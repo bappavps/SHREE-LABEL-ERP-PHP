@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// Shree Label ERP — Paper Stock: Edit Roll
+// ERP System — Paper Stock: Edit Roll
 // ============================================================
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';

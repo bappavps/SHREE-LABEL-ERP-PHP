@@ -1,0 +1,28 @@
+{
+    "company_name": "Shree Label Creation",
+    "company_tagline": "ERP Master System",
+    "company_email": "",
+    "company_mobile": "",
+    "company_phone": "",
+    "company_currency": "INR",
+    "company_address": "",
+    "company_gst": "",
+    "logo_path": "uploads/company/logo_20260326_001743_7bd0d690.jpg",
+    "flag_emoji": "🇮🇳",
+    "animated_flag_path": "",
+    "animated_flag_url": "https://media1.tenor.com/m/f7t624exZA0AAAAC/india-india-flag.gif",
+    "login_background_image": "",
+    "theme_mode": "light",
+    "sidebar_button_color": "#22c55e",
+    "sidebar_hover_color": "rgba(255,255,255,.09)",
+    "sidebar_active_bg": "rgba(34,197,94,.12)",
+    "sidebar_active_text": "#bbf7d0",
+    "image_library": [
+        {
+            "path": "uploads/library/lib_20260326_001606_2ad00a4a.jpg",
+            "name": "lib_20260326_001606_2ad00a4a.jpg",
+            "uploaded_at": "2026-03-26 00:16:06",
+            "category": "background"
+        }
+    ]
+}

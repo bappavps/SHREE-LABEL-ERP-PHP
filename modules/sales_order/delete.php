@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// Shree Label ERP — Sales Orders: Delete
+// ERP System — Sales Orders: Delete
 // ============================================================
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';

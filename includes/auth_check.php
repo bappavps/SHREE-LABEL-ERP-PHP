@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// Shree Label ERP — Authentication Guard
+// ERP System — Authentication Guard
 // Include at the top of every protected page.
 // Requires db.php to be loaded first (for BASE_URL).
 // ============================================================

@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// Shree Label ERP — Estimates: Convert to Sales Order
+// ERP System — Estimates: Convert to Sales Order
 // ============================================================
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';

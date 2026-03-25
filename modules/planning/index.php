@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// Shree Label ERP — Planning: List
+// ERP System — Planning: List
 // ============================================================
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';

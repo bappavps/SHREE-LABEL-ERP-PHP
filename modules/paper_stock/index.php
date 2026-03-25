@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// Shree Label ERP — Paper Stock: List
+// ERP System — Paper Stock: List
 // Unified filter system + Excel-style column filters
 // ============================================================
 require_once __DIR__ . '/../../config/db.php';

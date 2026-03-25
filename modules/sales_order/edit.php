@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// Shree Label ERP — Sales Orders: Edit (Status update)
+// ERP System — Sales Orders: Edit (Status update)
 // ============================================================
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';

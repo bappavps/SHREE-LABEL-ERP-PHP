@@ -1,8 +1,13 @@
   </main><!-- /.page-content -->
 
+  <?php
+    $footerSettings = function_exists('getAppSettings') ? getAppSettings() : [];
+    $footerCompanyName = trim((string)($footerSettings['company_name'] ?? ''));
+    $footerErpName = function_exists('getErpDisplayName') ? getErpDisplayName($footerCompanyName) : APP_NAME;
+  ?>
   <footer class="app-footer" role="contentinfo">
-    <div class="app-footer-left">Version 3.0</div>
-    <div class="app-footer-right">&copy; 2026 Shree Label Creation &bull; ERP Master System v3.0 | Developed by Mriganka Bhusan Debnath</div>
+    <div class="app-footer-left">Version : <?= e(APP_VERSION) ?></div>
+    <div class="app-footer-right">&copy; <?= date('Y') ?> <?= e($footerErpName) ?> &bull; ERP Master System v<?= e(APP_VERSION) ?> | @ Developed by Mriganka Bhusan Debnath</div>
   </footer>
 
 </div><!-- /.main-wrapper -->

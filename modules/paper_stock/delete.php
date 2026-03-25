@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// Shree Label ERP — Paper Stock: Delete Roll (CSRF protected)
+// ERP System — Paper Stock: Delete Roll (CSRF protected)
 // ============================================================
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';

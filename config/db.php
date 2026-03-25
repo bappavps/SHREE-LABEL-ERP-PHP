@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// Shree Label ERP — Database Configuration
+// ERP System — Database Configuration
 // Edit DB_USER / DB_PASS / BASE_URL to match your server
 // ============================================================
 
@@ -14,7 +14,7 @@ define('DB_NAME',    'shree_label_erp');
 // Shared hosting: '' (if installed at domain root)
 define('BASE_URL',   '/calipot-erp/shree-label-php');
 
-define('APP_NAME',   'Shree Label ERP');
+define('APP_NAME',   'Enterprise ERP');
 define('APP_VERSION','1.0');
 
 /**

@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// Shree Label ERP — Helper Functions
+// ERP System — Helper Functions
 // ============================================================
 
 /**
@@ -157,4 +157,119 @@ function paginationBar($total, $per_page, $current_page, $url_pattern) {
     }
     $html .= '</div>';
     return $html;
+}
+
+/**
+ * Default application settings.
+ */
+function appSettingsDefaults() {
+    return [
+        'company_name' => APP_NAME,
+        'company_tagline' => 'ERP Master System',
+        'company_email' => '',
+        'company_mobile' => '',
+        'company_phone' => '',
+        'company_currency' => 'INR',
+        'company_address' => '',
+        'company_gst' => '',
+        'logo_path' => '',
+        'flag_emoji' => '🇮🇳',
+        'animated_flag_path' => '',
+        'animated_flag_url' => '',
+        'login_background_image' => '',
+        'theme_mode' => 'light',
+        'sidebar_button_color' => '#22c55e',
+        'sidebar_hover_color' => 'rgba(255,255,255,.09)',
+        'sidebar_active_bg' => 'rgba(34,197,94,.12)',
+        'sidebar_active_text' => '#bbf7d0',
+        'image_library' => [],
+    ];
+}
+
+/**
+ * Path to persistent app settings JSON.
+ */
+function getAppSettingsPath() {
+    return __DIR__ . '/../data/app_settings.json';
+}
+
+/**
+ * Read app settings from JSON and merge with defaults.
+ */
+function getAppSettings() {
+    static $cache = null;
+    if ($cache !== null) return $cache;
+
+    $defaults = appSettingsDefaults();
+    $path = getAppSettingsPath();
+    if (!is_file($path)) {
+        $cache = $defaults;
+        return $cache;
+    }
+
+    $raw = @file_get_contents($path);
+    if ($raw === false) {
+        $cache = $defaults;
+        return $cache;
+    }
+
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        $cache = $defaults;
+        return $cache;
+    }
+
+    $cache = array_merge($defaults, $decoded);
+    if (trim((string)$cache['company_mobile']) === '' && trim((string)$cache['company_phone']) !== '') {
+        $cache['company_mobile'] = (string)$cache['company_phone'];
+    }
+    if (!is_array($cache['image_library'])) {
+        $cache['image_library'] = [];
+    } else {
+        foreach ($cache['image_library'] as $i => $img) {
+            if (!is_array($img)) {
+                $cache['image_library'][$i] = ['path' => '', 'name' => '', 'uploaded_at' => '', 'category' => 'misc'];
+                continue;
+            }
+            if (empty($cache['image_library'][$i]['category'])) {
+                $cache['image_library'][$i]['category'] = 'misc';
+            }
+        }
+    }
+    return $cache;
+}
+
+/**
+ * Persist app settings to JSON.
+ */
+function saveAppSettings(array $settings) {
+    $path = getAppSettingsPath();
+    $dir = dirname($path);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0777, true);
+    }
+    $data = array_merge(appSettingsDefaults(), $settings);
+    if (!isset($data['image_library']) || !is_array($data['image_library'])) {
+        $data['image_library'] = [];
+    }
+    $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    return $json !== false ? (@file_put_contents($path, $json) !== false) : false;
+}
+
+/**
+ * Build ERP display name as "Company Name ERP".
+ */
+function getErpDisplayName($companyName = '') {
+    $base = trim((string)$companyName);
+    if ($base === '') {
+        $app = trim((string)APP_NAME);
+        if (preg_match('/\s+ERP$/i', $app)) {
+            return $app;
+        }
+        return trim($app . ' ERP');
+    }
+    if (preg_match('/\s+ERP$/i', $base)) {
+        return $base;
+    }
+    return trim($base . ' ERP');
 }

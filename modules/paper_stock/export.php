@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// Shree Label ERP — Paper Stock: Bulk Export (CSV / PDF)
+// ERP System — Paper Stock: Bulk Export (CSV / PDF)
 // ============================================================
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';
@@ -174,7 +174,7 @@ tr:nth-child(even) { background: #f8fafc; }
 <div class="report-header">
     <div>
         <div class="report-title">Paper Stock Report</div>
-        <div class="report-subtitle">Shree Label ERP — Inventory Export</div>
+        <div class="report-subtitle"><?= e(APP_NAME) ?> — Inventory Export</div>
     </div>
     <div class="report-meta">
         <div>Generated: <strong><?= date('d M Y, h:i A') ?></strong></div>
@@ -216,7 +216,7 @@ tr:nth-child(even) { background: #f8fafc; }
 </table>
 
 <div class="footer-row">
-    Paper Stock Report — Shree Label ERP — Generated <?= date('d M Y, h:i A') ?> — <?= count($rolls) ?> records
+    Paper Stock Report — <?= e(APP_NAME) ?> — Generated <?= date('d M Y, h:i A') ?> — <?= count($rolls) ?> records
 </div>
 </div>
 

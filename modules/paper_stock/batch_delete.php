@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// Shree Label ERP — Paper Stock: Batch Delete (POST + CSRF)
+// ERP System — Paper Stock: Batch Delete (POST + CSRF)
 // ============================================================
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';

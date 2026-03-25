@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// Shree Label ERP — Users: List (Admin only)
+// ERP System — Users: List (Admin only)
 // ============================================================
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';

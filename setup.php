@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// Shree Label ERP — One-click Database Setup
+// ERP System — One-click Database Setup
 // ✅ Run this ONCE to create the database and seed admin user.
 // ✅ Delete or rename this file after successful setup.
 // ============================================================
@@ -11,7 +11,7 @@ define('DB_USER', 'root');
 define('DB_PASS', '');
 define('DB_NAME', 'shree_label_erp');
 define('BASE_URL', '/calipot-erp/shree-label-php');
-define('APP_NAME', 'Shree Label ERP');
+define('APP_NAME', 'Enterprise ERP');
 define('APP_VERSION', '1.0');
 
 $log    = [];
@@ -78,7 +78,7 @@ if ($schemaErrors === 0) {
 }
 
 // Step 5: Seed admin user
-$adminEmail = 'admin@shreelabel.com';
+$adminEmail = 'admin@example.com';
 $adminPass  = password_hash('admin123', PASSWORD_BCRYPT);
 $adminName  = 'System Admin';
 $adminRole  = 'admin';

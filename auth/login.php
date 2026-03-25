@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// Shree Label ERP — Login Page
+// ERP System — Login Page
 // ============================================================
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/functions.php';
@@ -45,23 +45,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $csrf = generateCSRF();
+$settings = getAppSettings();
+$companyName = trim((string)($settings['company_name'] ?? '')) ?: APP_NAME;
+$erpDisplayName = function_exists('getErpDisplayName') ? getErpDisplayName($companyName) : APP_NAME;
+$logoPath = (string)($settings['logo_path'] ?? '');
+$loginBg = (string)($settings['login_background_image'] ?? '');
+if ($loginBg === '') {
+  $library = $settings['image_library'] ?? [];
+  if (is_array($library)) {
+    for ($i = count($library) - 1; $i >= 0; $i--) {
+      $img = $library[$i] ?? null;
+      if (is_array($img) && (($img['category'] ?? '') === 'background') && !empty($img['path'])) {
+        $loginBg = (string)$img['path'];
+        break;
+      }
+    }
+  }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Login — <?= APP_NAME ?></title>
+<title>Login — <?= e($erpDisplayName) ?></title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 <link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/style.css">
+<?php if ($loginBg !== ''): ?>
+<style>
+.login-body {
+  background: linear-gradient(rgba(15,23,42,.48), rgba(15,23,42,.48)), url('<?= e(BASE_URL . '/' . ltrim($loginBg, '/')) ?>') center/cover no-repeat fixed;
+}
+</style>
+<?php endif; ?>
 </head>
 <body class="login-body">
 <div class="login-wrap">
   <div class="login-card">
-    <div class="login-logo"><i class="bi bi-layers"></i></div>
-    <h1 class="login-title"><?= APP_NAME ?></h1>
+    <div class="login-logo">
+      <?php if ($logoPath !== ''): ?>
+        <img src="<?= e(BASE_URL . '/' . ltrim($logoPath, '/')) ?>" alt="Logo">
+      <?php else: ?>
+        <i class="bi bi-layers"></i>
+      <?php endif; ?>
+    </div>
+    <h1 class="login-title"><?= e($erpDisplayName) ?></h1>
+    <p class="login-sub" style="margin-bottom:8px"><?= e($companyName) ?></p>
     <p class="login-sub">Sign in to your account</p>
 
     <?php if ($error): ?>
@@ -77,7 +108,7 @@ $csrf = generateCSRF();
       <div class="form-group">
         <label for="email">Email Address</label>
         <input type="email" id="email" name="email"
-               class="form-control" placeholder="you@shreelabel.com"
+               class="form-control" placeholder="you@company.com"
                value="<?= e($_POST['email'] ?? '') ?>" required autofocus>
       </div>
 
@@ -95,7 +126,7 @@ $csrf = generateCSRF();
     </form>
 
     <p class="text-center text-sm text-muted mt-16">
-      Default admin: <strong>admin@shreelabel.com</strong> / <strong>admin123</strong>
+      Default admin: <strong>admin@example.com</strong> / <strong>admin123</strong>
     </p>
   </div>
 </div>

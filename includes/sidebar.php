@@ -1,9 +1,13 @@
 <?php
 // ============================================================
-// Shree Label ERP — Sidebar Navigation
+// ERP System — Sidebar Navigation
 // ============================================================
 
 $currentFile = $_SERVER['PHP_SELF'] ?? '';
+$appSettings = function_exists('getAppSettings') ? getAppSettings() : [];
+$sidebarCompanyName = trim((string)($appSettings['company_name'] ?? ''));
+$sidebarCompanyName = function_exists('getErpDisplayName') ? getErpDisplayName($sidebarCompanyName) : APP_NAME;
+$sidebarLogoPath = (string)($appSettings['logo_path'] ?? '');
 
 function navItem($href, $icon, $label, $currentFile) {
     $isActive = strpos($currentFile, $href) !== false;
@@ -30,8 +34,14 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
 ?>
 <nav class="sidebar">
   <div class="sidebar-brand">
-    <div class="brand-icon"><i class="bi bi-layers"></i></div>
-    <span class="brand-name"><?= APP_NAME ?></span>
+    <div class="brand-icon">
+      <?php if ($sidebarLogoPath !== ''): ?>
+        <img src="<?= e(BASE_URL . '/' . ltrim($sidebarLogoPath, '/')) ?>" alt="Logo" class="sidebar-logo-img">
+      <?php else: ?>
+        <i class="bi bi-layers"></i>
+      <?php endif; ?>
+    </div>
+    <span class="brand-name"><?= e($sidebarCompanyName) ?></span>
   </div>
 
   <div class="sidebar-nav">
@@ -192,6 +202,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
         <?= navSubItem('/modules/print/index.php',        'Print Studio',             $currentFile) ?>
         <?= navSubItem('/modules/pricing/index.php',      'Pricing Login',            $currentFile) ?>
         <?= navSubItem('/modules/settings/index.php',     'Settings',                 $currentFile) ?>
+        <?= navSubItem('/modules/settings/index.php?tab=backup', 'Backup & Restore',  $currentFile, ['/modules/settings/index.php']) ?>
       </div>
     </div>
 

@@ -1,5 +1,5 @@
 // ============================================================
-// Shree Label ERP — Global UI Script
+// ERP System — Global UI Script
 // ============================================================
 (function () {
     'use strict';
@@ -64,6 +64,7 @@
     }
     redirectFromButton('topbarProfileBtn');
     redirectFromButton('topbarPowerBtn');
+    redirectFromButton('topbarNotificationBtn');
 
     // Live topbar date and time
     var dateTimeNode = document.getElementById('topbarDateTime');

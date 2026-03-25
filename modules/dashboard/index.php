@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// Shree Label ERP — Dashboard
+// ERP System — Dashboard
 // ============================================================
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';
@@ -169,16 +169,10 @@ include __DIR__ . '/../../includes/header.php';
     </div>
 
     <div class="card">
-      <div class="card-header"><span class="card-title">System Info</span></div>
+      <div class="card-header"><span class="card-title">Data Safety</span></div>
       <div class="card-body">
-        <table style="font-size:.82rem">
-          <tbody>
-            <tr><td class="text-muted" style="padding:5px 0">PHP Version</td><td class="fw-600"><?= phpversion() ?></td></tr>
-            <tr><td class="text-muted" style="padding:5px 0">MySQL</td><td class="fw-600"><?= $db->server_info ?></td></tr>
-            <tr><td class="text-muted" style="padding:5px 0">App Version</td><td class="fw-600"><?= APP_VERSION ?></td></tr>
-            <tr><td class="text-muted" style="padding:5px 0">Server Time</td><td class="fw-600"><?= date('d M Y H:i') ?></td></tr>
-          </tbody>
-        </table>
+        <p class="text-muted" style="margin-bottom:10px">Backup and restore controls are now available from Settings.</p>
+        <a href="<?= BASE_URL ?>/modules/settings/index.php?tab=backup" class="btn btn-secondary"><i class="bi bi-database-check"></i> Open Backup &amp; Restore</a>
       </div>
     </div>
   </div>
