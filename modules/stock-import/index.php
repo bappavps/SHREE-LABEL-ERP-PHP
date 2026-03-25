@@ -1617,6 +1617,92 @@ include __DIR__ . '/../../includes/header.php';
   </div>
 </div>
 
+<!-- ── Export & Manage All Rolls ── -->
+<?php
+  $totalRolls = (int)$db->query("SELECT COUNT(*) AS c FROM paper_stock")->fetch_assoc()['c'];
+  $totalMtr   = (float)$db->query("SELECT IFNULL(SUM(length_mtr),0) AS m FROM paper_stock")->fetch_assoc()['m'];
+?>
+<div class="card stock-import-card" style="margin-top:20px">
+  <div style="background:#0f172a;color:#fff;padding:22px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+    <div>
+      <h2 style="font-size:15px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:0 0 6px 0">
+        <i class="bi bi-database-gear" style="color:#22c55e;margin-right:8px"></i>Manage All Paper Rolls
+      </h2>
+      <p style="margin:0;color:#cbd5e1;font-size:12px">Export full inventory as PDF or Excel, or clear all rolls from the database.</p>
+    </div>
+    <span class="stock-import-pill success"><i class="bi bi-box-seam"></i> <?= number_format($totalRolls) ?> rolls &middot; <?= number_format($totalMtr, 0) ?> MTR</span>
+  </div>
+  <div style="padding:32px">
+    <div style="display:flex;justify-content:center;gap:16px;flex-wrap:wrap">
+
+      <!-- Export PDF -->
+      <a href="<?= BASE_URL ?>/modules/paper_stock/export.php?format=pdf&mode=all"
+         class="stock-import-action download" style="background:#2563eb;border-color:#1d4ed8;min-width:180px;text-decoration:none"
+         target="_blank">
+        <i class="bi bi-file-earmark-pdf"></i>
+        <span>Export PDF</span>
+      </a>
+
+      <!-- Export Excel -->
+      <a href="<?= BASE_URL ?>/modules/paper_stock/export.php?format=csv&mode=all"
+         class="stock-import-action download" style="background:#16a34a;border-color:#15803d;min-width:180px;text-decoration:none">
+        <i class="bi bi-file-earmark-excel"></i>
+        <span>Export Excel</span>
+      </a>
+
+      <!-- Delete All Rolls -->
+      <button type="button" onclick="confirmDeleteAllRolls()" class="stock-import-action upload"
+              style="background:#dc2626;border-color:#b91c1c;min-width:180px;cursor:pointer"
+              <?= $totalRolls === 0 ? 'disabled style="opacity:.5;pointer-events:none"' : '' ?>>
+        <i class="bi bi-trash3"></i>
+        <span>Delete All Rolls (<?= number_format($totalRolls) ?>)</span>
+      </button>
+    </div>
+
+    <?php if ($totalRolls > 0): ?>
+    <p style="text-align:center;margin:18px 0 0;color:#94a3b8;font-size:12px">
+      <i class="bi bi-info-circle"></i>
+      Delete All will permanently remove <strong><?= number_format($totalRolls) ?></strong> roll(s) from the database. This cannot be undone.
+    </p>
+    <?php else: ?>
+    <p style="text-align:center;margin:18px 0 0;color:#94a3b8;font-size:12px">
+      <i class="bi bi-inbox"></i> No rolls in the database. Import a file above to get started.
+    </p>
+    <?php endif; ?>
+  </div>
+</div>
+
+<!-- Delete All — hidden form + confirmation -->
+<form id="delete-all-rolls-form" method="POST" action="<?= BASE_URL ?>/modules/paper_stock/batch_delete.php" style="display:none">
+  <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
+  <input type="hidden" name="ids" id="delete-all-roll-ids" value="">
+</form>
+<script>
+function confirmDeleteAllRolls() {
+  var total = <?= (int)$totalRolls ?>;
+  if (total === 0) return;
+  var msg = 'Are you sure you want to DELETE ALL ' + total.toLocaleString() + ' paper roll(s)?\n\nThis action CANNOT be undone.';
+  if (!confirm(msg)) return;
+  var msg2 = 'FINAL CONFIRMATION: Type OK to proceed with deleting ALL rolls.';
+  var answer = prompt(msg2);
+  if (!answer || answer.trim().toUpperCase() !== 'OK') { alert('Deletion cancelled.'); return; }
+
+  // Fetch all roll IDs via AJAX, then submit
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', '<?= BASE_URL ?>/modules/paper_stock/export.php?format=ids&mode=all', true);
+  xhr.onload = function() {
+    if (xhr.status === 200) {
+      document.getElementById('delete-all-roll-ids').value = xhr.responseText.trim();
+      document.getElementById('delete-all-rolls-form').submit();
+    } else {
+      alert('Failed to fetch roll IDs. Please try again.');
+    }
+  };
+  xhr.onerror = function() { alert('Network error. Please try again.'); };
+  xhr.send();
+}
+</script>
+
 <?php elseif ($importState === 'mapping'): ?>
 <div class="card stock-import-card">
   <div style="background:#0f172a;color:#fff;padding:22px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">

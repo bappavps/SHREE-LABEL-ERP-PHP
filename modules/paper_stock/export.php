@@ -82,6 +82,14 @@ $columns = [
     'remarks'         => 'Remarks',
 ];
 
+// ── IDs Only (for delete-all AJAX) ────────────────────────────
+if ($format === 'ids') {
+    header('Content-Type: text/plain; charset=utf-8');
+    $ids = array_column($rolls, 'id');
+    echo implode(',', $ids);
+    exit;
+}
+
 // ── CSV / Excel Export ────────────────────────────────────────
 if ($format === 'csv') {
     $filename = 'Paper_Stock_Export_' . date('Y-m-d_His') . '.csv';
