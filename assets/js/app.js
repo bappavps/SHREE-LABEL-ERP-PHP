@@ -16,26 +16,144 @@
     // Mobile sidebar toggle
     var toggleBtn = document.getElementById('sidebarToggle');
     var sidebar   = document.querySelector('.sidebar');
-    if (toggleBtn && sidebar) {
+    var appShell  = document.querySelector('.app-shell');
+    if (toggleBtn && sidebar && appShell) {
         toggleBtn.addEventListener('click', function () {
-            sidebar.classList.toggle('is-open');
+            if (window.innerWidth <= 900) {
+                sidebar.classList.toggle('is-open');
+            } else {
+                appShell.classList.toggle('sidebar-collapsed');
+            }
         });
         document.addEventListener('click', function (e) {
-            if (sidebar.classList.contains('is-open')
+            if (window.innerWidth <= 900
+                && sidebar.classList.contains('is-open')
                 && !sidebar.contains(e.target)
                 && !toggleBtn.contains(e.target)) {
                 sidebar.classList.remove('is-open');
             }
         });
+        window.addEventListener('resize', function () {
+            if (window.innerWidth > 900) {
+                sidebar.classList.remove('is-open');
+            }
+        });
     }
 
-    // Active nav item highlight based on current URL
-    var currentPath = window.location.pathname;
-    document.querySelectorAll('.nav-item').forEach(function (item) {
-        var href = item.getAttribute('href') || item.getAttribute('data-href');
-        if (href && currentPath.includes(href.replace(/\/index\.php$/, '').replace(/\.php$/, ''))) {
-            item.classList.add('active');
+    // Topbar controls
+    var fullscreenBtn = document.getElementById('topbarFullscreenBtn');
+    if (fullscreenBtn) {
+        fullscreenBtn.addEventListener('click', function () {
+            if (!document.fullscreenElement) {
+                if (document.documentElement.requestFullscreen) {
+                    document.documentElement.requestFullscreen();
+                }
+            } else if (document.exitFullscreen) {
+                document.exitFullscreen();
+            }
+        });
+    }
+
+    function redirectFromButton(btnId) {
+        var btn = document.getElementById(btnId);
+        if (!btn) return;
+        btn.addEventListener('click', function () {
+            var href = btn.getAttribute('data-href');
+            if (href) window.location.href = href;
+        });
+    }
+    redirectFromButton('topbarProfileBtn');
+    redirectFromButton('topbarPowerBtn');
+
+    // Live topbar date and time
+    var dateTimeNode = document.getElementById('topbarDateTime');
+    function updateDateTime() {
+        if (!dateTimeNode) return;
+        var now = new Date();
+        dateTimeNode.textContent = now.toLocaleString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true
+        });
+    }
+    if (dateTimeNode) {
+        updateDateTime();
+        setInterval(updateDateTime, 1000);
+    }
+
+    // Sidebar accordion behavior
+    var groups = Array.prototype.slice.call(document.querySelectorAll('.nav-group'));
+    var accordion = groups.map(function (group) {
+        return {
+            group: group,
+            toggle: group.querySelector('.nav-group-toggle'),
+            sub: group.querySelector('.nav-sub')
+        };
+    }).filter(function (x) { return x.toggle && x.sub; });
+
+    function closeAllAccordion() {
+        accordion.forEach(function (item) {
+            item.group.classList.remove('is-open');
+            item.toggle.setAttribute('aria-expanded', 'false');
+        });
+    }
+
+    // Open the current section if one of its submenu links is active
+    var currentPath = window.location.pathname.replace(/\/$/, '');
+    accordion.forEach(function (item) {
+        var hasActiveClass = item.group.querySelector('.nav-sub-item.active');
+        var hasPathMatch = Array.prototype.some.call(item.group.querySelectorAll('.nav-sub-item[href]'), function (link) {
+            var href = (link.getAttribute('href') || '').replace(/\/$/, '');
+            return href && currentPath.indexOf(href) !== -1;
+        });
+
+        if (hasActiveClass || hasPathMatch) {
+            item.group.classList.add('is-open');
+            item.toggle.setAttribute('aria-expanded', 'true');
+        } else {
+            item.toggle.setAttribute('aria-expanded', 'false');
         }
+
+        item.toggle.addEventListener('click', function (e) {
+            e.preventDefault();
+            var wasOpen = item.group.classList.contains('is-open');
+            closeAllAccordion();
+            if (!wasOpen) {
+                item.group.classList.add('is-open');
+                item.toggle.setAttribute('aria-expanded', 'true');
+            }
+        });
+    });
+
+    // Nested accordion under Physical Stock Check
+    var nested = Array.prototype.slice.call(document.querySelectorAll('.nav-sub-nest'));
+    nested.forEach(function (node) {
+        var toggle = node.querySelector('.nav-sub-parent-toggle');
+        var children = node.querySelector('.nav-sub-children');
+        if (!toggle || !children) return;
+
+        var hasActiveChild = node.querySelector('.nav-sub-item.active') ||
+            Array.prototype.some.call(node.querySelectorAll('.nav-sub-item[href]'), function (link) {
+                var href = (link.getAttribute('href') || '').replace(/\/$/, '');
+                return href && currentPath.indexOf(href) !== -1;
+            });
+
+        if (hasActiveChild) {
+            node.classList.add('is-open');
+            toggle.setAttribute('aria-expanded', 'true');
+        } else {
+            toggle.setAttribute('aria-expanded', 'false');
+        }
+
+        toggle.addEventListener('click', function (e) {
+            e.preventDefault();
+            var isOpen = node.classList.toggle('is-open');
+            toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        });
     });
 
     // Confirm delete
