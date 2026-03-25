@@ -33,28 +33,35 @@ function getCurrentUser() {
     if (!isLoggedIn()) return null;
     $conn = db();
     $id = (int)$_SESSION['user_id'];
-    $result = $conn->query("SELECT id, name, email, role FROM users WHERE id = $id AND status = 1");
+    $stmt = $conn->prepare("SELECT id, name, email, role FROM users WHERE id = ? AND status = 1");
+    $stmt->bind_param('i', $id);
+    $stmt->execute();
+    $result = $stmt->get_result();
     return $result ? $result->fetch_assoc() : null;
 }
 
 function generateOrderNumber() {
     $conn = db();
-    $year = date('Y');
-    $month = date('m');
-    $result = $conn->query("SELECT COUNT(*) as cnt FROM orders WHERE YEAR(order_date) = $year AND MONTH(order_date) = $month");
-    $row = $result->fetch_assoc();
+    $year  = (int)date('Y');
+    $month = (int)date('m');
+    $stmt  = $conn->prepare("SELECT COUNT(*) as cnt FROM orders WHERE YEAR(order_date) = ? AND MONTH(order_date) = ?");
+    $stmt->bind_param('ii', $year, $month);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
     $seq = ($row['cnt'] ?? 0) + 1;
-    return 'ORD-' . $year . $month . '-' . str_pad($seq, 4, '0', STR_PAD_LEFT);
+    return 'ORD-' . $year . str_pad($month, 2, '0', STR_PAD_LEFT) . '-' . str_pad($seq, 4, '0', STR_PAD_LEFT);
 }
 
 function generateInvoiceNumber() {
     $conn = db();
-    $year = date('Y');
-    $month = date('m');
-    $result = $conn->query("SELECT COUNT(*) as cnt FROM invoices WHERE YEAR(invoice_date) = $year AND MONTH(invoice_date) = $month");
-    $row = $result->fetch_assoc();
+    $year  = (int)date('Y');
+    $month = (int)date('m');
+    $stmt  = $conn->prepare("SELECT COUNT(*) as cnt FROM invoices WHERE YEAR(invoice_date) = ? AND MONTH(invoice_date) = ?");
+    $stmt->bind_param('ii', $year, $month);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
     $seq = ($row['cnt'] ?? 0) + 1;
-    return 'INV-' . $year . $month . '-' . str_pad($seq, 4, '0', STR_PAD_LEFT);
+    return 'INV-' . $year . str_pad($month, 2, '0', STR_PAD_LEFT) . '-' . str_pad($seq, 4, '0', STR_PAD_LEFT);
 }
 
 function formatCurrency($amount) {

@@ -6,23 +6,32 @@ $conn = db();
 $id = (int)($_GET['id'] ?? 0);
 if (!$id) { header('Location: index.php'); exit; }
 
-$order = $conn->query("
+$stmt = $conn->prepare("
     SELECT o.*, c.name as customer_name, c.company, c.email as customer_email,
            c.phone as customer_phone, c.address as customer_address, c.city, c.state, c.gstin
     FROM orders o
     JOIN customers c ON o.customer_id = c.id
-    WHERE o.id = $id
-")->fetch_assoc();
+    WHERE o.id = ?
+");
+$stmt->bind_param('i', $id);
+$stmt->execute();
+$order = $stmt->get_result()->fetch_assoc();
 if (!$order) { setFlash('error', 'Order not found.'); header('Location: index.php'); exit; }
 
-$items = $conn->query("
+$stmt2 = $conn->prepare("
     SELECT oi.*, p.name as product_name, p.code, p.unit
     FROM order_items oi
     JOIN products p ON oi.product_id = p.id
-    WHERE oi.order_id = $id
+    WHERE oi.order_id = ?
 ");
+$stmt2->bind_param('i', $id);
+$stmt2->execute();
+$items = $stmt2->get_result();
 
-$invoice = $conn->query("SELECT id, invoice_number FROM invoices WHERE order_id = $id")->fetch_assoc();
+$stmt3 = $conn->prepare("SELECT id, invoice_number FROM invoices WHERE order_id = ?");
+$stmt3->bind_param('i', $id);
+$stmt3->execute();
+$invoice = $stmt3->get_result()->fetch_assoc();
 
 $pageTitle  = 'Order: ' . $order['order_number'];
 $breadcrumbs = [

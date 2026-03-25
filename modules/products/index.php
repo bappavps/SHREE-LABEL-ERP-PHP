@@ -4,17 +4,15 @@ requireLogin();
 
 $conn = db();
 $search = trim($_GET['search'] ?? '');
-$where = "WHERE p.status = 1";
 if ($search) {
-    $s = $conn->real_escape_string($search);
-    $where .= " AND (p.name LIKE '%$s%' OR p.code LIKE '%$s%' OR p.material LIKE '%$s%')";
+    $like = '%' . $search . '%';
+    $stmt = $conn->prepare("SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.status = 1 AND (p.name LIKE ? OR p.code LIKE ? OR p.material LIKE ?) ORDER BY p.created_at DESC");
+    $stmt->bind_param('sss', $like, $like, $like);
+    $stmt->execute();
+    $products = $stmt->get_result();
+} else {
+    $products = $conn->query("SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.status = 1 ORDER BY p.created_at DESC");
 }
-$products = $conn->query("
-    SELECT p.*, c.name as category_name
-    FROM products p
-    LEFT JOIN categories c ON p.category_id = c.id
-    $where ORDER BY p.created_at DESC
-");
 
 $pageTitle  = 'Products / Labels';
 $breadcrumbs = [

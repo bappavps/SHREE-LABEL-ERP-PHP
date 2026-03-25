@@ -4,12 +4,15 @@ requireLogin();
 
 $conn = db();
 $search = trim($_GET['search'] ?? '');
-$where = "WHERE status = 1";
 if ($search) {
-    $s = $conn->real_escape_string($search);
-    $where .= " AND (name LIKE '%$s%' OR company LIKE '%$s%' OR phone LIKE '%$s%' OR email LIKE '%$s%')";
+    $like = '%' . $search . '%';
+    $stmt = $conn->prepare("SELECT * FROM customers WHERE status = 1 AND (name LIKE ? OR company LIKE ? OR phone LIKE ? OR email LIKE ?) ORDER BY created_at DESC");
+    $stmt->bind_param('ssss', $like, $like, $like, $like);
+    $stmt->execute();
+    $customers = $stmt->get_result();
+} else {
+    $customers = $conn->query("SELECT * FROM customers WHERE status = 1 ORDER BY created_at DESC");
 }
-$customers = $conn->query("SELECT * FROM customers $where ORDER BY created_at DESC");
 
 $pageTitle  = 'Customers';
 $breadcrumbs = [

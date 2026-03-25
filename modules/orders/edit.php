@@ -6,12 +6,19 @@ $conn = db();
 $id = (int)($_GET['id'] ?? 0);
 if (!$id) { header('Location: index.php'); exit; }
 
-$order = $conn->query("SELECT * FROM orders WHERE id = $id")->fetch_assoc();
+$stmt = $conn->prepare("SELECT * FROM orders WHERE id = ?");
+$stmt->bind_param('i', $id);
+$stmt->execute();
+$order = $stmt->get_result()->fetch_assoc();
 if (!$order) { setFlash('error', 'Order not found.'); header('Location: index.php'); exit; }
 
 $customers = $conn->query("SELECT id, name, company FROM customers WHERE status=1 ORDER BY name");
 $products  = $conn->query("SELECT id, name, code, price, unit FROM products WHERE status=1 ORDER BY name");
-$existingItems = $conn->query("SELECT oi.*, p.name as product_name FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = $id");
+
+$stmt2 = $conn->prepare("SELECT oi.*, p.name as product_name FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = ?");
+$stmt2->bind_param('i', $id);
+$stmt2->execute();
+$existingItems = $stmt2->get_result();
 
 $errors = [];
 
@@ -51,7 +58,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $subtotal, $discount, $tax_percent, $tax_amount, $total, $notes, $id
         );
         if ($stmt->execute()) {
-            $conn->query("DELETE FROM order_items WHERE order_id = $id");
+            $delItems = $conn->prepare("DELETE FROM order_items WHERE order_id = ?");
+            $delItems->bind_param('i', $id);
+            $delItems->execute();
             foreach ($validItems as $item) {
                 $istmt = $conn->prepare("INSERT INTO order_items (order_id,product_id,quantity,unit_price,total) VALUES (?,?,?,?,?)");
                 $istmt->bind_param('iiidd', $id, $item['product_id'], $item['quantity'], $item['unit_price'], $item['total']);

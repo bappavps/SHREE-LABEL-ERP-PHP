@@ -7,20 +7,26 @@ $orderId = (int)($_GET['order_id'] ?? 0);
 if (!$orderId) { header('Location: ../orders/index.php'); exit; }
 
 // Check if invoice already exists
-$existing = $conn->query("SELECT id FROM invoices WHERE order_id = $orderId")->fetch_assoc();
+$stmt0 = $conn->prepare("SELECT id FROM invoices WHERE order_id = ?");
+$stmt0->bind_param('i', $orderId);
+$stmt0->execute();
+$existing = $stmt0->get_result()->fetch_assoc();
 if ($existing) {
     setFlash('info', 'Invoice already exists for this order.');
     header('Location: view.php?id=' . $existing['id']);
     exit;
 }
 
-$order = $conn->query("
+$stmt = $conn->prepare("
     SELECT o.*, c.name as customer_name, c.company, c.email as customer_email,
            c.phone as customer_phone, c.address, c.city, c.state, c.gstin
     FROM orders o
     JOIN customers c ON o.customer_id = c.id
-    WHERE o.id = $orderId
-")->fetch_assoc();
+    WHERE o.id = ?
+");
+$stmt->bind_param('i', $orderId);
+$stmt->execute();
+$order = $stmt->get_result()->fetch_assoc();
 if (!$order) { setFlash('error', 'Order not found.'); header('Location: ../orders/index.php'); exit; }
 
 $errors = [];

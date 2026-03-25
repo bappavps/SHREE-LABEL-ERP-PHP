@@ -3,26 +3,36 @@ require_once __DIR__ . '/../../includes/functions.php';
 requireLogin();
 
 $conn = db();
-$search = trim($_GET['search'] ?? '');
+$search    = trim($_GET['search'] ?? '');
 $payStatus = $_GET['pay_status'] ?? '';
-$where = "WHERE 1=1";
+$params    = [];
+$types     = '';
+$conditions = [];
+
 if ($search) {
-    $s = $conn->real_escape_string($search);
-    $where .= " AND (i.invoice_number LIKE '%$s%' OR c.name LIKE '%$s%')";
+    $like = '%' . $search . '%';
+    $conditions[] = "(i.invoice_number LIKE ? OR c.name LIKE ?)";
+    $params[] = $like;
+    $params[] = $like;
+    $types   .= 'ss';
 }
 if ($payStatus) {
-    $ps = $conn->real_escape_string($payStatus);
-    $where .= " AND i.payment_status = '$ps'";
+    $conditions[] = "i.payment_status = ?";
+    $params[] = $payStatus;
+    $types   .= 's';
 }
 
-$invoices = $conn->query("
-    SELECT i.*, c.name as customer_name, o.order_number
-    FROM invoices i
-    JOIN customers c ON i.customer_id = c.id
-    JOIN orders o ON i.order_id = o.id
-    $where
-    ORDER BY i.created_at DESC
-");
+$where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
+$sql = "SELECT i.*, c.name as customer_name, o.order_number FROM invoices i JOIN customers c ON i.customer_id = c.id JOIN orders o ON i.order_id = o.id $where ORDER BY i.created_at DESC";
+
+if ($params) {
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $invoices = $stmt->get_result();
+} else {
+    $invoices = $conn->query($sql);
+}
 
 $pageTitle  = 'Invoices';
 $breadcrumbs = [

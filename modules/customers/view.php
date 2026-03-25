@@ -6,10 +6,16 @@ $conn = db();
 $id = (int)($_GET['id'] ?? 0);
 if (!$id) { header('Location: index.php'); exit; }
 
-$customer = $conn->query("SELECT * FROM customers WHERE id = $id")->fetch_assoc();
+$stmt = $conn->prepare("SELECT * FROM customers WHERE id = ?");
+$stmt->bind_param('i', $id);
+$stmt->execute();
+$customer = $stmt->get_result()->fetch_assoc();
 if (!$customer) { setFlash('error', 'Customer not found.'); header('Location: index.php'); exit; }
 
-$orders = $conn->query("SELECT * FROM orders WHERE customer_id = $id ORDER BY order_date DESC LIMIT 10");
+$stmt2 = $conn->prepare("SELECT * FROM orders WHERE customer_id = ? ORDER BY order_date DESC LIMIT 10");
+$stmt2->bind_param('i', $id);
+$stmt2->execute();
+$orders = $stmt2->get_result();
 
 $pageTitle  = 'Customer: ' . $customer['name'];
 $breadcrumbs = [

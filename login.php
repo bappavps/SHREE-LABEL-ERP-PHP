@@ -16,8 +16,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Please enter email and password.';
     } else {
         $conn  = db();
-        $email = $conn->real_escape_string($email);
-        $result = $conn->query("SELECT id, name, email, password, role FROM users WHERE email = '$email' AND status = 1");
+        $stmt  = $conn->prepare("SELECT id, name, email, password, role FROM users WHERE email = ? AND status = 1");
+        $stmt->bind_param('s', $email);
+        $stmt->execute();
+        $result = $stmt->get_result();
         if ($result && $row = $result->fetch_assoc()) {
             if (password_verify($password, $row['password'])) {
                 session_regenerate_id(true);

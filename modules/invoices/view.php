@@ -6,23 +6,30 @@ $conn = db();
 $id = (int)($_GET['id'] ?? 0);
 if (!$id) { header('Location: index.php'); exit; }
 
-$invoice = $conn->query("
+$stmt = $conn->prepare("
     SELECT i.*, c.name as customer_name, c.company, c.email as customer_email,
            c.phone as customer_phone, c.address, c.city, c.state, c.gstin,
            o.order_number, o.order_date
     FROM invoices i
     JOIN customers c ON i.customer_id = c.id
     JOIN orders o ON i.order_id = o.id
-    WHERE i.id = $id
-")->fetch_assoc();
+    WHERE i.id = ?
+");
+$stmt->bind_param('i', $id);
+$stmt->execute();
+$invoice = $stmt->get_result()->fetch_assoc();
 if (!$invoice) { setFlash('error', 'Invoice not found.'); header('Location: index.php'); exit; }
 
-$items = $conn->query("
+$orderId = (int)$invoice['order_id'];
+$stmt2 = $conn->prepare("
     SELECT oi.*, p.name as product_name, p.code, p.unit
     FROM order_items oi
     JOIN products p ON oi.product_id = p.id
-    WHERE oi.order_id = {$invoice['order_id']}
+    WHERE oi.order_id = ?
 ");
+$stmt2->bind_param('i', $orderId);
+$stmt2->execute();
+$items = $stmt2->get_result();
 
 // Update payment
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['paid_amount'])) {

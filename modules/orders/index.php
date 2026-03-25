@@ -3,25 +3,46 @@ require_once __DIR__ . '/../../includes/functions.php';
 requireLogin();
 
 $conn = db();
-$search = trim($_GET['search'] ?? '');
-$status = $_GET['status'] ?? '';
-$where = "WHERE 1=1";
+$search    = trim($_GET['search'] ?? '');
+$status    = $_GET['status'] ?? '';
+$params    = [];
+$types     = '';
+$conditions = [];
+
 if ($search) {
-    $s = $conn->real_escape_string($search);
-    $where .= " AND (o.order_number LIKE '%$s%' OR c.name LIKE '%$s%')";
+    $like = '%' . $search . '%';
+    $conditions[] = "(o.order_number LIKE ? OR c.name LIKE ?)";
+    $params[] = $like;
+    $params[] = $like;
+    $types   .= 'ss';
 }
 if ($status) {
-    $st = $conn->real_escape_string($status);
-    $where .= " AND o.status = '$st'";
+    $conditions[] = "o.status = ?";
+    $params[] = $status;
+    $types   .= 's';
 }
 
-$orders = $conn->query("
-    SELECT o.*, c.name as customer_name
-    FROM orders o
-    JOIN customers c ON o.customer_id = c.id
-    $where
-    ORDER BY o.created_at DESC
-");
+$where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
+
+if ($params) {
+    $stmt = $conn->prepare("
+        SELECT o.*, c.name as customer_name
+        FROM orders o
+        JOIN customers c ON o.customer_id = c.id
+        $where
+        ORDER BY o.created_at DESC
+    ");
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $orders = $stmt->get_result();
+} else {
+    $orders = $conn->query("
+        SELECT o.*, c.name as customer_name
+        FROM orders o
+        JOIN customers c ON o.customer_id = c.id
+        ORDER BY o.created_at DESC
+    ");
+}
 
 $pageTitle  = 'Orders';
 $breadcrumbs = [

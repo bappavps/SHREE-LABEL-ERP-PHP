@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT
 );
 
--- Default admin user (password: admin123)
+-- Default admin user (password: password)
 INSERT INTO users (name, email, password, role) VALUES
 ('Administrator', 'admin@shreelabel.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin');
 

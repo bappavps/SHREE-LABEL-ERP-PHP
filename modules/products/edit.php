@@ -6,7 +6,10 @@ $conn = db();
 $id = (int)($_GET['id'] ?? 0);
 if (!$id) { header('Location: index.php'); exit; }
 
-$row = $conn->query("SELECT * FROM products WHERE id = $id AND status = 1")->fetch_assoc();
+$stmt = $conn->prepare("SELECT * FROM products WHERE id = ? AND status = 1");
+$stmt->bind_param('i', $id);
+$stmt->execute();
+$row = $stmt->get_result()->fetch_assoc();
 if (!$row) { setFlash('error', 'Product not found.'); header('Location: index.php'); exit; }
 
 $categories = $conn->query("SELECT id, name FROM categories WHERE status=1 ORDER BY name");
