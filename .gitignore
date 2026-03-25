@@ -1,0 +1,24 @@
+# Dependencies
+vendor/
+node_modules/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temp files
+tmp/
+temp/
+
+# Environment
+.env
