@@ -257,6 +257,146 @@ function saveAppSettings(array $settings) {
 }
 
 /**
+ * Default ID prefix settings and counters for all modules.
+ */
+function prefixSettingsDefaults() {
+    return [
+        'id_generation' => [
+            'year_format' => 'YY',
+            'separator' => '/',
+            'padding' => 3,
+            'modules' => [
+                'roll' => ['prefix' => 'SLC', 'counter' => 0],
+                'job' => ['prefix' => 'JOB', 'counter' => 0],
+                'invoice' => ['prefix' => 'INV', 'counter' => 0],
+                'estimate' => ['prefix' => 'EST', 'counter' => 0],
+                'quotation' => ['prefix' => 'QTN', 'counter' => 0],
+                'batch' => ['prefix' => 'BAT', 'counter' => 0],
+                'sales_order' => ['prefix' => 'SO', 'counter' => 0],
+            ],
+        ],
+    ];
+}
+
+/**
+ * Merge current app settings with prefix defaults.
+ */
+function getPrefixSettings() {
+    $settings = getAppSettings();
+    $defaults = prefixSettingsDefaults();
+
+    if (!isset($settings['id_generation']) || !is_array($settings['id_generation'])) {
+        $settings['id_generation'] = $defaults['id_generation'];
+    }
+
+    $idg = $settings['id_generation'];
+    if (!isset($idg['year_format']) || !in_array($idg['year_format'], ['YY', 'YYYY'], true)) {
+        $idg['year_format'] = $defaults['id_generation']['year_format'];
+    }
+    if (!isset($idg['separator']) || !is_string($idg['separator']) || $idg['separator'] === '') {
+        $idg['separator'] = $defaults['id_generation']['separator'];
+    }
+    if (!isset($idg['padding']) || !is_numeric($idg['padding']) || (int)$idg['padding'] < 1) {
+        $idg['padding'] = $defaults['id_generation']['padding'];
+    } else {
+        $idg['padding'] = (int)$idg['padding'];
+    }
+
+    if (!isset($idg['modules']) || !is_array($idg['modules'])) {
+        $idg['modules'] = [];
+    }
+
+    foreach ($defaults['id_generation']['modules'] as $type => $moduleDefaults) {
+        if (!isset($idg['modules'][$type]) || !is_array($idg['modules'][$type])) {
+            $idg['modules'][$type] = $moduleDefaults;
+            continue;
+        }
+
+        if (!isset($idg['modules'][$type]['prefix']) || trim((string)$idg['modules'][$type]['prefix']) === '') {
+            $idg['modules'][$type]['prefix'] = $moduleDefaults['prefix'];
+        } else {
+            $idg['modules'][$type]['prefix'] = trim((string)$idg['modules'][$type]['prefix']);
+        }
+
+        if (!isset($idg['modules'][$type]['counter']) || !is_numeric($idg['modules'][$type]['counter'])) {
+            $idg['modules'][$type]['counter'] = $moduleDefaults['counter'];
+        } else {
+            $idg['modules'][$type]['counter'] = max(0, (int)$idg['modules'][$type]['counter']);
+        }
+    }
+
+    return $idg;
+}
+
+/**
+ * Build year token as configured in master settings.
+ */
+function buildIdYearToken($yearFormat) {
+    return $yearFormat === 'YYYY' ? date('Y') : date('y');
+}
+
+/**
+ * Build an ID in PREFIX/YY/001 format (separator and year format are configurable).
+ */
+function buildFormattedId($prefix, $yearToken, $sequence, $separator, $padding) {
+    $seq = str_pad((string)$sequence, max(1, (int)$padding), '0', STR_PAD_LEFT);
+    return strtoupper(trim((string)$prefix)) . $separator . $yearToken . $separator . $seq;
+}
+
+/**
+ * Preview current ID format for a module without incrementing counter.
+ */
+function getIdPreview($type) {
+    $type = trim((string)$type);
+    $settings = getAppSettings();
+    $idg = getPrefixSettings();
+
+    if (!isset($idg['modules'][$type])) {
+        return null;
+    }
+
+    $module = $idg['modules'][$type];
+    $next = max(0, (int)$module['counter']) + 1;
+    return buildFormattedId(
+        $module['prefix'],
+        buildIdYearToken($idg['year_format']),
+        $next,
+        $idg['separator'],
+        $idg['padding']
+    );
+}
+
+/**
+ * Centralized reusable API for all module IDs.
+ * Increments only the requested module counter and persists settings.
+ */
+function getNextId($type) {
+    $type = trim((string)$type);
+    $settings = getAppSettings();
+    $idg = getPrefixSettings();
+
+    if (!isset($idg['modules'][$type])) {
+        return null;
+    }
+
+    $module = $idg['modules'][$type];
+    $next = max(0, (int)$module['counter']) + 1;
+    $newId = buildFormattedId(
+        $module['prefix'],
+        buildIdYearToken($idg['year_format']),
+        $next,
+        $idg['separator'],
+        $idg['padding']
+    );
+
+    $settings['id_generation'] = $idg;
+    $settings['id_generation']['modules'][$type]['counter'] = $next;
+    saveAppSettings($settings);
+
+    return $newId;
+}
+
+/**
  * Build ERP display name as "Company Name ERP".
  */
 function getErpDisplayName($companyName = '') {

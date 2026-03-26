@@ -179,4 +179,107 @@ INSERT IGNORE INTO `system_settings` (`setting_key`, `setting_value`, `descripti
   ('default_margin',   '20',           'Default profit margin percentage'),
   ('waste_factor',     '1.15',         'Material waste factor for SQM calculation');
 
+-- --------------------------------
+-- Table: master_raw_materials
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `master_raw_materials` (
+  `id`         INT AUTO_INCREMENT PRIMARY KEY,
+  `name`       VARCHAR(255) NOT NULL,
+  `type`       VARCHAR(100) NOT NULL,
+  `gsm`        DECIMAL(6,2) DEFAULT NULL,
+  `width_mm`   DECIMAL(8,2) DEFAULT NULL,
+  `supplier_id` INT DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (`supplier_id`) REFERENCES `master_suppliers`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------
+-- Table: master_suppliers
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `master_suppliers` (
+  `id`              INT AUTO_INCREMENT PRIMARY KEY,
+  `name`            VARCHAR(255) NOT NULL,
+  `gst_number`      VARCHAR(30)  DEFAULT NULL,
+  `contact_person`  VARCHAR(100) DEFAULT NULL,
+  `phone`           VARCHAR(20)  DEFAULT NULL,
+  `email`           VARCHAR(150) DEFAULT NULL,
+  `address`         TEXT         DEFAULT NULL,
+  `notes`           TEXT         DEFAULT NULL,
+  `city`            VARCHAR(50)  DEFAULT NULL,
+  `state`           VARCHAR(50)  DEFAULT NULL,
+  `created_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------
+-- Table: master_boms
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `master_boms` (
+  `id`          INT AUTO_INCREMENT PRIMARY KEY,
+  `bom_name`    VARCHAR(255) NOT NULL,
+  `description` TEXT         DEFAULT NULL,
+  `status`      ENUM('Active','Inactive') NOT NULL DEFAULT 'Active',
+  `created_at`  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------
+-- Table: master_bom_items
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `master_bom_items` (
+  `id`                INT AUTO_INCREMENT PRIMARY KEY,
+  `bom_id`            INT NOT NULL,
+  `raw_material_id`   INT NOT NULL,
+  `quantity`          DECIMAL(10,3) NOT NULL,
+  `unit`              VARCHAR(20) DEFAULT 'kg',
+  `created_at`        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`bom_id`) REFERENCES `master_boms`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`raw_material_id`) REFERENCES `master_raw_materials`(`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------
+-- Table: master_machines
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `master_machines` (
+  `id`         INT AUTO_INCREMENT PRIMARY KEY,
+  `name`       VARCHAR(255) NOT NULL,
+  `type`       VARCHAR(100) DEFAULT NULL,
+  `section`    VARCHAR(100) DEFAULT NULL,
+  `status`     ENUM('Active','Inactive','Maintenance') NOT NULL DEFAULT 'Active',
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------
+-- Table: master_cylinders
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `master_cylinders` (
+  `id`            INT AUTO_INCREMENT PRIMARY KEY,
+  `name`          VARCHAR(255) NOT NULL,
+  `size_inch`     DECIMAL(6,2) DEFAULT NULL,
+  `teeth`         INT          DEFAULT NULL,
+  `material_type` VARCHAR(100) DEFAULT NULL,
+  `created_at`    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------
+-- Table: master_clients
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `master_clients` (
+  `id`              INT AUTO_INCREMENT PRIMARY KEY,
+  `name`            VARCHAR(255) NOT NULL,
+  `contact_person`  VARCHAR(100) DEFAULT NULL,
+  `phone`           VARCHAR(20)  DEFAULT NULL,
+  `email`           VARCHAR(150) DEFAULT NULL,
+  `address`         TEXT         DEFAULT NULL,
+  `credit_period_days` INT       DEFAULT 0,
+  `credit_limit`    DECIMAL(12,2) DEFAULT 0,
+  `city`            VARCHAR(50)  DEFAULT NULL,
+  `state`           VARCHAR(50)  DEFAULT NULL,
+  `created_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 SET FOREIGN_KEY_CHECKS = 1;

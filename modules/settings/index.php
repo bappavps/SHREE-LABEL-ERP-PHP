@@ -283,6 +283,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     redirect(BASE_URL . '/modules/settings/index.php?tab=theme');
   }
 
+
+
   if ($action === 'download_backup') {
     $backupSql = buildDatabaseBackupSql($db);
     if ($backupSql === '') {

@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../includes/auth_check.php';
 $db     = getDB();
 $errors = [];
 $old    = [];
+$prefilledRollNo = getIdPreview('roll');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCSRF($_POST['csrf_token'] ?? '')) {
@@ -23,7 +24,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $width_mm   = trim($old['width_mm']    ?? '');
         $length_mtr = trim($old['length_mtr']  ?? '');
 
-        if ($roll_no === '')    $errors[] = 'Roll No is required.';
+        if ($roll_no === '') {
+          $generated = getNextId('roll');
+          if ($generated) {
+            $roll_no = $generated;
+            $old['roll_no'] = $generated;
+          } else {
+            $errors[] = 'Roll No is required.';
+          }
+        }
         if ($paper_type === '') $errors[] = 'Paper Type is required.';
         if ($company === '')    $errors[] = 'Company is required.';
         if (!is_numeric($width_mm) || $width_mm <= 0)   $errors[] = 'Width must be a positive number.';
@@ -51,6 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $v = trim($old[$f] ?? '');
                 $data[$f] = ($v === '') ? null : $v;
             }
+              $data['roll_no'] = $roll_no;
             $data['status']     = in_array($data['status'] ?? '', $validStatuses) ? $data['status'] : 'Main';
             $data['created_by'] = $_SESSION['user_id'];
 
@@ -126,8 +136,8 @@ include __DIR__ . '/../../includes/header.php';
       <div class="form-grid">
         <div class="form-group">
           <label>Roll No <span style="color:red">*</span></label>
-          <input type="text" name="roll_no" class="form-control" placeholder="RL-2026-001"
-                 value="<?= e($old['roll_no'] ?? '') ?>" required>
+             <input type="text" name="roll_no" class="form-control" placeholder="<?= e($prefilledRollNo ?: 'SLC/26/001') ?>"
+               value="<?= e($old['roll_no'] ?? '') ?>">
         </div>
         <div class="form-group">
           <label>Status</label>
