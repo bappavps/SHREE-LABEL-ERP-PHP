@@ -23,6 +23,12 @@
             "name": "lib_20260326_001606_2ad00a4a.jpg",
             "uploaded_at": "2026-03-26 00:16:06",
             "category": "background"
+        },
+        {
+            "path": "uploads/library/lib_20260326_132610_5274b65d.jpg",
+            "name": "lib_20260326_132610_5274b65d.jpg",
+            "uploaded_at": "2026-03-26 13:26:10",
+            "category": "label-asset"
         }
     ]
 }

@@ -170,6 +170,8 @@ $jsTemplates = array_map(function($t) {
   ];
 }, $templates);
 
+$appSettings = getAppSettings();
+$imageLibrary = $appSettings['image_library'] ?? [];
 $csrf = generateCSRF();
 $pageTitle = 'Print Studio';
 include __DIR__ . '/../../includes/header.php';
@@ -269,18 +271,18 @@ include __DIR__ . '/../../includes/header.php';
       </div>
       <div style="margin-bottom:16px">
         <label style="display:block;margin-bottom:4px;font-size:10px;font-weight:700;text-transform:uppercase;opacity:.5">Paper Size</label>
-        <select name="paper_size" id="ps-paper-size" onchange="document.getElementById('ps-custom-size').style.display=this.value==='Custom'?'block':'none'" style="width:100%;padding:10px;border:2px solid #e2e8f0;border-radius:8px;font-weight:600">
+        <select name="paper_size" id="ps-paper-size" onchange="psUpdatePaperFields()" style="width:100%;padding:10px;border:2px solid #e2e8f0;border-radius:8px;font-weight:600">
           <option value="A4">A4 Paper (210×297mm)</option>
           <option value="A5">A5 Paper (148×210mm)</option>
-          <option value="Thermal150x100">Label 150×100mm</option>
+          <option value="Thermal150x100" selected>Label 150×100mm</option>
           <option value="Thermal100x50">Label 100×50mm</option>
           <option value="Custom">Custom Size</option>
         </select>
       </div>
-      <div id="ps-custom-size" style="display:none;margin-bottom:16px">
+      <div id="ps-custom-size" style="margin-bottom:16px">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <div><label style="display:block;margin-bottom:4px;font-size:9px;font-weight:700;text-transform:uppercase;color:#94a3b8">Width (mm)</label><input type="number" name="custom_width" placeholder="100" style="width:100%;padding:8px;border:2px solid #e2e8f0;border-radius:8px;font-weight:600"></div>
-          <div><label style="display:block;margin-bottom:4px;font-size:9px;font-weight:700;text-transform:uppercase;color:#94a3b8">Height (mm)</label><input type="number" name="custom_height" placeholder="100" style="width:100%;padding:8px;border:2px solid #e2e8f0;border-radius:8px;font-weight:600"></div>
+          <div><label style="display:block;margin-bottom:4px;font-size:9px;font-weight:700;text-transform:uppercase;color:#94a3b8">Width (mm)</label><input type="number" name="custom_width" id="ps-cw" value="150" readonly style="width:100%;padding:8px;border:2px solid #e2e8f0;border-radius:8px;font-weight:600;opacity:.6"></div>
+          <div><label style="display:block;margin-bottom:4px;font-size:9px;font-weight:700;text-transform:uppercase;color:#94a3b8">Height (mm)</label><input type="number" name="custom_height" id="ps-ch" value="100" readonly style="width:100%;padding:8px;border:2px solid #e2e8f0;border-radius:8px;font-weight:600;opacity:.6"></div>
         </div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
@@ -300,6 +302,17 @@ include __DIR__ . '/../../includes/header.php';
       <button class="btn btn-secondary" onclick="document.getElementById('ps-delete-modal').style.display='none'">Cancel</button>
       <form method="POST" style="display:inline"><input type="hidden" name="csrf_token" value="<?= e($csrf) ?>"><input type="hidden" name="action" value="delete_template"><input type="hidden" name="template_id" id="ps-delete-id" value=""><button type="submit" class="btn btn-danger">Delete</button></form>
     </div>
+  </div>
+</div>
+
+<!-- ======================== IMAGE LIBRARY MODAL ======================== -->
+<div id="ps-library-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10001;align-items:center;justify-content:center">
+  <div style="width:92%;max-width:640px;max-height:80vh;background:white;border-radius:12px;padding:24px;box-shadow:0 25px 50px rgba(0,0,0,.25);display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-shrink:0">
+      <h3 style="margin:0;font-weight:800;text-transform:uppercase;font-size:1rem;display:flex;align-items:center;gap:8px"><i class="bi bi-images" style="color:#6366f1"></i> Image Library</h3>
+      <button class="btn btn-sm btn-ghost" onclick="document.getElementById('ps-library-modal').style.display='none'"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div id="ps-library-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:12px;overflow-y:auto;flex:1"></div>
   </div>
 </div>
 
@@ -362,6 +375,7 @@ include __DIR__ . '/../../includes/header.php';
 <div id="ps-toast" class="ps-toast"></div>
 
 <!-- ======================== STYLES ======================== -->
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Poppins:wght@400;500;600;700;800;900&family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 .ps-tpl-card:hover { border-color:#6366f1!important; }
 .ps-card-overlay { position:absolute;inset:0;background:rgba(99,102,241,.92);opacity:0;transition:opacity .25s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:20px; }
@@ -410,8 +424,13 @@ const PAGE_URL = '<?= BASE_URL ?>/modules/print/index.php';
 const AUTO_EDIT_ID = <?= $autoEditId ?>;
 const TEMPLATES_DATA = <?= json_encode($jsTemplates, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 
+const IMAGE_LIBRARY = <?= json_encode(array_map(function($img) { return ['path' => BASE_URL . '/' . ltrim((string)($img['path'] ?? ''), '/'), 'name' => (string)($img['name'] ?? ''), 'category' => (string)($img['category'] ?? 'misc')]; }, $imageLibrary), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+
 const FONT_FAMILIES = [
   { name:'Inter', value:'Inter, sans-serif' },
+  { name:'Oswald', value:'Oswald, sans-serif' },
+  { name:'Poppins', value:'Poppins, sans-serif' },
+  { name:'Montserrat', value:'Montserrat, sans-serif' },
   { name:'Arial', value:'Arial, sans-serif' },
   { name:'Helvetica', value:'Helvetica, sans-serif' },
   { name:'Georgia', value:'Georgia, serif' },
@@ -475,6 +494,81 @@ function psToast(msg, type) {
   t.className = 'ps-toast ps-toast-' + (type||'info') + ' ps-toast-show';
   clearTimeout(t._timer);
   t._timer = setTimeout(() => t.className = 'ps-toast', 3000);
+}
+
+// Optimized slider handlers (skip props panel re-render for smooth dragging)
+function psSliderProp(id, prop, val) {
+  const el = currentTemplate.elements.find(e => e.id === id);
+  if (!el) return;
+  el[prop] = val;
+  const lbl = document.getElementById('ps-lbl-'+prop);
+  if (lbl) lbl.textContent = val + (prop==='rotate'?'\u00B0':'');
+  psRenderCanvas();
+}
+function psSliderStyle(id, prop, val) {
+  const el = currentTemplate.elements.find(e => e.id === id);
+  if (!el || !el.style) return;
+  el.style[prop] = val;
+  const lbl = document.getElementById('ps-lbl-'+prop);
+  if (lbl) lbl.textContent = Math.round(val*100)+'%';
+  psRenderCanvas();
+}
+function psSliderBgOpacity(val) {
+  if (!currentTemplate || !currentTemplate.background) return;
+  currentTemplate.background.opacity = val;
+  const lbl = document.getElementById('ps-lbl-bg-opacity');
+  if (lbl) lbl.textContent = Math.round(val*100)+'%';
+  psRenderCanvas();
+}
+
+// Paper size field sync
+function psUpdatePaperFields() {
+  const sel = document.getElementById('ps-paper-size');
+  const cw = document.getElementById('ps-cw');
+  const ch = document.getElementById('ps-ch');
+  if (!sel||!cw||!ch) return;
+  const sizes = {A4:[210,297],A5:[148,210],Thermal150x100:[150,100],Thermal100x50:[100,50]};
+  const isCustom = sel.value === 'Custom';
+  if (!isCustom && sizes[sel.value]) { cw.value = sizes[sel.value][0]; ch.value = sizes[sel.value][1]; }
+  cw.readOnly = !isCustom; ch.readOnly = !isCustom;
+  cw.style.opacity = isCustom ? '1' : '.6'; ch.style.opacity = isCustom ? '1' : '.6';
+}
+
+// Image Library browser
+function psOpenLibrary(target, elId) {
+  const modal = document.getElementById('ps-library-modal');
+  if (!modal) return;
+  modal.dataset.target = target || '';
+  modal.dataset.elId = elId || '';
+  const grid = document.getElementById('ps-library-grid');
+  let h = '';
+  if (!IMAGE_LIBRARY || IMAGE_LIBRARY.length === 0) {
+    h = '<div style="grid-column:1/-1;text-align:center;padding:40px 20px;color:#94a3b8"><i class="bi bi-images" style="font-size:2rem;opacity:.3;display:block;margin-bottom:12px"></i><p style="font-weight:600;font-size:.85rem">No images in library.</p><p style="font-size:.75rem">Upload images in <strong>Settings \u2192 Image Library</strong>.</p></div>';
+  } else {
+    IMAGE_LIBRARY.forEach(function(img, idx) {
+      h += '<div style="cursor:pointer;border:2px solid #e2e8f0;border-radius:10px;overflow:hidden;transition:all .15s" onmouseover="this.style.borderColor=\'#6366f1\'" onmouseout="this.style.borderColor=\'#e2e8f0\'" onclick="psPickLibraryImage('+idx+')">';
+      h += '<div style="aspect-ratio:1;background:#f8fafc;overflow:hidden"><img src="'+psEscHtml(img.path)+'" style="width:100%;height:100%;object-fit:cover" alt=""></div>';
+      h += '<div style="padding:6px 8px;font-size:9px;font-weight:700;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#64748b">'+psEscHtml(img.name)+'</div>';
+      h += '</div>';
+    });
+  }
+  grid.innerHTML = h;
+  modal.style.display = 'flex';
+}
+function psPickLibraryImage(idx) {
+  const img = IMAGE_LIBRARY[idx];
+  if (!img) return;
+  const modal = document.getElementById('ps-library-modal');
+  const target = modal.dataset.target;
+  const elId = modal.dataset.elId;
+  if (target === 'background') {
+    currentTemplate.background.image = img.path;
+    psRenderCanvas(); psRenderProps();
+  } else if (target === 'element' && elId) {
+    psUpdateProp(elId, 'content', img.path);
+  }
+  modal.style.display = 'none';
+  psToast('Image applied from library', 'success');
 }
 
 // ============================================================
@@ -899,10 +993,10 @@ function psRenderProps() {
     // Canvas setup panel
     let h = '<div style="padding:20px"><h4 style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#6366f1;display:flex;align-items:center;gap:8px;padding-bottom:12px;border-bottom:1px solid #e2e8f0"><i class="bi bi-image"></i> Canvas Setup</h4>';
     h += '<div style="margin-top:20px"><label style="font-size:9px;font-weight:700;text-transform:uppercase;opacity:.5;display:block;margin-bottom:8px">Background Image</label>';
-    h += '<div style="position:relative"><button class="btn btn-sm" style="width:100%;border:2px dashed #e2e8f0;padding:16px;font-size:9px;font-weight:700;text-transform:uppercase" onclick="document.getElementById(\'bg-upload\').click()"><i class="bi bi-upload"></i> Upload Image</button><input type="file" id="bg-upload" accept="image/*" style="display:none" onchange="psUploadBg(this)"></div>';
+    h += '<div style="display:flex;gap:6px"><button class="btn btn-sm" style="flex:1;border:2px dashed #e2e8f0;padding:16px;font-size:9px;font-weight:700;text-transform:uppercase" onclick="document.getElementById(\'bg-upload\').click()"><i class="bi bi-upload"></i> Upload</button><button class="btn btn-sm" style="flex:1;border:2px solid #e2e8f0;padding:16px;font-size:9px;font-weight:700;text-transform:uppercase;color:#6366f1" onclick="psOpenLibrary(\'background\')"><i class="bi bi-images"></i> Library</button><input type="file" id="bg-upload" accept="image/*" style="display:none" onchange="psUploadBg(this)"></div>';
     if (currentTemplate.background && currentTemplate.background.image) {
-      h += '<div style="margin-top:16px"><label style="font-size:9px;font-weight:700;text-transform:uppercase;display:block;margin-bottom:4px">Opacity: '+Math.round((currentTemplate.background.opacity||1)*100)+'%</label>';
-      h += '<input type="range" min="0" max="100" value="'+Math.round((currentTemplate.background.opacity||1)*100)+'" style="width:100%" oninput="currentTemplate.background.opacity=this.value/100;psRenderCanvas();psRenderProps()">';
+      h += '<div style="margin-top:16px"><label style="font-size:9px;font-weight:700;text-transform:uppercase;display:block;margin-bottom:4px">Opacity: <span id="ps-lbl-bg-opacity">'+Math.round((currentTemplate.background.opacity||1)*100)+'</span>%</label>';
+      h += '<input type="range" min="0" max="100" value="'+Math.round((currentTemplate.background.opacity||1)*100)+'" style="width:100%;cursor:pointer" oninput="psSliderBgOpacity(this.value/100)">';
       h += '<button class="btn btn-xs" style="color:#ef4444;margin-top:8px;width:100%;font-size:9px;font-weight:700;text-transform:uppercase" onclick="currentTemplate.background.image=\'\';psRenderCanvas();psRenderProps()"><i class="bi bi-eraser"></i> Remove</button></div>';
     }
     h += '</div>';
@@ -932,8 +1026,8 @@ function psRenderProps() {
   h += '<div><label style="font-size:9px;font-weight:700;text-transform:uppercase">Width</label><input type="number" class="ps-prop-input" value="'+Math.round(el.width)+'" onchange="psUpdateProp(\''+el.id+'\',\'width\',Number(this.value))"></div>';
   h += '<div><label style="font-size:9px;font-weight:700;text-transform:uppercase">Height</label><input type="number" class="ps-prop-input" value="'+Math.round(el.height)+'" onchange="psUpdateProp(\''+el.id+'\',\'height\',Number(this.value))"></div>';
   h += '</div>';
-  h += '<div style="margin-top:10px"><label style="font-size:9px;font-weight:700;text-transform:uppercase">Rotation: '+(el.rotate||0)+'&deg;</label>';
-  h += '<input type="range" min="0" max="360" value="'+(el.rotate||0)+'" style="width:100%" oninput="psUpdateProp(\''+el.id+'\',\'rotate\',Number(this.value))">';
+  h += '<div style="margin-top:10px"><label style="font-size:9px;font-weight:700;text-transform:uppercase">Rotation: <span id="ps-lbl-rotate">'+(el.rotate||0)+'</span>&deg;</label>';
+  h += '<input type="range" min="0" max="360" value="'+(el.rotate||0)+'" style="width:100%;cursor:pointer" oninput="psSliderProp(\''+el.id+'\',\'rotate\',Number(this.value))">';
   h += '</div></div>';
 
   // Typography (text/title)
@@ -977,7 +1071,7 @@ function psRenderProps() {
   if (el.type==='image') {
     h += '<div style="margin-bottom:20px">';
     h += '<label style="font-size:10px;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:1px;display:block;padding-bottom:8px;border-bottom:1px solid #f1f5f9;margin-bottom:12px">Image</label>';
-    h += '<div style="position:relative;margin-bottom:10px"><button class="btn btn-sm" style="width:100%;border:2px dashed #e2e8f0;padding:12px;font-size:9px;font-weight:700;text-transform:uppercase" onclick="document.getElementById(\'img-up-'+el.id+'\').click()"><i class="bi bi-upload"></i> Upload</button><input type="file" id="img-up-'+el.id+'" accept="image/*" style="display:none" onchange="psUploadImg(this,\''+el.id+'\')"></div>';
+    h += '<div style="display:flex;gap:6px;margin-bottom:10px"><button class="btn btn-sm" style="flex:1;border:2px dashed #e2e8f0;padding:12px;font-size:9px;font-weight:700;text-transform:uppercase" onclick="document.getElementById(\'img-up-'+el.id+'\').click()"><i class="bi bi-upload"></i> Upload</button><button class="btn btn-sm" style="flex:1;border:2px solid #e2e8f0;padding:12px;font-size:9px;font-weight:700;text-transform:uppercase;color:#6366f1" onclick="psOpenLibrary(\'element\',\''+el.id+'\')"><i class="bi bi-images"></i> Library</button><input type="file" id="img-up-'+el.id+'" accept="image/*" style="display:none" onchange="psUploadImg(this,\''+el.id+'\')"></div>';
     h += '<div><label style="font-size:9px;font-weight:700;text-transform:uppercase">Or URL</label><input type="text" class="ps-prop-input" value="'+psEscHtml(el.content||'')+'" placeholder="https://..." onchange="psUpdateProp(\''+el.id+'\',\'content\',this.value)"></div>';
     h += '</div>';
   }
@@ -1000,8 +1094,8 @@ function psRenderProps() {
   // Effects
   h += '<div style="margin-bottom:20px">';
   h += '<label style="font-size:10px;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:1px;display:block;padding-bottom:8px;border-bottom:1px solid #f1f5f9;margin-bottom:12px">Effects</label>';
-  h += '<div><label style="font-size:9px;font-weight:700;text-transform:uppercase">Opacity: '+Math.round((el.style.opacity||1)*100)+'%</label>';
-  h += '<input type="range" min="0" max="100" value="'+Math.round((el.style.opacity||1)*100)+'" style="width:100%" oninput="psUpdateStyle(\''+el.id+'\',\'opacity\',Number(this.value)/100)"></div>';
+  h += '<div><label style="font-size:9px;font-weight:700;text-transform:uppercase">Opacity: <span id="ps-lbl-opacity">'+Math.round((el.style.opacity||1)*100)+'</span>%</label>';
+  h += '<input type="range" min="0" max="100" value="'+Math.round((el.style.opacity||1)*100)+'" style="width:100%;cursor:pointer" oninput="psSliderStyle(\''+el.id+'\',\'opacity\',Number(this.value)/100)"></div>';
   h += '</div>';
 
   // Arrangement
@@ -1055,15 +1149,18 @@ async function psSave() {
   const canvasEl = document.getElementById('studio-canvas');
   if (canvasEl && typeof html2canvas !== 'undefined') {
     try {
-      // Temporarily deselect for clean thumbnail
+      // Temporarily deselect + reset transform for clean capture
       const prevSel = selectedElementId;
+      const prevTransform = canvasEl.style.transform;
       selectedElementId = null;
       psRenderCanvas();
-      const thumbCanvas = await html2canvas(canvasEl, { scale:0.2, useCORS:true, logging:false, backgroundColor:'#fff' });
+      canvasEl.style.transform = 'none';
+      const thumbCanvas = await html2canvas(canvasEl, { scale:0.3, useCORS:true, logging:false, backgroundColor:'#fff', allowTaint:true });
       thumbnail = thumbCanvas.toDataURL('image/jpeg', 0.6);
       selectedElementId = prevSel;
+      canvasEl.style.transform = prevTransform;
       psRenderCanvas();
-    } catch(e) {}
+    } catch(e) { console.warn('Thumbnail generation failed:', e); }
   }
 
   const data = { ...currentTemplate, thumbnail };
@@ -1169,8 +1266,10 @@ document.addEventListener('keydown', function(e) {
     setTimeout(function() { openEditor(AUTO_EDIT_ID); }, 100);
   }
 
+  psUpdatePaperFields();
+
   // Close modals on click outside
-  ['ps-create-modal','ps-delete-modal'].forEach(id => {
+  ['ps-create-modal','ps-delete-modal','ps-library-modal'].forEach(id => {
     const modal = document.getElementById(id);
     if (modal) modal.addEventListener('click', function(e) { if (e.target === modal) modal.style.display = 'none'; });
   });
