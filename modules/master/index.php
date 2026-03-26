@@ -608,6 +608,153 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     redirect(BASE_URL . '/modules/master/index.php?tab=prefix');
   }
+
+  // ============================================================
+  // CSV UPLOAD HANDLER
+  // ============================================================
+  if ($action === 'upload_master_data') {
+    $uploadTab = trim((string)($_POST['upload_tab'] ?? ''));
+    $allowedUploadTabs = ['raw_materials', 'suppliers', 'clients', 'machines', 'cylinders', 'bom'];
+    if (!in_array($uploadTab, $allowedUploadTabs, true)) {
+      setFlash('error', 'Invalid upload target.');
+      redirect(BASE_URL . '/modules/master/index.php?tab=' . urlencode($activeTab));
+    }
+
+    if (!isset($_FILES['upload_file']) || $_FILES['upload_file']['error'] !== UPLOAD_ERR_OK) {
+      setFlash('error', 'Please select a valid CSV file to upload.');
+      redirect(BASE_URL . '/modules/master/index.php?tab=' . urlencode($uploadTab));
+    }
+
+    $file = $_FILES['upload_file'];
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    if ($ext !== 'csv') {
+      setFlash('error', 'Only CSV files are supported. Please save your Excel file as CSV first.');
+      redirect(BASE_URL . '/modules/master/index.php?tab=' . urlencode($uploadTab));
+    }
+
+    $handle = fopen($file['tmp_name'], 'r');
+    if (!$handle) {
+      setFlash('error', 'Could not read uploaded file.');
+      redirect(BASE_URL . '/modules/master/index.php?tab=' . urlencode($uploadTab));
+    }
+
+    // Read header row
+    $header = fgetcsv($handle);
+    if (!$header) {
+      fclose($handle);
+      setFlash('error', 'CSV file is empty or has no header row.');
+      redirect(BASE_URL . '/modules/master/index.php?tab=' . urlencode($uploadTab));
+    }
+    $header = array_map(function($h) { return strtolower(trim($h)); }, $header);
+
+    // Column mappings per tab
+    $columnMaps = [
+      'suppliers' => [
+        'required' => ['name'],
+        'columns' => ['name'=>'name', 'gst number'=>'gst_number', 'gst'=>'gst_number', 'gst_number'=>'gst_number', 'contact person'=>'contact_person', 'contact'=>'contact_person', 'contact_person'=>'contact_person', 'phone'=>'phone', 'email'=>'email', 'address'=>'address', 'notes'=>'notes', 'city'=>'city', 'state'=>'state']
+      ],
+      'clients' => [
+        'required' => ['name'],
+        'columns' => ['name'=>'name', 'contact person'=>'contact_person', 'contact'=>'contact_person', 'contact_person'=>'contact_person', 'phone'=>'phone', 'email'=>'email', 'address'=>'address', 'credit period'=>'credit_period_days', 'credit_period_days'=>'credit_period_days', 'credit period days'=>'credit_period_days', 'credit limit'=>'credit_limit', 'credit_limit'=>'credit_limit', 'city'=>'city', 'state'=>'state']
+      ],
+      'raw_materials' => [
+        'required' => ['name', 'type'],
+        'columns' => ['name'=>'name', 'type'=>'type', 'gsm'=>'gsm', 'width'=>'width_mm', 'width_mm'=>'width_mm', 'width mm'=>'width_mm']
+      ],
+      'machines' => [
+        'required' => ['name'],
+        'columns' => ['name'=>'name', 'type'=>'type', 'section'=>'section', 'status'=>'status']
+      ],
+      'cylinders' => [
+        'required' => ['name'],
+        'columns' => ['name'=>'name', 'size'=>'size_inch', 'size_inch'=>'size_inch', 'size inch'=>'size_inch', 'teeth'=>'teeth', 'material type'=>'material_type', 'material_type'=>'material_type', 'material'=>'material_type']
+      ],
+      'bom' => [
+        'required' => ['bom_name'],
+        'columns' => ['bom name'=>'bom_name', 'bom_name'=>'bom_name', 'name'=>'bom_name', 'description'=>'description', 'status'=>'status']
+      ]
+    ];
+
+    $map = $columnMaps[$uploadTab];
+    // Map header indices to DB column names
+    $colIndex = [];
+    foreach ($header as $idx => $h) {
+      if (isset($map['columns'][$h])) {
+        $colIndex[$idx] = $map['columns'][$h];
+      }
+    }
+
+    // Check required columns are present
+    $mappedCols = array_values($colIndex);
+    foreach ($map['required'] as $req) {
+      if (!in_array($req, $mappedCols)) {
+        fclose($handle);
+        setFlash('error', 'Missing required column: ' . $req . '. Found columns: ' . implode(', ', $header));
+        redirect(BASE_URL . '/modules/master/index.php?tab=' . urlencode($uploadTab));
+      }
+    }
+
+    $tableMap = [
+      'suppliers' => 'master_suppliers',
+      'clients' => 'master_clients',
+      'raw_materials' => 'master_raw_materials',
+      'machines' => 'master_machines',
+      'cylinders' => 'master_cylinders',
+      'bom' => 'master_boms'
+    ];
+    $table = $tableMap[$uploadTab];
+
+    $success = 0;
+    $skipped = 0;
+    $rowNum = 1;
+    while (($row = fgetcsv($handle)) !== false) {
+      $rowNum++;
+      if (count($row) < count($header)) {
+        $skipped++;
+        continue;
+      }
+
+      $data = [];
+      foreach ($colIndex as $idx => $dbCol) {
+        $data[$dbCol] = trim((string)($row[$idx] ?? ''));
+      }
+
+      // Check required fields have values
+      $valid = true;
+      foreach ($map['required'] as $req) {
+        if (empty($data[$req])) {
+          $valid = false;
+          break;
+        }
+      }
+      if (!$valid) {
+        $skipped++;
+        continue;
+      }
+
+      // Build INSERT
+      $cols = array_keys($data);
+      $placeholders = array_fill(0, count($cols), '?');
+      $sql = "INSERT INTO $table (" . implode(',', $cols) . ") VALUES (" . implode(',', $placeholders) . ")";
+      $stmt = $db->prepare($sql);
+      if ($stmt) {
+        $types = str_repeat('s', count($cols));
+        $values = array_values($data);
+        $stmt->bind_param($types, ...$values);
+        if ($stmt->execute()) {
+          $success++;
+        } else {
+          $skipped++;
+        }
+      } else {
+        $skipped++;
+      }
+    }
+    fclose($handle);
+
+    setFlash('success', "Upload complete: $success rows imported, $skipped rows skipped.");
+    redirect(BASE_URL . '/modules/master/index.php?tab=' . urlencode($uploadTab));
+  }
 }
 
 $csrf = generateCSRF();
@@ -729,7 +876,10 @@ if ($activeTab === 'clients' && $editClientId > 0) {
       <div class="card">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
           <span class="card-title">Raw Materials</span>
-          <button class="btn btn-sm btn-primary" onclick="openRawMaterialModal()"><i class="bi bi-plus"></i> Add Material</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm btn-primary" onclick="openRawMaterialModal()"><i class="bi bi-plus"></i> Add Material</button>
+            <button class="btn btn-sm btn-success" onclick="openUploadModal('raw_materials')"><i class="bi bi-upload"></i> Upload CSV</button>
+          </div>
         </div>
         <?php $rawMaterialsView = !empty($raw_materials) ? $raw_materials : $sampleRawMaterials; ?>
           <div class="table-responsive">
@@ -821,7 +971,10 @@ if ($activeTab === 'clients' && $editClientId > 0) {
       <div class="card">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
           <span class="card-title">Suppliers</span>
-          <button class="btn btn-sm btn-primary" onclick="openSupplierModal()"><i class="bi bi-plus"></i> Add Supplier</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm btn-primary" onclick="openSupplierModal()"><i class="bi bi-plus"></i> Add Supplier</button>
+            <button class="btn btn-sm btn-success" onclick="openUploadModal('suppliers')"><i class="bi bi-upload"></i> Upload CSV</button>
+          </div>
         </div>
           <div class="table-responsive">
             <table class="table">
@@ -936,7 +1089,10 @@ if ($activeTab === 'clients' && $editClientId > 0) {
       <div class="card">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
           <span class="card-title">Machines</span>
-          <button class="btn btn-sm btn-primary" onclick="openMachineModal()"><i class="bi bi-plus"></i> Add Machine</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm btn-primary" onclick="openMachineModal()"><i class="bi bi-plus"></i> Add Machine</button>
+            <button class="btn btn-sm btn-success" onclick="openUploadModal('machines')"><i class="bi bi-upload"></i> Upload CSV</button>
+          </div>
         </div>
         <?php $machinesView = !empty($machines) ? $machines : $sampleMachines; ?>
           <div class="table-responsive">
@@ -1020,7 +1176,10 @@ if ($activeTab === 'clients' && $editClientId > 0) {
       <div class="card">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
           <span class="card-title">Cylinders</span>
-          <button class="btn btn-sm btn-primary" onclick="openCylinderModal()"><i class="bi bi-plus"></i> Add Cylinder</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm btn-primary" onclick="openCylinderModal()"><i class="bi bi-plus"></i> Add Cylinder</button>
+            <button class="btn btn-sm btn-success" onclick="openUploadModal('cylinders')"><i class="bi bi-upload"></i> Upload CSV</button>
+          </div>
         </div>
         <?php $cylindersView = !empty($cylinders) ? $cylinders : $sampleCylinders; ?>
           <div class="table-responsive">
@@ -1100,7 +1259,10 @@ if ($activeTab === 'clients' && $editClientId > 0) {
       <div class="card">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
           <span class="card-title">Clients</span>
-          <button class="btn btn-sm btn-primary" onclick="openClientModal()"><i class="bi bi-plus"></i> Add Client</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm btn-primary" onclick="openClientModal()"><i class="bi bi-plus"></i> Add Client</button>
+            <button class="btn btn-sm btn-success" onclick="openUploadModal('clients')"><i class="bi bi-upload"></i> Upload CSV</button>
+          </div>
         </div>
           <div class="table-responsive">
             <table class="table">
@@ -1218,7 +1380,10 @@ if ($activeTab === 'clients' && $editClientId > 0) {
       <div class="card">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
           <span class="card-title">BOM Master</span>
-          <button class="btn btn-sm btn-primary" onclick="openBomModal()"><i class="bi bi-plus"></i> Add BOM</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm btn-primary" onclick="openBomModal()"><i class="bi bi-plus"></i> Add BOM</button>
+            <button class="btn btn-sm btn-success" onclick="openUploadModal('bom')"><i class="bi bi-upload"></i> Upload CSV</button>
+          </div>
         </div>
         <?php $bomsView = !empty($boms) ? $boms : $sampleBoms; ?>
           <div class="table-responsive">
@@ -1417,6 +1582,30 @@ if ($activeTab === 'clients' && $editClientId > 0) {
       <button class="btn btn-secondary" onclick="closeDeleteModal()">Cancel</button>
       <button class="btn btn-danger" onclick="submitDelete()">Delete</button>
     </div>
+  </div>
+</div>
+
+<!-- Upload CSV Modal -->
+<div id="uploadModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:2000">
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:90%;max-width:480px;background:white;border-radius:8px;box-shadow:0 4px 6px rgba(0,0,0,0.1);padding:24px">
+    <h3 style="margin:0 0 16px;font-size:1.15rem"><i class="bi bi-upload"></i> Upload CSV File</h3>
+    <form method="POST" enctype="multipart/form-data" id="uploadForm">
+      <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
+      <input type="hidden" name="action" value="upload_master_data">
+      <input type="hidden" name="upload_tab" id="uploadTab" value="">
+      <div style="margin-bottom:16px">
+        <label style="display:block;margin-bottom:4px;font-weight:500">Select CSV File *</label>
+        <input type="file" name="upload_file" id="uploadFile" accept=".csv" required style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px">
+      </div>
+      <div style="margin-bottom:16px;padding:12px;background:#f0f9ff;border-radius:6px;border:1px solid #bae6fd">
+        <strong style="font-size:0.85rem">CSV Format Guide:</strong>
+        <div id="uploadHint" style="font-size:0.82rem;color:#475569;margin-top:6px"></div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+        <button type="button" class="btn btn-secondary" onclick="closeUploadModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-upload"></i> Upload</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -1632,6 +1821,27 @@ function closeBomModal() {
   document.getElementById('bomModal').style.display = 'none';
 }
 
+// Upload Modal Functions
+var uploadHints = {
+  'raw_materials': 'Required: <b>Name</b>, <b>Type</b><br>Optional: GSM, Width (or Width_mm)',
+  'suppliers': 'Required: <b>Name</b><br>Optional: GST Number, Contact Person, Phone, Email, Address, Notes, City, State',
+  'clients': 'Required: <b>Name</b><br>Optional: Contact Person, Phone, Email, Address, Credit Period Days, Credit Limit, City, State',
+  'machines': 'Required: <b>Name</b><br>Optional: Type, Section, Status (Active/Inactive/Maintenance)',
+  'cylinders': 'Required: <b>Name</b><br>Optional: Size (or Size_inch), Teeth, Material Type (or Material)',
+  'bom': 'Required: <b>BOM Name</b> (or Name)<br>Optional: Description, Status (Active/Inactive)'
+};
+
+function openUploadModal(tab) {
+  document.getElementById('uploadTab').value = tab;
+  document.getElementById('uploadFile').value = '';
+  document.getElementById('uploadHint').innerHTML = uploadHints[tab] || '';
+  document.getElementById('uploadModal').style.display = 'flex';
+}
+
+function closeUploadModal() {
+  document.getElementById('uploadModal').style.display = 'none';
+}
+
 // Close modals on escape key
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
@@ -1642,6 +1852,7 @@ document.addEventListener('keydown', function(e) {
     document.getElementById('clientModal').style.display = 'none';
     document.getElementById('bomModal').style.display = 'none';
     document.getElementById('deleteModal').style.display = 'none';
+    document.getElementById('uploadModal').style.display = 'none';
   }
 });
 
