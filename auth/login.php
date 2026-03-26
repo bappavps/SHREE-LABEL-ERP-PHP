@@ -49,6 +49,8 @@ $settings = getAppSettings();
 $companyName = trim((string)($settings['company_name'] ?? '')) ?: APP_NAME;
 $erpDisplayName = function_exists('getErpDisplayName') ? getErpDisplayName($companyName) : APP_NAME;
 $logoPath = (string)($settings['logo_path'] ?? '');
+$companyLogoUrl = $logoPath !== '' ? (BASE_URL . '/' . ltrim($logoPath, '/')) : (BASE_URL . '/assets/img/logo.svg');
+$themeColor = (string)($settings['sidebar_button_color'] ?? '#22c55e');
 $loginBg = (string)($settings['login_background_image'] ?? '');
 if ($loginBg === '') {
   $library = $settings['image_library'] ?? [];
@@ -69,6 +71,10 @@ if ($loginBg === '') {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Login — <?= e($erpDisplayName) ?></title>
+<link rel="icon" href="<?= e($companyLogoUrl) ?>">
+<link rel="apple-touch-icon" href="<?= e($companyLogoUrl) ?>">
+<link rel="manifest" href="<?= BASE_URL ?>/manifest.php">
+<meta name="theme-color" content="<?= e($themeColor) ?>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">

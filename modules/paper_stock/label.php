@@ -12,6 +12,8 @@ $appSettings = getAppSettings();
 $companyName = $appSettings['company_name'] ?? APP_NAME;
 $logoPath = $appSettings['logo_path'] ?? '';
 $logoUrl = $logoPath ? (BASE_URL . '/' . $logoPath) : '';
+$companyLogoUrl = $logoUrl !== '' ? $logoUrl : (BASE_URL . '/assets/img/logo.svg');
+$themeColor = (string)($appSettings['sidebar_button_color'] ?? '#22c55e');
 
 // ── Auto-create print_templates table if missing ──────────────
 @$db->query("CREATE TABLE IF NOT EXISTS print_templates (
@@ -165,6 +167,10 @@ $jsTemplates = array_map(function($t) {
 <head>
 <meta charset="UTF-8">
 <title>Print Labels — <?= e($companyName) ?></title>
+<link rel="icon" href="<?= e($companyLogoUrl) ?>">
+<link rel="apple-touch-icon" href="<?= e($companyLogoUrl) ?>">
+<link rel="manifest" href="<?= BASE_URL ?>/manifest.php">
+<meta name="theme-color" content="<?= e($themeColor) ?>">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
