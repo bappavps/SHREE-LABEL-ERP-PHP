@@ -30,5 +30,40 @@
             "uploaded_at": "2026-03-26 13:26:10",
             "category": "label-asset"
         }
-    ]
+    ],
+    "id_generation": {
+        "year_format": "YY",
+        "separator": "/",
+        "padding": 3,
+        "modules": {
+            "roll": {
+                "prefix": "SLC",
+                "counter": 0
+            },
+            "job": {
+                "prefix": "JOB",
+                "counter": 0
+            },
+            "invoice": {
+                "prefix": "INV",
+                "counter": 0
+            },
+            "estimate": {
+                "prefix": "EST",
+                "counter": 0
+            },
+            "quotation": {
+                "prefix": "QTN",
+                "counter": 0
+            },
+            "batch": {
+                "prefix": "BAT",
+                "counter": 0
+            },
+            "sales_order": {
+                "prefix": "SO",
+                "counter": 0
+            }
+        }
+    }
 }

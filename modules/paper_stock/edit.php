@@ -19,6 +19,14 @@ if (!$roll) { setFlash('error', 'Roll not found.'); redirect(BASE_URL . '/module
 $errors = [];
 $old    = $roll; // pre-fill with existing data
 
+// Fetch existing companies & paper types for dropdown options
+$companyOptions = [];
+$typeOptions = [];
+$cRes = $db->query("SELECT DISTINCT company FROM paper_stock WHERE company IS NOT NULL AND TRIM(company)<>'' ORDER BY company");
+if($cRes){ while($cr = $cRes->fetch_assoc()) $companyOptions[] = trim($cr['company']); }
+$tRes = $db->query("SELECT DISTINCT paper_type FROM paper_stock WHERE paper_type IS NOT NULL AND TRIM(paper_type)<>'' ORDER BY paper_type");
+if($tRes){ while($tr = $tRes->fetch_assoc()) $typeOptions[] = trim($tr['paper_type']); }
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCSRF($_POST['csrf_token'] ?? '')) {
         $errors[] = 'Invalid request token.';
@@ -37,7 +45,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (empty($errors)) {
             $validStatuses = ['Main','Stock','Slitting','Job Assign','In Production','Consumed'];
-            $status        = in_array($old['status'] ?? '', $validStatuses) ? $old['status'] : 'Main';
+            if (($old['status'] ?? '') === '__custom__') {
+                $status = trim($old['custom_status'] ?? '');
+                $status = $status !== '' ? substr($status, 0, 50) : 'Main';
+            } else {
+                $status = in_array($old['status'] ?? '', $validStatuses) ? $old['status'] : 'Main';
+            }
             $gsm           = ($old['gsm']            ?? '') !== '' ? (float)$old['gsm']           : null;
             $weight_kg     = ($old['weight_kg']      ?? '') !== '' ? (float)$old['weight_kg']     : null;
             $purchase_rate = ($old['purchase_rate']  ?? '') !== '' ? (float)$old['purchase_rate'] : null;
@@ -57,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 date_received=?, date_used=?, remarks=?
                 WHERE id=?");
             $upd->bind_param(
-                'ssdddssssssssssi',
+                'ssddddssssssssssi',
                 $paper_type, $company, $width_mm, $length_mtr, $gsm, $weight_kg,
                 $purchase_rate, $lot_batch, $co_roll, $status,
                 $job_no, $job_size, $job_name,
@@ -116,19 +129,20 @@ include __DIR__ . '/../../includes/header.php';
         </div>
         <div class="form-group">
           <label>Status</label>
-          <select name="status" class="form-control">
-            <?php foreach (['Main','Stock','Slitting','Job Assign','In Production','Consumed'] as $s): ?>
-            <option value="<?= $s ?>" <?= ($old['status'] ?? '') === $s ? 'selected' : '' ?>><?= $s ?></option>
-            <?php endforeach; ?>
-          </select>
+          <?php $presetStatuses = ['Main','Stock','Slitting','Job Assign','In Production','Consumed']; $curStatus = $old['status'] ?? ''; $isCustom = !in_array($curStatus, $presetStatuses) && $curStatus !== ''; ?>
+          <input type="hidden" name="status" id="status-hidden" value="<?= $isCustom ? '__custom__' : e($curStatus) ?>">
+          <input type="hidden" name="custom_status" id="custom-status-hidden" value="<?= $isCustom ? e($curStatus) : '' ?>">
+          <div id="status-dd-container"></div>
         </div>
         <div class="form-group">
           <label>Paper Company <span style="color:red">*</span></label>
-          <input type="text" name="company" class="form-control" value="<?= e($old['company'] ?? '') ?>" required>
+          <input type="hidden" name="company" id="company-hidden" value="<?= e($old['company'] ?? '') ?>" required>
+          <div id="company-dd-container"></div>
         </div>
         <div class="form-group">
           <label>Paper Type <span style="color:red">*</span></label>
-          <input type="text" name="paper_type" class="form-control" value="<?= e($old['paper_type'] ?? '') ?>" required>
+          <input type="hidden" name="paper_type" id="type-dd-hidden" value="<?= e($old['paper_type'] ?? '') ?>" required>
+          <div id="type-dd-container"></div>
         </div>
       </div>
     </div>
@@ -215,5 +229,34 @@ include __DIR__ . '/../../includes/header.php';
     <a href="<?= BASE_URL ?>/modules/paper_stock/index.php" class="btn btn-ghost">Cancel</a>
   </div>
 </form>
+
+<?php include __DIR__ . '/_dropdown_component.php'; ?>
+<script>
+(function(){
+  var statusVal = <?= json_encode($isCustom ? $curStatus : ($old['status'] ?? 'Main')) ?>;
+  initStatusDropdown(
+    document.getElementById('status-dd-container'),
+    document.getElementById('status-hidden'),
+    document.getElementById('custom-status-hidden'),
+    statusVal
+  );
+
+  var companies = <?= json_encode(array_values($companyOptions), JSON_UNESCAPED_UNICODE) ?>;
+  initSearchDropdown(
+    document.getElementById('company-dd-container'),
+    document.getElementById('company-hidden'),
+    companies,
+    'Search or type company…'
+  );
+
+  var types = <?= json_encode(array_values($typeOptions), JSON_UNESCAPED_UNICODE) ?>;
+  initSearchDropdown(
+    document.getElementById('type-dd-container'),
+    document.getElementById('type-dd-hidden'),
+    types,
+    'Search or type paper type…'
+  );
+})();
+</script>
 
 <?php include __DIR__ . '/../../includes/footer.php'; ?>

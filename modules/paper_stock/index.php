@@ -48,6 +48,9 @@ $companies  = $db->query("SELECT DISTINCT company FROM paper_stock WHERE company
 $paperTypes = $db->query("SELECT DISTINCT paper_type FROM paper_stock WHERE paper_type IS NOT NULL AND paper_type <> '' ORDER BY paper_type")->fetch_all(MYSQLI_ASSOC);
 $gsmValues  = $db->query("SELECT DISTINCT gsm FROM paper_stock WHERE gsm IS NOT NULL ORDER BY gsm")->fetch_all(MYSQLI_ASSOC);
 $statusValues = ['Available', 'Assigned', 'Consumed', 'Main', 'Stock', 'Slitting', 'Job Assign', 'In Production'];
+// Append any custom statuses from DB not in the preset list
+$customStatusRes = $db->query("SELECT DISTINCT status FROM paper_stock WHERE status IS NOT NULL AND TRIM(status) <> '' AND status NOT IN ('Available','Assigned','Consumed','Main','Stock','Slitting','Job Assign','In Production') ORDER BY status");
+if ($customStatusRes) { while ($csRow = $customStatusRes->fetch_assoc()) { $statusValues[] = trim($csRow['status']); } }
 
 $sumStmt = $db->query("SELECT company, paper_type, COUNT(*) AS total_rolls,
     IFNULL(SUM(length_mtr),0) AS total_mtr,
@@ -228,6 +231,31 @@ include __DIR__ . '/../../includes/header.php';
 .ps-page-left,.ps-page-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:.78rem;color:#64748b}
 .ps-page-left input{width:70px;height:32px;border:1px solid var(--border);border-radius:8px;padding:0 8px}
 
+/* === Status-colored row backgrounds === */
+.ps-row-main td{background:#faf5ff}
+.ps-row-main .sticky-check,.ps-row-main .sticky-sl,.ps-row-main .sticky-roll,.ps-row-main .sticky-action{background:#faf5ff}
+.ps-row-stock td{background:#f0fdf4}
+.ps-row-stock .sticky-check,.ps-row-stock .sticky-sl,.ps-row-stock .sticky-roll,.ps-row-stock .sticky-action{background:#f0fdf4}
+.ps-row-slitting td{background:#fff7ed}
+.ps-row-slitting .sticky-check,.ps-row-slitting .sticky-sl,.ps-row-slitting .sticky-roll,.ps-row-slitting .sticky-action{background:#fff7ed}
+.ps-row-job-assign td{background:#fef2f2}
+.ps-row-job-assign .sticky-check,.ps-row-job-assign .sticky-sl,.ps-row-job-assign .sticky-roll,.ps-row-job-assign .sticky-action{background:#fef2f2}
+.ps-row-in-production td{background:#ecfeff}
+.ps-row-in-production .sticky-check,.ps-row-in-production .sticky-sl,.ps-row-in-production .sticky-roll,.ps-row-in-production .sticky-action{background:#ecfeff}
+.ps-row-consumed td{background:#f8fafc}
+.ps-row-consumed .sticky-check,.ps-row-consumed .sticky-sl,.ps-row-consumed .sticky-roll,.ps-row-consumed .sticky-action{background:#f8fafc}
+.ps-row-available td{background:#eff6ff}
+.ps-row-available .sticky-check,.ps-row-available .sticky-sl,.ps-row-available .sticky-roll,.ps-row-available .sticky-action{background:#eff6ff}
+.ps-row-assigned td{background:#fefce8}
+.ps-row-assigned .sticky-check,.ps-row-assigned .sticky-sl,.ps-row-assigned .sticky-roll,.ps-row-assigned .sticky-action{background:#fefce8}
+/* Selected rows ALWAYS override status tint */
+.ps-row-selected td{background:#ecfdf5 !important}
+.ps-row-selected .sticky-check,.ps-row-selected .sticky-sl,.ps-row-selected .sticky-roll,.ps-row-selected .sticky-action{background:#d1fae5 !important}
+
+/* === Tree hierarchy indent === */
+.tree-connector{color:#94a3b8;font-family:monospace;font-weight:700;margin-right:4px;font-size:11px;user-select:none}
+.tree-spacer{display:inline-block;width:20px}
+
 @media print{
   .no-print{display:none !important}
 }
@@ -357,6 +385,14 @@ include __DIR__ . '/../../includes/header.php';
       <div class="ps-qf-popup" id="qf-popup-status"></div>
     </div>
   </div>
+  <div class="ps-qf-item">
+    <label>Received From</label>
+    <input type="date" id="qf-date-from">
+  </div>
+  <div class="ps-qf-item">
+    <label>Received To</label>
+    <input type="date" id="qf-date-to">
+  </div>
   <div class="ps-qf-actions">
     <button type="button" class="ps-qf-reset" onclick="resetQuickFilters()">Reset</button>
   </div>
@@ -429,8 +465,8 @@ include __DIR__ . '/../../includes/header.php';
       <?php if (empty($rolls)): ?>
         <tr class="ps-empty-row"><td colspan="<?= count($allColumns) + 3 ?>" class="table-empty"><i class="bi bi-inbox"></i> No paper rolls found.</td></tr>
       <?php else: ?>
-        <?php foreach ($rolls as $i => $r): $sqm = calcSQM($r['width_mm'], $r['length_mtr']); ?>
-        <tr class="ps-data-row" data-id="<?= $r['id'] ?>" data-mtr="<?= (float)$r['length_mtr'] ?>" data-sqm="<?= round($sqm,2) ?>">
+        <?php foreach ($rolls as $i => $r): $sqm = calcSQM($r['width_mm'], $r['length_mtr']); $statusSlug = strtolower(str_replace(' ', '-', trim($r['status'] ?? ''))); ?>
+        <tr class="ps-data-row ps-row-<?= e($statusSlug) ?>" data-id="<?= $r['id'] ?>" data-mtr="<?= (float)$r['length_mtr'] ?>" data-sqm="<?= round($sqm,2) ?>" data-status="<?= e($r['status'] ?? '') ?>" data-date-received="<?= e($r['date_received'] ?? '') ?>">
           <td class="sticky-check" style="text-align:center"><input type="checkbox" class="ps-row-cb" value="<?= $r['id'] ?>" style="cursor:pointer;width:16px;height:16px"></td>
           <td class="sticky-sl" style="text-align:center;font-size:.75rem" data-sl="<?= $offset + $i + 1 ?>"><?= $offset + $i + 1 ?></td>
           <td class="ps-col ps-col-roll_no sticky-roll" style="font-weight:700;font-family:monospace"><a href="view.php?id=<?= $r['id'] ?>" style="color:#f97316;text-decoration:none"><?= e($r['roll_no']) ?></a></td>
@@ -520,7 +556,9 @@ include __DIR__ . '/../../includes/header.php';
     company: document.getElementById('qf-company'),
     type: document.getElementById('qf-type'),
     gsm: document.getElementById('qf-gsm'),
-    status: document.getElementById('qf-status')
+    status: document.getElementById('qf-status'),
+    dateFrom: document.getElementById('qf-date-from'),
+    dateTo: document.getElementById('qf-date-to')
   };
 
   var colKeys = <?= json_encode(array_keys($allColumns)) ?>;
@@ -573,6 +611,15 @@ include __DIR__ . '/../../includes/header.php';
     if (gsm && cellText(tr, 'gsm').toLowerCase() !== gsm) return false;
     if (status && cellText(tr, 'status').toLowerCase().indexOf(status) === -1) return false;
 
+    var dateFrom = (qf.dateFrom.value || '');
+    var dateTo = (qf.dateTo.value || '');
+    if (dateFrom || dateTo) {
+      var rd = (tr.dataset.dateReceived || '').substring(0, 10);
+      if (!rd) return false;
+      if (dateFrom && rd < dateFrom) return false;
+      if (dateTo && rd > dateTo) return false;
+    }
+
     return true;
   }
 
@@ -606,7 +653,46 @@ include __DIR__ . '/../../includes/header.php';
     });
     showingCount.textContent = visible;
     recordBadge.textContent = visible + ' visible';
+    applyHierarchy();
     updateSelectionUI();
+  }
+
+  function applyHierarchy(){
+    var rows = dataRows();
+    var map = {};
+    rows.forEach(function(tr){
+      if (tr.style.display === 'none') return;
+      var rollNo = cellText(tr, 'roll_no');
+      if (!rollNo) return;
+      var base = rollNo.replace(/[-\/][A-Z]$/i, '');
+      if (!map[base]) map[base] = [];
+      map[base].push({tr: tr, rollNo: rollNo});
+    });
+    rows.forEach(function(tr){
+      var rollTd = tr.querySelector('.ps-col-roll_no');
+      if (!rollTd) return;
+      var raw = rollTd.textContent.trim();
+      var spans = rollTd.querySelectorAll('.tree-connector,.tree-spacer');
+      spans.forEach(function(s){ s.remove(); });
+      var rollNo = rollTd.textContent.trim();
+      var base = rollNo.replace(/[-\/][A-Z]$/i, '');
+      var group = map[base];
+      if (!group || group.length < 2) return;
+      if (rollNo === base) {
+        var marker = document.createElement('span');
+        marker.className = 'tree-connector';
+        marker.textContent = '\u25BC ';
+        rollTd.prepend(marker);
+      } else {
+        var spacer = document.createElement('span');
+        spacer.className = 'tree-spacer';
+        rollTd.prepend(spacer);
+        var conn = document.createElement('span');
+        conn.className = 'tree-connector';
+        conn.textContent = '\u2514 ';
+        rollTd.prepend(conn);
+      }
+    });
   }
 
   function updateSelectionUI(){
@@ -680,6 +766,8 @@ include __DIR__ . '/../../includes/header.php';
       label.className = 'muted';
       btn.classList.remove('active');
     });
+    if (qf.dateFrom) qf.dateFrom.value = '';
+    if (qf.dateTo) qf.dateTo.value = '';
     applyAllFilters();
   };
 
@@ -899,10 +987,13 @@ include __DIR__ . '/../../includes/header.php';
     if (link && !confirm(link.dataset.confirm)) e.preventDefault();
   });
 
-  document.addEventListener('scroll', function(){
+  document.addEventListener('scroll', function(e){
+    // Don't close/reposition if scrolling inside a popup list
+    if (e.target && (e.target.closest('.cfp-list') || e.target.closest('.ps-qf-popup-list'))) return;
     if (activeQuickPopup) {
       var popup = document.getElementById('qf-popup-' + activeQuickPopup);
       if (popup && popup.classList.contains('open')) {
+        if (e.target && popup.contains(e.target)) return;
         var btn = document.querySelector('[data-qf-picker="' + activeQuickPopup + '"]');
         if (btn) {
           var rect = btn.getBoundingClientRect();
@@ -912,7 +1003,11 @@ include __DIR__ . '/../../includes/header.php';
         }
       }
     }
-    if (activeCfpCol) closeCfp();
+    if (activeCfpCol) {
+      var cfpPopup = document.getElementById('cfp-' + activeCfpCol);
+      if (cfpPopup && e.target && cfpPopup.contains(e.target)) return;
+      closeCfp();
+    }
   }, true);
 
   var tableWrap = document.querySelector('.table-wrap');
