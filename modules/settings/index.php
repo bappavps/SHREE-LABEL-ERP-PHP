@@ -9,6 +9,7 @@ $libraryCategories = [
   'company-logo' => 'Company Logo',
   'label-asset' => 'Label Asset',
   'background' => 'Background',
+  'product-type' => 'Product Type',
   'misc' => 'Misc',
 ];
 
@@ -217,6 +218,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $category = $_POST['image_category'] ?? 'misc';
     if (!isset($libraryCategories[$category])) $category = 'misc';
 
+    $paperType = trim((string)($_POST['paper_type_tag'] ?? ''));
+    if ($category === 'product-type' && $paperType === '') {
+      setFlash('error', 'Paper type name is required for Product Type images.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=library');
+    }
+
     list($imgPath, $imgErr) = saveUploadedImage('library_image', 'library', 'lib');
     if ($imgErr !== '') {
       setFlash('error', $imgErr);
@@ -224,12 +231,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if ($imgPath !== '') {
       if (!isset($settings['image_library']) || !is_array($settings['image_library'])) $settings['image_library'] = [];
-      $settings['image_library'][] = [
+      $entry = [
         'path' => $imgPath,
         'name' => basename($imgPath),
         'uploaded_at' => date('Y-m-d H:i:s'),
         'category' => $category,
       ];
+      if ($category === 'product-type' && $paperType !== '') {
+        $entry['paper_type'] = $paperType;
+      }
+      $settings['image_library'][] = $entry;
       if ($category === 'background' && trim((string)($settings['login_background_image'] ?? '')) === '') {
         $settings['login_background_image'] = $imgPath;
       }
@@ -469,14 +480,29 @@ include __DIR__ . '/../../includes/header.php';
       <form method="POST" enctype="multipart/form-data" class="library-upload-bar mb-16">
         <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
         <input type="hidden" name="action" value="upload_library_image">
-        <select name="image_category" required>
+        <select name="image_category" id="lib-cat-select" required>
           <?php foreach ($libraryCategories as $k => $label): ?>
             <option value="<?= e($k) ?>"><?= e($label) ?></option>
           <?php endforeach; ?>
         </select>
+        <input type="text" name="paper_type_tag" id="paper-type-tag-input" class="form-control" placeholder="Paper type name (e.g. Thermal Paper)" style="display:none;max-width:220px">
         <input type="file" name="library_image" accept="image/png,image/jpeg,image/webp,image/gif" required>
         <button class="btn btn-primary" type="submit"><i class="bi bi-upload"></i> Upload</button>
       </form>
+      <script>
+      (function(){
+        var sel = document.getElementById('lib-cat-select');
+        var inp = document.getElementById('paper-type-tag-input');
+        function toggle() {
+          var isProductType = sel.value === 'product-type';
+          inp.style.display = isProductType ? '' : 'none';
+          inp.required = isProductType;
+          if (!isProductType) inp.value = '';
+        }
+        sel.addEventListener('change', toggle);
+        toggle();
+      })();
+      </script>
 
       <div class="library-category-pills mb-16">
         <a href="?tab=library&category=all" class="library-pill <?= $libraryFilter==='all'?'active':'' ?>">All</a>
@@ -492,6 +518,9 @@ include __DIR__ . '/../../includes/header.php';
             <div class="library-thumb"><img src="<?= e(BASE_URL . '/' . ltrim((string)$img['path'], '/')) ?>" alt="Library image"></div>
             <div class="library-meta">
               <div class="library-name"><?= e((string)($img['name'] ?? 'image')) ?></div>
+              <?php if (($img['category'] ?? '') === 'product-type' && !empty($img['paper_type'])): ?>
+                <div style="font-size:.72rem;color:#f97316;font-weight:700;margin-top:2px"><i class="bi bi-tag-fill"></i> <?= e($img['paper_type']) ?></div>
+              <?php endif; ?>
               <div class="library-time">Uploaded: <?= e((string)($img['uploaded_at'] ?? '')) ?></div>
             </div>
             <form method="POST" onsubmit="return confirm('Remove this image?')">

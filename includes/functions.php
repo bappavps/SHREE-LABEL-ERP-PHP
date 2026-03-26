@@ -240,6 +240,24 @@ function getAppSettings() {
 }
 
 /**
+ * Get the product-type image URL for a given paper type from image library.
+ * Returns empty string if no match found.
+ */
+function getProductTypeImage($paperType) {
+    $paperType = strtolower(trim((string)$paperType));
+    if ($paperType === '') return '';
+    $settings = getAppSettings();
+    foreach (($settings['image_library'] ?? []) as $img) {
+        if (($img['category'] ?? '') !== 'product-type') continue;
+        $imgType = strtolower(trim((string)($img['paper_type'] ?? '')));
+        if ($imgType !== '' && $imgType === $paperType) {
+            return $img['path'] ?? '';
+        }
+    }
+    return '';
+}
+
+/**
  * Persist app settings to JSON.
  */
 function saveAppSettings(array $settings) {

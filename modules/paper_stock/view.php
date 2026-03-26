@@ -28,19 +28,24 @@ $rollQrPayload = implode(' | ', [
 ]);
 $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=' . rawurlencode($rollQrPayload);
 
-// Paper type thumbnail fallback search by slug under assets/images/paper-types/
-$paperSlug = strtolower(trim((string)($r['paper_type'] ?? '')));
-$paperSlug = preg_replace('/[^a-z0-9]+/', '-', $paperSlug);
-$paperSlug = trim($paperSlug, '-');
-$thumbPath = null;
-if ($paperSlug !== '') {
-  foreach (['png', 'jpg', 'jpeg', 'webp'] as $ext) {
-    $candidateFs = __DIR__ . '/../../assets/images/paper-types/' . $paperSlug . '.' . $ext;
-    if (file_exists($candidateFs)) {
-      $thumbPath = BASE_URL . '/assets/images/paper-types/' . $paperSlug . '.' . $ext;
-      break;
+// Paper type thumbnail from settings image library (product-type category)
+$productImgPath = getProductTypeImage($r['paper_type'] ?? '');
+$thumbPath = $productImgPath ? (BASE_URL . '/' . ltrim($productImgPath, '/')) : null;
+
+// Fallback: slug-based filesystem lookup under assets/images/paper-types/
+if (!$thumbPath) {
+    $paperSlug = strtolower(trim((string)($r['paper_type'] ?? '')));
+    $paperSlug = preg_replace('/[^a-z0-9]+/', '-', $paperSlug);
+    $paperSlug = trim($paperSlug, '-');
+    if ($paperSlug !== '') {
+        foreach (['png', 'jpg', 'jpeg', 'webp'] as $ext) {
+            $candidateFs = __DIR__ . '/../../assets/images/paper-types/' . $paperSlug . '.' . $ext;
+            if (file_exists($candidateFs)) {
+                $thumbPath = BASE_URL . '/assets/images/paper-types/' . $paperSlug . '.' . $ext;
+                break;
+            }
+        }
     }
-  }
 }
 
 $pageTitle = 'Roll — ' . $r['roll_no'];
@@ -79,8 +84,10 @@ include __DIR__ . '/../../includes/header.php';
         <?php if ($thumbPath): ?>
           <img src="<?= e($thumbPath) ?>" alt="<?= e($r['paper_type']) ?>" style="max-width:100%;width:320px;aspect-ratio:16/10;object-fit:cover;border:1px solid #e2e8f0;border-radius:10px;background:#fff">
         <?php else: ?>
-          <div style="width:320px;max-width:100%;aspect-ratio:16/10;border:1px dashed #cbd5e1;border-radius:10px;background:#f8fafc;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:.82rem;font-weight:600">
-            No thumbnail available for <?= e($r['paper_type'] ?: 'this paper type') ?>
+          <div style="width:320px;max-width:100%;aspect-ratio:16/10;border:1px dashed #cbd5e1;border-radius:10px;background:#f8fafc;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#64748b;font-size:.82rem;font-weight:600;gap:6px;padding:12px;text-align:center">
+            <i class="bi bi-image" style="font-size:24px;color:#94a3b8"></i>
+            No image for "<?= e($r['paper_type'] ?: 'this paper type') ?>"
+            <a href="<?= BASE_URL ?>/modules/settings/index.php?tab=library" style="font-size:.72rem;color:#f97316;font-weight:700;text-decoration:none">Upload in Settings &rarr;</a>
           </div>
         <?php endif; ?>
       </div>
