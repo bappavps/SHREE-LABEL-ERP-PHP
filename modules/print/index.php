@@ -18,9 +18,13 @@ $db = getDB();
   background LONGTEXT DEFAULT NULL,
   thumbnail LONGTEXT DEFAULT NULL,
   is_default TINYINT(1) NOT NULL DEFAULT 0,
+  is_system TINYINT(1) NOT NULL DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+// Add is_system column if missing
+try { $db->query("ALTER TABLE print_templates ADD COLUMN is_system TINYINT(1) NOT NULL DEFAULT 0 AFTER is_default"); } catch (Exception $e) {}
 
 // ============================================================
 // AJAX Handler (returns JSON, exits early)
@@ -66,7 +70,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['ajax'])) {
   if ($action === 'delete_template') {
     $id = (int)($_POST['template_id'] ?? 0);
     if ($id > 0) {
-      $stmt = $db->prepare("DELETE FROM print_templates WHERE id = ?");
+      // Prevent deleting system templates
+      $chk = $db->prepare("SELECT is_system FROM print_templates WHERE id = ?");
+      $chk->bind_param('i', $id);
+      $chk->execute();
+      $row = $chk->get_result()->fetch_assoc();
+      if ($row && !empty($row['is_system'])) {
+        echo json_encode(['success' => false, 'error' => 'System templates cannot be deleted']);
+        exit;
+      }
+      $stmt = $db->prepare("DELETE FROM print_templates WHERE id = ? AND (is_system = 0 OR is_system IS NULL)");
       $stmt->bind_param('i', $id);
       $stmt->execute();
       echo json_encode(['success' => true]);
@@ -115,7 +128,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   if ($action === 'delete_template') {
     $id = (int)($_POST['template_id'] ?? 0);
-    if ($id > 0) { $stmt = $db->prepare("DELETE FROM print_templates WHERE id=?"); $stmt->bind_param('i',$id); $stmt->execute(); setFlash('success','Template deleted.'); }
+    if ($id > 0) {
+      $stmt = $db->prepare("DELETE FROM print_templates WHERE id=? AND (is_system = 0 OR is_system IS NULL)");
+      $stmt->bind_param('i',$id);
+      if ($stmt->execute() && $stmt->affected_rows > 0) {
+        setFlash('success','Template deleted.');
+      } else {
+        setFlash('error','Cannot delete system-protected templates.');
+      }
+    }
     redirect(BASE_URL . '/modules/print/index.php');
   }
 
@@ -167,6 +188,7 @@ $jsTemplates = array_map(function($t) {
     'background' => json_decode($t['background'] ?: '{}', true) ?: ['image'=>'','opacity'=>1],
     'thumbnail' => $t['thumbnail'] ?? '',
     'isDefault' => (bool)$t['is_default'],
+    'isSystem' => (bool)($t['is_system'] ?? false),
   ];
 }, $templates);
 
@@ -375,7 +397,9 @@ include __DIR__ . '/../../includes/header.php';
 <div id="ps-toast" class="ps-toast"></div>
 
 <!-- ======================== STYLES ======================== -->
-<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Poppins:wght@400;500;600;700;800;900&family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Roboto:wght@400;500;700;900&family=Oswald:wght@400;500;600;700&family=Poppins:wght@400;500;600;700;800;900&family=Montserrat:wght@400;500;600;700;800;900&family=Open+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 .ps-tpl-card:hover { border-color:#6366f1!important; }
 .ps-card-overlay { position:absolute;inset:0;background:rgba(99,102,241,.92);opacity:0;transition:opacity .25s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:20px; }
@@ -427,17 +451,31 @@ const TEMPLATES_DATA = <?= json_encode($jsTemplates, JSON_HEX_TAG | JSON_HEX_APO
 const IMAGE_LIBRARY = <?= json_encode(array_map(function($img) { return ['path' => BASE_URL . '/' . ltrim((string)($img['path'] ?? ''), '/'), 'name' => (string)($img['name'] ?? ''), 'category' => (string)($img['category'] ?? 'misc')]; }, $imageLibrary), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 
 const FONT_FAMILIES = [
-  { name:'Inter', value:'Inter, sans-serif' },
-  { name:'Oswald', value:'Oswald, sans-serif' },
-  { name:'Poppins', value:'Poppins, sans-serif' },
-  { name:'Montserrat', value:'Montserrat, sans-serif' },
-  { name:'Arial', value:'Arial, sans-serif' },
-  { name:'Helvetica', value:'Helvetica, sans-serif' },
-  { name:'Georgia', value:'Georgia, serif' },
-  { name:'Times New Roman', value:'Times New Roman, serif' },
-  { name:'Courier New', value:'Courier New, monospace' },
-  { name:'Verdana', value:'Verdana, sans-serif' }
+  { id:'inter', name:'Inter (Sans)', value:"'Inter', sans-serif" },
+  { id:'roboto', name:'Roboto', value:"'Roboto', sans-serif" },
+  { id:'montserrat', name:'Montserrat', value:"'Montserrat', sans-serif" },
+  { id:'poppins', name:'Poppins', value:"'Poppins', sans-serif" },
+  { id:'oswald', name:'Oswald', value:"'Oswald', sans-serif" },
+  { id:'open-sans', name:'Open Sans', value:"'Open Sans', sans-serif" },
+  { id:'arial', name:'Arial', value:'Arial, sans-serif' },
+  { id:'helvetica', name:'Helvetica', value:'Helvetica, sans-serif' },
+  { id:'mono', name:'Monospace', value:"ui-monospace, SFMono-Regular, 'Courier New', monospace" },
+  { id:'georgia', name:'Georgia', value:'Georgia, serif' },
+  { id:'times', name:'Times New Roman', value:"'Times New Roman', serif" },
+  { id:'verdana', name:'Verdana', value:'Verdana, sans-serif' }
 ];
+function getFontValue(id) {
+  if (!id) return 'sans-serif';
+  // Already a CSS value (has comma or quotes)? Use as-is
+  if (id.indexOf(',') !== -1 || id.indexOf("'") !== -1) return id;
+  var f = FONT_FAMILIES.find(function(ff){ return ff.id === id; });
+  return f ? f.value : ("'" + id + "', sans-serif");
+}
+function getFontId(val) {
+  if (!val) return 'inter';
+  var f = FONT_FAMILIES.find(function(ff){ return ff.id === val || ff.value === val; });
+  return f ? f.id : 'inter';
+}
 
 const PLACEHOLDERS = {
   GENERAL: [
@@ -710,7 +748,7 @@ function psAddElement(type, placeholder, content) {
     style: {
       fontSize: type==='title' ? 24 : 14,
       fontWeight: type==='title' ? 'bold' : 'normal',
-      fontFamily: 'Inter, sans-serif',
+      fontFamily: 'inter',
       textAlign: 'left',
       color: '#000000',
       backgroundColor: (type==='rectangle'||type==='circle') ? '#ffffff' : 'transparent',
@@ -855,13 +893,16 @@ function psRenderElementContent(el, c) {
   const border = bw ? (bw+'px '+ls+' '+bc) : 'none';
 
   switch(el.type) {
-    case 'text': case 'title':
-      Object.assign(c.style, { backgroundColor:bg, border, borderRadius:br, opacity:op, display:'flex', alignItems:'center', padding:'4px' });
-      const sp = document.createElement('span');
-      Object.assign(sp.style, { fontSize:el.style.fontSize+'px', fontFamily:el.style.fontFamily||'Inter,sans-serif', fontWeight:el.style.fontWeight||'normal', color:el.style.color||'#000', width:'100%', textAlign:el.style.textAlign||'left', wordBreak:'break-word', lineHeight:'1.3' });
+    case 'text': case 'title': {
+      var align = el.style.textAlign || 'left';
+      var jc = align === 'center' ? 'center' : (align === 'right' ? 'flex-end' : 'flex-start');
+      Object.assign(c.style, { backgroundColor:bg, border, borderRadius:br, opacity:op, display:'flex', alignItems:'center', justifyContent:jc, padding:'4px' });
+      const sp = document.createElement('div');
+      Object.assign(sp.style, { fontSize:el.style.fontSize+'px', fontFamily:getFontValue(el.style.fontFamily), fontWeight:el.style.fontWeight||'normal', color:el.style.color||'#000', width:'100%', textAlign:align, wordBreak:'break-word', lineHeight:'1.3' });
       sp.textContent = psProcessText(el.content||'');
       c.appendChild(sp);
       break;
+    }
 
     case 'image':
       Object.assign(c.style, { borderRadius:br, opacity:op });
@@ -1036,7 +1077,8 @@ function psRenderProps() {
     h += '<label style="font-size:10px;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:1px;display:block;padding-bottom:8px;border-bottom:1px solid #f1f5f9;margin-bottom:12px">Typography</label>';
     h += '<div style="margin-bottom:10px"><label style="font-size:9px;font-weight:700;text-transform:uppercase">Content</label><textarea class="ps-prop-input" rows="2" onchange="psUpdateProp(\''+el.id+'\',\'content\',this.value)">'+psEscHtml(el.content||'')+'</textarea></div>';
     h += '<div style="margin-bottom:10px"><label style="font-size:9px;font-weight:700;text-transform:uppercase">Font</label><select class="ps-prop-input" onchange="psUpdateStyle(\''+el.id+'\',\'fontFamily\',this.value)">';
-    FONT_FAMILIES.forEach(f => { h += '<option value="'+f.value+'"'+(el.style.fontFamily===f.value?' selected':'')+'>'+f.name+'</option>'; });
+    var curFontId = getFontId(el.style.fontFamily);
+    FONT_FAMILIES.forEach(f => { h += '<option value="'+f.id+'"'+(curFontId===f.id?' selected':'')+'>'+f.name+'</option>'; });
     h += '</select></div>';
     h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">';
     h += '<div><label style="font-size:9px;font-weight:700;text-transform:uppercase">Size</label><input type="number" class="ps-prop-input" value="'+el.style.fontSize+'" onchange="psUpdateStyle(\''+el.id+'\',\'fontSize\',Number(this.value))"></div>';
@@ -1199,28 +1241,46 @@ async function psPrint() {
   btn.disabled = true;
   btn.innerHTML = '<i class="bi bi-arrow-repeat spin-icon"></i> Rendering...';
 
-  // Clean render (deselect)
+  // Clean render (deselect + remove zoom)
   const prevSel = selectedElementId;
+  const prevZoom = psZoom;
   selectedElementId = null;
+  psZoom = 1;
   psRenderCanvas();
 
+  // Small delay for DOM to settle before capture
+  await new Promise(function(r){ setTimeout(r, 100); });
+
   try {
-    const imgCanvas = await html2canvas(canvasEl, { scale:4, useCORS:true, logging:false, backgroundColor:'#fff', width:currentTemplate.paperWidth*MM_TO_PX, height:currentTemplate.paperHeight*MM_TO_PX });
+    const imgCanvas = await html2canvas(canvasEl, { scale:4, useCORS:true, allowTaint:true, logging:false, backgroundColor:'#fff', width:currentTemplate.paperWidth*MM_TO_PX, height:currentTemplate.paperHeight*MM_TO_PX });
     const imgData = imgCanvas.toDataURL('image/png', 1.0);
+
+    // Restore canvas state immediately after capture
+    selectedElementId = prevSel;
+    psZoom = prevZoom;
+    psRenderCanvas();
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-printer"></i> Print';
+
     const iframe = document.createElement('iframe');
     iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
     document.body.appendChild(iframe);
     const doc = iframe.contentWindow.document;
     doc.open();
-    doc.write('<html><head><title>Print</title><style>@page{size:'+currentTemplate.paperWidth+'mm '+currentTemplate.paperHeight+'mm;margin:0}body{margin:0;display:flex;justify-content:center;align-items:center}img{width:100%;height:100%;object-fit:contain}</style></head><body><img src="'+imgData+'"></body></html>');
+    doc.write('<html><head><title>Print</title><style>@page{size:'+currentTemplate.paperWidth+'mm '+currentTemplate.paperHeight+'mm;margin:0}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{margin:0;padding:0;width:100%;height:100%}img{width:100%;height:100%;object-fit:contain;display:block}</style></head><body><img src="'+imgData+'"></body></html>');
     doc.close();
-    setTimeout(() => { iframe.contentWindow.focus(); iframe.contentWindow.print(); iframe.remove(); }, 500);
-  } catch(e) { psToast('Print error','error'); }
-
-  selectedElementId = prevSel;
-  psRenderCanvas();
-  btn.disabled = false;
-  btn.innerHTML = '<i class="bi bi-printer"></i> Print';
+    setTimeout(function(){
+      try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch(pe){}
+      setTimeout(function(){ try{iframe.remove();}catch(re){} }, 3000);
+    }, 800);
+  } catch(e) {
+    psToast('Print error','error');
+    selectedElementId = prevSel;
+    psZoom = prevZoom;
+    psRenderCanvas();
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-printer"></i> Print';
+  }
 }
 
 // ============================================================

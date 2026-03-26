@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../includes/auth_check.php';
 
 $db   = getDB();
 $csrf = generateCSRF();
+$appSettings = getAppSettings();
 
 $allowedPerPage = [10, 20, 50, 100];
 $perPageRaw = strtolower(trim((string)($_GET['per_page'] ?? '20')));
@@ -96,7 +97,11 @@ $allColumns = [
     if ($res) {
       while ($row = $res->fetch_assoc()) {
         $v = trim((string)($row['v'] ?? ''));
-        if ($v !== '' && $v !== '-') $vals[] = $v;
+        if ($v !== '' && $v !== '-') {
+          // Remove unnecessary decimals from numeric columns
+          if (in_array($colKey, ['width_mm','gsm'])) $v = (string)(int)((float)$v);
+          $vals[] = $v;
+        }
       }
     }
 
@@ -273,8 +278,8 @@ include __DIR__ . '/../../includes/header.php';
     <p>Master inventory of all parent and child paper rolls.</p>
   </div>
   <div class="ps-action-bar no-print">
-    <button type="button" class="ps-action-btn red" onclick="psBulkExport('pdf','all')"><i class="bi bi-file-earmark-pdf"></i> Export PDF</button>
-    <button type="button" class="ps-action-btn green" onclick="psBulkExport('csv','all')"><i class="bi bi-file-earmark-excel"></i> Export Excel</button>
+    <button type="button" class="ps-action-btn red" onclick="psBulkExport('pdf','auto')"><i class="bi bi-file-earmark-pdf"></i> Export PDF</button>
+    <button type="button" class="ps-action-btn green" onclick="psBulkExport('csv','auto')"><i class="bi bi-file-earmark-excel"></i> Export Excel</button>
     <button type="button" id="top-print-label-btn" class="ps-action-btn blue" onclick="psPrintLabels()" disabled><i class="bi bi-printer"></i> Print Label</button>
     <button type="button" class="ps-action-btn blue" onclick="psPrintStockReport()"><i class="bi bi-file-earmark-richtext"></i> Print Stock Report</button>
     <div style="position:relative;display:inline-block">
@@ -473,10 +478,10 @@ include __DIR__ . '/../../includes/header.php';
           <td class="ps-col ps-col-status"><?= statusBadge($r['status']) ?></td>
           <td class="ps-col ps-col-company"><?= e($r['company']) ?></td>
           <td class="ps-col ps-col-paper_type"><?= e($r['paper_type']) ?></td>
-          <td class="ps-col ps-col-width_mm" style="font-family:monospace;text-align:right"><?= e($r['width_mm']) ?></td>
+          <td class="ps-col ps-col-width_mm" style="font-family:monospace;text-align:right"><?= $r['width_mm'] !== null ? (int)$r['width_mm'] : '-' ?></td>
           <td class="ps-col ps-col-length_mtr" style="font-family:monospace;font-weight:600;text-align:right"><?= number_format((float)$r['length_mtr'], 0) ?></td>
           <td class="ps-col ps-col-sqm" style="font-family:monospace;font-weight:700;text-align:right;color:#16a34a"><?= number_format($sqm, 2) ?></td>
-          <td class="ps-col ps-col-gsm" style="font-family:monospace;text-align:right"><?= $r['gsm'] !== null ? e($r['gsm']) : '-' ?></td>
+          <td class="ps-col ps-col-gsm" style="font-family:monospace;text-align:right"><?= $r['gsm'] !== null ? (int)$r['gsm'] : '-' ?></td>
           <td class="ps-col ps-col-weight_kg" style="font-family:monospace;text-align:right"><?= $r['weight_kg'] !== null ? e($r['weight_kg']) : '-' ?></td>
           <td class="ps-col ps-col-purchase_rate" style="font-family:monospace;text-align:right"><?= $r['purchase_rate'] ? '₹'.number_format((float)$r['purchase_rate'],2) : '-' ?></td>
           <td class="ps-col ps-col-date_received text-muted"><?= formatDate($r['date_received']) ?></td>
@@ -566,7 +571,7 @@ include __DIR__ . '/../../includes/header.php';
   var quickFilterOptions = {
     company: <?= json_encode(array_map(function($row){ return $row['company']; }, $companies), JSON_UNESCAPED_UNICODE) ?>,
     type: <?= json_encode(array_map(function($row){ return $row['paper_type']; }, $paperTypes), JSON_UNESCAPED_UNICODE) ?>,
-    gsm: <?= json_encode(array_map(function($row){ return (string)$row['gsm']; }, $gsmValues), JSON_UNESCAPED_UNICODE) ?>,
+    gsm: <?= json_encode(array_map(function($row){ return (string)(int)$row['gsm']; }, $gsmValues), JSON_UNESCAPED_UNICODE) ?>,
     status: <?= json_encode(array_values($statusValues), JSON_UNESCAPED_UNICODE) ?>
   };
   var activeColFilters = {};
@@ -1053,6 +1058,12 @@ include __DIR__ . '/../../includes/header.php';
   });
 
   window.psBulkExport = function(format, mode){
+    // Auto-detect: if rows selected, use them; otherwise export all
+    if (mode === 'auto') {
+      var sel = selectedIds();
+      mode = sel.length > 0 ? 'selected' : 'all';
+    }
+
     var p = new URLSearchParams();
     p.set('format', format);
     p.set('mode', mode);
@@ -1076,12 +1087,12 @@ include __DIR__ . '/../../includes/header.php';
 
   window.psPrintLabels = function(){
     var ids = selectedIds();
-    if (!ids.length) { return; }
-    window.open('<?= BASE_URL ?>/modules/paper_stock/export.php?format=pdf&mode=selected&ids=' + ids.join(','), '_blank');
+    if (!ids.length) { alert('Select at least one roll.'); return; }
+    window.open('<?= BASE_URL ?>/modules/paper_stock/label.php?ids=' + ids.join(','), '_blank');
   };
 
   window.psPrintSingleLabel = function(id){
-    window.open('<?= BASE_URL ?>/modules/paper_stock/export.php?format=pdf&mode=selected&ids=' + id, '_blank');
+    window.open('<?= BASE_URL ?>/modules/paper_stock/label.php?ids=' + id, '_blank');
   };
 
   window.psBulkDelete = function(){
@@ -1142,43 +1153,128 @@ include __DIR__ . '/../../includes/header.php';
       if (th && th.style.display !== 'none') visibleCols.push(col);
     });
 
+    // Smart selection: if rows selected, only use those; otherwise use all visible rows
+    var sel = selectedIds();
+    var useSelected = sel.length > 0;
+    var selSet = {};
+    if (useSelected) sel.forEach(function(id){ selSet[id] = true; });
+
     var rows = [];
+    var totalMtr = 0, totalSqm = 0, totalWt = 0;
     dataRows().forEach(function(tr){
       if (tr.style.display === 'none') return;
+      if (useSelected && !selSet[tr.dataset.id]) return;
       var row = [];
       row.push(tr.querySelector('.sticky-sl').textContent.trim());
       visibleCols.forEach(function(col){ row.push(cellText(tr, col)); });
       rows.push(row);
+      totalMtr += parseFloat(tr.dataset.mtr || 0);
+      totalSqm += parseFloat(tr.dataset.sqm || 0);
+      var wtCell = tr.querySelector('.ps-col-weight_kg');
+      if (wtCell) { var v = parseFloat(wtCell.textContent); if (!isNaN(v)) totalWt += v; }
     });
 
-    var labels = ['SL No.'];
+    var labels = ['#'];
     visibleCols.forEach(function(col){
       var th = document.querySelector('th.ps-col-' + col + ' a');
       labels.push((th ? th.textContent : col).replace(/\s+/g, ' ').trim());
     });
 
+    var colCount = visibleCols.length;
+    var usePortrait = colCount <= 8;
+    var pageSize = usePortrait ? 'A4 portrait' : 'A4 landscape';
+    var fontSize = colCount > 14 ? '9px' : (colCount > 10 ? '10px' : '11px');
+    var thFontSize = colCount > 14 ? '8.5px' : (colCount > 10 ? '9px' : '10px');
+
     var w = window.open('', '_blank');
     if (!w) return;
 
     var tableHtml = '<table><thead><tr>';
-    labels.forEach(function(h){ tableHtml += '<th>' + h + '</th>'; });
+    labels.forEach(function(h,i){ tableHtml += '<th' + (i===0?' class="sl-col"':'') + '>' + h + '</th>'; });
     tableHtml += '</tr></thead><tbody>';
-    rows.forEach(function(r){
+    rows.forEach(function(r,ri){
       tableHtml += '<tr>';
-      r.forEach(function(c){ tableHtml += '<td>' + (c || '-') + '</td>'; });
+      r.forEach(function(c,ci){ tableHtml += '<td' + (ci===0?' class="sl-col"':'') + '>' + (c || '-') + '</td>'; });
       tableHtml += '</tr>';
     });
     tableHtml += '</tbody></table>';
 
-    w.document.write('<!doctype html><html><head><title>Stock Report</title><style>' +
-      '@page{size:A4;margin:10mm;}*{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:10px;color:#111827}' +
-      '.head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #111827;padding-bottom:8px;margin-bottom:10px}' +
-      '.head h2{margin:0;font-size:16px}table{width:100%;border-collapse:collapse;font-size:9px}th{background:#0f172a;color:#fff;padding:6px;text-align:left}td{padding:5px;border-bottom:1px solid #e5e7eb}tr:nth-child(even){background:#f8fafc}' +
+    var companyName = <?= json_encode($appSettings['company_name'] ?? APP_NAME) ?>;
+    var companyTagline = <?= json_encode($appSettings['company_tagline'] ?? '') ?>;
+    var companyAddress = <?= json_encode($appSettings['company_address'] ?? '') ?>;
+    var companyPhone = <?= json_encode($appSettings['company_mobile'] ?? ($appSettings['company_phone'] ?? '')) ?>;
+    var companyEmail = <?= json_encode($appSettings['company_email'] ?? '') ?>;
+    var companyGST = <?= json_encode($appSettings['company_gst'] ?? '') ?>;
+    var logoUrl = <?= json_encode(($appSettings['logo_path'] ?? '') ? BASE_URL . '/' . $appSettings['logo_path'] : '') ?>;
+
+    var logoHtml = logoUrl ? '<img src="' + logoUrl + '" style="width:56px;height:56px;border-radius:10px;object-fit:contain;border:1px solid #e2e8f0">' : '';
+
+    // Build company detail lines
+    var addressHtml = companyAddress ? '<div style="font-size:10px;color:#475569;margin-top:3px">' + companyAddress + '</div>' : '';
+    var contactParts = [];
+    if (companyPhone) contactParts.push('Ph: ' + companyPhone);
+    if (companyEmail) contactParts.push(companyEmail);
+    if (companyGST) contactParts.push('GST: ' + companyGST);
+    var contactHtml = contactParts.length ? '<div style="font-size:10px;color:#64748b;margin-top:3px">' + contactParts.join('  |  ') + '</div>' : '';
+
+    var modeLabel = useSelected ? 'Selected: ' + rows.length + ' roll(s)' : 'All Visible: ' + rows.length + ' rolls';
+
+    var html = '<!doctype html><html><head><title>Stock Report — ' + companyName + '</title>' +
+      '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">' +
+      '<style>' +
+      '@page{size:' + pageSize + ';margin:10mm 8mm 14mm 8mm}*{box-sizing:border-box;margin:0;padding:0}' +
+      'body{font-family:"Segoe UI",Arial,sans-serif;font-size:' + fontSize + ';color:#1e293b}' +
+      '.company-header{display:flex;align-items:center;gap:14px;border-bottom:3px solid #0f172a;padding-bottom:10px;margin-bottom:10px}' +
+      '.company-name{font-size:22px;font-weight:900;color:#0f172a;text-transform:uppercase;letter-spacing:.03em}' +
+      '.company-sub{font-size:11px;color:#64748b;margin-top:2px}' +
+      '.report-meta{text-align:right;min-width:160px;font-size:10px;color:#64748b;line-height:1.7}' +
+      '.report-meta strong{color:#0f172a}' +
+      '.title-bar{display:flex;justify-content:space-between;align-items:center;background:#0f172a;color:#fff;border-radius:8px;padding:10px 18px;margin-bottom:10px;font-size:13px;font-weight:700}' +
+      '.summary-cards{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap}' +
+      '.sc{flex:1;min-width:120px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;text-align:center}' +
+      '.sc .label{font-size:10px;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:.08em}' +
+      '.sc .val{font-size:18px;font-weight:900;color:#0f172a;margin-top:2px}' +
+      '.sc .unit{font-size:10px;color:#64748b;font-weight:600}' +
+      '.sc.accent{border-color:#bbf7d0;background:#f0fdf4}.sc.accent .val{color:#16a34a}' +
+      'table{width:100%;border-collapse:collapse;font-size:' + fontSize + ';margin-bottom:8px}' +
+      'thead{display:table-header-group}' +
+      'th{background:#0f172a;color:#fff;padding:6px 8px;text-align:left;font-size:' + thFontSize + ';text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;border:1px solid #1e293b}' +
+      'td{padding:5px 8px;border:1px solid #e2e8f0}tr:nth-child(even){background:#f8fafc}' +
+      '.sl-col{text-align:center;width:34px;color:#94a3b8;font-size:9px}' +
+      '.report-footer{display:flex;justify-content:space-between;align-items:center;border-top:2px solid #0f172a;padding-top:8px;margin-top:10px;font-size:10px;color:#94a3b8}' +
+      '.report-footer strong{color:#0f172a}' +
+      '.print-toolbar{padding:14px 20px;background:linear-gradient(135deg,#fefce8,#fff7ed);border-bottom:2px solid #fde68a;text-align:center;font-size:13px;font-weight:700;color:#92400e;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}' +
+      '.print-toolbar button{padding:8px 20px;border-radius:10px;font-weight:700;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:6px}' +
+      '.btn-p{border:none;background:#0f172a;color:#fff}.btn-c{border:1px solid #cbd5e1;background:#fff;color:#64748b}' +
+      '@media print{body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}.no-print{display:none!important}}' +
       '</style></head><body>' +
-      '<div class="head"><div><h2>Paper Stock Report</h2><div>Visible columns only</div></div><div>Generated: <?= date('d M Y, h:i A') ?></div></div>' +
+      '<div class="print-toolbar no-print">' +
+        '<span><i class="bi bi-file-earmark-richtext" style="font-size:16px"></i> Stock Report Ready</span>' +
+        '<button class="btn-p" onclick="window.print()"><i class="bi bi-printer"></i> Print / Save PDF</button>' +
+        '<button class="btn-c" onclick="window.close()"><i class="bi bi-x-lg"></i> Close</button>' +
+      '</div>' +
+      '<div style="padding:12px 16px">' +
+      '<div class="company-header">' +
+        logoHtml +
+        '<div style="flex:1"><div class="company-name">' + companyName + '</div>' +
+        (companyTagline ? '<div class="company-sub">' + companyTagline + '</div>' : '') +
+        addressHtml + contactHtml +
+        '</div>' +
+        '<div class="report-meta"><div>Generated: <strong>' + new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) + ', ' + new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true}) + '</strong></div><div>Records: <strong>' + rows.length + '</strong></div><div>Columns: <strong>' + colCount + '</strong></div></div>' +
+      '</div>' +
+      '<div class="title-bar"><span><i class="bi bi-grid"></i> PAPER STOCK REPORT</span><span style="background:rgba(255,255,255,.15);border-radius:6px;padding:4px 12px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em">' + modeLabel + '</span></div>' +
+      '<div class="summary-cards">' +
+        '<div class="sc"><div class="label">Total Rolls</div><div class="val">' + rows.length.toLocaleString() + '</div></div>' +
+        '<div class="sc accent"><div class="label">Running Meter</div><div class="val">' + Math.round(totalMtr).toLocaleString() + '</div><div class="unit">MTR</div></div>' +
+        '<div class="sc accent"><div class="label">Surface Area</div><div class="val">' + totalSqm.toFixed(2) + '</div><div class="unit">SQM</div></div>' +
+        '<div class="sc"><div class="label">Total Weight</div><div class="val">' + totalWt.toFixed(2) + '</div><div class="unit">KG</div></div>' +
+      '</div>' +
       tableHtml +
-      '<script>window.onload=function(){window.print();};<\/script>' +
-      '</body></html>');
+      '<div class="report-footer"><div><strong>' + companyName + '</strong> — Paper Stock Report</div><div>' + new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) + ' | ' + rows.length + ' records | ' + colCount + ' columns</div></div>' +
+      '</div>' +
+      '</body></html>';
+
+    w.document.write(html);
     w.document.close();
   };
 
