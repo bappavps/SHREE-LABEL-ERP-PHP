@@ -1,6 +1,18 @@
 // ============================================================
 // ERP System — Global UI Script
 // ============================================================
+
+/**
+ * Shared SQM calculator — reused across Paper Stock & Reports.
+ * SQM = (Width_mm × Length_mtr) / 1000
+ * Returns 0 if inputs are non-numeric.
+ */
+window.erpCalcSQM = function(widthMm, lengthMtr) {
+    var w = parseFloat(widthMm) || 0;
+    var l = parseFloat(lengthMtr) || 0;
+    return (w > 0 && l > 0) ? (w / 1000) * l : 0;
+};
+
 (function () {
     'use strict';
 

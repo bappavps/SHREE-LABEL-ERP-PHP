@@ -17,7 +17,7 @@ $perPage = in_array((int)$perPageRaw, $allowedPerPage) ? (int)$perPageRaw : 20;
 $page    = max(1, (int)($_GET['page'] ?? 1));
 $offset  = ($page - 1) * $perPage;
 
-$allowedSort = ['roll_no','status','company','paper_type','width_mm','length_mtr','gsm','weight_kg','purchase_rate','lot_batch_no','company_roll_no','job_no','date_received','date_used','remarks'];
+$allowedSort = ['roll_no','status','company','paper_type','width_mm','length_mtr','sqm','gsm','weight_kg','purchase_rate','date_received','date_used','job_no','job_size','job_name','lot_batch_no','company_roll_no','remarks'];
 $sortCol = in_array($_GET['sort'] ?? '', $allowedSort) ? $_GET['sort'] : 'id';
 $sortDir = (strtolower($_GET['dir'] ?? '') === 'asc') ? 'ASC' : 'DESC';
 
@@ -60,20 +60,23 @@ $totStmt = $db->query("SELECT IFNULL(SUM(length_mtr),0) AS total_mtr, IFNULL(SUM
 $totals = $totStmt->fetch_assoc();
 
 $allColumns = [
-    'roll_no'         => ['Roll ID',        'min-width:150px', 'left'],
+    'roll_no'         => ['Roll No',        'min-width:150px', 'left'],
     'status'          => ['Status',         'min-width:120px', 'left'],
     'company'         => ['Paper Company',  'min-width:150px', 'left'],
     'paper_type'      => ['Paper Type',     'min-width:160px', 'left'],
     'width_mm'        => ['Width (MM)',     'min-width:100px', 'right'],
     'length_mtr'      => ['Length (MTR)',   'min-width:120px', 'right'],
+    'sqm'             => ['SQM',            'min-width:100px', 'right'],
     'gsm'             => ['GSM',            'min-width:80px',  'right'],
     'weight_kg'       => ['Weight (KG)',    'min-width:110px', 'right'],
     'purchase_rate'   => ['Purchase Rate',  'min-width:120px', 'right'],
-    'lot_batch_no'    => ['Lot / Batch No', 'min-width:130px', 'left'],
-    'company_roll_no' => ['Company Roll No','min-width:140px', 'left'],
-    'job_no'          => ['Job No',         'min-width:120px', 'left'],
     'date_received'   => ['Date Received',  'min-width:120px', 'left'],
     'date_used'       => ['Date Used',      'min-width:110px', 'left'],
+    'job_no'          => ['Job No',         'min-width:120px', 'left'],
+    'job_size'        => ['Job Size',       'min-width:120px', 'left'],
+    'job_name'        => ['Job Name',       'min-width:150px', 'left'],
+    'lot_batch_no'    => ['Lot / Batch No', 'min-width:130px', 'left'],
+    'company_roll_no' => ['Company Roll No','min-width:140px', 'left'],
     'remarks'         => ['Remarks',        'min-width:170px', 'left'],
 ];
 
@@ -176,7 +179,7 @@ include __DIR__ . '/../../includes/header.php';
 .ps-grid-header{background:#0f172a;color:#fff;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;border-radius:16px 16px 0 0}
 
 .table-wrap{overflow:auto;max-height:700px}
-#ps-table{min-width:1700px;border-collapse:separate;border-spacing:0}
+#ps-table{min-width:2400px;border-collapse:separate;border-spacing:0}
 #ps-table thead th{position:sticky;top:0;background:#f8fafc;z-index:12;border-bottom:1px solid #e2e8f0;white-space:nowrap}
 #ps-table .sticky-check{position:sticky;left:0;z-index:18;background:#fff;min-width:44px}
 #ps-table thead .sticky-check{background:#f8fafc;z-index:22}
@@ -436,14 +439,17 @@ include __DIR__ . '/../../includes/header.php';
           <td class="ps-col ps-col-paper_type"><?= e($r['paper_type']) ?></td>
           <td class="ps-col ps-col-width_mm" style="font-family:monospace;text-align:right"><?= e($r['width_mm']) ?></td>
           <td class="ps-col ps-col-length_mtr" style="font-family:monospace;font-weight:600;text-align:right"><?= number_format((float)$r['length_mtr'], 0) ?></td>
+          <td class="ps-col ps-col-sqm" style="font-family:monospace;font-weight:700;text-align:right;color:#16a34a"><?= number_format($sqm, 2) ?></td>
           <td class="ps-col ps-col-gsm" style="font-family:monospace;text-align:right"><?= $r['gsm'] !== null ? e($r['gsm']) : '-' ?></td>
           <td class="ps-col ps-col-weight_kg" style="font-family:monospace;text-align:right"><?= $r['weight_kg'] !== null ? e($r['weight_kg']) : '-' ?></td>
           <td class="ps-col ps-col-purchase_rate" style="font-family:monospace;text-align:right"><?= $r['purchase_rate'] ? '₹'.number_format((float)$r['purchase_rate'],2) : '-' ?></td>
-          <td class="ps-col ps-col-lot_batch_no" style="font-family:monospace"><?= e($r['lot_batch_no'] ?? '-') ?></td>
-          <td class="ps-col ps-col-company_roll_no"><?= e($r['company_roll_no'] ?? '-') ?></td>
-          <td class="ps-col ps-col-job_no" style="font-family:monospace;font-weight:600"><?= e($r['job_no'] ?? '-') ?></td>
           <td class="ps-col ps-col-date_received text-muted"><?= formatDate($r['date_received']) ?></td>
           <td class="ps-col ps-col-date_used text-muted"><?= formatDate($r['date_used']) ?></td>
+          <td class="ps-col ps-col-job_no" style="font-family:monospace;font-weight:600"><?= e($r['job_no'] ?? '-') ?></td>
+          <td class="ps-col ps-col-job_size"><?= e($r['job_size'] ?? '-') ?></td>
+          <td class="ps-col ps-col-job_name"><?= e($r['job_name'] ?? '-') ?></td>
+          <td class="ps-col ps-col-lot_batch_no" style="font-family:monospace"><?= e($r['lot_batch_no'] ?? '-') ?></td>
+          <td class="ps-col ps-col-company_roll_no"><?= e($r['company_roll_no'] ?? '-') ?></td>
           <td class="ps-col ps-col-remarks" style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#64748b" title="<?= e($r['remarks'] ?? '') ?>"><?= e($r['remarks'] ?? '-') ?></td>
           <td class="sticky-action" style="text-align:center">
             <div class="ps-row-actions">
