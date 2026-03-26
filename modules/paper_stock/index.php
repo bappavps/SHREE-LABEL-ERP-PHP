@@ -199,7 +199,7 @@ include __DIR__ . '/../../includes/header.php';
 .col-filter-btn .filter-count{display:none;position:absolute;top:-5px;right:-6px;background:#ef4444;color:#fff;border-radius:8px;font-size:7px;padding:1px 3px;line-height:1;min-width:11px;text-align:center}
 .col-filter-btn.active .filter-count{display:block}
 
-.cfp{display:none;position:fixed;top:0;left:0;z-index:220;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.18);min-width:250px;max-width:320px;overflow:hidden}
+.cfp{display:none;position:fixed;top:0;left:0;z-index:99999;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.18);min-width:250px;max-width:320px;overflow:hidden}
 .cfp.open{display:block}
 .cfp.anchor-right{left:auto;right:0}
 .cfp-head{padding:10px;border-bottom:1px solid #f1f5f9}
@@ -811,10 +811,18 @@ include __DIR__ . '/../../includes/header.php';
     }
   }
 
+  var cfpOriginalParent = null;
+
   function closeCfp(){
     if (!activeCfpCol) return;
     var pop = document.getElementById('cfp-' + activeCfpCol);
-    if (pop) pop.classList.remove('open');
+    if (pop) {
+      pop.classList.remove('open');
+      if (cfpOriginalParent && pop.parentNode === document.body) {
+        cfpOriginalParent.appendChild(pop);
+      }
+    }
+    cfpOriginalParent = null;
     activeCfpCol = null;
   }
 
@@ -856,10 +864,16 @@ include __DIR__ . '/../../includes/header.php';
       closeCfp();
       renderCfp(col);
       var pop = document.getElementById('cfp-' + col);
+      cfpOriginalParent = pop.parentNode;
+      document.body.appendChild(pop);
       var rect = btn.getBoundingClientRect();
       var popupW = 290;
+      var popupH = 340;
       var left = Math.max(8, Math.min(rect.left, window.innerWidth - popupW - 8));
       var top = rect.bottom + 6;
+      if (top + popupH > window.innerHeight) {
+        top = Math.max(8, rect.top - popupH - 6);
+      }
       pop.style.left = left + 'px';
       pop.style.top = top + 'px';
       pop.classList.add('open');
@@ -898,7 +912,13 @@ include __DIR__ . '/../../includes/header.php';
         }
       }
     }
+    if (activeCfpCol) closeCfp();
   }, true);
+
+  var tableWrap = document.querySelector('.table-wrap');
+  if (tableWrap) {
+    tableWrap.addEventListener('scroll', function(){ if (activeCfpCol) closeCfp(); });
+  }
 
   document.addEventListener('change', function(e){
     if (!activeCfpCol) return;
