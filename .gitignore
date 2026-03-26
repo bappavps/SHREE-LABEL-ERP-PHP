@@ -26,6 +26,8 @@ composer.lock
 .env.*
 config/db.local.php
 config/db.php
+data/github_auto_push.json
+data/install.lock
 
 # ----- Logs & temp -----
 *.log
