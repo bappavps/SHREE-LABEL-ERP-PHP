@@ -4,15 +4,22 @@
 // Edit DB_USER / DB_PASS / BASE_URL to match your server
 // ============================================================
 
-define('DB_HOST',    'localhost');
-define('DB_USER',    'root');
-define('DB_PASS',    '');
-define('DB_NAME',    'shree_label_erp');
+// ── InfinityFree / RF.GD settings ─────────────────────────
+// Find these in: InfinityFree Panel → MySQL Databases
+define('DB_HOST',    'sql305.infinityfree.com');   // your MySQL host from panel
+define('DB_USER',    'if0_41486428');               // your MySQL username
+define('DB_PASS',    'YOUR_DB_PASSWORD_HERE');      // your MySQL password
+define('DB_NAME',    'if0_41486428_shreeerp');      // your database name
 
-// Base URL — no trailing slash
-// XAMPP:          '/calipot-erp/shree-label-php'
-// Shared hosting: '' (if installed at domain root)
-define('BASE_URL',   '/calipot-erp/shree-label-php');
+// Installed at domain root (rf.gd), so BASE_URL is empty
+define('BASE_URL',   '');
+
+// ── XAMPP local dev (uncomment to switch back) ─────────────
+// define('DB_HOST',  'localhost');
+// define('DB_USER',  'root');
+// define('DB_PASS',  '');
+// define('DB_NAME',  'shree_label_erp');
+// define('BASE_URL', '/calipot-erp/shree-label-php');
 
 define('APP_NAME',   'Enterprise ERP');
 define('APP_VERSION','1.0');

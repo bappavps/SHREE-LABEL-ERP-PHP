@@ -25,6 +25,7 @@ composer.lock
 .env
 .env.*
 config/db.local.php
+config/db.php
 
 # ----- Logs & temp -----
 *.log

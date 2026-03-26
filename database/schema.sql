@@ -1,6 +1,6 @@
 -- ============================================================
 -- Shree Label ERP — Database Schema
--- Run via setup.php (recommended) or import manually
+-- Compatible with InfinityFree / shared hosting phpMyAdmin
 -- ============================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
@@ -45,8 +45,7 @@ CREATE TABLE IF NOT EXISTS `paper_stock` (
   `remarks`         TEXT          DEFAULT NULL,
   `created_by`      INT           DEFAULT NULL,
   `created_at`      TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
-  `updated_at`      TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON DELETE SET NULL
+  `updated_at`      TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------
@@ -74,8 +73,7 @@ CREATE TABLE IF NOT EXISTS `estimates` (
   `notes`           TEXT          DEFAULT NULL,
   `created_by`      INT           DEFAULT NULL,
   `created_at`      TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
-  `updated_at`      TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON DELETE SET NULL
+  `updated_at`      TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------
@@ -96,9 +94,7 @@ CREATE TABLE IF NOT EXISTS `sales_orders` (
   `notes`             TEXT          DEFAULT NULL,
   `created_by`        INT           DEFAULT NULL,
   `created_at`        TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
-  `updated_at`        TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (`estimate_id`) REFERENCES `estimates`(`id`) ON DELETE SET NULL,
-  FOREIGN KEY (`created_by`)  REFERENCES `users`(`id`)    ON DELETE SET NULL
+  `updated_at`        TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------
@@ -116,9 +112,7 @@ CREATE TABLE IF NOT EXISTS `planning` (
   `notes`          TEXT         DEFAULT NULL,
   `created_by`     INT          DEFAULT NULL,
   `created_at`     TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
-  `updated_at`     TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (`sales_order_id`) REFERENCES `sales_orders`(`id`) ON DELETE SET NULL,
-  FOREIGN KEY (`created_by`)     REFERENCES `users`(`id`)        ON DELETE SET NULL
+  `updated_at`     TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------
@@ -137,10 +131,7 @@ CREATE TABLE IF NOT EXISTS `jobs` (
   `operator_id`    INT          DEFAULT NULL,
   `notes`          TEXT         DEFAULT NULL,
   `created_at`     TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
-  `updated_at`     TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (`planning_id`)    REFERENCES `planning`(`id`)      ON DELETE SET NULL,
-  FOREIGN KEY (`sales_order_id`) REFERENCES `sales_orders`(`id`)  ON DELETE SET NULL,
-  FOREIGN KEY (`operator_id`)    REFERENCES `users`(`id`)         ON DELETE SET NULL
+  `updated_at`     TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------
@@ -155,9 +146,7 @@ CREATE TABLE IF NOT EXISTS `inventory_logs` (
   `job_no`          VARCHAR(50)   DEFAULT NULL,
   `description`     TEXT          DEFAULT NULL,
   `performed_by`    INT           DEFAULT NULL,
-  `created_at`      TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (`paper_stock_id`) REFERENCES `paper_stock`(`id`) ON DELETE SET NULL,
-  FOREIGN KEY (`performed_by`)   REFERENCES `users`(`id`)       ON DELETE SET NULL
+  `created_at`      TIMESTAMP     DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------
@@ -180,21 +169,6 @@ INSERT IGNORE INTO `system_settings` (`setting_key`, `setting_value`, `descripti
   ('waste_factor',     '1.15',         'Material waste factor for SQM calculation');
 
 -- --------------------------------
--- Table: master_raw_materials
--- --------------------------------
-CREATE TABLE IF NOT EXISTS `master_raw_materials` (
-  `id`         INT AUTO_INCREMENT PRIMARY KEY,
-  `name`       VARCHAR(255) NOT NULL,
-  `type`       VARCHAR(100) NOT NULL,
-  `gsm`        DECIMAL(6,2) DEFAULT NULL,
-  `width_mm`   DECIMAL(8,2) DEFAULT NULL,
-  `supplier_id` INT DEFAULT NULL,
-  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (`supplier_id`) REFERENCES `master_suppliers`(`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- --------------------------------
 -- Table: master_suppliers
 -- --------------------------------
 CREATE TABLE IF NOT EXISTS `master_suppliers` (
@@ -210,6 +184,20 @@ CREATE TABLE IF NOT EXISTS `master_suppliers` (
   `state`           VARCHAR(50)  DEFAULT NULL,
   `created_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------
+-- Table: master_raw_materials
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `master_raw_materials` (
+  `id`         INT AUTO_INCREMENT PRIMARY KEY,
+  `name`       VARCHAR(255) NOT NULL,
+  `type`       VARCHAR(100) NOT NULL,
+  `gsm`        DECIMAL(6,2) DEFAULT NULL,
+  `width_mm`   DECIMAL(8,2) DEFAULT NULL,
+  `supplier_id` INT DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------
@@ -233,9 +221,7 @@ CREATE TABLE IF NOT EXISTS `master_bom_items` (
   `raw_material_id`   INT NOT NULL,
   `quantity`          DECIMAL(10,3) NOT NULL,
   `unit`              VARCHAR(20) DEFAULT 'kg',
-  `created_at`        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (`bom_id`) REFERENCES `master_boms`(`id`) ON DELETE CASCADE,
-  FOREIGN KEY (`raw_material_id`) REFERENCES `master_raw_materials`(`id`) ON DELETE RESTRICT
+  `created_at`        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------
@@ -281,5 +267,42 @@ CREATE TABLE IF NOT EXISTS `master_clients` (
   `created_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+SET FOREIGN_KEY_CHECKS = 1;
+
+-- ============================================================
+-- Foreign Key Constraints (added after all tables exist)
+-- ============================================================
+SET FOREIGN_KEY_CHECKS = 0;
+
+ALTER TABLE `paper_stock`
+  ADD CONSTRAINT `fk_ps_created_by`      FOREIGN KEY (`created_by`)      REFERENCES `users`(`id`)         ON DELETE SET NULL;
+
+ALTER TABLE `estimates`
+  ADD CONSTRAINT `fk_est_created_by`     FOREIGN KEY (`created_by`)      REFERENCES `users`(`id`)         ON DELETE SET NULL;
+
+ALTER TABLE `sales_orders`
+  ADD CONSTRAINT `fk_so_estimate`        FOREIGN KEY (`estimate_id`)     REFERENCES `estimates`(`id`)     ON DELETE SET NULL,
+  ADD CONSTRAINT `fk_so_created_by`      FOREIGN KEY (`created_by`)      REFERENCES `users`(`id`)         ON DELETE SET NULL;
+
+ALTER TABLE `planning`
+  ADD CONSTRAINT `fk_plan_so`            FOREIGN KEY (`sales_order_id`)  REFERENCES `sales_orders`(`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `fk_plan_created_by`    FOREIGN KEY (`created_by`)      REFERENCES `users`(`id`)         ON DELETE SET NULL;
+
+ALTER TABLE `jobs`
+  ADD CONSTRAINT `fk_jobs_planning`      FOREIGN KEY (`planning_id`)     REFERENCES `planning`(`id`)     ON DELETE SET NULL,
+  ADD CONSTRAINT `fk_jobs_so`            FOREIGN KEY (`sales_order_id`)  REFERENCES `sales_orders`(`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `fk_jobs_operator`      FOREIGN KEY (`operator_id`)     REFERENCES `users`(`id`)        ON DELETE SET NULL;
+
+ALTER TABLE `inventory_logs`
+  ADD CONSTRAINT `fk_invlog_ps`          FOREIGN KEY (`paper_stock_id`)  REFERENCES `paper_stock`(`id`)  ON DELETE SET NULL,
+  ADD CONSTRAINT `fk_invlog_by`          FOREIGN KEY (`performed_by`)    REFERENCES `users`(`id`)        ON DELETE SET NULL;
+
+ALTER TABLE `master_raw_materials`
+  ADD CONSTRAINT `fk_mrm_supplier`       FOREIGN KEY (`supplier_id`)     REFERENCES `master_suppliers`(`id`) ON DELETE SET NULL;
+
+ALTER TABLE `master_bom_items`
+  ADD CONSTRAINT `fk_bomi_bom`           FOREIGN KEY (`bom_id`)          REFERENCES `master_boms`(`id`)          ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_bomi_material`      FOREIGN KEY (`raw_material_id`) REFERENCES `master_raw_materials`(`id`) ON DELETE RESTRICT;
 
 SET FOREIGN_KEY_CHECKS = 1;
