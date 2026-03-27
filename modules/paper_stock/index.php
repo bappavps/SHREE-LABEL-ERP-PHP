@@ -517,7 +517,7 @@ include __DIR__ . '/../../includes/header.php';
             <div class="ps-row-actions">
               <a href="view.php?id=<?= $r['id'] ?>" class="act-view" title="View"><i class="bi bi-eye"></i></a>
               <a href="edit.php?id=<?= $r['id'] ?>" class="act-edit" title="Edit"><i class="bi bi-pencil"></i></a>
-              <a href="#" class="act-slit" title="Slitting" onclick="alert('Slitting feature coming soon');return false"><i class="bi bi-scissors"></i></a>
+              <a href="#" class="act-slit" title="Slitting" onclick="psGoSlitting(this);return false"><i class="bi bi-scissors"></i></a>
               <a href="#" class="act-art" title="Artwork" onclick="alert('Artwork feature coming soon');return false"><i class="bi bi-image"></i></a>
               <a href="#" class="act-print" title="Print Label" onclick="psPrintSingleLabel(<?= $r['id'] ?>);return false"><i class="bi bi-printer"></i></a>
               <a href="delete.php?id=<?= $r['id'] ?>&csrf=<?= $csrf ?>" class="act-del" title="Delete" data-confirm="Delete roll <?= e($r['roll_no']) ?>? This cannot be undone."><i class="bi bi-trash"></i></a>
@@ -1115,6 +1115,36 @@ include __DIR__ . '/../../includes/header.php';
 
   window.psPrintSingleLabel = function(id){
     window.open('<?= BASE_URL ?>/modules/paper_stock/label.php?ids=' + id, '_blank');
+  };
+
+  window.psGoSlitting = function(el){
+    // Get the clicked row's roll_no
+    var row = el.closest('tr');
+    var rollNo = row ? row.querySelector('.ps-col-roll_no a') : null;
+    var clickedRoll = rollNo ? rollNo.textContent.trim() : '';
+
+    // Check if any checkboxes are selected
+    var checked = document.querySelectorAll('.ps-row-cb:checked');
+    if (checked.length > 1) {
+      // Multi-roll: collect all selected roll numbers
+      var rolls = [];
+      checked.forEach(function(cb){
+        var r = cb.closest('tr');
+        if (r) {
+          var rn = r.querySelector('.ps-col-roll_no a');
+          if (rn) rolls.push(rn.textContent.trim());
+        }
+      });
+      if (rolls.length) {
+        window.location.href = '<?= BASE_URL ?>/modules/inventory/slitting/?rolls=' + encodeURIComponent(rolls.join(','));
+        return;
+      }
+    }
+
+    // Single roll redirect
+    if (clickedRoll) {
+      window.location.href = '<?= BASE_URL ?>/modules/inventory/slitting/?rollNo=' + encodeURIComponent(clickedRoll);
+    }
   };
 
   window.psBulkDelete = function(){
