@@ -491,40 +491,108 @@ include __DIR__ . '/../../includes/header.php';
       <?php if (empty($rolls)): ?>
         <tr class="ps-empty-row"><td colspan="<?= count($allColumns) + 3 ?>" class="table-empty"><i class="bi bi-inbox"></i> No paper rolls found.</td></tr>
       <?php else: ?>
-        <?php foreach ($rolls as $i => $r): $sqm = calcSQM($r['width_mm'], $r['length_mtr']); $statusSlug = strtolower(str_replace(' ', '-', trim($r['status'] ?? ''))); ?>
-        <tr class="ps-data-row ps-row-<?= e($statusSlug) ?>" data-id="<?= $r['id'] ?>" data-mtr="<?= (float)$r['length_mtr'] ?>" data-sqm="<?= round($sqm,2) ?>" data-status="<?= e($r['status'] ?? '') ?>" data-date-received="<?= e($r['date_received'] ?? '') ?>">
-          <td class="sticky-check" style="text-align:center"><input type="checkbox" class="ps-row-cb" value="<?= $r['id'] ?>" style="cursor:pointer;width:16px;height:16px"></td>
-          <td class="sticky-sl" style="text-align:center;font-size:.75rem" data-sl="<?= $offset + $i + 1 ?>"><?= $offset + $i + 1 ?></td>
-          <td class="ps-col ps-col-roll_no sticky-roll" style="font-weight:700;font-family:monospace"><a href="view.php?id=<?= $r['id'] ?>" style="color:#f97316;text-decoration:none"><?= e($r['roll_no']) ?></a></td>
-          <td class="ps-col ps-col-status"><?= statusBadge($r['status']) ?></td>
-          <td class="ps-col ps-col-company"><?= e($r['company']) ?></td>
-          <td class="ps-col ps-col-paper_type"><?= e($r['paper_type']) ?></td>
-          <td class="ps-col ps-col-width_mm" style="font-family:monospace;text-align:right"><?= $r['width_mm'] !== null ? (int)$r['width_mm'] : '-' ?></td>
-          <td class="ps-col ps-col-length_mtr" style="font-family:monospace;font-weight:600;text-align:right"><?= number_format((float)$r['length_mtr'], 0) ?></td>
-          <td class="ps-col ps-col-sqm" style="font-family:monospace;font-weight:700;text-align:right;color:#16a34a"><?= number_format($sqm, 2) ?></td>
-          <td class="ps-col ps-col-gsm" style="font-family:monospace;text-align:right"><?= $r['gsm'] !== null ? (int)$r['gsm'] : '-' ?></td>
-          <td class="ps-col ps-col-weight_kg" style="font-family:monospace;text-align:right"><?= $r['weight_kg'] !== null ? e($r['weight_kg']) : '-' ?></td>
-          <td class="ps-col ps-col-purchase_rate" style="font-family:monospace;text-align:right"><?= $r['purchase_rate'] ? '₹'.number_format((float)$r['purchase_rate'],2) : '-' ?></td>
-          <td class="ps-col ps-col-date_received text-muted"><?= formatDate($r['date_received']) ?></td>
-          <td class="ps-col ps-col-date_used text-muted"><?= formatDate($r['date_used']) ?></td>
-          <td class="ps-col ps-col-job_no" style="font-family:monospace;font-weight:600"><?= e($r['job_no'] ?? '-') ?></td>
-          <td class="ps-col ps-col-job_size"><?= e($r['job_size'] ?? '-') ?></td>
-          <td class="ps-col ps-col-job_name"><?= e($r['job_name'] ?? '-') ?></td>
-          <td class="ps-col ps-col-lot_batch_no" style="font-family:monospace"><?= e($r['lot_batch_no'] ?? '-') ?></td>
-          <td class="ps-col ps-col-company_roll_no"><?= e($r['company_roll_no'] ?? '-') ?></td>
-          <td class="ps-col ps-col-remarks" style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#64748b" title="<?= e($r['remarks'] ?? '') ?>"><?= e($r['remarks'] ?? '-') ?></td>
-          <td class="sticky-action" style="text-align:center">
-            <div class="ps-row-actions">
-              <a href="view.php?id=<?= $r['id'] ?>" class="act-view" title="View"><i class="bi bi-eye"></i></a>
-              <a href="edit.php?id=<?= $r['id'] ?>" class="act-edit" title="Edit"><i class="bi bi-pencil"></i></a>
-              <a href="#" class="act-slit" title="Slitting" onclick="psGoSlitting(this);return false"><i class="bi bi-scissors"></i></a>
-              <a href="#" class="act-art" title="Artwork" onclick="alert('Artwork feature coming soon');return false"><i class="bi bi-image"></i></a>
-              <a href="#" class="act-print" title="Print Label" onclick="psPrintSingleLabel(<?= $r['id'] ?>);return false"><i class="bi bi-printer"></i></a>
-              <a href="delete.php?id=<?= $r['id'] ?>&csrf=<?= $csrf ?>" class="act-del" title="Delete" data-confirm="Delete roll <?= e($r['roll_no']) ?>? This cannot be undone."><i class="bi bi-trash"></i></a>
-            </div>
-          </td>
-        </tr>
-        <?php endforeach; ?>
+        <?php
+        // --- Build roll_no tree ---
+        $rollMap = [];
+        foreach ($rolls as $row) {
+          $row['children'] = [];
+          $rollMap[$row['roll_no']] = $row;
+        }
+        $roots = [];
+        foreach ($rolls as $row) {
+          $parts = explode('-', $row['roll_no']);
+          if (count($parts) === 1) {
+            $roots[] = &$rollMap[$row['roll_no']];
+          } else {
+            $parentRollNo = implode('-', array_slice($parts, 0, -1));
+            if (isset($rollMap[$parentRollNo])) {
+              $rollMap[$parentRollNo]['children'][] = &$rollMap[$row['roll_no']];
+            } else {
+              $roots[] = &$rollMap[$row['roll_no']];
+            }
+          }
+        }
+
+        // --- Recursive render function ---
+        function renderRollTree($nodes, $level = 0, &$slNo = 1, $offset = 0, $allColumns, $csrf, $parentLines = []) {
+          // Sort children by last suffix ascending (A, B, C, D, 1, 2, ...)
+          usort($nodes, function($a, $b) {
+            $aSuf = array_slice(explode('-', $a['roll_no']), -1)[0];
+            $bSuf = array_slice(explode('-', $b['roll_no']), -1)[0];
+            // Try numeric sort, else alpha
+            $aNum = intval($aSuf);
+            $bNum = intval($bSuf);
+            if (strval($aNum) === $aSuf && strval($bNum) === $bSuf) return $aNum - $bNum;
+            if (strval($aNum) === $aSuf) return -1;
+            if (strval($bNum) === $bSuf) return 1;
+            return strcmp($aSuf, $bSuf);
+          });
+          $count = count($nodes);
+          foreach ($nodes as $idx => $r) {
+            $sqm = calcSQM($r['width_mm'], $r['length_mtr']);
+            $statusSlug = strtolower(str_replace(' ', '-', trim($r['status'] ?? '')));
+            echo '<tr class="ps-data-row ps-row-'.e($statusSlug).'" data-id="'.e($r['id']).'" data-mtr="'.(float)$r['length_mtr'].'" data-sqm="'.round($sqm,2).'" data-status="'.e($r['status'] ?? '').'" data-date-received="'.e($r['date_received'] ?? '').'">';
+            echo '<td class="sticky-check" style="text-align:center"><input type="checkbox" class="ps-row-cb" value="'.e($r['id']).'" style="cursor:pointer;width:16px;height:16px"></td>';
+            echo '<td class="sticky-sl" style="text-align:center;font-size:.75rem" data-sl="'.($offset + $slNo).'">'.($offset + $slNo).'</td>';
+            // Roll No column with indentation and tree lines
+            echo '<td class="ps-col ps-col-roll_no sticky-roll" style="font-weight:700;font-family:monospace;white-space:nowrap">';
+            $isLast = ($idx === $count - 1);
+            if ($level > 0) {
+              // Draw continuation lines for ancestor levels (columns 0 to level-2)
+              for ($l = 0; $l < $level - 1; $l++) {
+                echo (!empty($parentLines[$l])
+                  ? '<span class="tree-connector" style="display:inline-block;width:1.6em;text-align:center;color:#94a3b8">│</span>'
+                  : '<span class="tree-spacer" style="display:inline-block;width:1.6em"></span>');
+              }
+              // Draw branch for current node
+              echo '<span class="tree-connector" style="display:inline-block;width:2.2em;color:#94a3b8">'.($isLast ? '└── ' : '├── ').'</span>';
+            }
+            echo '<a href="view.php?id='.e($r['id']).'" style="color:#f97316;text-decoration:none">'.e($r['roll_no']).'</a>';
+            echo '</td>';
+            // Other columns
+            echo '<td class="ps-col ps-col-status">'.statusBadge($r['status']).'</td>';
+            echo '<td class="ps-col ps-col-company">'.e($r['company']).'</td>';
+            echo '<td class="ps-col ps-col-paper_type">'.e($r['paper_type']).'</td>';
+            echo '<td class="ps-col ps-col-width_mm" style="font-family:monospace;text-align:right">'.($r['width_mm'] !== null ? (int)$r['width_mm'] : '-').'</td>';
+            echo '<td class="ps-col ps-col-length_mtr" style="font-family:monospace;font-weight:600;text-align:right">'.number_format((float)$r['length_mtr'], 0).'</td>';
+            echo '<td class="ps-col ps-col-sqm" style="font-family:monospace;font-weight:700;text-align:right;color:#16a34a">'.number_format($sqm, 2).'</td>';
+            echo '<td class="ps-col ps-col-gsm" style="font-family:monospace;text-align:right">'.($r['gsm'] !== null ? (int)$r['gsm'] : '-').'</td>';
+            echo '<td class="ps-col ps-col-weight_kg" style="font-family:monospace;text-align:right">'.($r['weight_kg'] !== null ? e($r['weight_kg']) : '-').'</td>';
+            echo '<td class="ps-col ps-col-purchase_rate" style="font-family:monospace;text-align:right">'.($r['purchase_rate'] ? '₹'.number_format((float)$r['purchase_rate'],2) : '-').'</td>';
+            echo '<td class="ps-col ps-col-date_received text-muted">'.formatDate($r['date_received']).'</td>';
+            echo '<td class="ps-col ps-col-date_used text-muted">'.formatDate($r['date_used']).'</td>';
+            echo '<td class="ps-col ps-col-job_no" style="font-family:monospace;font-weight:600">'.e($r['job_no'] ?? '-').'</td>';
+            echo '<td class="ps-col ps-col-job_size">'.e($r['job_size'] ?? '-').'</td>';
+            echo '<td class="ps-col ps-col-job_name">'.e($r['job_name'] ?? '-').'</td>';
+            echo '<td class="ps-col ps-col-lot_batch_no" style="font-family:monospace">'.e($r['lot_batch_no'] ?? '-').'</td>';
+            echo '<td class="ps-col ps-col-company_roll_no">'.e($r['company_roll_no'] ?? '-').'</td>';
+            echo '<td class="ps-col ps-col-remarks" style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#64748b" title="'.e($r['remarks'] ?? '-').'">'.e($r['remarks'] ?? '-').'</td>';
+            echo '<td class="sticky-action" style="text-align:center">';
+            echo '<div class="ps-row-actions">';
+            echo '<a href="view.php?id='.e($r['id']).'" class="act-view" title="View"><i class="bi bi-eye"></i></a>';
+            echo '<a href="edit.php?id='.e($r['id']).'" class="act-edit" title="Edit"><i class="bi bi-pencil"></i></a>';
+            echo '<a href="#" class="act-slit" title="Slitting" onclick="psGoSlitting(this);return false"><i class="bi bi-scissors"></i></a>';
+            echo '<a href="#" class="act-art" title="Artwork" onclick="alert(\'Artwork feature coming soon\');return false"><i class="bi bi-image"></i></a>';
+            echo '<a href="#" class="act-print" title="Print Label" onclick="psPrintSingleLabel('.e($r['id']).');return false"><i class="bi bi-printer"></i></a>';
+            echo '<a href="delete.php?id='.e($r['id']).'&csrf='.$csrf.'" class="act-del" title="Delete" data-confirm="Delete roll '.e($r['roll_no']).'? This cannot be undone."><i class="bi bi-trash"></i></a>';
+            echo '</div>';
+            echo '</td>';
+            echo '</tr>';
+            $slNo++;
+            if (!empty($r['children'])) {
+              // Set parentLines: at column ($level-1), mark whether THIS node has more siblings
+              // so descendant nodes draw │ at the right positions
+              $childParentLines = $parentLines;
+              if ($level > 0) {
+                $childParentLines[$level - 1] = !$isLast;
+              }
+              renderRollTree($r['children'], $level+1, $slNo, $offset, $allColumns, $csrf, $childParentLines);
+            }
+          }
+        }
+        $slNo = 1;
+        renderRollTree($roots, 0, $slNo, $offset, $allColumns, $csrf);
+        ?>
       <?php endif; ?>
       </tbody>
     </table>
@@ -686,40 +754,88 @@ include __DIR__ . '/../../includes/header.php';
 
   function applyHierarchy(){
     var rows = dataRows();
-    var map = {};
+    // 1. Collect visible rows with their roll_no
+    var visibleItems = [];
     rows.forEach(function(tr){
       if (tr.style.display === 'none') return;
-      var rollNo = cellText(tr, 'roll_no');
-      if (!rollNo) return;
-      var base = rollNo.replace(/[-\/][A-Z]$/i, '');
-      if (!map[base]) map[base] = [];
-      map[base].push({tr: tr, rollNo: rollNo});
-    });
-    rows.forEach(function(tr){
       var rollTd = tr.querySelector('.ps-col-roll_no');
       if (!rollTd) return;
-      var raw = rollTd.textContent.trim();
-      var spans = rollTd.querySelectorAll('.tree-connector,.tree-spacer');
-      spans.forEach(function(s){ s.remove(); });
+      // Strip old tree markers
+      rollTd.querySelectorAll('.tree-connector,.tree-spacer').forEach(function(s){ s.remove(); });
       var rollNo = rollTd.textContent.trim();
-      var base = rollNo.replace(/[-\/][A-Z]$/i, '');
-      var group = map[base];
-      if (!group || group.length < 2) return;
-      if (rollNo === base) {
-        var marker = document.createElement('span');
-        marker.className = 'tree-connector';
-        marker.textContent = '\u25BC ';
-        rollTd.prepend(marker);
+      visibleItems.push({tr: tr, td: rollTd, rollNo: rollNo, children: []});
+    });
+
+    // 2. Build tree from flat list using roll_no pattern
+    var rollMap = {};
+    visibleItems.forEach(function(item){ rollMap[item.rollNo] = item; });
+    var roots = [];
+    visibleItems.forEach(function(item){
+      var parts = item.rollNo.split('-');
+      if (parts.length <= 1) {
+        roots.push(item);
       } else {
-        var spacer = document.createElement('span');
-        spacer.className = 'tree-spacer';
-        rollTd.prepend(spacer);
-        var conn = document.createElement('span');
-        conn.className = 'tree-connector';
-        conn.textContent = '\u2514 ';
-        rollTd.prepend(conn);
+        var parentNo = parts.slice(0, -1).join('-');
+        if (rollMap[parentNo]) {
+          rollMap[parentNo].children.push(item);
+        } else {
+          roots.push(item);
+        }
       }
     });
+
+    // 3. Sort children ascending by last suffix
+    function sortNodes(nodes) {
+      nodes.sort(function(a, b){
+        var aSuf = a.rollNo.split('-').pop();
+        var bSuf = b.rollNo.split('-').pop();
+        var aNum = parseInt(aSuf, 10);
+        var bNum = parseInt(bSuf, 10);
+        if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+        return aSuf.localeCompare(bSuf);
+      });
+      nodes.forEach(function(n){ if (n.children.length) sortNodes(n.children); });
+    }
+    sortNodes(roots);
+
+    // 4. Flatten tree back into correct order and re-append rows to tbody
+    var tbody = rows[0] ? rows[0].parentNode : null;
+    if (!tbody) return;
+    function flattenAndRender(nodes, level, parentLines) {
+      var count = nodes.length;
+      nodes.forEach(function(item, idx){
+        var isLast = (idx === count - 1);
+        // Prepend tree prefixes (right to left so prepend order is correct)
+        // Build prefix string
+        var prefix = '';
+        if (level > 0) {
+          for (var l = 0; l < level - 1; l++) {
+            if (parentLines[l]) {
+              prefix += '<span class="tree-connector" style="display:inline-block;width:1.6em;text-align:center;color:#94a3b8;font-family:monospace">│</span>';
+            } else {
+              prefix += '<span class="tree-spacer" style="display:inline-block;width:1.6em"></span>';
+            }
+          }
+          prefix += '<span class="tree-connector" style="display:inline-block;width:2.2em;color:#94a3b8;font-family:monospace">' + (isLast ? '└── ' : '├── ') + '</span>';
+        }
+        // Find the <a> link inside td
+        var link = item.td.querySelector('a');
+        if (link) {
+          item.td.innerHTML = prefix + link.outerHTML;
+        }
+        // Re-append tr in correct order
+        tbody.appendChild(item.tr);
+        // Recurse into children
+        if (item.children.length) {
+          var childLines = parentLines.slice();
+          if (level > 0) {
+            childLines[level - 1] = !isLast;
+          }
+          flattenAndRender(item.children, level + 1, childLines);
+        }
+      });
+    }
+    flattenAndRender(roots, 0, []);
   }
 
   function updateSelectionUI(){

@@ -573,18 +573,72 @@ const SLT = (() => {
       el.innerHTML = '<div class="slt-empty"><i class="bi bi-box-seam"></i><p>No rolls loaded</p></div>';
       return;
     }
-    el.innerHTML = loadedRolls.map(r => {
-      const isActive = r.roll_no === activeRollNo;
-      const cfg = rollConfigs[r.roll_no];
-      const childCount = cfg ? cfg.runs.reduce((s, run) => s + (parseFloat(run.width) > 0 ? (parseInt(run.qty) || 1) : 0), 0) : 0;
-      return `<div class="slt-roll-card${isActive ? ' active' : ''}" onclick="SLT.selectRoll('${esc(r.roll_no)}')">
-        <div class="rc-no">${esc(r.roll_no)}</div>
-        <div class="rc-dim">${esc(r.paper_type)} · ${r.width_mm}mm × ${r.length_mtr}m</div>
-        ${childCount > 0 ? '<div style="font-size:.68rem;margin-top:3px;color:var(--brand);font-weight:600"><i class="bi bi-diagram-3"></i> ' + childCount + ' output roll(s)</div>' : ''}
-        <div class="rc-status">${statusBadge(r.status)}</div>
-        <button class="slt-roll-remove" onclick="event.stopPropagation();SLT.removeRoll('${esc(r.roll_no)}')"><i class="bi bi-x-circle"></i></button>
-      </div>`;
-    }).join('');
+
+    // 1. Build a map of roll_no to roll object
+    const rollMap = {};
+    loadedRolls.forEach(r => {
+      rollMap[r.roll_no] = {...r, children: []};
+    });
+
+    // 2. Build parent-child relationships using roll_no pattern
+    const roots = [];
+    loadedRolls.forEach(r => {
+      const parts = r.roll_no.split('-');
+      if (parts.length === 1) {
+        roots.push(rollMap[r.roll_no]);
+      } else {
+        const parentRollNo = parts.slice(0, -1).join('-');
+        if (rollMap[parentRollNo]) {
+          rollMap[parentRollNo].children.push(rollMap[r.roll_no]);
+        } else {
+          // Orphaned child, treat as root fallback
+          roots.push(rollMap[r.roll_no]);
+        }
+      }
+    });
+
+    // 3. Recursive render function
+    function renderTree(nodes, level) {
+      return nodes.sort((a, b) => {
+        // Custom sort: parent first, then children in natural order
+        // For children: sort by suffix (A, B, C, 1, 2, 3, ...)
+        const aParts = a.roll_no.split('-');
+        const bParts = b.roll_no.split('-');
+        if (aParts.length !== bParts.length) return aParts.length - bParts.length;
+        // Compare last part (suffix)
+        const aSuf = aParts[aParts.length - 1];
+        const bSuf = bParts[bParts.length - 1];
+        // Try numeric sort, else alpha
+        const aNum = parseInt(aSuf, 10);
+        const bNum = parseInt(bSuf, 10);
+        if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+        if (!isNaN(aNum)) return -1;
+        if (!isNaN(bNum)) return 1;
+        return aSuf.localeCompare(bSuf);
+      }).map(r => {
+        const isActive = r.roll_no === activeRollNo;
+        const cfg = rollConfigs[r.roll_no];
+        const childCount = cfg ? cfg.runs.reduce((s, run) => s + (parseFloat(run.width) > 0 ? (parseInt(run.qty) || 1) : 0), 0) : 0;
+        // Indentation: use padding-left or tree icons
+        let treePrefix = '';
+        if (level > 0) {
+          treePrefix = '<span style="display:inline-block;width:' + (level*18) + 'px"></span>';
+          // Optionally, use tree lines/icons
+        }
+        return `
+          <div class="slt-roll-card${isActive ? ' active' : ''}" onclick="SLT.selectRoll('${esc(r.roll_no)}')" style="margin-left:${level*12}px">
+            <div class="rc-no">${treePrefix}${esc(r.roll_no)}</div>
+            <div class="rc-dim">${esc(r.paper_type)} · ${r.width_mm}mm × ${r.length_mtr}m</div>
+            ${childCount > 0 ? '<div style="font-size:.68rem;margin-top:3px;color:var(--brand);font-weight:600"><i class="bi bi-diagram-3"></i> ' + childCount + ' output roll(s)</div>' : ''}
+            <div class="rc-status">${statusBadge(r.status)}</div>
+            <button class="slt-roll-remove" onclick="event.stopPropagation();SLT.removeRoll('${esc(r.roll_no)}')"><i class="bi bi-x-circle"></i></button>
+          </div>
+          ${r.children && r.children.length ? renderTree(r.children, level + 1) : ''}
+        `;
+      }).join('');
+    }
+
+    el.innerHTML = renderTree(roots, 0);
   }
 
   // ── Render: Configuration (Col 3) ─────────────────────────
