@@ -908,6 +908,16 @@ include __DIR__ . '/../../includes/header.php';
 .planning-board-table td { white-space: nowrap; }
 .planning-board-table th[draggable="true"] { cursor: move; }
 .planning-board-table tr.is-editing { background: #f8fafc; }
+.planning-board-table tr.is-editing td { white-space: normal; }
+.planning-board-table tr.is-editing .cell-input {
+  display: block !important;
+  width: 100%;
+  min-width: 120px;
+  box-sizing: border-box;
+}
+.planning-board-table tr.is-editing td[data-type="Date"] .cell-input { min-width: 140px; }
+.planning-board-table tr.is-editing td[data-type="Number"] .cell-input { min-width: 80px; }
+.planning-board-table td[data-key] { min-width: 80px; }
 .sticky-col {
   position: sticky;
   left: 0;

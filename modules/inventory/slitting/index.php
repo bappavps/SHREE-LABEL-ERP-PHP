@@ -79,6 +79,32 @@ include __DIR__ . '/../../../includes/header.php';
 .slt-eff-fill{height:100%;background:var(--brand);border-radius:3px;transition:width .3s}
 .slt-qty-input{width:60px;height:30px;border:1px solid var(--border);border-radius:6px;text-align:center;font-weight:700;font-size:.82rem}
 
+/* Status filter tabs */
+.slt-status-tab{padding:4px 12px;border-radius:20px;font-size:.65rem;font-weight:800;border:1px solid var(--border);background:#fff;color:#64748b;cursor:pointer;text-transform:uppercase;letter-spacing:.04em;transition:all .15s}
+.slt-status-tab:hover{border-color:var(--brand);color:var(--brand)}
+.slt-status-tab.active{background:var(--brand);border-color:var(--brand);color:#fff}
+
+/* Stock analysis grid row */
+.slt-stock-grid{display:grid;grid-template-columns:2fr 1fr 2fr 1.5fr 1fr 1fr;gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:#fff;transition:all .15s}
+.slt-stock-grid:hover{border-color:#86efac;background:#f0fdf4}
+.slt-stock-eff-bar{width:100%;height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden;margin-top:4px}
+.slt-stock-eff-fill{height:100%;border-radius:3px;transition:width .3s}
+
+/* Waste toggle (STOCK / ADJUST) */
+.slt-waste-toggle{display:inline-flex;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:#f1f5f9}
+.slt-waste-toggle button{padding:5px 12px;font-size:.62rem;font-weight:900;text-transform:uppercase;border:none;cursor:pointer;background:transparent;color:#64748b;transition:all .15s;letter-spacing:.04em}
+.slt-waste-toggle button.stock-active{background:#22c55e;color:#fff;box-shadow:0 2px 8px rgba(34,197,94,.3)}
+.slt-waste-toggle button.adjust-active{background:#f97316;color:#fff;box-shadow:0 2px 8px rgba(249,115,22,.3)}
+
+/* Qty stepper */
+.slt-qty-stepper{display:inline-flex;align-items:center;gap:4px}
+.slt-qty-stepper button{width:26px;height:26px;border-radius:50%;border:1px solid var(--border);background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:.85rem;color:#374151;transition:all .15s}
+.slt-qty-stepper button:hover{background:#f1f5f9;border-color:var(--brand)}
+.slt-qty-stepper span{font-weight:900;min-width:24px;text-align:center;font-size:.88rem}
+
+/* Priority badge */
+.slt-priority-badge{display:inline-block;font-size:.55rem;font-weight:800;color:#fff;padding:2px 8px;border-radius:10px;text-transform:uppercase}
+
 /* 3-Column Terminal */
 .slt-terminal{display:grid;grid-template-columns:280px 1fr 360px;gap:16px;min-height:500px}
 .slt-col{background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
@@ -264,6 +290,8 @@ include __DIR__ . '/../../../includes/header.php';
       <div style="margin-bottom:10px">
         <input type="text" id="plannerSearch" class="form-control" placeholder="Search jobs…" style="height:34px;font-size:.82rem">
       </div>
+      <!-- Status Filter Tabs -->
+      <div id="plannerStatusTabs" style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap"></div>
       <div class="slt-job-list" id="plannerJobList">
         <div class="slt-empty"><i class="bi bi-inbox"></i><p>Loading jobs…</p></div>
       </div>
@@ -365,10 +393,20 @@ include __DIR__ . '/../../../includes/header.php';
 <!-- MODAL: Stock Analysis                                       -->
 <!-- ═══════════════════════════════════════════════════════════ -->
 <div class="slt-modal-overlay" id="stockModal">
-  <div class="slt-modal">
+  <div class="slt-modal" style="max-width:1200px">
     <div class="slt-modal-head">
-      <h3><i class="bi bi-bar-chart-steps"></i> Stock Analysis — Slitting Options</h3>
-      <button class="slt-modal-close" onclick="SLT.closeModal('stockModal')">&times;</button>
+      <h3><i class="bi bi-bar-chart-steps"></i> Stock Decision Support</h3>
+      <div style="display:flex;align-items:center;gap:12px">
+        <!-- Supplier Filter -->
+        <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.08);padding:5px 14px;border-radius:10px">
+          <span style="font-size:.6rem;font-weight:800;text-transform:uppercase;color:#94a3b8">Supplier:</span>
+          <select id="supplierFilter" style="background:transparent;border:none;color:#fff;font-size:.72rem;font-weight:700;min-width:150px;cursor:pointer;outline:none">
+            <option value="all" style="color:#000">ALL SUPPLIERS</option>
+          </select>
+        </div>
+        <span id="stockModalCount" style="font-size:.65rem;font-weight:700;color:#94a3b8"></span>
+        <button class="slt-modal-close" onclick="SLT.closeModal('stockModal')">&times;</button>
+      </div>
     </div>
     <div class="slt-modal-body">
       <div id="stockAnalysisContent">
@@ -377,7 +415,7 @@ include __DIR__ . '/../../../includes/header.php';
     </div>
     <div class="slt-modal-foot">
       <div id="stockModalSummary" style="font-size:.82rem;color:var(--text-muted)"></div>
-      <button class="btn btn-primary" id="btnDeployTerminal" style="display:none"><i class="bi bi-box-arrow-in-right"></i> Deploy to Terminal</button>
+      <button class="btn btn-primary" id="btnDeployTerminal" style="display:none"><i class="bi bi-box-arrow-in-right"></i> Deploy Selection to Terminal</button>
     </div>
   </div>
 </div>
@@ -415,12 +453,16 @@ const SLT = (() => {
   // ── State ──────────────────────────────────────────────────
   let plannerJobs     = [];
   let selectedJob     = null;
-  let stockOptions    = [];
 
   let loadedRolls     = [];   // [{roll_no, paper_type, width_mm, length_mtr, …}]
   let activeRollNo    = null; // currently selected roll for config
   let rollConfigs     = {};   // rollNo -> { runs: [{width,length,qty}], destination, job_no, job_name, job_size, remainderAction }
   let machines        = [];
+  let plannerFilter   = 'all'; // status tab filter
+  let allStockOptions = [];    // raw options from API (unfiltered)
+  let selectedSupplier = 'all';
+  let selectionMap    = {};    // key -> qty selected
+  let wastagePrefs    = {};    // key -> 'STOCK' | 'ADJUST'
 
   // ── Init ───────────────────────────────────────────────────
   function init() {
@@ -1054,7 +1096,32 @@ const SLT = (() => {
     const data = await apiGet('get_planning_jobs');
     if (!data.ok) return;
     plannerJobs = data.jobs || [];
+    renderPlannerTabs();
     renderPlannerJobs();
+  }
+
+  function renderPlannerTabs() {
+    const el = document.getElementById('plannerStatusTabs');
+    const counts = { all: plannerJobs.length };
+    plannerJobs.forEach(j => {
+      const pp = (j.printing_planning || j.status || 'Pending').toLowerCase();
+      counts[pp] = (counts[pp] || 0) + 1;
+    });
+    const tabs = [
+      { key: 'all', label: 'All', count: counts.all },
+      { key: 'pending', label: 'Pending', count: counts['pending'] || 0 },
+      { key: 'running', label: 'Running', count: (counts['running']||0) + (counts['in progress']||0) },
+      { key: 'completed', label: 'Completed', count: counts['completed'] || 0 },
+    ];
+    el.innerHTML = tabs.map(t =>
+      `<button class="slt-status-tab${plannerFilter===t.key?' active':''}" onclick="SLT.setPlannerFilter('${t.key}')">${t.label} <span style="opacity:.6">(${t.count})</span></button>`
+    ).join('');
+  }
+
+  function setPlannerFilter(f) {
+    plannerFilter = f;
+    renderPlannerTabs();
+    renderPlannerJobs(document.getElementById('plannerSearch').value);
   }
 
   function renderPlannerJobs(filter) {
@@ -1065,20 +1132,37 @@ const SLT = (() => {
       jobs = jobs.filter(j => (j.job_name || '').toLowerCase().includes(f) || (j.material_type || '').toLowerCase().includes(f));
     }
 
+    // Apply status tab filter
+    if (plannerFilter !== 'all') {
+      jobs = jobs.filter(j => {
+        const s = (j.printing_planning || j.status || '').toLowerCase();
+        if (plannerFilter === 'running') return s === 'running' || s === 'in progress';
+        return s === plannerFilter;
+      });
+    }
+
     if (!jobs.length) {
-      el.innerHTML = '<div class="slt-empty"><i class="bi bi-inbox"></i><p>No pending jobs</p></div>';
+      el.innerHTML = '<div class="slt-empty"><i class="bi bi-inbox"></i><p>No jobs found for this filter</p></div>';
       return;
     }
 
     el.innerHTML = jobs.map(j => {
       const sel = selectedJob && selectedJob.id === j.id;
       const pri = j.priority || 'Normal';
+      const mat = j.material_type || 'N/A';
+      const dim1 = j.label_width_mm || '—';
+      const dim2 = j.label_length_mm || '—';
+      const mtrs = j.allocate_mtrs ? (' · ' + esc(j.allocate_mtrs) + ' MTR') : '';
+      const ppStatus = j.printing_planning || j.status || 'Pending';
       return `<div class="slt-job-item${sel?' selected':''}" onclick="SLT.selectJob(${j.id})">
         <div>
           <div class="job-label">${esc(j.job_name)}</div>
-          <div class="job-meta">${esc(j.material_type || 'N/A')} · ${esc(j.label_width_mm || '?')}mm × ${esc(j.label_length_mm || '?')}mm</div>
+          <div class="job-meta">${esc(mat)} · ${esc(dim1)} × ${esc(dim2)}${mtrs}</div>
         </div>
-        <span class="badge badge-${pri.toLowerCase()}">${esc(pri)}</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          ${j.allocate_mtrs ? '<span style="font-size:.6rem;font-weight:800;background:rgba(34,197,94,.1);color:var(--brand);border:1px solid rgba(34,197,94,.2);padding:2px 8px;border-radius:20px;text-transform:uppercase;white-space:nowrap">REQ: '+esc(j.allocate_mtrs)+' MTR</span>' : ''}
+          ${statusBadge(ppStatus)}
+        </div>
       </div>`;
     }).join('');
 
@@ -1108,9 +1192,15 @@ const SLT = (() => {
     el.innerHTML = `<div class="slt-job-detail">
       <div class="detail-row"><span class="detail-label">Job Name</span><span class="detail-value">${esc(j.job_name)}</span></div>
       <div class="detail-row"><span class="detail-label">Material</span><span class="detail-value">${esc(j.material_type || 'N/A')}</span></div>
-      <div class="detail-row"><span class="detail-label">Required Width</span><span class="detail-value">${j.label_width_mm || '—'}mm</span></div>
-      <div class="detail-row"><span class="detail-label">Required Length</span><span class="detail-value">${j.label_length_mm || '—'}mm</span></div>
-      <div class="detail-row"><span class="detail-label">Quantity</span><span class="detail-value">${j.quantity || '—'}</span></div>
+      <div class="detail-row"><span class="detail-label">Paper Size / Width</span><span class="detail-value">${esc(j.label_width_mm || '—')}</span></div>
+      <div class="detail-row"><span class="detail-label">Size</span><span class="detail-value">${esc(j.label_length_mm || '—')}</span></div>
+      <div class="detail-row"><span class="detail-label">Allocated MTRS</span><span class="detail-value">${esc(j.allocate_mtrs || '—')}</span></div>
+      <div class="detail-row"><span class="detail-label">Quantity</span><span class="detail-value">${esc(j.quantity || '—')}</span></div>
+      <div class="detail-row"><span class="detail-label">Die</span><span class="detail-value">${esc(j.die_type || '—')}</span></div>
+      <div class="detail-row"><span class="detail-label">Core</span><span class="detail-value">${esc(j.core_size || '—')}</span></div>
+      <div class="detail-row"><span class="detail-label">Direction</span><span class="detail-value">${esc(j.roll_direction || '—')}</span></div>
+      <div class="detail-row"><span class="detail-label">Repeat</span><span class="detail-value">${esc(j.repeat_val || '—')}</span></div>
+      <div class="detail-row"><span class="detail-label">Dispatch Date</span><span class="detail-value">${esc(j.dispatch_date || '—')}</span></div>
       <div class="detail-row"><span class="detail-label">Priority</span><span class="detail-value">${statusBadge(j.priority || 'Normal')}</span></div>
       <div class="detail-row"><span class="detail-label">Status</span><span class="detail-value">${statusBadge(j.status)}</span></div>
     </div>`;
@@ -1127,100 +1217,233 @@ const SLT = (() => {
     const contentEl = document.getElementById('stockAnalysisContent');
     contentEl.innerHTML = '<div class="slt-empty"><i class="bi bi-hourglass-split"></i><p>Analyzing stock options…</p></div>';
 
+    const targetWidth = parseInt(j.label_width_mm) || parseInt(j.paper_size) || 0;
+    const material = j.material_type || '';
+    const reqMtrs = parseFloat(j.allocate_mtrs) || 0;
+
     const data = await apiGet('search_rolls_by_material', {
-      paper_type: j.material_type || '',
-      target_width: j.label_width_mm || 0,
-      target_length: j.label_length_mm || 0,
+      paper_type: material,
+      target_width: targetWidth,
+      target_length: 0,
     });
 
     if (!data.ok || !data.options || !data.options.length) {
-      contentEl.innerHTML = '<div class="slt-empty"><i class="bi bi-exclamation-triangle"></i><p>No suitable stock found for this material and width</p></div>';
+      contentEl.innerHTML = `<div class="slt-empty"><i class="bi bi-exclamation-triangle" style="color:#f59e0b"></i><p>No suitable stock for <strong>${esc(material)}</strong> at width ≥ ${targetWidth}mm</p></div>`;
       document.getElementById('btnDeployTerminal').style.display = 'none';
+      document.getElementById('stockModalSummary').innerHTML = '';
       return;
     }
 
-    stockOptions = data.options;
+    allStockOptions = data.options;
+    selectionMap = {};
+    wastagePrefs = {};
+    selectedSupplier = 'all';
 
-    let html = '<div class="slt-stock-options">';
-    html += `<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:12px;padding:0 14px 8px;font-size:.65rem;text-transform:uppercase;color:var(--text-muted);font-weight:700;letter-spacing:.05em">
-      <span>Roll</span><span>Efficiency</span><span>Splits</span><span>Waste</span><span>Qty</span>
+    // Populate supplier dropdown
+    const supplierSelect = document.getElementById('supplierFilter');
+    const uniqueSuppliers = [];
+    data.options.forEach(opt => {
+      const c = (opt.roll.company || '').trim();
+      if (c && !uniqueSuppliers.includes(c)) uniqueSuppliers.push(c);
+    });
+    uniqueSuppliers.sort();
+    supplierSelect.innerHTML = '<option value="all">ALL SUPPLIERS</option>';
+    uniqueSuppliers.forEach(s => {
+      supplierSelect.innerHTML += `<option value="${esc(s)}">${esc(s)}</option>`;
+    });
+    supplierSelect.value = 'all';
+    supplierSelect.onchange = function() {
+      selectedSupplier = this.value;
+      renderStockOptions(targetWidth, reqMtrs);
+    };
+
+    // Store context on element for rendering/deploy
+    contentEl._targetWidth = targetWidth;
+    contentEl._reqMtrs = reqMtrs;
+
+    renderStockOptions(targetWidth, reqMtrs);
+  }
+
+  function renderStockOptions(targetWidth, reqMtrs) {
+    const contentEl = document.getElementById('stockAnalysisContent');
+
+    // Filter by supplier
+    let filtered = allStockOptions;
+    if (selectedSupplier !== 'all') {
+      filtered = allStockOptions.filter(opt => (opt.roll.company || '').trim() === selectedSupplier);
+    }
+
+    if (!filtered.length) {
+      contentEl.innerHTML = `<div class="slt-empty"><i class="bi bi-funnel" style="color:#64748b"></i><p>No stock from <strong>${esc(selectedSupplier)}</strong> matches this requirement</p></div>`;
+      contentEl._groups = [];
+      updateProductionSummary();
+      return;
+    }
+
+    // Group by dimension key
+    const grouped = {};
+    filtered.forEach(opt => {
+      const r = opt.roll;
+      const key = r.width_mm + 'x' + r.length_mtr + '-' + (r.company || '');
+      if (!grouped[key]) {
+        grouped[key] = { roll: r, splits: opt.splits, waste_mm: opt.waste_mm, efficiency: opt.efficiency, rolls: [], key };
+        if (selectionMap[key] === undefined) selectionMap[key] = 0;
+        if (!wastagePrefs[key]) wastagePrefs[key] = 'STOCK';
+      }
+      grouped[key].rolls.push(r);
+    });
+
+    const groups = Object.values(grouped);
+    groups.sort((a, b) => a.waste_mm - b.waste_mm || b.efficiency - a.efficiency);
+
+    document.getElementById('stockModalCount').textContent = 'Showing: ' + filtered.length + ' of ' + allStockOptions.length + ' rolls';
+
+    // Render grid header
+    let html = `<div class="slt-stock-grid" style="font-size:.55rem;font-weight:800;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;border:none;padding:0 14px 8px">
+      <span>Dimension & Priority</span><span>Wastage Control</span><span>Slitting Result</span><span>Yield Details</span><span>Efficiency</span><span>Batch Qty</span>
     </div>`;
 
-    data.options.forEach((opt, idx) => {
-      const r = opt.roll;
-      const effColor = opt.efficiency >= 90 ? '#16a34a' : (opt.efficiency >= 70 ? '#d97706' : '#dc2626');
-      html += `<div class="slt-stock-opt" id="stockOpt${idx}" onclick="SLT.toggleStockOption(${idx})">
+    groups.forEach(g => {
+      const r = g.roll;
+      const effColor = g.efficiency >= 90 ? '#16a34a' : (g.efficiency >= 70 ? '#d97706' : '#dc2626');
+      const priority = g.waste_mm === 0 ? 'Best Fit' : (r.width_mm >= 1000 ? 'Jumbo' : 'Alternate');
+      const priBg = g.waste_mm === 0 ? '#22c55e' : (r.width_mm >= 1000 ? '#f59e0b' : '#3b82f6');
+      const yieldPerRoll = (parseFloat(r.length_mtr) || 0) * g.splits;
+      const stockResult = targetWidth + 'mm × ' + g.splits + ' splits' + (g.waste_mm > 0 ? ' + ' + Math.round(g.waste_mm) + 'mm (Stock)' : '');
+      const adjustResult = Math.round(parseFloat(r.width_mm) / g.splits) + 'mm × ' + g.splits + ' parts (Adjusted)';
+      const pref = wastagePrefs[g.key] || 'STOCK';
+
+      html += `<div class="slt-stock-grid" data-key="${esc(g.key)}">
         <div>
-          <div class="opt-roll">${esc(r.roll_no)}</div>
-          <div class="opt-dim">${esc(r.paper_type)} · ${r.width_mm}mm × ${r.length_mtr}m</div>
+          <div style="font-weight:900;font-size:.8rem">${r.width_mm}mm × ${r.length_mtr}m</div>
+          <div style="font-size:.6rem;color:var(--text-muted);margin-top:2px">${esc(r.roll_no)} · ${esc(r.company || '')}</div>
+          <span class="slt-priority-badge" style="background:${priBg}">${priority}</span>
         </div>
         <div>
-          <span class="opt-eff" style="color:${effColor}">${opt.efficiency}%</span>
-          <div class="slt-eff-bar"><div class="slt-eff-fill" style="width:${opt.efficiency}%;background:${effColor}"></div></div>
+          <div style="font-size:.65rem;color:var(--text-muted);font-weight:700;margin-bottom:4px">Waste: ${Math.round(g.waste_mm)}mm</div>
+          <div class="slt-waste-toggle">
+            <button class="${pref==='STOCK'?'stock-active':''}" onclick="SLT.setWaste('${esc(g.key)}','STOCK')">Stock</button>
+            <button class="${pref==='ADJUST'?'adjust-active':''}" onclick="SLT.setWaste('${esc(g.key)}','ADJUST')">Adjust</button>
+          </div>
         </div>
-        <div class="opt-splits">${opt.splits} splits</div>
-        <div class="opt-waste">${opt.waste_mm}mm waste</div>
-        <div><input type="number" class="slt-qty-input" min="0" value="0" id="stockQty${idx}" onclick="event.stopPropagation()" onchange="SLT.updateStockQty(${idx},this.value)"></div>
+        <div>
+          <div style="font-size:.72rem;font-weight:700" id="resultText_${esc(g.key)}">${pref === 'STOCK' ? stockResult : adjustResult}</div>
+        </div>
+        <div>
+          <div style="font-size:.7rem;font-weight:800">${g.splits} units @ ${r.length_mtr} mtr</div>
+          <div style="font-size:.6rem;color:var(--text-muted)">Output: ${yieldPerRoll.toLocaleString()} M / roll</div>
+        </div>
+        <div>
+          <div style="font-size:.85rem;font-weight:900;color:${effColor}">${g.efficiency}%</div>
+          <div class="slt-stock-eff-bar"><div class="slt-stock-eff-fill" style="width:${g.efficiency}%;background:${effColor}"></div></div>
+        </div>
+        <div>
+          <div class="slt-qty-stepper">
+            <button onclick="SLT.adjustQty('${esc(g.key)}',-1)">−</button>
+            <span id="qty_${esc(g.key)}">${selectionMap[g.key] || 0}</span>
+            <button onclick="SLT.adjustQty('${esc(g.key)}',1)">+</button>
+          </div>
+          <div style="font-size:.55rem;color:var(--text-muted);text-align:center;margin-top:2px">of ${g.rolls.length}</div>
+        </div>
       </div>`;
     });
-    html += '</div>';
+
     contentEl.innerHTML = html;
-
-    document.getElementById('btnDeployTerminal').style.display = '';
-    document.getElementById('btnDeployTerminal').onclick = () => deployToTerminal();
-    updateStockSummary();
+    contentEl._groups = groups;
+    contentEl._targetWidth = targetWidth;
+    contentEl._reqMtrs = reqMtrs;
+    updateProductionSummary();
   }
 
-  function toggleStockOption(idx) {
-    const el = document.getElementById('stockOpt' + idx);
-    const qtyEl = document.getElementById('stockQty' + idx);
-    const current = parseInt(qtyEl.value) || 0;
-    qtyEl.value = current === 0 ? 1 : 0;
-    el.classList.toggle('selected', parseInt(qtyEl.value) > 0);
-    updateStockSummary();
+  function setWaste(key, mode) {
+    wastagePrefs[key] = mode;
+    const row = document.querySelector(`.slt-stock-grid[data-key="${key}"]`);
+    if (row) {
+      row.querySelectorAll('.slt-waste-toggle button').forEach(b => {
+        const bMode = b.textContent.trim().toUpperCase();
+        b.className = '';
+        if (bMode === mode) b.className = (mode === 'STOCK' ? 'stock-active' : 'adjust-active');
+      });
+    }
+    // Re-render to update result text
+    const contentEl = document.getElementById('stockAnalysisContent');
+    if (contentEl._targetWidth !== undefined) {
+      renderStockOptions(contentEl._targetWidth, contentEl._reqMtrs);
+    }
   }
 
-  function updateStockQty(idx, val) {
-    const el = document.getElementById('stockOpt' + idx);
-    el.classList.toggle('selected', parseInt(val) > 0);
-    updateStockSummary();
+  function adjustQty(key, delta) {
+    const contentEl = document.getElementById('stockAnalysisContent');
+    const groups = contentEl._groups || [];
+    const g = groups.find(x => x.key === key);
+    if (!g) return;
+    const current = selectionMap[key] || 0;
+    selectionMap[key] = Math.max(0, Math.min(g.rolls.length, current + delta));
+    const span = document.getElementById('qty_' + key);
+    if (span) span.textContent = selectionMap[key];
+    updateProductionSummary();
   }
 
-  function updateStockSummary() {
-    let totalRolls = 0;
-    stockOptions.forEach((opt, idx) => {
-      const q = parseInt(document.getElementById('stockQty' + idx)?.value) || 0;
-      totalRolls += q;
+  function updateProductionSummary() {
+    const contentEl = document.getElementById('stockAnalysisContent');
+    const groups = contentEl._groups || [];
+    const reqMtrs = contentEl._reqMtrs || 0;
+
+    let totalProduced = 0;
+    groups.forEach(g => {
+      const qty = selectionMap[g.key] || 0;
+      const yieldPerRoll = (parseFloat(g.roll.length_mtr) || 0) * g.splits;
+      totalProduced += qty * yieldPerRoll;
     });
-    document.getElementById('stockModalSummary').textContent = totalRolls > 0
-      ? totalRolls + ' roll(s) selected for deployment'
+
+    const summaryEl = document.getElementById('stockModalSummary');
+    const pct = reqMtrs > 0 ? Math.min(100, Math.round(totalProduced / reqMtrs * 100)) : 0;
+    const achieved = totalProduced >= reqMtrs && reqMtrs > 0;
+    const hasSelection = Object.values(selectionMap).some(v => v > 0);
+
+    summaryEl.innerHTML = hasSelection
+      ? `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span style="font-weight:800">${totalProduced.toLocaleString()} M of ${(reqMtrs || 0).toLocaleString()} M required</span>
+          <div style="width:120px;height:8px;background:var(--bg-secondary);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${achieved ? '#22c55e' : '#3b82f6'};border-radius:4px"></div></div>
+          <span style="font-size:.55rem;font-weight:800;background:${achieved ? '#22c55e' : '#f59e0b'};color:#fff;padding:3px 8px;border-radius:10px">${achieved ? 'Target Achieved' : 'In Progress'}</span>
+        </div>`
       : 'Select rolls and set qty to deploy';
+
+    document.getElementById('btnDeployTerminal').style.display = hasSelection ? '' : 'none';
+    document.getElementById('btnDeployTerminal').onclick = () => deployToTerminal();
   }
 
   function deployToTerminal() {
-    stockOptions.forEach((opt, idx) => {
-      const q = parseInt(document.getElementById('stockQty' + idx)?.value) || 0;
-      if (q <= 0) return;
-      const roll = opt.roll;
-      addRollToTerminal(roll);
+    const contentEl = document.getElementById('stockAnalysisContent');
+    const groups = contentEl._groups || [];
+    const targetWidth = contentEl._targetWidth || 0;
+    const j = selectedJob;
 
-      // Pre-configure runs based on analysis
-      const tw = selectedJob?.label_width_mm || 0;
-      const tl = selectedJob?.label_length_mm || 0;
-      if (parseFloat(tw) > 0 && rollConfigs[roll.roll_no]) {
-        const runs = [];
-        for (let i = 0; i < opt.splits; i++) {
-          runs.push({
-            width: parseFloat(tw),
-            length: parseFloat(roll.length_mtr),
-            qty: 1
-          });
+    groups.forEach(g => {
+      const qty = selectionMap[g.key] || 0;
+      if (qty <= 0) return;
+      const pref = wastagePrefs[g.key] || 'STOCK';
+      const rollsToUse = g.rolls.slice(0, qty);
+
+      rollsToUse.forEach(roll => {
+        addRollToTerminal(roll);
+
+        const slitWidth = pref === 'ADJUST'
+          ? Math.round(parseFloat(roll.width_mm) / g.splits)
+          : targetWidth;
+
+        if (rollConfigs[roll.roll_no]) {
+          rollConfigs[roll.roll_no].runs = [{
+            width: slitWidth,
+            length: parseFloat(roll.length_mtr) || 0,
+            qty: g.splits
+          }];
+          rollConfigs[roll.roll_no].remainderAction = pref;
+          rollConfigs[roll.roll_no].destination = 'JOB';
+          rollConfigs[roll.roll_no].job_name = j?.job_name || '';
+          rollConfigs[roll.roll_no].job_size = j?.label_length_mm || j?.label_width_mm || '';
         }
-        if (!runs.length) runs.push({width: '', length: parseFloat(roll.length_mtr), qty: 1});
-        rollConfigs[roll.roll_no].runs = runs;
-        rollConfigs[roll.roll_no].destination = 'JOB';
-        rollConfigs[roll.roll_no].job_name = selectedJob?.job_name || '';
-      }
+      });
     });
 
     closeModal('stockModal');
@@ -1518,7 +1741,7 @@ const SLT = (() => {
     selectJob: selectJob, openBatchReport: openBatchReport,
     updateConfig: updateConfig, updateRun: updateRun, addRun: addRun, removeRun: removeRun,
     setSlitMode: setSlitMode, updateEqualPieces: updateEqualPieces,
-    toggleStockOption: toggleStockOption, updateStockQty: updateStockQty,
+    setPlannerFilter: setPlannerFilter, setWaste: setWaste, adjustQty: adjustQty,
     openModal: openModal, closeModal: closeModal,
   };
 })();

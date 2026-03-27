@@ -188,9 +188,38 @@ try {
         $rows = $db->query("SELECT p.*, so.material_type, so.label_width_mm, so.label_length_mm, so.quantity
             FROM planning p
             LEFT JOIN sales_orders so ON p.sales_order_id = so.id
-            WHERE p.status IN ('Queued','In Progress')
             ORDER BY FIELD(p.priority,'Urgent','High','Normal','Low'), p.scheduled_date ASC
-            LIMIT 50")->fetch_all(MYSQLI_ASSOC);
+            LIMIT 100")->fetch_all(MYSQLI_ASSOC);
+
+        // Merge extra_data JSON fields into each row so JS can read them directly
+        foreach ($rows as &$row) {
+            $extra = json_decode($row['extra_data'] ?? '{}', true);
+            if (is_array($extra)) {
+                // Provide fallback values from extra_data when sales_order fields are empty
+                if (empty($row['material_type']) && !empty($extra['material'])) {
+                    $row['material_type'] = $extra['material'];
+                }
+                if (empty($row['label_width_mm']) && !empty($extra['paper_size'])) {
+                    $row['label_width_mm'] = $extra['paper_size'];
+                }
+                if (empty($row['label_length_mm']) && !empty($extra['size'])) {
+                    $row['label_length_mm'] = $extra['size'];
+                }
+                if (empty($row['quantity']) && !empty($extra['qty_pcs'])) {
+                    $row['quantity'] = $extra['qty_pcs'];
+                }
+                // Expose extra planning fields
+                $row['allocate_mtrs'] = $extra['allocate_mtrs'] ?? '';
+                $row['die_type'] = $extra['die'] ?? '';
+                $row['core_size'] = $extra['core_size'] ?? '';
+                $row['dispatch_date'] = $extra['dispatch_date'] ?? ($row['scheduled_date'] ?? '');
+                $row['printing_planning'] = $extra['printing_planning'] ?? '';
+                $row['roll_direction'] = $extra['roll_direction'] ?? '';
+                $row['repeat_val'] = $extra['repeat'] ?? '';
+            }
+        }
+        unset($row);
+
         echo json_encode(['ok' => true, 'jobs' => $rows]);
         break;
 
