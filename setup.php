@@ -5,7 +5,7 @@ mysqli_report(MYSQLI_REPORT_OFF);
 
 $lockFile   = __DIR__ . '/data/install.lock';
 $schemaFile = __DIR__ . '/database/schema.sql';
-$configFile = __DIR__ . '/config/db.php';
+$runtimeConfigFile = __DIR__ . '/config/db.runtime.php';
 $gitCfgFile = __DIR__ . '/data/github_auto_push.json';
 
 $log = [];
@@ -32,6 +32,7 @@ $input = [
   'db_user' => '',
   'db_pass' => '',
   'base_url' => '',
+  'profile_target' => 'auto',
   'app_name' => 'Enterprise ERP',
   'app_version' => '1.0',
   'create_database' => '0',
@@ -79,6 +80,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   $baseUrl = rtrim($input['base_url'], '/');
+
+  $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
+  $isLocalHost = ($host === '' || strpos($host, 'localhost') !== false || strpos($host, '127.0.0.1') !== false);
+  $detectedEnv = $isLocalHost ? 'local' : 'live';
+  $targetEnv = $input['profile_target'] === 'local' || $input['profile_target'] === 'live'
+    ? $input['profile_target']
+    : $detectedEnv;
 
   if ($input['db_host'] === '' || $input['db_name'] === '' || $input['db_user'] === '') {
     log_err('DB Host, DB Name, and DB Username are required.');
@@ -190,30 +198,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
 
       if (empty($errors)) {
-        $dbPhp = "<?php\n"
-          . "define('DB_HOST',    " . var_export($input['db_host'], true) . ");\n"
-          . "define('DB_USER',    " . var_export($input['db_user'], true) . ");\n"
-          . "define('DB_PASS',    " . var_export($input['db_pass'], true) . ");\n"
-          . "define('DB_NAME',    " . var_export($input['db_name'], true) . ");\n"
-          . "define('BASE_URL',   " . var_export($baseUrl, true) . ");\n\n"
-          . "define('APP_NAME',   " . var_export($input['app_name'], true) . ");\n"
-          . "define('APP_VERSION'," . var_export($input['app_version'], true) . ");\n\n"
-          . "function getDB() {\n"
-          . "    static \$conn = null;\n"
-          . "    if (\$conn === null) {\n"
-          . "        \$conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);\n"
-          . "        if (\$conn->connect_error) {\n"
-          . "            die('<p style=\"font-family:sans-serif;color:red;padding:20px\">Database connection failed: ' . htmlspecialchars(\$conn->connect_error) . '</p>');\n"
-          . "        }\n"
-          . "        \$conn->set_charset('utf8mb4');\n"
-          . "    }\n"
-          . "    return \$conn;\n"
-          . "}\n";
+        $runtime = [];
+        if (file_exists($runtimeConfigFile)) {
+          $loaded = require $runtimeConfigFile;
+          if (is_array($loaded)) {
+            $runtime = $loaded;
+          }
+        }
 
-        if (file_put_contents($configFile, $dbPhp, LOCK_EX) === false) {
-          log_err('Failed to write config/db.php (check permissions).');
+        $runtime[$targetEnv] = [
+          'DB_HOST' => $input['db_host'],
+          'DB_USER' => $input['db_user'],
+          'DB_PASS' => $input['db_pass'],
+          'DB_NAME' => $input['db_name'],
+          'BASE_URL' => $baseUrl,
+          'APP_NAME' => $input['app_name'],
+          'APP_VERSION' => $input['app_version'],
+        ];
+
+        $runtimePhp = "<?php\nreturn " . var_export($runtime, true) . ";\n";
+        if (file_put_contents($runtimeConfigFile, $runtimePhp, LOCK_EX) === false) {
+          log_err('Failed to write config/db.runtime.php (check permissions).');
         } else {
-          log_ok('config/db.php generated.');
+          log_ok('Runtime profile saved for environment: ' . $targetEnv . '.');
         }
       }
 
@@ -285,6 +292,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <div><label>DB Username</label><input name="db_user" value="<?= e($input['db_user']) ?>" required></div>
       <div><label>DB Password</label><input type="password" name="db_pass" value="<?= e($input['db_pass']) ?>"></div>
       <div><label>Base URL (empty for domain root)</label><input name="base_url" value="<?= e($input['base_url']) ?>"></div>
+            <div><label>Save Profile To</label><input name="profile_target" value="<?= e($input['profile_target']) ?>" placeholder="auto | local | live"></div>
       <div><label>App Name</label><input name="app_name" value="<?= e($input['app_name']) ?>" required></div>
       <div><label>App Version</label><input name="app_version" value="<?= e($input['app_version']) ?>"></div>
       <div class="full check"><input type="checkbox" name="create_database" value="1" <?= $input['create_database'] === '1' ? 'checked' : '' ?>><label>Create database automatically (disable for shared hosting)</label></div>

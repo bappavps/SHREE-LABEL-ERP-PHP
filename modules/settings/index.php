@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';
 require_once __DIR__ . '/../../includes/auth_check.php';
 
+$db = getDB();
 $settings = getAppSettings();
 
 $libraryCategories = [
@@ -62,7 +63,10 @@ function resolveImageUrlFromPage($url) {
   return '';
 }
 
-function buildDatabaseBackupSql(mysqli $db) {
+function buildDatabaseBackupSql(?mysqli $db = null) {
+  if (!$db instanceof mysqli) {
+    $db = getDB();
+  }
   $sql = [];
   $sql[] = '-- ERP System Database Backup';
   $sql[] = '-- Generated: ' . date('Y-m-d H:i:s');
@@ -297,7 +301,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
   if ($action === 'download_backup') {
-    $backupSql = buildDatabaseBackupSql($db);
+    if (!isset($db) || !($db instanceof mysqli)) {
+      $db = getDB();
+    }
+    $backupSql = buildDatabaseBackupSql($db ?? null);
     if ($backupSql === '') {
       setFlash('error', 'Unable to generate backup. Please check database access.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
@@ -312,6 +319,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   if ($action === 'restore_backup') {
+    if (!isset($db) || !($db instanceof mysqli)) {
+      $db = getDB();
+    }
     if (empty($_FILES['backup_sql']) || !is_array($_FILES['backup_sql'])) {
       setFlash('error', 'Please choose a SQL backup file to restore.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=backup');

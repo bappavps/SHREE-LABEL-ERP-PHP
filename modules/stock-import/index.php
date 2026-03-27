@@ -128,6 +128,22 @@ function importBuildHeaderMap(array $headerRow) {
     return $fieldIndexMap;
   }
 
+  function importExcelColumnLabel($index) {
+    $index = (int)$index;
+    if ($index < 0) {
+      return '';
+    }
+
+    $label = '';
+    do {
+      $remainder = $index % 26;
+      $label = chr(65 + $remainder) . $label;
+      $index = (int)floor($index / 26) - 1;
+    } while ($index >= 0);
+
+    return $label;
+  }
+
 function importColumnIndexFromCellRef($cellReference) {
     if (!preg_match('/[A-Z]+/i', (string)$cellReference, $matches)) {
         return 0;
@@ -153,10 +169,9 @@ function importReadXlsxSharedStrings(ZipArchive $zip) {
         return [];
     }
 
-    $document->registerXPathNamespace('main', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
     $sharedStrings = [];
-    foreach ($document->xpath('//main:si') as $item) {
-        $parts = $item->xpath('.//main:t');
+    foreach ($document->xpath('//*[local-name()="si"]') as $item) {
+      $parts = $item->xpath('.//*[local-name()="t"]');
         $value = '';
         if ($parts) {
             foreach ($parts as $part) {
@@ -182,9 +197,7 @@ function importFindFirstWorksheetPath(ZipArchive $zip) {
                 $relationships[(string)$relationship['Id']] = (string)$relationship['Target'];
             }
 
-            $workbook->registerXPathNamespace('main', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
-            $workbook->registerXPathNamespace('r', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships');
-            $sheets = $workbook->xpath('//main:sheets/main:sheet');
+            $sheets = $workbook->xpath('//*[local-name()="sheets"]/*[local-name()="sheet"]');
             if ($sheets && isset($sheets[0])) {
                 $relationshipId = (string)$sheets[0]->attributes('http://schemas.openxmlformats.org/officeDocument/2006/relationships')->id;
                 if ($relationshipId && isset($relationships[$relationshipId])) {
@@ -205,11 +218,10 @@ function importFindFirstWorksheetPath(ZipArchive $zip) {
 }
 
 function importExtractXlsxCellValue(SimpleXMLElement $cell, array $sharedStrings) {
-    $cell->registerXPathNamespace('main', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
     $type = (string)$cell['t'];
 
     if ($type === 'inlineStr') {
-        $textParts = $cell->xpath('.//main:t');
+    $textParts = $cell->xpath('.//*[local-name()="t"]');
         $value = '';
         if ($textParts) {
             foreach ($textParts as $part) {
@@ -262,9 +274,8 @@ function importParseXlsxFile($filePath) {
         throw new RuntimeException('Worksheet XML is invalid or unreadable.');
     }
 
-    $worksheet->registerXPathNamespace('main', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
     $rows = [];
-    foreach ($worksheet->xpath('//main:sheetData/main:row') as $row) {
+    foreach ($worksheet->xpath('//*[local-name()="sheetData"]/*[local-name()="row"]') as $row) {
         $values = [];
         $maxIndex = -1;
 
@@ -631,29 +642,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? null) === 'upl
       redirect(BASE_URL . '/modules/stock-import/index.php');
     }
 
-    $submittedMapping = $_POST['mapping'] ?? [];
+    $submittedMapping = $_POST['mapping_by_field'] ?? [];
     $allowedFields = array_keys(importSystemFieldOptions());
     $selectedMapping = [];
     $seenFields = [];
+    $seenColumns = [];
 
-    foreach ($headerRow as $index => $header) {
-      $field = trim((string)($submittedMapping[$index] ?? ''));
-      if ($field === '') {
+    foreach ($allowedFields as $field) {
+      $columnIndexRaw = $submittedMapping[$field] ?? '';
+      if ($columnIndexRaw === '' || $columnIndexRaw === null) {
         continue;
       }
 
-      if (!in_array($field, $allowedFields, true)) {
+      $columnIndex = (int)$columnIndexRaw;
+      if (!array_key_exists($columnIndex, $headerRow)) {
         continue;
       }
 
       if (isset($seenFields[$field])) {
-        $_SESSION['import_mapping'] = $submittedMapping;
+        $_SESSION['import_mapping'] = $selectedMapping;
         setFlash('error', strtoupper($field) . ' was mapped more than once. Each system field can only be used once.');
         redirect(BASE_URL . '/modules/stock-import/index.php');
       }
 
-      $selectedMapping[$index] = $field;
+      if (isset($seenColumns[$columnIndex])) {
+        $_SESSION['import_mapping'] = $selectedMapping;
+        $label = importExcelColumnLabel($columnIndex);
+        setFlash('error', 'Excel column ' . $label . ' was assigned to multiple ERP fields.');
+        redirect(BASE_URL . '/modules/stock-import/index.php');
+      }
+
+      $selectedMapping[$columnIndex] = $field;
       $seenFields[$field] = true;
+      $seenColumns[$columnIndex] = true;
     }
 
     $missingRequired = array_values(array_filter(importRequiredFields(), function($field) use ($seenFields) {
@@ -661,7 +682,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? null) === 'upl
     }));
 
     if (!empty($missingRequired)) {
-      $_SESSION['import_mapping'] = $submittedMapping;
+      $_SESSION['import_mapping'] = $selectedMapping;
       setFlash('error', 'Map all required fields before continuing: ' . implode(', ', $missingRequired));
       redirect(BASE_URL . '/modules/stock-import/index.php');
     }
@@ -796,17 +817,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? null) === 'imp
         redirect(BASE_URL . '/modules/stock-import/index.php');
     }
 
-    $validRows = array_values(array_filter($rows, function($row) use ($skippedRows) {
-        return empty($row['_errors']) && !in_array((int)$row['_row_number'], $skippedRows, true);
+    $rowsToImport = array_values(array_filter($rows, function($row) use ($skippedRows) {
+      return !in_array((int)$row['_row_number'], $skippedRows, true);
     }));
 
-    if (empty($validRows)) {
-        setFlash('error', 'No valid rows are available to import. Fix the file and upload it again.');
+    if (empty($rowsToImport)) {
+      setFlash('error', 'No rows are available to import.');
         redirect(BASE_URL . '/modules/stock-import/index.php');
     }
 
     $successCount = 0;
     $resultErrors = [];
+    $autoAdjustedCount = 0;
+    $usedRollNos = [];
 
     $checkStmt = $db->prepare('SELECT id FROM paper_stock WHERE roll_no = ? LIMIT 1');
     $insertStmt = $db->prepare("INSERT INTO paper_stock
@@ -815,37 +838,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? null) === 'imp
          date_received, date_used, remarks, created_by)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
 
-    foreach ($validRows as $row) {
-        $rollNo = $row['roll_no'];
-        $checkStmt->bind_param('s', $rollNo);
-        $checkStmt->execute();
-        if ($checkStmt->get_result()->fetch_assoc()) {
-            $resultErrors[] = [
-                'row' => $row['_row_number'],
-                'message' => 'Skipped because roll_no already exists at import time',
-            ];
-            continue;
+    foreach ($rowsToImport as $row) {
+      $rowNumber = (int)($row['_row_number'] ?? 0);
+
+      $rollNo = importTrimBom((string)($row['roll_no'] ?? ''));
+      if ($rollNo === '') {
+        $rollNo = 'AUTO-' . date('Ymd') . '-' . $rowNumber;
+        $autoAdjustedCount++;
         }
 
-        $widthMm = $row['width_mm'];
-        $lengthMtr = $row['length_mtr'];
-        $gsm = $row['gsm'];
-        $weightKg = $row['weight_kg'];
-        $purchaseRate = $row['purchase_rate'];
-        $lotBatchNo = $row['lot_batch_no'];
-        $companyRollNo = $row['company_roll_no'];
-        $status = $row['status'];
-        $jobNo = $row['job_no'];
-        $dateReceived = $row['date_received'];
-        $dateUsed = $row['date_used'];
-        $remarks = $row['remarks'];
+      $baseRollNo = $rollNo;
+      $suffix = 1;
+      while (true) {
+        $conflictsInBatch = isset($usedRollNos[$rollNo]);
+
+        $checkStmt->bind_param('s', $rollNo);
+        $checkStmt->execute();
+        $existsInDb = (bool)$checkStmt->get_result()->fetch_assoc();
+
+        if (!$conflictsInBatch && !$existsInDb) {
+          break;
+        }
+
+        $rollNo = $baseRollNo . '-' . $suffix;
+        $suffix++;
+        $autoAdjustedCount++;
+      }
+      $usedRollNos[$rollNo] = true;
+
+      $paperType = importTrimBom((string)($row['paper_type'] ?? ''));
+      if ($paperType === '') {
+        $paperType = 'Unknown';
+        $autoAdjustedCount++;
+      }
+
+      $company = importTrimBom((string)($row['company'] ?? ''));
+      if ($company === '') {
+        $company = 'Unknown';
+        $autoAdjustedCount++;
+      }
+
+      $widthMm = isset($row['width_mm']) && is_numeric($row['width_mm']) ? (float)$row['width_mm'] : 0.0;
+      $lengthMtr = isset($row['length_mtr']) && is_numeric($row['length_mtr']) ? (float)$row['length_mtr'] : 0.0;
+      if ($widthMm === 0.0 || $lengthMtr === 0.0) {
+        $autoAdjustedCount++;
+      }
+
+      $gsm = isset($row['gsm']) && is_numeric($row['gsm']) ? (float)$row['gsm'] : 0.0;
+      $weightKg = isset($row['weight_kg']) && is_numeric($row['weight_kg']) ? (float)$row['weight_kg'] : 0.0;
+      $purchaseRate = isset($row['purchase_rate']) && is_numeric($row['purchase_rate']) ? (float)$row['purchase_rate'] : 0.0;
+      $lotBatchNo = !empty($row['lot_batch_no']) ? (string)$row['lot_batch_no'] : null;
+      $companyRollNo = !empty($row['company_roll_no']) ? (string)$row['company_roll_no'] : null;
+      $status = importNormalizeStatus((string)($row['status'] ?? ''));
+      $jobNo = !empty($row['job_no']) ? (string)$row['job_no'] : null;
+      $dateReceived = !empty($row['date_received']) ? (string)$row['date_received'] : null;
+      $dateUsed = !empty($row['date_used']) ? (string)$row['date_used'] : null;
+      $remarks = !empty($row['remarks']) ? (string)$row['remarks'] : null;
         $createdBy = (int)($_SESSION['user_id'] ?? 0);
 
         $insertStmt->bind_param(
             'sssdddddsssssssi',
             $rollNo,
-            $row['paper_type'],
-            $row['company'],
+        $paperType,
+        $company,
             $widthMm,
             $lengthMtr,
             $gsm,
@@ -878,11 +933,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? null) === 'imp
     $_SESSION['import_errors'] = $resultErrors;
     $_SESSION['import_result'] = [
         'total_rows' => $summary['total_rows'] ?? 0,
-        'valid_rows' => count($validRows),
+      'valid_rows' => count($rowsToImport),
         'imported_rows' => $successCount,
         'error_rows' => count($resultErrors),
         'file_name' => $summary['file_name'] ?? '',
     ];
+    if ($autoAdjustedCount > 0) {
+      setFlash('success', $autoAdjustedCount . ' value(s) were auto-adjusted to complete import without review.');
+    }
     $_SESSION['import_state'] = 'result';
 
     unset($_SESSION['import_rows']);
@@ -897,12 +955,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? null) === 'imp
 $importState = $_SESSION['import_state'] ?? 'template';
 $uploadedHeader = $_SESSION['import_header'] ?? [];
 $selectedMapping = $_SESSION['import_mapping'] ?? [];
+$uploadedRowsRaw = $_SESSION['import_parsed_rows'] ?? [];
+$firstUploadedDataRow = [];
+if (isset($uploadedRowsRaw[1]) && is_array($uploadedRowsRaw[1])) {
+  $firstUploadedDataRow = $uploadedRowsRaw[1];
+}
+$selectedFieldToColumn = [];
+foreach ($selectedMapping as $colIdx => $fieldName) {
+  $selectedFieldToColumn[(string)$fieldName] = (int)$colIdx;
+}
 $importErrors = $_SESSION['import_errors'] ?? [];
 $analysisRows = $_SESSION['import_preview'] ?? [];
 $allDisplayRows = $_SESSION['import_all_display'] ?? [];
 $skippedRows = $_SESSION['import_skipped'] ?? [];
 $analysisSummary = $_SESSION['import_summary'] ?? ['total_rows' => 0, 'valid_rows' => 0, 'error_rows' => 0, 'duplicate_rows' => 0, 'file_name' => ''];
 $resultSummary = $_SESSION['import_result'] ?? ['total_rows' => 0, 'valid_rows' => 0, 'imported_rows' => 0, 'error_rows' => 0, 'file_name' => ''];
+
+// Avoid showing stale "last import" results after all stock has been deleted.
+$currentPaperStockCount = 0;
+$stockCountRes = $db->query("SELECT COUNT(*) AS c FROM paper_stock");
+if ($stockCountRes) {
+  $stockCountRow = $stockCountRes->fetch_assoc();
+  $currentPaperStockCount = (int)($stockCountRow['c'] ?? 0);
+}
+if ($importState === 'result' && $currentPaperStockCount === 0 && (int)($resultSummary['imported_rows'] ?? 0) > 0) {
+  unset($_SESSION['import_result']);
+  unset($_SESSION['import_errors']);
+  $_SESSION['import_state'] = 'template';
+  $importState = 'template';
+  $resultSummary = ['total_rows' => 0, 'valid_rows' => 0, 'imported_rows' => 0, 'error_rows' => 0, 'file_name' => ''];
+  $importErrors = [];
+}
 
 $mappingFields = importSystemFieldOptions();
 $requiredFields = importRequiredFields();
@@ -1749,36 +1832,71 @@ function confirmDeleteAllRolls() {
         <table class="stock-import-table">
           <thead>
             <tr>
-              <th>Detected Excel Column</th>
-              <th>Map To Field</th>
+              <th>ERP Table Column</th>
+              <th>Map Excel Column</th>
+              <th>Excel Preview</th>
               <th style="text-align:center;width:70px">Status</th>
             </tr>
           </thead>
           <tbody>
-            <?php foreach ($uploadedHeader as $index => $header): ?>
+            <?php foreach ($mappingFields as $field => $label): ?>
               <?php
-                $mappedField = $selectedMapping[$index] ?? '';
-                $isRequired = in_array($mappedField, $requiredFields, true);
+                $isRequired = in_array($field, $requiredFields, true);
+                $selectedColumn = $selectedFieldToColumn[$field] ?? '';
               ?>
-              <tr class="stock-import-mapping-row" id="mapping-row-<?= $index ?>">
+              <tr class="stock-import-mapping-row" id="mapping-row-<?= e($field) ?>">
                 <td>
                   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                    <span class="stock-import-header-chip"><i class="bi bi-columns-gap"></i><?= e($header !== '' ? $header : 'Column ' . ($index + 1)) ?></span>
+                    <span class="stock-import-header-chip" style="background:#ecfeff;color:#0f766e">
+                      <i class="bi bi-table"></i>
+                      <?= e($label) ?>
+                    </span>
+                    <?php if ($isRequired): ?>
+                      <span class="stock-import-pill warning" style="padding:4px 8px">
+                        <i class="bi bi-asterisk"></i> Required
+                      </span>
+                    <?php endif; ?>
                   </div>
                 </td>
                 <td>
-                  <select name="mapping[<?= $index ?>]" class="stock-import-select mapping-select" data-index="<?= $index ?>">
-                    <option value="">Do not import this column</option>
-                    <?php foreach ($mappingFields as $field => $label): ?>
-                      <option value="<?= e($field) ?>" <?= $mappedField === $field ? 'selected' : '' ?>
-                        data-required="<?= in_array($field, $requiredFields, true) ? '1' : '0' ?>">
-                        <?= e($label) ?>
+                  <select name="mapping_by_field[<?= e($field) ?>]" class="stock-import-select mapping-select" data-field="<?= e($field) ?>">
+                    <option value="">Do not import</option>
+                    <?php foreach ($uploadedHeader as $index => $header): ?>
+                      <?php
+                        $excelLabel = importExcelColumnLabel($index);
+                        $headerLabel = importTrimBom((string)$header);
+                        if ($headerLabel === '') {
+                          $headerLabel = 'Excel Column ' . $excelLabel;
+                        }
+                      ?>
+                      <option value="<?= (int)$index ?>" <?= ((string)$selectedColumn !== '' && (int)$selectedColumn === (int)$index) ? 'selected' : '' ?>>
+                        <?= e($excelLabel . ' - ' . $headerLabel) ?>
                       </option>
                     <?php endforeach; ?>
                   </select>
                 </td>
+                <td>
+                  <div class="text-muted" id="mapping-preview-<?= e($field) ?>" style="font-size:12px">
+                    <?php if ((string)$selectedColumn !== '' && isset($uploadedHeader[(int)$selectedColumn])): ?>
+                      <?php
+                        $previewHeader = importTrimBom((string)$uploadedHeader[(int)$selectedColumn]);
+                        if ($previewHeader === '') {
+                          $previewHeader = 'Excel Column ' . importExcelColumnLabel((int)$selectedColumn);
+                        }
+                        $previewSample = importTrimBom((string)($firstUploadedDataRow[(int)$selectedColumn] ?? ''));
+                        if ($previewSample === '') {
+                          $previewSample = '-';
+                        }
+                      ?>
+                      <strong><?= e($previewHeader) ?></strong><br>
+                      <span style="font-family:monospace"><?= e(strlen($previewSample) > 42 ? substr($previewSample, 0, 39) . '...' : $previewSample) ?></span>
+                    <?php else: ?>
+                      <span class="text-muted">No Excel column selected</span>
+                    <?php endif; ?>
+                  </div>
+                </td>
                 <td style="text-align:center">
-                  <span class="stock-import-status-icon" id="mapping-icon-<?= $index ?>">
+                  <span class="stock-import-status-icon" id="mapping-icon-<?= e($field) ?>">
                     <i class="bi bi-dash"></i>
                     <span class="si-tooltip"></span>
                   </span>
@@ -1811,59 +1929,100 @@ function confirmDeleteAllRolls() {
     <script>
     (function() {
       var requiredFields = <?= json_encode(array_values($requiredFields)) ?>;
+      var headerMap = <?= json_encode(array_values(array_map('importTrimBom', $uploadedHeader))) ?>;
+      var sampleMap = <?= json_encode(array_values(array_map(function($v) { return importTrimBom((string)$v); }, $firstUploadedDataRow))) ?>;
       var selects = document.querySelectorAll('.mapping-select');
 
+      function excelColumnLabel(index) {
+        var label = '';
+        var n = parseInt(index, 10);
+        if (isNaN(n) || n < 0) {
+          return '';
+        }
+        while (n >= 0) {
+          label = String.fromCharCode((n % 26) + 65) + label;
+          n = Math.floor(n / 26) - 1;
+        }
+        return label;
+      }
+
+      function updatePreview(field, indexValue) {
+        var preview = document.getElementById('mapping-preview-' + field);
+        if (!preview) {
+          return;
+        }
+
+        if (indexValue === '') {
+          preview.innerHTML = '<span class="text-muted">No Excel column selected</span>';
+          return;
+        }
+
+        var idx = parseInt(indexValue, 10);
+        var header = (headerMap[idx] || '').trim();
+        if (!header) {
+          header = 'Excel Column ' + excelColumnLabel(idx);
+        }
+        var sample = (sampleMap[idx] || '').toString().trim();
+        if (!sample) {
+          sample = '-';
+        }
+        if (sample.length > 42) {
+          sample = sample.slice(0, 39) + '...';
+        }
+
+        preview.innerHTML = '<strong>' + header.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</strong><br><span style="font-family:monospace">' + sample.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span>';
+      }
+
       function runValidation() {
+        var selectedColumns = {};
+        var duplicateColumns = {};
         var fieldMap = {};
-        var duplicates = {};
-        var validCount = 0, errorCount = 0, warningCount = 0;
+        var validCount = 0;
+        var errorCount = 0;
+        var warningCount = 0;
 
         selects.forEach(function(sel) {
           var val = sel.value;
+          var field = sel.getAttribute('data-field');
+          fieldMap[field] = val;
           if (val !== '') {
-            if (fieldMap[val] !== undefined) {
-              duplicates[val] = true;
+            if (selectedColumns[val] !== undefined) {
+              duplicateColumns[val] = true;
             }
-            fieldMap[val] = sel.getAttribute('data-index');
+            selectedColumns[val] = field;
           }
+          updatePreview(field, val);
         });
 
         selects.forEach(function(sel) {
-          var idx = sel.getAttribute('data-index');
+          var field = sel.getAttribute('data-field');
           var val = sel.value;
-          var row = document.getElementById('mapping-row-' + idx);
-          var icon = document.getElementById('mapping-icon-' + idx);
+          var row = document.getElementById('mapping-row-' + field);
+          var icon = document.getElementById('mapping-icon-' + field);
           var iconEl = icon.querySelector('i');
           var tooltip = icon.querySelector('.si-tooltip');
+          var isRequired = requiredFields.indexOf(field) !== -1;
 
           row.className = 'stock-import-mapping-row';
           icon.className = 'stock-import-status-icon';
 
-          if (val === '') {
-            var isMissingRequired = false;
-            for (var r = 0; r < requiredFields.length; r++) {
-              var rf = requiredFields[r];
-              if (!fieldMap[rf]) {
-                var anySelectHas = false;
-                selects.forEach(function(s2) {
-                  if (s2.value === rf) anySelectHas = true;
-                });
-                if (!anySelectHas) {
-                  isMissingRequired = true;
-                  break;
-                }
-              }
-            }
-            icon.classList.add('icon-warning');
-            row.classList.add('row-warning');
-            iconEl.className = 'bi bi-exclamation-triangle-fill';
-            tooltip.textContent = 'Optional field not mapped';
-            warningCount++;
-          } else if (duplicates[val]) {
+          if (val === '' && isRequired) {
             icon.classList.add('icon-error');
             row.classList.add('row-error');
             iconEl.className = 'bi bi-x-circle-fill';
-            tooltip.textContent = 'Duplicate mapping — each field can only be used once';
+            tooltip.textContent = 'Required ERP field is not mapped';
+            errorCount++;
+          } else if (val === '') {
+            icon.classList.add('icon-warning');
+            row.classList.add('row-warning');
+            iconEl.className = 'bi bi-exclamation-triangle-fill';
+            tooltip.textContent = 'Optional ERP field not mapped';
+            warningCount++;
+          } else if (duplicateColumns[val]) {
+            icon.classList.add('icon-error');
+            row.classList.add('row-error');
+            iconEl.className = 'bi bi-x-circle-fill';
+            tooltip.textContent = 'This Excel column is mapped multiple times';
             errorCount++;
           } else {
             icon.classList.add('icon-valid');
@@ -1874,23 +2033,19 @@ function confirmDeleteAllRolls() {
           }
         });
 
-        for (var r = 0; r < requiredFields.length; r++) {
-          var rf = requiredFields[r];
+        requiredFields.forEach(function(rf) {
           var pill = document.getElementById('req-pill-' + rf);
-          if (!pill) continue;
-          var isMapped = false;
-          selects.forEach(function(s) {
-            if (s.value === rf) isMapped = true;
-          });
-          if (isMapped) {
+          if (!pill) {
+            return;
+          }
+          if (fieldMap[rf] && fieldMap[rf] !== '') {
             pill.className = 'stock-import-pill success';
             pill.querySelector('i').className = 'bi bi-check2-circle';
           } else {
             pill.className = 'stock-import-pill warning';
             pill.querySelector('i').className = 'bi bi-exclamation-circle';
-            errorCount++;
           }
-        }
+        });
 
         document.getElementById('vb-valid-count').textContent = validCount;
         document.getElementById('vb-error-count').textContent = errorCount;
@@ -1976,9 +2131,15 @@ function confirmDeleteAllRolls() {
         <input type="hidden" name="action" value="import_confirmed">
         <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
         <button type="submit" class="si-review-btn import-valid" <?= $readyCount < 1 ? 'disabled style="opacity:.45;cursor:not-allowed"' : '' ?>>
-          <i class="bi bi-cloud-check"></i> Import Only Valid Data (<?= $readyCount ?>)
+          <i class="bi bi-cloud-check"></i> Import Now Without Review (<?= $readyCount ?>)
         </button>
       </form>
+    </div>
+
+    <div style="margin-bottom:16px;padding:12px 14px;border:1px solid #fde68a;background:#fffbeb;border-radius:12px;color:#92400e;font-size:12px">
+      <i class="bi bi-info-circle" style="margin-right:6px"></i>
+      <strong>Recommended:</strong> click <strong>Review All Issues</strong> first to verify mapped data.
+      If needed, you can still continue with <strong>Import Now Without Review</strong>.
     </div>
 
     <div class="stock-import-table-wrap" style="max-height:520px;overflow-y:auto" id="analysis-table-wrap">
@@ -2305,6 +2466,76 @@ document.getElementById('si-edit-modal').addEventListener('click', function(e) {
   </div>
 </div>
 
+<?php endif; ?>
+
+<?php if ($importState !== 'template'): ?>
+<?php
+  $totalRollsAlways = (int)$db->query("SELECT COUNT(*) AS c FROM paper_stock")->fetch_assoc()['c'];
+  $totalMtrAlways   = (float)$db->query("SELECT IFNULL(SUM(length_mtr),0) AS m FROM paper_stock")->fetch_assoc()['m'];
+?>
+<div class="card stock-import-card" style="margin-top:20px">
+  <div style="background:#0f172a;color:#fff;padding:22px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+    <div>
+      <h2 style="font-size:15px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:0 0 6px 0">
+        <i class="bi bi-database-gear" style="color:#22c55e;margin-right:8px"></i>Manage All Paper Rolls
+      </h2>
+      <p style="margin:0;color:#cbd5e1;font-size:12px">Bulk export inventory or delete all rolls from here.</p>
+    </div>
+    <span class="stock-import-pill success"><i class="bi bi-box-seam"></i> <?= number_format($totalRollsAlways) ?> rolls &middot; <?= number_format($totalMtrAlways, 0) ?> MTR</span>
+  </div>
+  <div style="padding:22px 24px">
+    <div style="display:flex;justify-content:center;gap:12px;flex-wrap:wrap">
+      <a href="<?= BASE_URL ?>/modules/paper_stock/export.php?format=pdf&mode=all"
+         class="stock-import-action download" style="background:#2563eb;border-color:#1d4ed8;min-width:170px;text-decoration:none"
+         target="_blank">
+        <i class="bi bi-file-earmark-pdf"></i>
+        <span>Export PDF</span>
+      </a>
+
+      <a href="<?= BASE_URL ?>/modules/paper_stock/export.php?format=csv&mode=all"
+         class="stock-import-action download" style="background:#16a34a;border-color:#15803d;min-width:170px;text-decoration:none">
+        <i class="bi bi-file-earmark-excel"></i>
+        <span>Export Excel</span>
+      </a>
+
+      <button type="button" onclick="confirmDeleteAllRollsGlobal()" class="stock-import-action upload"
+              style="background:#dc2626;border-color:#b91c1c;min-width:170px;cursor:pointer"
+              <?= $totalRollsAlways === 0 ? 'disabled style="opacity:.5;pointer-events:none"' : '' ?>>
+        <i class="bi bi-trash3"></i>
+        <span>Delete All Rolls (<?= number_format($totalRollsAlways) ?>)</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<form id="delete-all-rolls-form-global" method="POST" action="<?= BASE_URL ?>/modules/paper_stock/batch_delete.php" style="display:none">
+  <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
+  <input type="hidden" name="ids" id="delete-all-roll-ids-global" value="">
+</form>
+<script>
+function confirmDeleteAllRollsGlobal() {
+  var total = <?= (int)$totalRollsAlways ?>;
+  if (total === 0) return;
+  var msg = 'Are you sure you want to DELETE ALL ' + total.toLocaleString() + ' paper roll(s)?\n\nThis action CANNOT be undone.';
+  if (!confirm(msg)) return;
+  var msg2 = 'FINAL CONFIRMATION: Type OK to proceed with deleting ALL rolls.';
+  var answer = prompt(msg2);
+  if (!answer || answer.trim().toUpperCase() !== 'OK') { alert('Deletion cancelled.'); return; }
+
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', '<?= BASE_URL ?>/modules/paper_stock/export.php?format=ids&mode=all', true);
+  xhr.onload = function() {
+    if (xhr.status === 200) {
+      document.getElementById('delete-all-roll-ids-global').value = xhr.responseText.trim();
+      document.getElementById('delete-all-rolls-form-global').submit();
+    } else {
+      alert('Failed to fetch roll IDs. Please try again.');
+    }
+  };
+  xhr.onerror = function() { alert('Network error. Please try again.'); };
+  xhr.send();
+}
+</script>
 <?php endif; ?>
 
 <div style="margin-top:24px;padding:16px;background:#eff6ff;border:2px solid #bfdbfe;border-radius:12px;font-size:12px;color:#1e40af">

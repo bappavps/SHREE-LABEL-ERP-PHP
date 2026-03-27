@@ -168,13 +168,7 @@ include __DIR__ . '/../../includes/header.php';
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-header"><span class="card-title">Data Safety</span></div>
-      <div class="card-body">
-        <p class="text-muted" style="margin-bottom:10px">Backup and restore controls are now available from Settings.</p>
-        <a href="<?= BASE_URL ?>/modules/settings/index.php?tab=backup" class="btn btn-secondary"><i class="bi bi-database-check"></i> Open Backup &amp; Restore</a>
-      </div>
-    </div>
+
   </div>
 </div>
 
