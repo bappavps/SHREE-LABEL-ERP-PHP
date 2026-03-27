@@ -366,12 +366,6 @@ if (typeof qrcode === 'undefined') {
         <?php endforeach; ?>
         </div>
 
-        <div style="margin-top:14px">
-            <a href="<?= BASE_URL ?>/modules/print/index.php" style="font-size:11px;color:var(--brand);font-weight:700;text-decoration:none">
-                <i class="bi bi-plus-circle"></i> Create new template in Print Studio
-            </a>
-        </div>
-
         <div class="roll-section">
             <div class="tpl-section-title"><i class="bi bi-list-check"></i> Rolls to Print</div>
             <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;margin-bottom:8px;cursor:pointer">
