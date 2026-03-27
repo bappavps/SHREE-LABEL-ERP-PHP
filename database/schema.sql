@@ -298,6 +298,49 @@ ALTER TABLE `inventory_logs`
   ADD CONSTRAINT `fk_invlog_ps`          FOREIGN KEY (`paper_stock_id`)  REFERENCES `paper_stock`(`id`)  ON DELETE SET NULL,
   ADD CONSTRAINT `fk_invlog_by`          FOREIGN KEY (`performed_by`)    REFERENCES `users`(`id`)        ON DELETE SET NULL;
 
+-- --------------------------------
+-- Table: inventory_audits
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `inventory_audits` (
+  `id`              INT AUTO_INCREMENT PRIMARY KEY,
+  `audit_id`        VARCHAR(30)   NOT NULL UNIQUE,
+  `session_name`    VARCHAR(255)  NOT NULL,
+  `status`          ENUM('In Progress','Finalized') NOT NULL DEFAULT 'In Progress',
+  `total_erp`       INT           NOT NULL DEFAULT 0,
+  `total_scanned`   INT           NOT NULL DEFAULT 0,
+  `matched_count`   INT           NOT NULL DEFAULT 0,
+  `missing_count`   INT           NOT NULL DEFAULT 0,
+  `extra_count`     INT           NOT NULL DEFAULT 0,
+  `match_percent`   DECIMAL(5,2)  NOT NULL DEFAULT 0.00,
+  `created_by`      INT           DEFAULT NULL,
+  `created_by_name` VARCHAR(100)  DEFAULT NULL,
+  `finalized_at`    DATETIME      DEFAULT NULL,
+  `finalized_by`    INT           DEFAULT NULL,
+  `created_at`      TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`      TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------
+-- Table: audit_scanned_rolls
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `audit_scanned_rolls` (
+  `id`          INT AUTO_INCREMENT PRIMARY KEY,
+  `audit_id`    INT           NOT NULL,
+  `roll_no`     VARCHAR(50)   NOT NULL,
+  `paper_type`  VARCHAR(100)  DEFAULT '',
+  `dimension`   VARCHAR(100)  DEFAULT '',
+  `scan_time`   DATETIME      NOT NULL,
+  `status`      ENUM('Matched','Unknown') NOT NULL DEFAULT 'Unknown',
+  `created_at`  TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_asr_audit_id` (`audit_id`),
+  INDEX `idx_asr_roll_no` (`roll_no`),
+  CONSTRAINT `fk_asr_audit` FOREIGN KEY (`audit_id`) REFERENCES `inventory_audits`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE `inventory_audits`
+  ADD CONSTRAINT `fk_ia_created_by`  FOREIGN KEY (`created_by`)  REFERENCES `users`(`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `fk_ia_finalized_by` FOREIGN KEY (`finalized_by`) REFERENCES `users`(`id`) ON DELETE SET NULL;
+
 ALTER TABLE `master_raw_materials`
   ADD CONSTRAINT `fk_mrm_supplier`       FOREIGN KEY (`supplier_id`)     REFERENCES `master_suppliers`(`id`) ON DELETE SET NULL;
 

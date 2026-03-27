@@ -53,7 +53,9 @@ if ($forcedEnv === 'local' || $forcedEnv === 'live') {
         || strpos($host, '127.0.0.1') !== false
         || substr($host, -6) === '.local'
         || $serverAddr === '127.0.0.1'
-        || $serverAddr === '::1');
+        || $serverAddr === '::1'
+        || preg_match('/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/', $host)
+        || preg_match('/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/', $serverAddr));
 
     // Default must be XAMPP/local unless detected otherwise.
     $env = $isLocalHost ? 'local' : 'live';
