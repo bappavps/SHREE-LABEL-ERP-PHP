@@ -261,6 +261,20 @@ include __DIR__ . '/../../includes/header.php';
 .tree-connector{color:#94a3b8;font-family:monospace;font-weight:700;margin-right:4px;font-size:11px;user-select:none}
 .tree-spacer{display:inline-block;width:20px}
 
+/* === Collapsible Summary Section === */
+.ps-summary-toggle{cursor:pointer;user-select:none}
+.ps-summary-toggle i.chevron{transition:transform .25s ease;font-size:10px;color:#94a3b8}
+.ps-summary-toggle.collapsed i.chevron{transform:rotate(-90deg)}
+.ps-summary-body{overflow:hidden;transition:max-height .3s ease,opacity .2s ease;max-height:600px;opacity:1}
+.ps-summary-body.collapsed{max-height:0;opacity:0;margin:0;padding:0}
+
+/* === Collapsible Action Column === */
+.action-col-hidden .sticky-action{display:none !important}
+.ps-action-toggle{position:absolute;right:0;top:50%;transform:translateY(-50%);z-index:25;width:24px;height:48px;display:flex;align-items:center;justify-content:center;background:#f8fafc;border:1px solid var(--border);border-right:none;border-radius:8px 0 0 8px;cursor:pointer;color:#64748b;font-size:12px;box-shadow:-2px 0 8px rgba(0,0,0,.06);transition:all .15s}
+.ps-action-toggle:hover{background:#fff;color:#0f172a;box-shadow:-2px 0 12px rgba(0,0,0,.1)}
+.ps-action-toggle i{transition:transform .2s ease}
+.ps-action-toggle.expanded i{transform:rotate(180deg)}
+
 @media print{
   .no-print{display:none !important}
 }
@@ -302,9 +316,10 @@ include __DIR__ . '/../../includes/header.php';
 </div>
 
 <div style="margin-bottom:16px">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding:0 2px;flex-wrap:wrap;gap:8px">
-    <span style="font-size:10px;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:.15em">
+  <div class="ps-summary-toggle" id="ps-summary-toggle" onclick="toggleSummarySection()" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding:0 2px;flex-wrap:wrap;gap:8px;cursor:pointer" title="Click to collapse/expand">
+    <span style="font-size:10px;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:.15em;display:flex;align-items:center;gap:6px">
       <i class="bi bi-grid" style="color:var(--brand)"></i>&nbsp; Technical Inventory Summary
+      <i class="bi bi-chevron-down chevron"></i>
     </span>
     <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
       <span style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase">
@@ -316,6 +331,7 @@ include __DIR__ . '/../../includes/header.php';
       <span class="badge badge-draft"><?= count($summaryGroups) ?> Technical Groups</span>
     </div>
   </div>
+  <div class="ps-summary-body" id="ps-summary-body">
   <?php if (!empty($summaryGroups)): ?>
   <div class="ps-summary-wrap">
     <div class="ps-summary-grid">
@@ -343,6 +359,7 @@ include __DIR__ . '/../../includes/header.php';
     </div>
   </div>
   <?php endif; ?>
+  </div><!-- /ps-summary-body -->
 </div>
 
 <div class="ps-quick-filter no-print" id="ps-quick-filter">
@@ -444,8 +461,12 @@ include __DIR__ . '/../../includes/header.php';
     </a>
   </div>
 
-  <div class="table-wrap">
-    <table id="ps-table">
+  <div style="position:relative">
+    <button type="button" class="ps-action-toggle no-print" id="ps-action-toggle" onclick="toggleActionColumn()" title="Toggle Action column">
+      <i class="bi bi-chevron-left"></i>
+    </button>
+    <div class="table-wrap">
+    <table id="ps-table" class="action-col-hidden">
       <thead>
         <tr>
           <th class="sticky-check" style="text-align:center"><input type="checkbox" id="ps-select-all" style="cursor:pointer;width:16px;height:16px"></th>
@@ -508,6 +529,7 @@ include __DIR__ . '/../../includes/header.php';
       </tbody>
     </table>
   </div>
+  </div><!-- /position:relative wrapper -->
 
   <?php
   if (!$isAllRows) {
@@ -1281,5 +1303,58 @@ include __DIR__ . '/../../includes/header.php';
   ['company','type','gsm','status'].forEach(updateQuickPickerLabel);
 
   applyAllFilters();
+
+  // === Collapsible Summary Section ===
+  window.toggleSummarySection = function(){
+    var toggle = document.getElementById('ps-summary-toggle');
+    var body = document.getElementById('ps-summary-body');
+    var isCollapsed = body.classList.contains('collapsed');
+    if (isCollapsed) {
+      body.classList.remove('collapsed');
+      toggle.classList.remove('collapsed');
+      localStorage.setItem('ps_summary_collapsed', '0');
+    } else {
+      body.classList.add('collapsed');
+      toggle.classList.add('collapsed');
+      localStorage.setItem('ps_summary_collapsed', '1');
+    }
+  };
+
+  // Restore summary state (default: expanded)
+  (function(){
+    var saved = localStorage.getItem('ps_summary_collapsed');
+    if (saved === '1') {
+      document.getElementById('ps-summary-body').classList.add('collapsed');
+      document.getElementById('ps-summary-toggle').classList.add('collapsed');
+    }
+  })();
+
+  // === Collapsible Action Column ===
+  window.toggleActionColumn = function(){
+    var tbl = document.getElementById('ps-table');
+    var btn = document.getElementById('ps-action-toggle');
+    var isHidden = tbl.classList.contains('action-col-hidden');
+    if (isHidden) {
+      tbl.classList.remove('action-col-hidden');
+      btn.classList.add('expanded');
+      localStorage.setItem('ps_action_collapsed', '0');
+    } else {
+      tbl.classList.add('action-col-hidden');
+      btn.classList.remove('expanded');
+      localStorage.setItem('ps_action_collapsed', '1');
+    }
+  };
+
+  // Restore action column state (default: collapsed)
+  (function(){
+    var saved = localStorage.getItem('ps_action_collapsed');
+    var tbl = document.getElementById('ps-table');
+    var btn = document.getElementById('ps-action-toggle');
+    if (saved === '0') {
+      tbl.classList.remove('action-col-hidden');
+      btn.classList.add('expanded');
+    }
+    // default is collapsed (class already applied in HTML)
+  })();
 })();
 </script>
