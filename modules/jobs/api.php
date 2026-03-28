@@ -44,6 +44,31 @@ function jobs_ensure_change_request_table(mysqli $db): void {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 }
 
+function jobs_ensure_delete_audit_table(mysqli $db): void {
+    $db->query("CREATE TABLE IF NOT EXISTS job_delete_audit (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        root_job_id INT NOT NULL,
+        root_job_no VARCHAR(60) NULL,
+        root_job_type VARCHAR(50) NULL,
+        planning_id INT NULL,
+        parent_roll_no VARCHAR(80) NULL,
+        action_status VARCHAR(20) NOT NULL DEFAULT 'completed',
+        deleted_root TINYINT(1) NOT NULL DEFAULT 0,
+        deleted_child_jobs INT NOT NULL DEFAULT 0,
+        removed_child_rolls INT NOT NULL DEFAULT 0,
+        parent_restored TINYINT(1) NOT NULL DEFAULT 0,
+        planning_restored TINYINT(1) NOT NULL DEFAULT 0,
+        blocked_jobs_json LONGTEXT NULL,
+        reset_snapshot_json LONGTEXT NULL,
+        requested_by INT NULL,
+        requested_by_name VARCHAR(120) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_jda_root_job_id (root_job_id),
+        INDEX idx_jda_status (action_status),
+        INDEX idx_jda_created_at (created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
 function jobs_apply_jumbo_roll_changes(mysqli $db, array $job, array $rows, float $operatorWastageKg, string $operatorRemarks, string $notePrefix = 'Operator remarks'): array {
     $extra = json_decode((string)($job['extra_data'] ?? '{}'), true);
     if (!is_array($extra)) $extra = [];
@@ -133,6 +158,138 @@ function jobs_apply_jumbo_roll_changes(mysqli $db, array $job, array $rows, floa
         $db->rollback();
         return ['ok' => false, 'error' => $th->getMessage()];
     }
+}
+
+function jobs_department_label(string $department): string {
+    $department = strtolower(trim($department));
+    $map = [
+        'jumbo_slitting' => 'Jumbo Slitting',
+        'flexo_printing' => 'Flexo Printing',
+        'qc' => 'QC',
+        'packing' => 'Packing',
+    ];
+    if (isset($map[$department])) return $map[$department];
+    $department = str_replace('_', ' ', $department);
+    return trim((string)preg_replace('/\s+/', ' ', ucwords($department)));
+}
+
+function jobs_display_job_name(array $job): string {
+    $planningName = trim((string)($job['planning_job_name'] ?? ''));
+    if ($planningName !== '') return $planningName;
+
+    $jobNo = trim((string)($job['job_no'] ?? ''));
+    $dept = jobs_department_label((string)($job['department'] ?? ''));
+    if ($jobNo !== '') return $dept !== '' ? ($jobNo . ' (' . $dept . ')') : $jobNo;
+
+    if ($dept !== '') {
+        $seq = (int)($job['sequence_order'] ?? 0);
+        return $seq > 0 ? ($dept . ' #' . $seq) : $dept;
+    }
+
+    return '—';
+}
+
+function jobs_collect_roll_nos(array $extra, array $job): array {
+    $rollNos = [];
+    $jobRoll = trim((string)($job['roll_no'] ?? ''));
+    if ($jobRoll !== '') $rollNos[$jobRoll] = true;
+
+    $parentRoll = trim((string)($extra['parent_roll'] ?? (($extra['parent_details']['roll_no'] ?? ''))));
+    if ($parentRoll !== '') $rollNos[$parentRoll] = true;
+
+    foreach (['child_rolls', 'stock_rolls'] as $bucket) {
+        $rows = is_array($extra[$bucket] ?? null) ? $extra[$bucket] : [];
+        foreach ($rows as $r) {
+            $rn = trim((string)($r['roll_no'] ?? ''));
+            if ($rn !== '') $rollNos[$rn] = true;
+        }
+    }
+    return array_values(array_keys($rollNos));
+}
+
+function jobs_fetch_roll_map(mysqli $db, array $rollNos): array {
+    if (empty($rollNos)) return [];
+    $ph = implode(',', array_fill(0, count($rollNos), '?'));
+    $types = str_repeat('s', count($rollNos));
+    $sql = "SELECT roll_no, remarks, status, width_mm, length_mtr, gsm, weight_kg, paper_type, company FROM paper_stock WHERE roll_no IN ($ph)";
+    $stmt = $db->prepare($sql);
+    $stmt->bind_param($types, ...$rollNos);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $map = [];
+    foreach ($rows as $r) {
+        $k = (string)($r['roll_no'] ?? '');
+        if ($k === '') continue;
+        $map[$k] = [
+            'remarks'    => (string)($r['remarks'] ?? ''),
+            'status'     => (string)($r['status'] ?? ''),
+            'width_mm'   => (float)($r['width_mm'] ?? 0),
+            'length_mtr' => (float)($r['length_mtr'] ?? 0),
+            'gsm'        => (float)($r['gsm'] ?? 0),
+            'weight_kg'  => (float)($r['weight_kg'] ?? 0),
+            'paper_type' => (string)($r['paper_type'] ?? ''),
+            'company'    => (string)($r['company'] ?? ''),
+        ];
+    }
+    return $map;
+}
+
+function jobs_attach_live_roll_data(array &$job, array $rollMap): void {
+    $extra = $job['extra_data_parsed'] ?? json_decode((string)($job['extra_data'] ?? '{}'), true) ?: [];
+    if (!is_array($extra)) $extra = [];
+
+    $job['display_job_name'] = jobs_display_job_name($job);
+    $job['live_roll_map'] = $rollMap;
+
+    $parentRoll = trim((string)($extra['parent_roll'] ?? (($extra['parent_details']['roll_no'] ?? ''))));
+    $job['live_parent_remarks'] = '';
+    if ($parentRoll !== '' && isset($rollMap[$parentRoll])) {
+        $job['live_parent_remarks'] = (string)($rollMap[$parentRoll]['remarks'] ?? '');
+    }
+
+    foreach (['child_rolls', 'stock_rolls'] as $bucket) {
+        $rows = is_array($extra[$bucket] ?? null) ? $extra[$bucket] : [];
+        foreach ($rows as &$r) {
+            $rn = trim((string)($r['roll_no'] ?? ''));
+            if ($rn !== '' && isset($rollMap[$rn])) {
+                $r['remarks_live'] = (string)($rollMap[$rn]['remarks'] ?? '');
+                $r['status_live'] = (string)($rollMap[$rn]['status'] ?? '');
+            }
+        }
+        unset($r);
+        $extra[$bucket] = $rows;
+    }
+    $job['extra_data_parsed'] = $extra;
+}
+
+function jobs_get_chain_jobs(mysqli $db, int $rootJobId): array {
+    $chain = [];
+    $seen = [];
+    $queue = [$rootJobId];
+
+    while (!empty($queue)) {
+        $currentId = (int)array_shift($queue);
+        if ($currentId <= 0 || isset($seen[$currentId])) continue;
+        $seen[$currentId] = true;
+
+        $selfStmt = $db->prepare("SELECT * FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $selfStmt->bind_param('i', $currentId);
+        $selfStmt->execute();
+        $self = $selfStmt->get_result()->fetch_assoc();
+        if (!$self) continue;
+        $chain[$currentId] = $self;
+
+        $childStmt = $db->prepare("SELECT id FROM jobs WHERE previous_job_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')");
+        $childStmt->bind_param('i', $currentId);
+        $childStmt->execute();
+        $childRows = $childStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        foreach ($childRows as $cr) {
+            $cid = (int)($cr['id'] ?? 0);
+            if ($cid > 0 && !isset($seen[$cid])) $queue[] = $cid;
+        }
+    }
+
+    return array_values($chain);
 }
 
 try {
@@ -324,6 +481,9 @@ try {
         }
 
         $job['extra_data_parsed'] = json_decode($job['extra_data'] ?? '{}', true) ?: [];
+        $rollNos = jobs_collect_roll_nos($job['extra_data_parsed'], $job);
+        $rollMap = jobs_fetch_roll_map($db, $rollNos);
+        jobs_attach_live_roll_data($job, $rollMap);
         echo json_encode(['ok' => true, 'job' => $job]);
         break;
 
@@ -729,6 +889,9 @@ try {
 
         foreach ($jobs as &$j) {
             $j['extra_data_parsed'] = json_decode($j['extra_data'] ?? '{}', true) ?: [];
+            $rollNos = jobs_collect_roll_nos($j['extra_data_parsed'], $j);
+            $rollMap = jobs_fetch_roll_map($db, $rollNos);
+            jobs_attach_live_roll_data($j, $rollMap);
         }
         unset($j);
 
@@ -788,15 +951,234 @@ try {
         echo json_encode(['ok' => true, 'job_id' => $jobId]);
         break;
 
-    // ─── Delete job (admin only, soft delete) ───────────────
+    // ─── Delete job with reset (admin only) ─────────────────
     case 'delete_job':
         if ($method !== 'POST') { echo json_encode(['ok' => false, 'error' => 'POST required']); break; }
         $jobId = (int)($_POST['job_id'] ?? 0);
         if (!$jobId) { echo json_encode(['ok' => false, 'error' => 'Missing job_id']); break; }
-        $upd = $db->prepare("UPDATE jobs SET deleted_at = NOW() WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')");
-        $upd->bind_param('i', $jobId);
-        $upd->execute();
-        echo json_encode(['ok' => true, 'job_id' => $jobId, 'deleted' => $upd->affected_rows > 0]);
+
+        jobs_ensure_delete_audit_table($db);
+        $requestedBy = (int)($_SESSION['user_id'] ?? 0);
+        $requestedByName = trim((string)($_SESSION['name'] ?? ($_SESSION['user_name'] ?? 'Unknown')));
+
+        $rootStmt = $db->prepare("SELECT * FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $rootStmt->bind_param('i', $jobId);
+        $rootStmt->execute();
+        $rootJob = $rootStmt->get_result()->fetch_assoc();
+        if (!$rootJob) {
+            echo json_encode(['ok' => false, 'error' => 'Job not found']);
+            break;
+        }
+
+        $chain = jobs_get_chain_jobs($db, $jobId);
+        $blocked = [];
+        foreach ($chain as $cj) {
+            $cid = (int)($cj['id'] ?? 0);
+            if ($cid === $jobId) continue;
+            $st = trim((string)($cj['status'] ?? ''));
+            if (!in_array($st, ['Queued', 'Pending'], true)) {
+                $blocked[] = ['id' => $cid, 'job_no' => (string)($cj['job_no'] ?? ''), 'status' => $st];
+            }
+        }
+        if (!empty($blocked)) {
+            $blockedJson = json_encode($blocked, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $rootJobNo = (string)($rootJob['job_no'] ?? '');
+            $rootType = (string)($rootJob['job_type'] ?? '');
+            $planId = (int)($rootJob['planning_id'] ?? 0);
+            $blockedParentRoll = trim((string)($rootJob['roll_no'] ?? ''));
+            $auditBlocked = $db->prepare("INSERT INTO job_delete_audit (root_job_id, root_job_no, root_job_type, planning_id, parent_roll_no, action_status, blocked_jobs_json, requested_by, requested_by_name) VALUES (?, ?, ?, ?, ?, 'blocked', ?, ?, ?)");
+            if ($auditBlocked) {
+                $auditBlocked->bind_param('ississis', $jobId, $rootJobNo, $rootType, $planId, $blockedParentRoll, $blockedJson, $requestedBy, $requestedByName);
+                $auditBlocked->execute();
+            }
+            echo json_encode([
+                'ok' => false,
+                'error' => 'Delete blocked: downstream jobs already progressed.',
+                'blocked_jobs' => $blocked,
+            ]);
+            break;
+        }
+
+        $db->begin_transaction();
+        try {
+            $deletedChildJobs = 0;
+            $deletedRoot = 0;
+            $removedRolls = 0;
+            $restoredParent = false;
+            $restoredPlanning = false;
+            $parentRollForAudit = trim((string)($rootJob['roll_no'] ?? ''));
+
+            if (($rootJob['job_type'] ?? '') === 'Slitting') {
+                $extra = json_decode((string)($rootJob['extra_data'] ?? '{}'), true) ?: [];
+                $parentRoll = trim((string)($extra['parent_roll'] ?? (($extra['parent_details']['roll_no'] ?? ''))));
+                $parentRemarks = trim((string)($extra['parent_details']['remarks'] ?? ''));
+                if ($parentRoll !== '') $parentRollForAudit = $parentRoll;
+
+                $childRolls = [];
+                foreach (['child_rolls', 'stock_rolls'] as $bucket) {
+                    $rows = is_array($extra[$bucket] ?? null) ? $extra[$bucket] : [];
+                    foreach ($rows as $r) {
+                        $rn = trim((string)($r['roll_no'] ?? ''));
+                        if ($rn !== '') $childRolls[$rn] = true;
+                    }
+                }
+
+                if (!empty($childRolls)) {
+                    $list = array_values(array_keys($childRolls));
+                    $ph = implode(',', array_fill(0, count($list), '?'));
+                    $types = str_repeat('s', count($list));
+                    $delSql = "DELETE FROM paper_stock WHERE roll_no IN ($ph)";
+                    $delStmt = $db->prepare($delSql);
+                    $delStmt->bind_param($types, ...$list);
+                    $delStmt->execute();
+                    $removedRolls = (int)$delStmt->affected_rows;
+                }
+
+                // Collect all unique parent rolls (primary + any additional from multi-roll slitting)
+                $parentRollsToRestore = [];
+                if ($parentRoll !== '') $parentRollsToRestore[$parentRoll] = true;
+                $rootRollNo = trim((string)($rootJob['roll_no'] ?? ''));
+                if ($rootRollNo !== '' && !isset($parentRollsToRestore[$rootRollNo])) {
+                    $parentRollsToRestore[$rootRollNo] = true;
+                }
+                foreach (['child_rolls', 'stock_rolls'] as $bk) {
+                    foreach (is_array($extra[$bk] ?? null) ? $extra[$bk] : [] as $bkRow) {
+                        $bkPrn = trim((string)($bkRow['parent_roll_no'] ?? ''));
+                        if ($bkPrn !== '') $parentRollsToRestore[$bkPrn] = true;
+                    }
+                }
+                // Use original_status from parent_details (saved at slitting time); map invalid states to 'Main'
+                $primaryOriginalStatus = trim((string)($extra['parent_details']['original_status'] ?? ''));
+                if ($primaryOriginalStatus === '' || in_array($primaryOriginalStatus, ['Consumed', 'Slitting'], true)) {
+                    $primaryOriginalStatus = 'Main';
+                }
+                foreach (array_keys($parentRollsToRestore) as $pRollToRestore) {
+                    $restoreStatus  = ($pRollToRestore === $parentRoll) ? $primaryOriginalStatus : 'Main';
+                    $restoreRemarks = ($pRollToRestore === $parentRoll) ? $parentRemarks : '';
+                    $upParent = $db->prepare("UPDATE paper_stock SET status = ?, date_used = NULL, remarks = ? WHERE roll_no = ?");
+                    $upParent->bind_param('sss', $restoreStatus, $restoreRemarks, $pRollToRestore);
+                    $upParent->execute();
+                    if ($upParent->affected_rows > 0) $restoredParent = true;
+                }
+
+                $planId = (int)($rootJob['planning_id'] ?? 0);
+                if ($planId > 0) {
+                    $queued = 'Queued';
+                    $upPlan = $db->prepare("UPDATE planning SET status = ? WHERE id = ?");
+                    $upPlan->bind_param('si', $queued, $planId);
+                    $upPlan->execute();
+                    $restoredPlanning = $upPlan->affected_rows > 0;
+
+                    $planExtraStmt = $db->prepare("SELECT extra_data FROM planning WHERE id = ? LIMIT 1");
+                    if ($planExtraStmt) {
+                        $planExtraStmt->bind_param('i', $planId);
+                        $planExtraStmt->execute();
+                        $planRow = $planExtraStmt->get_result()->fetch_assoc();
+                        if ($planRow) {
+                            $pExtra = json_decode((string)($planRow['extra_data'] ?? '{}'), true) ?: [];
+                            $pExtra['printing_planning'] = 'Queued';
+                            $pExtraJson = json_encode($pExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                            $upPlanExtra = $db->prepare("UPDATE planning SET extra_data = ? WHERE id = ?");
+                            if ($upPlanExtra) {
+                                $upPlanExtra->bind_param('si', $pExtraJson, $planId);
+                                $upPlanExtra->execute();
+                            }
+                        }
+                    }
+                }
+            }
+
+            foreach ($chain as $cj) {
+                $cid = (int)($cj['id'] ?? 0);
+                if ($cid <= 0 || $cid === $jobId) continue;
+                $delChild = $db->prepare("UPDATE jobs SET deleted_at = NOW() WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')");
+                $delChild->bind_param('i', $cid);
+                $delChild->execute();
+                $deletedChildJobs += max(0, (int)$delChild->affected_rows);
+            }
+
+            $delRoot = $db->prepare("UPDATE jobs SET deleted_at = NOW() WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')");
+            $delRoot->bind_param('i', $jobId);
+            $delRoot->execute();
+            $deletedRoot = (int)$delRoot->affected_rows;
+
+            $chainSummary = array_map(function($row) {
+                return [
+                    'id' => (int)($row['id'] ?? 0),
+                    'job_no' => (string)($row['job_no'] ?? ''),
+                    'status' => (string)($row['status'] ?? ''),
+                    'job_type' => (string)($row['job_type'] ?? ''),
+                ];
+            }, $chain);
+            $snapshot = [
+                'root_job_id' => $jobId,
+                'root_job_no' => (string)($rootJob['job_no'] ?? ''),
+                'root_job_type' => (string)($rootJob['job_type'] ?? ''),
+                'planning_id' => (int)($rootJob['planning_id'] ?? 0),
+                'chain_jobs' => $chainSummary,
+                'result' => [
+                    'deleted_root' => $deletedRoot,
+                    'deleted_child_jobs' => $deletedChildJobs,
+                    'removed_child_rolls' => $removedRolls,
+                    'parent_restored' => $restoredParent,
+                    'planning_restored' => $restoredPlanning,
+                ],
+            ];
+            $snapshotJson = json_encode($snapshot, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $rootJobNo = (string)($rootJob['job_no'] ?? '');
+            $rootType = (string)($rootJob['job_type'] ?? '');
+            $planId = (int)($rootJob['planning_id'] ?? 0);
+            $auditCompleted = $db->prepare("INSERT INTO job_delete_audit (root_job_id, root_job_no, root_job_type, planning_id, parent_roll_no, action_status, deleted_root, deleted_child_jobs, removed_child_rolls, parent_restored, planning_restored, reset_snapshot_json, requested_by, requested_by_name) VALUES (?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?)");
+            if ($auditCompleted) {
+                $auditCompleted->bind_param('issisiiiiisis', $jobId, $rootJobNo, $rootType, $planId, $parentRollForAudit, $deletedRoot, $deletedChildJobs, $removedRolls, $restoredParent, $restoredPlanning, $snapshotJson, $requestedBy, $requestedByName);
+                $auditCompleted->execute();
+            }
+
+            $db->commit();
+            echo json_encode([
+                'ok' => true,
+                'job_id' => $jobId,
+                'deleted' => $deletedRoot > 0,
+                'reset' => [
+                    'deleted_root' => $deletedRoot,
+                    'deleted_child_jobs' => $deletedChildJobs,
+                    'removed_child_rolls' => $removedRolls,
+                    'parent_restored' => $restoredParent,
+                    'planning_restored' => $restoredPlanning,
+                ],
+            ]);
+        } catch (Throwable $th) {
+            $db->rollback();
+            echo json_encode(['ok' => false, 'error' => 'Delete reset failed: ' . $th->getMessage()]);
+        }
+        break;
+
+    // ─── Fetch delete-reset audit log ──────────────────────
+    case 'get_delete_audit':
+        jobs_ensure_delete_audit_table($db);
+        $dalLimit  = min(200, max(1, (int)($_GET['limit'] ?? 100)));
+        $dalStatus = trim($_GET['status'] ?? '');
+        $dalWhere  = [];
+        $dalParams = [];
+        $dalTypes  = '';
+        if (in_array($dalStatus, ['completed', 'blocked'], true)) {
+            $dalWhere[]  = 'action_status = ?';
+            $dalParams[] = $dalStatus;
+            $dalTypes   .= 's';
+        }
+        $dalSql = "SELECT id, root_job_no, root_job_type, parent_roll_no, action_status,
+                          deleted_root, deleted_child_jobs, removed_child_rolls,
+                          parent_restored, planning_restored,
+                          requested_by_name, created_at
+                   FROM job_delete_audit"
+                . ($dalWhere ? ' WHERE ' . implode(' AND ', $dalWhere) : '')
+                . ' ORDER BY id DESC LIMIT ?';
+        $dalParams[] = $dalLimit;
+        $dalTypes   .= 'i';
+        $dalStmt = $db->prepare($dalSql);
+        $dalStmt->bind_param($dalTypes, ...$dalParams);
+        $dalStmt->execute();
+        echo json_encode(['ok' => true, 'records' => $dalStmt->get_result()->fetch_all(MYSQLI_ASSOC)]);
         break;
 
     default:

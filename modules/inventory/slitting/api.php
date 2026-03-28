@@ -413,24 +413,27 @@ try {
             // Resolve planning context using planning_id first, then plan number.
             $planNo = $planNoInput;
             $planningExtra = [];
+            $planningJobName = '';
             if ($planningId > 0) {
-                $planStmt = $db->prepare("SELECT id, job_no, extra_data FROM planning WHERE id = ? LIMIT 1");
+                $planStmt = $db->prepare("SELECT id, job_no, job_name, extra_data FROM planning WHERE id = ? LIMIT 1");
                 $planStmt->bind_param('i', $planningId);
                 $planStmt->execute();
                 $planRow = $planStmt->get_result()->fetch_assoc();
                 if ($planRow) {
-                    $planNo = trim((string)($planRow['job_no'] ?? $planNo));
-                    $planningExtra = json_decode((string)($planRow['extra_data'] ?? '{}'), true) ?: [];
+                    $planNo           = trim((string)($planRow['job_no'] ?? $planNo));
+                    $planningJobName  = trim((string)($planRow['job_name'] ?? ''));
+                    $planningExtra    = json_decode((string)($planRow['extra_data'] ?? '{}'), true) ?: [];
                 }
             } elseif ($planNo !== '') {
-                $planStmt = $db->prepare("SELECT id, job_no, extra_data FROM planning WHERE job_no = ? LIMIT 1");
+                $planStmt = $db->prepare("SELECT id, job_no, job_name, extra_data FROM planning WHERE job_no = ? LIMIT 1");
                 $planStmt->bind_param('s', $planNo);
                 $planStmt->execute();
                 $planRow = $planStmt->get_result()->fetch_assoc();
                 if ($planRow) {
-                    $planningId = (int)$planRow['id'];
-                    $planNo = trim((string)($planRow['job_no'] ?? $planNo));
-                    $planningExtra = json_decode((string)($planRow['extra_data'] ?? '{}'), true) ?: [];
+                    $planningId       = (int)$planRow['id'];
+                    $planNo           = trim((string)($planRow['job_no'] ?? $planNo));
+                    $planningJobName  = trim((string)($planRow['job_name'] ?? ''));
+                    $planningExtra    = json_decode((string)($planRow['extra_data'] ?? '{}'), true) ?: [];
                 }
             }
 
@@ -705,8 +708,9 @@ try {
                     'length_mtr' => (float)($parent['length_mtr'] ?? 0),
                     'gsm' => (float)($parent['gsm'] ?? 0),
                     'weight_kg' => (float)($parent['weight_kg'] ?? 0),
-                    'sqm' => round(((float)($parent['width_mm'] ?? 0) / 1000) * (float)($parent['length_mtr'] ?? 0), 2),
-                    'remarks' => (string)($parent['remarks'] ?? ''),
+                    'sqm'             => round(((float)($parent['width_mm'] ?? 0) / 1000) * (float)($parent['length_mtr'] ?? 0), 2),
+                    'original_status' => (string)($parent['status'] ?? 'Main'),
+                    'remarks'         => (string)($parent['remarks'] ?? ''),
                 ],
                 'child_rolls' => array_values($jobChildRolls),
                 'stock_rolls' => array_values($stockRolls),
@@ -719,6 +723,7 @@ try {
                 'operator_name' => $operatorName,
             ];
 
+            $displayJobName = ($planningJobName !== '' ? $planningJobName : $jobName);
             $jumboJobId = 0;
             if (!empty($jobChildRolls)) {
                 $existingJumbo = null;
@@ -755,7 +760,7 @@ try {
 
                     $newExtra = json_encode($extraPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                     $updJ = $db->prepare("UPDATE jobs SET extra_data = ?, notes = ? WHERE id = ?");
-                    $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | JMB: ' . (string)($existingJumbo['job_no'] ?? 'N/A');
+                    $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | JMB: ' . (string)($existingJumbo['job_no'] ?? 'N/A') . ($displayJobName !== '' ? ' | Job Name : ' . $displayJobName : '');
                     $jid = (int)$existingJumbo['id'];
                     $updJ->bind_param('ssi', $newExtra, $notesJ, $jid);
                     $updJ->execute();
@@ -781,14 +786,35 @@ try {
                         $jcNoJumbo = 'JMB/' . date('Y') . '/' . str_pad((string)$batchId, 4, '0', STR_PAD_LEFT);
                     }
 
-                    $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | JMB: ' . $jcNoJumbo;
                     $extraJson = json_encode($extraPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                     $pidJ = $planningId > 0 ? $planningId : null;
-                    $jcStmtJ = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, notes, extra_data) VALUES (?, ?, NULL, ?, 'Slitting', 'jumbo_slitting', 'Pending', 1, ?, ?)");
-                    $jcStmtJ->bind_param('sisss', $jcNoJumbo, $pidJ, $parentRollNo, $notesJ, $extraJson);
-                    $jcStmtJ->execute();
-                    $jumboJobId = $db->insert_id;
-                    $createdJobCards[] = ['job_no' => $jcNoJumbo, 'type' => 'Slitting', 'roll' => $parentRollNo, 'id' => $jumboJobId];
+                    $insertedJumbo = false;
+                    for ($jumboAttempt = 0; $jumboAttempt < 30; $jumboAttempt++) {
+                        if ($jumboAttempt > 0) {
+                            $jcNoJumbo = (string)(generateUniqueIdForTable($db, 'jumbo_job', 'jobs', 'job_no') ?? '');
+                            if ($jcNoJumbo === '') {
+                                $jcNoJumbo = 'JMB/' . date('Y') . '/' . str_pad((string)($batchId + $jumboAttempt), 4, '0', STR_PAD_LEFT);
+                            }
+                        }
+
+                        $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | JMB: ' . $jcNoJumbo . ($displayJobName !== '' ? ' | Job Name : ' . $displayJobName : '');
+                        $jcStmtJ = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, notes, extra_data) VALUES (?, ?, NULL, ?, 'Slitting', 'jumbo_slitting', 'Pending', 1, ?, ?)");
+                        $jcStmtJ->bind_param('sisss', $jcNoJumbo, $pidJ, $parentRollNo, $notesJ, $extraJson);
+                        $okJumbo = $jcStmtJ->execute();
+                        if ($okJumbo) {
+                            $jumboJobId = $db->insert_id;
+                            $createdJobCards[] = ['job_no' => $jcNoJumbo, 'type' => 'Slitting', 'roll' => $parentRollNo, 'id' => $jumboJobId];
+                            $insertedJumbo = true;
+                            break;
+                        }
+                        if ((int)$jcStmtJ->errno === 1062) {
+                            continue;
+                        }
+                        throw new Exception('Failed to create jumbo job: ' . $jcStmtJ->error);
+                    }
+                    if (!$insertedJumbo) {
+                        throw new Exception('Failed to create jumbo job: duplicate job number, please retry.');
+                    }
                 }
 
                 // Keep one downstream printing job per plan as queued.

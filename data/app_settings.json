@@ -81,7 +81,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 7
+                "counter": 19
             },
             "sales_order": {
                 "prefix": "SO",
@@ -93,11 +93,11 @@
             },
             "printing_job": {
                 "prefix": "FLX",
-                "counter": 8
+                "counter": 2
             },
             "planning": {
                 "prefix": "PLN",
-                "counter": 8
+                "counter": 0
             }
         }
     }

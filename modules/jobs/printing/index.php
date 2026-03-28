@@ -31,6 +31,15 @@ $jobs = $db->query("
 // Parse extra_data for each job
 foreach ($jobs as &$j) {
     $j['extra_data_parsed'] = json_decode($j['extra_data'] ?? '{}', true) ?: [];
+    $planningName = trim((string)($j['planning_job_name'] ?? ''));
+    if ($planningName !== '') {
+      $j['display_job_name'] = $planningName;
+    } else {
+      $deptRaw = trim((string)($j['department'] ?? 'flexo_printing'));
+      $dept = ucwords(str_replace('_', ' ', $deptRaw));
+      $jobNo = trim((string)($j['job_no'] ?? ''));
+      $j['display_job_name'] = $jobNo !== '' ? ($jobNo . ' (' . $dept . ')') : ($dept !== '' ? $dept : '—');
+    }
 }
 unset($j);
 
@@ -285,6 +294,15 @@ const API_BASE = '<?= BASE_URL ?>/modules/jobs/api.php';
 const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const ALL_JOBS = <?= json_encode($jobs, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 
+function resolvePrintDisplayName(job) {
+  if (job && String(job.display_job_name || '').trim() !== '') return String(job.display_job_name).trim();
+  if (job && String(job.planning_job_name || '').trim() !== '') return String(job.planning_job_name).trim();
+  const jobNo = String(job?.job_no || '').trim();
+  const dept = String(job?.department || 'flexo_printing').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  if (jobNo !== '') return `${jobNo} (${dept})`;
+  return dept || '—';
+}
+
 // ─── Filters ────────────────────────────────────────────────
 function filterFP(status, btn) {
   document.querySelectorAll('.fp-filter-btn').forEach(b => b.classList.remove('active'));
@@ -400,7 +418,7 @@ function openPrintDetail(id, mode) {
   // Job Info
   html += `<div class="fp-detail-section"><h3><i class="bi bi-info-circle"></i> Job Information</h3><div class="fp-detail-grid">
     <div class="fp-detail-item"><span class="dl">Job No</span><span class="dv" style="color:var(--fp-brand)">${esc(job.job_no)}</span></div>
-    <div class="fp-detail-item"><span class="dl">Job Name</span><span class="dv">${esc(job.planning_job_name||'—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Job Name</span><span class="dv">${esc(resolvePrintDisplayName(job))}</span></div>
     <div class="fp-detail-item"><span class="dl">Department</span><span class="dv">Flexo Printing</span></div>
     <div class="fp-detail-item"><span class="dl">Priority</span><span class="dv">${esc(job.planning_priority||'Normal')}</span></div>
     <div class="fp-detail-item"><span class="dl">Sequence</span><span class="dv">#${job.sequence_order||2}</span></div>
@@ -508,7 +526,7 @@ document.getElementById('fpDetailModal').addEventListener('click', function(e) {
 
 // ─── Delete job (admin) ─────────────────────────────────────
 async function deleteJob(id) {
-  if (!confirm('Are you sure you want to delete this job card? This action is soft-delete.')) return;
+  if (!confirm('Delete this job card? If linked reset logic applies, related queued jobs may also be rolled back.')) return;
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
   fd.append('action', 'delete_job');
@@ -545,7 +563,7 @@ function printJobCard(id) {
       </div>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:16px">
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc;width:35%">Job Name</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(job.planning_job_name||'—')}</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc;width:35%">Job Name</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(resolvePrintDisplayName(job))}</td></tr>
       <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Roll No</td><td style="padding:6px 10px;border:1px solid #e2e8f0;color:#8b5cf6;font-weight:700">${esc(job.roll_no||'—')}</td></tr>
       <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Material / GSM</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(job.paper_type||'—')} / ${esc(job.gsm||'—')} GSM</td></tr>
       <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Dimension</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((job.width_mm||'—')+'mm × '+(job.length_mtr||'—')+'m')}</td></tr>

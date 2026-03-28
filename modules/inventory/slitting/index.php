@@ -585,16 +585,17 @@ const SLT = (() => {
   function addRollToTerminal(roll) {
     if (loadedRolls.find(r => r.roll_no === roll.roll_no)) return;
     loadedRolls.push(roll);
+    const autoPlan = getAutoPlanContext();
     // Default destination: JOB for Slitting status, STOCK otherwise
-    const defaultDest = (roll.status === 'Slitting') ? 'JOB' : 'STOCK';
+    const defaultDest = autoPlan.job_no ? 'JOB' : ((roll.status === 'Slitting') ? 'JOB' : 'STOCK');
     rollConfigs[roll.roll_no] = {
       runs: [{width: '', length: parseFloat(roll.length_mtr), qty: 1}],
       slitMode: 'MANUAL', // MANUAL or EQUAL_DIVIDE
       equalPieces: 2,
       destination: defaultDest,
-      job_no: (selectedJob && selectedJob.job_no) ? String(selectedJob.job_no) : '',
-      job_name: (selectedJob && selectedJob.job_name) ? String(selectedJob.job_name) : '',
-      job_size: (selectedJob && (selectedJob.label_length_mm || selectedJob.label_width_mm)) ? String(selectedJob.label_length_mm || selectedJob.label_width_mm) : '',
+      job_no: autoPlan.job_no,
+      job_name: autoPlan.job_name,
+      job_size: autoPlan.job_size,
       remainderAction: 'STOCK'
     };
     if (!activeRollNo) activeRollNo = roll.roll_no;
@@ -605,12 +606,62 @@ const SLT = (() => {
 
   function autofillSelectedPlanNo() {
     if (!selectedJob) return;
+    applyPlanContextToAllRolls({
+      job_no: String(selectedJob.job_no || ''),
+      job_name: String(selectedJob.job_name || ''),
+      job_size: String(selectedJob.label_length_mm || selectedJob.label_width_mm || ''),
+      forceDestinationJob: true,
+      overwriteExisting: true,
+    });
+  }
+
+  function looksLikePlanNo(v) {
+    const s = String(v || '').trim().toUpperCase();
+    return s.startsWith('PLN/');
+  }
+
+  function findPlannerJobByPlanNo(planNo) {
+    const target = String(planNo || '').trim().toUpperCase();
+    if (!target) return null;
+    return plannerJobs.find(j => String(j.job_no || '').trim().toUpperCase() === target) || null;
+  }
+
+  function getAutoPlanContext() {
+    if (selectedJob && String(selectedJob.job_no || '').trim()) {
+      return {
+        job_no: String(selectedJob.job_no || ''),
+        job_name: String(selectedJob.job_name || ''),
+        job_size: String(selectedJob.label_length_mm || selectedJob.label_width_mm || ''),
+      };
+    }
+    if (activeRollNo && rollConfigs[activeRollNo] && String(rollConfigs[activeRollNo].job_no || '').trim()) {
+      const cfg = rollConfigs[activeRollNo];
+      return {
+        job_no: String(cfg.job_no || ''),
+        job_name: String(cfg.job_name || ''),
+        job_size: String(cfg.job_size || ''),
+      };
+    }
+    const firstWithPlan = Object.values(rollConfigs).find(cfg => String(cfg.job_no || '').trim() !== '');
+    if (firstWithPlan) {
+      return {
+        job_no: String(firstWithPlan.job_no || ''),
+        job_name: String(firstWithPlan.job_name || ''),
+        job_size: String(firstWithPlan.job_size || ''),
+      };
+    }
+    return { job_no: '', job_name: '', job_size: '' };
+  }
+
+  function applyPlanContextToAllRolls(ctx) {
+    const payload = ctx || {};
     loadedRolls.forEach(roll => {
       const cfg = rollConfigs[roll.roll_no];
       if (!cfg) return;
-      if (!String(cfg.job_no || '').trim()) cfg.job_no = String(selectedJob.job_no || '');
-      if (!String(cfg.job_name || '').trim()) cfg.job_name = String(selectedJob.job_name || '');
-      if (!String(cfg.job_size || '').trim()) cfg.job_size = String(selectedJob.label_length_mm || selectedJob.label_width_mm || '');
+      if (payload.overwriteExisting || !String(cfg.job_no || '').trim()) cfg.job_no = String(payload.job_no || '');
+      if (payload.overwriteExisting || !String(cfg.job_name || '').trim()) cfg.job_name = String(payload.job_name || '');
+      if (payload.overwriteExisting || !String(cfg.job_size || '').trim()) cfg.job_size = String(payload.job_size || '');
+      if (payload.forceDestinationJob && String(payload.job_no || '').trim()) cfg.destination = 'JOB';
     });
   }
 
@@ -1049,7 +1100,35 @@ const SLT = (() => {
   // ── Config update handlers ─────────────────────────────────
   function updateConfig(rollNo, key, value) {
     if (rollConfigs[rollNo]) {
-      rollConfigs[rollNo][key] = value;
+      if (key === 'job_no') {
+        const planNo = String(value || '').trim();
+        rollConfigs[rollNo][key] = planNo;
+        if (looksLikePlanNo(planNo)) {
+          const matched = findPlannerJobByPlanNo(planNo);
+          if (matched) {
+            selectedJob = matched;
+            applyPlanContextToAllRolls({
+              job_no: String(matched.job_no || planNo),
+              job_name: String(matched.job_name || ''),
+              job_size: String(matched.label_length_mm || matched.label_width_mm || ''),
+              forceDestinationJob: true,
+              overwriteExisting: true,
+            });
+            renderPlannerJobs(document.getElementById('plannerSearch').value);
+            renderJobDetail();
+          } else {
+            applyPlanContextToAllRolls({
+              job_no: planNo,
+              job_name: '',
+              job_size: '',
+              forceDestinationJob: true,
+              overwriteExisting: true,
+            });
+          }
+        }
+      } else {
+        rollConfigs[rollNo][key] = value;
+      }
       renderConfig();
       renderBatchStatus();
       renderLoadedRolls();

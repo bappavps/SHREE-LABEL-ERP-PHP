@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/../../../config/db.php';
 require_once __DIR__ . '/../../../includes/functions.php';
 require_once __DIR__ . '/../../../includes/auth_check.php';
@@ -13,7 +13,7 @@ $logoPath    = $appSettings['logo_path'] ?? '';
 $logoUrl     = $logoPath ? (BASE_URL . '/' . $logoPath) : '';
 $footerErpName = getErpDisplayName((string)$companyName);
 $appFooterLeft = 'Version : ' . APP_VERSION;
-$appFooterRight = '© ' . date('Y') . ' ' . $footerErpName . ' • ERP Master System v' . APP_VERSION . ' | @ Developed by Mriganka Bhusan Debnath';
+$appFooterRight = 'Â© ' . date('Y') . ' ' . $footerErpName . ' â€¢ ERP Master System v' . APP_VERSION . ' | @ Developed by Mriganka Bhusan Debnath';
 
 // Load Jumbo jobs from DB so new auto-slitting cards appear immediately.
 $activeJobs = [];
@@ -26,6 +26,26 @@ function safeCountQuery(mysqli $db, string $sql): int {
   }
   $row = $res->fetch_assoc();
   return (int)($row['cnt'] ?? 0);
+}
+
+function jumboDepartmentLabel(string $department): string {
+  $department = strtolower(trim($department));
+  $map = [
+    'jumbo_slitting' => 'Jumbo Slitting',
+    'flexo_printing' => 'Flexo Printing',
+  ];
+  if (isset($map[$department])) return $map[$department];
+  $department = str_replace('_', ' ', $department);
+  return trim((string)preg_replace('/\s+/', ' ', ucwords($department)));
+}
+
+function jumboDisplayJobName(array $job): string {
+  $planning = trim((string)($job['planning_job_name'] ?? ''));
+  if ($planning !== '') return $planning;
+  $jobNo = trim((string)($job['job_no'] ?? ''));
+  $dept = jumboDepartmentLabel((string)($job['department'] ?? ''));
+  if ($jobNo !== '') return $dept !== '' ? ($jobNo . ' (' . $dept . ')') : $jobNo;
+  return $dept !== '' ? $dept : 'â€”';
 }
 
 $db->query("CREATE TABLE IF NOT EXISTS job_change_requests (
@@ -67,8 +87,107 @@ if ($jobsStmt) {
   }
 }
 
+$allRollNos = [];
 foreach ($allJumboRows as $row) {
-  $row['extra_data_parsed'] = json_decode((string)($row['extra_data'] ?? '{}'), true) ?: [];
+  $extra = json_decode((string)($row['extra_data'] ?? '{}'), true) ?: [];
+  $jobRoll = trim((string)($row['roll_no'] ?? ''));
+  if ($jobRoll !== '') $allRollNos[$jobRoll] = true;
+  $parentRoll = trim((string)($extra['parent_roll'] ?? (($extra['parent_details']['roll_no'] ?? ''))));
+  if ($parentRoll !== '') $allRollNos[$parentRoll] = true;
+  $parentRollsRaw = $extra['parent_rolls'] ?? [];
+  if (is_string($parentRollsRaw)) {
+    $parentRollsRaw = preg_split('/\s*,\s*/', trim($parentRollsRaw), -1, PREG_SPLIT_NO_EMPTY);
+  }
+  if (is_array($parentRollsRaw)) {
+    foreach ($parentRollsRaw as $pr) {
+      $prn = trim((string)$pr);
+      if ($prn !== '') $allRollNos[$prn] = true;
+    }
+  }
+  foreach (['child_rolls', 'stock_rolls'] as $bucket) {
+    $rows = is_array($extra[$bucket] ?? null) ? $extra[$bucket] : [];
+    foreach ($rows as $r) {
+      $rn = trim((string)($r['roll_no'] ?? ''));
+      if ($rn !== '') $allRollNos[$rn] = true;
+        $prn = trim((string)($r['parent_roll_no'] ?? ''));
+        if ($prn !== '') $allRollNos[$prn] = true;
+    }
+  }
+}
+
+$rollMap = [];
+if (!empty($allRollNos)) {
+  $rollNos = array_values(array_keys($allRollNos));
+  $ph = implode(',', array_fill(0, count($rollNos), '?'));
+  $types = str_repeat('s', count($rollNos));
+  $sql = "SELECT roll_no, remarks, status, width_mm, length_mtr, gsm, weight_kg, paper_type, company FROM paper_stock WHERE roll_no IN ($ph)";
+  $stmt = $db->prepare($sql);
+  if ($stmt) {
+    $stmt->bind_param($types, ...$rollNos);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($rows as $r) {
+      $k = (string)($r['roll_no'] ?? '');
+      if ($k === '') continue;
+      $rollMap[$k] = [
+          'remarks'    => (string)($r['remarks'] ?? ''),
+          'status'     => (string)($r['status'] ?? ''),
+          'width_mm'   => (float)($r['width_mm'] ?? 0),
+          'length_mtr' => (float)($r['length_mtr'] ?? 0),
+          'gsm'        => (float)($r['gsm'] ?? 0),
+          'weight_kg'  => (float)($r['weight_kg'] ?? 0),
+          'paper_type' => (string)($r['paper_type'] ?? ''),
+          'company'    => (string)($r['company'] ?? ''),
+      ];
+    }
+  }
+}
+
+foreach ($allJumboRows as $row) {
+  $extra = json_decode((string)($row['extra_data'] ?? '{}'), true) ?: [];
+  $row['display_job_name'] = jumboDisplayJobName($row);
+  $row['extra_data_parsed'] = $extra;
+  $row['live_roll_map'] = [];
+
+  $jobRoll = trim((string)($row['roll_no'] ?? ''));
+  if ($jobRoll !== '' && isset($rollMap[$jobRoll])) {
+    $row['live_roll_map'][$jobRoll] = $rollMap[$jobRoll];
+  }
+  $parentRoll = trim((string)($extra['parent_roll'] ?? (($extra['parent_details']['roll_no'] ?? ''))));
+  if ($parentRoll !== '' && isset($rollMap[$parentRoll])) {
+    $row['live_roll_map'][$parentRoll] = $rollMap[$parentRoll];
+    $row['live_parent_remarks'] = (string)($rollMap[$parentRoll]['remarks'] ?? '');
+  } else {
+    $row['live_parent_remarks'] = '';
+  }
+  $parentRollsRaw = $extra['parent_rolls'] ?? [];
+  if (is_string($parentRollsRaw)) {
+    $parentRollsRaw = preg_split('/\s*,\s*/', trim($parentRollsRaw), -1, PREG_SPLIT_NO_EMPTY);
+  }
+  if (is_array($parentRollsRaw)) {
+    foreach ($parentRollsRaw as $pr) {
+      $prn = trim((string)$pr);
+      if ($prn !== '' && isset($rollMap[$prn])) {
+        $row['live_roll_map'][$prn] = $rollMap[$prn];
+      }
+    }
+  }
+
+  foreach (['child_rolls', 'stock_rolls'] as $bucket) {
+    $rows = is_array($extra[$bucket] ?? null) ? $extra[$bucket] : [];
+    foreach ($rows as &$r) {
+      $rn = trim((string)($r['roll_no'] ?? ''));
+      if ($rn !== '' && isset($rollMap[$rn])) {
+        $row['live_roll_map'][$rn] = $rollMap[$rn];
+        $r['remarks_live'] = (string)($rollMap[$rn]['remarks'] ?? '');
+          $r['status_live']  = (string)($rollMap[$rn]['status'] ?? '');
+      }
+    }
+    unset($r);
+    $extra[$bucket] = $rows;
+  }
+  $row['extra_data_parsed'] = $extra;
+
   $statusLower = strtolower(trim((string)($row['status'] ?? '')));
   if (in_array($statusLower, ['closed', 'finalized'], true)) {
     $historyJobs[] = $row;
@@ -80,9 +199,9 @@ foreach ($allJumboRows as $row) {
 // Notification count
 $notifCount = 0;
 
-// ════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // DYNAMIC COUNT CALCULATIONS FOR TOP SUMMARY
-// ════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 // Count all Jumbo jobs (active + history for "Job Details" = ALL filter)
 $totalCount = safeCountQuery($db, "
@@ -200,7 +319,7 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-request-state{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;border:1px solid #fecaca;background:#fff1f2;color:#dc2626;font-size:.6rem;font-weight:900;text-transform:uppercase;letter-spacing:.04em;animation:request-blink 1s linear infinite}
 @keyframes request-blink{0%,100%{opacity:1}50%{opacity:.2}}
 
-/* ── Detail Modal ── */
+/* â”€â”€ Detail Modal â”€â”€ */
 .jc-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;padding:20px}
 .jc-modal-overlay.active{display:flex}
 .jc-modal{background:#fff;border-radius:16px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 25px 60px rgba(0,0,0,.2)}
@@ -280,6 +399,7 @@ $historyCount = $finishedCount;
   <button id="jcTabBtnActive" class="jc-tab-btn active" type="button" onclick="switchJumboTab('active')">Job Detials <span class="jc-tab-count"><?= $activeCount ?></span></button>
   <button id="jcTabBtnHistory" class="jc-tab-btn" type="button" onclick="switchJumboTab('history')">History <span class="jc-tab-count"><?= $historyCount ?></span></button>
 </div>
+  <button id="jcTabBtnDeletedLogs" class="jc-tab-btn" type="button" onclick="switchJumboTab('deleted_logs')"><i class="bi bi-trash3"></i> Deleted Logs</button>
 
 <div id="jcPanelActive">
 
@@ -307,10 +427,10 @@ $historyCount = $finishedCount;
     $pri = $job['planning_priority'] ?? 'Normal';
     $priClass = match(strtolower($pri)) { 'urgent'=>'urgent', 'high'=>'high', default=>'normal' };
     $hasPendingRequest = (int)($job['pending_change_requests'] ?? 0) > 0;
-    $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : '—';
-    $startedAt = $job['started_at'] ? date('d M Y, H:i', strtotime($job['started_at'])) : '—';
-    $completedAt = $job['completed_at'] ? date('d M Y, H:i', strtotime($job['completed_at'])) : '—';
-    $searchText = strtolower($job['job_no'] . ' ' . ($job['roll_no'] ?? '') . ' ' . ($job['company'] ?? '') . ' ' . ($job['planning_job_name'] ?? ''));
+    $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : 'â€”';
+    $startedAt = $job['started_at'] ? date('d M Y, H:i', strtotime($job['started_at'])) : 'â€”';
+    $completedAt = $job['completed_at'] ? date('d M Y, H:i', strtotime($job['completed_at'])) : 'â€”';
+    $searchText = strtolower($job['job_no'] . ' ' . ($job['roll_no'] ?? '') . ' ' . ($job['company'] ?? '') . ' ' . ($job['display_job_name'] ?? ''));
   ?>
   <div class="jc-card" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" onclick="openJobDetail(<?= $job['id'] ?>)">
     <div class="jc-card-head">
@@ -326,12 +446,10 @@ $historyCount = $finishedCount;
       </div>
     </div>
     <div class="jc-card-body">
-      <?php if ($job['planning_job_name']): ?>
-      <div class="jc-card-row"><span class="jc-label">Job Name</span><span class="jc-value"><?= e($job['planning_job_name']) ?></span></div>
-      <?php endif; ?>
-      <div class="jc-card-row"><span class="jc-label">Roll No</span><span class="jc-value" style="color:var(--jc-brand)"><?= e($job['roll_no'] ?? '—') ?></span></div>
-      <div class="jc-card-row"><span class="jc-label">Material</span><span class="jc-value"><?= e($job['paper_type'] ?? '—') ?></span></div>
-      <div class="jc-card-row"><span class="jc-label">Dimension</span><span class="jc-value"><?= e(($job['width_mm'] ?? '—') . 'mm × ' . ($job['length_mtr'] ?? '—') . 'm') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Job Name</span><span class="jc-value"><?= e($job['display_job_name'] ?? 'â€”') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Roll No</span><span class="jc-value" style="color:var(--jc-brand)"><?= e($job['roll_no'] ?? 'â€”') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Material</span><span class="jc-value"><?= e($job['paper_type'] ?? 'â€”') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Dimension</span><span class="jc-value"><?= e(($job['width_mm'] ?? 'â€”') . 'mm Ã— ' . ($job['length_mtr'] ?? 'â€”') . 'm') ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Started</span><span class="jc-value"><?= e($startedAt) ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Ended</span><span class="jc-value"><?= e($completedAt) ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Plan Flow</span><span class="jc-value">Pending</span></div>
@@ -351,10 +469,10 @@ $historyCount = $finishedCount;
     $stsClass = match($sts) { 'Pending'=>'pending', 'Closed','Finalized'=>'completed', default=>'pending' };
     $pri = $job['planning_priority'] ?? 'Normal';
     $priClass = match(strtolower($pri)) { 'urgent'=>'urgent', 'high'=>'high', default=>'normal' };
-    $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : '—';
-    $startedAt = $job['started_at'] ? date('d M Y, H:i', strtotime($job['started_at'])) : '—';
-    $completedAt = $job['completed_at'] ? date('d M Y, H:i', strtotime($job['completed_at'])) : '—';
-    $searchText = strtolower($job['job_no'] . ' ' . ($job['roll_no'] ?? '') . ' ' . ($job['company'] ?? '') . ' ' . ($job['planning_job_name'] ?? ''));
+    $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : 'â€”';
+    $startedAt = $job['started_at'] ? date('d M Y, H:i', strtotime($job['started_at'])) : 'â€”';
+    $completedAt = $job['completed_at'] ? date('d M Y, H:i', strtotime($job['completed_at'])) : 'â€”';
+    $searchText = strtolower($job['job_no'] . ' ' . ($job['roll_no'] ?? '') . ' ' . ($job['company'] ?? '') . ' ' . ($job['display_job_name'] ?? ''));
   ?>
   <div class="jc-card" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" data-finished-only="1" style="display:none" onclick="openJobDetail(<?= $job['id'] ?>)">
     <div class="jc-card-head">
@@ -367,12 +485,10 @@ $historyCount = $finishedCount;
       </div>
     </div>
     <div class="jc-card-body">
-      <?php if ($job['planning_job_name']): ?>
-      <div class="jc-card-row"><span class="jc-label">Job Name</span><span class="jc-value"><?= e($job['planning_job_name']) ?></span></div>
-      <?php endif; ?>
-      <div class="jc-card-row"><span class="jc-label">Roll No</span><span class="jc-value" style="color:var(--jc-brand)"><?= e($job['roll_no'] ?? '—') ?></span></div>
-      <div class="jc-card-row"><span class="jc-label">Material</span><span class="jc-value"><?= e($job['paper_type'] ?? '—') ?></span></div>
-      <div class="jc-card-row"><span class="jc-label">Dimension</span><span class="jc-value"><?= e(($job['width_mm'] ?? '—') . 'mm × ' . ($job['length_mtr'] ?? '—') . 'm') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Job Name</span><span class="jc-value"><?= e($job['display_job_name'] ?? 'â€”') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Roll No</span><span class="jc-value" style="color:var(--jc-brand)"><?= e($job['roll_no'] ?? 'â€”') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Material</span><span class="jc-value"><?= e($job['paper_type'] ?? 'â€”') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Dimension</span><span class="jc-value"><?= e(($job['width_mm'] ?? 'â€”') . 'mm Ã— ' . ($job['length_mtr'] ?? 'â€”') . 'm') ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Started</span><span class="jc-value"><?= e($startedAt) ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Ended</span><span class="jc-value"><?= e($completedAt) ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Plan Flow</span><span class="jc-value">Finished</span></div>
@@ -414,10 +530,10 @@ $historyCount = $finishedCount;
         <?php foreach ($historyJobs as $h): ?>
           <tr>
             <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;font-weight:700"><?= e($h['job_no']) ?></td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['planning_job_name'] ?? '—') ?></td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['roll_no'] ?? '—') ?></td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['display_job_name'] ?? 'â€”') ?></td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['roll_no'] ?? 'â€”') ?></td>
             <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['status']) ?></td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['completed_at'] ?? $h['updated_at'] ?? $h['created_at'] ?? '—') ?></td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['completed_at'] ?? $h['updated_at'] ?? $h['created_at'] ?? 'â€”') ?></td>
           </tr>
         <?php endforeach; ?>
       <?php endif; ?>
@@ -427,7 +543,26 @@ $historyCount = $finishedCount;
 </div>
 </div>
 
-<!-- ═══ DETAIL MODAL ═══ -->
+<div id="jcPanelDeletedLogs" style="display:none">
+<div class="card no-print" style="margin-top:18px">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+    <span class="card-title"><i class="bi bi-trash3"></i> Deleted Job Card Log</span>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="dalFilter" class="form-control" style="height:32px;min-width:160px;font-size:.78rem" onchange="loadDeleteAudit()">
+        <option value="">All Actions</option>
+        <option value="completed">Completed Deletes</option>
+        <option value="blocked">Blocked Attempts</option>
+      </select>
+      <button class="jc-action-btn jc-btn-view" onclick="loadDeleteAudit()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+    </div>
+  </div>
+  <div id="dalTableWrap" style="overflow:auto;padding:8px 0">
+    <div style="padding:24px;color:#94a3b8;text-align:center;font-size:.82rem">Switch to this tab to load deletion logs.</div>
+  </div>
+</div>
+</div>
+
+<!-- â•â•â• DETAIL MODAL â•â•â• -->
 <div class="jc-modal-overlay" id="jcDetailModal">
   <div class="jc-modal">
     <div class="jc-modal-header">
@@ -446,7 +581,7 @@ $historyCount = $finishedCount;
   </div>
 </div>
 
-<!-- ═══ PRINT AREA (hidden, used for browser print) ═══ -->
+<!-- â•â•â• PRINT AREA (hidden, used for browser print) â•â•â• -->
 <div class="jc-print-area" id="jcPrintArea"></div>
 
 <script>
@@ -459,26 +594,41 @@ const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'g
 const ALL_JOBS = <?= json_encode(array_values(array_merge($activeJobs, $historyJobs)), JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const JC_AUTO_REFRESH_MS = 45000;
 
-function switchJumboTab(tab) {
-  const activePanel = document.getElementById('jcPanelActive');
-  const historyPanel = document.getElementById('jcPanelHistory');
-  const activeBtn = document.getElementById('jcTabBtnActive');
-  const historyBtn = document.getElementById('jcTabBtnHistory');
-
-  if (tab === 'history') {
-    activePanel.style.display = 'none';
-    historyPanel.style.display = '';
-    activeBtn.classList.remove('active');
-    historyBtn.classList.add('active');
-  } else {
-    activePanel.style.display = '';
-    historyPanel.style.display = 'none';
-    activeBtn.classList.add('active');
-    historyBtn.classList.remove('active');
-  }
+function formatDepartmentLabel(dept) {
+  const map = { jumbo_slitting: 'Jumbo Slitting', flexo_printing: 'Flexo Printing' };
+  const key = String(dept || '').trim().toLowerCase();
+  if (map[key]) return map[key];
+  return String(dept || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).trim();
 }
 
-// ─── Filters ────────────────────────────────────────────────
+function resolveJobDisplayName(job) {
+  if (job && String(job.display_job_name || '').trim() !== '') return String(job.display_job_name).trim();
+  if (job && String(job.planning_job_name || '').trim() !== '') return String(job.planning_job_name).trim();
+  const jobNo = String(job?.job_no || '').trim();
+  const dept = formatDepartmentLabel(job?.department);
+  if (jobNo !== '') return dept ? `${jobNo} (${dept})` : jobNo;
+  return dept || 'â€”';
+}
+
+function switchJumboTab(tab) {
+  const panels = {
+    active:       document.getElementById('jcPanelActive'),
+    history:      document.getElementById('jcPanelHistory'),
+    deleted_logs: document.getElementById('jcPanelDeletedLogs'),
+  };
+  const btns = {
+    active:       document.getElementById('jcTabBtnActive'),
+    history:      document.getElementById('jcTabBtnHistory'),
+    deleted_logs: document.getElementById('jcTabBtnDeletedLogs'),
+  };
+  Object.keys(panels).forEach(function(k) {
+    if (panels[k]) panels[k].style.display = (k === tab) ? '' : 'none';
+    if (btns[k])   btns[k].classList.toggle('active', k === tab);
+  });
+  if (tab === 'deleted_logs') loadDeleteAudit();
+}
+
+// \u2500\u2500\u2500 Filters \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 function filterJobs(status, btn) {
   document.querySelectorAll('.jc-filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
@@ -508,7 +658,7 @@ function filterJobs(status, btn) {
   });
 }
 
-// ─── Trigger filter from stat box ───────────────────────────
+// â”€â”€â”€ Trigger filter from stat box â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function filterFromStat(status) {
   const filterBtns = document.querySelectorAll('.jc-filter-btn');
   let targetBtn = null;
@@ -527,7 +677,7 @@ function filterFromStat(status) {
   }
 }
 
-// ─── Update stat box highlights ─────────────────────────────
+// â”€â”€â”€ Update stat box highlights â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function updateStatBoxes(status) {
   document.querySelectorAll('.jc-stat').forEach(stat => {
     stat.classList.remove('active');
@@ -547,7 +697,7 @@ document.getElementById('jcSearch').addEventListener('input', function() {
   });
 });
 
-// ─── Live timers for running jobs ────────────────────────────
+// â”€â”€â”€ Live timers for running jobs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function updateTimers() {
   document.querySelectorAll('.jc-timer[data-started]').forEach(el => {
     const started = parseInt(el.dataset.started);
@@ -572,7 +722,7 @@ setInterval(function() {
   }
 }, JC_AUTO_REFRESH_MS);
 
-// ─── Status update ──────────────────────────────────────────
+// â”€â”€â”€ Status update â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function updateJobStatus(id, newStatus) {
   if (!confirm('Set this job to ' + newStatus + '?')) return;
   const fd = new FormData();
@@ -588,7 +738,7 @@ async function updateJobStatus(id, newStatus) {
   } catch (err) { alert('Network error: ' + err.message); }
 }
 
-// ─── Submit operator extra data + close ─────────────────────
+// â”€â”€â”€ Submit operator extra data + close â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function submitAndClose(id) {
   // Gather form values
   const form = document.getElementById('dm-operator-form');
@@ -618,7 +768,7 @@ async function submitAndClose(id) {
   await updateJobStatus(id, 'Closed');
 }
 
-// ─── Detail modal ───────────────────────────────────────────
+// â”€â”€â”€ Detail modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function openJobDetail(id, mode) {
   const job = ALL_JOBS.find(j => j.id == id);
   if (!job) return;
@@ -626,9 +776,9 @@ function openJobDetail(id, mode) {
   const sts = job.status;
   const stsClass = {Pending:'pending',Closed:'completed',Finalized:'completed'}[sts]||'pending';
   const extra = job.extra_data_parsed || {};
-  const createdAt = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
-  const startedAt = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
-  const completedAt = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
+  const createdAt = job.created_at ? new Date(job.created_at).toLocaleString() : 'â€”';
+  const startedAt = job.started_at ? new Date(job.started_at).toLocaleString() : 'â€”';
+  const completedAt = job.completed_at ? new Date(job.completed_at).toLocaleString() : 'â€”';
   const dur = job.duration_minutes;
   const startedTs = job.started_at ? new Date(job.started_at).getTime() : 0;
 
@@ -642,23 +792,23 @@ function openJobDetail(id, mode) {
   // Job Info
   html += `<div class="jc-detail-section"><h3><i class="bi bi-info-circle"></i> Job Information</h3><div class="jc-detail-grid">
     <div class="jc-detail-item"><span class="dl">Job No</span><span class="dv" style="color:var(--jc-brand)">${esc(job.job_no)}</span></div>
-    <div class="jc-detail-item"><span class="dl">Job Name</span><span class="dv">${esc(job.planning_job_name||'—')}</span></div>
+    <div class="jc-detail-item"><span class="dl">Job Name</span><span class="dv">${esc(resolveJobDisplayName(job))}</span></div>
     <div class="jc-detail-item"><span class="dl">Department</span><span class="dv">Jumbo Slitting</span></div>
     <div class="jc-detail-item"><span class="dl">Priority</span><span class="dv">${esc(job.planning_priority||'Normal')}</span></div>
-    <div class="jc-detail-item"><span class="dl">Planning Status</span><span class="dv">${esc(job.planning_status||'—')}</span></div>
+    <div class="jc-detail-item"><span class="dl">Planning Status</span><span class="dv">${esc(job.planning_status||'â€”')}</span></div>
     <div class="jc-detail-item"><span class="dl">Sequence</span><span class="dv">#${job.sequence_order||1}</span></div>
   </div></div>`;
 
   // Material Info
   html += `<div class="jc-detail-section"><h3><i class="bi bi-box"></i> Material Information</h3><div class="jc-detail-grid">
-    <div class="jc-detail-item"><span class="dl">Roll No</span><span class="dv" style="color:var(--jc-brand)">${esc(job.roll_no||'—')}</span></div>
-    <div class="jc-detail-item"><span class="dl">Paper Type</span><span class="dv">${esc(job.paper_type||'—')}</span></div>
-    <div class="jc-detail-item"><span class="dl">GSM</span><span class="dv">${esc(job.gsm||'—')}</span></div>
-    <div class="jc-detail-item"><span class="dl">Width × Length</span><span class="dv">${esc((job.width_mm||'—')+'mm × '+(job.length_mtr||'—')+'m')}</span></div>
-    <div class="jc-detail-item"><span class="dl">Weight</span><span class="dv">${job.weight_kg ? job.weight_kg+' kg' : '—'}</span></div>
-    <div class="jc-detail-item"><span class="dl">Supplier</span><span class="dv">${esc(job.company||'—')}</span></div>
-    <div class="jc-detail-item"><span class="dl">Lot/Batch</span><span class="dv">${esc(job.lot_batch_no||'—')}</span></div>
-    <div class="jc-detail-item"><span class="dl">Roll Status</span><span class="dv">${esc(job.roll_status||'—')}</span></div>
+    <div class="jc-detail-item"><span class="dl">Roll No</span><span class="dv" style="color:var(--jc-brand)">${esc(job.roll_no||'â€”')}</span></div>
+    <div class="jc-detail-item"><span class="dl">Paper Type</span><span class="dv">${esc(job.paper_type||'â€”')}</span></div>
+    <div class="jc-detail-item"><span class="dl">GSM</span><span class="dv">${esc(job.gsm||'â€”')}</span></div>
+    <div class="jc-detail-item"><span class="dl">Width Ã— Length</span><span class="dv">${esc((job.width_mm||'â€”')+'mm Ã— '+(job.length_mtr||'â€”')+'m')}</span></div>
+    <div class="jc-detail-item"><span class="dl">Weight</span><span class="dv">${job.weight_kg ? job.weight_kg+' kg' : 'â€”'}</span></div>
+    <div class="jc-detail-item"><span class="dl">Supplier</span><span class="dv">${esc(job.company||'â€”')}</span></div>
+    <div class="jc-detail-item"><span class="dl">Lot/Batch</span><span class="dv">${esc(job.lot_batch_no||'â€”')}</span></div>
+    <div class="jc-detail-item"><span class="dl">Roll Status</span><span class="dv">${esc(job.roll_status||'â€”')}</span></div>
   </div></div>`;
 
   // Timeline
@@ -678,17 +828,62 @@ function openJobDetail(id, mode) {
     html += `<div class="jc-detail-section"><h3><i class="bi bi-sticky"></i> Notes</h3><div style="font-size:.82rem;color:#475569;line-height:1.5;background:#f8fafc;padding:12px;border-radius:8px">${esc(job.notes)}</div></div>`;
   }
 
-  // Parent Roll Details
-  if (extra.parent_roll) {
+  // Parent Roll(s) -- collect all unique parent rolls referenced by child/stock rows
+  {
+    const liveRollMap = job.live_roll_map || {};
     const p = extra.parent_details || {};
-    html += `<div class="jc-detail-section"><h3><i class="bi bi-inbox"></i> Parent Roll</h3><div style="font-size:.75rem;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.73rem"><tr style="background:#f3f4f6"><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Roll No</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Paper Company</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Material</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Width</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Length</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Weight</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Sqr Mtr</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">GSM</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Remarks</th></tr><tr><td style="padding:8px;border-bottom:1px solid #e5e7eb;color:var(--jc-brand);font-weight:700">${esc(p.roll_no || extra.parent_roll || '—')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(p.company || job.company || '—')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(p.paper_type || job.paper_type || '—')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((p.width_mm ?? job.width_mm ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((p.length_mtr ?? job.length_mtr ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((p.weight_kg ?? job.weight_kg ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((p.sqm ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((p.gsm ?? job.gsm ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(p.remarks || '—')}</td></tr></table></div></div>`;
+    const seenParents = {};
+    const primaryPRN = String((p.roll_no) || extra.parent_roll || job.roll_no || '').trim();
+    if (primaryPRN !== '') seenParents[primaryPRN] = true;
+    const parentRollsRaw = extra.parent_rolls;
+    if (Array.isArray(parentRollsRaw)) {
+      parentRollsRaw.forEach(function(pr) {
+        const prn = String(pr || '').trim();
+        if (prn !== '') seenParents[prn] = true;
+      });
+    } else if (typeof parentRollsRaw === 'string' && parentRollsRaw.trim() !== '') {
+      parentRollsRaw.split(',').forEach(function(pr) {
+        const prn = String(pr || '').trim();
+        if (prn !== '') seenParents[prn] = true;
+      });
+    }
+    (Array.isArray(extra.child_rolls) ? extra.child_rolls : []).forEach(function(r) {
+      const prn = String(r.parent_roll_no || '').trim();
+      if (prn !== '') seenParents[prn] = true;
+    });
+    (Array.isArray(extra.stock_rolls) ? extra.stock_rolls : []).forEach(function(r) {
+      const prn = String(r.parent_roll_no || '').trim();
+      if (prn !== '') seenParents[prn] = true;
+    });
+    const allParentRollNos = Object.keys(seenParents);
+    if (allParentRollNos.length > 0) {
+      let parentTableHtml = '<table style="width:100%;border-collapse:collapse;font-size:.73rem"><tr style="background:#f3f4f6"><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Roll No</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Paper Company</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Material</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Width</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Length</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Weight</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Sqr Mtr</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">GSM</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Status</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Remarks</th></tr>';
+      allParentRollNos.forEach(function(prn) {
+        const live      = liveRollMap[prn] || {};
+        const isPrimary = (prn === primaryPRN);
+        const company   = live.company    || (isPrimary ? (p.company    || job.company    || '') : '');
+        const ptype     = live.paper_type || (isPrimary ? (p.paper_type || job.paper_type || '') : '');
+        const width     = live.width_mm   !== undefined ? live.width_mm   : (isPrimary ? (p.width_mm  ?? job.width_mm  ?? '--') : '--');
+        const length    = live.length_mtr !== undefined ? live.length_mtr : (isPrimary ? (p.length_mtr ?? job.length_mtr ?? '--') : '--');
+        const weight    = live.weight_kg  !== undefined ? live.weight_kg  : (isPrimary ? (p.weight_kg ?? job.weight_kg ?? '--') : '--');
+        const sqm       = isPrimary ? (p.sqm ?? '--') : '--';
+        const gsm       = live.gsm !== undefined ? live.gsm : (isPrimary ? (p.gsm ?? job.gsm ?? '--') : '--');
+        const liveStatus  = live.status  || '--';
+        const liveRemarks = live.remarks !== undefined ? live.remarks : (isPrimary ? (p.remarks || '') : '');
+        parentTableHtml += `<tr><td style="padding:8px;border-bottom:1px solid #e5e7eb;color:var(--jc-brand);font-weight:700">${esc(prn)}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(company || '--')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(ptype || '--')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(width + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(length + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(weight + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(sqm + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(gsm + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(liveStatus)}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(liveRemarks || '--')}</td></tr>`;
+      });
+      parentTableHtml += '</table>';
+      html += `<div class="jc-detail-section"><h3><i class="bi bi-inbox"></i> Parent Roll${allParentRollNos.length > 1 ? 's' : ''}</h3><div style="font-size:.75rem;overflow-x:auto">${parentTableHtml}</div></div>`;
+    }
   }
 
-  // All child rolls in one table (job assign + stock) with plan number.
+  // All child rolls in one table (job assign + stock) with plan number and live status.
   const childRows = Array.isArray(extra.child_rolls) ? extra.child_rolls : [];
   const stockRows = Array.isArray(extra.stock_rolls) ? extra.stock_rolls : [];
   const allRows = [];
   childRows.forEach(function(r) {
+    const rrn = String(r.roll_no || '').trim();
+    const liveEntry = (job.live_roll_map && job.live_roll_map[rrn]) ? job.live_roll_map[rrn] : {};
     allRows.push({
       parent_roll_no: r.parent_roll_no || extra.parent_roll || job.roll_no || '',
       roll_no: r.roll_no || '',
@@ -696,14 +891,16 @@ function openJobDetail(id, mode) {
       width: (r.width ?? r.width_mm),
       length: (r.length ?? r.length_mtr),
       weight_kg: (r.weight_kg ?? job.weight_kg),
-      sqm: (r.sqm ?? '—'),
+      sqm: (r.sqm ?? '--'),
       gsm: (r.gsm ?? job.gsm),
       wastage: (r.wastage ?? 0),
-      remarks: r.remarks || '',
-      status: 'Job Assign',
+      remarks: liveEntry.remarks !== undefined ? liveEntry.remarks : (r.remarks || ''),
+      status: liveEntry.status || r.status_live || 'Job Assign',
     });
   });
   stockRows.forEach(function(r) {
+    const rrn = String(r.roll_no || '').trim();
+    const liveEntry = (job.live_roll_map && job.live_roll_map[rrn]) ? job.live_roll_map[rrn] : {};
     allRows.push({
       parent_roll_no: r.parent_roll_no || extra.parent_roll || job.roll_no || '',
       roll_no: r.roll_no || '',
@@ -711,18 +908,18 @@ function openJobDetail(id, mode) {
       width: (r.width ?? r.width_mm),
       length: (r.length ?? r.length_mtr),
       weight_kg: (r.weight_kg ?? job.weight_kg),
-      sqm: (r.sqm ?? '—'),
+      sqm: (r.sqm ?? '--'),
       gsm: (r.gsm ?? job.gsm),
       wastage: (r.wastage ?? 0),
-      remarks: r.remarks || '',
-      status: 'Stock',
+      remarks: liveEntry.remarks !== undefined ? liveEntry.remarks : (r.remarks || ''),
+      status: liveEntry.status || r.status_live || 'Stock',
     });
   });
 
   if (allRows.length) {
-    let allRollHtml = '<table style="width:100%;border-collapse:collapse;font-size:.73rem"><tr style="background:#f3f4f6"><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Parent Roll No</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Child Roll NO.</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Width</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Length</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Type</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Weight</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Sqr Mtr</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">GSM</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Wastage</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Remarks</th></tr>';
+    let allRollHtml = '<table style="width:100%;border-collapse:collapse;font-size:.73rem"><tr style="background:#f3f4f6"><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Parent Roll No</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Child Roll NO.</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Width</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Length</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Type</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Weight</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Sqr Mtr</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">GSM</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Wastage</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Status</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Remarks</th></tr>';
     allRows.forEach(function(r) {
-      allRollHtml += `<tr><td style="padding:8px;border-bottom:1px solid #e5e7eb;color:#334155;font-weight:700">${esc(r.parent_roll_no || '—')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb;color:var(--jc-brand);font-weight:700">${esc(r.roll_no || '—')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.width ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.length ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(r.type || '—')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.weight_kg ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.sqm ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.gsm ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.wastage ?? 0) + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(r.remarks || '—')}</td></tr>`;
+      allRollHtml += `<tr><td style="padding:8px;border-bottom:1px solid #e5e7eb;color:#334155;font-weight:700">${esc(r.parent_roll_no || '--')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb;color:var(--jc-brand);font-weight:700">${esc(r.roll_no || '--')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.width ?? '--') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.length ?? '--') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(r.type || '--')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.weight_kg ?? '--') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.sqm ?? '--') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.gsm ?? '--') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.wastage ?? 0) + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(r.status || '--')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(r.remarks || '--')}</td></tr>`;
     });
     allRollHtml += '</table>';
     html += `<div class="jc-detail-section"><h3><i class="bi bi-table"></i> All Child Rolls</h3><div style="font-size:.75rem;overflow-x:auto">${allRollHtml}</div></div>`;
@@ -752,9 +949,9 @@ document.getElementById('jcDetailModal').addEventListener('click', function(e) {
   if (e.target === this) closeDetail();
 });
 
-// ─── Delete job (admin) ─────────────────────────────────────
+// â”€â”€â”€ Delete job (admin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function deleteJob(id) {
-  if (!confirm('Are you sure you want to delete this job card? This action is soft-delete.')) return;
+  if (!confirm('Delete this job card and reset linked paper stock, planning status, and downstream queued jobs?')) return;
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
   fd.append('action', 'delete_job');
@@ -763,11 +960,57 @@ async function deleteJob(id) {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
     if (data.ok) location.reload();
+    else if (data.blocked_jobs && data.blocked_jobs.length) {
+      const rows = data.blocked_jobs.map(b => `${b.job_no || ('ID ' + b.id)} [${b.status}]`).join('\n');
+      alert((data.error || 'Delete blocked') + '\n\n' + rows);
+    }
     else alert('Error: ' + (data.error || 'Unknown'));
   } catch (err) { alert('Network error: ' + err.message); }
 }
 
-// ─── Print Job Card ─────────────────────────────────────────
+// --- Delete Audit Log ---------------------------------------------------
+async function loadDeleteAudit() {
+  const wrap = document.getElementById('dalTableWrap');
+  if (!wrap) return;
+  const filter = (document.getElementById('dalFilter') || {}).value || '';
+  wrap.innerHTML = '<p style="padding:12px;color:#64748b">Loading...</p>';
+  try {
+    const params = new URLSearchParams({ action: 'get_delete_audit', csrf_token: CSRF, limit: '200' });
+    if (filter) params.set('status', filter);
+    const res = await fetch(API_BASE + '?' + params.toString());
+    const data = await res.json();
+    const rows = Array.isArray(data.records) ? data.records : (Array.isArray(data.entries) ? data.entries : []);
+    if (!data.ok || !rows.length) {
+      wrap.innerHTML = '<p style="padding:12px;color:#64748b">' + esc(data.error || 'No deleted job records found.') + '</p>';
+      return;
+    }
+    let tbl = '<table style="width:100%;border-collapse:collapse;font-size:.73rem"><tr style="background:#f3f4f6"><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db">Date/Time</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db">Job No</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db">Parent Roll</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db">Result</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db">Rolls Removed</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db">Stock Restored</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db">Deleted By</th></tr>';
+    rows.forEach(function(e) {
+      const actionStatus = String(e.action_status || e.status || '').toLowerCase();
+      const resultBadge = (actionStatus === 'completed' || actionStatus === 'deleted')
+        ? '<span style="background:#dcfce7;color:#166534;padding:2px 6px;border-radius:4px;font-size:.7rem">Deleted</span>'
+        : '<span style="background:#fee2e2;color:#991b1b;padding:2px 6px;border-radius:4px;font-size:.7rem">Blocked</span>';
+      const stockOk = Number(e.parent_restored || 0) > 0
+        ? '<span style="color:#16a34a">&#10003;</span>'
+        : '<span style="color:#dc2626">&#10007;</span>';
+      tbl += '<tr>'
+        + '<td style="padding:8px;border-bottom:1px solid #e5e7eb;white-space:nowrap">' + esc(e.created_at || e.deleted_at || '') + '</td>'
+        + '<td style="padding:8px;border-bottom:1px solid #e5e7eb;font-weight:700;color:var(--jc-brand)">' + esc(e.root_job_no || e.job_no || ('ID ' + (e.root_job_id || e.job_id || ''))) + '</td>'
+        + '<td style="padding:8px;border-bottom:1px solid #e5e7eb">' + esc(e.parent_roll_no || e.parent_roll || '--') + '</td>'
+        + '<td style="padding:8px;border-bottom:1px solid #e5e7eb">' + resultBadge + '</td>'
+        + '<td style="padding:8px;border-bottom:1px solid #e5e7eb">' + esc(((e.removed_child_rolls ?? e.rolls_removed) ?? '--') + '') + '</td>'
+        + '<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center">' + stockOk + '</td>'
+        + '<td style="padding:8px;border-bottom:1px solid #e5e7eb">' + esc(e.requested_by_name || e.deleted_by || '--') + '</td>'
+        + '</tr>';
+    });
+    tbl += '</table>';
+    wrap.innerHTML = tbl;
+  } catch (err) {
+    wrap.innerHTML = '<p style="padding:12px;color:#dc2626">Error: ' + esc(err.message) + '</p>';
+  }
+}
+
+// â”€â”€â”€ Print Job Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function printJobCard(id) {
   const job = ALL_JOBS.find(j => j.id == id);
   if (!job) return;
@@ -789,7 +1032,7 @@ function printJobCard(id) {
         </div>
         <div class="jc-print-brand-right">
           <div class="jc-print-title">Jumbo Slitting Job Card</div>
-          <div class="jc-print-job">${esc(job.job_no || '—')}</div>
+          <div class="jc-print-job">${esc(job.job_no || 'â€”')}</div>
           <div class="jc-print-meta">Printed: ${esc(nowText)}</div>
         </div>
       </header>
