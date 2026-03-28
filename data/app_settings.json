@@ -43,6 +43,14 @@
             "uploaded_at": "2026-03-26 19:20:32",
             "category": "product-type",
             "paper_type": "PP White"
+        },
+        {
+            "category": "product-type",
+            "paper_type": "CHROMO MATT",
+            "path": "uploads/library/lib_20260326_191753_2c549c4c.png",
+            "name": "lib_20260326_191753_2c549c4c.png",
+            "title": "CHROMO MATT Thumbnail",
+            "uploaded_at": "2026-03-28 17:04:51"
         }
     ],
     "id_generation": {
@@ -89,7 +97,7 @@
             },
             "planning": {
                 "prefix": "PLN",
-                "counter": 6
+                "counter": 8
             }
         }
     }

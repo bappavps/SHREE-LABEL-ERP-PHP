@@ -158,7 +158,15 @@ $activeTab = $_GET['tab'] ?? 'company';
 $allowedTabs = ['company', 'library', 'theme', 'backup'];
 if (!in_array($activeTab, $allowedTabs, true)) $activeTab = 'company';
 
-$libraryFilter = $_GET['category'] ?? 'all';
+// Support paper_type parameter from paper stock view
+$targetPaperType = trim((string)($_GET['paper_type'] ?? ''));
+if ($targetPaperType !== '') {
+  $activeTab = 'library';
+  $libraryFilter = 'all';
+} else {
+  $libraryFilter = $_GET['category'] ?? 'all';
+}
+
 if ($libraryFilter !== 'all' && !isset($libraryCategories[$libraryFilter])) {
   $libraryFilter = 'all';
 }
@@ -272,6 +280,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       setFlash('success', 'Image removed from library.');
     }
     redirect(BASE_URL . '/modules/settings/index.php?tab=library&category=' . urlencode($libraryFilter));
+  }
+
+  if ($action === 'assign_image_to_papertype') {
+    $imageIdx = (int)($_POST['image_index'] ?? -1);
+    $paperType = trim((string)($_POST['paper_type'] ?? ''));
+    
+    if ($imageIdx >= 0 && isset($settings['image_library'][$imageIdx]) && $paperType !== '') {
+      $imagePath = (string)($settings['image_library'][$imageIdx]['path'] ?? '');
+      
+      // Find existing entry for this paper type and update it
+      $found = false;
+      foreach (($settings['image_library'] ?? []) as &$img) {
+        if (($img['category'] ?? '') === 'product-type' && 
+            strtolower(trim((string)($img['paper_type'] ?? ''))) === strtolower($paperType)) {
+          $img['path'] = $imagePath;
+          $img['paper_type'] = $paperType;
+          $found = true;
+          break;
+        }
+      }
+      
+      // If not found, add new entry
+      if (!$found) {
+        $settings['image_library'][] = [
+          'category' => 'product-type',
+          'paper_type' => $paperType,
+          'path' => $imagePath,
+          'name' => basename($imagePath),
+          'title' => $paperType . ' Thumbnail',
+          'uploaded_at' => date('Y-m-d H:i:s')
+        ];
+      }
+      
+      if (saveAppSettings($settings)) {
+        setFlash('success', 'Image assigned to paper type "' . htmlspecialchars($paperType) . '" successfully.');
+      } else {
+        setFlash('error', 'Failed to assign image to paper type.');
+      }
+    }
+    redirect(BASE_URL . '/modules/settings/index.php?tab=library&category=product-type');
   }
 
   if ($action === 'save_theme') {
@@ -487,6 +535,11 @@ include __DIR__ . '/../../includes/header.php';
     <?php endif; ?>
 
     <?php if ($activeTab === 'library'): ?>
+      <?php if ($targetPaperType !== ''): ?>
+        <div style="background:#e0f2fe;border:1px solid #0284c7;border-radius:8px;padding:12px 16px;margin-bottom:16px;color:#0c4a6e;font-size:.95rem">
+          <i class="bi bi-info-circle"></i> <strong>Assigning image to paper type:</strong> <strong><?= e($targetPaperType) ?></strong> - Click "<strong>Assign to Type</strong>" on any image below, then enter the paper type name.
+        </div>
+      <?php endif; ?>
       <form method="POST" enctype="multipart/form-data" class="library-upload-bar mb-16">
         <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
         <input type="hidden" name="action" value="upload_library_image">
@@ -532,6 +585,9 @@ include __DIR__ . '/../../includes/header.php';
                 <div style="font-size:.72rem;color:#f97316;font-weight:700;margin-top:2px"><i class="bi bi-tag-fill"></i> <?= e($img['paper_type']) ?></div>
               <?php endif; ?>
               <div class="library-time">Uploaded: <?= e((string)($img['uploaded_at'] ?? '')) ?></div>
+            <?php if (($img['category'] ?? '') === 'product-type' || !isset($img['category']) || $img['category'] === 'misc'): ?>
+              <button type="button" class="btn btn-primary btn-sm" onclick="openPaperTypeModal(<?= (int)$idx ?>)" style="width:100%;margin-top:8px;margin-bottom:8px"><i class="bi bi-tag"></i> Assign to Type</button>
+            <?php endif; ?>
             </div>
             <form method="POST" onsubmit="return confirm('Remove this image?')">
               <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
@@ -652,5 +708,60 @@ include __DIR__ . '/../../includes/header.php';
     <?php endif; ?>
   </div>
 </div>
+
+<!-- Paper Type Assignment Modal -->
+<div id="paperTypeModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;padding:24px;width:90%;max-width:400px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)">
+    <h3 style="margin:0 0 16px;font-size:1.1rem">Assign to Paper Type</h3>
+    <form method="POST" id="assignPaperTypeForm">
+      <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
+      <input type="hidden" name="action" value="assign_image_to_papertype">
+      <input type="hidden" name="image_index" id="modalImageIndex" value="">
+      
+      <div style="margin-bottom:16px">
+        <label style="display:block;font-weight:600;margin-bottom:8px;color:#334155">Paper Type Name</label>
+        <input type="text" name="paper_type" id="modalPaperType" placeholder="e.g., Thermal Paper, Chromo Matt" style="width:100%;padding:8px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:.95rem" required>
+      </div>
+      
+      <div style="display:flex;gap:12px;justify-content:space-between">
+        <button type="button" onclick="closePaperTypeModal()" style="flex:1;padding:10px;border:1px solid #e2e8f0;background:#fff;border-radius:6px;cursor:pointer;font-weight:600">Cancel</button>
+        <button type="submit" style="flex:1;padding:10px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">Assign</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+let currentImageIndex = null;
+
+function openPaperTypeModal(imageIndex) {
+  currentImageIndex = imageIndex;
+  document.getElementById('modalImageIndex').value = imageIndex;
+  document.getElementById('modalPaperType').value = '<?= e($targetPaperType) ?>';
+  document.getElementById('paperTypeModal').style.display = 'flex';
+  document.getElementById('modalPaperType').focus();
+}
+
+function closePaperTypeModal() {
+  document.getElementById('paperTypeModal').style.display = 'none';
+  currentImageIndex = null;
+}
+
+// Close modal when clicking outside
+document.getElementById('paperTypeModal')?.addEventListener('click', function(e) {
+  if (e.target === this) closePaperTypeModal();
+});
+
+// Handle form submission
+document.getElementById('assignPaperTypeForm')?.addEventListener('submit', function(e) {
+  const paperType = document.getElementById('modalPaperType').value.trim();
+  if (!paperType) {
+    e.preventDefault();
+    alert('Please enter a paper type name');
+    return;
+  }
+  // Form will submit naturally
+});
+</script>
 
 <?php include __DIR__ . '/../../includes/footer.php'; ?>

@@ -886,13 +886,29 @@ include __DIR__ . '/../../includes/header.php';
     }
   });
 
+  // Debounce timeout for quick filter input events to prevent stuttering on first keystroke
+  var qfDebounceTimer = null;
+
   Object.keys(qf).forEach(function(k){
     qf[k].addEventListener('input', function(){
       if (!ensureAllRowsMode()) return;
-      applyAllFilters();
+      
+      // Debounce applyAllFilters on input events (300ms delay)
+      if (qfDebounceTimer) {
+        clearTimeout(qfDebounceTimer);
+      }
+      qfDebounceTimer = setTimeout(function(){
+        applyAllFilters();
+        qfDebounceTimer = null;
+      }, 300);
     });
     qf[k].addEventListener('change', function(){
       if (!ensureAllRowsMode()) return;
+      // Immediate apply on change (for select pickers and date inputs)
+      if (qfDebounceTimer) {
+        clearTimeout(qfDebounceTimer);
+        qfDebounceTimer = null;
+      }
       applyAllFilters();
     });
   });
@@ -992,12 +1008,15 @@ include __DIR__ . '/../../includes/header.php';
     html += '</div>';
     pop.innerHTML = html;
 
-    pop.querySelectorAll('.cfp-list input[type=checkbox]').forEach(function(cb){
-      var token = cb.value === '__blank__' ? '__blank__' : cb.value.toLowerCase();
-      cb.checked = draft.has(token);
-    });
+    // Defer checkbox state updates to next frame for smooth interaction
+    requestAnimationFrame(function(){
+      pop.querySelectorAll('.cfp-list input[type=checkbox]').forEach(function(cb){
+        var token = cb.value === '__blank__' ? '__blank__' : cb.value.toLowerCase();
+        cb.checked = draft.has(token);
+      });
 
-    syncSelectAll(col);
+      syncSelectAll(col);
+    });
   }
 
   function syncSelectAll(col){

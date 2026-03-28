@@ -87,7 +87,7 @@ include __DIR__ . '/../../includes/header.php';
           <div style="width:320px;max-width:100%;aspect-ratio:16/10;border:1px dashed #cbd5e1;border-radius:10px;background:#f8fafc;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#64748b;font-size:.82rem;font-weight:600;gap:6px;padding:12px;text-align:center">
             <i class="bi bi-image" style="font-size:24px;color:#94a3b8"></i>
             No image for "<?= e($r['paper_type'] ?: 'this paper type') ?>"
-            <a href="<?= BASE_URL ?>/modules/settings/index.php?tab=library" style="font-size:.72rem;color:#f97316;font-weight:700;text-decoration:none">Upload in Settings &rarr;</a>
+            <a href="<?= BASE_URL ?>/modules/settings/index.php?tab=library&paper_type=<?= urlencode($r['paper_type'] ?? '') ?>" style="font-size:.72rem;color:#f97316;font-weight:700;text-decoration:underline">Select Image in Settings &rarr;</a>
           </div>
         <?php endif; ?>
       </div>
