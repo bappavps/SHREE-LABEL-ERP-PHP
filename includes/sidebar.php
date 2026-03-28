@@ -187,6 +187,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
       <div class="nav-sub">
         <?= navSubItem('/modules/performance/index.php', 'Performance', $currentFile, [], '', 'speedometer2') ?>
         <?= navSubItem('/modules/reports/index.php',     'Reports',     $currentFile, [], '', 'bar-chart-line') ?>
+        <?= navSubItem('/modules/reports/jobs.php',      'Job Reports', $currentFile, [], '', 'briefcase') ?>
       </div>
     </div>
 

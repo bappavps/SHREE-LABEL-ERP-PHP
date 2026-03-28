@@ -27,8 +27,11 @@ if ($method === 'POST') {
     }
 }
 
-// ─── Helper: Generate batch number SB-YYYYMMDD-XXXX ─────────
+// ─── Helper: Generate batch number using master prefix system ─
 function generateBatchNo($db) {
+    $batchId = getNextId('batch');
+    if ($batchId) return $batchId;
+    // Fallback if prefix system fails
     $prefix = 'SB-' . date('Ymd') . '-';
     $like   = $prefix . '%';
     $stmt   = $db->prepare("SELECT COUNT(*) AS cnt FROM slitting_batches WHERE batch_no LIKE ?");
@@ -37,6 +40,20 @@ function generateBatchNo($db) {
     $row  = $stmt->get_result()->fetch_assoc();
     $next = (int)($row['cnt'] ?? 0) + 1;
     return $prefix . str_pad($next, 4, '0', STR_PAD_LEFT);
+}
+
+// ─── Helper: Derive stage number from planning.job_no ───────
+// Example: PLN/2026/0042 -> JUM/2026/0042
+function deriveStageJobNo($planNo, $targetPrefix) {
+    $planNo = trim((string)$planNo);
+    $targetPrefix = strtoupper(trim((string)$targetPrefix));
+    if ($planNo === '' || $targetPrefix === '') return '';
+
+    if (preg_match('/^[A-Za-z]+([\/-].+)$/', $planNo, $m)) {
+        return $targetPrefix . $m[1];
+    }
+
+    return $targetPrefix . '/' . $planNo;
 }
 
 // ─── Helper: Detect slitting mode ────────────────────────────
@@ -142,17 +159,26 @@ try {
             break;
         }
 
-        // Find all available rolls of this material
-        $stmt = $db->prepare("SELECT * FROM paper_stock WHERE status IN ('Stock','Main','Available') AND paper_type = ? AND width_mm >= ? ORDER BY width_mm ASC, length_mtr DESC");
-        $stmt->bind_param('sd', $paperType, $targetWidth);
+        $normalizedPaperType = normalizeMaterial($paperType);
+
+        // Find all available rolls, then do tolerant material matching in PHP.
+        $stmt = $db->prepare("SELECT * FROM paper_stock WHERE status IN ('Stock','Main','Available') AND width_mm >= ? ORDER BY width_mm ASC, length_mtr DESC");
+        $stmt->bind_param('d', $targetWidth);
         $stmt->execute();
-        $rolls = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $candidateRolls = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+        $rolls = array_values(array_filter($candidateRolls, function($roll) use ($normalizedPaperType) {
+            $rollType = normalizeMaterial($roll['paper_type'] ?? '');
+            if ($normalizedPaperType === '' || $rollType === '') return false;
+            return $rollType === $normalizedPaperType || strpos($rollType, $normalizedPaperType) !== false || strpos($normalizedPaperType, $rollType) !== false;
+        }));
 
         $options = [];
         foreach ($rolls as $roll) {
             $rw = (float)$roll['width_mm'];
             $rl = (float)$roll['length_mtr'];
             $splits = floor($rw / $targetWidth);
+            if ($splits < 1) continue;
             $waste  = fmod($rw, $targetWidth);
             $efficiency = $rw > 0 ? round(($splits * $targetWidth) / $rw * 100, 1) : 0;
 
@@ -163,6 +189,17 @@ try {
                 $lengthSplits = floor($rl / $targetLength);
             }
 
+            $possibleWays = [];
+            for ($count = (int)$splits; $count >= 1; $count--) {
+                $stockWaste = round(max(0, $rw - ($targetWidth * $count)), 2);
+                $possibleWays[] = [
+                    'count' => $count,
+                    'stock_width' => round($targetWidth, 2),
+                    'stock_waste_mm' => $stockWaste,
+                    'adjust_width' => round($rw / $count, 2),
+                ];
+            }
+
             $options[] = [
                 'roll'       => $roll,
                 'splits'     => (int)$splits,
@@ -170,11 +207,14 @@ try {
                 'efficiency' => $efficiency,
                 'mode'       => $mode,
                 'length_splits' => $mode === 'LENGTH' ? (int)($lengthSplits ?? 1) : 1,
+                'possible_ways' => $possibleWays,
             ];
         }
 
-        // Sort by efficiency descending
+        // Sort by width ascending (smallest roll first), then efficiency descending
         usort($options, function($a, $b) {
+            $wCmp = (float)$a['roll']['width_mm'] <=> (float)$b['roll']['width_mm'];
+            if ($wCmp !== 0) return $wCmp;
             return $b['efficiency'] <=> $a['efficiency'];
         });
 
@@ -185,9 +225,12 @@ try {
     // GET PLANNING JOBS — pending jobs that need slitting
     // ═════════════════════════════════════════════════════════
     case 'get_planning_jobs':
+        // Planning is the single source of truth for auto slitting queue.
+        // Only pending jobs are eligible for execution.
         $rows = $db->query("SELECT p.*, so.material_type, so.label_width_mm, so.label_length_mm, so.quantity
             FROM planning p
             LEFT JOIN sales_orders so ON p.sales_order_id = so.id
+            WHERE p.status = 'Pending'
             ORDER BY FIELD(p.priority,'Urgent','High','Normal','Low'), p.scheduled_date ASC
             LIMIT 100")->fetch_all(MYSQLI_ASSOC);
 
@@ -313,7 +356,9 @@ try {
         $jobNo          = trim($_POST['job_no'] ?? '');
         $jobName        = trim($_POST['job_name'] ?? '');
         $jobSize        = trim($_POST['job_size'] ?? '');
+        $planNoInput    = trim($_POST['plan_no'] ?? $jobNo);
         $destination    = trim($_POST['destination'] ?? 'STOCK');
+        $planningId     = (int)($_POST['planning_id'] ?? 0);
         $runs           = json_decode($runsJson, true);
 
         if (!$parentRollNo || !is_array($runs) || empty($runs)) {
@@ -339,6 +384,30 @@ try {
             $pw = (float)$parent['width_mm'];
             $pl = (float)$parent['length_mtr'];
 
+            // Resolve planning context using planning_id first, then plan number.
+            $planNo = $planNoInput;
+            $planningExtra = [];
+            if ($planningId > 0) {
+                $planStmt = $db->prepare("SELECT id, job_no, extra_data FROM planning WHERE id = ? LIMIT 1");
+                $planStmt->bind_param('i', $planningId);
+                $planStmt->execute();
+                $planRow = $planStmt->get_result()->fetch_assoc();
+                if ($planRow) {
+                    $planNo = trim((string)($planRow['job_no'] ?? $planNo));
+                    $planningExtra = json_decode((string)($planRow['extra_data'] ?? '{}'), true) ?: [];
+                }
+            } elseif ($planNo !== '') {
+                $planStmt = $db->prepare("SELECT id, job_no, extra_data FROM planning WHERE job_no = ? LIMIT 1");
+                $planStmt->bind_param('s', $planNo);
+                $planStmt->execute();
+                $planRow = $planStmt->get_result()->fetch_assoc();
+                if ($planRow) {
+                    $planningId = (int)$planRow['id'];
+                    $planNo = trim((string)($planRow['job_no'] ?? $planNo));
+                    $planningExtra = json_decode((string)($planRow['extra_data'] ?? '{}'), true) ?: [];
+                }
+            }
+
             // 2. Validate all runs & detect mode
             $totalUsedWidth = 0;
             $validRuns = [];
@@ -357,7 +426,7 @@ try {
                 $totalUsedWidth += $w * $q;
                 $validRuns[] = ['width' => $w, 'length' => $l, 'qty' => $q, 'mode' => $mode,
                                 'dest' => $run['destination'] ?? $destination,
-                                'job_no' => $run['job_no'] ?? $jobNo,
+                                'job_no' => $run['job_no'] ?? $planNo,
                                 'job_name' => $run['job_name'] ?? $jobName,
                                 'job_size' => $run['job_size'] ?? $jobSize];
             }
@@ -540,14 +609,138 @@ try {
             $logStmt->bind_param('sisi', $parentRollNo, $parent['id'], $logDesc, $userId);
             $logStmt->execute();
 
-            // 8. Create job cards for JOB destination (only Jumbo Slitting & Printing)
+            // 8. Create ONE jumbo job per plan (outside child-roll loop).
+            $createdJobCards = [];
+            $jobChildRolls = [];
+            $stockRolls = [];
             foreach ($childRolls as $ch) {
-                if (($ch['dest'] ?? '') === 'JOB' && !empty($ch['roll_no'])) {
-                    // Only create job cards for Slitting and Printing types
-                    $jcNo = 'JC-' . date('Ymd') . '-' . random_int(1000, 9999);
-                    $jcStmt = $db->prepare("INSERT INTO jobs (job_no, roll_no, job_type, status) VALUES (?, ?, 'Slitting', 'Pending')");
-                    $jcStmt->bind_param('ss', $jcNo, $ch['roll_no']);
-                    $jcStmt->execute();
+                if (($ch['dest'] ?? '') === 'JOB') $jobChildRolls[] = $ch;
+                if (($ch['dest'] ?? '') === 'STOCK') $stockRolls[] = $ch;
+            }
+
+            $totalQtyMtr = 0.0;
+            foreach ($jobChildRolls as $ch) $totalQtyMtr += (float)($ch['length'] ?? 0);
+            foreach ($stockRolls as $ch) $totalQtyMtr += (float)($ch['length'] ?? 0);
+
+            $materialRaw = (string)($planningExtra['material'] ?? ($parent['paper_type'] ?? ''));
+            $isPaperMaterial = normalizeMaterial($materialRaw) === 'paper';
+
+            $extraPayload = [
+                'plan_no' => $planNo,
+                'parent_roll' => $parentRollNo,
+                'child_rolls' => array_values($jobChildRolls),
+                'stock_rolls' => array_values($stockRolls),
+                'total_roll_count' => count($jobChildRolls) + count($stockRolls) + 1,
+                'total_qty_mtr' => round($totalQtyMtr, 2),
+                'material' => $materialRaw,
+                'paper_combined' => $isPaperMaterial,
+                'batch_no' => $batchNo,
+            ];
+
+            $jumboJobId = 0;
+            if (!empty($jobChildRolls)) {
+                $existingJumbo = null;
+                if ($planningId > 0) {
+                    $findJ = $db->prepare("SELECT * FROM jobs WHERE job_type = 'Slitting' AND planning_id = ? AND status IN ('Pending','Running') AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
+                    $findJ->bind_param('i', $planningId);
+                    $findJ->execute();
+                    $existingJumbo = $findJ->get_result()->fetch_assoc();
+                } elseif ($planNo !== '') {
+                    $findJ = $db->prepare("SELECT * FROM jobs WHERE job_type = 'Slitting' AND JSON_UNQUOTE(JSON_EXTRACT(extra_data, '$.plan_no')) = ? AND status IN ('Pending','Running') AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
+                    $findJ->bind_param('s', $planNo);
+                    $findJ->execute();
+                    $existingJumbo = $findJ->get_result()->fetch_assoc();
+                }
+
+                if ($existingJumbo) {
+                    $oldExtra = json_decode((string)($existingJumbo['extra_data'] ?? '{}'), true) ?: [];
+                    $oldChild = is_array($oldExtra['child_rolls'] ?? null) ? $oldExtra['child_rolls'] : [];
+                    $oldStock = is_array($oldExtra['stock_rolls'] ?? null) ? $oldExtra['stock_rolls'] : [];
+
+                    $mergeByRoll = function(array $rows) {
+                        $m = [];
+                        foreach ($rows as $r) {
+                            $k = (string)($r['roll_no'] ?? '');
+                            if ($k === '') continue;
+                            $m[$k] = $r;
+                        }
+                        return array_values($m);
+                    };
+
+                    $extraPayload['child_rolls'] = $mergeByRoll(array_merge($oldChild, $jobChildRolls));
+                    $extraPayload['stock_rolls'] = $mergeByRoll(array_merge($oldStock, $stockRolls));
+                    $extraPayload['total_roll_count'] = count($extraPayload['child_rolls']) + count($extraPayload['stock_rolls']) + 1;
+
+                    $newExtra = json_encode($extraPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    $updJ = $db->prepare("UPDATE jobs SET extra_data = ?, notes = ? WHERE id = ?");
+                    $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | Batch: ' . $batchNo;
+                    $jid = (int)$existingJumbo['id'];
+                    $updJ->bind_param('ssi', $newExtra, $notesJ, $jid);
+                    $updJ->execute();
+                    $jumboJobId = $jid;
+                    $createdJobCards[] = ['job_no' => $existingJumbo['job_no'], 'type' => 'Slitting', 'roll' => $parentRollNo, 'id' => $jumboJobId];
+                } else {
+                    $jcNoJumbo = deriveStageJobNo($planNo, 'JUM');
+                    if ($jcNoJumbo === '') $jcNoJumbo = 'JUM/' . date('Y') . '/' . str_pad((string)$batchId, 4, '0', STR_PAD_LEFT);
+                    $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | Batch: ' . $batchNo;
+                    $extraJson = json_encode($extraPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    $pidJ = $planningId > 0 ? $planningId : null;
+                    $jcStmtJ = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, notes, extra_data) VALUES (?, ?, NULL, ?, 'Slitting', 'jumbo_slitting', 'Pending', 1, ?, ?)");
+                    $jcStmtJ->bind_param('sisss', $jcNoJumbo, $pidJ, $parentRollNo, $notesJ, $extraJson);
+                    $jcStmtJ->execute();
+                    $jumboJobId = $db->insert_id;
+                    $createdJobCards[] = ['job_no' => $jcNoJumbo, 'type' => 'Slitting', 'roll' => $parentRollNo, 'id' => $jumboJobId];
+                }
+
+                // Keep one downstream printing job per plan as queued.
+                if ($jumboJobId > 0 && $planningId > 0) {
+                    $chkP = $db->prepare("SELECT id, job_no FROM jobs WHERE job_type = 'Printing' AND planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
+                    $chkP->bind_param('i', $planningId);
+                    $chkP->execute();
+                    $existingPrint = $chkP->get_result()->fetch_assoc();
+                    if (!$existingPrint) {
+                        $jcNoFlex = deriveStageJobNo($planNo, 'FLX');
+                        if ($jcNoFlex === '') $jcNoFlex = 'FLX/' . date('Y') . '/' . str_pad((string)$batchId, 4, '0', STR_PAD_LEFT);
+                        $notesF = 'Flexo printing queued from Jumbo | Plan: ' . ($planNo ?: 'N/A') . ' | Batch: ' . $batchNo;
+                        $jcStmtF = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Printing', 'flexo_printing', 'Queued', 2, ?, ?)");
+                        $jcStmtF->bind_param('sisss', $jcNoFlex, $planningId, $parentRollNo, $jumboJobId, $notesF);
+                        $jcStmtF->execute();
+                        $createdJobCards[] = ['job_no' => $jcNoFlex, 'type' => 'Printing', 'roll' => $parentRollNo, 'id' => $db->insert_id];
+                    }
+                }
+            }
+
+            // 9. Update planning status to Preparing Slitting (not Completed).
+            if ($planNo !== '') {
+                $updPlanNo = $db->prepare("UPDATE planning SET status = 'Preparing Slitting' WHERE job_no = ?");
+                $updPlanNo->bind_param('s', $planNo);
+                $updPlanNo->execute();
+
+                $extraStmt = $db->prepare("SELECT id, extra_data FROM planning WHERE job_no = ? LIMIT 1");
+                $extraStmt->bind_param('s', $planNo);
+                $extraStmt->execute();
+                $extraRow = $extraStmt->get_result()->fetch_assoc();
+                if ($extraRow) {
+                    $extraData = json_decode((string)($extraRow['extra_data'] ?? '{}'), true) ?: [];
+                    $extraData['printing_planning'] = 'Preparing Slitting';
+                    $newExtra = json_encode($extraData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    $pid = (int)$extraRow['id'];
+                    $updExtra = $db->prepare("UPDATE planning SET extra_data = ? WHERE id = ?");
+                    $updExtra->bind_param('si', $newExtra, $pid);
+                    $updExtra->execute();
+                }
+            } elseif ($planningId > 0) {
+                $updPlan = $db->prepare("UPDATE planning SET status = 'Preparing Slitting' WHERE id = ?");
+                $updPlan->bind_param('i', $planningId);
+                $updPlan->execute();
+            }
+
+            // 10. Mark JOB destination children as Slitting.
+            foreach ($childRolls as $ch) {
+                if (($ch['dest'] ?? '') === 'JOB') {
+                    $lockStmt = $db->prepare("UPDATE paper_stock SET status = 'Slitting' WHERE roll_no = ?");
+                    $lockStmt->bind_param('s', $ch['roll_no']);
+                    $lockStmt->execute();
                 }
             }
 
@@ -560,6 +753,8 @@ try {
                 'parent'   => $parentRollNo,
                 'children' => $childRolls,
                 'remainder_action' => $remainderAction,
+                'job_cards' => $createdJobCards,
+                'planning_status' => ($planningId > 0 || $planNo !== '') ? 'Preparing Slitting' : null,
             ]);
 
         } catch (Exception $ex) {
@@ -587,6 +782,13 @@ try {
         $stmt2->execute();
         $entries = $stmt2->get_result()->fetch_all(MYSQLI_ASSOC);
 
+        $childRollNos = [];
+        foreach ($entries as $entry) {
+            $rollNo = trim((string)($entry['child_roll_no'] ?? ''));
+            if ($rollNo !== '') $childRollNos[] = $rollNo;
+        }
+        $childRollNos = array_values(array_unique($childRollNos));
+
         // Get parent roll details for each unique parent
         $parentRolls = [];
         foreach ($entries as $e) {
@@ -599,7 +801,53 @@ try {
             }
         }
 
-        echo json_encode(['ok' => true, 'batch' => $batch, 'entries' => $entries, 'parents' => $parentRolls]);
+        $jobCards = [];
+        if (!empty($childRollNos)) {
+            $placeholders = implode(',', array_fill(0, count($childRollNos), '?'));
+            $types = str_repeat('s', count($childRollNos));
+            $jobSql = "SELECT id, job_no, roll_no, job_type, department, status, planning_id, created_at
+                       FROM jobs
+                       WHERE roll_no IN ($placeholders)
+                         AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
+                       ORDER BY created_at ASC, id ASC";
+            $jobStmt = $db->prepare($jobSql);
+            $jobStmt->bind_param($types, ...$childRollNos);
+            $jobStmt->execute();
+            $jobCards = $jobStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        }
+
+        $planning = null;
+        $planningId = 0;
+        foreach ($jobCards as $jobCard) {
+            if ((int)($jobCard['planning_id'] ?? 0) > 0) {
+                $planningId = (int)$jobCard['planning_id'];
+                break;
+            }
+        }
+
+        if ($planningId > 0) {
+            $planStmt = $db->prepare("SELECT * FROM planning WHERE id = ? LIMIT 1");
+            $planStmt->bind_param('i', $planningId);
+            $planStmt->execute();
+            $planning = $planStmt->get_result()->fetch_assoc();
+        }
+
+        $settings = getAppSettings();
+        $companyName = trim((string)($settings['company_name'] ?? 'Shree Label Creation'));
+        $erpName = getErpDisplayName($companyName);
+        $company = [
+            'company_name' => $companyName,
+            'erp_name' => $erpName,
+            'company_address' => trim((string)($settings['company_address'] ?? '')),
+            'company_phone' => trim((string)($settings['company_phone'] ?? '')),
+            'company_mobile' => trim((string)($settings['company_mobile'] ?? '')),
+            'company_email' => trim((string)($settings['company_email'] ?? '')),
+            'company_gst' => trim((string)($settings['company_gst'] ?? '')),
+            'logo_url' => !empty($settings['logo_path']) ? (BASE_URL . '/' . ltrim((string)$settings['logo_path'], '/')) : '',
+            'footer_text' => 'Version : ' . APP_VERSION . ' | © ' . date('Y') . ' ' . $erpName . ' • ERP Master System v' . APP_VERSION . ' | @ Developed by Mriganka Bhusan Debnath',
+        ];
+
+        echo json_encode(['ok' => true, 'batch' => $batch, 'entries' => $entries, 'parents' => $parentRolls, 'job_cards' => $jobCards, 'planning' => $planning, 'company' => $company]);
         break;
 
     // ═════════════════════════════════════════════════════════

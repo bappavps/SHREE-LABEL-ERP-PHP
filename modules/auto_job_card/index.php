@@ -280,7 +280,7 @@ var rollConfigs = {};
 var stockOptions = [];
 var selectionMap = {};
 var wastagePrefs = {};
-var plannerFilter = 'all'; // status tab filter
+var plannerFilter = 'pending'; // status tab filter
 var selectedSupplier = 'all';
 
 // ── Helper ──
@@ -960,7 +960,9 @@ async function executeBatch() {
       operator_name: OPERATOR,
       job_no: config.jobNo,
       job_name: config.jobName,
-      job_size: config.jobSize
+      job_size: config.jobSize,
+      planning_id: selectedJob && selectedJob.id ? selectedJob.id : '',
+      plan_no: selectedJob && selectedJob.job_no ? selectedJob.job_no : config.jobNo
     });
 
     if (data.ok) {

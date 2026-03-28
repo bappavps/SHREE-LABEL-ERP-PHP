@@ -586,6 +586,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       'quotation' => 'prefix_quotation',
       'batch' => 'prefix_batch',
       'sales_order' => 'prefix_sales_order',
+      'planning' => 'prefix_planning',
+      'jumbo_job' => 'prefix_jumbo_job',
+      'printing_job' => 'prefix_printing_job',
     ];
 
     foreach ($moduleFieldMap as $type => $field) {
@@ -606,6 +609,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
       setFlash('error', 'Unable to save prefix settings.');
     }
+    redirect(BASE_URL . '/modules/master/index.php?tab=prefix');
+  }
+
+  if ($action === 'reset_prefix_counters') {
+    $idg = getPrefixSettings();
+
+    if (!isset($idg['modules']) || !is_array($idg['modules'])) {
+      $idg['modules'] = [];
+    }
+
+    foreach ($idg['modules'] as $type => $moduleCfg) {
+      $idg['modules'][$type]['counter'] = 0;
+    }
+
+    $idg['global_job_counter'] = 0;
+
+    $settings['id_generation'] = $idg;
+    if (saveAppSettings($settings)) {
+      setFlash('success', 'All prefix counters reset successfully. Next IDs will start from 0001.');
+    } else {
+      setFlash('error', 'Unable to reset prefix counters.');
+    }
+
     redirect(BASE_URL . '/modules/master/index.php?tab=prefix');
   }
 
@@ -770,6 +796,9 @@ $prefixModules = [
   'quotation' => 'Quotation Prefix',
   'batch' => 'Batch Prefix',
   'sales_order' => 'Sales Order Prefix',
+  'planning' => 'Planning Job Prefix',
+  'jumbo_job' => 'Jumbo Slitting Job Prefix',
+  'printing_job' => 'Flexo Printing Job Prefix',
 ];
 
 $sampleSuppliers = [
@@ -1520,6 +1549,13 @@ if ($activeTab === 'clients' && $editClientId > 0) {
 
         <div class="form-actions col-span-2">
           <button class="btn btn-primary" type="submit"><i class="bi bi-save"></i> Save Prefix Settings</button>
+          <button
+            class="btn btn-secondary"
+            type="submit"
+            name="action"
+            value="reset_prefix_counters"
+            onclick="return confirm('Reset all prefix counters? Next generated IDs will start from 0001.');"
+          ><i class="bi bi-arrow-counterclockwise"></i> Reset All Counters to 0001</button>
         </div>
       </form>
 

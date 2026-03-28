@@ -12,6 +12,7 @@ $db = getDB();
 // Ensure department support for planning rows.
 try { $db->query("ALTER TABLE planning ADD COLUMN department VARCHAR(80) NOT NULL DEFAULT 'general' AFTER notes"); } catch (Exception $e) {}
 try { $db->query("ALTER TABLE planning ADD COLUMN extra_data LONGTEXT NULL AFTER department"); } catch (Exception $e) {}
+try { $db->query("ALTER TABLE planning ADD COLUMN job_no VARCHAR(60) NULL AFTER id"); } catch (Exception $e) {}
 
 // Config table for planning board columns (rename/type/reorder).
 @$db->query("CREATE TABLE IF NOT EXISTS planning_board_columns (
@@ -112,21 +113,22 @@ function planning_get_rows(mysqli $db, $department) {
         LEFT JOIN sales_orders so ON so.id = p.sales_order_id
         WHERE p.department = ?
         ORDER BY
-          FIELD(p.priority,'Urgent','High','Normal','Low'),
-          p.scheduled_date ASC,
-          p.id DESC");
+          CASE WHEN p.job_no IS NULL OR p.job_no = '' THEN 1 ELSE 0 END ASC,
+          CAST(SUBSTRING_INDEX(p.job_no, '/', -1) AS UNSIGNED) ASC,
+          p.id ASC");
     $stmt->bind_param('s', $department);
     $stmt->execute();
     return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
 
 function planning_normalize_status($status) {
-    $s = trim((string)$status);
-    if ($s === '' || strcasecmp($s, 'Pending') === 0 || strcasecmp($s, 'Running') === 0) return 'Queued';
-    if (strcasecmp($s, 'Hold') === 0 || strcasecmp($s, 'Hold for Payment') === 0 || strcasecmp($s, 'Hold for Approval') === 0) return 'On Hold';
-    if (strcasecmp($s, 'Completed') === 0) return 'Completed';
-    if (strcasecmp($s, 'In Progress') === 0) return 'In Progress';
-    return 'Queued';
+  $s = trim((string)$status);
+  if ($s === '') return 'Pending';
+  $allowed = ['Pending', 'Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval'];
+  foreach ($allowed as $v) {
+    if (strcasecmp($s, $v) === 0) return $v;
+  }
+  return 'Pending';
 }
 
 function planning_status_badge($status) {
@@ -257,11 +259,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
       $jobName = trim((string)($rowValues['name'] ?? $_POST['job_name'] ?? ''));
         if ($jobName === '') planning_json_response(['ok' => false, 'message' => 'Job name is required.'], 400);
 
-      $statusRaw = trim((string)($rowValues['printing_planning'] ?? $_POST['status'] ?? 'Pending'));
-      if ($statusRaw === '') $statusRaw = 'Pending';
-      $rowValues['printing_planning'] = $statusRaw;
+      $statusRaw = 'Pending';
+      $rowValues['printing_planning'] = 'Pending';
 
-      $status = planning_normalize_status($statusRaw);
+      $status = 'Pending';
       $priority = (string)($rowValues['priority'] ?? $_POST['priority'] ?? 'Normal');
         if (!in_array($priority, $priorityList, true)) $priority = 'Normal';
 
@@ -271,11 +272,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
       $scheduled = planning_try_parse_date($rowValues['dispatch_date'] ?? $_POST['scheduled_date'] ?? '');
 
       $extraJson = json_encode($rowValues, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-      $ins = $db->prepare("INSERT INTO planning (sales_order_id, job_name, machine, operator_name, scheduled_date, status, priority, notes, department, extra_data, created_by) VALUES (NULL,?,?,?,NULLIF(?, ''),?,?,?,?,?,?)");
+
+      // Auto-generate planning job number
+      $planJobNo = getNextId('planning');
+      if (!$planJobNo) $planJobNo = 'PLN-' . date('Ymd') . '-' . rand(1000,9999);
+
+      $ins = $db->prepare("INSERT INTO planning (job_no, sales_order_id, job_name, machine, operator_name, scheduled_date, status, priority, notes, department, extra_data, created_by) VALUES (?,NULL,?,?,?,NULLIF(?, ''),?,?,?,?,?,?)");
         $uid = (int)($_SESSION['user_id'] ?? 0);
-      $ins->bind_param('sssssssssi', $jobName, $machine, $operator, $scheduled, $status, $priority, $notes, $department, $extraJson, $uid);
+      $ins->bind_param('ssssssssssi', $planJobNo, $jobName, $machine, $operator, $scheduled, $status, $priority, $notes, $department, $extraJson, $uid);
         $ok = $ins->execute();
-        planning_json_response(['ok' => (bool)$ok, 'message' => $ok ? 'Row created.' : 'Create failed.']);
+        planning_json_response(['ok' => (bool)$ok, 'id' => $ok ? $db->insert_id : 0, 'job_no' => $planJobNo, 'message' => $ok ? 'Row created.' : 'Create failed.']);
     }
 
     if ($action === 'save_columns') {
@@ -316,7 +322,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
       $activeColumns = planning_get_columns($db, $department, $defaultColumns);
 
-        $ins = $db->prepare("INSERT INTO planning (sales_order_id, job_name, machine, operator_name, scheduled_date, status, priority, notes, department, extra_data, created_by) VALUES (NULL,?,?,?,NULLIF(?, ''),?,?,?,?,?,?)");
+        $ins = $db->prepare("INSERT INTO planning (job_no, sales_order_id, job_name, machine, operator_name, scheduled_date, status, priority, notes, department, extra_data, created_by) VALUES (?,NULL,?,?,?,NULLIF(?, ''),?,?,?,?,?,?)");
         $uid = (int)($_SESSION['user_id'] ?? 0);
         $count = 0;
 
@@ -338,25 +344,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $aliases = [
                 'order_date' => ['order_date', 'order date'],
                 'dispatch_date' => ['dispatch_date', 'dispatch date'],
-                'printing_planning' => ['printing_planning', 'status'],
-                'plate_no' => ['plate_no', 'plate no'],
+                'printing_planning' => ['printing_planning', 'printing planing', 'status', 'planing', 'planning'],
+                'plate_no' => ['plate_no', 'plate no', 'plate no.'],
                 'name' => ['name', 'job name', 'job_name'],
                 'size' => ['size'],
                 'repeat' => ['repeat'],
                 'material' => ['material'],
                 'paper_size' => ['paper_size', 'paper size'],
                 'die' => ['die'],
-                'allocate_mtrs' => ['allocate_mtrs', 'mtrs', 'allocate mtrs'],
-                'qty_pcs' => ['qty_pcs', 'qty'],
+                'allocate_mtrs' => ['allocate_mtrs', 'mtrs', 'allocate mtrs', 'allocate'],
+                'qty_pcs' => ['qty_pcs', 'qty', 'qty. (pcs)', 'qty (pcs)'],
                 'core_size' => ['core_size', 'core', 'core size'],
-                'qty_per_roll' => ['qty_per_roll', 'qty/roll', 'qty per roll'],
+                'qty_per_roll' => ['qty_per_roll', 'qty/roll', 'qty per roll', 'qty. per roll'],
                 'roll_direction' => ['roll_direction', 'direction', 'roll direction'],
                 'remarks' => ['remarks', 'notes']
             ];
 
             foreach ($aliases as $k => $tryKeys) {
                 $v = planning_get_any_key($normRow, $tryKeys);
-                if ($v !== null) $rowValues[$k] = (string)$v;
+               if ($v !== null && trim((string)$v) !== '') {
+                 $rowValues[$k] = (string)$v;
+               } else {
+                 // Show NA for missing/blank values - user can edit them later
+                 $rowValues[$k] = 'NA';
+               }
             }
 
             $jobName = trim((string)($rowValues['name'] ?? ''));
@@ -368,9 +379,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $rowValues['dispatch_date'] = $scheduled;
             $rowValues['order_date'] = planning_try_parse_date($rowValues['order_date'] ?? '');
 
-            $statusIn = (string)($rowValues['printing_planning'] ?? 'Pending');
-            $status = planning_normalize_status($statusIn);
-            $rowValues['printing_planning'] = trim($statusIn) !== '' ? (string)$statusIn : 'Pending';
+            $status = 'Pending';
+            $rowValues['printing_planning'] = 'Pending';
 
             $priority = (string)(planning_get_any_key($normRow, ['priority']) ?? 'Normal');
             if (!in_array($priority, $priorityList, true)) $priority = 'Normal';
@@ -378,7 +388,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $notes = trim((string)($rowValues['remarks'] ?? ''));
             $extraJson = json_encode($rowValues, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-            $ins->bind_param('sssssssssi', $jobName, $machine, $operator, $scheduled, $status, $priority, $notes, $department, $extraJson, $uid);
+            // Auto-generate planning job number for each imported row
+            $planJobNo = getNextId('planning');
+            if (!$planJobNo) $planJobNo = 'PLN-' . date('Ymd') . '-' . rand(1000,9999);
+
+            $ins->bind_param('ssssssssssi', $planJobNo, $jobName, $machine, $operator, $scheduled, $status, $priority, $notes, $department, $extraJson, $uid);
             if ($ins->execute()) $count++;
         }
 
@@ -393,6 +407,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
 $columns = planning_get_columns($db, $department, $defaultColumns);
 $rows = planning_get_rows($db, $department);
+$planningJobPreview = previewNextId('planning') ?: 'Auto-generated on save';
 
 $pageTitle = 'Planning Board';
 include __DIR__ . '/../../includes/header.php';
@@ -409,6 +424,8 @@ include __DIR__ . '/../../includes/header.php';
     <p>Live planning board with inline editing, Excel import, and configurable headers.</p>
   </div>
   <div class="d-flex gap-8">
+    <button type="button" class="btn btn-ghost" id="btn-print-pdf"><i class="bi bi-printer"></i> Print / PDF</button>
+    <button type="button" class="btn btn-ghost" id="btn-export-excel"><i class="bi bi-file-earmark-excel"></i> Export Excel</button>
     <button type="button" class="btn btn-ghost" id="btn-board-config"><i class="bi bi-layout-text-window-reverse"></i> Board Layout</button>
     <button type="button" class="btn btn-secondary" id="btn-import"><i class="bi bi-file-earmark-arrow-up"></i> Import Excel</button>
     <button type="button" class="btn btn-primary" id="btn-add-row"><i class="bi bi-plus-circle"></i> Add Job Entry</button>
@@ -436,14 +453,18 @@ include __DIR__ . '/../../includes/header.php';
       <thead>
         <tr>
           <th class="sticky-col">Actions</th>
+          <th>S.N</th>
+          <th>Job No</th>
           <?php foreach ($columns as $c): ?>
+            <?php if ($c['key'] === 'sn') continue; ?>
             <th draggable="true" data-col-key="<?= e($c['key']) ?>"><?= e($c['label']) ?></th>
           <?php endforeach; ?>
         </tr>
       </thead>
       <tbody>
+      <?php $visibleColCount = 0; foreach ($columns as $_c) { if ($_c['key'] !== 'sn') $visibleColCount++; } ?>
       <?php if (empty($rows)): ?>
-        <tr><td colspan="<?= count($columns) + 1 ?>" class="table-empty"><i class="bi bi-inbox"></i>No planning jobs found.</td></tr>
+        <tr><td colspan="<?= $visibleColCount + 3 ?>" class="table-empty"><i class="bi bi-inbox"></i>No planning jobs found.</td></tr>
       <?php else: ?>
         <?php foreach ($rows as $idx => $r): ?>
           <?php
@@ -462,7 +483,10 @@ include __DIR__ . '/../../includes/header.php';
                 <button class="btn btn-danger btn-sm btn-delete" type="button" title="Delete"><i class="bi bi-trash"></i></button>
               </div>
             </td>
+            <td><?= (int)($idx + 1) ?></td>
+            <td class="job-no-cell"><strong><?= e($r['job_no'] ?? '—') ?></strong></td>
             <?php foreach ($columns as $c): ?>
+              <?php if ($c['key'] === 'sn') continue; ?>
               <?php
                 $k = $c['key'];
                 $v = (string)($rowVals[$k] ?? '');
@@ -494,15 +518,19 @@ include __DIR__ . '/../../includes/header.php';
       <button type="button" class="btn btn-ghost btn-sm modal-close"><i class="bi bi-x-lg"></i></button>
     </div>
     <form id="form-add-row">
+      <div class="planning-job-preview-box">
+        <span class="planning-job-preview-label">Job ID</span>
+        <strong id="planning-job-preview"><?= e($planningJobPreview) ?></strong>
+        <small>Final number is assigned when you save.</small>
+      </div>
       <div class="planning-grid">
         <?php foreach ($columns as $c): ?>
           <?php if ($c['key'] === 'sn') continue; ?>
           <div<?= $c['key'] === 'remarks' ? ' style="grid-column:1 / -1"' : '' ?>>
             <label><?= e($c['label']) ?><?= $c['key'] === 'name' ? ' *' : '' ?></label>
             <?php if ($c['type'] === 'Status'): ?>
-              <select class="form-control" name="<?= e($c['key']) ?>" <?= $c['key'] === 'name' ? 'required' : '' ?>>
-                <?php foreach ($statusList as $s): ?><option value="<?= e($s) ?>" <?= $s === 'Pending' ? 'selected' : '' ?>><?= e($s) ?></option><?php endforeach; ?>
-              </select>
+              <input class="form-control" type="text" value="Pending" readonly>
+              <input type="hidden" name="<?= e($c['key']) ?>" value="Pending">
             <?php else: ?>
               <input class="form-control" name="<?= e($c['key']) ?>" type="<?= $c['type'] === 'Number' ? 'number' : ($c['type'] === 'Date' ? 'date' : 'text') ?>" <?= $c['key'] === 'name' ? 'required' : '' ?>>
             <?php endif; ?>
@@ -529,6 +557,16 @@ include __DIR__ . '/../../includes/header.php';
   </div>
 </div>
 
+<div class="planning-modal" id="modal-plan-detail" style="display:none">
+  <div class="planning-modal-card">
+    <div class="planning-modal-head">
+      <h3>Plan Details</h3>
+      <button type="button" class="btn btn-ghost btn-sm modal-close"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div id="plan-detail-content" class="plan-detail-grid"></div>
+  </div>
+</div>
+
 <form id="csrf-form" style="display:none">
   <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
   <input type="hidden" name="department" value="<?= e($department) ?>">
@@ -543,9 +581,140 @@ include __DIR__ . '/../../includes/header.php';
   var deptSwitch = document.getElementById('dept-switch');
   var addModal = document.getElementById('modal-add');
   var cfgModal = document.getElementById('modal-config');
+  var detailModal = document.getElementById('modal-plan-detail');
   var fileInput = document.getElementById('excel-file');
+  var btnExportExcel = document.getElementById('btn-export-excel');
+  var btnPrintPdf = document.getElementById('btn-print-pdf');
   var columns = <?= json_encode($columns, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
   var csrfToken = document.querySelector('#csrf-form [name="csrf_token"]').value;
+  var currentDepartment = <?= json_encode($department, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+
+  function safeText(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function boardHeaders() {
+    var headers = ['S.N', 'Job No'];
+    columns.forEach(function(col){
+      if (col.key === 'sn') return;
+      headers.push(col.label || col.key || '');
+    });
+    return headers;
+  }
+
+  function boardRows() {
+    return Array.prototype.slice.call(boardTable.querySelectorAll('tbody tr[data-id]')).map(function(tr){
+      var row = [];
+      var snCell = tr.children[1];
+      row.push(snCell ? snCell.textContent.trim() : '');
+      var jobNoCell = tr.querySelector('.job-no-cell');
+      row.push(jobNoCell ? jobNoCell.textContent.trim() : '');
+      Array.prototype.slice.call(tr.querySelectorAll('td[data-key]')).forEach(function(td){
+        var raw = td.getAttribute('data-raw');
+        var text = raw !== null ? raw : (td.querySelector('.cell-display') ? td.querySelector('.cell-display').textContent.trim() : td.textContent.trim());
+        row.push(text === '—' ? 'NA' : text);
+      });
+      return row;
+    });
+  }
+
+  function exportPlanningExcel() {
+    if (typeof XLSX === 'undefined') {
+      toast('Excel export library failed to load. Please refresh and try again.', true);
+      return;
+    }
+
+    var rows = boardRows();
+    if (!rows.length) {
+      toast('No planning rows available to export.', true);
+      return;
+    }
+
+    var data = [boardHeaders()].concat(rows);
+    var ws = XLSX.utils.aoa_to_sheet(data);
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Planning');
+
+    var fileDept = String(currentDepartment || 'planning').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'planning';
+    var stamp = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, 'planning-' + fileDept + '-' + stamp + '.xlsx');
+  }
+
+  function printPlanningBoard() {
+    var rows = boardRows();
+    if (!rows.length) {
+      toast('No planning rows available to print.', true);
+      return;
+    }
+
+    var headers = boardHeaders();
+    var title = 'Planning Board - ' + String(currentDepartment || '').replace(/-/g, ' ');
+    var printedAt = new Date().toLocaleString();
+    var html = '<!doctype html><html><head><meta charset="utf-8">' +
+      '<title>' + safeText(title) + '</title>' +
+      '<style>' +
+      'body{font-family:Arial,sans-serif;margin:24px;color:#0f172a;}' +
+      'h1{margin:0 0 6px;font-size:22px;text-transform:capitalize;}' +
+      '.meta{margin-bottom:18px;color:#475569;font-size:12px;}' +
+      'table{width:100%;border-collapse:collapse;font-size:11px;}' +
+      'th,td{border:1px solid #cbd5e1;padding:7px 8px;text-align:left;vertical-align:top;word-break:break-word;}' +
+      'th{background:#e2e8f0;font-weight:700;}' +
+      'tbody tr:nth-child(even){background:#f8fafc;}' +
+      '@media print{body{margin:10mm;} .no-print{display:none;}}' +
+      '</style></head><body>' +
+      '<h1>' + safeText(title) + '</h1>' +
+      '<div class="meta">Printed: ' + safeText(printedAt) + ' | Total Rows: ' + rows.length + '</div>' +
+      '<table><thead><tr>' + headers.map(function(h){ return '<th>' + safeText(h) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      rows.map(function(row){
+        return '<tr>' + row.map(function(cell){ return '<td>' + safeText(cell || 'NA') + '</td>'; }).join('') + '</tr>';
+      }).join('') +
+      '</tbody></table>' +
+      '<script>window.onload=function(){window.print();};</' + 'script>' +
+      '</body></html>';
+
+    var printWin = window.open('', '_blank', 'width=1280,height=900');
+    if (!printWin) {
+      toast('Popup blocked. Please allow popups and try again.', true);
+      return;
+    }
+    printWin.document.open();
+    printWin.document.write(html);
+    printWin.document.close();
+  }
+
+  function openPlanDetail(tr) {
+    var headers = Array.prototype.slice.call(boardTable.querySelectorAll('thead th')).map(function(th){
+      return th.textContent.trim();
+    });
+    var values = [];
+    var jobNo = tr.querySelector('.job-no-cell') ? tr.querySelector('.job-no-cell').textContent.trim() : '—';
+    values.push({ label: 'Plan No', value: jobNo || '—' });
+
+    Array.prototype.slice.call(tr.querySelectorAll('td[data-key]')).forEach(function(td, idx){
+      var value = td.getAttribute('data-raw');
+      if (value === null) {
+        var disp = td.querySelector('.cell-display');
+        value = disp ? disp.textContent.trim() : td.textContent.trim();
+      }
+      values.push({
+        label: (headers[idx + 3] || 'Field').trim(),
+        value: value && value !== '—' ? value : 'NA'
+      });
+    });
+
+    var container = document.getElementById('plan-detail-content');
+    container.innerHTML = values.map(function(item){
+      return '<div class="plan-detail-item">' +
+        '<div class="plan-detail-label">' + safeText(item.label) + '</div>' +
+        '<div class="plan-detail-value">' + safeText(item.value) + '</div>' +
+      '</div>';
+    }).join('');
+    openModal(detailModal);
+  }
 
   var _toastCtr = null;
   function toast(msg, type) {
@@ -656,6 +825,11 @@ include __DIR__ . '/../../includes/header.php';
     var tr = e.target.closest('tr[data-id]');
     if (!tr) return;
 
+    if (e.target.closest('.job-no-cell')) {
+      openPlanDetail(tr);
+      return;
+    }
+
     if (e.target.closest('.btn-edit')) {
       setRowEditMode(tr, true);
       return;
@@ -727,6 +901,8 @@ include __DIR__ . '/../../includes/header.php';
   function closeModal(el) { el.style.display = 'none'; }
 
   document.getElementById('btn-add-row').addEventListener('click', function(){ openModal(addModal); });
+  btnExportExcel.addEventListener('click', exportPlanningExcel);
+  btnPrintPdf.addEventListener('click', printPlanningBoard);
   document.getElementById('btn-board-config').addEventListener('click', function(){
     renderConfigList();
     openModal(cfgModal);
@@ -738,7 +914,7 @@ include __DIR__ . '/../../includes/header.php';
     });
   });
 
-  [addModal, cfgModal].forEach(function(m){
+  [addModal, cfgModal, detailModal].forEach(function(m){
     m.addEventListener('click', function(e){ if (e.target === m) closeModal(m); });
   });
 
@@ -926,6 +1102,8 @@ include __DIR__ . '/../../includes/header.php';
   min-width: 145px;
 }
 .planning-board-table thead .sticky-col { z-index: 6; }
+.job-no-cell { white-space: nowrap; color: #1e40af; font-size: .82rem; letter-spacing: .02em; }
+.job-no-cell strong { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 
 .planning-modal {
   position: fixed;
@@ -964,6 +1142,31 @@ include __DIR__ . '/../../includes/header.php';
   gap: 12px;
   padding: 14px 16px;
 }
+.planning-job-preview-box {
+  margin: 14px 16px 0;
+  padding: 12px 14px;
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.planning-job-preview-label {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #1d4ed8;
+}
+.planning-job-preview-box strong {
+  font-size: 1rem;
+  color: #0f172a;
+}
+.planning-job-preview-box small {
+  color: #475569;
+}
 .planning-grid label {
   display: block;
   margin-bottom: 5px;
@@ -974,6 +1177,31 @@ include __DIR__ . '/../../includes/header.php';
   letter-spacing: .04em;
 }
 .config-list { padding: 14px 16px; display: grid; gap: 8px; }
+.plan-detail-grid {
+  padding: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.plan-detail-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+  background: #f8fafc;
+}
+.plan-detail-label {
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #64748b;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.plan-detail-value {
+  color: #0f172a;
+  font-weight: 600;
+  word-break: break-word;
+}
 .config-row {
   display: grid;
   grid-template-columns: 34px 1fr 150px;
@@ -996,6 +1224,7 @@ include __DIR__ . '/../../includes/header.php';
 }
 @media (max-width: 680px) {
   .planning-grid { grid-template-columns: 1fr; }
+  .plan-detail-grid { grid-template-columns: 1fr; }
 }
 /* ── In-page toast notifications ── */
 #erp-toast-ctr { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none; max-width: 420px; }

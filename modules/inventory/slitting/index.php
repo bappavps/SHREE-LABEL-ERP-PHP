@@ -84,8 +84,8 @@ include __DIR__ . '/../../../includes/header.php';
 .slt-status-tab:hover{border-color:var(--brand);color:var(--brand)}
 .slt-status-tab.active{background:var(--brand);border-color:var(--brand);color:#fff}
 
-/* Stock analysis grid row */
-.slt-stock-grid{display:grid;grid-template-columns:2fr 1fr 2fr 1.5fr 1fr 1fr;gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:#fff;transition:all .15s}
+/* Stock analysis grid row (7 columns: Sr#, Dimension, Waste, Result, Yield, Eff, Qty) */
+.slt-stock-grid{display:grid;grid-template-columns:50px 2fr 1fr 2fr 1.5fr 1fr 1fr;gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:#fff;transition:all .15s}
 .slt-stock-grid:hover{border-color:#86efac;background:#f0fdf4}
 .slt-stock-eff-bar{width:100%;height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden;margin-top:4px}
 .slt-stock-eff-fill{height:100%;border-radius:3px;transition:width .3s}
@@ -398,10 +398,10 @@ include __DIR__ . '/../../../includes/header.php';
       <h3><i class="bi bi-bar-chart-steps"></i> Stock Decision Support</h3>
       <div style="display:flex;align-items:center;gap:12px">
         <!-- Supplier Filter -->
-        <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.08);padding:5px 14px;border-radius:10px">
+        <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.12);padding:5px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.15)">
           <span style="font-size:.6rem;font-weight:800;text-transform:uppercase;color:#94a3b8">Supplier:</span>
-          <select id="supplierFilter" style="background:transparent;border:none;color:#fff;font-size:.72rem;font-weight:700;min-width:150px;cursor:pointer;outline:none">
-            <option value="all" style="color:#000">ALL SUPPLIERS</option>
+          <select id="supplierFilter" style="background:#1e293b;border:1px solid rgba(255,255,255,.2);color:#fff;font-size:.72rem;font-weight:700;min-width:180px;cursor:pointer;outline:none;padding:4px 8px;border-radius:6px;-webkit-appearance:auto;appearance:auto">
+            <option value="all">ALL SUPPLIERS</option>
           </select>
         </div>
         <span id="stockModalCount" style="font-size:.65rem;font-weight:700;color:#94a3b8"></span>
@@ -432,7 +432,13 @@ include __DIR__ . '/../../../includes/header.php';
     <div class="slt-modal-body slt-report-body" id="reportContent">
     </div>
     <div class="slt-modal-foot no-print">
-      <span></span>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="font-size:.72rem;font-weight:700;color:var(--text-muted)">Template</label>
+        <select id="reportTemplateSelect" class="form-control" style="min-width:180px;height:36px">
+          <option value="executive">Executive</option>
+          <option value="compact">Compact</option>
+        </select>
+      </div>
       <button class="btn btn-primary" onclick="window.print()"><i class="bi bi-printer"></i> Print Report</button>
     </div>
   </div>
@@ -442,6 +448,7 @@ include __DIR__ . '/../../../includes/header.php';
 
 <?php include __DIR__ . '/../../../includes/footer.php'; ?>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 // ════════════════════════════════════════════════════════════════
 // Industrial Slitting Terminal — Frontend Logic
@@ -458,11 +465,12 @@ const SLT = (() => {
   let activeRollNo    = null; // currently selected roll for config
   let rollConfigs     = {};   // rollNo -> { runs: [{width,length,qty}], destination, job_no, job_name, job_size, remainderAction }
   let machines        = [];
-  let plannerFilter   = 'all'; // status tab filter
+  let plannerFilter   = 'pending'; // status tab filter
   let allStockOptions = [];    // raw options from API (unfiltered)
   let selectedSupplier = 'all';
   let selectionMap    = {};    // key -> qty selected
   let wastagePrefs    = {};    // key -> 'STOCK' | 'ADJUST'
+  let reportState     = { data: null, template: 'executive' };
 
   // ── Init ───────────────────────────────────────────────────
   function init() {
@@ -582,13 +590,26 @@ const SLT = (() => {
       slitMode: 'MANUAL', // MANUAL or EQUAL_DIVIDE
       equalPieces: 2,
       destination: defaultDest,
-      job_no: '', job_name: '', job_size: '',
+      job_no: (selectedJob && selectedJob.job_no) ? String(selectedJob.job_no) : '',
+      job_name: (selectedJob && selectedJob.job_name) ? String(selectedJob.job_name) : '',
+      job_size: (selectedJob && (selectedJob.label_length_mm || selectedJob.label_width_mm)) ? String(selectedJob.label_length_mm || selectedJob.label_width_mm) : '',
       remainderAction: 'STOCK'
     };
     if (!activeRollNo) activeRollNo = roll.roll_no;
     renderLoadedRolls();
     renderConfig();
     renderBatchStatus();
+  }
+
+  function autofillSelectedPlanNo() {
+    if (!selectedJob) return;
+    loadedRolls.forEach(roll => {
+      const cfg = rollConfigs[roll.roll_no];
+      if (!cfg) return;
+      if (!String(cfg.job_no || '').trim()) cfg.job_no = String(selectedJob.job_no || '');
+      if (!String(cfg.job_name || '').trim()) cfg.job_name = String(selectedJob.job_name || '');
+      if (!String(cfg.job_size || '').trim()) cfg.job_size = String(selectedJob.label_length_mm || selectedJob.label_width_mm || '');
+    });
   }
 
   function removeRoll(rollNo) {
@@ -1094,7 +1115,12 @@ const SLT = (() => {
   // ── Auto Planner ───────────────────────────────────────────
   async function loadPlannerJobs() {
     const data = await apiGet('get_planning_jobs');
-    if (!data.ok) return;
+    if (!data.ok) {
+      plannerJobs = [];
+      document.getElementById('plannerJobList').innerHTML = '<div class="slt-empty"><i class="bi bi-exclamation-triangle"></i><p>Unable to load planning jobs</p></div>';
+      showToast(data.error || 'Unable to load planning jobs', 'error');
+      return;
+    }
     plannerJobs = data.jobs || [];
     renderPlannerTabs();
     renderPlannerJobs();
@@ -1174,8 +1200,15 @@ const SLT = (() => {
 
   function selectJob(id) {
     selectedJob = plannerJobs.find(j => j.id == id) || null;
+    if (!selectedJob) {
+      showToast('Selected planning job was not found', 'error');
+      return;
+    }
+    autofillSelectedPlanNo();
     renderPlannerJobs();
     renderJobDetail();
+    renderConfig();
+    renderBatchStatus();
   }
 
   function renderJobDetail() {
@@ -1190,6 +1223,7 @@ const SLT = (() => {
 
     const j = selectedJob;
     el.innerHTML = `<div class="slt-job-detail">
+      <div class="detail-row"><span class="detail-label">Plan No</span><span class="detail-value">${esc(j.job_no || '—')}</span></div>
       <div class="detail-row"><span class="detail-label">Job Name</span><span class="detail-value">${esc(j.job_name)}</span></div>
       <div class="detail-row"><span class="detail-label">Material</span><span class="detail-value">${esc(j.material_type || 'N/A')}</span></div>
       <div class="detail-row"><span class="detail-label">Paper Size / Width</span><span class="detail-value">${esc(j.label_width_mm || '—')}</span></div>
@@ -1221,6 +1255,13 @@ const SLT = (() => {
     const material = j.material_type || '';
     const reqMtrs = parseFloat(j.allocate_mtrs) || 0;
 
+    if (!material || !targetWidth) {
+      contentEl.innerHTML = '<div class="slt-empty"><i class="bi bi-exclamation-triangle" style="color:#f59e0b"></i><p>Planning job is missing material or paper width, so stock analysis cannot run.</p></div>';
+      document.getElementById('btnDeployTerminal').style.display = 'none';
+      document.getElementById('stockModalSummary').innerHTML = 'Update the planning job details, then try again.';
+      return;
+    }
+
     const data = await apiGet('search_rolls_by_material', {
       paper_type: material,
       target_width: targetWidth,
@@ -1244,12 +1285,12 @@ const SLT = (() => {
     const uniqueSuppliers = [];
     data.options.forEach(opt => {
       const c = (opt.roll.company || '').trim();
-      if (c && !uniqueSuppliers.includes(c)) uniqueSuppliers.push(c);
+      if (c && c !== 'Unknown' && !uniqueSuppliers.includes(c)) uniqueSuppliers.push(c);
     });
     uniqueSuppliers.sort();
-    supplierSelect.innerHTML = '<option value="all">ALL SUPPLIERS</option>';
+    supplierSelect.innerHTML = '<option value="all" style="background:#1e293b;color:#fff">ALL SUPPLIERS (' + uniqueSuppliers.length + ')</option>';
     uniqueSuppliers.forEach(s => {
-      supplierSelect.innerHTML += `<option value="${esc(s)}">${esc(s)}</option>`;
+      supplierSelect.innerHTML += `<option value="${esc(s)}" style="background:#1e293b;color:#fff">${esc(s)}</option>`;
     });
     supplierSelect.value = 'all';
     supplierSelect.onchange = function() {
@@ -1286,7 +1327,7 @@ const SLT = (() => {
       const r = opt.roll;
       const key = r.width_mm + 'x' + r.length_mtr + '-' + (r.company || '');
       if (!grouped[key]) {
-        grouped[key] = { roll: r, splits: opt.splits, waste_mm: opt.waste_mm, efficiency: opt.efficiency, rolls: [], key };
+        grouped[key] = { roll: r, splits: opt.splits, waste_mm: opt.waste_mm, efficiency: opt.efficiency, possible_ways: opt.possible_ways || [], rolls: [], key };
         if (selectionMap[key] === undefined) selectionMap[key] = 0;
         if (!wastagePrefs[key]) wastagePrefs[key] = 'STOCK';
       }
@@ -1294,17 +1335,19 @@ const SLT = (() => {
     });
 
     const groups = Object.values(grouped);
-    groups.sort((a, b) => a.waste_mm - b.waste_mm || b.efficiency - a.efficiency);
+    // Sort by width ascending (smallest roll first), then by waste ascending
+    groups.sort((a, b) => parseFloat(a.roll.width_mm) - parseFloat(b.roll.width_mm) || a.waste_mm - b.waste_mm);
 
     document.getElementById('stockModalCount').textContent = 'Showing: ' + filtered.length + ' of ' + allStockOptions.length + ' rolls';
 
-    // Render grid header
-    let html = `<div class="slt-stock-grid" style="font-size:.55rem;font-weight:800;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;border:none;padding:0 14px 8px">
-      <span>Dimension & Priority</span><span>Wastage Control</span><span>Slitting Result</span><span>Yield Details</span><span>Efficiency</span><span>Batch Qty</span>
+    // Render grid header (7 columns now — added Sr#)
+    let html = `<div class="slt-stock-grid" style="grid-template-columns:50px 2fr 1fr 2fr 1.5fr 1fr 1fr;font-size:.55rem;font-weight:800;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;border:none;padding:0 14px 8px">
+      <span>Sr#</span><span>Dimension & Priority</span><span>Wastage Control</span><span>Slitting Result</span><span>Yield Details</span><span>Efficiency</span><span>Batch Qty</span>
     </div>`;
 
-    groups.forEach(g => {
+    groups.forEach((g, gIdx) => {
       const r = g.roll;
+      const rollSrNo = r.id || '—';
       const effColor = g.efficiency >= 90 ? '#16a34a' : (g.efficiency >= 70 ? '#d97706' : '#dc2626');
       const priority = g.waste_mm === 0 ? 'Best Fit' : (r.width_mm >= 1000 ? 'Jumbo' : 'Alternate');
       const priBg = g.waste_mm === 0 ? '#22c55e' : (r.width_mm >= 1000 ? '#f59e0b' : '#3b82f6');
@@ -1312,12 +1355,23 @@ const SLT = (() => {
       const stockResult = targetWidth + 'mm × ' + g.splits + ' splits' + (g.waste_mm > 0 ? ' + ' + Math.round(g.waste_mm) + 'mm (Stock)' : '');
       const adjustResult = Math.round(parseFloat(r.width_mm) / g.splits) + 'mm × ' + g.splits + ' parts (Adjusted)';
       const pref = wastagePrefs[g.key] || 'STOCK';
+      const ways = (g.possible_ways || []).map(function(w){
+        return '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;font-size:.58rem;font-weight:800">' +
+          esc(w.stock_width) + '×' + esc(w.count) + (w.stock_waste_mm > 0 ? ' +' + esc(Math.round(w.stock_waste_mm)) : '') +
+          '</span>';
+      }).join('');
 
-      html += `<div class="slt-stock-grid" data-key="${esc(g.key)}">
+      html += `<div class="slt-stock-grid" style="grid-template-columns:50px 2fr 1fr 2fr 1.5fr 1fr 1fr" data-key="${esc(g.key)}">
+        <div style="display:flex;align-items:center;justify-content:center">
+          <span style="font-weight:900;font-size:.9rem;color:var(--brand);background:rgba(34,197,94,.08);width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:1px solid rgba(34,197,94,.15)">${rollSrNo}</span>
+        </div>
         <div>
           <div style="font-weight:900;font-size:.8rem">${r.width_mm}mm × ${r.length_mtr}m</div>
           <div style="font-size:.6rem;color:var(--text-muted);margin-top:2px">${esc(r.roll_no)} · ${esc(r.company || '')}</div>
           <span class="slt-priority-badge" style="background:${priBg}">${priority}</span>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px">
+            ${ways || '<span style="font-size:.58rem;color:var(--text-muted)">Single feasible way</span>'}
+          </div>
         </div>
         <div>
           <div style="font-size:.65rem;color:var(--text-muted);font-weight:700;margin-bottom:4px">Waste: ${Math.round(g.waste_mm)}mm</div>
@@ -1440,6 +1494,9 @@ const SLT = (() => {
           }];
           rollConfigs[roll.roll_no].remainderAction = pref;
           rollConfigs[roll.roll_no].destination = 'JOB';
+          if (!String(rollConfigs[roll.roll_no].job_no || '').trim()) {
+            rollConfigs[roll.roll_no].job_no = j?.job_no || '';
+          }
           rollConfigs[roll.roll_no].job_name = j?.job_name || '';
           rollConfigs[roll.roll_no].job_size = j?.label_length_mm || j?.label_width_mm || '';
         }
@@ -1498,6 +1555,13 @@ const SLT = (() => {
       fd.append('job_no', cfg.job_no);
       fd.append('job_name', cfg.job_name);
       fd.append('job_size', cfg.job_size);
+      if (selectedJob && selectedJob.job_no) {
+        fd.append('plan_no', selectedJob.job_no);
+      }
+      // Pass planning_id for status update if from planner
+      if (selectedJob && selectedJob.id) {
+        fd.append('planning_id', selectedJob.id);
+      }
 
       try {
         const res = await fetch(API, {method: 'POST', body: fd});
@@ -1570,72 +1634,115 @@ const SLT = (() => {
       return;
     }
 
-    const b = data.batch;
+    reportState.data = data;
+    renderBatchReport();
+  }
+
+  function renderBatchReport() {
+    const data = reportState.data;
+    if (!data) return;
+
+    const el = document.getElementById('reportContent');
+    const b = data.batch || {};
     const entries = data.entries || [];
     const parents = data.parents || {};
+    const jobCards = data.job_cards || [];
+    const planning = data.planning || {};
+    const company = data.company || {};
+    const template = reportState.template || 'executive';
+    const jumboCards = jobCards.filter(j => (j.department || '') === 'jumbo_slitting' || (j.job_type || '') === 'Slitting');
+    const printingCards = jobCards.filter(j => (j.department || '') === 'flexo_printing' || (j.job_type || '') === 'Printing');
+    const primaryJumboCard = jumboCards.length ? jumboCards[0] : null;
+    const reportIdentity = primaryJumboCard && primaryJumboCard.job_no ? primaryJumboCard.job_no : (b.batch_no || 'N/A');
+    const parentRows = Object.values(parents).filter(Boolean);
+    const totalWasteMm = entries.filter(e => parseInt(e.is_remainder || 0, 10) === 1).reduce((sum, e) => sum + parseFloat(e.slit_width_mm || 0), 0);
+    const qrPayload = JSON.stringify({
+      type: 'slitting-traceability',
+      jumbo_job_card_id: reportIdentity,
+      batch_no: b.batch_no || '',
+      planning_job_no: planning.job_no || '',
+      planning_job_name: planning.job_name || '',
+      child_rolls: entries.map(e => e.child_roll_no || '')
+    });
 
-    let html = `<div class="slt-report-header">
-      <h2>Slitting Traceability Report</h2>
-      <p>Batch: ${esc(b.batch_no)} · Date: ${formatDate(b.created_at)}</p>
-    </div>`;
+    let html = '';
+    html += '<div class="slt-report-sheet template-' + esc(template) + '">';
+    html += '<div class="slt-report-branding">';
+    html += '<div class="slt-report-brand-left">';
+    html += company.logo_url
+      ? '<img class="slt-report-logo" src="' + esc(company.logo_url) + '" alt="Company Logo">'
+      : '<div class="slt-report-logo slt-report-logo-placeholder">SLC</div>';
+    html += '<div>';
+    html += '<div class="slt-report-company">' + esc(company.company_name || company.erp_name || 'Company') + '</div>';
+    html += '<div class="slt-report-address">' + esc(company.company_address || '—') + '</div>';
+    html += '<div class="slt-report-address">' + esc([company.company_mobile || company.company_phone, company.company_email, company.company_gst ? ('GST: ' + company.company_gst) : ''].filter(Boolean).join(' | ') || '—') + '</div>';
+    html += '</div></div>';
+    html += '<div class="slt-report-brand-right">';
+    html += '<div class="slt-report-id-card"><div class="slt-report-id-label">Jumbo Job Card ID</div><div class="slt-report-id-value">' + esc(reportIdentity) + '</div><div class="slt-report-id-sub">Gen Date: ' + esc(formatDate(b.created_at)) + '</div></div>';
+    html += '<div class="slt-report-qr-wrap"><div id="slt-report-qr"></div><div class="slt-report-qr-label">Technical Trace ID</div></div>';
+    html += '</div></div>';
 
-    // Batch info grid
-    html += `<div class="slt-report-grid">
-      <div class="rg-item"><span class="rg-label">Batch No</span><span class="rg-value">${esc(b.batch_no)}</span></div>
-      <div class="rg-item"><span class="rg-label">Status</span><span class="rg-value">${esc(b.status)}</span></div>
-      <div class="rg-item"><span class="rg-label">Operator</span><span class="rg-value">${esc(b.operator_name || '—')}</span></div>
-      <div class="rg-item"><span class="rg-label">Machine</span><span class="rg-value">${esc(b.machine || '—')}</span></div>
-    </div>`;
+    html += '<div class="slt-report-section-title">Execution Identity</div>';
+    html += '<div class="slt-report-meta-grid">';
+    html += '<div><span>Plan No</span><strong>' + esc(planning.job_no || '—') + '</strong></div>';
+    html += '<div><span>Job Name</span><strong>' + esc(planning.job_name || entries[0]?.job_name || '—') + '</strong></div>';
+    html += '<div><span>Substrate</span><strong>' + esc((parentRows[0] && parentRows[0].paper_type) || '—') + '</strong></div>';
+    html += '<div><span>Machine ID</span><strong>' + esc(b.machine || 'MANUAL_TERMINAL') + '</strong></div>';
+    html += '<div><span>Operator</span><strong>' + esc(b.operator_name || '—') + '</strong></div>';
+    html += '<div><span>Status</span><strong>' + esc(b.status || 'Completed') + '</strong></div>';
+    html += '</div>';
 
-    // Source material table
-    html += '<h4 style="font-size:.82rem;font-weight:700;margin:14px 0 8px">Source Material</h4>';
-    html += `<table class="slt-report-table"><thead><tr>
-      <th>Roll No</th><th>Material</th><th>Company</th><th>Width</th><th>Length</th><th>Status</th>
-    </tr></thead><tbody>`;
-    Object.values(parents).forEach(p => {
-      if (!p) return;
-      html += `<tr>
-        <td><strong>${esc(p.roll_no)}</strong></td>
-        <td>${esc(p.paper_type)}</td>
-        <td>${esc(p.company)}</td>
-        <td>${p.width_mm}mm</td>
-        <td>${p.length_mtr}m</td>
-        <td>${statusBadge(p.status)}</td>
-      </tr>`;
+    html += '<div class="slt-report-section-title">Source Material Allocation</div>';
+    html += '<table class="slt-report-table nice"><thead><tr><th>Roll ID</th><th>Company</th><th>Type</th><th>Dimension</th><th>GSM</th><th>Weight</th><th>SQ. MTR</th><th>Job Context</th></tr></thead><tbody>';
+    parentRows.forEach(function(p) {
+      const sqm = ((parseFloat(p.width_mm || 0) / 1000) * parseFloat(p.length_mtr || 0)).toFixed(2);
+      html += '<tr>';
+      html += '<td><strong>' + esc(p.roll_no || '—') + '</strong></td>';
+      html += '<td>' + esc(p.company || '—') + '</td>';
+      html += '<td>' + esc(p.paper_type || '—') + '</td>';
+      html += '<td>' + esc((p.width_mm || '—') + 'mm x ' + (p.length_mtr || '—') + 'm') + '</td>';
+      html += '<td>' + esc(p.gsm || '—') + '</td>';
+      html += '<td>' + esc(p.weight_kg || '—') + '</td>';
+      html += '<td>' + esc(sqm) + '</td>';
+      html += '<td>' + esc(planning.job_name || planning.job_no || '—') + '</td>';
+      html += '</tr>';
     });
     html += '</tbody></table>';
 
-    // Slitting output table
-    html += '<h4 style="font-size:.82rem;font-weight:700;margin:14px 0 8px">Slitting Output</h4>';
-    html += `<table class="slt-report-table"><thead><tr>
-      <th>#</th><th>Child Roll</th><th>Width</th><th>Length</th><th>Mode</th><th>Destination</th><th>Job</th><th>Rem</th>
-    </tr></thead><tbody>`;
-    entries.forEach((e, i) => {
-      const destBadge = e.destination === 'JOB'
-        ? '<span class="badge badge-job-assign">JOB</span>'
-        : '<span class="badge badge-stock">STOCK</span>';
-      const isRem = parseInt(e.is_remainder);
-      html += `<tr style="${isRem?'background:#fffbeb':''}">
-        <td>${i+1}</td>
-        <td><strong style="font-family:monospace">${esc(e.child_roll_no)}</strong></td>
-        <td>${e.slit_width_mm}mm</td>
-        <td>${e.slit_length_mtr}m</td>
-        <td><span class="badge ${e.mode==='WIDTH'?'badge-stock':'badge-slitting'}">${esc(e.mode)}</span></td>
-        <td>${destBadge}</td>
-        <td>${esc(e.job_name || e.job_no || '—')}</td>
-        <td>${isRem ? '<i class="bi bi-check-circle" style="color:#d97706"></i>' : ''}</td>
-      </tr>`;
+    html += '<div class="slt-report-section-title">Slitting Unit Outputs</div>';
+    html += '<table class="slt-report-table nice"><thead><tr><th>Child Roll ID</th><th>Parent Ref</th><th>Width</th><th>Length</th><th>GSM</th><th>Qty</th><th>Wastage</th><th>Destination</th></tr></thead><tbody>';
+    entries.forEach(function(e) {
+      const isRem = parseInt(e.is_remainder || 0, 10) === 1;
+      html += '<tr' + (isRem ? ' class="is-remainder"' : '') + '>';
+      html += '<td><strong>' + esc(e.child_roll_no || '—') + '</strong></td>';
+      html += '<td>' + esc(e.parent_roll_no || '—') + '</td>';
+      html += '<td>' + esc((e.slit_width_mm || '—') + 'mm') + '</td>';
+      html += '<td>' + esc((e.slit_length_mtr || '—') + 'm') + '</td>';
+      html += '<td>' + esc((parentRows[0] && parentRows[0].gsm) || '—') + '</td>';
+      html += '<td>' + esc(e.qty || '1') + '</td>';
+      html += '<td>' + esc(isRem ? ((parseFloat(e.slit_width_mm || 0)).toFixed(2) + 'mm') : '0') + '</td>';
+      html += '<td>' + esc(e.destination || '—') + '</td>';
+      html += '</tr>';
     });
     html += '</tbody></table>';
 
-    // Signature section
-    html += `<div class="slt-sig-grid">
-      <div class="slt-sig-box"><p><strong>Operator</strong></p></div>
-      <div class="slt-sig-box"><p><strong>QC Inspector</strong></p></div>
-      <div class="slt-sig-box"><p><strong>Store Manager</strong></p></div>
-    </div>`;
+    html += '<div class="slt-report-bottom-grid">';
+    html += '<div class="slt-report-note-box"><div class="box-title">Machine Run Log</div><div class="box-row"><span>Start:</span><strong>' + esc(formatDate(b.created_at)) + '</strong></div><div class="box-row"><span>End:</span><strong>' + esc(formatDate(b.updated_at || b.created_at)) + '</strong></div><div class="box-row accent"><span>Net Waste:</span><strong>' + esc(totalWasteMm.toFixed(2) + ' mm') + '</strong></div></div>';
+    html += '<div class="slt-report-note-box"><div class="box-title">Technical Remarks</div><div class="box-body">' + esc(planning.notes || 'No specific floor deviations noted.') + '</div><div class="box-mini">Printing Job Cards: ' + esc(printingCards.map(function(j) { return j.job_no || ''; }).filter(Boolean).join(', ') || '—') + '</div></div>';
+    html += '<div class="slt-report-note-box sign-box"><div class="box-title">Approval</div><div class="sign-line"></div><div class="sign-label">QC Supervisor Sign</div></div>';
+    html += '</div>';
+    html += '<div class="slt-report-footer">' + esc(company.footer_text || '') + '</div>';
+    html += '</div>';
 
     el.innerHTML = html;
+
+    const qrEl = document.getElementById('slt-report-qr');
+    if (qrEl) {
+      qrEl.innerHTML = '';
+      if (typeof QRCode !== 'undefined') {
+        new QRCode(qrEl, { text: qrPayload, width: 96, height: 96, correctLevel: QRCode.CorrectLevel.M });
+      }
+    }
   }
 
   // ── Machines ───────────────────────────────────────────────

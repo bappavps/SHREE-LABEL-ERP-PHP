@@ -1,0 +1,314 @@
+<?php
+require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/functions.php';
+require_once __DIR__ . '/../../includes/auth_check.php';
+
+$pageTitle = 'Job Reports';
+$db = getDB();
+
+// Date filters
+$dateFrom = $_GET['from'] ?? date('Y-m-01');
+$dateTo   = $_GET['to']   ?? date('Y-m-d');
+$deptFilter = $_GET['dept'] ?? 'all';
+
+$where = "(j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')";
+$where .= " AND DATE(j.created_at) BETWEEN '" . $db->real_escape_string($dateFrom) . "' AND '" . $db->real_escape_string($dateTo) . "'";
+if ($deptFilter === 'slitting') $where .= " AND j.job_type = 'Slitting'";
+elseif ($deptFilter === 'printing') $where .= " AND j.job_type = 'Printing'";
+
+$jobs = $db->query("
+    SELECT j.*, ps.paper_type, ps.company, ps.width_mm, ps.gsm, ps.weight_kg,
+           p.job_name AS planning_job_name, p.priority AS planning_priority
+    FROM jobs j
+    LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no
+    LEFT JOIN planning p ON j.planning_id = p.id
+    WHERE $where
+    ORDER BY j.created_at DESC
+    LIMIT 500
+")->fetch_all(MYSQLI_ASSOC);
+
+// Parse extra data
+foreach ($jobs as &$j) {
+    $j['extra_data_parsed'] = json_decode($j['extra_data'] ?? '{}', true) ?: [];
+}
+unset($j);
+
+// KPIs
+$totalJobs = count($jobs);
+$completed = array_filter($jobs, fn($j) => in_array($j['status'], ['Completed','QC Passed']));
+$running   = array_filter($jobs, fn($j) => $j['status'] === 'Running');
+$pending   = array_filter($jobs, fn($j) => $j['status'] === 'Pending');
+$completedCount = count($completed);
+$avgDuration = 0;
+$durations = array_filter(array_column($completed, 'duration_minutes'), fn($d) => $d > 0);
+if (count($durations) > 0) $avgDuration = round(array_sum($durations) / count($durations));
+
+// Department breakdown
+$slittingJobs = array_filter($jobs, fn($j) => $j['job_type'] === 'Slitting');
+$printingJobs = array_filter($jobs, fn($j) => $j['job_type'] === 'Printing');
+$slittingCompleted = count(array_filter($slittingJobs, fn($j) => in_array($j['status'], ['Completed','QC Passed'])));
+$printingCompleted = count(array_filter($printingJobs, fn($j) => in_array($j['status'], ['Completed','QC Passed'])));
+
+// Daily completed chart data (last 14 days)
+$chartDays = [];
+for ($i = 13; $i >= 0; $i--) {
+    $d = date('Y-m-d', strtotime("-$i days"));
+    $chartDays[$d] = ['slitting' => 0, 'printing' => 0];
+}
+foreach ($completed as $j) {
+    $d = date('Y-m-d', strtotime($j['completed_at'] ?? $j['updated_at']));
+    if (isset($chartDays[$d])) {
+        $key = $j['job_type'] === 'Slitting' ? 'slitting' : 'printing';
+        $chartDays[$d][$key]++;
+    }
+}
+
+// Priority breakdown
+$priorities = ['Urgent' => 0, 'High' => 0, 'Normal' => 0];
+foreach ($jobs as $j) {
+    $p = $j['planning_priority'] ?? 'Normal';
+    if (isset($priorities[$p])) $priorities[$p]++;
+    else $priorities['Normal']++;
+}
+
+$csrf = generateCSRF();
+include __DIR__ . '/../../includes/header.php';
+?>
+
+<div class="breadcrumb">
+  <a href="<?= BASE_URL ?>/modules/dashboard/index.php">Dashboard</a>
+  <span class="breadcrumb-sep">&#8250;</span>
+  <span>Reports</span>
+  <span class="breadcrumb-sep">&#8250;</span>
+  <span>Job Reports</span>
+</div>
+
+<style>
+:root{--jr-brand:#3b82f6;--jr-green:#22c55e;--jr-purple:#8b5cf6;--jr-orange:#f97316;--jr-red:#ef4444}
+.jr-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px}
+.jr-header h1{font-size:1.4rem;font-weight:900;display:flex;align-items:center;gap:10px}
+.jr-header h1 i{font-size:1.6rem;color:var(--jr-brand)}
+.jr-date-filters{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.jr-date-filters input[type=date],.jr-date-filters select{padding:7px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:.78rem;font-weight:600;font-family:inherit}
+.jr-date-filters input:focus,.jr-date-filters select:focus{outline:none;border-color:var(--jr-brand)}
+.jr-apply-btn{padding:7px 16px;background:var(--jr-brand);color:#fff;border:none;border-radius:8px;font-size:.7rem;font-weight:800;cursor:pointer;text-transform:uppercase}
+.jr-apply-btn:hover{background:#2563eb}
+.jr-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px}
+.jr-stat{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px 18px;display:flex;align-items:center;gap:14px}
+.jr-stat-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.2rem}
+.jr-stat-val{font-size:1.5rem;font-weight:900;line-height:1}
+.jr-stat-label{font-size:.65rem;font-weight:700;text-transform:uppercase;color:#94a3b8;letter-spacing:.04em;margin-top:2px}
+.jr-charts{display:grid;grid-template-columns:2fr 1fr;gap:20px;margin-bottom:24px}
+.jr-chart-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:20px}
+.jr-chart-title{font-size:.75rem;font-weight:800;text-transform:uppercase;color:#64748b;margin-bottom:14px;display:flex;align-items:center;gap:6px}
+.jr-bar-chart{display:flex;flex-direction:column;gap:8px}
+.jr-bar-row{display:flex;align-items:center;gap:10px;font-size:.7rem}
+.jr-bar-label{width:65px;font-weight:700;color:#64748b;text-align:right;flex-shrink:0;font-size:.6rem}
+.jr-bar-track{flex:1;height:24px;background:#f1f5f9;border-radius:6px;overflow:hidden;display:flex}
+.jr-bar-fill{height:100%;border-radius:6px;transition:width .5s ease;display:flex;align-items:center;padding:0 6px;font-size:.55rem;font-weight:800;color:#fff}
+.jr-bar-fill.slitting{background:var(--jr-green)}
+.jr-bar-fill.printing{background:var(--jr-purple)}
+.jr-donut-list{display:flex;flex-direction:column;gap:10px}
+.jr-donut-item{display:flex;align-items:center;gap:10px}
+.jr-donut-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+.jr-donut-label{flex:1;font-size:.75rem;font-weight:700;color:#475569}
+.jr-donut-val{font-size:.85rem;font-weight:900;color:#0f172a}
+.jr-table-wrap{background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden}
+.jr-table-head{padding:16px 20px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center}
+.jr-table-head h3{font-size:.85rem;font-weight:900}
+.jr-export-btn{padding:5px 12px;font-size:.6rem;font-weight:800;text-transform:uppercase;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer}
+.jr-export-btn:hover{background:#e2e8f0}
+.jr-table{width:100%;border-collapse:collapse;font-size:.75rem}
+.jr-table th{padding:10px 14px;background:#f8fafc;font-weight:800;text-transform:uppercase;font-size:.6rem;letter-spacing:.04em;color:#64748b;text-align:left;border-bottom:1px solid #e2e8f0}
+.jr-table td{padding:8px 14px;border-bottom:1px solid #f1f5f9;color:#1e293b;font-weight:600}
+.jr-table tr:hover td{background:#f8fafc}
+.jr-badge{display:inline-flex;padding:2px 8px;border-radius:12px;font-size:.55rem;font-weight:800;text-transform:uppercase}
+.jr-badge-completed{background:#dcfce7;color:#166534}
+.jr-badge-running{background:#dbeafe;color:#1e40af}
+.jr-badge-pending{background:#fef3c7;color:#92400e}
+.jr-badge-queued{background:#f1f5f9;color:#64748b}
+.jr-dept-slitting{color:var(--jr-green);font-weight:800}
+.jr-dept-printing{color:var(--jr-purple);font-weight:800}
+@media(max-width:768px){.jr-charts{grid-template-columns:1fr}.jr-stats{grid-template-columns:repeat(2,1fr)}}
+@media print{.no-print,.breadcrumb{display:none!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
+</style>
+
+<div class="jr-header no-print">
+  <h1><i class="bi bi-bar-chart-line"></i> Job Reports</h1>
+  <form class="jr-date-filters" method="get">
+    <input type="date" name="from" value="<?= e($dateFrom) ?>">
+    <span style="color:#94a3b8;font-weight:700;font-size:.7rem">to</span>
+    <input type="date" name="to" value="<?= e($dateTo) ?>">
+    <select name="dept">
+      <option value="all"<?= $deptFilter==='all'?' selected':'' ?>>All Departments</option>
+      <option value="slitting"<?= $deptFilter==='slitting'?' selected':'' ?>>Jumbo Slitting</option>
+      <option value="printing"<?= $deptFilter==='printing'?' selected':'' ?>>Flexo Printing</option>
+    </select>
+    <button class="jr-apply-btn" type="submit"><i class="bi bi-filter"></i> Apply</button>
+  </form>
+</div>
+
+<div class="jr-stats no-print">
+  <div class="jr-stat">
+    <div class="jr-stat-icon" style="background:#dbeafe;color:var(--jr-brand)"><i class="bi bi-briefcase"></i></div>
+    <div><div class="jr-stat-val"><?= $totalJobs ?></div><div class="jr-stat-label">Total Jobs</div></div>
+  </div>
+  <div class="jr-stat">
+    <div class="jr-stat-icon" style="background:#dcfce7;color:var(--jr-green)"><i class="bi bi-check-circle"></i></div>
+    <div><div class="jr-stat-val"><?= $completedCount ?></div><div class="jr-stat-label">Completed</div></div>
+  </div>
+  <div class="jr-stat">
+    <div class="jr-stat-icon" style="background:#fef3c7;color:var(--jr-orange)"><i class="bi bi-clock-history"></i></div>
+    <div><div class="jr-stat-val"><?= $avgDuration ? floor($avgDuration/60).'h '.($avgDuration%60).'m' : '—' ?></div><div class="jr-stat-label">Avg Duration</div></div>
+  </div>
+  <div class="jr-stat">
+    <div class="jr-stat-icon" style="background:#f0fdf4;color:var(--jr-green)"><i class="bi bi-boxes"></i></div>
+    <div><div class="jr-stat-val"><?= $slittingCompleted ?></div><div class="jr-stat-label">Slitting Done</div></div>
+  </div>
+  <div class="jr-stat">
+    <div class="jr-stat-icon" style="background:#faf5ff;color:var(--jr-purple)"><i class="bi bi-printer"></i></div>
+    <div><div class="jr-stat-val"><?= $printingCompleted ?></div><div class="jr-stat-label">Printing Done</div></div>
+  </div>
+</div>
+
+<div class="jr-charts">
+  <!-- Daily completed bar chart -->
+  <div class="jr-chart-card">
+    <div class="jr-chart-title"><i class="bi bi-graph-up"></i> Daily Completed Jobs (Last 14 Days)</div>
+    <div class="jr-bar-chart">
+      <?php
+        $maxDay = max(1, max(array_map(fn($d) => $d['slitting'] + $d['printing'], $chartDays)));
+        foreach ($chartDays as $date => $vals):
+          $total = $vals['slitting'] + $vals['printing'];
+          $sW = round(($vals['slitting'] / $maxDay) * 100);
+          $pW = round(($vals['printing'] / $maxDay) * 100);
+      ?>
+      <div class="jr-bar-row">
+        <span class="jr-bar-label"><?= date('d M', strtotime($date)) ?></span>
+        <div class="jr-bar-track">
+          <?php if ($vals['slitting']): ?><div class="jr-bar-fill slitting" style="width:<?= $sW ?>%"><?= $vals['slitting'] ?></div><?php endif; ?>
+          <?php if ($vals['printing']): ?><div class="jr-bar-fill printing" style="width:<?= $pW ?>%"><?= $vals['printing'] ?></div><?php endif; ?>
+        </div>
+        <span style="font-weight:800;font-size:.7rem;color:#1e293b;width:24px"><?= $total ?></span>
+      </div>
+      <?php endforeach; ?>
+    </div>
+    <div style="display:flex;gap:16px;margin-top:10px;padding-left:75px">
+      <span style="display:flex;align-items:center;gap:4px;font-size:.6rem;font-weight:700;color:#64748b"><span style="width:10px;height:10px;border-radius:2px;background:var(--jr-green)"></span> Slitting</span>
+      <span style="display:flex;align-items:center;gap:4px;font-size:.6rem;font-weight:700;color:#64748b"><span style="width:10px;height:10px;border-radius:2px;background:var(--jr-purple)"></span> Printing</span>
+    </div>
+  </div>
+
+  <!-- Priority breakdown -->
+  <div class="jr-chart-card">
+    <div class="jr-chart-title"><i class="bi bi-flag"></i> Priority Breakdown</div>
+    <div class="jr-donut-list">
+      <div class="jr-donut-item">
+        <div class="jr-donut-dot" style="background:#ef4444"></div>
+        <span class="jr-donut-label">Urgent</span>
+        <span class="jr-donut-val"><?= $priorities['Urgent'] ?></span>
+      </div>
+      <div class="jr-donut-item">
+        <div class="jr-donut-dot" style="background:#f97316"></div>
+        <span class="jr-donut-label">High</span>
+        <span class="jr-donut-val"><?= $priorities['High'] ?></span>
+      </div>
+      <div class="jr-donut-item">
+        <div class="jr-donut-dot" style="background:#3b82f6"></div>
+        <span class="jr-donut-label">Normal</span>
+        <span class="jr-donut-val"><?= $priorities['Normal'] ?></span>
+      </div>
+    </div>
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0">
+      <div class="jr-chart-title"><i class="bi bi-building"></i> Dept Split</div>
+      <div class="jr-donut-list">
+        <div class="jr-donut-item">
+          <div class="jr-donut-dot" style="background:var(--jr-green)"></div>
+          <span class="jr-donut-label">Jumbo Slitting</span>
+          <span class="jr-donut-val"><?= count($slittingJobs) ?></span>
+        </div>
+        <div class="jr-donut-item">
+          <div class="jr-donut-dot" style="background:var(--jr-purple)"></div>
+          <span class="jr-donut-label">Flexo Printing</span>
+          <span class="jr-donut-val"><?= count($printingJobs) ?></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Job table -->
+<div class="jr-table-wrap">
+  <div class="jr-table-head">
+    <h3><i class="bi bi-table"></i> Job Details — <?= e($dateFrom) ?> to <?= e($dateTo) ?></h3>
+    <button class="jr-export-btn no-print" onclick="exportCSV()"><i class="bi bi-download"></i> Export CSV</button>
+  </div>
+  <div style="overflow-x:auto">
+    <table class="jr-table" id="jrTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Job No</th>
+          <th>Department</th>
+          <th>Job Name</th>
+          <th>Roll No</th>
+          <th>Status</th>
+          <th>Priority</th>
+          <th>Created</th>
+          <th>Started</th>
+          <th>Completed</th>
+          <th>Duration</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php foreach ($jobs as $i => $j):
+          $sts = $j['status'];
+          $stsClass = match($sts) { 'Completed','QC Passed'=>'completed', 'Running'=>'running', 'Pending'=>'pending', default=>'queued' };
+          $dept = $j['job_type'] === 'Slitting' ? 'Slitting' : 'Printing';
+          $deptClass = $j['job_type'] === 'Slitting' ? 'jr-dept-slitting' : 'jr-dept-printing';
+          $dur = $j['duration_minutes'];
+          $durStr = ($dur !== null && $dur > 0) ? floor($dur/60).'h '.$dur%60 .'m' : '—';
+        ?>
+        <tr>
+          <td><?= $i + 1 ?></td>
+          <td style="font-weight:800"><?= e($j['job_no']) ?></td>
+          <td><span class="<?= $deptClass ?>"><?= $dept ?></span></td>
+          <td><?= e($j['planning_job_name'] ?? '—') ?></td>
+          <td><?= e($j['roll_no'] ?? '—') ?></td>
+          <td><span class="jr-badge jr-badge-<?= $stsClass ?>"><?= e($sts) ?></span></td>
+          <td><?= e($j['planning_priority'] ?? 'Normal') ?></td>
+          <td><?= $j['created_at'] ? date('d M H:i', strtotime($j['created_at'])) : '—' ?></td>
+          <td><?= $j['started_at'] ? date('d M H:i', strtotime($j['started_at'])) : '—' ?></td>
+          <td><?= $j['completed_at'] ? date('d M H:i', strtotime($j['completed_at'])) : '—' ?></td>
+          <td style="font-weight:700"><?= $durStr ?></td>
+        </tr>
+        <?php endforeach; ?>
+        <?php if (empty($jobs)): ?>
+        <tr><td colspan="11" style="text-align:center;padding:30px;color:#94a3b8">No jobs found for the selected period.</td></tr>
+        <?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function exportCSV() {
+  const table = document.getElementById('jrTable');
+  const rows = table.querySelectorAll('tr');
+  let csv = [];
+  rows.forEach(row => {
+    const cells = row.querySelectorAll('th,td');
+    const rowData = Array.from(cells).map(c => '"' + c.textContent.replace(/"/g,'""').trim() + '"');
+    csv.push(rowData.join(','));
+  });
+  const blob = new Blob([csv.join('\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'job_report_<?= $dateFrom ?>_to_<?= $dateTo ?>.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+
+<?php include __DIR__ . '/../../includes/footer.php'; ?>

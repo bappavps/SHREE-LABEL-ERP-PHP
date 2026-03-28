@@ -46,9 +46,10 @@
         }
     ],
     "id_generation": {
-        "year_format": "YY",
+        "year_format": "YYYY",
         "separator": "/",
-        "padding": 3,
+        "padding": 4,
+        "global_job_counter": 0,
         "modules": {
             "roll": {
                 "prefix": "SLC",
@@ -77,6 +78,18 @@
             "sales_order": {
                 "prefix": "SO",
                 "counter": 0
+            },
+            "jumbo_job": {
+                "prefix": "JMB",
+                "counter": 0
+            },
+            "printing_job": {
+                "prefix": "FLX",
+                "counter": 0
+            },
+            "planning": {
+                "prefix": "PLN",
+                "counter": 3
             }
         }
     }

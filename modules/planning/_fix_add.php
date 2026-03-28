@@ -1,4 +1,7 @@
 <?php
+// Recreate add.php properly
+$content = <<<'EOT'
+<?php
 // ============================================================
 // ERP System — Planning: Add
 // ============================================================
@@ -10,7 +13,6 @@ $db = getDB();
 $errors = [];
 $statuses   = ['Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval', 'Pending'];
 $priorities = ['Low','Normal','High','Urgent'];
-$planningJobPreview = previewNextId('planning') ?: 'Auto-generated on save';
 
 // Load open sales orders for dropdown
 $soList = $db->query(
@@ -29,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $operatorName = trim($_POST['operator_name'] ?? '');
         $scheduledDate= trim($_POST['scheduled_date'] ?? '');
         $priority     = $_POST['priority']           ?? 'Normal';
-        $status       = 'Pending';
+        $status       = $_POST['status']             ?? 'Pending';
         $notes        = trim($_POST['notes']         ?? '');
 
         if ($jobName === '')             $errors[] = 'Job name is required.';
@@ -58,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['user_id']
             );
             if ($stmt->execute()) {
-              setFlash('success',"Job '{$planJobNo} - {$jobName}' added to planning.");
+                setFlash('success',"Job '{ $planJobNo} - {$jobName}' added to planning.");
                 redirect(BASE_URL.'/modules/planning/index.php');
             } else {
                 $errors[] = 'Database error: '.$db->error;
@@ -90,11 +92,6 @@ include __DIR__ . '/../../includes/header.php';
   <input type="hidden" name="csrf_token" value="<?= generateCSRF() ?>">
   <div class="card">
     <div class="card-body">
-      <div class="planning-job-preview-box" style="margin:0 0 16px">
-        <span class="planning-job-preview-label">Job ID</span>
-        <strong><?= e($planningJobPreview) ?></strong>
-        <small>Final number is assigned when you save.</small>
-      </div>
       <div class="form-grid">
         <div class="form-group">
           <label class="form-label">Job Name <span class="req">*</span></label>
@@ -133,8 +130,11 @@ include __DIR__ . '/../../includes/header.php';
         </div>
         <div class="form-group">
           <label class="form-label">Status</label>
-          <input type="text" class="form-control" value="Pending" readonly>
-          <input type="hidden" name="status" value="Pending">
+          <select name="status" class="form-control">
+            <?php foreach ($statuses as $s): ?>
+            <option value="<?= $s ?>" <?= ($_POST['status']??'Pending')==$s?'selected':'' ?>><?= $s ?></option>
+            <?php endforeach; ?>
+          </select>
         </div>
         <div class="form-group" style="grid-column:1/-1">
           <label class="form-label">Notes</label>
@@ -148,31 +148,9 @@ include __DIR__ . '/../../includes/header.php';
     <a href="index.php" class="btn btn-ghost">Cancel</a>
   </div>
 </form>
-<style>
-.req{color:var(--danger)}
-.planning-job-preview-box {
-  padding: 12px 14px;
-  border: 1px solid #dbeafe;
-  background: #eff6ff;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.planning-job-preview-label {
-  font-size: .72rem;
-  font-weight: 700;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: #1d4ed8;
-}
-.planning-job-preview-box strong {
-  font-size: 1rem;
-  color: #0f172a;
-}
-.planning-job-preview-box small {
-  color: #475569;
-}
-</style>
+<style>.req{color:var(--danger)}</style>
 <?php include __DIR__ . '/../../includes/footer.php'; ?>
+EOT;
+
+file_put_contents(__DIR__ . '/add_fixed.php', $content);
+echo "Created add_fixed.php\n";

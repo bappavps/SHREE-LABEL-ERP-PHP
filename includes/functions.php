@@ -196,8 +196,9 @@ function getAppSettingsPath() {
 /**
  * Read app settings from JSON and merge with defaults.
  */
-function getAppSettings() {
+function getAppSettings($noCache = false) {
     static $cache = null;
+    if ($noCache) $cache = null;
     if ($cache !== null) return $cache;
 
     $defaults = appSettingsDefaults();
@@ -271,7 +272,12 @@ function saveAppSettings(array $settings) {
         $data['image_library'] = [];
     }
     $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    return $json !== false ? (@file_put_contents($path, $json) !== false) : false;
+    $ok = $json !== false ? (@file_put_contents($path, $json) !== false) : false;
+    if ($ok) {
+        // Clear the cache so next getAppSettings() call reads fresh data
+        getAppSettings(true);
+    }
+    return $ok;
 }
 
 /**
@@ -280,9 +286,10 @@ function saveAppSettings(array $settings) {
 function prefixSettingsDefaults() {
     return [
         'id_generation' => [
-            'year_format' => 'YY',
+            'year_format' => 'YYYY',
             'separator' => '/',
-            'padding' => 3,
+            'padding' => 4,
+            'global_job_counter' => 0,
             'modules' => [
                 'roll' => ['prefix' => 'SLC', 'counter' => 0],
                 'job' => ['prefix' => 'JOB', 'counter' => 0],
@@ -291,6 +298,9 @@ function prefixSettingsDefaults() {
                 'quotation' => ['prefix' => 'QTN', 'counter' => 0],
                 'batch' => ['prefix' => 'BAT', 'counter' => 0],
                 'sales_order' => ['prefix' => 'SO', 'counter' => 0],
+                'planning' => ['prefix' => 'PLN', 'counter' => 0],
+                'jumbo_job' => ['prefix' => 'JMB', 'counter' => 0],
+                'printing_job' => ['prefix' => 'FLX', 'counter' => 0],
             ],
         ],
     ];
@@ -318,6 +328,12 @@ function getPrefixSettings() {
         $idg['padding'] = $defaults['id_generation']['padding'];
     } else {
         $idg['padding'] = (int)$idg['padding'];
+    }
+
+    if (!isset($idg['global_job_counter']) || !is_numeric($idg['global_job_counter'])) {
+        $idg['global_job_counter'] = (int)($defaults['id_generation']['global_job_counter'] ?? 0);
+    } else {
+        $idg['global_job_counter'] = max(0, (int)$idg['global_job_counter']);
     }
 
     if (!isset($idg['modules']) || !is_array($idg['modules'])) {
@@ -409,6 +425,65 @@ function getNextId($type) {
 
     $settings['id_generation'] = $idg;
     $settings['id_generation']['modules'][$type]['counter'] = $next;
+    saveAppSettings($settings);
+
+    return $newId;
+}
+
+/**
+ * Preview the next ID for a module without incrementing the stored counter.
+ */
+function previewNextId($type) {
+    $type = trim((string)$type);
+    $idg = getPrefixSettings();
+
+    if (!isset($idg['modules'][$type])) {
+        return null;
+    }
+
+    $module = $idg['modules'][$type];
+    $next = max(0, (int)($module['counter'] ?? 0)) + 1;
+
+    return buildFormattedId(
+        $module['prefix'],
+        buildIdYearToken($idg['year_format']),
+        $next,
+        $idg['separator'],
+        $idg['padding']
+    );
+}
+
+/**
+ * Generate a job ID using the GLOBAL shared counter but department-specific prefix.
+ * All departments share the same incrementing counter; only the prefix differs.
+ * E.g. JMB/2026/1020 (jumbo_job), FLX/2026/1021 (printing_job)
+ *
+ * @param string $department  Module key: 'jumbo_job', 'printing_job', etc.
+ * @return string|null  The formatted job ID, or null if department not found.
+ */
+function getNextJobId($department) {
+    $department = trim((string)$department);
+    $settings = getAppSettings();
+    $idg = getPrefixSettings();
+
+    if (!isset($idg['modules'][$department])) {
+        return null;
+    }
+
+    $prefix = $idg['modules'][$department]['prefix'];
+    $globalCounter = max(0, (int)($idg['global_job_counter'] ?? 0)) + 1;
+
+    $newId = buildFormattedId(
+        $prefix,
+        buildIdYearToken($idg['year_format']),
+        $globalCounter,
+        $idg['separator'],
+        $idg['padding']
+    );
+
+    // Persist the incremented global counter
+    $settings['id_generation'] = $idg;
+    $settings['id_generation']['global_job_counter'] = $globalCounter;
     saveAppSettings($settings);
 
     return $newId;
