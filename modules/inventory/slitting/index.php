@@ -334,7 +334,7 @@ include __DIR__ . '/../../../includes/header.php';
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
           <div class="form-group">
             <label>Operator</label>
-            <input type="text" id="execOperator" class="form-control" style="height:34px;font-size:.8rem" placeholder="Operator name">
+            <input type="text" id="execOperator" class="form-control" style="height:34px;font-size:.8rem;background:#f8fafc" placeholder="Auto detected from login" readonly>
           </div>
           <div class="form-group">
             <label>Machine</label>
@@ -456,6 +456,7 @@ include __DIR__ . '/../../../includes/header.php';
 const SLT = (() => {
   const API  = '<?= BASE_URL ?>/modules/inventory/slitting/api.php';
   const CSRF = '<?= e($csrf) ?>';
+  const CURRENT_OPERATOR = '<?= e(trim((string)($_SESSION['user_name'] ?? '')) ?: 'Operator') ?>';
 
   // ── State ──────────────────────────────────────────────────
   let plannerJobs     = [];
@@ -1603,8 +1604,15 @@ const SLT = (() => {
     btn.disabled = true;
     btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Executing…';
 
-    const operator = document.getElementById('execOperator').value.trim();
+    const operator = (document.getElementById('execOperator').value || CURRENT_OPERATOR).trim();
     const machine  = document.getElementById('execMachine').value;
+
+    if (!machine) {
+      showToast('Please select machine first', 'warning');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-play-circle"></i> Execute Batch';
+      return;
+    }
 
     const results = [];
     let hasError = false;
@@ -1834,11 +1842,21 @@ const SLT = (() => {
     if (!data.ok) return;
     machines = data.machines || [];
     const sel = document.getElementById('execMachine');
+    const op = document.getElementById('execOperator');
+    if (op) {
+      op.value = '';
+      op.readOnly = true;
+    }
     machines.forEach(m => {
       const opt = document.createElement('option');
       opt.value = m.name;
       opt.textContent = m.name + (m.type ? ' (' + m.type + ')' : '');
       sel.appendChild(opt);
+    });
+    sel.addEventListener('change', function() {
+      const opField = document.getElementById('execOperator');
+      if (!opField) return;
+      opField.value = this.value ? CURRENT_OPERATOR : '';
     });
   }
 

@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS master_machines (
   name VARCHAR(255) NOT NULL,
   type VARCHAR(100) DEFAULT NULL,
   section VARCHAR(100) DEFAULT NULL,
+  operator_name VARCHAR(150) DEFAULT NULL,
   status ENUM('Active','Inactive','Maintenance') NOT NULL DEFAULT 'Active',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -123,6 +124,9 @@ if (!masterColumnExists($db, 'master_clients', 'credit_period_days')) {
 }
 if (!masterColumnExists($db, 'master_clients', 'credit_limit')) {
   @$db->query("ALTER TABLE master_clients ADD COLUMN credit_limit DECIMAL(12,2) DEFAULT 0 AFTER credit_period_days");
+}
+if (!masterColumnExists($db, 'master_machines', 'operator_name')) {
+  @$db->query("ALTER TABLE master_machines ADD COLUMN operator_name VARCHAR(150) DEFAULT NULL AFTER section");
 }
 
 
@@ -322,13 +326,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = trim((string)($_POST['machine_name'] ?? ''));
     $type = trim((string)($_POST['machine_type'] ?? ''));
     $section = trim((string)($_POST['machine_section'] ?? ''));
+    $operatorName = trim((string)($_POST['machine_operator_name'] ?? ''));
     $status = trim((string)($_POST['machine_status'] ?? 'Active'));
 
     if ($name === '') {
       setFlash('error', 'Machine name is required.');
     } else {
-      $stmt = $db->prepare("INSERT INTO master_machines (name, type, section, status) VALUES (?, ?, ?, ?)");
-      $stmt->bind_param('ssss', $name, $type, $section, $status);
+      $stmt = $db->prepare("INSERT INTO master_machines (name, type, section, operator_name, status) VALUES (?, ?, ?, ?, ?)");
+      $stmt->bind_param('sssss', $name, $type, $section, $operatorName, $status);
       if ($stmt->execute()) {
         setFlash('success', 'Machine added successfully.');
       } else {
@@ -343,13 +348,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = trim((string)($_POST['machine_name'] ?? ''));
     $type = trim((string)($_POST['machine_type'] ?? ''));
     $section = trim((string)($_POST['machine_section'] ?? ''));
+    $operatorName = trim((string)($_POST['machine_operator_name'] ?? ''));
     $status = trim((string)($_POST['machine_status'] ?? 'Active'));
 
     if ($id <= 0 || $name === '') {
       setFlash('error', 'Invalid data.');
     } else {
-      $stmt = $db->prepare("UPDATE master_machines SET name=?, type=?, section=?, status=? WHERE id=?");
-      $stmt->bind_param('ssssi', $name, $type, $section, $status, $id);
+      $stmt = $db->prepare("UPDATE master_machines SET name=?, type=?, section=?, operator_name=?, status=? WHERE id=?");
+      $stmt->bind_param('sssssi', $name, $type, $section, $operatorName, $status, $id);
       if ($stmt->execute()) {
         setFlash('success', 'Machine updated successfully.');
       } else {
@@ -689,7 +695,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       ],
       'machines' => [
         'required' => ['name'],
-        'columns' => ['name'=>'name', 'type'=>'type', 'section'=>'section', 'status'=>'status']
+        'columns' => ['name'=>'name', 'type'=>'type', 'section'=>'section', 'operator name'=>'operator_name', 'operator_name'=>'operator_name', 'operator'=>'operator_name', 'status'=>'status']
       ],
       'cylinders' => [
         'required' => ['name'],
@@ -807,8 +813,8 @@ $sampleSuppliers = [
 ];
 
 $sampleMachines = [
-  ['name' => 'Label Slitting', 'type' => 'Slitting', 'section' => 'Production', 'status' => 'Active'],
-  ['name' => 'Printing Machine', 'type' => 'Printing', 'section' => 'Production', 'status' => 'Active'],
+  ['name' => 'Label Slitting', 'type' => 'Slitting', 'section' => 'Production', 'operator_name' => 'Operator 1', 'status' => 'Active'],
+  ['name' => 'Printing Machine', 'type' => 'Printing', 'section' => 'Production', 'operator_name' => 'Operator 2', 'status' => 'Active'],
 ];
 
 $sampleCylinders = [
@@ -1131,6 +1137,7 @@ if ($activeTab === 'clients' && $editClientId > 0) {
                   <th>Name</th>
                   <th>Type</th>
                   <th>Section</th>
+                  <th>Operator Name</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
@@ -1141,6 +1148,7 @@ if ($activeTab === 'clients' && $editClientId > 0) {
                     <td><?= e($m['name']) ?></td>
                     <td><?= e($m['type'] ?? '') ?></td>
                     <td><?= e($m['section'] ?? '') ?></td>
+                    <td><?= e($m['operator_name'] ?? '-') ?></td>
                     <td><span class="badge" style="background:<?= $m['status'] === 'Active' ? '#10b981' : ($m['status'] === 'Maintenance' ? '#f59e0b' : '#6b7280') ?>;color:white;padding:4px 8px;border-radius:4px;font-size:0.85rem"><?= e($m['status']) ?></span></td>
                     <td>
                       <?php if (!empty($machines)): ?>
@@ -1180,6 +1188,11 @@ if ($activeTab === 'clients' && $editClientId > 0) {
             <div style="margin-bottom:16px">
               <label style="display:block;margin-bottom:4px;font-weight:500">Section</label>
               <input type="text" name="machine_section" id="machineSection" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px">
+            </div>
+
+            <div style="margin-bottom:16px">
+              <label style="display:block;margin-bottom:4px;font-weight:500">Operator Name</label>
+              <input type="text" name="machine_operator_name" id="machineOperatorName" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px" placeholder="Assigned operator name">
             </div>
 
             <div style="margin-bottom:16px">
@@ -1655,6 +1668,7 @@ if ($activeTab === 'clients' && $editClientId > 0) {
 <script>
 const suppliersData = <?= json_encode($suppliers, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 const clientsData = <?= json_encode($clients, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+const machinesData = <?= json_encode($machines, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 
 var currentDeleteType = '';
 var currentDeleteId = '';
@@ -1782,11 +1796,32 @@ function openMachineModal() {
   document.getElementById('machineForm').reset();
   document.getElementById('machineAction').value = 'add_machine';
   document.getElementById('machineId').value = '';
+  var op = document.getElementById('machineOperatorName'); if (op) op.value = '';
   document.getElementById('machineModal').style.display = 'flex';
 }
 
 function closeMachineModal() {
   document.getElementById('machineModal').style.display = 'none';
+}
+
+function editMachine(id) {
+  var rows = machinesData;
+  var item = null;
+  for (var i = 0; i < rows.length; i++) {
+    if (parseInt(rows[i].id, 10) === parseInt(id, 10)) {
+      item = rows[i];
+      break;
+    }
+  }
+  if (!item) return;
+  document.getElementById('machineAction').value = 'edit_machine';
+  document.getElementById('machineId').value = item.id || '';
+  document.getElementById('machineName').value = item.name || '';
+  document.getElementById('machineType').value = item.type || '';
+  document.getElementById('machineSection').value = item.section || '';
+  var op = document.getElementById('machineOperatorName'); if (op) op.value = item.operator_name || '';
+  document.getElementById('machineStatus').value = item.status || 'Active';
+  document.getElementById('machineModal').style.display = 'flex';
 }
 
 // Cylinder Modal Functions
@@ -1862,7 +1897,7 @@ var uploadHints = {
   'raw_materials': 'Required: <b>Name</b>, <b>Type</b><br>Optional: GSM, Width (or Width_mm)',
   'suppliers': 'Required: <b>Name</b><br>Optional: GST Number, Contact Person, Phone, Email, Address, Notes, City, State',
   'clients': 'Required: <b>Name</b><br>Optional: Contact Person, Phone, Email, Address, Credit Period Days, Credit Limit, City, State',
-  'machines': 'Required: <b>Name</b><br>Optional: Type, Section, Status (Active/Inactive/Maintenance)',
+  'machines': 'Required: <b>Name</b><br>Optional: Type, Section, Operator Name, Status (Active/Inactive/Maintenance)',
   'cylinders': 'Required: <b>Name</b><br>Optional: Size (or Size_inch), Teeth, Material Type (or Material)',
   'bom': 'Required: <b>BOM Name</b> (or Name)<br>Optional: Description, Status (Active/Inactive)'
 };

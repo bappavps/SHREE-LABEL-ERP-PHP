@@ -392,6 +392,10 @@ try {
             break;
         }
 
+        if ($operatorName === '') {
+            $operatorName = trim((string)($_SESSION['user_name'] ?? 'Operator'));
+        }
+
         $db->begin_transaction();
         try {
             // 1. Lock and fetch parent roll
