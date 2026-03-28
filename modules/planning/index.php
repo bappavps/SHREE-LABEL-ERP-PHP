@@ -51,7 +51,7 @@ $defaultColumns = [
 ];
 
 $allowedTypes = ['Text', 'Number', 'Date', 'Status'];
-$statusList = ['Pending', 'Preparing Slitting', 'Sliting Done', 'Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval'];
+$statusList = ['Pending', 'Preparing Slitting', 'Slitting Completed', 'Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval'];
 $priorityList = ['Low', 'Normal', 'High', 'Urgent'];
 
 function planning_json_response($payload, $status = 200) {
@@ -128,7 +128,7 @@ function planning_normalize_status($status) {
   $sLower = strtolower($s);
   // Any slitting-stage text should stay in the slitting lane.
   if (strpos($sLower, 'slitting') !== false || strpos($sLower, 'sliting') !== false) {
-    if (strpos($sLower, 'completed') !== false || strpos($sLower, 'done') !== false) return 'Sliting Done';
+    if (strpos($sLower, 'completed') !== false || strpos($sLower, 'done') !== false) return 'Slitting Completed';
     return 'Preparing Slitting';
   }
 
@@ -140,11 +140,11 @@ function planning_normalize_status($status) {
     return 'Preparing Slitting';
   }
 
-  if (strcasecmp($s, 'Slitting Done') === 0 || strcasecmp($s, 'Sliting Done') === 0) {
-    return 'Sliting Done';
+  if (strcasecmp($s, 'Slitting Done') === 0 || strcasecmp($s, 'Sliting Done') === 0 || strcasecmp($s, 'Slitting Completed') === 0) {
+    return 'Slitting Completed';
   }
 
-  $allowed = ['Pending', 'Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval', 'Preparing Slitting', 'Slitting', 'Sliting Done'];
+  $allowed = ['Pending', 'Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval', 'Preparing Slitting', 'Slitting', 'Slitting Completed'];
   foreach ($allowed as $v) {
     if (strcasecmp($s, $v) === 0) return $v;
   }
@@ -158,7 +158,7 @@ function planning_status_badge($status) {
     elseif (strcasecmp($s, 'Running') === 0) $class = 'in-progress';
     elseif (stripos($s, 'Hold') === 0 || strcasecmp($s, 'On Hold') === 0) $class = 'on-hold';
     elseif (strcasecmp($s, 'Slitting') === 0 || strcasecmp($s, 'Preparing Slitting') === 0) $class = 'slitting';
-    elseif (strcasecmp($s, 'Sliting Done') === 0 || strcasecmp($s, 'Slitting Done') === 0) $class = 'completed';
+    elseif (strcasecmp($s, 'Slitting Completed') === 0 || strcasecmp($s, 'Sliting Done') === 0 || strcasecmp($s, 'Slitting Done') === 0) $class = 'completed';
     elseif ($s === 'Queued') $class = 'consumed';
     return '<span class="badge badge-' . $class . '">' . e($s) . '</span>';
 }
@@ -183,7 +183,7 @@ function planning_status_badge($status) {
     if (strcasecmp($s, 'Running') === 0) $class = 'in-progress';
     elseif (strcasecmp($s, 'Completed') === 0) $class = 'completed';
     elseif (strcasecmp($s, 'Preparing Slitting') === 0 || strcasecmp($s, 'Slitting') === 0) $class = 'slitting';
-    elseif (strcasecmp($s, 'Sliting Done') === 0 || strcasecmp($s, 'Slitting Done') === 0) $class = 'completed';
+    elseif (strcasecmp($s, 'Slitting Completed') === 0 || strcasecmp($s, 'Sliting Done') === 0 || strcasecmp($s, 'Slitting Done') === 0) $class = 'completed';
     elseif (stripos($s, 'Hold') === 0) $class = 'on-hold';
     return '<span class="badge badge-' . $class . '">' . e($s) . '</span>';
   }
@@ -539,7 +539,7 @@ include __DIR__ . '/../../includes/header.php';
                   <span class="cell-display status-pill status-pill-<?= e(planning_status_pill_class($v ?: 'Pending')) ?>"><?= e($v ?: 'Pending') ?></span>
                   <?php
                     $statusOptions = array_values(array_unique(array_merge(
-                      ['Pending', 'Preparing Slitting', 'Sliting Done', 'Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval'],
+                      ['Pending', 'Preparing Slitting', 'Slitting Completed', 'Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval'],
                       $statusList,
                       [$v ?: 'Pending']
                     )));
@@ -868,7 +868,7 @@ include __DIR__ . '/../../includes/header.php';
       var currentText = String(statusCell.textContent || '').trim();
       var logicalStatus = (cls === 'slitting') ? 'Preparing Slitting' : currentText;
       if (cls === 'completed' && /slit+ing?\s*done/i.test(currentText)) {
-        logicalStatus = 'Sliting Done';
+        logicalStatus = 'Slitting Completed';
       }
       applyRowStatus(tr, logicalStatus);
     });

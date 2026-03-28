@@ -13,7 +13,7 @@ $logoPath    = $appSettings['logo_path'] ?? '';
 $logoUrl     = $logoPath ? (BASE_URL . '/' . $logoPath) : '';
 $footerErpName = getErpDisplayName((string)$companyName);
 $appFooterLeft = 'Version : ' . APP_VERSION;
-$appFooterRight = 'Â© ' . date('Y') . ' ' . $footerErpName . ' â€¢ ERP Master System v' . APP_VERSION . ' | @ Developed by Mriganka Bhusan Debnath';
+$appFooterRight = '© ' . date('Y') . ' ' . $footerErpName . ' • ERP Master System v' . APP_VERSION . ' | @ Developed by Mriganka Bhusan Debnath';
 
 // Load Jumbo jobs from DB so new auto-slitting cards appear immediately.
 $activeJobs = [];
@@ -45,7 +45,7 @@ function jumboDisplayJobName(array $job): string {
   $jobNo = trim((string)($job['job_no'] ?? ''));
   $dept = jumboDepartmentLabel((string)($job['department'] ?? ''));
   if ($jobNo !== '') return $dept !== '' ? ($jobNo . ' (' . $dept . ')') : $jobNo;
-  return $dept !== '' ? $dept : 'â€”';
+  return $dept !== '' ? $dept : '—';
 }
 
 $db->query("CREATE TABLE IF NOT EXISTS job_change_requests (
@@ -199,9 +199,9 @@ foreach ($allJumboRows as $row) {
 // Notification count
 $notifCount = 0;
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════
 // DYNAMIC COUNT CALCULATIONS FOR TOP SUMMARY
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════
 
 // Count all Jumbo jobs (active + history for "Job Details" = ALL filter)
 $totalCount = safeCountQuery($db, "
@@ -319,7 +319,7 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-request-state{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;border:1px solid #fecaca;background:#fff1f2;color:#dc2626;font-size:.6rem;font-weight:900;text-transform:uppercase;letter-spacing:.04em;animation:request-blink 1s linear infinite}
 @keyframes request-blink{0%,100%{opacity:1}50%{opacity:.2}}
 
-/* â”€â”€ Detail Modal â”€â”€ */
+/* ── Detail Modal ── */
 .jc-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;padding:20px}
 .jc-modal-overlay.active{display:flex}
 .jc-modal{background:#fff;border-radius:16px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 25px 60px rgba(0,0,0,.2)}
@@ -427,9 +427,9 @@ $historyCount = $finishedCount;
     $pri = $job['planning_priority'] ?? 'Normal';
     $priClass = match(strtolower($pri)) { 'urgent'=>'urgent', 'high'=>'high', default=>'normal' };
     $hasPendingRequest = (int)($job['pending_change_requests'] ?? 0) > 0;
-    $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : 'â€”';
-    $startedAt = $job['started_at'] ? date('d M Y, H:i', strtotime($job['started_at'])) : 'â€”';
-    $completedAt = $job['completed_at'] ? date('d M Y, H:i', strtotime($job['completed_at'])) : 'â€”';
+    $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : '—';
+    $startedAt = $job['started_at'] ? date('d M Y, H:i', strtotime($job['started_at'])) : '—';
+    $completedAt = $job['completed_at'] ? date('d M Y, H:i', strtotime($job['completed_at'])) : '—';
     $searchText = strtolower($job['job_no'] . ' ' . ($job['roll_no'] ?? '') . ' ' . ($job['company'] ?? '') . ' ' . ($job['display_job_name'] ?? ''));
   ?>
   <div class="jc-card" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" onclick="openJobDetail(<?= $job['id'] ?>)">
@@ -446,10 +446,10 @@ $historyCount = $finishedCount;
       </div>
     </div>
     <div class="jc-card-body">
-      <div class="jc-card-row"><span class="jc-label">Job Name</span><span class="jc-value"><?= e($job['display_job_name'] ?? 'â€”') ?></span></div>
-      <div class="jc-card-row"><span class="jc-label">Roll No</span><span class="jc-value" style="color:var(--jc-brand)"><?= e($job['roll_no'] ?? 'â€”') ?></span></div>
-      <div class="jc-card-row"><span class="jc-label">Material</span><span class="jc-value"><?= e($job['paper_type'] ?? 'â€”') ?></span></div>
-      <div class="jc-card-row"><span class="jc-label">Dimension</span><span class="jc-value"><?= e(($job['width_mm'] ?? 'â€”') . 'mm Ã— ' . ($job['length_mtr'] ?? 'â€”') . 'm') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Job Name</span><span class="jc-value"><?= e($job['display_job_name'] ?? '—') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Roll No</span><span class="jc-value" style="color:var(--jc-brand)"><?= e($job['roll_no'] ?? '—') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Material</span><span class="jc-value"><?= e($job['paper_type'] ?? '—') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Dimension</span><span class="jc-value"><?= e(($job['width_mm'] ?? '—') . 'mm × ' . ($job['length_mtr'] ?? '—') . 'm') ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Started</span><span class="jc-value"><?= e($startedAt) ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Ended</span><span class="jc-value"><?= e($completedAt) ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Plan Flow</span><span class="jc-value">Pending</span></div>
@@ -469,9 +469,9 @@ $historyCount = $finishedCount;
     $stsClass = match($sts) { 'Pending'=>'pending', 'Closed','Finalized'=>'completed', default=>'pending' };
     $pri = $job['planning_priority'] ?? 'Normal';
     $priClass = match(strtolower($pri)) { 'urgent'=>'urgent', 'high'=>'high', default=>'normal' };
-    $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : 'â€”';
-    $startedAt = $job['started_at'] ? date('d M Y, H:i', strtotime($job['started_at'])) : 'â€”';
-    $completedAt = $job['completed_at'] ? date('d M Y, H:i', strtotime($job['completed_at'])) : 'â€”';
+    $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : '—';
+    $startedAt = $job['started_at'] ? date('d M Y, H:i', strtotime($job['started_at'])) : '—';
+    $completedAt = $job['completed_at'] ? date('d M Y, H:i', strtotime($job['completed_at'])) : '—';
     $searchText = strtolower($job['job_no'] . ' ' . ($job['roll_no'] ?? '') . ' ' . ($job['company'] ?? '') . ' ' . ($job['display_job_name'] ?? ''));
   ?>
   <div class="jc-card" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" data-finished-only="1" style="display:none" onclick="openJobDetail(<?= $job['id'] ?>)">
@@ -485,10 +485,10 @@ $historyCount = $finishedCount;
       </div>
     </div>
     <div class="jc-card-body">
-      <div class="jc-card-row"><span class="jc-label">Job Name</span><span class="jc-value"><?= e($job['display_job_name'] ?? 'â€”') ?></span></div>
-      <div class="jc-card-row"><span class="jc-label">Roll No</span><span class="jc-value" style="color:var(--jc-brand)"><?= e($job['roll_no'] ?? 'â€”') ?></span></div>
-      <div class="jc-card-row"><span class="jc-label">Material</span><span class="jc-value"><?= e($job['paper_type'] ?? 'â€”') ?></span></div>
-      <div class="jc-card-row"><span class="jc-label">Dimension</span><span class="jc-value"><?= e(($job['width_mm'] ?? 'â€”') . 'mm Ã— ' . ($job['length_mtr'] ?? 'â€”') . 'm') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Job Name</span><span class="jc-value"><?= e($job['display_job_name'] ?? '—') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Roll No</span><span class="jc-value" style="color:var(--jc-brand)"><?= e($job['roll_no'] ?? '—') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Material</span><span class="jc-value"><?= e($job['paper_type'] ?? '—') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Dimension</span><span class="jc-value"><?= e(($job['width_mm'] ?? '—') . 'mm × ' . ($job['length_mtr'] ?? '—') . 'm') ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Started</span><span class="jc-value"><?= e($startedAt) ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Ended</span><span class="jc-value"><?= e($completedAt) ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Plan Flow</span><span class="jc-value">Finished</span></div>
@@ -530,10 +530,10 @@ $historyCount = $finishedCount;
         <?php foreach ($historyJobs as $h): ?>
           <tr>
             <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;font-weight:700"><?= e($h['job_no']) ?></td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['display_job_name'] ?? 'â€”') ?></td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['roll_no'] ?? 'â€”') ?></td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['display_job_name'] ?? '—') ?></td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['roll_no'] ?? '—') ?></td>
             <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['status']) ?></td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['completed_at'] ?? $h['updated_at'] ?? $h['created_at'] ?? 'â€”') ?></td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['completed_at'] ?? $h['updated_at'] ?? $h['created_at'] ?? '—') ?></td>
           </tr>
         <?php endforeach; ?>
       <?php endif; ?>
@@ -562,7 +562,7 @@ $historyCount = $finishedCount;
 </div>
 </div>
 
-<!-- â•â•â• DETAIL MODAL â•â•â• -->
+<!-- ═══ DETAIL MODAL ═══ -->
 <div class="jc-modal-overlay" id="jcDetailModal">
   <div class="jc-modal">
     <div class="jc-modal-header">
@@ -581,7 +581,7 @@ $historyCount = $finishedCount;
   </div>
 </div>
 
-<!-- â•â•â• PRINT AREA (hidden, used for browser print) â•â•â• -->
+<!-- ═══ PRINT AREA (hidden, used for browser print) ═══ -->
 <div class="jc-print-area" id="jcPrintArea"></div>
 
 <script>
@@ -607,7 +607,7 @@ function resolveJobDisplayName(job) {
   const jobNo = String(job?.job_no || '').trim();
   const dept = formatDepartmentLabel(job?.department);
   if (jobNo !== '') return dept ? `${jobNo} (${dept})` : jobNo;
-  return dept || 'â€”';
+  return dept || '—';
 }
 
 function switchJumboTab(tab) {
@@ -658,7 +658,7 @@ function filterJobs(status, btn) {
   });
 }
 
-// â”€â”€â”€ Trigger filter from stat box â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Trigger filter from stat box ───────────────────────────
 function filterFromStat(status) {
   const filterBtns = document.querySelectorAll('.jc-filter-btn');
   let targetBtn = null;
@@ -677,7 +677,7 @@ function filterFromStat(status) {
   }
 }
 
-// â”€â”€â”€ Update stat box highlights â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Update stat box highlights ─────────────────────────────
 function updateStatBoxes(status) {
   document.querySelectorAll('.jc-stat').forEach(stat => {
     stat.classList.remove('active');
@@ -697,7 +697,7 @@ document.getElementById('jcSearch').addEventListener('input', function() {
   });
 });
 
-// â”€â”€â”€ Live timers for running jobs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Live timers for running jobs ────────────────────────────
 function updateTimers() {
   document.querySelectorAll('.jc-timer[data-started]').forEach(el => {
     const started = parseInt(el.dataset.started);
@@ -722,7 +722,7 @@ setInterval(function() {
   }
 }, JC_AUTO_REFRESH_MS);
 
-// â”€â”€â”€ Status update â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Status update ──────────────────────────────────────────
 async function updateJobStatus(id, newStatus) {
   if (!confirm('Set this job to ' + newStatus + '?')) return;
   const fd = new FormData();
@@ -738,7 +738,7 @@ async function updateJobStatus(id, newStatus) {
   } catch (err) { alert('Network error: ' + err.message); }
 }
 
-// â”€â”€â”€ Submit operator extra data + close â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Submit operator extra data + close ─────────────────────
 async function submitAndClose(id) {
   // Gather form values
   const form = document.getElementById('dm-operator-form');
@@ -768,7 +768,7 @@ async function submitAndClose(id) {
   await updateJobStatus(id, 'Closed');
 }
 
-// â”€â”€â”€ Detail modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Detail modal ───────────────────────────────────────────
 function openJobDetail(id, mode) {
   const job = ALL_JOBS.find(j => j.id == id);
   if (!job) return;
@@ -776,9 +776,9 @@ function openJobDetail(id, mode) {
   const sts = job.status;
   const stsClass = {Pending:'pending',Closed:'completed',Finalized:'completed'}[sts]||'pending';
   const extra = job.extra_data_parsed || {};
-  const createdAt = job.created_at ? new Date(job.created_at).toLocaleString() : 'â€”';
-  const startedAt = job.started_at ? new Date(job.started_at).toLocaleString() : 'â€”';
-  const completedAt = job.completed_at ? new Date(job.completed_at).toLocaleString() : 'â€”';
+  const createdAt = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
+  const startedAt = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
+  const completedAt = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
   const dur = job.duration_minutes;
   const startedTs = job.started_at ? new Date(job.started_at).getTime() : 0;
 
@@ -795,20 +795,20 @@ function openJobDetail(id, mode) {
     <div class="jc-detail-item"><span class="dl">Job Name</span><span class="dv">${esc(resolveJobDisplayName(job))}</span></div>
     <div class="jc-detail-item"><span class="dl">Department</span><span class="dv">Jumbo Slitting</span></div>
     <div class="jc-detail-item"><span class="dl">Priority</span><span class="dv">${esc(job.planning_priority||'Normal')}</span></div>
-    <div class="jc-detail-item"><span class="dl">Planning Status</span><span class="dv">${esc(job.planning_status||'â€”')}</span></div>
+    <div class="jc-detail-item"><span class="dl">Planning Status</span><span class="dv">${esc(job.planning_status||'—')}</span></div>
     <div class="jc-detail-item"><span class="dl">Sequence</span><span class="dv">#${job.sequence_order||1}</span></div>
   </div></div>`;
 
   // Material Info
   html += `<div class="jc-detail-section"><h3><i class="bi bi-box"></i> Material Information</h3><div class="jc-detail-grid">
-    <div class="jc-detail-item"><span class="dl">Roll No</span><span class="dv" style="color:var(--jc-brand)">${esc(job.roll_no||'â€”')}</span></div>
-    <div class="jc-detail-item"><span class="dl">Paper Type</span><span class="dv">${esc(job.paper_type||'â€”')}</span></div>
-    <div class="jc-detail-item"><span class="dl">GSM</span><span class="dv">${esc(job.gsm||'â€”')}</span></div>
-    <div class="jc-detail-item"><span class="dl">Width Ã— Length</span><span class="dv">${esc((job.width_mm||'â€”')+'mm Ã— '+(job.length_mtr||'â€”')+'m')}</span></div>
-    <div class="jc-detail-item"><span class="dl">Weight</span><span class="dv">${job.weight_kg ? job.weight_kg+' kg' : 'â€”'}</span></div>
-    <div class="jc-detail-item"><span class="dl">Supplier</span><span class="dv">${esc(job.company||'â€”')}</span></div>
-    <div class="jc-detail-item"><span class="dl">Lot/Batch</span><span class="dv">${esc(job.lot_batch_no||'â€”')}</span></div>
-    <div class="jc-detail-item"><span class="dl">Roll Status</span><span class="dv">${esc(job.roll_status||'â€”')}</span></div>
+    <div class="jc-detail-item"><span class="dl">Roll No</span><span class="dv" style="color:var(--jc-brand)">${esc(job.roll_no||'—')}</span></div>
+    <div class="jc-detail-item"><span class="dl">Paper Type</span><span class="dv">${esc(job.paper_type||'—')}</span></div>
+    <div class="jc-detail-item"><span class="dl">GSM</span><span class="dv">${esc(job.gsm||'—')}</span></div>
+    <div class="jc-detail-item"><span class="dl">Width × Length</span><span class="dv">${esc((job.width_mm||'—')+'mm × '+(job.length_mtr||'—')+'m')}</span></div>
+    <div class="jc-detail-item"><span class="dl">Weight</span><span class="dv">${job.weight_kg ? job.weight_kg+' kg' : '—'}</span></div>
+    <div class="jc-detail-item"><span class="dl">Supplier</span><span class="dv">${esc(job.company||'—')}</span></div>
+    <div class="jc-detail-item"><span class="dl">Lot/Batch</span><span class="dv">${esc(job.lot_batch_no||'—')}</span></div>
+    <div class="jc-detail-item"><span class="dl">Roll Status</span><span class="dv">${esc(job.roll_status||'—')}</span></div>
   </div></div>`;
 
   // Timeline
@@ -826,6 +826,16 @@ function openJobDetail(id, mode) {
   // Notes
   if (job.notes) {
     html += `<div class="jc-detail-section"><h3><i class="bi bi-sticky"></i> Notes</h3><div style="font-size:.82rem;color:#475569;line-height:1.5;background:#f8fafc;padding:12px;border-radius:8px">${esc(job.notes)}</div></div>`;
+  }
+
+  // Operator Entry (wastage / remarks from operator)
+  {
+    const opWaste = extra.wastage_kg || extra.operator_wastage_kg || '';
+    const opNotes = extra.operator_notes || extra.operator_remarks || '';
+    html += `<div class="jc-detail-section"><h3><i class="bi bi-person-workspace"></i> Operator Entry</h3><div class="jc-detail-grid">
+      <div class="jc-detail-item"><span class="dl">Wastage (kg)</span><span class="dv">${esc(opWaste || '--')}</span></div>
+      <div class="jc-detail-item"><span class="dl">Operator Remarks</span><span class="dv">${esc(opNotes || '--')}</span></div>
+    </div></div>`;
   }
 
   // Parent Roll(s) -- collect all unique parent rolls referenced by child/stock rows
@@ -949,7 +959,7 @@ document.getElementById('jcDetailModal').addEventListener('click', function(e) {
   if (e.target === this) closeDetail();
 });
 
-// â”€â”€â”€ Delete job (admin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Delete job (admin) ─────────────────────────────────────
 async function deleteJob(id) {
   if (!confirm('Delete this job card and reset linked paper stock, planning status, and downstream queued jobs?')) return;
   const fd = new FormData();
@@ -1010,7 +1020,7 @@ async function loadDeleteAudit() {
   }
 }
 
-// â”€â”€â”€ Print Job Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Print Job Card ─────────────────────────────────────────
 function printJobCard(id) {
   const job = ALL_JOBS.find(j => j.id == id);
   if (!job) return;
@@ -1032,7 +1042,7 @@ function printJobCard(id) {
         </div>
         <div class="jc-print-brand-right">
           <div class="jc-print-title">Jumbo Slitting Job Card</div>
-          <div class="jc-print-job">${esc(job.job_no || 'â€”')}</div>
+          <div class="jc-print-job">${esc(job.job_no || '—')}</div>
           <div class="jc-print-meta">Printed: ${esc(nowText)}</div>
         </div>
       </header>

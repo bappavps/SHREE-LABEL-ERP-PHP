@@ -42,8 +42,101 @@ $jobsStmt = $db->prepare("\n  SELECT j.*,\n         ps.paper_type, ps.company, p
 $jobsStmt->execute();
 $allJumboRows = $jobsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
+// Collect all roll numbers for live data lookup (multi-parent support)
+$allRollNos = [];
 foreach ($allJumboRows as $row) {
-  $row['extra_data_parsed'] = json_decode((string)($row['extra_data'] ?? '{}'), true) ?: [];
+  $extra = json_decode((string)($row['extra_data'] ?? '{}'), true) ?: [];
+  $jobRoll = trim((string)($row['roll_no'] ?? ''));
+  if ($jobRoll !== '') $allRollNos[$jobRoll] = true;
+  $parentRoll = trim((string)($extra['parent_roll'] ?? (($extra['parent_details']['roll_no'] ?? ''))));
+  if ($parentRoll !== '') $allRollNos[$parentRoll] = true;
+  $parentRollsRaw = $extra['parent_rolls'] ?? [];
+  if (is_string($parentRollsRaw)) {
+    $parentRollsRaw = preg_split('/\s*,\s*/', trim($parentRollsRaw), -1, PREG_SPLIT_NO_EMPTY);
+  }
+  if (is_array($parentRollsRaw)) {
+    foreach ($parentRollsRaw as $pr) {
+      $prn = trim((string)$pr);
+      if ($prn !== '') $allRollNos[$prn] = true;
+    }
+  }
+  foreach (['child_rolls', 'stock_rolls'] as $bucket) {
+    $rows2 = is_array($extra[$bucket] ?? null) ? $extra[$bucket] : [];
+    foreach ($rows2 as $r) {
+      $rn = trim((string)($r['roll_no'] ?? ''));
+      if ($rn !== '') $allRollNos[$rn] = true;
+      $prn = trim((string)($r['parent_roll_no'] ?? ''));
+      if ($prn !== '') $allRollNos[$prn] = true;
+    }
+  }
+}
+$rollMap = [];
+if (!empty($allRollNos)) {
+  $rollNos = array_values(array_keys($allRollNos));
+  $ph = implode(',', array_fill(0, count($rollNos), '?'));
+  $types = str_repeat('s', count($rollNos));
+  $sql = "SELECT roll_no, remarks, status, width_mm, length_mtr, gsm, weight_kg, paper_type, company FROM paper_stock WHERE roll_no IN ($ph)";
+  $rmStmt = $db->prepare($sql);
+  if ($rmStmt) {
+    $rmStmt->bind_param($types, ...$rollNos);
+    $rmStmt->execute();
+    $rmRows = $rmStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($rmRows as $r) {
+      $k = (string)($r['roll_no'] ?? '');
+      if ($k === '') continue;
+      $rollMap[$k] = [
+          'remarks'    => (string)($r['remarks'] ?? ''),
+          'status'     => (string)($r['status'] ?? ''),
+          'width_mm'   => (float)($r['width_mm'] ?? 0),
+          'length_mtr' => (float)($r['length_mtr'] ?? 0),
+          'gsm'        => (float)($r['gsm'] ?? 0),
+          'weight_kg'  => (float)($r['weight_kg'] ?? 0),
+          'paper_type' => (string)($r['paper_type'] ?? ''),
+          'company'    => (string)($r['company'] ?? ''),
+      ];
+    }
+  }
+}
+
+foreach ($allJumboRows as $row) {
+  $extra = json_decode((string)($row['extra_data'] ?? '{}'), true) ?: [];
+  $row['extra_data_parsed'] = $extra;
+  $row['live_roll_map'] = [];
+  // Build live_roll_map for this job
+  $jobRoll = trim((string)($row['roll_no'] ?? ''));
+  if ($jobRoll !== '' && isset($rollMap[$jobRoll])) {
+    $row['live_roll_map'][$jobRoll] = $rollMap[$jobRoll];
+  }
+  $parentRoll = trim((string)($extra['parent_roll'] ?? (($extra['parent_details']['roll_no'] ?? ''))));
+  if ($parentRoll !== '' && isset($rollMap[$parentRoll])) {
+    $row['live_roll_map'][$parentRoll] = $rollMap[$parentRoll];
+  }
+  $parentRollsRaw = $extra['parent_rolls'] ?? [];
+  if (is_string($parentRollsRaw)) {
+    $parentRollsRaw = preg_split('/\s*,\s*/', trim($parentRollsRaw), -1, PREG_SPLIT_NO_EMPTY);
+  }
+  if (is_array($parentRollsRaw)) {
+    foreach ($parentRollsRaw as $pr) {
+      $prn = trim((string)$pr);
+      if ($prn !== '' && isset($rollMap[$prn])) {
+        $row['live_roll_map'][$prn] = $rollMap[$prn];
+      }
+    }
+  }
+  foreach (['child_rolls', 'stock_rolls'] as $bucket) {
+    $rows2 = is_array($extra[$bucket] ?? null) ? $extra[$bucket] : [];
+    foreach ($rows2 as &$r2) {
+      $rn = trim((string)($r2['roll_no'] ?? ''));
+      if ($rn !== '' && isset($rollMap[$rn])) {
+        $row['live_roll_map'][$rn] = $rollMap[$rn];
+        $r2['remarks_live'] = (string)($rollMap[$rn]['remarks'] ?? '');
+        $r2['status_live']  = (string)($rollMap[$rn]['status'] ?? '');
+      }
+    }
+    unset($r2);
+    $extra[$bucket] = $rows2;
+  }
+  $row['extra_data_parsed'] = $extra;
   $statusLower = strtolower(trim((string)($row['status'] ?? '')));
   if (in_array($statusLower, ['closed', 'finalized'], true)) {
     $historyJobs[] = $row;
@@ -807,8 +900,27 @@ async function startJobFromModal(id) {
     alert('Finished job cannot be started again.');
     return;
   }
-  const ok = await updateJobStatus(id, 'Running', { reloadOnSuccess: false });
-  if (!ok) return;
+  if (status === 'running') {
+    // Already running, just re-open with timer
+    DM_MODAL_LOCKED = true;
+    openJobDetail(id);
+    switchDetailTab('execution');
+    return;
+  }
+  // Start without confirm for smooth UX
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'update_status');
+  fd.append('job_id', id);
+  fd.append('status', 'Running');
+  try {
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) {
+      alert('Start error: ' + (data.error || 'Unknown'));
+      return;
+    }
+  } catch (err) { alert('Network error: ' + err.message); return; }
 
   const liveJob = getJobById(id);
   if (liveJob) {
@@ -830,10 +942,26 @@ async function endJobFromModal(id) {
     alert('Finished job is already closed.');
     return;
   }
+  if (!confirm('End this job and save operator entry?')) return;
+  // Save operator wastage/notes first
   const ok = await saveExecutionData(id);
   if (!ok) return;
-  DM_MODAL_LOCKED = false;
-  await updateJobStatus(id, 'Closed', { reloadOnSuccess: true });
+  // Close the job without another confirm
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'update_status');
+  fd.append('job_id', id);
+  fd.append('status', 'Closed');
+  try {
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) {
+      alert('Close error: ' + (data.error || 'Unknown'));
+      return;
+    }
+    DM_MODAL_LOCKED = false;
+    location.reload();
+  } catch (err) { alert('Network error: ' + err.message); }
 }
 
 function collectEditedRows() {
@@ -1104,17 +1232,64 @@ function openJobDetail(id, mode) {
   let editHtml = '';
   editHtml += summaryHtml;
 
-  if (extra.parent_roll) {
+  // Multi-parent roll collection (same logic as main JMB page)
+  {
+    const liveRollMap = job.live_roll_map || {};
     const p = extra.parent_details || {};
-    const parentTable = `<div class="jc-detail-section"><h3><i class="bi bi-inbox"></i> Parent Roll</h3><div class="jc-table-shell jc-parent-shell"><div style="overflow-x:auto"><table class="jc-soft-table"><tr><th>Roll No</th><th>Paper Company</th><th>Material</th><th>Width</th><th>Length</th><th>Weight</th><th>Sqr Mtr</th><th>GSM</th><th>Remarks</th></tr><tr><td style="color:var(--jc-brand);font-weight:700">${esc(p.roll_no || extra.parent_roll || '—')}</td><td>${esc(p.company || job.company || '—')}</td><td>${esc(p.paper_type || job.paper_type || '—')}</td><td>${esc((p.width_mm ?? job.width_mm ?? '—') + '')}</td><td>${esc((p.length_mtr ?? job.length_mtr ?? '—') + '')}</td><td>${esc((p.weight_kg ?? job.weight_kg ?? '—') + '')}</td><td>${esc((p.sqm ?? '—') + '')}</td><td>${esc((p.gsm ?? job.gsm ?? '—') + '')}</td><td>${esc(p.remarks || '—')}</td></tr></table></div></div></div>`;
-    executionRollHtml += parentTable;
-    editHtml += `<div class="jc-detail-section"><h3><i class="bi bi-inbox"></i> Change Parent Roll</h3>
-      <div class="jc-form-row">
-        <div class="jc-form-group"><label>Parent Roll Number</label><div class="jc-roll-pick-row"><input type="text" id="dm-parent-roll-input" value="" placeholder="Current: ${esc(p.roll_no || extra.parent_roll || '—')}" onclick="openRollPicker()" autocomplete="off"><button type="button" class="jc-action-btn jc-btn-view" onclick="openRollPicker()"><i class="bi bi-search"></i> Browse</button></div></div>
-        <div class="jc-form-group"><label>Requested Parent Preview</label><div class="jc-timing-box"><div class="jc-timing-value" id="dm-parent-roll-preview">-</div></div></div>
-      </div>
-      <div id="dm-roll-check" class="jc-roll-check"><div id="dm-roll-check-message" class="rv">Enter replacement parent roll number.</div><div id="dm-roll-check-detail"></div></div>
-    </div>`;
+    const seenParents = {};
+    const primaryPRN = String((p.roll_no) || extra.parent_roll || job.roll_no || '').trim();
+    if (primaryPRN !== '') seenParents[primaryPRN] = true;
+    const parentRollsRaw = extra.parent_rolls;
+    if (Array.isArray(parentRollsRaw)) {
+      parentRollsRaw.forEach(function(pr) {
+        const prn = String(pr || '').trim();
+        if (prn !== '') seenParents[prn] = true;
+      });
+    } else if (typeof parentRollsRaw === 'string' && parentRollsRaw.trim() !== '') {
+      parentRollsRaw.split(',').forEach(function(pr) {
+        const prn = String(pr || '').trim();
+        if (prn !== '') seenParents[prn] = true;
+      });
+    }
+    (Array.isArray(extra.child_rolls) ? extra.child_rolls : []).forEach(function(r) {
+      const prn = String(r.parent_roll_no || '').trim();
+      if (prn !== '') seenParents[prn] = true;
+    });
+    (Array.isArray(extra.stock_rolls) ? extra.stock_rolls : []).forEach(function(r) {
+      const prn = String(r.parent_roll_no || '').trim();
+      if (prn !== '') seenParents[prn] = true;
+    });
+    const allParentRollNos = Object.keys(seenParents);
+    if (allParentRollNos.length > 0) {
+      let parentTableHtml = '<table class="jc-soft-table"><tr><th>Roll No</th><th>Paper Company</th><th>Material</th><th>Width</th><th>Length</th><th>Weight</th><th>Sqr Mtr</th><th>GSM</th><th>Status</th><th>Remarks</th></tr>';
+      allParentRollNos.forEach(function(prn) {
+        const live      = liveRollMap[prn] || {};
+        const isPrimary = (prn === primaryPRN);
+        const company   = live.company    || (isPrimary ? (p.company    || job.company    || '') : '');
+        const ptype     = live.paper_type || (isPrimary ? (p.paper_type || job.paper_type || '') : '');
+        const width     = live.width_mm   !== undefined ? live.width_mm   : (isPrimary ? (p.width_mm  ?? job.width_mm  ?? '--') : '--');
+        const length    = live.length_mtr !== undefined ? live.length_mtr : (isPrimary ? (p.length_mtr ?? job.length_mtr ?? '--') : '--');
+        const weight    = live.weight_kg  !== undefined ? live.weight_kg  : (isPrimary ? (p.weight_kg ?? job.weight_kg ?? '--') : '--');
+        const sqm       = isPrimary ? (p.sqm ?? '--') : '--';
+        const gsm       = live.gsm !== undefined ? live.gsm : (isPrimary ? (p.gsm ?? job.gsm ?? '--') : '--');
+        const liveStatus  = live.status  || '--';
+        const liveRemarks = live.remarks !== undefined ? live.remarks : (isPrimary ? (p.remarks || '') : '');
+        parentTableHtml += `<tr><td style="color:var(--jc-brand);font-weight:700">${esc(prn)}</td><td>${esc(company || '--')}</td><td>${esc(ptype || '--')}</td><td>${esc(width + '')}</td><td>${esc(length + '')}</td><td>${esc(weight + '')}</td><td>${esc(sqm + '')}</td><td>${esc(gsm + '')}</td><td>${esc(liveStatus)}</td><td>${esc(liveRemarks || '--')}</td></tr>`;
+      });
+      parentTableHtml += '</table>';
+      executionRollHtml += `<div class="jc-detail-section"><h3><i class="bi bi-inbox"></i> Parent Roll${allParentRollNos.length > 1 ? 's' : ''}</h3><div class="jc-table-shell jc-parent-shell"><div style="overflow-x:auto">${parentTableHtml}</div></div></div>`;
+    }
+
+    // Edit tab: change parent roll section (uses first/primary parent)
+    if (primaryPRN) {
+      editHtml += `<div class="jc-detail-section"><h3><i class="bi bi-inbox"></i> Change Parent Roll</h3>
+        <div class="jc-form-row">
+          <div class="jc-form-group"><label>Parent Roll Number</label><div class="jc-roll-pick-row"><input type="text" id="dm-parent-roll-input" value="" placeholder="Current: ${esc(primaryPRN)}" onclick="openRollPicker()" autocomplete="off"><button type="button" class="jc-action-btn jc-btn-view" onclick="openRollPicker()"><i class="bi bi-search"></i> Browse</button></div></div>
+          <div class="jc-form-group"><label>Requested Parent Preview</label><div class="jc-timing-box"><div class="jc-timing-value" id="dm-parent-roll-preview">-</div></div></div>
+        </div>
+        <div id="dm-roll-check" class="jc-roll-check"><div id="dm-roll-check-message" class="rv">Enter replacement parent roll number.</div><div id="dm-roll-check-detail"></div></div>
+      </div>`;
+    }
   }
 
   // All child rolls in one table (job assign + stock) with plan number.

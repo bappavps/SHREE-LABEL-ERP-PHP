@@ -346,15 +346,66 @@ try {
                 $updPlan->bind_param('i', $planId);
                 $updPlan->execute();
             }
+            // Update primary roll
             if (!empty($job['roll_no'])) {
                 $updParentRoll = $db->prepare("UPDATE paper_stock SET status = 'Slitting' WHERE roll_no = ? AND status IN ('Job Assign','Stock','Main')");
                 $updParentRoll->bind_param('s', $job['roll_no']);
                 $updParentRoll->execute();
             }
+            // Update ALL parent rolls from extra_data.parent_rolls
+            $extraStart = json_decode((string)($job['extra_data'] ?? '{}'), true) ?: [];
+            $parentRollsStart = $extraStart['parent_rolls'] ?? [];
+            if (is_string($parentRollsStart)) {
+                $parentRollsStart = preg_split('/\s*,\s*/', trim($parentRollsStart), -1, PREG_SPLIT_NO_EMPTY);
+            }
+            if (is_array($parentRollsStart)) {
+                foreach ($parentRollsStart as $pr) {
+                    $prn = trim((string)$pr);
+                    if ($prn !== '' && $prn !== ($job['roll_no'] ?? '')) {
+                        $updPr = $db->prepare("UPDATE paper_stock SET status = 'Slitting' WHERE roll_no = ? AND status IN ('Job Assign','Stock','Main')");
+                        $updPr->bind_param('s', $prn);
+                        $updPr->execute();
+                    }
+                }
+            }
         }
 
-        // If completing a job, mark parent roll as Slitted in paper_stock
-        if (in_array($newStatus, ['Closed', 'Finalized', 'Completed'], true) && $job['roll_no']) {
+        // If completing a job, mark parent rolls as Slitted + child rolls as Job Assign
+        if (in_array($newStatus, ['Closed', 'Finalized', 'Completed'], true) && ($job['job_type'] ?? '') === 'Slitting') {
+            // Update primary parent roll
+            if ($job['roll_no']) {
+                $updRoll = $db->prepare("UPDATE paper_stock SET status = 'Slitted' WHERE roll_no = ? AND status IN ('Slitting','Consumed')");
+                $updRoll->bind_param('s', $job['roll_no']);
+                $updRoll->execute();
+            }
+            // Update ALL parent rolls from extra_data
+            $extraClose = json_decode((string)($job['extra_data'] ?? '{}'), true) ?: [];
+            $parentRollsClose = $extraClose['parent_rolls'] ?? [];
+            if (is_string($parentRollsClose)) {
+                $parentRollsClose = preg_split('/\s*,\s*/', trim($parentRollsClose), -1, PREG_SPLIT_NO_EMPTY);
+            }
+            if (is_array($parentRollsClose)) {
+                foreach ($parentRollsClose as $pr) {
+                    $prn = trim((string)$pr);
+                    if ($prn !== '' && $prn !== ($job['roll_no'] ?? '')) {
+                        $updPr = $db->prepare("UPDATE paper_stock SET status = 'Slitted' WHERE roll_no = ? AND status IN ('Slitting','Consumed')");
+                        $updPr->bind_param('s', $prn);
+                        $updPr->execute();
+                    }
+                }
+            }
+            // Update child rolls: Slitting → Job Assign
+            $childRollsClose = is_array($extraClose['child_rolls'] ?? null) ? $extraClose['child_rolls'] : [];
+            foreach ($childRollsClose as $cr) {
+                $crn = trim((string)($cr['roll_no'] ?? ''));
+                if ($crn !== '') {
+                    $updCr = $db->prepare("UPDATE paper_stock SET status = 'Job Assign' WHERE roll_no = ? AND status = 'Slitting'");
+                    $updCr->bind_param('s', $crn);
+                    $updCr->execute();
+                }
+            }
+        } elseif (in_array($newStatus, ['Closed', 'Finalized', 'Completed'], true) && $job['roll_no']) {
+            // Non-slitting jobs: simple parent roll update
             $updRoll = $db->prepare("UPDATE paper_stock SET status = 'Slitted' WHERE roll_no = ? AND status = 'Slitting'");
             $updRoll->bind_param('s', $job['roll_no']);
             $updRoll->execute();
@@ -379,7 +430,7 @@ try {
             }
         }
 
-        // Jumbo close/finalize moves planning into Sliting Done stage.
+        // Jumbo close/finalize moves planning into Slitting Completed stage.
         if (in_array($newStatus, ['Closed', 'Finalized'], true) && ($job['job_type'] ?? '') === 'Slitting') {
             $planId = (int)($job['planning_id'] ?? 0);
             if ($planId > 0) {
@@ -389,11 +440,11 @@ try {
                 $planNoRow = $planNoStmt->get_result()->fetch_assoc();
                 $planNo = trim((string)($planNoRow['job_no'] ?? ''));
                 if ($planNo !== '') {
-                    $updPlanNo = $db->prepare("UPDATE planning SET status = 'Sliting Done' WHERE job_no = ?");
+                    $updPlanNo = $db->prepare("UPDATE planning SET status = 'Slitting Completed' WHERE job_no = ?");
                     $updPlanNo->bind_param('s', $planNo);
                     $updPlanNo->execute();
                 } else {
-                    $updPlan = $db->prepare("UPDATE planning SET status = 'Sliting Done' WHERE id = ?");
+                    $updPlan = $db->prepare("UPDATE planning SET status = 'Slitting Completed' WHERE id = ?");
                     $updPlan->bind_param('i', $planId);
                     $updPlan->execute();
                 }
@@ -401,7 +452,7 @@ try {
                 $extra = json_decode((string)($job['extra_data'] ?? '{}'), true);
                 $planNo = trim((string)($extra['plan_no'] ?? ''));
                 if ($planNo !== '') {
-                    $updPlanNo = $db->prepare("UPDATE planning SET status = 'Sliting Done' WHERE job_no = ?");
+                    $updPlanNo = $db->prepare("UPDATE planning SET status = 'Slitting Completed' WHERE job_no = ?");
                     $updPlanNo->bind_param('s', $planNo);
                     $updPlanNo->execute();
                 }
