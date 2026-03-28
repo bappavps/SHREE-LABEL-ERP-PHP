@@ -200,6 +200,46 @@ try {
         echo json_encode(['ok' => true, 'job' => $job]);
         break;
 
+    // ─── Resolve roll numbers to paper_stock IDs ───────────
+    case 'get_roll_ids':
+        $rollNosRaw = trim((string)($_GET['roll_nos'] ?? ''));
+        if ($rollNosRaw === '') {
+            echo json_encode(['ok' => false, 'error' => 'Missing roll_nos']);
+            break;
+        }
+
+        $rollNos = array_values(array_unique(array_filter(array_map('trim', explode(',', $rollNosRaw)), function($v) {
+            return $v !== '';
+        })));
+
+        if (empty($rollNos)) {
+            echo json_encode(['ok' => false, 'error' => 'No valid roll numbers']);
+            break;
+        }
+
+        $ph = implode(',', array_fill(0, count($rollNos), '?'));
+        $types = str_repeat('s', count($rollNos));
+        $sql = "SELECT id, roll_no FROM paper_stock WHERE roll_no IN ($ph) ORDER BY id ASC";
+        $stmt = $db->prepare($sql);
+        $stmt->bind_param($types, ...$rollNos);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+        $ids = [];
+        $foundRollNos = [];
+        foreach ($rows as $r) {
+            $ids[] = (int)$r['id'];
+            $foundRollNos[] = (string)$r['roll_no'];
+        }
+
+        echo json_encode([
+            'ok' => true,
+            'ids' => $ids,
+            'found_roll_nos' => $foundRollNos,
+            'missing_roll_nos' => array_values(array_diff($rollNos, $foundRollNos)),
+        ]);
+        break;
+
     // ─── List jobs by department ─────────────────────────────
     case 'list_jobs':
         $dept = trim($_GET['department'] ?? '');

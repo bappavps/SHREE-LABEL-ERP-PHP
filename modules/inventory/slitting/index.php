@@ -479,6 +479,8 @@ const SLT = (() => {
     loadMachines();
     loadPlannerJobs();
     loadHistory();
+    // Keep planner queue current without requiring manual page reload.
+    setInterval(loadPlannerJobs, 12000);
 
     // URL param: ?rollNo=XXXX or ?rolls=A,B,C
     const preload = '<?= e($preloadRoll) ?>';
@@ -1588,6 +1590,8 @@ const SLT = (() => {
       renderLoadedRolls();
       renderConfig();
       renderBatchStatus();
+      await loadPlannerJobs();
+      await loadHistory();
 
       // Show report for last batch
       if (results.length === 1) {
@@ -1767,6 +1771,10 @@ const SLT = (() => {
   function closeModal(id) {
     document.getElementById(id).classList.remove('open');
     document.body.style.overflow = '';
+    if (id === 'reportModal') {
+      loadPlannerJobs();
+      loadHistory();
+    }
   }
 
   // Close modal on overlay click
@@ -1774,6 +1782,10 @@ const SLT = (() => {
     if (e.target.classList.contains('slt-modal-overlay') && e.target.classList.contains('open')) {
       e.target.classList.remove('open');
       document.body.style.overflow = '';
+      if (e.target.id === 'reportModal') {
+        loadPlannerJobs();
+        loadHistory();
+      }
     }
   });
 

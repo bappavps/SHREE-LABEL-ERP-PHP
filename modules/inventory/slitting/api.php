@@ -42,6 +42,27 @@ function generateBatchNo($db) {
     return $prefix . str_pad($next, 4, '0', STR_PAD_LEFT);
 }
 
+// ─── Helper: Ensure generated identifier is unique in table ─
+function generateUniqueIdForTable(mysqli $db, string $moduleType, string $table, string $column, int $maxAttempts = 30) {
+    for ($i = 0; $i < $maxAttempts; $i++) {
+        $candidate = getNextId($moduleType);
+        if (!$candidate) {
+            break;
+        }
+
+        $sql = "SELECT COUNT(*) AS c FROM {$table} WHERE {$column} = ?";
+        $chk = $db->prepare($sql);
+        $chk->bind_param('s', $candidate);
+        $chk->execute();
+        $exists = (int)($chk->get_result()->fetch_assoc()['c'] ?? 0) > 0;
+        if (!$exists) {
+            return $candidate;
+        }
+    }
+
+    return null;
+}
+
 // ─── Helper: Derive stage number from planning.job_no ───────
 // Example: PLN/2026/0042 -> JUM/2026/0042
 function deriveStageJobNo($planNo, $targetPrefix) {
@@ -366,6 +387,11 @@ try {
             break;
         }
 
+        if ($machine === '') {
+            echo json_encode(['ok' => false, 'error' => 'Error: Select machine first']);
+            break;
+        }
+
         $db->begin_transaction();
         try {
             // 1. Lock and fetch parent roll
@@ -436,13 +462,34 @@ try {
                 throw new Exception('Over-cut! Total width ' . round($totalUsedWidth,2) . 'mm exceeds parent ' . round($pw,2) . 'mm');
             }
 
-            // 3. Create batch
-            $batchNo = generateBatchNo($db);
+            // 3. Create batch (collision-safe for unique batch_no)
             $userId  = $_SESSION['user_id'] ?? null;
-            $stmtB   = $db->prepare("INSERT INTO slitting_batches (batch_no, status, operator_name, machine, created_by) VALUES (?, 'Completed', ?, ?, ?)");
-            $stmtB->bind_param('sssi', $batchNo, $operatorName, $machine, $userId);
-            $stmtB->execute();
-            $batchId = $db->insert_id;
+            $batchId = 0;
+            $batchNo = '';
+            for ($attempt = 0; $attempt < 30; $attempt++) {
+                $batchNo = (string)(generateUniqueIdForTable($db, 'batch', 'slitting_batches', 'batch_no') ?? '');
+                if ($batchNo === '') {
+                    $batchNo = generateBatchNo($db);
+                }
+
+                $stmtB = $db->prepare("INSERT INTO slitting_batches (batch_no, status, operator_name, machine, created_by) VALUES (?, 'Completed', ?, ?, ?)");
+                $stmtB->bind_param('sssi', $batchNo, $operatorName, $machine, $userId);
+                $okBatch = $stmtB->execute();
+                if ($okBatch) {
+                    $batchId = (int)$db->insert_id;
+                    break;
+                }
+
+                // Duplicate key race/collision: retry with next generated number.
+                if ((int)$stmtB->errno === 1062) {
+                    continue;
+                }
+
+                throw new Exception('Failed to create slitting batch: ' . $stmtB->error);
+            }
+            if ($batchId <= 0) {
+                throw new Exception('Unable to generate unique batch number. Please try again.');
+            }
 
             // 4. Generate child rolls
             $childRolls = [];
@@ -515,10 +562,21 @@ try {
 
                 $childRolls[] = [
                     'roll_no' => $childNo,
+                    'parent_roll_no' => $parentRollNo,
                     'width'   => $cWidth,
                     'length'  => $cLength,
                     'mode'    => $run['mode'],
                     'dest'    => $run['dest'],
+                    'status'  => (($run['dest'] ?? '') === 'JOB') ? 'Slitting' : 'Stock',
+                    'job_no'  => $cJobNo,
+                    'job_name'=> $cJobName,
+                    'company' => $cCompany,
+                    'paper_type' => $cPaperType,
+                    'gsm'     => $cGsm,
+                    'weight_kg' => $cWeightKg,
+                    'sqm' => round($childSqm, 2),
+                    'wastage' => 0,
+                    'remarks' => '',
                 ];
             }
             }
@@ -575,10 +633,21 @@ try {
 
                 $childRolls[] = [
                     'roll_no'      => $remRollNo,
+                    'parent_roll_no' => $parentRollNo,
                     'width'        => $remainderWidth,
                     'length'       => $pl,
                     'mode'         => 'WIDTH',
                     'dest'         => 'STOCK',
+                    'status'       => 'Stock',
+                    'job_no'       => '',
+                    'job_name'     => '',
+                    'company'      => $remCompany,
+                    'paper_type'   => $remPaperType,
+                    'gsm'          => $remGsm,
+                    'weight_kg'    => $remWeightKg,
+                    'sqm'          => round($remSqm, 2),
+                    'wastage'      => round($remainderWidth, 2),
+                    'remarks'      => 'Remainder roll',
                     'is_remainder' => true,
                 ];
             } elseif ($remainderWidth > 0.5 && $remainderAction === 'ADJUST') {
@@ -628,6 +697,17 @@ try {
             $extraPayload = [
                 'plan_no' => $planNo,
                 'parent_roll' => $parentRollNo,
+                'parent_details' => [
+                    'roll_no' => $parentRollNo,
+                    'company' => (string)($parent['company'] ?? ''),
+                    'paper_type' => (string)($parent['paper_type'] ?? ''),
+                    'width_mm' => (float)($parent['width_mm'] ?? 0),
+                    'length_mtr' => (float)($parent['length_mtr'] ?? 0),
+                    'gsm' => (float)($parent['gsm'] ?? 0),
+                    'weight_kg' => (float)($parent['weight_kg'] ?? 0),
+                    'sqm' => round(((float)($parent['width_mm'] ?? 0) / 1000) * (float)($parent['length_mtr'] ?? 0), 2),
+                    'remarks' => (string)($parent['remarks'] ?? ''),
+                ],
                 'child_rolls' => array_values($jobChildRolls),
                 'stock_rolls' => array_values($stockRolls),
                 'total_roll_count' => count($jobChildRolls) + count($stockRolls) + 1,
@@ -635,6 +715,8 @@ try {
                 'material' => $materialRaw,
                 'paper_combined' => $isPaperMaterial,
                 'batch_no' => $batchNo,
+                'machine' => $machine,
+                'operator_name' => $operatorName,
             ];
 
             $jumboJobId = 0;
@@ -673,16 +755,33 @@ try {
 
                     $newExtra = json_encode($extraPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                     $updJ = $db->prepare("UPDATE jobs SET extra_data = ?, notes = ? WHERE id = ?");
-                    $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | Batch: ' . $batchNo;
+                    $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | JMB: ' . (string)($existingJumbo['job_no'] ?? 'N/A');
                     $jid = (int)$existingJumbo['id'];
                     $updJ->bind_param('ssi', $newExtra, $notesJ, $jid);
                     $updJ->execute();
                     $jumboJobId = $jid;
                     $createdJobCards[] = ['job_no' => $existingJumbo['job_no'], 'type' => 'Slitting', 'roll' => $parentRollNo, 'id' => $jumboJobId];
                 } else {
-                    $jcNoJumbo = deriveStageJobNo($planNo, 'JUM');
-                    if ($jcNoJumbo === '') $jcNoJumbo = 'JUM/' . date('Y') . '/' . str_pad((string)$batchId, 4, '0', STR_PAD_LEFT);
-                    $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | Batch: ' . $batchNo;
+                    // Derive JMB suffix from planning number (e.g., PLN/2026/0002 → JMB/2026/0002)
+                    $jcNoJumbo = '';
+                    if ($planNo !== '') {
+                        $parts = explode('/', $planNo);
+                        if (count($parts) >= 3) {
+                            $suffix = (string)$parts[2];
+                            $year = (string)($parts[1] ?? date('Y'));
+                            $jcNoJumbo = 'JMB/' . $year . '/' . $suffix;
+                        }
+                    }
+                    
+                    // Fallback to deriveStageJobNo if suffix extraction fails
+                    if ($jcNoJumbo === '') {
+                        $jcNoJumbo = deriveStageJobNo($planNo, 'JMB');
+                    }
+                    if ($jcNoJumbo === '') {
+                        $jcNoJumbo = 'JMB/' . date('Y') . '/' . str_pad((string)$batchId, 4, '0', STR_PAD_LEFT);
+                    }
+
+                    $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | JMB: ' . $jcNoJumbo;
                     $extraJson = json_encode($extraPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                     $pidJ = $planningId > 0 ? $planningId : null;
                     $jcStmtJ = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, notes, extra_data) VALUES (?, ?, NULL, ?, 'Slitting', 'jumbo_slitting', 'Pending', 1, ?, ?)");
@@ -699,18 +798,37 @@ try {
                     $chkP->execute();
                     $existingPrint = $chkP->get_result()->fetch_assoc();
                     if (!$existingPrint) {
-                        $jcNoFlex = deriveStageJobNo($planNo, 'FLX');
-                        if ($jcNoFlex === '') $jcNoFlex = 'FLX/' . date('Y') . '/' . str_pad((string)$batchId, 4, '0', STR_PAD_LEFT);
-                        $notesF = 'Flexo printing queued from Jumbo | Plan: ' . ($planNo ?: 'N/A') . ' | Batch: ' . $batchNo;
-                        $jcStmtF = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Printing', 'flexo_printing', 'Queued', 2, ?, ?)");
-                        $jcStmtF->bind_param('sisss', $jcNoFlex, $planningId, $parentRollNo, $jumboJobId, $notesF);
-                        $jcStmtF->execute();
-                        $createdJobCards[] = ['job_no' => $jcNoFlex, 'type' => 'Printing', 'roll' => $parentRollNo, 'id' => $db->insert_id];
+                        $jcNoFlex = '';
+                        for ($flexAttempt = 0; $flexAttempt < 30; $flexAttempt++) {
+                            $jcNoFlex = (string)(generateUniqueIdForTable($db, 'printing_job', 'jobs', 'job_no') ?? '');
+                            if ($jcNoFlex === '') {
+                                $jcNoFlex = deriveStageJobNo($planNo, 'FLX');
+                            }
+                            if ($jcNoFlex === '') {
+                                $jcNoFlex = 'FLX/' . date('Y') . '/' . str_pad((string)($batchId + $flexAttempt), 4, '0', STR_PAD_LEFT);
+                            }
+                            if ($jcNoFlex === '') continue;
+
+                            $notesF = 'Flexo printing queued from Jumbo | Plan: ' . ($planNo ?: 'N/A') . ' | Batch: ' . $batchNo;
+                            $jcStmtF = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Printing', 'flexo_printing', 'Queued', 2, ?, ?)");
+                            $jcStmtF->bind_param('sisss', $jcNoFlex, $planningId, $parentRollNo, $jumboJobId, $notesF);
+                            $okFlex = $jcStmtF->execute();
+                            if ($okFlex) {
+                                $createdJobCards[] = ['job_no' => $jcNoFlex, 'type' => 'Printing', 'roll' => $parentRollNo, 'id' => $db->insert_id];
+                                break;
+                            }
+                            if ((int)$jcStmtF->errno === 1062) {
+                                continue;
+                            }
+                            if ($flexAttempt >= 29) {
+                                throw new Exception('Unable to generate unique Flexo job number. Please try again.');
+                            }
+                        }
                     }
                 }
             }
 
-            // 9. Update planning status to Preparing Slitting (not Completed).
+            // 9. Update planning status to a valid planning enum state.
             if ($planNo !== '') {
                 $updPlanNo = $db->prepare("UPDATE planning SET status = 'Preparing Slitting' WHERE job_no = ?");
                 $updPlanNo->bind_param('s', $planNo);

@@ -108,11 +108,17 @@ function calcSQM($width_mm, $length_mtr) {
  * Return an HTML badge for a status string.
  */
 function statusBadge($status) {
+    $displayStatus = (string)$status;
+    if ($displayStatus === 'Slitting') {
+        $displayStatus = 'Preparing Slitting';
+    }
+
     $map = [
         // Paper stock
         'Main'           => 'main',
         'Stock'          => 'stock',
         'Slitting'       => 'slitting',
+        'Preparing Slitting' => 'slitting',
         'Job Assign'     => 'job-assign',
         'In Production'  => 'in-production',
         'Available'      => 'available',
@@ -138,8 +144,8 @@ function statusBadge($status) {
         'QC Passed'      => 'completed',
         'QC Failed'      => 'rejected',
     ];
-    $cls = $map[$status] ?? 'draft';
-    return '<span class="badge badge-' . $cls . '">' . e($status) . '</span>';
+    $cls = $map[$status] ?? ($map[$displayStatus] ?? 'draft');
+    return '<span class="badge badge-' . $cls . '">' . e($displayStatus) . '</span>';
 }
 
 /**

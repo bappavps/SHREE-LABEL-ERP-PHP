@@ -51,7 +51,7 @@ $defaultColumns = [
 ];
 
 $allowedTypes = ['Text', 'Number', 'Date', 'Status'];
-$statusList = ['Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval', 'Pending'];
+$statusList = ['Pending', 'Preparing Slitting', 'Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval'];
 $priorityList = ['Low', 'Normal', 'High', 'Urgent'];
 
 function planning_json_response($payload, $status = 200) {
@@ -124,7 +124,23 @@ function planning_get_rows(mysqli $db, $department) {
 function planning_normalize_status($status) {
   $s = trim((string)$status);
   if ($s === '') return 'Pending';
-  $allowed = ['Pending', 'Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval'];
+
+  $sLower = strtolower($s);
+  // Any slitting-stage text should stay in the slitting lane.
+  if (strpos($sLower, 'slitting') !== false || strpos($sLower, 'sliting') !== false) {
+    if (strpos($sLower, 'completed') !== false) return 'Completed';
+    return 'Preparing Slitting';
+  }
+
+  // Normalize legacy and typo values to the canonical status.
+  if (strcasecmp($s, 'Slitting') === 0
+      || strcasecmp($s, 'Prepared Slitting') === 0
+      || strcasecmp($s, 'Prepared Sliting') === 0
+      || strcasecmp($s, 'Preparing Sliting') === 0) {
+    return 'Preparing Slitting';
+  }
+
+  $allowed = ['Pending', 'Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval', 'Preparing Slitting', 'Slitting'];
   foreach ($allowed as $v) {
     if (strcasecmp($s, $v) === 0) return $v;
   }
@@ -133,20 +149,36 @@ function planning_normalize_status($status) {
 
 function planning_status_badge($status) {
     $s = (string)$status;
-    $class = 'info';
-    if ($s === 'Completed') $class = 'success';
-    elseif ($s === 'On Hold') $class = 'warning';
+    $class = 'pending';
+    if (strcasecmp($s, 'Completed') === 0) $class = 'completed';
+    elseif (strcasecmp($s, 'Running') === 0) $class = 'in-progress';
+    elseif (stripos($s, 'Hold') === 0 || strcasecmp($s, 'On Hold') === 0) $class = 'on-hold';
+    elseif (strcasecmp($s, 'Slitting') === 0 || strcasecmp($s, 'Preparing Slitting') === 0) $class = 'slitting';
     elseif ($s === 'Queued') $class = 'consumed';
     return '<span class="badge badge-' . $class . '">' . e($s) . '</span>';
 }
 
+  function planning_status_pill_class($status) {
+    $v = strtolower(preg_replace('/[^a-z]/', '', trim((string)$status)));
+    if (strpos($v, 'slitting') !== false || strpos($v, 'sliting') !== false) {
+      if (strpos($v, 'completed') !== false) return 'completed';
+      return 'slitting';
+    }
+    if ($v === 'running' || $v === 'inprogress') return 'running';
+    if ($v === 'completed' || $v === 'slittingcompleted') return 'completed';
+    if (strpos($v, 'hold') === 0) return 'hold';
+    if ($v === 'preparingslitting' || $v === 'preparingsliting' || $v === 'preparedslitting' || $v === 'preparedsliting' || $v === 'slitting') return 'slitting';
+    return 'pending';
+  }
+
   function planning_board_status_badge($status) {
     $s = trim((string)$status);
     if ($s === '') $s = 'Pending';
-    $class = 'consumed';
-    if (strcasecmp($s, 'Running') === 0) $class = 'info';
-    elseif (strcasecmp($s, 'Completed') === 0) $class = 'success';
-    elseif (stripos($s, 'Hold') === 0) $class = 'warning';
+    $class = 'pending';
+    if (strcasecmp($s, 'Running') === 0) $class = 'in-progress';
+    elseif (strcasecmp($s, 'Completed') === 0) $class = 'completed';
+    elseif (strcasecmp($s, 'Preparing Slitting') === 0 || strcasecmp($s, 'Slitting') === 0) $class = 'slitting';
+    elseif (stripos($s, 'Hold') === 0) $class = 'on-hold';
     return '<span class="badge badge-' . $class . '">' . e($s) . '</span>';
   }
 
@@ -175,11 +207,15 @@ function planning_status_badge($status) {
         continue;
       }
       if (array_key_exists($k, $extra)) {
-        $vals[$k] = (string)$extra[$k];
+        $val = (string)$extra[$k];
+        if ($k === 'printing_planning') {
+          $val = planning_normalize_status($val);
+        }
+        $vals[$k] = $val;
         continue;
       }
       if ($k === 'name') $vals[$k] = (string)($row['job_name'] ?? '');
-      elseif ($k === 'printing_planning') $vals[$k] = (string)($extra['printing_planning'] ?? ($row['status'] ?? 'Pending'));
+      elseif ($k === 'printing_planning') $vals[$k] = planning_normalize_status((string)($extra['printing_planning'] ?? ($row['status'] ?? 'Pending')));
       elseif ($k === 'remarks') $vals[$k] = (string)($row['notes'] ?? '');
       elseif ($k === 'dispatch_date') $vals[$k] = (string)($extra['dispatch_date'] ?? ($row['scheduled_date'] ?? ''));
       else $vals[$k] = (string)($row[$k] ?? '');
@@ -225,9 +261,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
       $statusRaw = trim((string)($rowValues['printing_planning'] ?? $rowValues['status'] ?? 'Pending'));
       if ($statusRaw === '') $statusRaw = 'Pending';
-      $rowValues['printing_planning'] = $statusRaw;
-
       $status = planning_normalize_status($statusRaw);
+      // Persist canonical status token in extra_data so reload keeps correct color class.
+      $rowValues['printing_planning'] = $status;
       $priority = (string)($rowValues['priority'] ?? 'Normal');
         if (!in_array($priority, $priorityList, true)) $priority = 'Normal';
 
@@ -471,8 +507,7 @@ include __DIR__ . '/../../includes/header.php';
             $rowVals = planning_extract_row_values($r, $columns, $idx);
             $rowStatusVal = 'Pending';
             foreach ($columns as $_sc) { if ($_sc['type'] === 'Status') { $rowStatusVal = (string)($rowVals[$_sc['key']] ?? 'Pending'); break; } }
-            $vl_ = strtolower(trim($rowStatusVal));
-            $rowSCls = (substr($vl_, 0, 4) === 'hold') ? 'hold' : (($vl_ === 'running') ? 'running' : (($vl_ === 'completed') ? 'completed' : 'pending'));
+            $rowSCls = planning_status_pill_class($rowStatusVal);
           ?>
           <tr data-id="<?= (int)$r['id'] ?>" class="row-s-<?= $rowSCls ?>">
             <td class="sticky-col">
@@ -493,9 +528,16 @@ include __DIR__ . '/../../includes/header.php';
               ?>
               <td data-key="<?= e($k) ?>" data-type="<?= e($c['type']) ?>">
                 <?php if ($c['type'] === 'Status'): ?>
-                  <span class="cell-display status-pill status-pill-<?= strtolower(preg_replace('/[^a-z]/i','',str_replace(' ','_',strtolower($v ?: 'Pending')))) ?>"><?= e($v ?: 'Pending') ?></span>
+                  <span class="cell-display status-pill status-pill-<?= e(planning_status_pill_class($v ?: 'Pending')) ?>"><?= e($v ?: 'Pending') ?></span>
+                  <?php
+                    $statusOptions = array_values(array_unique(array_merge(
+                      ['Pending', 'Preparing Slitting', 'Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval'],
+                      $statusList,
+                      [$v ?: 'Pending']
+                    )));
+                  ?>
                   <select class="cell-input cell-select-status form-control" style="display:none">
-                    <?php foreach ($statusList as $s): ?><option value="<?= e($s) ?>"<?= $v === $s ? ' selected' : '' ?>><?= e($s) ?></option><?php endforeach; ?>
+                    <?php foreach ($statusOptions as $s): ?><option value="<?= e($s) ?>"<?= $v === $s ? ' selected' : '' ?>><?= e($s) ?></option><?php endforeach; ?>
                   </select>
                 <?php else: ?>
                   <span class="cell-display"><?= e($v !== '' ? $v : '—') ?></span>
@@ -750,17 +792,74 @@ include __DIR__ . '/../../includes/header.php';
 
   function applyRowStatus(tr, val) {
     var vl = String(val || '').trim().toLowerCase();
-    var cls = vl === 'running' ? 'row-s-running' : vl === 'completed' ? 'row-s-completed' : vl.indexOf('hold') === 0 ? 'row-s-hold' : 'row-s-pending';
-    tr.classList.remove('row-s-running','row-s-completed','row-s-hold','row-s-pending');
+    var norm = vl.replace(/[^a-z]/g, '');
+    if (norm.indexOf('slitting') !== -1 || norm.indexOf('sliting') !== -1) {
+      if (norm.indexOf('completed') !== -1) {
+        tr.classList.remove('row-s-running','row-s-completed','row-s-hold','row-s-slitting','row-s-pending');
+        tr.classList.add('row-s-completed');
+      } else {
+        tr.classList.remove('row-s-running','row-s-completed','row-s-hold','row-s-slitting','row-s-pending');
+        tr.classList.add('row-s-slitting');
+      }
+      return;
+    }
+    var cls = (norm === 'running' || norm === 'inprogress')
+      ? 'row-s-running'
+      : (norm === 'completed' || norm === 'slittingcompleted')
+        ? 'row-s-completed'
+        : (norm.indexOf('hold') === 0)
+          ? 'row-s-hold'
+          : (norm === 'preparingslitting' || norm === 'preparingsliting' || norm === 'preparedslitting' || norm === 'preparedsliting' || norm === 'slitting')
+            ? 'row-s-slitting'
+            : 'row-s-pending';
+    tr.classList.remove('row-s-running','row-s-completed','row-s-hold','row-s-slitting','row-s-pending');
     tr.classList.add(cls);
   }
 
   function applyStatusStyle(sel) {
     var v = String(sel.value || '').trim().toLowerCase();
-    var cls = v === 'running' ? 'ssel-running' : v === 'completed' ? 'ssel-completed' : v.indexOf('hold') === 0 ? 'ssel-hold' : 'ssel-pending';
+    var norm = v.replace(/[^a-z]/g, '');
+    if (norm.indexOf('slitting') !== -1 || norm.indexOf('sliting') !== -1) {
+      sel.className = 'cell-input cell-select-status form-control ' + (norm.indexOf('completed') !== -1 ? 'ssel-completed' : 'ssel-slitting');
+      var tr2 = sel.closest('tr[data-id]');
+      if (tr2) applyRowStatus(tr2, sel.value);
+      return;
+    }
+    var cls = (norm === 'running' || norm === 'inprogress')
+      ? 'ssel-running'
+      : (norm === 'completed' || norm === 'slittingcompleted')
+        ? 'ssel-completed'
+        : (norm.indexOf('hold') === 0)
+          ? 'ssel-hold'
+          : (norm === 'preparingslitting' || norm === 'preparingsliting' || norm === 'preparedslitting' || norm === 'preparedsliting' || norm === 'slitting')
+            ? 'ssel-slitting'
+            : 'ssel-pending';
     sel.className = 'cell-input cell-select-status form-control ' + cls;
     var tr = sel.closest('tr[data-id]');
     if (tr) applyRowStatus(tr, sel.value);
+  }
+
+  function statusClassFromText(txt) {
+    var s = String(txt || '').trim().toLowerCase();
+    var n = s.replace(/[^a-z]/g, '');
+    if (n.indexOf('slitting') !== -1 || n.indexOf('sliting') !== -1) {
+      return (n.indexOf('completed') !== -1) ? 'completed' : 'slitting';
+    }
+    if (n === 'running' || n === 'inprogress') return 'running';
+    if (n === 'completed') return 'completed';
+    if (n.indexOf('hold') === 0) return 'hold';
+    return 'pending';
+  }
+
+  function normalizeRenderedStatuses() {
+    boardTable.querySelectorAll('tr[data-id]').forEach(function(tr){
+      var statusCell = tr.querySelector('td[data-type="Status"] .cell-display.status-pill');
+      if (!statusCell) return;
+      var cls = statusClassFromText(statusCell.textContent || 'Pending');
+      statusCell.className = 'cell-display status-pill status-pill-' + cls;
+      var logicalStatus = (cls === 'slitting') ? 'Preparing Slitting' : statusCell.textContent;
+      applyRowStatus(tr, logicalStatus);
+    });
   }
 
   function postAction(payload) {
@@ -874,7 +973,17 @@ include __DIR__ . '/../../includes/header.php';
           td.setAttribute('data-raw', v);
           if (type === 'Status') {
             var vl = String(v || 'Pending').trim().toLowerCase().replace(/[^a-z]/g,'');
-            var pilClass = vl === 'running' ? 'running' : vl === 'completed' ? 'completed' : vl.indexOf('hold') === 0 ? 'hold' : 'pending';
+            var pilClass = (vl.indexOf('slitting') !== -1 || vl.indexOf('sliting') !== -1)
+              ? (vl.indexOf('completed') !== -1 ? 'completed' : 'slitting')
+              : (vl === 'running' || vl === 'inprogress')
+              ? 'running'
+              : (vl === 'completed' || vl === 'slittingcompleted')
+                ? 'completed'
+                : (vl.indexOf('hold') === 0)
+                  ? 'hold'
+                  : (vl === 'preparingslitting' || vl === 'preparingsliting' || vl === 'preparedslitting' || vl === 'preparedsliting' || vl === 'slitting')
+                    ? 'slitting'
+                    : 'pending';
             disp.className = 'cell-display status-pill status-pill-' + pilClass;
             disp.textContent = v || 'Pending';
             applyRowStatus(tr, v);
@@ -896,6 +1005,9 @@ include __DIR__ . '/../../includes/header.php';
     if (!tr || tr.classList.contains('is-editing')) return;
     setRowEditMode(tr, true);
   });
+
+  // Final UI guard: ensure persisted/legacy statuses render with the correct color after refresh.
+  normalizeRenderedStatuses();
 
   function openModal(el) { el.style.display = 'flex'; }
   function closeModal(el) { el.style.display = 'none'; }
@@ -1246,6 +1358,7 @@ include __DIR__ . '/../../includes/header.php';
 .ssel-running  { background: #3b82f6 !important; color: #fff !important; }
 .ssel-completed{ background: #22c55e !important; color: #fff !important; }
 .ssel-hold     { background: #ef4444 !important; color: #fff !important; }
+.ssel-slitting { background: #f97316 !important; color: #fff !important; }
 .ssel-pending  { background: #94a3b8 !important; color: #fff !important; }
 /* ── Column header drag ── */
 .planning-board-table th[data-col-key] { cursor: grab; user-select: none; }
@@ -1255,6 +1368,7 @@ include __DIR__ . '/../../includes/header.php';
 .row-s-running td, .row-s-running .sticky-col   { background: #eff6ff !important; }
 .row-s-completed td, .row-s-completed .sticky-col{ background: #f0fdf4 !important; }
 .row-s-hold td, .row-s-hold .sticky-col          { background: #fff5f5 !important; }
+.row-s-slitting td, .row-s-slitting .sticky-col  { background: #fff7ed !important; }
 .row-s-pending td, .row-s-pending .sticky-col    { background: #fff    !important; }
 /* ── Status pill badge ── */
 .status-pill { display: inline-block; font-size: .75rem; font-weight: 700; padding: 3px 14px; border-radius: 4px; letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; color: #fff; }
@@ -1263,6 +1377,8 @@ include __DIR__ . '/../../includes/header.php';
 .status-pill-hold,
 .status-pill-holdforpayment,
 .status-pill-holdforapproval  { background: #ef4444; }
+.status-pill-slitting,
+.status-pill-preparingslitting { background: #f97316; }
 .status-pill-pending          { background: #94a3b8; }
 /* Double-click hint cursor on data cells */
 .planning-board-table tbody tr[data-id]:not(.is-editing) td:not(.sticky-col) { cursor: pointer; }

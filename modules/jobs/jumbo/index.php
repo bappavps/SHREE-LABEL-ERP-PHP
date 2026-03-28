@@ -11,10 +11,27 @@ $companyAddr = $appSettings['company_address'] ?? '';
 $companyGst  = $appSettings['company_gst'] ?? '';
 $logoPath    = $appSettings['logo_path'] ?? '';
 $logoUrl     = $logoPath ? (BASE_URL . '/' . $logoPath) : '';
+$footerErpName = getErpDisplayName((string)$companyName);
+$appFooterLeft = 'Version : ' . APP_VERSION;
+$appFooterRight = '© ' . date('Y') . ' ' . $footerErpName . ' • ERP Master System v' . APP_VERSION . ' | @ Developed by Mriganka Bhusan Debnath';
 
-// Reset mode requested: Jumbo page starts blank (no cards shown).
+// Load Jumbo jobs from DB so new auto-slitting cards appear immediately.
 $activeJobs = [];
 $historyJobs = [];
+
+$jobsStmt = $db->prepare("\n  SELECT j.*,\n         ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,\n         ps.status AS roll_status, ps.lot_batch_no,\n         p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority\n  FROM jobs j\n  LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no\n  LEFT JOIN planning p ON j.planning_id = p.id\n  WHERE j.job_type = 'Slitting'\n    AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')\n  ORDER BY j.created_at DESC, j.id DESC\n");
+$jobsStmt->execute();
+$allJumboRows = $jobsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+foreach ($allJumboRows as $row) {
+  $row['extra_data_parsed'] = json_decode((string)($row['extra_data'] ?? '{}'), true) ?: [];
+  $statusLower = strtolower(trim((string)($row['status'] ?? '')));
+  if (in_array($statusLower, ['closed', 'finalized'], true)) {
+    $historyJobs[] = $row;
+  } else {
+    $activeJobs[] = $row;
+  }
+}
 
 // Notification count
 $notifCount = 0;
@@ -204,29 +221,29 @@ $historyCount = $finishedCount;
 <div class="jc-stats no-print">
   <div class="jc-stat active" data-filter="all" onclick="filterFromStat('all')">
     <div class="jc-stat-icon" style="background:#f0fdf4;color:#22c55e"><i class="bi bi-boxes"></i></div>
-    <div><div class="jc-stat-val">0</div><div class="jc-stat-label">Job Detials</div></div>
+    <div><div class="jc-stat-val"><?= $totalCount ?></div><div class="jc-stat-label">Job Detials</div></div>
   </div>
   <div class="jc-stat" data-filter="Pending" onclick="filterFromStat('Pending')">
     <div class="jc-stat-icon" style="background:#fef3c7;color:#f59e0b"><i class="bi bi-hourglass-split"></i></div>
-    <div><div class="jc-stat-val">0</div><div class="jc-stat-label">Pending</div></div>
+    <div><div class="jc-stat-val"><?= $pendingCount ?></div><div class="jc-stat-label">Pending</div></div>
   </div>
   <div class="jc-stat" data-filter="Running" onclick="filterFromStat('Running')">
     <div class="jc-stat-icon" style="background:#e0e7ff;color:#6366f1"><i class="bi bi-play-circle-fill"></i></div>
-    <div><div class="jc-stat-val">0</div><div class="jc-stat-label">Running</div></div>
+    <div><div class="jc-stat-val"><?= $runningCount ?></div><div class="jc-stat-label">Running</div></div>
   </div>
   <div class="jc-stat" data-filter="Hold" onclick="filterFromStat('Hold')">
     <div class="jc-stat-icon" style="background:#fecdd3;color:#dc2626"><i class="bi bi-pause-circle-fill"></i></div>
-    <div><div class="jc-stat-val">0</div><div class="jc-stat-label">Hold</div></div>
+    <div><div class="jc-stat-val"><?= $holdCount ?></div><div class="jc-stat-label">Hold</div></div>
   </div>
   <div class="jc-stat" data-filter="Finished" onclick="filterFromStat('Finished')">
     <div class="jc-stat-icon" style="background:#dcfce7;color:#16a34a"><i class="bi bi-check-circle"></i></div>
-    <div><div class="jc-stat-val">0</div><div class="jc-stat-label">Finished</div></div>
+    <div><div class="jc-stat-val"><?= $finishedCount ?></div><div class="jc-stat-label">Finished</div></div>
   </div>
 </div>
 
 <div class="jc-tabs no-print">
-  <button id="jcTabBtnActive" class="jc-tab-btn active" type="button" onclick="switchJumboTab('active')">Job Detials <span class="jc-tab-count">0</span></button>
-  <button id="jcTabBtnHistory" class="jc-tab-btn" type="button" onclick="switchJumboTab('history')">History <span class="jc-tab-count">0</span></button>
+  <button id="jcTabBtnActive" class="jc-tab-btn active" type="button" onclick="switchJumboTab('active')">Job Detials <span class="jc-tab-count"><?= $activeCount ?></span></button>
+  <button id="jcTabBtnHistory" class="jc-tab-btn" type="button" onclick="switchJumboTab('history')">History <span class="jc-tab-count"><?= $historyCount ?></span></button>
 </div>
 
 <div id="jcPanelActive">
@@ -350,9 +367,12 @@ $historyCount = $finishedCount;
 
 <script>
 const CSRF = '<?= e($csrf) ?>';
+const BASE_URL = '<?= BASE_URL ?>';
 const API_BASE = '<?= BASE_URL ?>/modules/jobs/api.php';
+const APP_FOOTER_LEFT = <?= json_encode($appFooterLeft, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+const APP_FOOTER_RIGHT = <?= json_encode($appFooterRight, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
-const ALL_JOBS = <?= json_encode($activeJobs, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+const ALL_JOBS = <?= json_encode(array_values(array_merge($activeJobs, $historyJobs)), JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 
 function switchJumboTab(tab) {
   const activePanel = document.getElementById('jcPanelActive');
@@ -558,38 +578,54 @@ function openJobDetail(id, mode) {
     html += `<div class="jc-detail-section"><h3><i class="bi bi-sticky"></i> Notes</h3><div style="font-size:.82rem;color:#475569;line-height:1.5;background:#f8fafc;padding:12px;border-radius:8px">${esc(job.notes)}</div></div>`;
   }
 
-  // Operator data (if already submitted)
-  if (extra.actual_output_weight || extra.wastage_kg || extra.operator_notes) {
-    html += `<div class="jc-detail-section"><h3><i class="bi bi-person-badge"></i> Operator Submission</h3><div class="jc-detail-grid">
-      <div class="jc-detail-item"><span class="dl">Output Weight</span><span class="dv">${esc(extra.actual_output_weight||'—')} kg</span></div>
-      <div class="jc-detail-item"><span class="dl">Wastage</span><span class="dv">${esc(extra.wastage_kg||'—')} kg</span></div>
-      <div class="jc-detail-item"><span class="dl">Condition</span><span class="dv">${esc(extra.roll_condition||'—')}</span></div>
-      <div class="jc-detail-item"><span class="dl">Notes</span><span class="dv">${esc(extra.operator_notes||'—')}</span></div>
-      ${extra.defects && extra.defects.length ? `<div class="jc-detail-item"><span class="dl">Defects</span><span class="dv">${extra.defects.join(', ')}</span></div>` : ''}
-    </div></div>`;
+  // Parent Roll Details
+  if (extra.parent_roll) {
+    const p = extra.parent_details || {};
+    html += `<div class="jc-detail-section"><h3><i class="bi bi-inbox"></i> Parent Roll</h3><div style="font-size:.75rem;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.73rem"><tr style="background:#f3f4f6"><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Roll No</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Paper Company</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Material</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Width</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Length</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Weight</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Sqr Mtr</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">GSM</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Remarks</th></tr><tr><td style="padding:8px;border-bottom:1px solid #e5e7eb;color:var(--jc-brand);font-weight:700">${esc(p.roll_no || extra.parent_roll || '—')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(p.company || job.company || '—')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(p.paper_type || job.paper_type || '—')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((p.width_mm ?? job.width_mm ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((p.length_mtr ?? job.length_mtr ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((p.weight_kg ?? job.weight_kg ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((p.sqm ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((p.gsm ?? job.gsm ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(p.remarks || '—')}</td></tr></table></div></div>`;
   }
 
-  // Operator input form (pending jumbo can be closed from this view)
-  if (sts === 'Pending' || mode === 'close') {
-    html += `<div class="jc-detail-section"><h3><i class="bi bi-pencil-square"></i> Operator Data — Fill Before Closing</h3>
-    <form id="dm-operator-form">
-      <div class="jc-form-row">
-        <div class="jc-form-group"><label>Actual Output Weight (kg)</label><input type="number" step="0.01" name="actual_output_weight" value="${esc(extra.actual_output_weight||'')}" placeholder="e.g. 85.5"></div>
-        <div class="jc-form-group"><label>Wastage (kg)</label><input type="number" step="0.01" name="wastage_kg" value="${esc(extra.wastage_kg||'')}" placeholder="e.g. 2.3"></div>
-      </div>
-      <div class="jc-form-row">
-        <div class="jc-form-group"><label>Roll Condition</label><select name="roll_condition"><option value="Good"${extra.roll_condition==='Good'?' selected':''}>Good</option><option value="Damaged"${extra.roll_condition==='Damaged'?' selected':''}>Damaged</option><option value="Partial"${extra.roll_condition==='Partial'?' selected':''}>Partial</option></select></div>
-        <div class="jc-form-group"><label>Defects Found</label>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;padding:6px 0">
-            <label style="font-size:.75rem;font-weight:600;cursor:pointer"><input type="checkbox" name="defects" value="Edge Damage"${(extra.defects||[]).includes('Edge Damage')?' checked':''}> Edge Damage</label>
-            <label style="font-size:.75rem;font-weight:600;cursor:pointer"><input type="checkbox" name="defects" value="Wrinkle"${(extra.defects||[]).includes('Wrinkle')?' checked':''}> Wrinkle</label>
-            <label style="font-size:.75rem;font-weight:600;cursor:pointer"><input type="checkbox" name="defects" value="Tear"${(extra.defects||[]).includes('Tear')?' checked':''}> Tear</label>
-            <label style="font-size:.75rem;font-weight:600;cursor:pointer"><input type="checkbox" name="defects" value="Uneven Width"${(extra.defects||[]).includes('Uneven Width')?' checked':''}> Uneven Width</label>
-          </div>
-        </div>
-      </div>
-      <div class="jc-form-group" style="margin-bottom:0"><label>Operator Notes</label><textarea name="operator_notes" placeholder="Any observations, issues, or remarks&hellip;">${esc(extra.operator_notes||'')}</textarea></div>
-    </form></div>`;
+  // All child rolls in one table (job assign + stock) with plan number.
+  const childRows = Array.isArray(extra.child_rolls) ? extra.child_rolls : [];
+  const stockRows = Array.isArray(extra.stock_rolls) ? extra.stock_rolls : [];
+  const allRows = [];
+  childRows.forEach(function(r) {
+    allRows.push({
+      parent_roll_no: r.parent_roll_no || extra.parent_roll || job.roll_no || '',
+      roll_no: r.roll_no || '',
+      type: r.paper_type || job.paper_type || '',
+      width: (r.width ?? r.width_mm),
+      length: (r.length ?? r.length_mtr),
+      weight_kg: (r.weight_kg ?? job.weight_kg),
+      sqm: (r.sqm ?? '—'),
+      gsm: (r.gsm ?? job.gsm),
+      wastage: (r.wastage ?? 0),
+      remarks: r.remarks || '',
+      status: 'Job Assign',
+    });
+  });
+  stockRows.forEach(function(r) {
+    allRows.push({
+      parent_roll_no: r.parent_roll_no || extra.parent_roll || job.roll_no || '',
+      roll_no: r.roll_no || '',
+      type: r.paper_type || job.paper_type || '',
+      width: (r.width ?? r.width_mm),
+      length: (r.length ?? r.length_mtr),
+      weight_kg: (r.weight_kg ?? job.weight_kg),
+      sqm: (r.sqm ?? '—'),
+      gsm: (r.gsm ?? job.gsm),
+      wastage: (r.wastage ?? 0),
+      remarks: r.remarks || '',
+      status: 'Stock',
+    });
+  });
+
+  if (allRows.length) {
+    let allRollHtml = '<table style="width:100%;border-collapse:collapse;font-size:.73rem"><tr style="background:#f3f4f6"><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Parent Roll No</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Child Roll NO.</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Width</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Length</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Type</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Weight</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Sqr Mtr</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">GSM</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Wastage</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db;font-weight:700">Remarks</th></tr>';
+    allRows.forEach(function(r) {
+      allRollHtml += `<tr><td style="padding:8px;border-bottom:1px solid #e5e7eb;color:#334155;font-weight:700">${esc(r.parent_roll_no || '—')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb;color:var(--jc-brand);font-weight:700">${esc(r.roll_no || '—')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.width ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.length ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(r.type || '—')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.weight_kg ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.sqm ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.gsm ?? '—') + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc((r.wastage ?? 0) + '')}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${esc(r.remarks || '—')}</td></tr>`;
+    });
+    allRollHtml += '</table>';
+    html += `<div class="jc-detail-section"><h3><i class="bi bi-table"></i> All Child Rolls</h3><div style="font-size:.75rem;overflow-x:auto">${allRollHtml}</div></div>`;
   }
 
   document.getElementById('dm-body').innerHTML = html;
@@ -597,9 +633,11 @@ function openJobDetail(id, mode) {
 
   // Footer actions
   let fHtml = '<div style="display:flex;gap:8px">';
-  fHtml += `<button class="jc-action-btn jc-btn-print" onclick="printJobCard(${job.id})"><i class="bi bi-printer"></i> Print</button>`;
+  fHtml += '<select id="dm-print-template" class="form-control" style="height:32px;min-width:140px"><option value="executive">Executive</option><option value="compact">Compact</option></select>';
+  fHtml += `<button class="jc-action-btn jc-btn-print" onclick="printJobCard(${job.id})"><i class="bi bi-printer"></i> Job Card Print</button>`;
+  fHtml += `<button class="jc-action-btn jc-btn-view" onclick="printLabelsForJob(${job.id})"><i class="bi bi-upc-scan"></i> Label Print</button>`;
   fHtml += '</div><div style="display:flex;gap:8px">';
-  if (sts === 'Pending') fHtml += `<button class="jc-action-btn jc-btn-complete" onclick="submitAndClose(${job.id})"><i class="bi bi-check-lg"></i> Close Jumbo Job</button>`;
+  if (sts === 'Pending') fHtml += `<button class="jc-action-btn jc-btn-complete" onclick="updateJobStatus(${job.id}, 'Closed')"><i class="bi bi-check-lg"></i> Close Jumbo Job</button>`;
   fHtml += `<button class="jc-action-btn jc-btn-delete" onclick="deleteJob(${job.id})" title="Admin: Delete"><i class="bi bi-trash"></i></button>`;
   fHtml += '</div>';
   document.getElementById('dm-footer').innerHTML = fHtml;
@@ -633,58 +671,113 @@ async function deleteJob(id) {
 function printJobCard(id) {
   const job = ALL_JOBS.find(j => j.id == id);
   if (!job) return;
-  const extra = job.extra_data_parsed || {};
-  const created = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
-  const started = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
-  const completed = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
-  const dur = job.duration_minutes;
-
-  const html = `<div style="font-family:'Segoe UI',Arial,sans-serif;padding:24px;max-width:700px;margin:0 auto">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;border-bottom:3px solid #22c55e;padding-bottom:12px">
-      <div>${COMPANY.logo ? `<img src="${COMPANY.logo}" style="height:40px;margin-bottom:4px;display:block">` : ''}
-        <div style="font-weight:900;font-size:1.1rem">${esc(COMPANY.name)}</div>
-        <div style="font-size:.7rem;color:#64748b">${esc(COMPANY.address)}</div>
-        ${COMPANY.gst ? `<div style="font-size:.65rem;color:#94a3b8">GST: ${esc(COMPANY.gst)}</div>` : ''}
-      </div>
-      <div style="text-align:right">
-        <div style="font-size:1.2rem;font-weight:900;color:#22c55e">${esc(job.job_no)}</div>
-        <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:#64748b">Jumbo Slitting Job Card</div>
-        <div style="font-size:.65rem;color:#94a3b8;margin-top:4px">${created}</div>
-      </div>
-    </div>
-    <table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:16px">
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc;width:35%">Job Name</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(job.planning_job_name||'—')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Roll No</td><td style="padding:6px 10px;border:1px solid #e2e8f0;color:#22c55e;font-weight:700">${esc(job.roll_no||'—')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Material / GSM</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(job.paper_type||'—')} / ${esc(job.gsm||'—')} GSM</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Dimension</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((job.width_mm||'—')+'mm × '+(job.length_mtr||'—')+'m')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Weight</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${job.weight_kg ? job.weight_kg+' kg' : '—'}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Supplier</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(job.company||'—')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Status</td><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700">${esc(job.status)}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Started</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${started}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Closed</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${completed}</td></tr>
-      ${dur !== null && dur !== undefined ? `<tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Duration</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${Math.floor(dur/60)}h ${dur%60}m</td></tr>` : ''}
-    </table>
-    ${extra.actual_output_weight || extra.wastage_kg ? `
-    <div style="font-weight:800;font-size:.75rem;text-transform:uppercase;color:#64748b;margin-bottom:8px">Operator Data</div>
-    <table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:16px">
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc;width:35%">Output Weight</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(extra.actual_output_weight||'—')} kg</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Wastage</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(extra.wastage_kg||'—')} kg</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Condition</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(extra.roll_condition||'—')}</td></tr>
-      ${extra.defects && extra.defects.length ? `<tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Defects</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${extra.defects.join(', ')}</td></tr>` : ''}
-      ${extra.operator_notes ? `<tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Notes</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(extra.operator_notes)}</td></tr>` : ''}
-    </table>` : ''}
-    ${job.notes ? `<div style="font-size:.75rem;color:#475569;margin-bottom:16px;padding:10px;background:#f8fafc;border-radius:8px"><strong>Notes:</strong> ${esc(job.notes)}</div>` : ''}
-    <div style="margin-top:40px;display:flex;justify-content:space-between;font-size:.7rem;color:#94a3b8">
-      <div>Operator Signature: _____________________</div>
-      <div>Supervisor Signature: _____________________</div>
-    </div>
-  </div>`;
+  openJobDetail(id);
+  const modalBody = document.getElementById('dm-body');
+  if (!modalBody) return;
+  const template = document.getElementById('dm-print-template')?.value || 'executive';
+  const nowText = new Date().toLocaleString();
+  const html = `
+    <div class="jc-print-sheet template-${template}">
+      <header class="jc-print-header">
+        <div class="jc-print-brand-left">
+          ${COMPANY.logo ? `<img src="${COMPANY.logo}" alt="Logo" style="max-height:40px;max-width:120px;display:block">` : ''}
+          <div>
+            <div class="jc-print-company">${esc(COMPANY.name || 'Company')}</div>
+            <div class="jc-print-meta">${esc(COMPANY.address || '')}</div>
+            ${COMPANY.gst ? `<div class="jc-print-meta">GST: ${esc(COMPANY.gst)}</div>` : ''}
+          </div>
+        </div>
+        <div class="jc-print-brand-right">
+          <div class="jc-print-title">Jumbo Slitting Job Card</div>
+          <div class="jc-print-job">${esc(job.job_no || '—')}</div>
+          <div class="jc-print-meta">Printed: ${esc(nowText)}</div>
+        </div>
+      </header>
+      <main class="jc-print-content">${modalBody.innerHTML}</main>
+      <footer class="jc-print-footer">
+        <span>${esc(APP_FOOTER_LEFT || '')}</span>
+        <span>${esc(APP_FOOTER_RIGHT || '')}</span>
+      </footer>
+    </div>`;
 
   const w = window.open('', '_blank', 'width=800,height=900');
-  w.document.write(`<!DOCTYPE html><html><head><title>Job Card - ${esc(job.job_no)}</title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>${html}</body></html>`);
+  w.document.write(`<!DOCTYPE html><html><head><title>Job Card - ${esc(job.job_no)}</title><style>
+    @page{margin:12mm}
+    *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+    body{font-family:'Segoe UI',Arial,sans-serif;color:#1f2937}
+    .jc-print-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:12px}
+    .jc-print-brand-left{display:flex;gap:10px;align-items:flex-start}
+    .jc-print-company{font-size:1rem;font-weight:800;color:#0f172a}
+    .jc-print-title{font-size:.85rem;font-weight:800;text-transform:uppercase;color:#334155}
+    .jc-print-job{font-size:1rem;font-weight:900;color:#16a34a}
+    .jc-print-meta{font-size:.68rem;color:#64748b}
+    .jc-print-footer{display:flex;justify-content:space-between;gap:10px;border-top:1px solid #e2e8f0;padding-top:8px;margin-top:14px;font-size:.66rem;color:#64748b}
+    .jc-detail-section{margin-bottom:16px}
+    .jc-detail-section h3{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin:0 0 8px}
+    .jc-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px}
+    .jc-detail-item .dl{font-size:.62rem;color:#94a3b8;font-weight:700;text-transform:uppercase}
+    .jc-detail-item .dv{font-size:.82rem;color:#0f172a;font-weight:700}
+    .jc-timeline{display:flex;gap:16px;flex-wrap:wrap}
+    .template-compact .jc-detail-grid{grid-template-columns:1fr}
+    .template-compact .jc-detail-section{margin-bottom:12px}
+    table{width:100%;border-collapse:collapse}
+    th,td{border:1px solid #dbe3ea;padding:7px 8px;text-align:left}
+    th{background:#f8fafc}
+  </style></head><body>${html}</body></html>`);
   w.document.close();
   w.focus();
   setTimeout(() => w.print(), 400);
+}
+
+async function printLabelsForJob(id) {
+  const job = ALL_JOBS.find(j => j.id == id);
+  if (!job) return;
+
+  const extra = job.extra_data_parsed || {};
+  const rollNos = [];
+
+  if (extra.parent_roll) rollNos.push(String(extra.parent_roll));
+  (Array.isArray(extra.child_rolls) ? extra.child_rolls : []).forEach(function(r) {
+    const rn = String((r && r.roll_no) || '').trim();
+    if (rn) rollNos.push(rn);
+  });
+  (Array.isArray(extra.stock_rolls) ? extra.stock_rolls : []).forEach(function(r) {
+    const rn = String((r && r.roll_no) || '').trim();
+    if (rn) rollNos.push(rn);
+  });
+
+  if (!rollNos.length && job.roll_no) {
+    rollNos.push(String(job.roll_no));
+  }
+
+  const uniqueRollNos = Array.from(new Set(rollNos));
+  if (!uniqueRollNos.length) {
+    alert('No rolls found for label printing.');
+    return;
+  }
+
+  try {
+    const url = new URL(API_BASE, window.location.origin);
+    url.searchParams.set('action', 'get_roll_ids');
+    url.searchParams.set('roll_nos', uniqueRollNos.join(','));
+    const res = await fetch(url.toString());
+    const data = await res.json();
+    if (!data.ok) {
+      alert('Error: ' + (data.error || 'Unable to resolve roll IDs'));
+      return;
+    }
+
+    const ids = Array.isArray(data.ids) ? data.ids.filter(Boolean) : [];
+    if (!ids.length) {
+      alert('No matching paper stock records found for labels.');
+      return;
+    }
+
+    const labelUrl = `${BASE_URL}/modules/paper_stock/label.php?ids=${ids.join(',')}`;
+    window.open(labelUrl, '_blank');
+  } catch (err) {
+    alert('Network error: ' + (err.message || 'Unknown error'));
+  }
 }
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
