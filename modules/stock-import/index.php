@@ -889,7 +889,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? null) === 'imp
       $purchaseRate = isset($row['purchase_rate']) && is_numeric($row['purchase_rate']) ? (float)$row['purchase_rate'] : 0.0;
       $lotBatchNo = !empty($row['lot_batch_no']) ? (string)$row['lot_batch_no'] : null;
       $companyRollNo = !empty($row['company_roll_no']) ? (string)$row['company_roll_no'] : null;
-      $status = importNormalizeStatus((string)($row['status'] ?? ''));
+      // Full stock import should always enter as Main stock by default.
+      $status = 'Main';
       $jobNo = !empty($row['job_no']) ? (string)$row['job_no'] : null;
       $dateReceived = !empty($row['date_received']) ? (string)$row['date_received'] : null;
       $dateUsed = !empty($row['date_used']) ? (string)$row['date_used'] : null;
