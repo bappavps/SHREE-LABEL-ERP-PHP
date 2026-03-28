@@ -1,0 +1,71 @@
+name: Deploy to InfinityFree
+
+on:
+  push:
+    branches:
+      - main
+      - M31-bugs-2
+  workflow_dispatch:
+
+concurrency:
+  group: infinityfree-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install lftp
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lftp
+
+      - name: Validate required secrets
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_TARGET_DIR: ${{ secrets.FTP_TARGET_DIR }}
+        run: |
+          test -n "$FTP_HOST" || (echo "Missing secret FTP_HOST" && exit 1)
+          test -n "$FTP_USERNAME" || (echo "Missing secret FTP_USERNAME" && exit 1)
+          test -n "$FTP_PASSWORD" || (echo "Missing secret FTP_PASSWORD" && exit 1)
+          test -n "$FTP_TARGET_DIR" || (echo "Missing secret FTP_TARGET_DIR" && exit 1)
+
+      - name: Deploy files to InfinityFree over FTP
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_PORT: ${{ secrets.FTP_PORT }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_TARGET_DIR: ${{ secrets.FTP_TARGET_DIR }}
+        run: |
+          PORT="${FTP_PORT:-21}"
+          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" -p "$PORT" "$FTP_HOST" << 'EOF'
+          set ftp:passive-mode true
+          set net:max-retries 2
+          set net:timeout 25
+          set ssl:verify-certificate no
+
+          mirror -R \
+            --verbose \
+            --parallel=2 \
+            --exclude-glob .git* \
+            --exclude-glob .github \
+            --exclude-glob node_modules \
+            --exclude-glob uploads \
+            --exclude-glob data \
+            --exclude-glob config/db.runtime.php \
+            --exclude-glob .env \
+            ./ "$FTP_TARGET_DIR"
+
+          bye
+          EOF
+
+      - name: Deployment completed
+        run: echo "InfinityFree deployment completed successfully."
