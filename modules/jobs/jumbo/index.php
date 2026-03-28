@@ -347,6 +347,30 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-form-group input:focus,.jc-form-group select:focus,.jc-form-group textarea:focus{outline:none;border-color:var(--jc-brand);box-shadow:0 0 0 2px rgba(34,197,94,.1)}
 .jc-modal-footer{padding:16px 24px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 
+/* ── Roll Change Comparison Panel ── */
+.rc-panel{background:linear-gradient(135deg,#fffbeb,#fef3c7);border:2px solid #f59e0b;border-radius:12px;padding:16px;margin-bottom:20px}
+.rc-panel-header{display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:.8rem;font-weight:900;color:#92400e;text-transform:uppercase;letter-spacing:.05em}
+.rc-panel-header i{font-size:1rem;color:#f59e0b}
+.rc-compare{display:grid;grid-template-columns:1fr 1fr;gap:0;border-radius:10px;overflow:hidden;border:1px solid #e5e7eb}
+.rc-side{padding:14px}
+.rc-side-left{background:#f0fdf4;border-right:2px dashed #d1d5db}
+.rc-side-right{background:#fef2f2}
+.rc-side-title{font-size:.65rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.rc-side-left .rc-side-title{color:#166534}
+.rc-side-right .rc-side-title{color:#991b1b}
+.rc-row{display:flex;justify-content:space-between;padding:4px 0;font-size:.75rem;border-bottom:1px solid rgba(0,0,0,.05)}
+.rc-row:last-child{border-bottom:none}
+.rc-label{color:#64748b;font-weight:600}
+.rc-val{color:#1e293b;font-weight:800;text-align:right;max-width:55%;word-break:break-word}
+.rc-remarks-box{margin-top:10px;padding:8px 10px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;font-size:.72rem;color:#475569;line-height:1.4}
+.rc-remarks-box strong{color:#1e293b}
+.rc-footer{margin-top:14px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.rc-btn-accept{padding:8px 20px;border-radius:8px;border:none;font-weight:800;font-size:.78rem;cursor:pointer;display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;box-shadow:0 2px 8px rgba(22,163,74,.3);transition:all .15s}
+.rc-btn-accept:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(22,163,74,.4)}
+.rc-btn-reject{padding:8px 16px;border-radius:8px;border:1px solid #fecaca;background:#fee2e2;color:#dc2626;font-weight:800;font-size:.78rem;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.rc-btn-reject:hover{background:#fecaca}
+.rc-loading{text-align:center;padding:20px;color:#92400e;font-size:.8rem;font-weight:600}
+
 /* Print */
 @media print{
   .no-print,.breadcrumb,.page-header,.jc-modal-overlay{display:none!important}
@@ -769,7 +793,7 @@ async function submitAndClose(id) {
 }
 
 // ─── Detail modal ───────────────────────────────────────────
-function openJobDetail(id, mode) {
+async function openJobDetail(id, mode) {
   const job = ALL_JOBS.find(j => j.id == id);
   if (!job) return;
 
@@ -832,10 +856,25 @@ function openJobDetail(id, mode) {
   {
     const opWaste = extra.wastage_kg || extra.operator_wastage_kg || '';
     const opNotes = extra.operator_notes || extra.operator_remarks || '';
-    html += `<div class="jc-detail-section"><h3><i class="bi bi-person-workspace"></i> Operator Entry</h3><div class="jc-detail-grid">
+    const voiceOriginal = extra.voice_input_original || '';
+    const voiceEnglish = extra.voice_input_english || '';
+    
+    let opEntryHtml = `<div class="jc-detail-section"><h3><i class="bi bi-person-workspace"></i> Operator Entry</h3><div class="jc-detail-grid">
       <div class="jc-detail-item"><span class="dl">Wastage (kg)</span><span class="dv">${esc(opWaste || '--')}</span></div>
       <div class="jc-detail-item"><span class="dl">Operator Remarks</span><span class="dv">${esc(opNotes || '--')}</span></div>
-    </div></div>`;
+    </div>`;
+    
+    // Add voice input translations if available
+    if (voiceOriginal || voiceEnglish) {
+      opEntryHtml += `<div style="margin-top:12px;padding:12px;background:linear-gradient(135deg,#f0f9ff,#e0f2fe);border-radius:8px;border-left:3px solid #0891b2;font-size:.75rem">
+        <div style="margin-bottom:6px"><strong style="color:#0891b2"><i class="bi bi-mic-fill"></i> Voice Input:</strong></div>`;
+      if (voiceOriginal) opEntryHtml += `<div style="margin:4px 0;color:#475569"><strong>Original:</strong> ${esc(voiceOriginal)}</div>`;
+      if (voiceEnglish) opEntryHtml += `<div style="margin:4px 0;color:#475569"><strong>English:</strong> ${esc(voiceEnglish)}</div>`;
+      opEntryHtml += `</div>`;
+    }
+    
+    opEntryHtml += `</div>`;
+    html += opEntryHtml;
   }
 
   // Parent Roll(s) -- collect all unique parent rolls referenced by child/stock rows
@@ -950,6 +989,168 @@ function openJobDetail(id, mode) {
   document.getElementById('dm-footer').innerHTML = fHtml;
 
   document.getElementById('jcDetailModal').classList.add('active');
+
+  // ─── Load roll change comparison if pending requests exist ───
+  if (Number(job.pending_change_requests || 0) > 0) {
+    await loadRollChangeComparison(job);
+  }
+}
+
+// ─── Roll Change Comparison Panel ─────────────────────────
+async function loadRollChangeComparison(job) {
+  const bodyEl = document.getElementById('dm-body');
+  const footerEl = document.getElementById('dm-footer');
+  // Prepend loading placeholder
+  const placeholder = document.createElement('div');
+  placeholder.id = 'rc-comparison-panel';
+  placeholder.innerHTML = '<div class="rc-panel"><div class="rc-loading"><i class="bi bi-hourglass-split"></i> Loading operator change request...</div></div>';
+  bodyEl.insertBefore(placeholder, bodyEl.firstChild);
+
+  try {
+    const params = new URLSearchParams({ action: 'list_jumbo_change_requests', csrf_token: CSRF, job_id: job.id, status: 'Pending', limit: '1' });
+    const res = await fetch(API_BASE + '?' + params.toString());
+    const data = await res.json();
+    if (!data.ok || !data.requests || !data.requests.length) {
+      placeholder.remove();
+      return;
+    }
+    const req = data.requests[0];
+    const reqPayload = req.payload || {};
+    const newRollNo = String(reqPayload.parent_roll_no || '').trim();
+    if (!newRollNo) { placeholder.remove(); return; }
+
+    // Fetch new roll details
+    const rollParams = new URLSearchParams({ action: 'get_roll_lookup', csrf_token: CSRF, roll_no: newRollNo });
+    const rollRes = await fetch(API_BASE + '?' + rollParams.toString());
+    const rollData = await rollRes.json();
+    const newRoll = (rollData.ok && rollData.roll) ? rollData.roll : {};
+
+    // Current job parent details
+    const extra = job.extra_data_parsed || {};
+    const p = extra.parent_details || {};
+    const curRollNo = String(p.roll_no || extra.parent_roll || job.roll_no || '').trim();
+    const liveMap = job.live_roll_map || {};
+    const curLive = liveMap[curRollNo] || {};
+
+    // Build comparison HTML
+    let html = '<div class="rc-panel">';
+    html += '<div class="rc-panel-header"><i class="bi bi-arrow-left-right"></i> Operator Roll Change Request';
+    html += '<span style="margin-left:auto;font-size:.6rem;font-weight:600;color:#78716c">by ' + esc(req.requested_by_name || 'Operator') + ' &bull; ' + (req.requested_at ? new Date(req.requested_at).toLocaleString() : '') + '</span>';
+    html += '</div>';
+
+    html += '<div class="rc-compare">';
+
+    // ── Left: Current Job ──
+    html += '<div class="rc-side rc-side-left">';
+    html += '<div class="rc-side-title"><i class="bi bi-clipboard-check"></i> Current Job (Planned)</div>';
+    html += rcRow('Parent Roll', curRollNo || '--');
+    html += rcRow('Company', curLive.company || p.company || job.company || '--');
+    html += rcRow('Paper Type', curLive.paper_type || p.paper_type || job.paper_type || '--');
+    html += rcRow('Width (mm)', (curLive.width_mm ?? p.width_mm ?? job.width_mm ?? '--') + '');
+    html += rcRow('Length (m)', (curLive.length_mtr ?? p.length_mtr ?? job.length_mtr ?? '--') + '');
+    html += rcRow('Weight (kg)', (curLive.weight_kg ?? p.weight_kg ?? job.weight_kg ?? '--') + '');
+    html += rcRow('GSM', (curLive.gsm ?? p.gsm ?? job.gsm ?? '--') + '');
+    html += rcRow('Status', curLive.status || job.roll_status || '--');
+    html += '</div>';
+
+    // ── Right: Operator Request ──
+    html += '<div class="rc-side rc-side-right">';
+    html += '<div class="rc-side-title"><i class="bi bi-person-workspace"></i> Operator Request (New Roll)</div>';
+    html += rcRow('Parent Roll', newRollNo);
+    html += rcRow('Company', newRoll.company || '--');
+    html += rcRow('Paper Type', newRoll.paper_type || '--');
+    html += rcRow('Width (mm)', (newRoll.width_mm ?? '--') + '');
+    html += rcRow('Length (m)', (newRoll.length_mtr ?? '--') + '');
+    html += rcRow('Weight (kg)', (newRoll.weight_kg ?? '--') + '');
+    html += rcRow('GSM', (newRoll.gsm ?? '--') + '');
+    html += rcRow('Status', newRoll.status || '--');
+    html += '</div>';
+
+    html += '</div>'; // .rc-compare
+
+    // Operator remarks box
+    const opRemarks = String(reqPayload.operator_remarks || '').trim();
+    if (opRemarks) {
+      html += '<div class="rc-remarks-box"><strong><i class="bi bi-chat-left-text"></i> Operator Remarks:</strong> ' + esc(opRemarks) + '</div>';
+    }
+
+    // Accept / Reject buttons
+    html += '<div class="rc-footer">';
+    html += '<button class="rc-btn-accept" onclick="acceptRollChange(' + job.id + ',' + req.id + ')"><i class="bi bi-check-circle"></i> Accept: Delete &amp; Recreate with New Roll</button>';
+    html += '<button class="rc-btn-reject" onclick="rejectRollChange(' + job.id + ',' + req.id + ')"><i class="bi bi-x-circle"></i> Reject Request</button>';
+    html += '</div>';
+
+    html += '</div>'; // .rc-panel
+    placeholder.innerHTML = html;
+
+  } catch (err) {
+    placeholder.innerHTML = '<div class="rc-panel"><div class="rc-loading" style="color:#dc2626"><i class="bi bi-exclamation-triangle"></i> Failed to load change request: ' + esc(err.message) + '</div></div>';
+  }
+}
+
+function rcRow(label, value) {
+  return '<div class="rc-row"><span class="rc-label">' + esc(label) + '</span><span class="rc-val">' + esc(value) + '</span></div>';
+}
+
+// ─── Accept Roll Change (delete & recreate with new roll) ───
+async function acceptRollChange(jobId, requestId) {
+  const job = ALL_JOBS.find(j => j.id == jobId);
+  const jobNo = job ? job.job_no : ('JOB-' + jobId);
+  if (!confirm('Accept roll change for ' + jobNo + '?\n\nThis will:\n• Delete the current job card and all child rolls\n• Restore the original parent roll\n• Recreate the same job (' + jobNo + ') with the new roll\n• Same JMB & PLN IDs will be preserved')) return;
+
+  const btn = document.querySelector('.rc-btn-accept');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...'; }
+
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'accept_roll_change');
+  fd.append('job_id', jobId);
+  fd.append('request_id', requestId);
+
+  try {
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.ok) {
+      alert('Roll change accepted!\n\n' + (data.job_no || jobNo) + ' recreated with new parent roll: ' + (data.new_parent_roll || '?') + '\n\nOld roll (' + (data.old_parent_roll || '?') + ') has been restored.');
+      location.reload();
+    } else if (data.blocked_jobs && data.blocked_jobs.length) {
+      const rows = data.blocked_jobs.map(b => (b.job_no || ('ID ' + b.id)) + ' [' + b.status + ']').join('\n');
+      alert((data.error || 'Blocked') + '\n\n' + rows);
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-circle"></i> Accept: Delete &amp; Recreate with New Roll'; }
+    } else {
+      alert('Error: ' + (data.error || 'Unknown'));
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-circle"></i> Accept: Delete &amp; Recreate with New Roll'; }
+    }
+  } catch (err) {
+    alert('Network error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-circle"></i> Accept: Delete &amp; Recreate with New Roll'; }
+  }
+}
+
+// ─── Reject Roll Change Request ──────────────────────────
+async function rejectRollChange(jobId, requestId) {
+  const reason = prompt('Reject this roll change request?\n\nOptionally enter a reason:');
+  if (reason === null) return; // Cancelled
+
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'review_jumbo_change_request');
+  fd.append('request_id', requestId);
+  fd.append('decision', 'Rejected');
+  fd.append('review_note', reason || '');
+
+  try {
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.ok) {
+      alert('Request rejected.');
+      location.reload();
+    } else {
+      alert('Error: ' + (data.error || 'Unknown'));
+    }
+  } catch (err) {
+    alert('Network error: ' + err.message);
+  }
 }
 
 function closeDetail() {

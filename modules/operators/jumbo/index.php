@@ -868,11 +868,21 @@ async function openRollPicker() {
 async function saveExecutionData(id) {
   const w = document.getElementById('dm-wastage-kg')?.value || '';
   const notes = document.getElementById('dm-operator-notes')?.value || '';
+  const voiceOriginal = document.getElementById('voiceOriginalText')?.textContent || '';
+  const voiceEnglish = document.getElementById('voiceEnglishText')?.textContent || '';
+  
   const job = getJobById(id);
   if (!job) return false;
   const extra = job.extra_data_parsed || {};
   extra.wastage_kg = w;
   extra.operator_notes = notes;
+  
+  // Store voice transcription if available
+  if (voiceOriginal) {
+    extra.voice_input_original = voiceOriginal;
+    extra.voice_input_english = voiceEnglish;
+    extra.voice_language = voiceLanguage || 'bn-IN';
+  }
 
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
@@ -1221,9 +1231,29 @@ function openJobDetail(id, mode) {
   const executionFormHtml = `<div class="jc-detail-section"><h3><i class="bi bi-pencil-square"></i> Operator Entry</h3>
     <div class="jc-form-row">
       <div class="jc-form-group"><label>Wastage (kg)</label><input type="number" step="0.01" min="0" id="dm-wastage-kg" value="${esc(extra.wastage_kg || extra.operator_wastage_kg || '')}" ${isFinishedJob ? 'disabled' : ''}></div>
-      <div class="jc-form-group"><label>Operator Remarks</label><input type="text" id="dm-operator-notes" value="${esc(extra.operator_notes || extra.operator_remarks || '')}" ${isFinishedJob ? 'disabled' : ''}></div>
+      <div class="jc-form-group"><label>Operator Remarks (Text or Voice)</label>
+        <div style="display:flex;gap:8px;align-items:flex-start">
+          <div style="flex:1">
+            <input type="text" id="dm-operator-notes" placeholder="Type remarks or use voice input..." value="${esc(extra.operator_notes || extra.operator_remarks || '')}" ${isFinishedJob ? 'disabled' : ''} style="width:100%">
+            <div id="voiceTranslationDisplay" style="margin-top:8px;padding:8px;background:#f0f9ff;border-radius:6px;font-size:.75rem;line-height:1.4;display:none">
+              <div><strong style="color:#0891b2">Original:</strong> <span id="voiceOriginalText" style="color:#334155"></span></div>
+              <div style="margin-top:4px"><strong style="color:#0891b2">English:</strong> <span id="voiceEnglishText" style="color:#334155"></span></div>
+            </div>
+          </div>
+          <button type="button" id="voiceMicBtn" class="voiceInputBtn" onclick="startVoiceInput()" title="Voice Input" ${isFinishedJob ? 'disabled' : ''} style="padding:8px 12px;background:#0891b2;color:white;border:none;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:700;height:fit-content">
+            <i class="bi bi-mic-fill"></i> <span class="voiceStatus">Wait</span>
+          </button>
+        </div>
+      </div>
     </div>
-  </div>`;
+  </div>
+  <style>
+    .voiceInputBtn { transition: all .2s; }
+    .voiceInputBtn:hover:not(:disabled) { transform: scale(1.05); box-shadow: 0 4px 12px rgba(8,145,178,.3); }
+    .voiceInputBtn:disabled { opacity: .5; cursor: not-allowed; }
+    .voiceInputBtn.listening { background: #dc2626; animation: voicePulse .8s infinite; }
+    @keyframes voicePulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,.7); } 50% { box-shadow: 0 0 0 8px rgba(220,38,38,0); } }
+  </style>`;
 
   // Parent/child roll snapshot (for execution tab clarity)
   let executionRollHtml = '';
@@ -1393,6 +1423,136 @@ document.getElementById('jcDetailModal').addEventListener('click', function(e) {
 document.getElementById('dmRollPickerModal').addEventListener('click', function(e) {
   if (e.target === this) closeRollPicker();
 });
+
+// ─── Voice Input with Translation ──────────────────────────
+let voiceRecognition;
+let isListeningToVoice = false;
+let voiceLanguage = 'bn-IN'; // Bengali by default
+
+// Initialize Web Speech API
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  voiceRecognition = new SpeechRecognition();
+  voiceRecognition.continuous = false;
+  voiceRecognition.interimResults = true;
+  voiceRecognition.lang = voiceLanguage;
+
+  voiceRecognition.onstart = function() {
+    isListeningToVoice = true;
+    const btn = document.getElementById('voiceMicBtn');
+    if (btn) {
+      btn.classList.add('listening');
+      btn.querySelector('.voiceStatus').textContent = 'Listening...';
+      btn.innerHTML = '<i class="bi bi-mic-fill"></i> <span class="voiceStatus">Listening...</span>';
+    }
+  };
+
+  voiceRecognition.onresult = function(event) {
+    let interimTranscript = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        const noteField = document.getElementById('dm-operator-notes');
+        if (noteField) {
+          const current = noteField.value.trim();
+          const newText = (current ? current + ' ' : '') + transcript;
+          noteField.value = newText;
+          
+          // Auto-translate to English
+          translateVoiceText(transcript);
+        }
+      } else {
+        interimTranscript += transcript;
+      }
+    }
+  };
+
+  voiceRecognition.onerror = function(event) {
+    console.error('Voice recognition error:', event.error);
+    alert('Voice input error: ' + event.error);
+    updateVoiceButton('Error');
+  };
+
+  voiceRecognition.onend = function() {
+    isListeningToVoice = false;
+    updateVoiceButton('Done');
+    setTimeout(() => updateVoiceButton('Start'), 2000);
+  };
+}
+
+function startVoiceInput() {
+  if (!voiceRecognition) {
+    alert('Voice input not supported in your browser. Please use Chrome, Edge, or Safari.');
+    return;
+  }
+
+  if (isListeningToVoice) {
+    voiceRecognition.stop();
+    updateVoiceButton('Stopped');
+  } else {
+    // Reset translation display
+    document.getElementById('voiceTranslationDisplay').style.display = 'none';
+    
+    // Detect language from user preference
+    const langSelect = document.querySelector('[data-voice-lang]') || {};
+    voiceLanguage = langSelect.getAttribute?.('data-voice-lang') || 'bn-IN';
+    voiceRecognition.lang = voiceLanguage;
+    
+    voiceRecognition.start();
+  }
+}
+
+function updateVoiceButton(status) {
+  const btn = document.getElementById('voiceMicBtn');
+  if (!btn) return;
+  
+  btn.classList.remove('listening');
+  btn.querySelector('.voiceStatus').textContent = status;
+  btn.innerHTML = '<i class="bi bi-mic-fill"></i> <span class="voiceStatus">' + status + '</span>';
+}
+
+function translateVoiceText(originalText) {
+  // Detect language and translate if needed
+  const langMap = { 'bn-IN': 'bn', 'hi-IN': 'hi', 'en-US': 'en' };
+  const detectedLang = langMap[voiceLanguage] || 'en';
+  
+  // Simple language detection heuristic
+  let isBengali = /[^\x00-\x7F\u0980-\u09FF]|[\u0980-\u09FF]/.test(originalText);
+  let isHindi = /[\u0900-\u097F]/.test(originalText);
+  
+  document.getElementById('voiceOriginalText').textContent = originalText;
+  document.getElementById('voiceTranslationDisplay').style.display = 'block';
+  
+  // If it's not English, attempt translation using Google Translate API (simple fetch)
+  if (isBengali || isHindi) {
+    // For now, show the original text in both fields (manual translation would require backend)
+    // In production, you'd call a translation API
+    simulateTranslation(originalText, detectedLang);
+  } else {
+    document.getElementById('voiceEnglishText').textContent = originalText;
+  }
+}
+
+function simulateTranslation(text, sourceLang) {
+  // This would call a translation API in production
+  // For now, we'll use a simple free translation service
+  const encodedText = encodeURIComponent(text);
+  
+  // Using Google Translate API (free, no key needed for simple usage)
+  fetch(`https://api.mymemory.translated.net/get?q=${encodedText}&langpair=${sourceLang}|en`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.responseStatus === 200) {
+        document.getElementById('voiceEnglishText').textContent = data.responseData.translatedText;
+      } else {
+        document.getElementById('voiceEnglishText').textContent = '[Translation unavailable]';
+      }
+    })
+    .catch(err => {
+      console.log('Translation service error (this is optional):', err);
+      document.getElementById('voiceEnglishText').textContent = '[Offline mode]';
+    });
+}
 
 // ─── Delete job (admin) ─────────────────────────────────────
 async function deleteJob(id) {

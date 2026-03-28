@@ -1204,6 +1204,222 @@ try {
         }
         break;
 
+    // ─── Accept roll change: delete & recreate with same IDs ─────
+    case 'accept_roll_change':
+        if ($method !== 'POST') { echo json_encode(['ok' => false, 'error' => 'POST required']); break; }
+
+        $jobId = (int)($_POST['job_id'] ?? 0);
+        $requestId = (int)($_POST['request_id'] ?? 0);
+        if (!$jobId || !$requestId) {
+            echo json_encode(['ok' => false, 'error' => 'Missing job_id or request_id']);
+            break;
+        }
+
+        // Fetch job
+        $rootStmt = $db->prepare("SELECT * FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $rootStmt->bind_param('i', $jobId);
+        $rootStmt->execute();
+        $rootJob = $rootStmt->get_result()->fetch_assoc();
+        if (!$rootJob) { echo json_encode(['ok' => false, 'error' => 'Job not found']); break; }
+
+        // Fetch change request
+        $reqStmt = $db->prepare("SELECT * FROM job_change_requests WHERE id = ? AND job_id = ? AND status = 'Pending' LIMIT 1");
+        $reqStmt->bind_param('ii', $requestId, $jobId);
+        $reqStmt->execute();
+        $changeReq = $reqStmt->get_result()->fetch_assoc();
+        if (!$changeReq) { echo json_encode(['ok' => false, 'error' => 'Change request not found or already reviewed']); break; }
+
+        $payload = json_decode((string)($changeReq['payload_json'] ?? '{}'), true) ?: [];
+        $newParentRoll = trim((string)($payload['parent_roll_no'] ?? ''));
+        if ($newParentRoll === '') { echo json_encode(['ok' => false, 'error' => 'No parent roll in change request']); break; }
+
+        // Fetch new parent roll live data
+        $newRollStmt = $db->prepare("SELECT * FROM paper_stock WHERE roll_no = ? LIMIT 1");
+        $newRollStmt->bind_param('s', $newParentRoll);
+        $newRollStmt->execute();
+        $newRollData = $newRollStmt->get_result()->fetch_assoc();
+        if (!$newRollData) { echo json_encode(['ok' => false, 'error' => 'New parent roll not found in paper stock']); break; }
+
+        // Check chain blocking
+        $chain = jobs_get_chain_jobs($db, $jobId);
+        $blocked = [];
+        foreach ($chain as $cj) {
+            if ((int)($cj['id'] ?? 0) === $jobId) continue;
+            $st = trim((string)($cj['status'] ?? ''));
+            if (!in_array($st, ['Queued', 'Pending'], true)) {
+                $blocked[] = ['id' => (int)$cj['id'], 'job_no' => (string)($cj['job_no'] ?? ''), 'status' => $st];
+            }
+        }
+        if (!empty($blocked)) {
+            echo json_encode(['ok' => false, 'error' => 'Delete blocked: downstream jobs already progressed.', 'blocked_jobs' => $blocked]);
+            break;
+        }
+
+        jobs_ensure_delete_audit_table($db);
+        $requestedBy = (int)($_SESSION['user_id'] ?? 0);
+        $requestedByName = trim((string)($_SESSION['name'] ?? ($_SESSION['user_name'] ?? 'Unknown')));
+
+        $db->begin_transaction();
+        try {
+            // ─── PHASE 1: Full delete/restore (same logic as delete_job) ───
+            $extra = json_decode((string)($rootJob['extra_data'] ?? '{}'), true) ?: [];
+            $parentRoll = trim((string)($extra['parent_roll'] ?? ($extra['parent_details']['roll_no'] ?? '')));
+            $parentRemarks = trim((string)($extra['parent_details']['remarks'] ?? ''));
+            $parentRollForAudit = trim((string)($rootJob['roll_no'] ?? ''));
+            if ($parentRoll !== '') $parentRollForAudit = $parentRoll;
+
+            // Delete child rolls from paper_stock
+            $childRolls = [];
+            foreach (['child_rolls', 'stock_rolls'] as $bucket) {
+                $bRows = is_array($extra[$bucket] ?? null) ? $extra[$bucket] : [];
+                foreach ($bRows as $r) {
+                    $rn = trim((string)($r['roll_no'] ?? ''));
+                    if ($rn !== '') $childRolls[$rn] = true;
+                }
+            }
+            $removedRolls = 0;
+            if (!empty($childRolls)) {
+                $list = array_values(array_keys($childRolls));
+                $ph = implode(',', array_fill(0, count($list), '?'));
+                $types = str_repeat('s', count($list));
+                $delStmt = $db->prepare("DELETE FROM paper_stock WHERE roll_no IN ($ph)");
+                $delStmt->bind_param($types, ...$list);
+                $delStmt->execute();
+                $removedRolls = (int)$delStmt->affected_rows;
+            }
+
+            // Restore ALL parent rolls
+            $parentRollsToRestore = [];
+            if ($parentRoll !== '') $parentRollsToRestore[$parentRoll] = true;
+            $rootRollNo = trim((string)($rootJob['roll_no'] ?? ''));
+            if ($rootRollNo !== '') $parentRollsToRestore[$rootRollNo] = true;
+            foreach (['child_rolls', 'stock_rolls'] as $bk) {
+                foreach (is_array($extra[$bk] ?? null) ? $extra[$bk] : [] as $bkRow) {
+                    $bkPrn = trim((string)($bkRow['parent_roll_no'] ?? ''));
+                    if ($bkPrn !== '') $parentRollsToRestore[$bkPrn] = true;
+                }
+            }
+            $primaryOriginalStatus = trim((string)($extra['parent_details']['original_status'] ?? ''));
+            if ($primaryOriginalStatus === '' || in_array($primaryOriginalStatus, ['Consumed', 'Slitting'], true)) {
+                $primaryOriginalStatus = 'Main';
+            }
+            foreach (array_keys($parentRollsToRestore) as $pRollToRestore) {
+                $restoreStatus = ($pRollToRestore === $parentRoll) ? $primaryOriginalStatus : 'Main';
+                $restoreRemarks = ($pRollToRestore === $parentRoll) ? $parentRemarks : '';
+                $upParent = $db->prepare("UPDATE paper_stock SET status = ?, date_used = NULL, remarks = ? WHERE roll_no = ?");
+                $upParent->bind_param('sss', $restoreStatus, $restoreRemarks, $pRollToRestore);
+                $upParent->execute();
+            }
+
+            // Soft-delete chain jobs (downstream only)
+            $deletedChildJobs = 0;
+            foreach ($chain as $cj) {
+                $cid = (int)($cj['id'] ?? 0);
+                if ($cid <= 0 || $cid === $jobId) continue;
+                $delChild = $db->prepare("UPDATE jobs SET deleted_at = NOW() WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')");
+                $delChild->bind_param('i', $cid);
+                $delChild->execute();
+                $deletedChildJobs += max(0, (int)$delChild->affected_rows);
+            }
+
+            // ─── PHASE 2: Recreate with new roll (same IDs) ───
+            $newOriginalStatus = trim((string)($newRollData['status'] ?? 'Main'));
+            $newParentDetails = [
+                'roll_no'         => $newParentRoll,
+                'original_status' => $newOriginalStatus,
+                'remarks'         => (string)($newRollData['remarks'] ?? ''),
+                'width_mm'        => (float)($newRollData['width_mm'] ?? 0),
+                'length_mtr'      => (float)($newRollData['length_mtr'] ?? 0),
+                'gsm'             => (float)($newRollData['gsm'] ?? 0),
+                'weight_kg'       => (float)($newRollData['weight_kg'] ?? 0),
+                'paper_type'      => (string)($newRollData['paper_type'] ?? ''),
+                'company'         => (string)($newRollData['company'] ?? ''),
+            ];
+
+            // Build new extra_data: keep metadata, update parent, clear child/stock rolls
+            $newExtra = [
+                'parent_roll'           => $newParentRoll,
+                'parent_details'        => $newParentDetails,
+                'parent_rolls'          => [$newParentRoll],
+                'child_rolls'           => [],
+                'stock_rolls'           => [],
+                'plan_no'               => $extra['plan_no'] ?? '',
+                'batch_no'              => $extra['batch_no'] ?? '',
+                'material'              => (string)($newRollData['paper_type'] ?? ($extra['material'] ?? '')),
+                'machine'               => $extra['machine'] ?? '',
+                'roll_change_from'      => $parentRollForAudit,
+                'roll_change_request_id' => $requestId,
+                'roll_change_remarks'   => trim((string)($payload['operator_remarks'] ?? '')),
+                'roll_change_by'        => trim((string)($changeReq['requested_by_name'] ?? '')),
+            ];
+            $newExtraJson = json_encode($newExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            // Revive the same job row with new parent roll, reset status
+            $updJob = $db->prepare("UPDATE jobs SET deleted_at = NULL, roll_no = ?, extra_data = ?, status = 'Pending', started_at = NULL, completed_at = NULL, updated_at = NOW() WHERE id = ?");
+            $updJob->bind_param('ssi', $newParentRoll, $newExtraJson, $jobId);
+            $updJob->execute();
+
+            // Mark new parent roll as 'Slitting'
+            $markSlitting = $db->prepare("UPDATE paper_stock SET status = 'Slitting', date_used = NOW() WHERE roll_no = ?");
+            $markSlitting->bind_param('s', $newParentRoll);
+            $markSlitting->execute();
+
+            // Update planning to Preparing Slitting
+            $planId = (int)($rootJob['planning_id'] ?? 0);
+            if ($planId > 0) {
+                $upPlan = $db->prepare("UPDATE planning SET status = 'Preparing Slitting' WHERE id = ?");
+                $upPlan->bind_param('i', $planId);
+                $upPlan->execute();
+            }
+
+            // Approve the change request
+            $updReq = $db->prepare("UPDATE job_change_requests SET status = 'Approved', reviewed_by = ?, reviewed_by_name = ?, reviewed_at = NOW(), review_note = 'Accepted: Job deleted and recreated with new roll' WHERE id = ?");
+            $updReq->bind_param('isi', $requestedBy, $requestedByName, $requestId);
+            $updReq->execute();
+
+            // Audit log
+            $rootJobNo = (string)($rootJob['job_no'] ?? '');
+            $rootType = (string)($rootJob['job_type'] ?? '');
+            $deletedRoot = 0;
+            $restoredParent = 1;
+            $restoredPlanning = 1;
+            $snapshot = json_encode([
+                'action'             => 'roll_change_recreate',
+                'old_parent_roll'    => $parentRollForAudit,
+                'new_parent_roll'    => $newParentRoll,
+                'request_id'         => $requestId,
+                'removed_child_rolls' => $removedRolls,
+                'deleted_child_jobs' => $deletedChildJobs,
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $auditIns = $db->prepare("INSERT INTO job_delete_audit (root_job_id, root_job_no, root_job_type, planning_id, parent_roll_no, action_status, deleted_root, deleted_child_jobs, removed_child_rolls, parent_restored, planning_restored, reset_snapshot_json, requested_by, requested_by_name) VALUES (?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?)");
+            if ($auditIns) {
+                $auditIns->bind_param('issisiiiiisis', $jobId, $rootJobNo, $rootType, $planId, $parentRollForAudit, $deletedRoot, $deletedChildJobs, $removedRolls, $restoredParent, $restoredPlanning, $snapshot, $requestedBy, $requestedByName);
+                $auditIns->execute();
+            }
+
+            // Notification
+            $notifMsg = ($rootJob['job_no'] ?? 'JMB') . ' roll changed: ' . $parentRollForAudit . ' → ' . $newParentRoll;
+            $notifDept = $rootJob['department'] ?? 'jumbo_slitting';
+            $nIns = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, 'success')");
+            $nIns->bind_param('iss', $jobId, $notifDept, $notifMsg);
+            $nIns->execute();
+
+            $db->commit();
+            echo json_encode([
+                'ok' => true,
+                'job_id' => $jobId,
+                'job_no' => $rootJobNo,
+                'new_parent_roll' => $newParentRoll,
+                'old_parent_roll' => $parentRollForAudit,
+                'removed_child_rolls' => $removedRolls,
+                'deleted_child_jobs' => $deletedChildJobs,
+            ]);
+        } catch (Throwable $th) {
+            $db->rollback();
+            echo json_encode(['ok' => false, 'error' => 'Roll change failed: ' . $th->getMessage()]);
+        }
+        break;
+
     // ─── Fetch delete-reset audit log ──────────────────────
     case 'get_delete_audit':
         jobs_ensure_delete_audit_table($db);
