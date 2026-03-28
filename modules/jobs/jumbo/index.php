@@ -19,7 +19,25 @@ $appFooterRight = '© ' . date('Y') . ' ' . $footerErpName . ' • ERP Master Sy
 $activeJobs = [];
 $historyJobs = [];
 
-$jobsStmt = $db->prepare("\n  SELECT j.*,\n         ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,\n         ps.status AS roll_status, ps.lot_batch_no,\n         p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority\n  FROM jobs j\n  LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no\n  LEFT JOIN planning p ON j.planning_id = p.id\n  WHERE j.job_type = 'Slitting'\n    AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')\n  ORDER BY j.created_at DESC, j.id DESC\n");
+$db->query("CREATE TABLE IF NOT EXISTS job_change_requests (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  job_id INT NOT NULL,
+  request_type VARCHAR(80) NOT NULL,
+  payload_json LONGTEXT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'Pending',
+  requested_by INT NULL,
+  requested_by_name VARCHAR(150) NULL,
+  requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  reviewed_by INT NULL,
+  reviewed_by_name VARCHAR(150) NULL,
+  reviewed_at DATETIME NULL,
+  review_note TEXT NULL,
+  INDEX idx_job_id (job_id),
+  INDEX idx_request_type (request_type),
+  INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+$jobsStmt = $db->prepare("\n  SELECT j.*,\n         ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,\n         ps.status AS roll_status, ps.lot_batch_no,\n         p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority,\n         COALESCE(req.pending_count, 0) AS pending_change_requests\n  FROM jobs j\n  LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no\n  LEFT JOIN planning p ON j.planning_id = p.id\n  LEFT JOIN (\n    SELECT job_id, COUNT(*) AS pending_count\n    FROM job_change_requests\n    WHERE request_type = 'jumbo_roll_update' AND status = 'Pending'\n    GROUP BY job_id\n  ) req ON req.job_id = j.id\n  WHERE j.job_type = 'Slitting'\n    AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')\n  ORDER BY j.created_at DESC, j.id DESC\n");
 $jobsStmt->execute();
 $allJumboRows = $jobsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
@@ -94,7 +112,6 @@ $finishedCount = $finishedQuery->get_result()->fetch_assoc()['cnt'];
 $csrf = generateCSRF();
 include __DIR__ . '/../../../includes/header.php';
 ?>
-
 <div class="breadcrumb">
   <a href="<?= BASE_URL ?>/modules/dashboard/index.php">Dashboard</a>
   <span class="breadcrumb-sep">&#8250;</span>
@@ -164,6 +181,8 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-empty p{margin-top:12px;font-size:.9rem;font-weight:600}
 .jc-timer{font-size:.75rem;font-weight:800;color:var(--jc-blue);font-family:'Courier New',monospace}
 .jc-notif-badge{background:#ef4444;color:#fff;font-size:9px;font-weight:800;width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-left:6px}
+.jc-request-state{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;border:1px solid #fecaca;background:#fff1f2;color:#dc2626;font-size:.6rem;font-weight:900;text-transform:uppercase;letter-spacing:.04em;animation:request-blink 1s linear infinite}
+@keyframes request-blink{0%,100%{opacity:1}50%{opacity:.2}}
 
 /* ── Detail Modal ── */
 .jc-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;padding:20px}
@@ -258,7 +277,7 @@ $historyCount = $finishedCount;
 </div>
 
 <div class="jc-grid no-print" id="jcGrid">
-<?php if (empty($activeJobs)): ?>
+<?php if (empty($activeJobs) && empty($historyJobs)): ?>
   <div class="jc-empty" style="grid-column:1/-1">
     <i class="bi bi-inbox"></i>
     <p>No active pending jumbo jobs.</p>
@@ -271,10 +290,57 @@ $historyCount = $finishedCount;
     $rStsClass = strtolower(str_replace(' ', '', $rSts)) === 'slitting' ? 'slitting' : $stsClass;
     $pri = $job['planning_priority'] ?? 'Normal';
     $priClass = match(strtolower($pri)) { 'urgent'=>'urgent', 'high'=>'high', default=>'normal' };
+    $hasPendingRequest = (int)($job['pending_change_requests'] ?? 0) > 0;
     $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : '—';
+    $startedAt = $job['started_at'] ? date('d M Y, H:i', strtotime($job['started_at'])) : '—';
+    $completedAt = $job['completed_at'] ? date('d M Y, H:i', strtotime($job['completed_at'])) : '—';
     $searchText = strtolower($job['job_no'] . ' ' . ($job['roll_no'] ?? '') . ' ' . ($job['company'] ?? '') . ' ' . ($job['planning_job_name'] ?? ''));
   ?>
   <div class="jc-card" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" onclick="openJobDetail(<?= $job['id'] ?>)">
+    <div class="jc-card-head">
+      <div class="jc-jobno"><i class="bi bi-box-seam"></i> <?= e($job['job_no']) ?></div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span class="jc-badge jc-badge-<?= $stsClass ?>"><?= e($sts) ?></span>
+        <?php if ($pri !== 'Normal'): ?>
+          <span class="jc-badge jc-badge-<?= $priClass ?>"><?= e($pri) ?></span>
+        <?php endif; ?>
+        <?php if ($hasPendingRequest): ?>
+          <span class="jc-request-state">Request Pending</span>
+        <?php endif; ?>
+      </div>
+    </div>
+    <div class="jc-card-body">
+      <?php if ($job['planning_job_name']): ?>
+      <div class="jc-card-row"><span class="jc-label">Job Name</span><span class="jc-value"><?= e($job['planning_job_name']) ?></span></div>
+      <?php endif; ?>
+      <div class="jc-card-row"><span class="jc-label">Roll No</span><span class="jc-value" style="color:var(--jc-brand)"><?= e($job['roll_no'] ?? '—') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Material</span><span class="jc-value"><?= e($job['paper_type'] ?? '—') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Dimension</span><span class="jc-value"><?= e(($job['width_mm'] ?? '—') . 'mm × ' . ($job['length_mtr'] ?? '—') . 'm') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Started</span><span class="jc-value"><?= e($startedAt) ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Ended</span><span class="jc-value"><?= e($completedAt) ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Plan Flow</span><span class="jc-value">Pending</span></div>
+    </div>
+    <div class="jc-card-foot">
+      <div class="jc-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
+      <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
+        <button class="jc-action-btn jc-btn-view" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-folder2-open"></i> Open</button>
+        <button class="jc-action-btn jc-btn-view" onclick="printJobCard(<?= $job['id'] ?>)" title="Print"><i class="bi bi-printer"></i></button>
+      </div>
+    </div>
+  </div>
+  <?php endforeach; ?>
+
+  <?php foreach ($historyJobs as $idx => $job):
+    $sts = $job['status'];
+    $stsClass = match($sts) { 'Pending'=>'pending', 'Closed','Finalized'=>'completed', default=>'pending' };
+    $pri = $job['planning_priority'] ?? 'Normal';
+    $priClass = match(strtolower($pri)) { 'urgent'=>'urgent', 'high'=>'high', default=>'normal' };
+    $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : '—';
+    $startedAt = $job['started_at'] ? date('d M Y, H:i', strtotime($job['started_at'])) : '—';
+    $completedAt = $job['completed_at'] ? date('d M Y, H:i', strtotime($job['completed_at'])) : '—';
+    $searchText = strtolower($job['job_no'] . ' ' . ($job['roll_no'] ?? '') . ' ' . ($job['company'] ?? '') . ' ' . ($job['planning_job_name'] ?? ''));
+  ?>
+  <div class="jc-card" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" data-finished-only="1" style="display:none" onclick="openJobDetail(<?= $job['id'] ?>)">
     <div class="jc-card-head">
       <div class="jc-jobno"><i class="bi bi-box-seam"></i> <?= e($job['job_no']) ?></div>
       <div style="display:flex;gap:6px;align-items:center">
@@ -291,7 +357,9 @@ $historyCount = $finishedCount;
       <div class="jc-card-row"><span class="jc-label">Roll No</span><span class="jc-value" style="color:var(--jc-brand)"><?= e($job['roll_no'] ?? '—') ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Material</span><span class="jc-value"><?= e($job['paper_type'] ?? '—') ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Dimension</span><span class="jc-value"><?= e(($job['width_mm'] ?? '—') . 'mm × ' . ($job['length_mtr'] ?? '—') . 'm') ?></span></div>
-      <div class="jc-card-row"><span class="jc-label">Plan Flow</span><span class="jc-value">Pending</span></div>
+      <div class="jc-card-row"><span class="jc-label">Started</span><span class="jc-value"><?= e($startedAt) ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Ended</span><span class="jc-value"><?= e($completedAt) ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Plan Flow</span><span class="jc-value">Finished</span></div>
     </div>
     <div class="jc-card-foot">
       <div class="jc-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
@@ -373,6 +441,7 @@ const APP_FOOTER_LEFT = <?= json_encode($appFooterLeft, JSON_HEX_TAG|JSON_HEX_AP
 const APP_FOOTER_RIGHT = <?= json_encode($appFooterRight, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const ALL_JOBS = <?= json_encode(array_values(array_merge($activeJobs, $historyJobs)), JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+const JC_AUTO_REFRESH_MS = 45000;
 
 function switchJumboTab(tab) {
   const activePanel = document.getElementById('jcPanelActive');
@@ -400,13 +469,18 @@ function filterJobs(status, btn) {
   updateStatBoxes(status);
   document.querySelectorAll('.jc-card').forEach(card => {
     const cardStatus = (card.dataset.status || '').toLowerCase();
+    const finishedOnly = card.dataset.finishedOnly === '1';
     if (status === 'all') {
-      card.style.display = '';
+      card.style.display = finishedOnly ? 'none' : '';
       return;
     }
     if (status === 'Finished') {
       const isFinished = ['finished', 'completed', 'closed', 'finalized', 'qc passed'].includes(cardStatus);
       card.style.display = isFinished ? '' : 'none';
+      return;
+    }
+    if (finishedOnly) {
+      card.style.display = 'none';
       return;
     }
     if (status === 'Hold') {
@@ -471,6 +545,16 @@ function updateTimers() {
 }
 setInterval(updateTimers, 1000);
 updateTimers();
+
+function canAutoRefreshMainJumboPage() {
+  return !document.getElementById('jcDetailModal')?.classList.contains('active');
+}
+
+setInterval(function() {
+  if (canAutoRefreshMainJumboPage()) {
+    location.reload();
+  }
+}, JC_AUTO_REFRESH_MS);
 
 // ─── Status update ──────────────────────────────────────────
 async function updateJobStatus(id, newStatus) {
