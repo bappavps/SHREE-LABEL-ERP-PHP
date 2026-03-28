@@ -39,19 +39,19 @@ $whereJobCompletedPeriod = periodWhere('completed_at', $period);
 // ── KPI Queries ──────────────────────────────────────────────
 $kpi = [];
 
-$r = $db->query("SELECT COUNT(*) AS c FROM paper_stock WHERE status = 'Available'");
+$r = $db->query("SELECT COUNT(*) AS c FROM paper_stock WHERE LOWER(COALESCE(status,'')) NOT IN ('consumed','disposed','scrap')");
 $kpi['stock_available'] = $r ? $r->fetch_assoc()['c'] : 0;
 
-$r = $db->query("SELECT COUNT(*) AS c FROM estimates WHERE status NOT IN ('Rejected','Converted')");
+$r = $db->query("SELECT COUNT(*) AS c FROM estimates WHERE LOWER(COALESCE(status,'')) NOT IN ('rejected','converted','cancelled')");
 $kpi['estimates_active'] = $r ? $r->fetch_assoc()['c'] : 0;
 
-$r = $db->query("SELECT COUNT(*) AS c FROM sales_orders WHERE status NOT IN ('Completed','Dispatched','Cancelled')");
+$r = $db->query("SELECT COUNT(*) AS c FROM sales_orders WHERE LOWER(COALESCE(status,'')) NOT IN ('completed','dispatched','cancelled','closed')");
 $kpi['orders_active'] = $r ? $r->fetch_assoc()['c'] : 0;
 
-$r = $db->query("SELECT COUNT(*) AS c FROM planning WHERE status IN ('Queued','In Progress')");
+$r = $db->query("SELECT COUNT(*) AS c FROM planning WHERE LOWER(COALESCE(status,'')) NOT IN ('completed','closed','finalized','cancelled','done')");
 $kpi['jobs_pending'] = $r ? $r->fetch_assoc()['c'] : 0;
 
-$r = $db->query("SELECT IFNULL(SUM(length_mtr),0) AS total FROM paper_stock WHERE status='Available'");
+$r = $db->query("SELECT IFNULL(SUM(length_mtr),0) AS total FROM paper_stock WHERE LOWER(COALESCE(status,'')) NOT IN ('consumed','disposed','scrap')");
 $kpi['total_stock_mtr'] = $r ? number_format((float)$r->fetch_assoc()['total'], 0) : 0;
 
 $r = $db->query("SELECT IFNULL(SUM(selling_price),0) AS total FROM estimates WHERE created_at >= DATE_FORMAT(NOW(),'%Y-%m-01')");

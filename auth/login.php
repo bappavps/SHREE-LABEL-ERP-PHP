@@ -48,6 +48,7 @@ $csrf = generateCSRF();
 $settings = getAppSettings();
 $companyName = trim((string)($settings['company_name'] ?? '')) ?: APP_NAME;
 $erpDisplayName = function_exists('getErpDisplayName') ? getErpDisplayName($companyName) : APP_NAME;
+$footerErpName = function_exists('getErpDisplayName') ? getErpDisplayName($companyName) : APP_NAME;
 $logoPath = (string)($settings['logo_path'] ?? '');
 $companyLogoUrl = $logoPath !== '' ? (BASE_URL . '/' . ltrim($logoPath, '/')) : (BASE_URL . '/assets/img/logo.svg');
 $themeColor = (string)($settings['sidebar_button_color'] ?? '#22c55e');
@@ -86,10 +87,111 @@ if ($loginBg === '') {
 }
 </style>
 <?php endif; ?>
+<style>
+.login-page-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.login-page-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.login-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.login-card {
+  position: relative;
+  overflow: hidden;
+  animation: loginCardIn .55s cubic-bezier(.16,.84,.3,1) both;
+}
+.login-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -120%;
+  width: 120%;
+  height: 3px;
+  background: linear-gradient(90deg, transparent 0%, rgba(34,197,94,.8) 45%, rgba(59,130,246,.85) 70%, transparent 100%);
+  animation: loginShimmer 2.8s ease-in-out 1;
+}
+.login-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  padding: 2px;
+  background: conic-gradient(from 0deg,
+    transparent 0deg,
+    transparent 304deg,
+    rgba(250, 204, 21, .95) 324deg,
+    rgba(34, 197, 94, .95) 338deg,
+    rgba(234, 179, 8, .95) 352deg,
+    transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: .92;
+  filter: drop-shadow(0 0 5px rgba(250, 204, 21, .6)) drop-shadow(0 0 7px rgba(34, 197, 94, .45));
+  animation: loginOrbitOnce 2.1s linear .25s 1 both;
+}
+.login-logo {
+  animation: loginLogoPop .6s ease-out .12s both;
+}
+.login-inline-footer {
+  background: rgba(255,255,255,.92);
+  border: 1px solid rgba(226,232,240,.9);
+  border-radius: 10px;
+  padding: 8px 12px;
+  text-align: center;
+  box-shadow: 0 4px 14px rgba(15,23,42,.08);
+  animation: loginFooterIn .45s ease-out .25s both;
+}
+.login-inline-footer .line1 {
+  font-size: .68rem;
+  color: #475569;
+  font-weight: 700;
+}
+.login-inline-footer .line2 {
+  margin-top: 2px;
+  font-size: .64rem;
+  color: #64748b;
+  font-weight: 600;
+}
+@keyframes loginCardIn {
+  from { opacity: 0; transform: translateY(18px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes loginLogoPop {
+  from { opacity: 0; transform: scale(.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes loginFooterIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes loginShimmer {
+  0% { left: -120%; }
+  100% { left: 110%; }
+}
+@keyframes loginOrbitOnce {
+  0% { transform: rotate(0deg); opacity: 0; }
+  8% { opacity: .96; }
+  85% { opacity: .92; }
+  100% { transform: rotate(360deg); opacity: 0; }
+}
+</style>
 </head>
 <body class="login-body">
-<div class="login-wrap">
-  <div class="login-card">
+<div class="login-page-shell">
+  <div class="login-page-main">
+    <div class="login-wrap">
+      <div class="login-card">
     <div class="login-logo">
       <?php if ($logoPath !== ''): ?>
         <img src="<?= e(BASE_URL . '/' . ltrim($logoPath, '/')) ?>" alt="Logo">
@@ -131,9 +233,16 @@ if ($loginBg === '') {
       </div>
     </form>
 
-    <p class="text-center text-sm text-muted mt-16">
-      Default admin: <strong>admin@example.com</strong> / <strong>admin123</strong>
-    </p>
+        <p class="text-center text-sm text-muted mt-16">
+          Default admin: <strong>admin@example.com</strong> / <strong>admin123</strong>
+        </p>
+      </div>
+
+      <div class="login-inline-footer" role="contentinfo">
+        <div class="line1">Version : <?= e(APP_VERSION) ?></div>
+        <div class="line2">&copy; <?= date('Y') ?> <?= e($footerErpName) ?> &bull; ERP Master System v<?= e(APP_VERSION) ?> | @ Developed by Mriganka Bhusan Debnath</div>
+      </div>
+    </div>
   </div>
 </div>
 <script src="<?= BASE_URL ?>/assets/js/app.js"></script>
