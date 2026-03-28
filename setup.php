@@ -44,6 +44,11 @@ $input = [
   'git_branch' => 'main',
 ];
 
+$currentHost = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
+$isLocalRequest = ($currentHost === ''
+  || strpos($currentHost, 'localhost') !== false
+  || strpos($currentHost, '127.0.0.1') !== false);
+
 if (file_exists($lockFile)) {
   $installedAt = trim((string) @file_get_contents($lockFile));
   ?>
@@ -81,12 +86,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   $baseUrl = rtrim($input['base_url'], '/');
 
-  $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
-  $isLocalHost = ($host === '' || strpos($host, 'localhost') !== false || strpos($host, '127.0.0.1') !== false);
+  $isLocalHost = $isLocalRequest;
   $detectedEnv = $isLocalHost ? 'local' : 'live';
   $targetEnv = $input['profile_target'] === 'local' || $input['profile_target'] === 'live'
     ? $input['profile_target']
     : $detectedEnv;
+
+  // Shared hosts like InfinityFree usually disable exec/shell access.
+  if (!$isLocalHost && $input['enable_git_push'] === '1') {
+    $input['enable_git_push'] = '0';
+    log_ok('Git auto-push was disabled automatically for non-local hosting.');
+  }
 
   if ($input['db_host'] === '' || $input['db_name'] === '' || $input['db_user'] === '') {
     log_err('DB Host, DB Name, and DB Username are required.');
@@ -303,8 +313,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       <div class="full" style="border-top:1px solid #e2e8f0;padding-top:12px;margin-top:4px">
         <label style="font-size:.9rem">Optional: GitHub Auto Push</label>
+        <?php if (!$isLocalRequest): ?>
+          <div class="muted" style="margin-top:6px;color:#92400e">Detected shared/non-local hosting. Git auto-push remains disabled because shell git is not available on most shared hosts (including InfinityFree).</div>
+        <?php endif; ?>
       </div>
-      <div class="full check"><input type="checkbox" name="enable_git_push" value="1" <?= $input['enable_git_push'] === '1' ? 'checked' : '' ?>><label>Enable browser page for git add/commit/push</label></div>
+      <div class="full check"><input type="checkbox" name="enable_git_push" value="1" <?= $input['enable_git_push'] === '1' ? 'checked' : '' ?> <?= !$isLocalRequest ? 'disabled' : '' ?>><label>Enable browser page for git add/commit/push (local only)</label></div>
       <div><label>Git Remote</label><input name="git_remote" value="<?= e($input['git_remote']) ?>"></div>
       <div><label>Git Branch</label><input name="git_branch" value="<?= e($input['git_branch']) ?>"></div>
     </div>

@@ -19,6 +19,15 @@ $appFooterRight = '© ' . date('Y') . ' ' . $footerErpName . ' • ERP Master Sy
 $activeJobs = [];
 $historyJobs = [];
 
+function safeCountQuery(mysqli $db, string $sql): int {
+  $res = $db->query($sql);
+  if (!$res) {
+    return 0;
+  }
+  $row = $res->fetch_assoc();
+  return (int)($row['cnt'] ?? 0);
+}
+
 $db->query("CREATE TABLE IF NOT EXISTS job_change_requests (
   id INT AUTO_INCREMENT PRIMARY KEY,
   job_id INT NOT NULL,
@@ -37,9 +46,26 @@ $db->query("CREATE TABLE IF NOT EXISTS job_change_requests (
   INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-$jobsStmt = $db->prepare("\n  SELECT j.*,\n         ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,\n         ps.status AS roll_status, ps.lot_batch_no,\n         p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority,\n         COALESCE(req.pending_count, 0) AS pending_change_requests\n  FROM jobs j\n  LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no\n  LEFT JOIN planning p ON j.planning_id = p.id\n  LEFT JOIN (\n    SELECT job_id, COUNT(*) AS pending_count\n    FROM job_change_requests\n    WHERE request_type = 'jumbo_roll_update' AND status = 'Pending'\n    GROUP BY job_id\n  ) req ON req.job_id = j.id\n  WHERE j.job_type = 'Slitting'\n    AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')\n  ORDER BY j.created_at DESC, j.id DESC\n");
-$jobsStmt->execute();
-$allJumboRows = $jobsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$allJumboRows = [];
+$jobsSql = "\n  SELECT j.*,\n         ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,\n         ps.status AS roll_status, ps.lot_batch_no,\n         p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority,\n         COALESCE(req.pending_count, 0) AS pending_change_requests\n  FROM jobs j\n  LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no\n  LEFT JOIN planning p ON j.planning_id = p.id\n  LEFT JOIN (\n    SELECT job_id, COUNT(*) AS pending_count\n    FROM job_change_requests\n    WHERE request_type = 'jumbo_roll_update' AND status = 'Pending'\n    GROUP BY job_id\n  ) req ON req.job_id = j.id\n  WHERE j.job_type = 'Slitting'\n    AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')\n  ORDER BY j.created_at DESC, j.id DESC\n";
+$jobsStmt = $db->prepare($jobsSql);
+if ($jobsStmt) {
+  $jobsStmt->execute();
+  $allJumboRows = $jobsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+} else {
+  // Fallback for live schema drift (missing columns like planning.priority, etc.)
+  $fallbackSql = "
+    SELECT j.*
+    FROM jobs j
+    WHERE j.job_type = 'Slitting'
+      AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')
+    ORDER BY j.created_at DESC, j.id DESC
+  ";
+  $fallbackResult = $db->query($fallbackSql);
+  if ($fallbackResult) {
+    $allJumboRows = $fallbackResult->fetch_all(MYSQLI_ASSOC);
+  }
+}
 
 foreach ($allJumboRows as $row) {
   $row['extra_data_parsed'] = json_decode((string)($row['extra_data'] ?? '{}'), true) ?: [];
@@ -59,34 +85,28 @@ $notifCount = 0;
 // ════════════════════════════════════════════════════════════
 
 // Count all Jumbo jobs (active + history for "Job Details" = ALL filter)
-$totalCountQuery = $db->prepare("
+$totalCount = safeCountQuery($db, "
   SELECT COUNT(*) as cnt
   FROM jobs
   WHERE job_type = 'Slitting' AND deleted_at IS NULL
 ");
-$totalCountQuery->execute();
-$totalCount = $totalCountQuery->get_result()->fetch_assoc()['cnt'];
 
 // Count Pending status
-$pendingQuery = $db->prepare("
+$pendingCount = safeCountQuery($db, "
   SELECT COUNT(*) as cnt
   FROM jobs
   WHERE job_type = 'Slitting' AND status = 'Pending' AND deleted_at IS NULL
 ");
-$pendingQuery->execute();
-$pendingCount = $pendingQuery->get_result()->fetch_assoc()['cnt'];
 
 // Count Running status
-$runningQuery = $db->prepare("
+$runningCount = safeCountQuery($db, "
   SELECT COUNT(*) as cnt
   FROM jobs
   WHERE job_type = 'Slitting' AND status = 'Running' AND deleted_at IS NULL
 ");
-$runningQuery->execute();
-$runningCount = $runningQuery->get_result()->fetch_assoc()['cnt'];
 
 // Count Hold status (includes Hold, Hold for Payment, Hold for Approval)
-$holdQuery = $db->prepare("
+$holdCount = safeCountQuery($db, "
   SELECT COUNT(*) as cnt
   FROM jobs
   WHERE job_type = 'Slitting' 
@@ -95,19 +115,15 @@ $holdQuery = $db->prepare("
          OR LOWER(status) = 'hold for approval')
     AND deleted_at IS NULL
 ");
-$holdQuery->execute();
-$holdCount = $holdQuery->get_result()->fetch_assoc()['cnt'];
 
 // Count Finished status (Closed, Finalized, Completed, etc.)
-$finishedQuery = $db->prepare("
+$finishedCount = safeCountQuery($db, "
   SELECT COUNT(*) as cnt
   FROM jobs
   WHERE job_type = 'Slitting' 
     AND (LOWER(status) IN ('closed', 'finalized', 'completed', 'finished', 'qc passed'))
     AND deleted_at IS NULL
 ");
-$finishedQuery->execute();
-$finishedCount = $finishedQuery->get_result()->fetch_assoc()['cnt'];
 
 $csrf = generateCSRF();
 include __DIR__ . '/../../../includes/header.php';
