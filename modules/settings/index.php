@@ -127,6 +127,94 @@ function buildDatabaseBackupSql(?mysqli $db = null) {
   return implode("\n", $sql);
 }
 
+function restoreDatabaseFromSql(mysqli $db, string $sqlDump): array {
+  $restoreErr = '';
+  $db->query('SET FOREIGN_KEY_CHECKS=0');
+  $restoreOk = true;
+
+  if (!$db->multi_query($sqlDump)) {
+    $restoreOk = false;
+    $restoreErr = $db->error;
+  } else {
+    do {
+      if ($res = $db->store_result()) {
+        $res->free();
+      }
+      if (!$db->more_results()) break;
+      if (!$db->next_result()) {
+        $restoreOk = false;
+        $restoreErr = $db->error;
+        break;
+      }
+    } while (true);
+  }
+
+  $db->query('SET FOREIGN_KEY_CHECKS=1');
+  return ['ok' => $restoreOk, 'error' => $restoreErr];
+}
+
+function addDirectoryToZip(ZipArchive $zip, string $sourceDir, string $zipPrefix): void {
+  if (!is_dir($sourceDir)) return;
+  $base = rtrim(str_replace('\\', '/', realpath($sourceDir) ?: $sourceDir), '/');
+  if (!is_dir($base)) return;
+
+  $it = new RecursiveIteratorIterator(
+    new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS),
+    RecursiveIteratorIterator::SELF_FIRST
+  );
+
+  foreach ($it as $entry) {
+    $path = str_replace('\\', '/', $entry->getPathname());
+    $rel = ltrim(substr($path, strlen($base)), '/');
+    if ($rel === '') continue;
+    $zipPath = trim($zipPrefix, '/') . '/' . $rel;
+    if ($entry->isDir()) {
+      $zip->addEmptyDir($zipPath);
+    } elseif ($entry->isFile()) {
+      $zip->addFile($path, $zipPath);
+    }
+  }
+}
+
+function restoreZipAsset(ZipArchive $zip, string $entryName, string $projectRoot): void {
+  $name = str_replace('\\', '/', $entryName);
+  $allowedPrefixes = ['uploads/company/', 'uploads/library/'];
+  $allowedSingles = ['data/app_settings.json'];
+
+  $isAllowed = in_array($name, $allowedSingles, true);
+  if (!$isAllowed) {
+    foreach ($allowedPrefixes as $prefix) {
+      if (strpos($name, $prefix) === 0) {
+        $isAllowed = true;
+        break;
+      }
+    }
+  }
+  if (!$isAllowed) return;
+  if (strpos($name, '..') !== false) return;
+
+  $target = $projectRoot . '/' . $name;
+  $targetDir = dirname($target);
+  if (!is_dir($targetDir)) {
+    @mkdir($targetDir, 0777, true);
+  }
+
+  $in = $zip->getStream($entryName);
+  if (!$in) return;
+  $out = @fopen($target, 'wb');
+  if (!$out) {
+    fclose($in);
+    return;
+  }
+  while (!feof($in)) {
+    $chunk = fread($in, 8192);
+    if ($chunk === false) break;
+    fwrite($out, $chunk);
+  }
+  fclose($out);
+  fclose($in);
+}
+
 function saveUploadedImage($fileKey, $targetDir, $prefix) {
   if (empty($_FILES[$fileKey]) || !is_array($_FILES[$fileKey])) return ['', ''];
   $file = $_FILES[$fileKey];
@@ -358,11 +446,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
     }
 
-    $fileName = DB_NAME . '_backup_' . date('Ymd_His') . '.sql';
-    header('Content-Type: application/sql; charset=UTF-8');
+    $stamp = date('Ymd_His');
+    $projectRoot = realpath(__DIR__ . '/../../') ?: (__DIR__ . '/../../');
+
+    if (!class_exists('ZipArchive')) {
+      $fileName = DB_NAME . '_backup_' . $stamp . '.sql';
+      header('Content-Type: application/sql; charset=UTF-8');
+      header('Content-Disposition: attachment; filename="' . $fileName . '"');
+      header('Content-Length: ' . strlen($backupSql));
+      echo $backupSql;
+      exit;
+    }
+
+    $tmpZip = tempnam(sys_get_temp_dir(), 'erpbk_');
+    if ($tmpZip === false) {
+      setFlash('error', 'Unable to create backup file. Please try again.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
+    }
+
+    $zip = new ZipArchive();
+    if ($zip->open($tmpZip, ZipArchive::OVERWRITE) !== true) {
+      @unlink($tmpZip);
+      setFlash('error', 'Unable to open backup archive for writing.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
+    }
+
+    $zip->addFromString('backup/database.sql', $backupSql);
+    $settingsFile = $projectRoot . '/data/app_settings.json';
+    if (is_file($settingsFile)) {
+      $zip->addFile($settingsFile, 'data/app_settings.json');
+    }
+    addDirectoryToZip($zip, $projectRoot . '/uploads/company', 'uploads/company');
+    addDirectoryToZip($zip, $projectRoot . '/uploads/library', 'uploads/library');
+    $zip->close();
+
+    $fileName = DB_NAME . '_full_backup_' . $stamp . '.zip';
+    $size = @filesize($tmpZip);
+    header('Content-Type: application/zip');
     header('Content-Disposition: attachment; filename="' . $fileName . '"');
-    header('Content-Length: ' . strlen($backupSql));
-    echo $backupSql;
+    if ($size !== false) {
+      header('Content-Length: ' . $size);
+    }
+    readfile($tmpZip);
+    @unlink($tmpZip);
     exit;
   }
 
@@ -370,12 +496,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isset($db) || !($db instanceof mysqli)) {
       $db = getDB();
     }
-    if (empty($_FILES['backup_sql']) || !is_array($_FILES['backup_sql'])) {
-      setFlash('error', 'Please choose a SQL backup file to restore.');
+    $fileInput = $_FILES['backup_file'] ?? $_FILES['backup_sql'] ?? null;
+    if (empty($fileInput) || !is_array($fileInput)) {
+      setFlash('error', 'Please choose a backup file (.zip or .sql) to restore.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
     }
 
-    $file = $_FILES['backup_sql'];
+    $file = $fileInput;
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
       setFlash('error', 'Backup upload failed. Please try again.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
@@ -386,42 +513,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $name = strtolower((string)($file['name'] ?? ''));
-    if (substr($name, -4) !== '.sql') {
-      setFlash('error', 'Invalid file format. Please upload a .sql backup file.');
+    $isSql = (substr($name, -4) === '.sql');
+    $isZip = (substr($name, -4) === '.zip');
+    if (!$isSql && !$isZip) {
+      setFlash('error', 'Invalid file format. Please upload a .zip (full backup) or .sql file.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
     }
 
-    $sqlDump = @file_get_contents((string)$file['tmp_name']);
-    if ($sqlDump === false || trim($sqlDump) === '') {
-      setFlash('error', 'Could not read uploaded backup file.');
+    if ($isSql) {
+      $sqlDump = @file_get_contents((string)$file['tmp_name']);
+      if ($sqlDump === false || trim($sqlDump) === '') {
+        setFlash('error', 'Could not read uploaded SQL backup file.');
+        redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
+      }
+      $res = restoreDatabaseFromSql($db, $sqlDump);
+      if ($res['ok']) {
+        setFlash('success', 'Database restore completed successfully.');
+      } else {
+        setFlash('error', 'Restore failed: ' . ($res['error'] ?: 'Unknown SQL error.'));
+      }
       redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
     }
 
-    $db->query('SET FOREIGN_KEY_CHECKS=0');
-    $restoreOk = true;
-    if (!$db->multi_query($sqlDump)) {
-      $restoreOk = false;
-      $restoreErr = $db->error;
-    } else {
-      do {
-        if ($res = $db->store_result()) {
-          $res->free();
-        }
-        if (!$db->more_results()) break;
-        if (!$db->next_result()) {
-          $restoreOk = false;
-          $restoreErr = $db->error;
-          break;
-        }
-      } while (true);
+    if (!class_exists('ZipArchive')) {
+      setFlash('error', 'ZIP restore requires ZipArchive extension in PHP.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
     }
-    $db->query('SET FOREIGN_KEY_CHECKS=1');
 
-    if ($restoreOk) {
-      setFlash('success', 'Database restore completed successfully.');
-    } else {
-      setFlash('error', 'Restore failed: ' . ($restoreErr ?? 'Unknown SQL error.'));
+    $zip = new ZipArchive();
+    if ($zip->open((string)$file['tmp_name']) !== true) {
+      setFlash('error', 'Could not open ZIP backup file.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
     }
+
+    $sqlDump = '';
+    $sqlIndex = $zip->locateName('backup/database.sql', ZipArchive::FL_NOCASE | ZipArchive::FL_NODIR);
+    if ($sqlIndex === false) {
+      $sqlIndex = $zip->locateName('database.sql', ZipArchive::FL_NOCASE | ZipArchive::FL_NODIR);
+    }
+    if ($sqlIndex !== false) {
+      $sqlDump = (string)$zip->getFromIndex($sqlIndex);
+    }
+    if (trim($sqlDump) === '') {
+      $zip->close();
+      setFlash('error', 'Invalid backup ZIP: database.sql not found.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
+    }
+
+    $dbRes = restoreDatabaseFromSql($db, $sqlDump);
+    if (!$dbRes['ok']) {
+      $zip->close();
+      setFlash('error', 'Database restore failed: ' . ($dbRes['error'] ?: 'Unknown SQL error.'));
+      redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
+    }
+
+    $projectRoot = realpath(__DIR__ . '/../../') ?: (__DIR__ . '/../../');
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+      $entryName = (string)$zip->getNameIndex($i);
+      if ($entryName === '' || substr($entryName, -1) === '/') continue;
+      restoreZipAsset($zip, $entryName, str_replace('\\', '/', $projectRoot));
+    }
+    $zip->close();
+
+    setFlash('success', 'Full backup restored successfully (database + images/settings).');
     redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
   }
 }
@@ -669,21 +823,21 @@ include __DIR__ . '/../../includes/header.php';
       <div class="backup-grid">
         <div class="backup-panel">
           <h3><i class="bi bi-download"></i> Backup Database</h3>
-          <p>Download a complete SQL snapshot of your current ERP database.</p>
+          <p>Download full backup package: database SQL + image library + company logo/settings.</p>
           <form method="POST" class="mt-12">
             <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
             <input type="hidden" name="action" value="download_backup">
-            <button class="btn btn-primary" type="submit"><i class="bi bi-cloud-arrow-down"></i> Download Backup (.sql)</button>
+            <button class="btn btn-primary" type="submit"><i class="bi bi-cloud-arrow-down"></i> Download Full Backup (.zip)</button>
           </form>
         </div>
 
         <div class="backup-panel backup-danger">
           <h3><i class="bi bi-upload"></i> Restore Database</h3>
-          <p>Restore from a SQL file. This can overwrite current records and structure.</p>
+          <p>Restore from full backup (.zip) or SQL (.sql). ZIP restore also restores company/library images.</p>
           <form method="POST" enctype="multipart/form-data" class="mt-12" onsubmit="return confirm('This will restore database data. Continue?');">
             <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
             <input type="hidden" name="action" value="restore_backup">
-            <input type="file" name="backup_sql" accept=".sql" required>
+            <input type="file" name="backup_file" accept=".zip,.sql" required>
             <div class="mt-12">
               <button class="btn btn-danger" type="submit"><i class="bi bi-cloud-arrow-up"></i> Restore from Backup</button>
             </div>
