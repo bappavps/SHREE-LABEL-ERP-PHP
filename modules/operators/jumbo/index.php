@@ -1234,14 +1234,23 @@ function openJobDetail(id, mode) {
       <div class="jc-form-group"><label>Operator Remarks (Text or Voice)</label>
         <div style="display:flex;gap:8px;align-items:flex-start">
           <div style="flex:1">
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+              <select id="voiceLangSelect" data-voice-lang="bn-IN" onchange="this.setAttribute('data-voice-lang',this.value);voiceLanguage=this.value" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:.72rem;font-weight:700;color:#334155" ${isFinishedJob ? 'disabled' : ''}>
+                <option value="bn-IN">🇧🇩 Bengali</option>
+                <option value="hi-IN">🇮🇳 Hindi</option>
+                <option value="en-US">🇬🇧 English</option>
+              </select>
+              <span style="font-size:.62rem;color:#94a3b8;font-weight:600">Select language before speaking</span>
+            </div>
             <input type="text" id="dm-operator-notes" placeholder="Type remarks or use voice input..." value="${esc(extra.operator_notes || extra.operator_remarks || '')}" ${isFinishedJob ? 'disabled' : ''} style="width:100%">
-            <div id="voiceTranslationDisplay" style="margin-top:8px;padding:8px;background:#f0f9ff;border-radius:6px;font-size:.75rem;line-height:1.4;display:none">
+            <div id="voiceTranslationDisplay" style="margin-top:8px;padding:10px;background:linear-gradient(135deg,#f0f9ff,#e0f2fe);border:1px solid #bae6fd;border-radius:8px;font-size:.75rem;line-height:1.5;display:none">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><span style="font-size:.9rem">🎤</span><strong style="color:#0369a1;font-size:.68rem;text-transform:uppercase;letter-spacing:.5px">Voice Translation</strong></div>
               <div><strong style="color:#0891b2">Original:</strong> <span id="voiceOriginalText" style="color:#334155"></span></div>
-              <div style="margin-top:4px"><strong style="color:#0891b2">English:</strong> <span id="voiceEnglishText" style="color:#334155"></span></div>
+              <div style="margin-top:4px"><strong style="color:#16a34a">English:</strong> <span id="voiceEnglishText" style="color:#1e293b;font-weight:700"></span></div>
             </div>
           </div>
           <button type="button" id="voiceMicBtn" class="voiceInputBtn" onclick="startVoiceInput()" title="Voice Input" ${isFinishedJob ? 'disabled' : ''} style="padding:8px 12px;background:#0891b2;color:white;border:none;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:700;height:fit-content">
-            <i class="bi bi-mic-fill"></i> <span class="voiceStatus">Wait</span>
+            <i class="bi bi-mic-fill"></i> <span class="voiceStatus">Speak</span>
           </button>
         </div>
       </div>
@@ -1493,9 +1502,9 @@ function startVoiceInput() {
     // Reset translation display
     document.getElementById('voiceTranslationDisplay').style.display = 'none';
     
-    // Detect language from user preference
-    const langSelect = document.querySelector('[data-voice-lang]') || {};
-    voiceLanguage = langSelect.getAttribute?.('data-voice-lang') || 'bn-IN';
+    // Get language from dropdown selector
+    const langSelect = document.getElementById('voiceLangSelect');
+    voiceLanguage = langSelect ? langSelect.value : 'bn-IN';
     voiceRecognition.lang = voiceLanguage;
     
     voiceRecognition.start();
@@ -1512,45 +1521,50 @@ function updateVoiceButton(status) {
 }
 
 function translateVoiceText(originalText) {
-  // Detect language and translate if needed
+  // Map speech recognition language code to translation source
   const langMap = { 'bn-IN': 'bn', 'hi-IN': 'hi', 'en-US': 'en' };
-  const detectedLang = langMap[voiceLanguage] || 'en';
-  
-  // Simple language detection heuristic
-  let isBengali = /[^\x00-\x7F\u0980-\u09FF]|[\u0980-\u09FF]/.test(originalText);
-  let isHindi = /[\u0900-\u097F]/.test(originalText);
+  const sourceLang = langMap[voiceLanguage] || 'en';
   
   document.getElementById('voiceOriginalText').textContent = originalText;
   document.getElementById('voiceTranslationDisplay').style.display = 'block';
   
-  // If it's not English, attempt translation using Google Translate API (simple fetch)
-  if (isBengali || isHindi) {
-    // For now, show the original text in both fields (manual translation would require backend)
-    // In production, you'd call a translation API
-    simulateTranslation(originalText, detectedLang);
-  } else {
+  // If English selected, just show same text (English → English)
+  if (sourceLang === 'en') {
     document.getElementById('voiceEnglishText').textContent = originalText;
+    return;
   }
-}
-
-function simulateTranslation(text, sourceLang) {
-  // This would call a translation API in production
-  // For now, we'll use a simple free translation service
-  const encodedText = encodeURIComponent(text);
   
-  // Using Google Translate API (free, no key needed for simple usage)
-  fetch(`https://api.mymemory.translated.net/get?q=${encodedText}&langpair=${sourceLang}|en`)
+  // Always translate non-English to English via API
+  // Bengali (bn) → English or Hindi (hi) → English
+  document.getElementById('voiceEnglishText').textContent = 'Translating...';
+  
+  const encodedText = encodeURIComponent(originalText);
+  const langPair = sourceLang + '|en';
+  
+  fetch('https://api.mymemory.translated.net/get?q=' + encodedText + '&langpair=' + langPair)
     .then(r => r.json())
     .then(data => {
-      if (data.responseStatus === 200) {
-        document.getElementById('voiceEnglishText').textContent = data.responseData.translatedText;
+      if (data.responseStatus === 200 && data.responseData && data.responseData.translatedText) {
+        const translated = data.responseData.translatedText;
+        // MyMemory sometimes returns same text if it fails — check
+        if (translated && translated !== originalText) {
+          document.getElementById('voiceEnglishText').textContent = translated;
+        } else {
+          // Try matches array for better result
+          if (data.matches && data.matches.length > 0) {
+            const best = data.matches.reduce((a, b) => (b.quality > a.quality ? b : a), data.matches[0]);
+            document.getElementById('voiceEnglishText').textContent = best.translation || translated;
+          } else {
+            document.getElementById('voiceEnglishText').textContent = translated;
+          }
+        }
       } else {
-        document.getElementById('voiceEnglishText').textContent = '[Translation unavailable]';
+        document.getElementById('voiceEnglishText').textContent = '[Translation unavailable — please type manually]';
       }
     })
     .catch(err => {
-      console.log('Translation service error (this is optional):', err);
-      document.getElementById('voiceEnglishText').textContent = '[Offline mode]';
+      console.warn('Translation API error:', err);
+      document.getElementById('voiceEnglishText').textContent = '[Offline — translation unavailable]';
     });
 }
 

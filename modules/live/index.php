@@ -6,47 +6,13 @@ require_once __DIR__ . '/../../includes/auth_check.php';
 $pageTitle = 'Live Floor';
 $db = getDB();
 
-// Fetch all active jobs grouped by status (not deleted, not old completed)
-$activeJobs = $db->query("
-    SELECT j.*, ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm,
-           p.job_name AS planning_job_name, p.priority AS planning_priority,
-           prev.job_no AS prev_job_no, prev.status AS prev_job_status
-    FROM jobs j
-    LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no
-    LEFT JOIN planning p ON j.planning_id = p.id
-    LEFT JOIN jobs prev ON j.previous_job_id = prev.id
-    WHERE (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')
-      AND j.status IN ('Queued','Pending','Running','Completed')
-    ORDER BY
-      FIELD(j.status, 'Running','Pending','Queued','Completed'),
-      j.updated_at DESC
-    LIMIT 300
-")->fetch_all(MYSQLI_ASSOC);
-
-// Parse extra_data
-foreach ($activeJobs as &$j) {
-    $j['extra_data_parsed'] = json_decode($j['extra_data'] ?? '{}', true) ?: [];
-}
-unset($j);
-
-// Group by department × status
-$columns = [
-    'slitting' => ['label' => 'Jumbo Slitting', 'icon' => 'bi-boxes', 'color' => '#22c55e', 'jobs' => []],
-    'printing' => ['label' => 'Flexo Printing', 'icon' => 'bi-printer', 'color' => '#8b5cf6', 'jobs' => []],
-];
-foreach ($activeJobs as $j) {
-    $dept = ($j['job_type'] === 'Slitting') ? 'slitting' : 'printing';
-    $columns[$dept]['jobs'][] = $j;
-}
-
-// Counts
-$runningCount = count(array_filter($activeJobs, fn($j) => $j['status'] === 'Running'));
-$pendingCount = count(array_filter($activeJobs, fn($j) => $j['status'] === 'Pending'));
-$queuedCount = count(array_filter($activeJobs, fn($j) => $j['status'] === 'Queued'));
-$completedToday = count(array_filter($activeJobs, fn($j) => $j['status'] === 'Completed' && date('Y-m-d', strtotime($j['completed_at'] ?? '')) === date('Y-m-d')));
+$csrf = bin2hex(random_bytes(32));
+$_SESSION['csrf_token'] = $csrf;
 
 include __DIR__ . '/../../includes/header.php';
 ?>
+
+
 
 <div class="breadcrumb">
   <a href="<?= BASE_URL ?>/modules/dashboard/index.php">Dashboard</a>
@@ -57,200 +23,399 @@ include __DIR__ . '/../../includes/header.php';
 </div>
 
 <style>
-:root{--lf-green:#22c55e;--lf-purple:#8b5cf6;--lf-blue:#3b82f6;--lf-orange:#f97316;--lf-red:#ef4444}
-.lf-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px}
-.lf-header h1{font-size:1.4rem;font-weight:900;display:flex;align-items:center;gap:10px}
-.lf-header h1 i{font-size:1.6rem;color:var(--lf-blue)}
-.lf-header-meta{font-size:.75rem;color:#64748b;font-weight:600}
-.lf-live-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;animation:lf-pulse 1.5s infinite}
-@keyframes lf-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
-.lf-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
-.lf-stat{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:12px;padding:16px 18px;display:flex;align-items:center;gap:14px}
-.lf-stat-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.2rem}
-.lf-stat-val{font-size:1.5rem;font-weight:900;line-height:1}
-.lf-stat-label{font-size:.65rem;font-weight:700;text-transform:uppercase;color:#94a3b8;letter-spacing:.04em;margin-top:2px}
-.lf-board{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:20px;align-items:start}
-.lf-column{background:#f8fafc;border:1px solid var(--border,#e2e8f0);border-radius:14px;overflow:hidden}
-.lf-col-head{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border,#e2e8f0)}
-.lf-col-title{font-weight:900;font-size:.9rem;display:flex;align-items:center;gap:8px}
-.lf-col-count{background:#e2e8f0;color:#475569;font-size:.6rem;font-weight:800;padding:2px 8px;border-radius:10px}
-.lf-col-body{padding:12px;display:flex;flex-direction:column;gap:10px;min-height:100px;max-height:70vh;overflow-y:auto}
-.lf-col-body::-webkit-scrollbar{width:4px}.lf-col-body::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
+/* ═══════════════════════════════════════════════════════════
+   LIVE FLOOR — HORIZONTAL TIMELINE UI  (Complete Rebuild)
+   ═══════════════════════════════════════════════════════════ */
 
-/* Status sub-headers */
-.lf-status-divider{font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;padding:8px 4px 4px;display:flex;align-items:center;gap:6px}
-.lf-status-divider::after{content:'';flex:1;height:1px;background:#e2e8f0}
+/* ── Live Header Bar ── */
+.fl-header{
+  background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);
+  color:#fff;border-radius:16px;padding:22px 32px;
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:24px;box-shadow:0 8px 32px rgba(15,52,96,.3);
+  position:relative;overflow:hidden;
+}
+.fl-header::after{
+  content:'';position:absolute;top:-60%;right:-8%;width:280px;height:280px;
+  background:radial-gradient(circle,rgba(255,255,255,.035) 0%,transparent 70%);border-radius:50%;
+}
+.fl-h-left h1{font-size:1.6rem;font-weight:800;display:flex;align-items:center;gap:12px;margin:0}
+.fl-h-left p{opacity:.65;font-size:.8rem;margin:5px 0 0;font-weight:500}
+.fl-live-dot{width:10px;height:10px;background:#00e676;border-radius:50%;display:inline-block;animation:flBlink 1.2s ease-in-out infinite}
+@keyframes flBlink{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(0,230,118,.6)}50%{opacity:.5;box-shadow:0 0 0 8px rgba(0,230,118,0)}}
+.fl-h-right{text-align:right;position:relative;z-index:2}
+.fl-time{font-size:2.6rem;font-weight:900;font-family:'Courier New',monospace;letter-spacing:2px;line-height:1}
+.fl-date{font-size:.85rem;opacity:.7;margin-top:5px;font-weight:500}
+.fl-day{font-size:.72rem;opacity:.5;margin-top:2px;text-transform:uppercase;letter-spacing:1.5px}
 
-/* Job mini cards */
-.lf-job{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:12px 14px;transition:all .15s;cursor:pointer;position:relative}
-.lf-job:hover{box-shadow:0 4px 12px rgba(0,0,0,.06);transform:translateY(-1px)}
-.lf-job.lf-running{border-left:3px solid var(--lf-blue);background:linear-gradient(135deg,#eff6ff,#fff)}
-.lf-job.lf-pending{border-left:3px solid #f59e0b}
-.lf-job.lf-queued{border-left:3px solid #94a3b8;opacity:.65}
-.lf-job.lf-completed{border-left:3px solid #22c55e;opacity:.7}
-.lf-job-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-.lf-job-no{font-weight:900;font-size:.78rem;color:#0f172a}
-.lf-badge{display:inline-flex;padding:2px 8px;border-radius:12px;font-size:.55rem;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
-.lf-badge-running{background:#dbeafe;color:#1e40af;animation:lf-pulse-badge 2s infinite}
-.lf-badge-pending{background:#fef3c7;color:#92400e}
-.lf-badge-queued{background:#f1f5f9;color:#64748b}
-.lf-badge-completed{background:#dcfce7;color:#166534}
-@keyframes lf-pulse-badge{0%,100%{opacity:1}50%{opacity:.5}}
-.lf-job-info{font-size:.7rem;color:#64748b;line-height:1.5}
-.lf-job-info strong{color:#1e293b;font-weight:700}
-.lf-job-timer{font-family:'Courier New',monospace;font-size:.7rem;font-weight:800;color:var(--lf-blue);margin-top:4px;display:flex;align-items:center;gap:4px}
-.lf-job-timer i{font-size:.6rem}
-.lf-job-dur{font-size:.65rem;color:#22c55e;font-weight:700;margin-top:2px}
-.lf-job-gate{font-size:.55rem;color:#f59e0b;font-weight:700;display:flex;align-items:center;gap:3px;margin-top:4px}
-.lf-job-pri{position:absolute;top:8px;right:8px}
-.lf-badge-urgent{background:#fee2e2;color:#991b1b;font-size:.5rem;padding:1px 6px}
-.lf-badge-high{background:#ffedd5;color:#9a3412;font-size:.5rem;padding:1px 6px}
-.lf-empty{padding:30px;text-align:center;color:#94a3b8;font-size:.75rem;font-weight:600}
-.lf-empty i{font-size:1.5rem;display:block;margin-bottom:8px;opacity:.3}
+/* ── Stats Row ── */
+.fl-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+.fl-stat{background:#fff;border-radius:14px;padding:18px 20px;box-shadow:0 2px 12px rgba(0,0,0,.05);border-bottom:4px solid #e0e0e0;transition:transform .2s}
+.fl-stat:hover{transform:translateY(-2px)}
+.fl-stat-label{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#8892a4;margin-bottom:4px}
+.fl-stat-num{font-size:1.9rem;font-weight:900}
+.fl-stat.s-total{border-bottom-color:#1a1a2e}.fl-stat.s-total .fl-stat-num{color:#1a1a2e}
+.fl-stat.s-pend{border-bottom-color:#ff9800}.fl-stat.s-pend .fl-stat-num{color:#ff9800}
+.fl-stat.s-run{border-bottom-color:#2196f3}.fl-stat.s-run .fl-stat-num{color:#2196f3}
+.fl-stat.s-done{border-bottom-color:#4caf50}.fl-stat.s-done .fl-stat-num{color:#4caf50}
 
-/* Filters */
-.lf-filters{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
-.lf-filter-btn{padding:5px 12px;font-size:.65rem;font-weight:800;text-transform:uppercase;border:1px solid #e2e8f0;background:#fff;border-radius:20px;cursor:pointer;color:#64748b;transition:all .15s}
-.lf-filter-btn.active{background:var(--lf-blue);border-color:var(--lf-blue);color:#fff}
-.lf-auto-refresh{font-size:.65rem;color:#94a3b8;font-weight:600;display:flex;align-items:center;gap:4px;margin-left:auto}
+/* ── Job Cards List ── */
+.fl-jobs{display:flex;flex-direction:column;gap:14px}
 
-@media(max-width:600px){.lf-board{grid-template-columns:1fr}.lf-stats{grid-template-columns:repeat(2,1fr)}}
-@media print{.no-print,.breadcrumb{display:none!important}}
+.fl-card{
+  background:#fff;border-radius:16px;
+  box-shadow:0 4px 20px rgba(0,0,0,.06);
+  overflow:hidden;
+  animation:flCardIn .4s ease-out both;
+}
+@keyframes flCardIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+
+/* Card Header */
+.fl-card-head{
+  padding:12px 20px;text-align:center;
+  border-bottom:1px solid #eef0f4;
+  background:linear-gradient(180deg,#fafbfd,#fff);
+}
+.fl-card-jobno{font-size:.92rem;font-weight:900;color:#1a1a2e;letter-spacing:.3px}
+.fl-card-name{font-size:.78rem;color:#5a6478;margin-top:2px;font-weight:600}
+.fl-card-detail{font-size:.68rem;color:#94a3b8;margin-top:2px}
+.fl-card-pri{
+  display:inline-block;font-size:.55rem;font-weight:800;
+  text-transform:uppercase;letter-spacing:1px;
+  padding:2px 10px;border-radius:20px;margin-top:5px;
+}
+.fl-card-pri.urgent{background:#fde8e8;color:#dc2626}
+.fl-card-pri.high{background:#fff3e0;color:#e65100}
+.fl-card-pri.normal{background:#e8f5e9;color:#2e7d32}
+.fl-card-pri.low{background:#e3f2fd;color:#1565c0}
+
+/* ── Horizontal Timeline ── */
+.fl-timeline{padding:16px 20px 14px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.fl-timeline::-webkit-scrollbar{height:3px}
+.fl-timeline::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
+
+.fl-track{
+  display:flex;align-items:flex-start;justify-content:center;
+  min-width:520px;position:relative;padding:0 6px;
+}
+
+/* Single Stage Node */
+.fl-node{
+  display:flex;flex-direction:column;align-items:center;
+  position:relative;flex:1;min-width:80px;
+}
+
+/* Connecting line */
+.fl-node:not(:last-child)::after{
+  content:'';position:absolute;top:16px;
+  left:calc(50% + 16px);width:calc(100% - 32px);
+  height:3px;background:#e0e0e0;z-index:1;border-radius:2px;
+}
+.fl-node.done:not(:last-child)::after{
+  background:linear-gradient(90deg,#4caf50,#66bb6a);
+}
+.fl-node.now:not(:last-child)::after{
+  background:linear-gradient(90deg,#ff9800 0%,#e0e0e0 60%);
+}
+
+/* Circle */
+.fl-circle{
+  width:32px;height:32px;border-radius:50%;
+  border:3px solid #ddd;background:#f5f5f5;
+  display:flex;align-items:center;justify-content:center;
+  position:relative;z-index:5;transition:all .3s;
+  font-size:.85rem;
+}
+
+/* Completed */
+.fl-node.done .fl-circle{
+  border-color:#4caf50;background:#e8f5e9;
+}
+.fl-node.done .fl-circle::after{
+  content:'✓';font-size:.85rem;font-weight:900;color:#2e7d32;
+}
+
+/* Active — RED border + YELLOW fill + PULSE */
+.fl-node.now .fl-circle{
+  border-color:#dc2626;background:#fdd835;
+  box-shadow:0 0 0 0 rgba(220,38,38,.4);
+  animation:flPulse 1.8s ease-out infinite;
+}
+@keyframes flPulse{
+  0%{box-shadow:0 0 0 0 rgba(220,38,38,.45)}
+  40%{box-shadow:0 0 0 10px rgba(220,38,38,.1)}
+  100%{box-shadow:0 0 0 16px rgba(220,38,38,0)}
+}
+.fl-node.now .fl-circle::before{
+  content:'';position:absolute;inset:-6px;border-radius:50%;
+  border:2px solid rgba(220,38,38,.18);
+  animation:flRing 2.2s ease-out infinite;
+}
+@keyframes flRing{
+  0%{transform:scale(.85);opacity:1}
+  100%{transform:scale(1.3);opacity:0}
+}
+
+/* Future / inactive */
+.fl-node.later .fl-circle{border-color:#d6d9e0;background:#f0f0f0;opacity:.45}
+
+/* Stage label */
+.fl-stage-name{
+  margin-top:8px;font-size:.68rem;font-weight:700;
+  color:#5a6478;text-align:center;white-space:nowrap;
+}
+.fl-node.now  .fl-stage-name{color:#dc2626;font-weight:800}
+.fl-node.done .fl-stage-name{color:#2e7d32}
+.fl-node.later .fl-stage-name{color:#b0b8c8}
+
+/* Time below */
+.fl-stage-time{
+  margin-top:2px;font-size:.62rem;font-weight:700;
+  color:#4caf50;font-family:'Courier New',monospace;
+}
+.fl-node.later .fl-stage-time{color:#c8cdd6}
+.fl-node.now   .fl-stage-time{color:#ff6f00}
+
+/* ── Empty & Loader ── */
+.fl-empty{text-align:center;padding:70px 20px;background:#fff;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.05)}
+.fl-empty-icon{font-size:3.5rem;opacity:.2;margin-bottom:14px}
+.fl-empty p{font-size:.95rem;color:#94a3b8;font-weight:600}
+.fl-loader{text-align:center;padding:50px}
+.fl-spinner{width:36px;height:36px;border:4px solid #e0e0e0;border-top-color:#1a1a2e;border-radius:50%;animation:flSpin .7s linear infinite;margin:0 auto 14px}
+@keyframes flSpin{to{transform:rotate(360deg)}}
+.fl-loader p{color:#8892a4;font-size:.85rem;font-weight:600}
+
+/* ── Legend ── */
+.fl-legend{
+  display:flex;gap:26px;flex-wrap:wrap;margin-top:22px;
+  padding:14px 22px;background:#fff;border-radius:12px;
+  box-shadow:0 2px 10px rgba(0,0,0,.04);font-size:.78rem;font-weight:600;color:#5a6478;
+}
+.fl-lg-item{display:flex;align-items:center;gap:8px}
+.fl-lg-dot{width:18px;height:18px;border-radius:50%;border:3px solid}
+.fl-lg-dot.d-done{border-color:#4caf50;background:#e8f5e9}
+.fl-lg-dot.d-now{border-color:#dc2626;background:#fdd835}
+.fl-lg-dot.d-later{border-color:#d6d9e0;background:#f0f0f0;opacity:.45}
+
+/* ── Responsive ── */
+@media(max-width:900px){
+  .fl-stats{grid-template-columns:repeat(2,1fr)}
+  .fl-header{flex-direction:column;gap:14px;text-align:center;padding:20px}
+  .fl-h-right{text-align:center}
+}
+@media(max-width:600px){
+  .fl-stats{grid-template-columns:1fr 1fr}
+  .fl-time{font-size:2rem}
+  .fl-h-left h1{font-size:1.25rem}
+  .fl-card-head{padding:14px 16px}
+  .fl-timeline{padding:18px 12px}
+}
+@media print{.fl-header,.fl-stats,.fl-legend,.breadcrumb{display:none!important}}
 </style>
 
-<div class="lf-header no-print">
-  <div>
-    <h1><i class="bi bi-activity"></i> Live Floor <span class="lf-live-dot"></span></h1>
-    <div class="lf-header-meta">Real-time production kanban &middot; All departments &middot; Auto-refreshes every 30s</div>
+<!-- ═══ LIVE HEADER ═══ -->
+<div class="fl-header">
+  <div class="fl-h-left">
+    <h1>🏭 Live Floor Plan <span class="fl-live-dot"></span></h1>
+    <p>Real-time Production Monitoring &middot; Auto-refresh 60s</p>
   </div>
-  <div style="display:flex;gap:8px">
-    <button class="lf-filter-btn" onclick="location.reload()" style="background:#f1f5f9"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
-  </div>
-</div>
-
-<div class="lf-stats no-print">
-  <div class="lf-stat">
-    <div class="lf-stat-icon" style="background:#dbeafe;color:#3b82f6"><i class="bi bi-play-circle-fill"></i></div>
-    <div><div class="lf-stat-val"><?= $runningCount ?></div><div class="lf-stat-label">Running Now</div></div>
-  </div>
-  <div class="lf-stat">
-    <div class="lf-stat-icon" style="background:#fef3c7;color:#f59e0b"><i class="bi bi-hourglass-split"></i></div>
-    <div><div class="lf-stat-val"><?= $pendingCount ?></div><div class="lf-stat-label">Pending</div></div>
-  </div>
-  <div class="lf-stat">
-    <div class="lf-stat-icon" style="background:#f1f5f9;color:#64748b"><i class="bi bi-lock"></i></div>
-    <div><div class="lf-stat-val"><?= $queuedCount ?></div><div class="lf-stat-label">Queued</div></div>
-  </div>
-  <div class="lf-stat">
-    <div class="lf-stat-icon" style="background:#dcfce7;color:#22c55e"><i class="bi bi-check-circle-fill"></i></div>
-    <div><div class="lf-stat-val"><?= $completedToday ?></div><div class="lf-stat-label">Done Today</div></div>
+  <div class="fl-h-right">
+    <div class="fl-time" id="flTime">--:--:--</div>
+    <div class="fl-date" id="flDate"></div>
+    <div class="fl-day" id="flDay"></div>
   </div>
 </div>
 
-<div class="lf-filters no-print">
-  <button class="lf-filter-btn active" onclick="filterFloor('all',this)">All</button>
-  <button class="lf-filter-btn" onclick="filterFloor('Running',this)">Running</button>
-  <button class="lf-filter-btn" onclick="filterFloor('Pending',this)">Pending</button>
-  <button class="lf-filter-btn" onclick="filterFloor('Queued',this)">Queued</button>
-  <button class="lf-filter-btn" onclick="filterFloor('Completed',this)">Completed</button>
-  <div class="lf-auto-refresh"><i class="bi bi-arrow-repeat"></i> Auto-refresh: <span id="lfCountdown">30</span>s</div>
+<!-- ═══ STATS ═══ -->
+<div class="fl-stats">
+  <div class="fl-stat s-total"><div class="fl-stat-label">Total Jobs</div><div class="fl-stat-num" id="sTotal">0</div></div>
+  <div class="fl-stat s-pend"><div class="fl-stat-label">Pending</div><div class="fl-stat-num" id="sPend">0</div></div>
+  <div class="fl-stat s-run"><div class="fl-stat-label">In Progress</div><div class="fl-stat-num" id="sRun">0</div></div>
+  <div class="fl-stat s-done"><div class="fl-stat-label">Completed</div><div class="fl-stat-num" id="sDone">0</div></div>
 </div>
 
-<div class="lf-board" id="lfBoard">
-<?php foreach ($columns as $deptKey => $col):
-    $deptJobs = $col['jobs'];
-    $groups = ['Running'=>[],'Pending'=>[],'Queued'=>[],'Completed'=>[]];
-    foreach ($deptJobs as $j) {
-        $s = $j['status'];
-        if (isset($groups[$s])) $groups[$s][] = $j;
-    }
-?>
-  <div class="lf-column">
-    <div class="lf-col-head" style="border-top:3px solid <?= $col['color'] ?>">
-      <div class="lf-col-title" style="color:<?= $col['color'] ?>"><i class="bi <?= $col['icon'] ?>"></i> <?= $col['label'] ?></div>
-      <span class="lf-col-count"><?= count($deptJobs) ?> jobs</span>
-    </div>
-    <div class="lf-col-body">
-      <?php if (empty($deptJobs)): ?>
-        <div class="lf-empty"><i class="bi bi-inbox"></i>No active jobs</div>
-      <?php else: ?>
-        <?php foreach ($groups as $statusKey => $sJobs):
-            if (empty($sJobs)) continue;
-            $sClass = strtolower($statusKey);
-        ?>
-          <div class="lf-status-divider" data-status="<?= $statusKey ?>"><?= $statusKey ?> (<?= count($sJobs) ?>)</div>
-          <?php foreach ($sJobs as $j):
-              $pri = $j['planning_priority'] ?? 'Normal';
-              $startedTs = $j['started_at'] ? strtotime($j['started_at']) * 1000 : 0;
-              $dur = $j['duration_minutes'] ?? null;
-              $prevNo = $j['prev_job_no'] ?? null;
-              $prevSts = $j['prev_job_status'] ?? null;
-              $linkUrl = ($j['job_type'] === 'Slitting')
-                ? BASE_URL . '/modules/jobs/jumbo/index.php'
-                : BASE_URL . '/modules/jobs/printing/index.php';
-          ?>
-          <div class="lf-job lf-<?= $sClass ?>" data-status="<?= $statusKey ?>" onclick="window.location='<?= $linkUrl ?>'">
-            <div class="lf-job-top">
-              <span class="lf-job-no" style="color:<?= $col['color'] ?>"><?= e($j['job_no']) ?></span>
-              <span class="lf-badge lf-badge-<?= $sClass ?>"><?= $statusKey ?></span>
-            </div>
-            <?php if ($pri !== 'Normal'): ?>
-              <div class="lf-job-pri"><span class="lf-badge lf-badge-<?= strtolower($pri) ?>"><?= $pri ?></span></div>
-            <?php endif; ?>
-            <div class="lf-job-info">
-              <?php if ($j['planning_job_name']): ?><strong><?= e($j['planning_job_name']) ?></strong><br><?php endif; ?>
-              <?= e($j['roll_no'] ?? '—') ?> &middot; <?= e($j['paper_type'] ?? '') ?> &middot; <?= e(($j['width_mm'] ?? '').'mm') ?>
-            </div>
-            <?php if ($statusKey === 'Running' && $startedTs): ?>
-              <div class="lf-job-timer"><i class="bi bi-stopwatch"></i> <span class="lf-timer" data-started="<?= $startedTs ?>">00:00:00</span></div>
-            <?php elseif ($statusKey === 'Completed' && $dur !== null): ?>
-              <div class="lf-job-dur"><i class="bi bi-check"></i> <?= floor($dur/60) ?>h <?= $dur%60 ?>m</div>
-            <?php endif; ?>
-            <?php if ($statusKey === 'Queued' && $prevNo): ?>
-              <div class="lf-job-gate"><i class="bi bi-lock-fill"></i> Waiting: <?= e($prevNo) ?> (<?= e($prevSts) ?>)</div>
-            <?php endif; ?>
-          </div>
-          <?php endforeach; ?>
-        <?php endforeach; ?>
-      <?php endif; ?>
-    </div>
-  </div>
-<?php endforeach; ?>
+<!-- ═══ JOB CARDS ═══ -->
+<div class="fl-jobs" id="flJobs">
+  <div class="fl-loader"><div class="fl-spinner"></div><p>Loading production data…</p></div>
+</div>
+
+<!-- ═══ LEGEND ═══ -->
+<div class="fl-legend">
+  <div class="fl-lg-item"><div class="fl-lg-dot d-done"></div> Completed Stage</div>
+  <div class="fl-lg-item"><div class="fl-lg-dot d-now"></div> Active Stage (Pulse)</div>
+  <div class="fl-lg-item"><div class="fl-lg-dot d-later"></div> Upcoming Stage</div>
 </div>
 
 <script>
-// ─── Live timers ────────────────────────────────────────────
-function updateTimers() {
-  document.querySelectorAll('.lf-timer[data-started]').forEach(el => {
-    const s = parseInt(el.dataset.started);
-    if (!s) return;
-    const d = Math.floor((Date.now() - s) / 1000);
-    el.textContent = String(Math.floor(d/3600)).padStart(2,'0') + ':' + String(Math.floor((d%3600)/60)).padStart(2,'0') + ':' + String(d%60).padStart(2,'0');
-  });
-}
-setInterval(updateTimers, 1000);
-updateTimers();
+console.log('NEW UI LOADED — Live Floor Horizontal Timeline v2');
 
-// ─── Filter ─────────────────────────────────────────────────
-function filterFloor(status, btn) {
-  document.querySelectorAll('.lf-filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  document.querySelectorAll('.lf-job').forEach(j => {
-    j.style.display = (status === 'all' || j.dataset.status === status) ? '' : 'none';
-  });
-  document.querySelectorAll('.lf-status-divider').forEach(d => {
-    d.style.display = (status === 'all' || d.dataset.status === status) ? '' : 'none';
-  });
+const FL_API = '<?= BASE_URL ?>/modules/jobs/api.php';
+const FL_CSRF = '<?= e($csrf) ?>';
+const FL_STAGES = ['Planning','Slitting','Printing','Flat Binding','Packaging','Dispatch'];
+
+/* ─── Live Clock ─── */
+function flTick(){
+  const n=new Date();
+  document.getElementById('flTime').textContent=n.toLocaleTimeString('en-IN',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  document.getElementById('flDate').textContent=n.toLocaleDateString('en-IN',{year:'numeric',month:'long',day:'numeric'});
+  document.getElementById('flDay').textContent=n.toLocaleDateString('en-IN',{weekday:'long'});
+}
+flTick(); setInterval(flTick,1000);
+
+/* ─── Stage Detection ─── */
+function getStageIdx(job){
+  const s=(job.status||'').toLowerCase();
+  const ps=(job.planning_status||'').toLowerCase();
+
+  // Only Dispatch if actually closed/finalized
+  if(s==='closed'||s==='finalized') return 5;
+
+  // Packaging
+  if(ps.includes('packaging')||ps.includes('packing')) return 4;
+
+  // Flat Binding
+  if(ps.includes('binding')||ps.includes('flat')) return 3;
+
+  // Printing
+  if(ps.includes('printing')) return 2;
+
+  // Slitting — Running on machine OR slitting prep
+  if(s==='running') return 1;
+  if(ps.includes('slitting')||ps.includes('preparing')) return 1;
+
+  // Completed but not closed = still Slitting stage done
+  if(s==='completed'||s==='qc passed'||s==='qc failed') return 1;
+
+  // Queued = waiting at Slitting
+  if(s==='queued') return 1;
+
+  // Default = Planning
+  return 0;
 }
 
-// ─── Auto refresh countdown ─────────────────────────────────
-let countdown = 30;
-const cdEl = document.getElementById('lfCountdown');
-setInterval(() => {
-  countdown--;
-  if (cdEl) cdEl.textContent = countdown;
-  if (countdown <= 0) location.reload();
-}, 1000);
+function fmtTime(dt){
+  try{const d=new Date(dt);if(isNaN(d))return '—';return d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false});}catch(e){return '—';}
+}
+
+/* ─── Real timestamps from job data ─── */
+function stageTime(job,idx){
+  const cur=getStageIdx(job);
+  if(idx>cur) return '—';
+
+  // Parse extra_data for timestamps
+  let extra={};
+  try{extra=JSON.parse(job.extra_data||'{}');}catch(e){}
+
+  // Stage 0: Planning → use created_at
+  if(idx===0) return job.created_at?fmtTime(job.created_at):'—';
+
+  // Stage 1: Slitting → use started_at (when machine started)
+  if(idx===1){
+    if(job.started_at) return fmtTime(job.started_at);
+    return job.updated_at?fmtTime(job.updated_at):'—';
+  }
+
+  // Stage 2: Printing → use completed_at of slitting or updated_at
+  if(idx===2) return job.completed_at?fmtTime(job.completed_at):(job.updated_at?fmtTime(job.updated_at):'—');
+
+  // Stage 3: Flat Binding
+  if(idx===3) return job.updated_at?fmtTime(job.updated_at):'—';
+
+  // Stage 4: Packaging
+  if(idx===4) return job.updated_at?fmtTime(job.updated_at):'—';
+
+  // Stage 5: Dispatch → use completed_at
+  if(idx===5) return job.completed_at?fmtTime(job.completed_at):(job.updated_at?fmtTime(job.updated_at):'—');
+
+  return '—';
+}
+
+function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+
+/* ─── Fetch & Render ─── */
+async function flLoad(){
+  try{
+    const p=new URLSearchParams({action:'list_jobs',csrf_token:FL_CSRF,job_type:'Slitting',limit:'500'});
+    const r=await fetch(FL_API+'?'+p.toString());
+    const d=await r.json();
+    if(!d.ok||!d.jobs)throw new Error('API error');
+
+    const today=new Date();today.setHours(0,0,0,0);
+    const jobs=d.jobs.filter(j=>{
+      if(j.deleted_at)return false;
+      if(['Pending','Running','Queued'].includes(j.status))return true;
+      if(j.completed_at){const cd=new Date(j.completed_at);cd.setHours(0,0,0,0);return cd.getTime()===today.getTime();}
+      return true;
+    });
+
+    renderJobs(jobs);
+    renderStats(jobs);
+  }catch(e){
+    document.getElementById('flJobs').innerHTML='<div class="fl-empty"><div class="fl-empty-icon">⚠️</div><p>Unable to load production data</p></div>';
+  }
+}
+
+function renderJobs(jobs){
+  const box=document.getElementById('flJobs');
+  if(!jobs.length){box.innerHTML='<div class="fl-empty"><div class="fl-empty-icon">🏭</div><p>No active jobs on the floor right now</p></div>';return;}
+
+  const priOrd={Urgent:0,High:1,Normal:2,Low:3};
+  jobs.sort((a,b)=>{
+    const ra=a.status==='Running'?0:1,rb=b.status==='Running'?0:1;
+    if(ra!==rb)return ra-rb;
+    const sa=getStageIdx(a),sb=getStageIdx(b);
+    if(sa!==sb)return sb-sa;
+    return(priOrd[a.planning_priority]||2)-(priOrd[b.planning_priority]||2);
+  });
+
+  let html='';
+  jobs.forEach((job,i)=>{
+    const cur=getStageIdx(job);
+    const pri=(job.planning_priority||'Normal').toLowerCase();
+
+    // Timeline nodes
+    let nodes='';
+    FL_STAGES.forEach((stage,idx)=>{
+      let cls='later';
+      if(idx<cur)cls='done';
+      else if(idx===cur)cls='now';
+      nodes+=`<div class="fl-node ${cls}"><div class="fl-circle"></div><div class="fl-stage-name">${stage}</div><div class="fl-stage-time">${stageTime(job,idx)}</div></div>`;
+    });
+
+    // Details
+    let det=[];
+    if(job.roll_no)det.push('Roll: '+job.roll_no);
+    if(job.paper_type)det.push(job.paper_type);
+    if(job.gsm)det.push(job.gsm+'gsm');
+    if(job.width_mm)det.push(job.width_mm+'mm');
+    const detStr=det.join(' • ')||'Jumbo Slitting Job';
+
+    html+=`<div class="fl-card" style="animation-delay:${i*0.05}s">
+      <div class="fl-card-head">
+        <div class="fl-card-jobno">${esc(job.job_no)} <span style="display:inline-block;font-size:.58rem;font-weight:800;padding:1px 8px;border-radius:10px;margin-left:6px;vertical-align:middle;${job.status==='Running'?'background:#dbeafe;color:#1e40af':job.status==='Pending'||job.status==='Queued'?'background:#fef3c7;color:#92400e':'background:#dcfce7;color:#166534'}">${esc(job.status)}</span></div>
+        <div class="fl-card-name">${esc(job.planning_job_name||'Job Card')}</div>
+        <div class="fl-card-detail">${esc(detStr)}</div>
+        ${pri!=='normal'?`<div class="fl-card-pri ${pri}">${pri}</div>`:''}
+      </div>
+      <div class="fl-timeline"><div class="fl-track">${nodes}</div></div>
+    </div>`;
+  });
+  box.innerHTML=html;
+}
+
+function renderStats(jobs){
+  document.getElementById('sTotal').textContent=jobs.length;
+  document.getElementById('sPend').textContent=jobs.filter(j=>['Pending','Queued'].includes(j.status)).length;
+  document.getElementById('sRun').textContent=jobs.filter(j=>j.status==='Running').length;
+  document.getElementById('sDone').textContent=jobs.filter(j=>['Closed','Finalized','Completed','QC Passed'].includes(j.status)).length;
+}
+
+/* ─── Init ─── */
+flLoad();
+setInterval(flLoad,60000);
+
+/* ─── Midnight full reload ─── */
+(function(){const n=new Date(),m=new Date(n);m.setHours(24,0,0,0);setTimeout(()=>location.reload(),m-n);})();
 </script>
 
 <?php include __DIR__ . '/../../includes/footer.php'; ?>
