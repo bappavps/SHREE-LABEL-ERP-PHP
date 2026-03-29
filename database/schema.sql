@@ -422,3 +422,141 @@ CREATE TABLE IF NOT EXISTS `slitting_entries` (
   INDEX `idx_se_child` (`child_roll_no`),
   CONSTRAINT `fk_se_batch` FOREIGN KEY (`batch_id`) REFERENCES `slitting_batches`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- Job Card Extended Tables
+-- ============================================================
+
+-- --------------------------------
+-- Table: job_change_requests
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `job_change_requests` (
+  `id`                  INT AUTO_INCREMENT PRIMARY KEY,
+  `job_id`              INT NOT NULL,
+  `request_type`        VARCHAR(50) NOT NULL DEFAULT 'jumbo_roll_update',
+  `payload_json`        LONGTEXT NOT NULL,
+  `status`              VARCHAR(20) NOT NULL DEFAULT 'Pending',
+  `requested_by`        INT NULL,
+  `requested_by_name`   VARCHAR(120) NULL,
+  `requested_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `reviewed_by`         INT NULL,
+  `reviewed_by_name`    VARCHAR(120) NULL,
+  `reviewed_at`         DATETIME NULL,
+  `review_note`         TEXT NULL,
+  `created_at`          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX `idx_jcr_job_id` (`job_id`),
+  INDEX `idx_jcr_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------
+-- Table: job_delete_audit
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `job_delete_audit` (
+  `id`                    INT AUTO_INCREMENT PRIMARY KEY,
+  `root_job_id`           INT NOT NULL,
+  `root_job_no`           VARCHAR(60) NULL,
+  `root_job_type`         VARCHAR(50) NULL,
+  `planning_id`           INT NULL,
+  `parent_roll_no`        VARCHAR(80) NULL,
+  `action_status`         VARCHAR(20) NOT NULL DEFAULT 'completed',
+  `deleted_root`          TINYINT(1) NOT NULL DEFAULT 0,
+  `deleted_child_jobs`    INT NOT NULL DEFAULT 0,
+  `removed_child_rolls`   INT NOT NULL DEFAULT 0,
+  `parent_restored`       TINYINT(1) NOT NULL DEFAULT 0,
+  `planning_restored`     TINYINT(1) NOT NULL DEFAULT 0,
+  `blocked_jobs_json`     LONGTEXT NULL,
+  `reset_snapshot_json`   LONGTEXT NULL,
+  `requested_by`          INT NULL,
+  `requested_by_name`     VARCHAR(120) NULL,
+  `created_at`            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_jda_root_job_id` (`root_job_id`),
+  INDEX `idx_jda_status` (`action_status`),
+  INDEX `idx_jda_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------
+-- Table: job_notifications
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `job_notifications` (
+  `id`          INT AUTO_INCREMENT PRIMARY KEY,
+  `job_id`      INT NOT NULL,
+  `department`  VARCHAR(50) DEFAULT NULL,
+  `message`     VARCHAR(500) NOT NULL,
+  `type`        ENUM('info','warning','success','error') NOT NULL DEFAULT 'info',
+  `is_read`     TINYINT(1) NOT NULL DEFAULT 0,
+  `created_at`  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_jn_job` (`job_id`),
+  INDEX `idx_jn_dept` (`department`),
+  INDEX `idx_jn_read` (`is_read`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- Print Studio
+-- ============================================================
+
+-- --------------------------------
+-- Table: print_templates
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `print_templates` (
+  `id`              INT AUTO_INCREMENT PRIMARY KEY,
+  `name`            VARCHAR(255) NOT NULL,
+  `document_type`   VARCHAR(50) NOT NULL DEFAULT 'Industrial Label',
+  `paper_width`     DECIMAL(8,2) NOT NULL DEFAULT 210,
+  `paper_height`    DECIMAL(8,2) NOT NULL DEFAULT 297,
+  `elements`        LONGTEXT DEFAULT NULL,
+  `background`      LONGTEXT DEFAULT NULL,
+  `thumbnail`       LONGTEXT DEFAULT NULL,
+  `is_default`      TINYINT(1) NOT NULL DEFAULT 0,
+  `is_system`       TINYINT(1) NOT NULL DEFAULT 0,
+  `created_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- Planning Module
+-- ============================================================
+
+-- --------------------------------
+-- Table: planning_board_columns
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `planning_board_columns` (
+  `id`          INT AUTO_INCREMENT PRIMARY KEY,
+  `department`  VARCHAR(80) NOT NULL,
+  `col_key`     VARCHAR(80) NOT NULL,
+  `col_label`   VARCHAR(120) NOT NULL,
+  `col_type`    VARCHAR(20) NOT NULL DEFAULT 'Text',
+  `sort_order`  INT NOT NULL DEFAULT 0,
+  UNIQUE KEY `uniq_dept_col` (`department`, `col_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- Column additions & ENUM expansions
+-- NOTE: When importing via phpMyAdmin, tick "Continue on error"
+-- so duplicate-column errors on existing installs are skipped.
+-- On a FRESH install these will all succeed cleanly.
+-- ============================================================
+
+-- planning: add job_no column
+ALTER TABLE `planning`
+  ADD COLUMN `job_no` VARCHAR(60) NULL AFTER `id`;
+
+-- jobs: extended columns added during development
+ALTER TABLE `jobs` ADD COLUMN `extra_data`       JSON        DEFAULT NULL;
+ALTER TABLE `jobs` ADD COLUMN `duration_minutes` INT         DEFAULT NULL;
+ALTER TABLE `jobs` ADD COLUMN `sequence_order`   INT         NOT NULL DEFAULT 1;
+ALTER TABLE `jobs` ADD COLUMN `department`       VARCHAR(50) DEFAULT NULL;
+ALTER TABLE `jobs` ADD COLUMN `previous_job_id`  INT         DEFAULT NULL;
+ALTER TABLE `jobs` ADD COLUMN `deleted_at`       DATETIME    DEFAULT NULL;
+
+-- jobs: expand status ENUM
+ALTER TABLE `jobs`
+  MODIFY `status` ENUM('Queued','Pending','Running','Closed','Finalized','Completed','QC Passed','QC Failed') DEFAULT 'Pending';
+
+-- jobs: expand job_type ENUM
+ALTER TABLE `jobs`
+  MODIFY `job_type` ENUM('Slitting','Printing','Finishing','Jumbo','Flexo') NOT NULL DEFAULT 'Slitting';
+
+-- planning: expand status ENUM
+ALTER TABLE `planning`
+  MODIFY `status` ENUM('Pending','Preparing Slitting','Slitting Completed','Queued','In Progress','Completed','On Hold') NOT NULL DEFAULT 'Pending';
