@@ -266,9 +266,11 @@ flTick(); setInterval(flTick,1000);
 function getStageIdx(job){
   const s=(job.status||'').toLowerCase();
   const ps=(job.planning_status||'').toLowerCase();
+  const dept=(job.department||'').toLowerCase();
+  const jn=String(job.job_no||'').toUpperCase();
 
-  // Only Dispatch if actually closed/finalized
-  if(s==='closed'||s==='finalized') return 5;
+  // Dispatch — only when planning has explicitly progressed to dispatch
+  if(ps.includes('dispatch')) return 5;
 
   // Packaging
   if(ps.includes('packaging')||ps.includes('packing')) return 4;
@@ -279,12 +281,15 @@ function getStageIdx(job){
   // Printing
   if(ps.includes('printing')) return 2;
 
+  // Printing-area jobs should stay on Printing stage
+  if(dept.includes('print')||jn.startsWith('FLX/')) return 2;
+
   // Slitting — Running on machine OR slitting prep
   if(s==='running') return 1;
   if(ps.includes('slitting')||ps.includes('preparing')) return 1;
 
-  // Completed but not closed = still Slitting stage done
-  if(s==='completed'||s==='qc passed'||s==='qc failed') return 1;
+  // Closed/Finalized/Completed at slitting = move active node to Printing
+  if(s==='closed'||s==='finalized'||s==='completed'||s==='qc passed'||s==='qc failed') return 2;
 
   // Queued = waiting at Slitting
   if(s==='queued') return 1;
@@ -297,37 +302,83 @@ function fmtTime(dt){
   try{const d=new Date(dt);if(isNaN(d))return '—';return d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false});}catch(e){return '—';}
 }
 
-/* ─── Real timestamps from job data ─── */
-function stageTime(job,idx){
+function fmtStageDate(dt){
+  try{
+    const d=new Date(dt);
+    if(isNaN(d)) return '—';
+    return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+  }catch(e){
+    return '—';
+  }
+}
+
+function isDispatchDone(job){
+  const s=String(job.status||'');
+  return getStageIdx(job)===5 && ['Closed','Finalized','Completed','QC Passed','QC Failed','Dispatched'].includes(s);
+}
+
+function findRefByPrefix(job,prefix){
+  const fields=[job.job_no,job.prev_job_no,job.planning_job_name,job.notes];
+  const re=new RegExp('(?:^|[^A-Z])('+prefix+'\\/\\d{4}\\/\\d{3,6})','i');
+  for(let i=0;i<fields.length;i++){
+    const txt=String(fields[i]||'');
+    const m=txt.match(re);
+    if(m&&m[1]) return m[1].toUpperCase();
+  }
+  return '';
+}
+
+function getDisplayJobRef(job,cur){
+  const planRef=findRefByPrefix(job,'PLN');
+  const jumboRef=findRefByPrefix(job,'JMB');
+  const flexoRef=findRefByPrefix(job,'FLX');
+
+  if(cur===0) return planRef||String(job.planning_job_name||'').trim()||String(job.job_no||'').trim()||'—';
+  if(cur===1) return jumboRef||String(job.job_no||'').trim()||'—';
+  if(cur>=2) return flexoRef||jumboRef||String(job.job_no||'').trim()||'—';
+  return String(job.job_no||'').trim()||'—';
+}
+
+function getDieStageName(job){
+  const die=String(job.planning_die||'').trim().toLowerCase();
+  if(die.includes('rotary')) return 'Rotary Die';
+  if(die.includes('flat')) return 'FlatBed';
+  return 'FlatBed';
+}
+
+function getStageName(job,idx){
   const cur=getStageIdx(job);
-  if(idx>cur) return '—';
-
-  // Parse extra_data for timestamps
-  let extra={};
-  try{extra=JSON.parse(job.extra_data||'{}');}catch(e){}
-
-  // Stage 0: Planning → use created_at
-  if(idx===0) return job.created_at?fmtTime(job.created_at):'—';
-
-  // Stage 1: Slitting → use started_at (when machine started)
-  if(idx===1){
-    if(job.started_at) return fmtTime(job.started_at);
-    return job.updated_at?fmtTime(job.updated_at):'—';
+  const dieStageName=getDieStageName(job);
+  if(idx<cur){
+    if(idx===0) return 'Planned';
+    if(idx===1) return 'Slitted';
+    if(idx===2) return 'Printing Done';
+    if(idx===3) return dieStageName + ' Done';
+    if(idx===4) return 'Packaging Done';
+    if(idx===5) return 'Dispatched';
+    return 'Done';
   }
 
-  // Stage 2: Printing → use completed_at of slitting or updated_at
-  if(idx===2) return job.completed_at?fmtTime(job.completed_at):(job.updated_at?fmtTime(job.updated_at):'—');
+  if(idx===0) return 'Planning';
+  if(idx===1) return 'Slitting';
+  if(idx===2) return 'Printing';
+  if(idx===3) return dieStageName;
+  if(idx===4) return 'Packaging';
+  if(idx===5) return 'Dispatch';
+  return 'In Progress';
+}
 
-  // Stage 3: Flat Binding
-  if(idx===3) return job.updated_at?fmtTime(job.updated_at):'—';
-
-  // Stage 4: Packaging
-  if(idx===4) return job.updated_at?fmtTime(job.updated_at):'—';
-
-  // Stage 5: Dispatch → use completed_at
-  if(idx===5) return job.completed_at?fmtTime(job.completed_at):(job.updated_at?fmtTime(job.updated_at):'—');
-
-  return '—';
+function stageTime(job,idx){
+  const cur=getStageIdx(job);
+  const planDate=job.planning_created_at||job.created_at||new Date();
+  if(idx===0) return fmtStageDate(planDate);
+  if(idx===5) return isDispatchDone(job) ? fmtStageDate(job.completed_at||new Date()) : fmtStageDate(job.planning_dispatch_date||planDate);
+  if(idx<=cur){
+    if(idx===1 && job.started_at) return fmtStageDate(job.started_at);
+    if(idx===2 && job.completed_at && cur>2) return fmtStageDate(job.completed_at);
+    return fmtStageDate(new Date());
+  }
+  return fmtStageDate(new Date());
 }
 
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
@@ -335,18 +386,41 @@ function esc(s){const d=document.createElement('div');d.textContent=s||'';return
 /* ─── Fetch & Render ─── */
 async function flLoad(){
   try{
-    const p=new URLSearchParams({action:'list_jobs',csrf_token:FL_CSRF,job_type:'Slitting',limit:'500'});
-    const r=await fetch(FL_API+'?'+p.toString());
-    const d=await r.json();
-    if(!d.ok||!d.jobs)throw new Error('API error');
+    const pSlit=new URLSearchParams({action:'list_jobs',csrf_token:FL_CSRF,job_type:'Slitting',limit:'500'});
+    const pPrint=new URLSearchParams({action:'list_jobs',csrf_token:FL_CSRF,job_type:'Printing',limit:'500'});
+    const [rSlit,rPrint]=await Promise.all([
+      fetch(FL_API+'?'+pSlit.toString()),
+      fetch(FL_API+'?'+pPrint.toString())
+    ]);
+    const [dSlit,dPrint]=await Promise.all([rSlit.json(),rPrint.json()]);
+    if(!dSlit.ok||!Array.isArray(dSlit.jobs))throw new Error('Slitting API error');
+    if(!dPrint.ok||!Array.isArray(dPrint.jobs))throw new Error('Printing API error');
 
     const today=new Date();today.setHours(0,0,0,0);
-    const jobs=d.jobs.filter(j=>{
+    const isVisibleJob=(j)=>{
       if(j.deleted_at)return false;
       if(['Pending','Running','Queued'].includes(j.status))return true;
       if(j.completed_at){const cd=new Date(j.completed_at);cd.setHours(0,0,0,0);return cd.getTime()===today.getTime();}
       return true;
+    };
+
+    const slittingJobs=(dSlit.jobs||[]).filter(isVisibleJob);
+    const printingJobs=(dPrint.jobs||[]).filter(isVisibleJob);
+
+    // If a slitting job is already completed and has a linked printing job, show the printing card only.
+    const printByPrevId=new Set(
+      printingJobs
+        .map(j=>Number(j.previous_job_id||0))
+        .filter(v=>Number.isFinite(v)&&v>0)
+    );
+    const slittingVisible=slittingJobs.filter(j=>{
+      const s=String(j.status||'');
+      const done=['Closed','Finalized','Completed','QC Passed','QC Failed'].includes(s);
+      if(!done) return true;
+      return !printByPrevId.has(Number(j.id||0));
     });
+
+    const jobs=[...slittingVisible,...printingJobs];
 
     renderJobs(jobs);
     renderStats(jobs);
@@ -372,6 +446,7 @@ function renderJobs(jobs){
   jobs.forEach((job,i)=>{
     const cur=getStageIdx(job);
     const pri=(job.planning_priority||'Normal').toLowerCase();
+    const displayRef=getDisplayJobRef(job,cur);
 
     // Timeline nodes
     let nodes='';
@@ -379,7 +454,7 @@ function renderJobs(jobs){
       let cls='later';
       if(idx<cur)cls='done';
       else if(idx===cur)cls='now';
-      nodes+=`<div class="fl-node ${cls}"><div class="fl-circle"></div><div class="fl-stage-name">${stage}</div><div class="fl-stage-time">${stageTime(job,idx)}</div></div>`;
+      nodes+=`<div class="fl-node ${cls}"><div class="fl-circle"></div><div class="fl-stage-name">${getStageName(job,idx)}</div><div class="fl-stage-time">${stageTime(job,idx)}</div></div>`;
     });
 
     // Details
@@ -392,7 +467,7 @@ function renderJobs(jobs){
 
     html+=`<div class="fl-card" style="animation-delay:${i*0.05}s">
       <div class="fl-card-head">
-        <div class="fl-card-jobno">${esc(job.job_no)} <span style="display:inline-block;font-size:.58rem;font-weight:800;padding:1px 8px;border-radius:10px;margin-left:6px;vertical-align:middle;${job.status==='Running'?'background:#dbeafe;color:#1e40af':job.status==='Pending'||job.status==='Queued'?'background:#fef3c7;color:#92400e':'background:#dcfce7;color:#166534'}">${esc(job.status)}</span></div>
+        <div class="fl-card-jobno">${esc(displayRef)} <span style="display:inline-block;font-size:.58rem;font-weight:800;padding:1px 8px;border-radius:10px;margin-left:6px;vertical-align:middle;${job.status==='Running'?'background:#dbeafe;color:#1e40af':job.status==='Pending'||job.status==='Queued'?'background:#fef3c7;color:#92400e':'background:#dcfce7;color:#166534'}">${esc(job.status)}</span></div>
         <div class="fl-card-name">${esc(job.planning_job_name||'Job Card')}</div>
         <div class="fl-card-detail">${esc(detStr)}</div>
         ${pri!=='normal'?`<div class="fl-card-pri ${pri}">${pri}</div>`:''}
@@ -404,10 +479,13 @@ function renderJobs(jobs){
 }
 
 function renderStats(jobs){
+  const pendingCount=jobs.filter(j=>getStageIdx(j)===0).length;
+  const completedCount=jobs.filter(j=>isDispatchDone(j)).length;
+  const inProgressCount=jobs.filter(j=>getStageIdx(j)>0 && !isDispatchDone(j)).length;
   document.getElementById('sTotal').textContent=jobs.length;
-  document.getElementById('sPend').textContent=jobs.filter(j=>['Pending','Queued'].includes(j.status)).length;
-  document.getElementById('sRun').textContent=jobs.filter(j=>j.status==='Running').length;
-  document.getElementById('sDone').textContent=jobs.filter(j=>['Closed','Finalized','Completed','QC Passed'].includes(j.status)).length;
+  document.getElementById('sPend').textContent=pendingCount;
+  document.getElementById('sRun').textContent=inProgressCount;
+  document.getElementById('sDone').textContent=completedCount;
 }
 
 /* ─── Init ─── */

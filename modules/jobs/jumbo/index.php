@@ -1203,6 +1203,9 @@ async function openJobDetail(id, mode) {
 
   let html = '';
 
+  const viewQrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no || '')}`;
+  const viewQrDataUrl = await generateQR(viewQrUrl);
+
   // Job Info
   html += `<div class="jc-detail-section"><h3><i class="bi bi-info-circle"></i> Job Information</h3><div class="jc-detail-grid">
     <div class="jc-detail-item"><span class="dl">Job No</span><span class="dv" style="color:var(--jc-brand)">${esc(job.job_no)}</span></div>
@@ -1362,6 +1365,18 @@ async function openJobDetail(id, mode) {
     });
     allRollHtml += '</table>';
     html += `<div class="jc-detail-section"><h3><i class="bi bi-table"></i> All Child Rolls</h3><div style="font-size:.75rem;overflow-x:auto">${allRollHtml}</div></div>`;
+  }
+
+  if (viewQrDataUrl) {
+    html = `<div class="jc-detail-section jc-qr-view-only" style="display:flex;align-items:center;justify-content:space-between;gap:14px;background:#f8fafc">
+      <div>
+        <div style="font-size:.7rem;font-weight:800;text-transform:uppercase;color:#64748b;letter-spacing:.05em">Job Card QR</div>
+        <div style="font-size:.74rem;color:#475569">Scan to open this job card on mobile/desktop</div>
+      </div>
+      <div style="text-align:center">
+        <img src="${viewQrDataUrl}" alt="Job QR" style="width:96px;height:96px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:4px">
+      </div>
+    </div>` + html;
   }
 
   document.getElementById('dm-body').innerHTML = html;
@@ -1623,6 +1638,9 @@ async function printJobCard(id) {
   const qrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
   const qrDataUrl = await generateQR(qrUrl);
   const qrHtml = qrDataUrl ? `<div style="text-align:right;margin-top:6px"><img src="${qrDataUrl}" style="width:80px;height:80px;display:inline-block"><div style="font-size:.5rem;color:#94a3b8;margin-top:2px">Scan to open</div></div>` : '';
+  const tmpBody = document.createElement('div');
+  tmpBody.innerHTML = modalBody.innerHTML;
+  tmpBody.querySelectorAll('.jc-qr-view-only').forEach(function(el) { el.remove(); });
   const html = `
     <div class="jc-print-sheet template-${template}">
       <header class="jc-print-header">
@@ -1641,7 +1659,7 @@ async function printJobCard(id) {
           ${qrHtml}
         </div>
       </header>
-      <main class="jc-print-content">${modalBody.innerHTML}</main>
+      <main class="jc-print-content">${tmpBody.innerHTML}</main>
       <footer class="jc-print-footer">
         <span>${esc(APP_FOOTER_LEFT || '')}</span>
         <span>${esc(APP_FOOTER_RIGHT || '')}</span>

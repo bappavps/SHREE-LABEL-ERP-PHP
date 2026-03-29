@@ -242,7 +242,7 @@ $pageTitle = 'Job Card — ' . ($job ? htmlspecialchars($job['job_no']) : 'Not F
   }
   $deptLabel = getDeptLabel($job);
   $deptUrl   = getDeptPageUrl($job);
-  $prevDone  = !$job['previous_job_id'] || !$job['prev_job_status'] || in_array($job['prev_job_status'], ['Completed','QC Passed']);
+  $prevDone  = !$job['previous_job_id'] || !$job['prev_job_status'] || in_array($job['prev_job_status'], ['Completed','QC Passed','Closed','Finalized']);
   $qrSelf    = BASE_URL . '/modules/scan/job.php?jn=' . urlencode($job['job_no']);
   $dur = $job['duration_minutes'] ?? null;
   $durStr = ($dur !== null) ? (floor($dur/60) . 'h ' . ($dur % 60) . 'm') : '—';

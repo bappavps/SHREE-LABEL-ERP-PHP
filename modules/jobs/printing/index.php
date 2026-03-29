@@ -41,6 +41,23 @@ foreach ($jobs as &$j) {
       $jobNo = trim((string)($j['job_no'] ?? ''));
       $j['display_job_name'] = $jobNo !== '' ? ($jobNo . ' (' . $dept . ')') : ($dept !== '' ? $dept : '—');
     }
+
+    $rawNotes = trim((string)($j['notes'] ?? ''));
+    $j['notes_display'] = $rawNotes;
+    if ($rawNotes !== '' && stripos($rawNotes, 'Flexo printing queued from Jumbo | Plan:') === 0) {
+      $planRef = 'N/A';
+      if (preg_match('/\|\s*Plan:\s*([^|\n]+)/i', $rawNotes, $m)) {
+        $planRef = trim((string)($m[1] ?? '')) ?: 'N/A';
+      }
+      $jumboRef = trim((string)($j['prev_job_no'] ?? ''));
+      $flexoRef = trim((string)($j['job_no'] ?? ''));
+      $displayName = trim((string)($j['display_job_name'] ?? ''));
+      $normalized = 'Flexo printing queued from Jumbo | Plan: ' . $planRef . ' | Jumbo: ' . ($jumboRef !== '' ? $jumboRef : 'N/A') . ' I Flexo: ' . ($flexoRef !== '' ? $flexoRef : 'N/A');
+      if ($displayName !== '') {
+        $normalized .= ' | Job name : ' . $displayName;
+      }
+      $j['notes_display'] = $normalized;
+    }
 }
 unset($j);
 
@@ -252,9 +269,9 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
     $startedTs = $job['started_at'] ? strtotime($job['started_at']) * 1000 : 0;
     $dur = $job['duration_minutes'] ?? null;
     $searchText = strtolower($job['job_no'] . ' ' . ($job['roll_no'] ?? '') . ' ' . ($job['company'] ?? '') . ' ' . ($job['planning_job_name'] ?? ''));
-    // Sequencing gate: can only start if previous slitting job is completed
+    // Sequencing gate: can only start if previous slitting job is finished
     $prevDone = true;
-    if ($job['previous_job_id'] && $job['prev_job_status'] && !in_array($job['prev_job_status'], ['Completed','QC Passed'])) {
+    if ($job['previous_job_id'] && $job['prev_job_status'] && !in_array($job['prev_job_status'], ['Completed','QC Passed','Closed','Finalized'])) {
         $prevDone = false;
     }
     $isQueued = ($sts === 'Queued');
@@ -654,7 +671,7 @@ async function submitAndComplete(id) {
 }
 
 // ─── Detail modal ───────────────────────────────────────────
-function openPrintDetail(id, mode) {
+async function openPrintDetail(id, mode) {
   const job = ALL_JOBS.find(j => j.id == id);
   if (!job) return;
 
@@ -667,7 +684,7 @@ function openPrintDetail(id, mode) {
   const completedAt = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
   const dur = job.duration_minutes;
   const startedTs = job.started_at ? new Date(job.started_at).getTime() : 0;
-  const prevDone = !job.previous_job_id || !job.prev_job_status || ['Completed','QC Passed'].includes(job.prev_job_status);
+  const prevDone = !job.previous_job_id || !job.prev_job_status || ['Completed','QC Passed','Closed','Finalized'].includes(job.prev_job_status);
 
   document.getElementById('dm-jobno').textContent = job.job_no;
   const badge = document.getElementById('dm-status-badge');
@@ -675,6 +692,8 @@ function openPrintDetail(id, mode) {
   badge.className = 'fp-badge fp-badge-' + stsClass;
 
   let html = '';
+  const viewQrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no || '')}`;
+  const viewQrDataUrl = await generateQR(viewQrUrl);
 
   // Sequencing info
   if (job.prev_job_no) {
@@ -685,6 +704,18 @@ function openPrintDetail(id, mode) {
         Previous Job: <span style="color:var(--fp-brand)">${esc(job.prev_job_no)}</span>
         — <span style="color:${pvColor}">${esc(job.prev_job_status||'—')}</span>
         ${prevDone?'<span style="font-size:.65rem;color:#16a34a">(Ready for printing)</span>':'<span style="font-size:.65rem;color:#f59e0b">(Slitting must complete first)</span>'}
+      </div>
+    </div>`;
+  }
+
+  if (viewQrDataUrl) {
+    html += `<div class="fp-detail-section" style="display:flex;align-items:center;justify-content:space-between;gap:14px;background:#f8fafc">
+      <div>
+        <div style="font-size:.7rem;font-weight:800;text-transform:uppercase;color:#64748b;letter-spacing:.05em">Job Card QR</div>
+        <div style="font-size:.74rem;color:#475569">Scan to open this flexo job card on mobile/desktop</div>
+      </div>
+      <div style="text-align:center">
+        <img src="${viewQrDataUrl}" alt="Job QR" style="width:96px;height:96px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:4px">
       </div>
     </div>`;
   }
@@ -746,8 +777,8 @@ function openPrintDetail(id, mode) {
   html += `</div></div>`;
 
   // Notes
-  if (job.notes) {
-    html += `<div class="fp-detail-section"><h3><i class="bi bi-sticky"></i> Notes</h3><div style="font-size:.82rem;color:#475569;line-height:1.5;background:#f8fafc;padding:12px;border-radius:8px">${esc(job.notes)}</div></div>`;
+  if (job.notes_display || job.notes) {
+    html += `<div class="fp-detail-section"><h3><i class="bi bi-sticky"></i> Notes</h3><div style="font-size:.82rem;color:#475569;line-height:1.5;background:#f8fafc;padding:12px;border-radius:8px">${esc(job.notes_display || job.notes)}</div></div>`;
   }
 
   // Operator data (if already submitted)
@@ -971,7 +1002,7 @@ async function printJobCard(id) {
       ${extra.defects && extra.defects.length ? `<tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Defects</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${extra.defects.join(', ')}</td></tr>` : ''}
       ${extra.operator_notes ? `<tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Notes</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(extra.operator_notes)}</td></tr>` : ''}
     </table>` : ''}
-    ${job.notes ? `<div style="font-size:.75rem;color:#475569;margin-bottom:16px;padding:10px;background:#f8fafc;border-radius:8px"><strong>Notes:</strong> ${esc(job.notes)}</div>` : ''}
+    ${(job.notes_display || job.notes) ? `<div style="font-size:.75rem;color:#475569;margin-bottom:16px;padding:10px;background:#f8fafc;border-radius:8px"><strong>Notes:</strong> ${esc(job.notes_display || job.notes)}</div>` : ''}
     <div style="margin-top:40px;display:flex;justify-content:space-between;font-size:.7rem;color:#94a3b8">
       <div>Operator Signature: _____________________</div>
       <div>Supervisor Signature: _____________________</div>

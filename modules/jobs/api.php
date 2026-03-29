@@ -913,8 +913,8 @@ try {
         jobs_ensure_change_request_table($db);
 
         $sql = "SELECT j.*, ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,
-                       ps.status AS roll_status,
-                       p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority,
+                   ps.status AS roll_status,
+                   p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority, p.created_at AS planning_created_at, p.scheduled_date AS planning_scheduled_date, p.extra_data AS planning_extra_data,
                        prev.job_no AS prev_job_no, prev.status AS prev_job_status,
                        COALESCE(req.pending_count, 0) AS pending_change_requests
                 FROM jobs j
@@ -940,6 +940,9 @@ try {
 
         foreach ($jobs as &$j) {
             $j['extra_data_parsed'] = json_decode($j['extra_data'] ?? '{}', true) ?: [];
+            $planningExtra = json_decode($j['planning_extra_data'] ?? '{}', true) ?: [];
+            $j['planning_dispatch_date'] = (string)($planningExtra['dispatch_date'] ?? ($j['planning_scheduled_date'] ?? ''));
+            $j['planning_die'] = trim((string)($planningExtra['die'] ?? ''));
             $rollNos = jobs_collect_roll_nos($j['extra_data_parsed'], $j);
             $rollMap = jobs_fetch_roll_map($db, $rollNos);
             jobs_attach_live_roll_data($j, $rollMap);

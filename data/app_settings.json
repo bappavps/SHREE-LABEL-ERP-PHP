@@ -79,7 +79,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 0
+                "counter": 9
             },
             "sales_order": {
                 "prefix": "SO",
@@ -95,7 +95,7 @@
             },
             "printing_job": {
                 "prefix": "FLX",
-                "counter": 0
+                "counter": 1
             }
         }
     }

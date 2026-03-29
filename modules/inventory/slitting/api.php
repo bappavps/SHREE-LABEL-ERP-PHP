@@ -252,7 +252,7 @@ try {
             FROM planning p
             LEFT JOIN sales_orders so ON p.sales_order_id = so.id
             WHERE p.status = 'Pending'
-            ORDER BY FIELD(p.priority,'Urgent','High','Normal','Low'), p.scheduled_date ASC
+            ORDER BY p.id ASC
             LIMIT 100")->fetch_all(MYSQLI_ASSOC);
 
         // Merge extra_data JSON fields into each row so JS can read them directly
@@ -743,6 +743,7 @@ try {
                     $existingJumbo = $findJ->get_result()->fetch_assoc();
                 }
 
+                $jumboRefNo = '';
                 if ($existingJumbo) {
                     $oldExtra = json_decode((string)($existingJumbo['extra_data'] ?? '{}'), true) ?: [];
                     $oldChild = is_array($oldExtra['child_rolls'] ?? null) ? $oldExtra['child_rolls'] : [];
@@ -769,6 +770,7 @@ try {
                     $updJ->bind_param('ssi', $newExtra, $notesJ, $jid);
                     $updJ->execute();
                     $jumboJobId = $jid;
+                    $jumboRefNo = (string)($existingJumbo['job_no'] ?? '');
                     $createdJobCards[] = ['job_no' => $existingJumbo['job_no'], 'type' => 'Slitting', 'roll' => $parentRollNo, 'id' => $jumboJobId];
                 } else {
                     // Derive JMB suffix from planning number (e.g., PLN/2026/0002 → JMB/2026/0002)
@@ -807,6 +809,7 @@ try {
                         $okJumbo = $jcStmtJ->execute();
                         if ($okJumbo) {
                             $jumboJobId = $db->insert_id;
+                            $jumboRefNo = $jcNoJumbo;
                             $createdJobCards[] = ['job_no' => $jcNoJumbo, 'type' => 'Slitting', 'roll' => $parentRollNo, 'id' => $jumboJobId];
                             $insertedJumbo = true;
                             break;
@@ -839,7 +842,7 @@ try {
                             }
                             if ($jcNoFlex === '') continue;
 
-                            $notesF = 'Flexo printing queued from Jumbo | Plan: ' . ($planNo ?: 'N/A') . ' | Batch: ' . $batchNo;
+                            $notesF = 'Flexo printing queued from Jumbo | Plan: ' . ($planNo ?: 'N/A') . ' | Jumbo: ' . ($jumboRefNo !== '' ? $jumboRefNo : 'N/A') . ' I Flexo: ' . $jcNoFlex . ($displayJobName !== '' ? ' | Job name : ' . $displayJobName : '');
                             $jcStmtF = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Printing', 'flexo_printing', 'Queued', 2, ?, ?)");
                             $jcStmtF->bind_param('sisss', $jcNoFlex, $planningId, $parentRollNo, $jumboJobId, $notesF);
                             $okFlex = $jcStmtF->execute();
@@ -853,6 +856,15 @@ try {
                             if ($flexAttempt >= 29) {
                                 throw new Exception('Unable to generate unique Flexo job number. Please try again.');
                             }
+                        }
+                    } else {
+                        $existingPrintId = (int)($existingPrint['id'] ?? 0);
+                        $existingFlexNo = trim((string)($existingPrint['job_no'] ?? ''));
+                        $notesF = 'Flexo printing queued from Jumbo | Plan: ' . ($planNo ?: 'N/A') . ' | Jumbo: ' . ($jumboRefNo !== '' ? $jumboRefNo : 'N/A') . ' I Flexo: ' . ($existingFlexNo !== '' ? $existingFlexNo : 'N/A') . ($displayJobName !== '' ? ' | Job name : ' . $displayJobName : '');
+                        if ($existingPrintId > 0) {
+                            $updFlexNotes = $db->prepare("UPDATE jobs SET notes = ? WHERE id = ?");
+                            $updFlexNotes->bind_param('si', $notesF, $existingPrintId);
+                            $updFlexNotes->execute();
                         }
                     }
                 }
