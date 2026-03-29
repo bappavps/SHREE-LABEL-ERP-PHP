@@ -665,6 +665,105 @@ try {
         ]);
         break;
 
+    // ─── Upload Jumbo Slitting Photo ────────────────────────
+    case 'upload_jumbo_photo':
+        if ($method !== 'POST') {
+            echo json_encode(['ok' => false, 'error' => 'POST required']);
+            break;
+        }
+
+        $jobId = (int)($_POST['job_id'] ?? 0);
+        if ($jobId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Missing job_id']);
+            break;
+        }
+
+        $jobStmt = $db->prepare("SELECT id, job_type, extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $jobStmt->bind_param('i', $jobId);
+        $jobStmt->execute();
+        $job = $jobStmt->get_result()->fetch_assoc();
+        if (!$job) {
+            echo json_encode(['ok' => false, 'error' => 'Job not found']);
+            break;
+        }
+
+        if (empty($_FILES['photo']) || !is_array($_FILES['photo'])) {
+            echo json_encode(['ok' => false, 'error' => 'Missing photo file']);
+            break;
+        }
+
+        $file = $_FILES['photo'];
+        if ((int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            echo json_encode(['ok' => false, 'error' => 'Upload failed']);
+            break;
+        }
+        $tmp = (string)($file['tmp_name'] ?? '');
+        if ($tmp === '' || !is_uploaded_file($tmp)) {
+            echo json_encode(['ok' => false, 'error' => 'Invalid upload source']);
+            break;
+        }
+
+        $maxBytes = 8 * 1024 * 1024;
+        $size = (int)($file['size'] ?? 0);
+        if ($size <= 0 || $size > $maxBytes) {
+            echo json_encode(['ok' => false, 'error' => 'Image must be up to 8MB']);
+            break;
+        }
+
+        $mime = '';
+        if (function_exists('finfo_open')) {
+            $fi = finfo_open(FILEINFO_MIME_TYPE);
+            if ($fi) {
+                $mime = (string)finfo_file($fi, $tmp);
+                finfo_close($fi);
+            }
+        }
+
+        $extMap = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+        ];
+        if (!isset($extMap[$mime])) {
+            echo json_encode(['ok' => false, 'error' => 'Only JPG, PNG, or WEBP images are allowed']);
+            break;
+        }
+
+        $uploadDir = __DIR__ . '/../../uploads/jobs/jumbo';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+            echo json_encode(['ok' => false, 'error' => 'Upload folder is not writable']);
+            break;
+        }
+
+        $fname = 'jumbo_' . $jobId . '_' . date('Ymd_His') . '_' . substr(sha1((string)mt_rand()), 0, 8) . '.' . $extMap[$mime];
+        $absPath = $uploadDir . '/' . $fname;
+        $relPath = 'uploads/jobs/jumbo/' . $fname;
+
+        if (!move_uploaded_file($tmp, $absPath)) {
+            echo json_encode(['ok' => false, 'error' => 'Failed to move uploaded file']);
+            break;
+        }
+
+        $extra = json_decode((string)($job['extra_data'] ?? '{}'), true);
+        if (!is_array($extra)) $extra = [];
+        $extra['jumbo_photo_path'] = $relPath;
+        $extra['jumbo_photo_url'] = jobs_join_base_url($relPath);
+        $extra['jumbo_photo_uploaded_at'] = date('c');
+        $extra['jumbo_photo_uploaded_by'] = trim((string)($_SESSION['name'] ?? ($_SESSION['user_name'] ?? '')));
+        $safeJson = json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $upd = $db->prepare("UPDATE jobs SET extra_data = ? WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')");
+        $upd->bind_param('si', $safeJson, $jobId);
+        $upd->execute();
+
+        echo json_encode([
+            'ok' => true,
+            'job_id' => $jobId,
+            'photo_path' => $relPath,
+            'photo_url' => jobs_join_base_url($relPath),
+        ]);
+        break;
+
     // ─── Get job details ────────────────────────────────────
     case 'get_job':
         $jobId = (int)($_GET['id'] ?? 0);
