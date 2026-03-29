@@ -50,7 +50,7 @@ $companyName = trim((string)($settings['company_name'] ?? '')) ?: APP_NAME;
 $erpDisplayName = function_exists('getErpDisplayName') ? getErpDisplayName($companyName) : APP_NAME;
 $footerErpName = function_exists('getErpDisplayName') ? getErpDisplayName($companyName) : APP_NAME;
 $logoPath = (string)($settings['logo_path'] ?? '');
-$companyLogoUrl = $logoPath !== '' ? (BASE_URL . '/' . ltrim($logoPath, '/')) : (BASE_URL . '/assets/img/logo.svg');
+$companyLogoUrl = $logoPath !== '' ? appUrl($logoPath) : appUrl('assets/img/logo.svg');
 $themeColor = (string)($settings['sidebar_button_color'] ?? '#22c55e');
 $loginBg = (string)($settings['login_background_image'] ?? '');
 if ($loginBg === '') {
@@ -74,16 +74,16 @@ if ($loginBg === '') {
 <title>Login — <?= e($erpDisplayName) ?></title>
 <link rel="icon" href="<?= e($companyLogoUrl) ?>">
 <link rel="apple-touch-icon" href="<?= e($companyLogoUrl) ?>">
-<link rel="manifest" href="<?= BASE_URL ?>/manifest.php">
+<link rel="manifest" href="<?= e(appUrl('manifest.php')) ?>">
 <meta name="theme-color" content="<?= e($themeColor) ?>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/style.css">
+<link rel="stylesheet" href="<?= e(appUrl('assets/css/style.css')) ?>">
 <?php if ($loginBg !== ''): ?>
 <style>
 .login-body {
-  background: linear-gradient(rgba(15,23,42,.48), rgba(15,23,42,.48)), url('<?= e(BASE_URL . '/' . ltrim($loginBg, '/')) ?>') center/cover no-repeat fixed;
+  background: linear-gradient(rgba(15,23,42,.48), rgba(15,23,42,.48)), url('<?= e(appUrl($loginBg)) ?>') center/cover no-repeat fixed;
 }
 </style>
 <?php endif; ?>
@@ -194,7 +194,7 @@ if ($loginBg === '') {
       <div class="login-card">
     <div class="login-logo">
       <?php if ($logoPath !== ''): ?>
-        <img src="<?= e(BASE_URL . '/' . ltrim($logoPath, '/')) ?>" alt="Logo">
+        <img src="<?= e(appUrl($logoPath)) ?>" alt="Logo">
       <?php else: ?>
         <i class="bi bi-layers"></i>
       <?php endif; ?>
@@ -239,8 +239,8 @@ if ($loginBg === '') {
       </div>
 
       <div class="login-inline-footer" role="contentinfo">
-        <div class="line1">Version : <?= e(APP_VERSION) ?></div>
-        <div class="line2">&copy; <?= date('Y') ?> <?= e($footerErpName) ?> &bull; ERP Master System v<?= e(APP_VERSION) ?> | @ Developed by Mriganka Bhusan Debnath</div>
+        <div class="line1">&copy; <?= date('Y') ?> <?= e($footerErpName) ?> &bull; ERP Master System v<?= e(APP_VERSION) ?></div>
+        <div class="line2">@ Developed by Mriganka Bhusan Debnath</div>
       </div>
     </div>
   </div>

@@ -19,6 +19,65 @@ function redirect($url) {
 }
 
 /**
+ * Resolve the application base URL.
+ * Falls back to detecting the app subfolder from DOCUMENT_ROOT when BASE_URL is blank.
+ */
+function appBaseUrl() {
+    static $baseUrl = null;
+    if ($baseUrl !== null) {
+        return $baseUrl;
+    }
+
+    $configured = defined('BASE_URL') ? trim((string)BASE_URL) : '';
+    if ($configured !== '') {
+        $normalized = '/' . trim(str_replace('\\', '/', $configured), '/');
+        $baseUrl = $normalized === '/' ? '' : $normalized;
+        return $baseUrl;
+    }
+
+    $documentRoot = $_SERVER['DOCUMENT_ROOT'] ?? '';
+    $appRoot = realpath(__DIR__ . '/..') ?: (__DIR__ . '/..');
+
+    $documentRoot = str_replace('\\', '/', (string)(realpath($documentRoot) ?: $documentRoot));
+    $appRoot = str_replace('\\', '/', (string)$appRoot);
+
+    if ($documentRoot !== '' && $appRoot !== '') {
+        $documentRoot = rtrim($documentRoot, '/');
+        if (stripos($appRoot, $documentRoot) === 0) {
+            $relative = trim(substr($appRoot, strlen($documentRoot)), '/');
+            $baseUrl = $relative === '' ? '' : '/' . $relative;
+            return $baseUrl;
+        }
+    }
+
+    $baseUrl = '';
+    return $baseUrl;
+}
+
+/**
+ * Build a public URL for an app-relative asset or route.
+ */
+function appUrl($path = '') {
+    $path = trim((string)$path);
+    if ($path === '') {
+        return appBaseUrl();
+    }
+
+    if (preg_match('#^(?:[a-z][a-z0-9+.-]*:)?//#i', $path) || strpos($path, 'data:') === 0) {
+        return $path;
+    }
+
+    $normalizedPath = '/' . ltrim(str_replace('\\', '/', $path), '/');
+    $baseUrl = appBaseUrl();
+
+    if ($baseUrl !== '' && ($normalizedPath === $baseUrl || strpos($normalizedPath, $baseUrl . '/') === 0)) {
+        return $normalizedPath;
+    }
+
+    return $baseUrl . $normalizedPath;
+}
+
+/**
  * Store a flash message in session.
  */
 function setFlash($type, $message) {

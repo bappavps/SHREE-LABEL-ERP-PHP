@@ -3,7 +3,8 @@ require_once __DIR__ . '/../../../config/db.php';
 require_once __DIR__ . '/../../../includes/functions.php';
 require_once __DIR__ . '/../../../includes/auth_check.php';
 
-$pageTitle = 'Flexo Printing Jobs';
+$isOperatorView = (string)($_GET['view'] ?? '') === 'operator';
+$pageTitle = $isOperatorView ? 'Flexo Operator' : 'Flexo Printing Jobs';
 $db = getDB();
 $appSettings = getAppSettings();
 $companyName = $appSettings['company_name'] ?? 'Shree Label Creation';
@@ -48,6 +49,12 @@ $notifCount = 0;
 $nRes = $db->query("SELECT COUNT(*) as cnt FROM job_notifications WHERE (department = 'flexo_printing' OR department IS NULL) AND is_read = 0");
 if ($nRes) $notifCount = (int)$nRes->fetch_assoc()['cnt'];
 
+// Split active vs history
+$activeJobs  = array_values(array_filter($jobs, fn($j) => !in_array($j['status'], ['Completed','QC Passed','Closed','Finalized'])));
+$historyJobs = array_values(array_filter($jobs, fn($j) => in_array($j['status'], ['Completed','QC Passed','Closed','Finalized'])));
+$activeCount  = count($activeJobs);
+$historyCount = count($historyJobs);
+
 $csrf = generateCSRF();
 include __DIR__ . '/../../../includes/header.php';
 ?>
@@ -55,11 +62,19 @@ include __DIR__ . '/../../../includes/header.php';
 <div class="breadcrumb">
   <a href="<?= BASE_URL ?>/modules/dashboard/index.php">Dashboard</a>
   <span class="breadcrumb-sep">&#8250;</span>
-  <span>Production</span>
-  <span class="breadcrumb-sep">&#8250;</span>
-  <span>Job Cards</span>
-  <span class="breadcrumb-sep">&#8250;</span>
-  <span>Flexo Printing</span>
+  <?php if ($isOperatorView): ?>
+    <span>Operator</span>
+    <span class="breadcrumb-sep">&#8250;</span>
+    <span>Machine Operators</span>
+    <span class="breadcrumb-sep">&#8250;</span>
+    <span>Flexo Operator</span>
+  <?php else: ?>
+    <span>Production</span>
+    <span class="breadcrumb-sep">&#8250;</span>
+    <span>Job Cards</span>
+    <span class="breadcrumb-sep">&#8250;</span>
+    <span>Flexo Printing</span>
+  <?php endif; ?>
 </div>
 
 <style>
@@ -149,16 +164,26 @@ include __DIR__ . '/../../../includes/header.php';
 .fp-form-group input:focus,.fp-form-group select:focus,.fp-form-group textarea:focus{outline:none;border-color:var(--fp-brand);box-shadow:0 0 0 2px rgba(139,92,246,.1)}
 .fp-modal-footer{padding:16px 24px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 
+.fp-tabs{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.fp-tab-btn{padding:7px 14px;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border:1px solid var(--border,#e2e8f0);background:#fff;border-radius:999px;cursor:pointer;color:#64748b;transition:all .15s}
+.fp-tab-btn.active{background:#0f172a;color:#fff;border-color:#0f172a}
+.fp-tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#e2e8f0;color:#334155;font-size:.62rem;margin-left:6px}
+.fp-tab-btn.active .fp-tab-count{background:rgba(255,255,255,.2);color:#fff}
+.fp-card-check{width:16px;height:16px;cursor:pointer;accent-color:var(--fp-brand);flex-shrink:0;margin-right:2px}
 @media print{.no-print,.breadcrumb,.page-header,.fp-modal-overlay{display:none!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
 @media(max-width:600px){.fp-grid{grid-template-columns:1fr}.fp-stats{grid-template-columns:repeat(2,1fr)}.fp-detail-grid{grid-template-columns:1fr}.fp-form-row{grid-template-columns:1fr}}
 </style>
 
 <div class="fp-header no-print">
   <div>
-    <h1><i class="bi bi-printer"></i> Flexo Printing Jobs
+    <h1><i class="bi bi-printer"></i> <?= $isOperatorView ? 'Flexo Operator' : 'Flexo Printing Jobs' ?>
       <?php if ($notifCount > 0): ?><span class="fp-notif-badge"><?= $notifCount ?></span><?php endif; ?>
     </h1>
-    <div class="fp-header-meta">Auto-generated for printing after slitting &middot; Sequential gating from Jumbo Slitting</div>
+    <div class="fp-header-meta">
+      <?= $isOperatorView
+        ? 'Operator execution board for Flexo printing job cards.'
+        : 'Auto-generated for printing after slitting &middot; Sequential gating from Jumbo Slitting' ?>
+    </div>
   </div>
   <div style="display:flex;gap:8px">
     <button class="fp-action-btn fp-btn-view" onclick="location.reload()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
@@ -195,13 +220,20 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
   </div>
 </div>
 
+<div class="fp-tabs no-print">
+  <button id="fpTabBtnActive" class="fp-tab-btn active" type="button" onclick="switchFPTab('active')">Job Cards <span class="fp-tab-count"><?= $activeCount ?></span></button>
+  <button id="fpTabBtnHistory" class="fp-tab-btn" type="button" onclick="switchFPTab('history')">History <span class="fp-tab-count"><?= $historyCount ?></span></button>
+</div>
+
+<div id="fpPanelActive">
 <div class="fp-filters no-print">
   <input type="text" class="fp-search" id="fpSearch" placeholder="Search by job no, roll, company&hellip;">
-  <button class="fp-filter-btn active" onclick="filterFP('all',this)">All</button>
-  <button class="fp-filter-btn" onclick="filterFP('Queued',this)">Queued</button>
+  <button class="fp-filter-btn" onclick="filterFP('all',this)">All</button>
+  <button class="fp-filter-btn active" onclick="filterFP('Queued',this)">Queued</button>
   <button class="fp-filter-btn" onclick="filterFP('Pending',this)">Pending</button>
   <button class="fp-filter-btn" onclick="filterFP('Running',this)">Running</button>
   <button class="fp-filter-btn" onclick="filterFP('Completed',this)">Completed</button>
+  <button id="fpPrintSelBtn" onclick="printSelectedJobs()" style="display:none;padding:6px 14px;font-size:.7rem;font-weight:800;text-transform:uppercase;border:none;background:var(--fp-brand);color:#fff;border-radius:20px;cursor:pointer;align-items:center;gap:6px;letter-spacing:.04em"><i class="bi bi-printer-fill"></i> Print Selected (<span id="fpSelCount">0</span>)</button>
 </div>
 
 <div class="fp-grid no-print" id="fpGrid">
@@ -227,7 +259,7 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
     }
     $isQueued = ($sts === 'Queued');
   ?>
-  <div class="fp-card <?= $isQueued ? 'fp-queued' : '' ?>" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" onclick="openPrintDetail(<?= $job['id'] ?>)">
+  <div class="fp-card <?= $isQueued ? 'fp-queued' : '' ?>" data-status="<?= e($sts) ?>" data-lockstate="<?= $prevDone ? 'unlocked' : 'locked' ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" onclick="openPrintDetail(<?= $job['id'] ?>)">
     <div class="fp-card-head">
       <div class="fp-jobno"><i class="bi bi-printer-fill"></i> <?= e($job['job_no']) ?></div>
       <div style="display:flex;gap:6px;align-items:center">
@@ -257,7 +289,8 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
     </div>
     <div class="fp-card-foot">
       <div class="fp-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
-      <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
+      <div style="display:flex;gap:6px;align-items:center" onclick="event.stopPropagation()">
+        <input type="checkbox" class="fp-card-check" data-id="<?= $job['id'] ?>" onclick="event.stopPropagation();updatePrintCount()" title="Select for bulk print">
         <?php if ($sts === 'Pending' && $prevDone): ?>
           <button class="fp-action-btn fp-btn-start" onclick="updateFPStatus(<?= $job['id'] ?>,'Running')"><i class="bi bi-play-fill"></i> Start</button>
         <?php elseif ($sts === 'Pending' && !$prevDone): ?>
@@ -272,6 +305,60 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
   <?php endforeach; ?>
 <?php endif; ?>
 </div>
+</div><!-- end fpPanelActive -->
+
+<div id="fpPanelHistory" style="display:none">
+<div class="card no-print" style="margin-top:8px">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+    <span class="card-title"><i class="bi bi-clock-history"></i> Flexo Printing History (Completed / QC Passed)</span>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="text" id="fpHistorySearch" placeholder="Search history..." oninput="filterHistory(this.value)" style="padding:6px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:.78rem;outline:none">
+      <span style="font-size:.72rem;color:#64748b;font-weight:700"><?= $historyCount ?> records</span>
+      <button onclick="window.print()" style="padding:5px 12px;font-size:.65rem;font-weight:800;text-transform:uppercase;border:none;background:var(--fp-brand);color:#fff;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:5px"><i class="bi bi-printer"></i> Print</button>
+    </div>
+  </div>
+  <div style="overflow:auto">
+    <table id="fpHistoryTable" style="width:100%;border-collapse:collapse;font-size:.78rem">
+      <thead>
+        <tr style="background:#f8fafc">
+          <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Job No</th>
+          <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Job Name</th>
+          <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Roll No</th>
+          <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Material</th>
+          <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Status</th>
+          <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Started</th>
+          <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Completed</th>
+          <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Duration</th>
+        </tr>
+      </thead>
+      <tbody id="fpHistoryBody">
+        <?php if (empty($historyJobs)): ?>
+          <tr><td colspan="8" style="padding:20px;text-align:center;color:#94a3b8">No completed jobs yet.</td></tr>
+        <?php else: ?>
+          <?php foreach ($historyJobs as $h):
+            $hDur = $h['duration_minutes'] ?? null;
+            $hDurStr = ($hDur !== null) ? (floor($hDur/60).'h '.($hDur%60).'m') : '—';
+            $hStarted = $h['started_at'] ? date('d M Y, H:i', strtotime($h['started_at'])) : '—';
+            $hCompleted = $h['completed_at'] ? date('d M Y, H:i', strtotime($h['completed_at'])) : '—';
+            $hSearch = e(strtolower(($h['job_no']??'').' '.($h['planning_job_name']??'').' '.($h['display_job_name']??'').' '.($h['roll_no']??'')));
+          ?>
+          <tr data-search="<?= $hSearch ?>" style="cursor:pointer" onclick="openPrintDetail(<?= $h['id'] ?>)" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;font-weight:700;color:var(--fp-brand)"><?= e($h['job_no']) ?></td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['planning_job_name'] ?? $h['display_job_name'] ?? '—') ?></td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['roll_no'] ?? '—') ?></td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['paper_type'] ?? '—') ?></td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><span class="fp-badge fp-badge-completed"><?= e($h['status']) ?></span></td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= $hStarted ?></td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= $hCompleted ?></td>
+            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= $hDurStr ?></td>
+          </tr>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+</div><!-- end fpPanelHistory -->
 
 <!-- ═══ DETAIL MODAL ═══ -->
 <div class="fp-modal-overlay" id="fpDetailModal">
@@ -291,8 +378,53 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
 <script>
 const CSRF = '<?= e($csrf) ?>';
 const API_BASE = '<?= BASE_URL ?>/modules/jobs/api.php';
+const IS_OPERATOR_VIEW = <?= $isOperatorView ? 'true' : 'false' ?>;
 const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const ALL_JOBS = <?= json_encode($jobs, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+let activeStatusFilter = 'Queued';
+
+function getFieldVal(form, name) {
+  return String(form.querySelector('[name="' + name + '"]')?.value || '').trim();
+}
+
+function getNumberFieldVal(form, name) {
+  const raw = getFieldVal(form, name);
+  if (raw === '') return '';
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : raw;
+}
+
+function normalizeCardData(job, extra) {
+  const out = Object.assign({}, extra || {});
+  out.mkd_job_sl_no = String(out.mkd_job_sl_no || '').trim();
+  out.job_date = String(out.job_date || '').trim();
+  out.job_name = String(out.job_name || resolvePrintDisplayName(job)).trim();
+  out.die = String(out.die || '').trim();
+  out.plate_no = String(out.plate_no || '').trim();
+  out.material_company = String(out.material_company || job.company || '').trim();
+  out.material_name = String(out.material_name || job.paper_type || '').trim();
+  out.order_mtr = out.order_mtr ?? '';
+  out.order_qty = out.order_qty ?? '';
+  out.reel_no_c1 = String(out.reel_no_c1 || '').trim();
+  out.reel_no_c2 = String(out.reel_no_c2 || '').trim();
+  out.width_c1 = out.width_c1 ?? (job.width_mm || '');
+  out.width_c2 = out.width_c2 ?? (job.width_mm || '');
+  out.length_c1 = out.length_c1 ?? (job.length_mtr || '');
+  out.length_c2 = out.length_c2 ?? (job.length_mtr || '');
+  out.label_size = String(out.label_size || '').trim();
+  out.repeat_mm = String(out.repeat_mm || '').trim();
+  out.direction = String(out.direction || '').trim();
+  out.actual_qty = out.actual_qty ?? '';
+  out.electricity = String(out.electricity || '').trim();
+  out.time_spent = String(out.time_spent || '').trim();
+  out.prepared_by = String(out.prepared_by || '').trim();
+  out.filled_by = String(out.filled_by || '').trim();
+  if (!Array.isArray(out.colour_lanes)) out.colour_lanes = ['', '', '', '', '', '', '', ''];
+  if (!Array.isArray(out.anilox_lanes)) out.anilox_lanes = ['', '', '', '', '', '', '', ''];
+  out.colour_lanes = out.colour_lanes.slice(0, 8).concat(Array(Math.max(0, 8 - out.colour_lanes.length)).fill('')).map(v => String(v || '').trim());
+  out.anilox_lanes = out.anilox_lanes.slice(0, 8).concat(Array(Math.max(0, 8 - out.anilox_lanes.length)).fill('')).map(v => String(v || '').trim());
+  return out;
+}
 
 function resolvePrintDisplayName(job) {
   if (job && String(job.display_job_name || '').trim() !== '') return String(job.display_job_name).trim();
@@ -303,21 +435,130 @@ function resolvePrintDisplayName(job) {
   return dept || '—';
 }
 
-// ─── Filters ────────────────────────────────────────────────
-function filterFP(status, btn) {
-  document.querySelectorAll('.fp-filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+function operatorTabMatch(card, status) {
+  const lockState = String(card.dataset.lockstate || '').toLowerCase();
+  const cardStatus = String(card.dataset.status || '').trim();
+
+  if (status === 'Queued') return lockState === 'locked';
+  if (status === 'Pending') return lockState !== 'locked' && (cardStatus === 'Pending' || cardStatus === 'Queued');
+  if (status === 'all') return true;
+  return cardStatus === status;
+}
+
+function applyFPFilters() {
+  const q = String(document.getElementById('fpSearch')?.value || '').toLowerCase();
   document.querySelectorAll('.fp-card').forEach(card => {
-    card.style.display = (status === 'all' || card.dataset.status === status) ? '' : 'none';
+    const searchOk = (card.dataset.search || '').includes(q);
+    const statusOk = operatorTabMatch(card, activeStatusFilter);
+    card.style.display = (searchOk && statusOk) ? '' : 'none';
   });
 }
 
+// ─── Filters ────────────────────────────────────────────────
+function filterFP(status, btn) {
+  activeStatusFilter = status;
+  document.querySelectorAll('.fp-filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  applyFPFilters();
+}
+
 document.getElementById('fpSearch').addEventListener('input', function() {
-  const q = this.value.toLowerCase();
-  document.querySelectorAll('.fp-card').forEach(card => {
-    card.style.display = (card.dataset.search || '').includes(q) ? '' : 'none';
-  });
+  applyFPFilters();
 });
+
+applyFPFilters();
+
+// ─── Tab switching ──────────────────────────────────────────
+function switchFPTab(tab) {
+  const panelActive  = document.getElementById('fpPanelActive');
+  const panelHistory = document.getElementById('fpPanelHistory');
+  const btnActive    = document.getElementById('fpTabBtnActive');
+  const btnHistory   = document.getElementById('fpTabBtnHistory');
+  if (tab === 'history') {
+    panelActive.style.display  = 'none';
+    panelHistory.style.display = '';
+    btnActive.classList.remove('active');
+    btnHistory.classList.add('active');
+  } else {
+    panelActive.style.display  = '';
+    panelHistory.style.display = 'none';
+    btnActive.classList.add('active');
+    btnHistory.classList.remove('active');
+  }
+}
+
+// ─── History search ──────────────────────────────────────────
+function filterHistory(q) {
+  q = (q || '').toLowerCase();
+  document.querySelectorAll('#fpHistoryBody tr[data-search]').forEach(row => {
+    row.style.display = (row.dataset.search || '').includes(q) ? '' : 'none';
+  });
+}
+
+// ─── Multi-select print ──────────────────────────────────────
+function updatePrintCount() {
+  const checked = document.querySelectorAll('.fp-card-check:checked').length;
+  const btn = document.getElementById('fpPrintSelBtn');
+  if (btn) {
+    btn.style.display = checked > 0 ? 'inline-flex' : 'none';
+    const cnt = btn.querySelector('#fpSelCount');
+    if (cnt) cnt.textContent = checked;
+  }
+}
+
+function printSelectedJobs() {
+  const checkedIds = Array.from(document.querySelectorAll('.fp-card-check:checked')).map(c => parseInt(c.dataset.id));
+  if (!checkedIds.length) { alert('No job cards selected.'); return; }
+  const selectedJobs = ALL_JOBS.filter(j => checkedIds.includes(j.id));
+  let pages = '';
+  selectedJobs.forEach((job, idx) => {
+    const extra = job.extra_data_parsed || {};
+    const card = normalizeCardData(job, extra);
+    const created   = job.created_at   ? new Date(job.created_at).toLocaleString()   : '—';
+    const started   = job.started_at   ? new Date(job.started_at).toLocaleString()   : '—';
+    const completed = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
+    const dur = job.duration_minutes;
+    const pb  = idx < selectedJobs.length - 1 ? 'page-break-after:always;' : '';
+    pages += `<div style="font-family:'Segoe UI',Arial,sans-serif;padding:24px;max-width:700px;margin:0 auto;${pb}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;border-bottom:3px solid #8b5cf6;padding-bottom:12px">
+        <div>${COMPANY.logo ? `<img src="${COMPANY.logo}" style="height:40px;margin-bottom:4px;display:block">` : ''}<div style="font-weight:900;font-size:1.1rem">${esc(COMPANY.name)}</div><div style="font-size:.7rem;color:#64748b">${esc(COMPANY.address)}</div>${COMPANY.gst ? `<div style="font-size:.65rem;color:#94a3b8">GST: ${esc(COMPANY.gst)}</div>` : ''}</div>
+        <div style="text-align:right"><div style="font-size:1.2rem;font-weight:900;color:#8b5cf6">${esc(job.job_no)}</div><div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:#64748b">Flexo Printing Job Card</div><div style="font-size:.65rem;color:#94a3b8;margin-top:4px">${created}</div></div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:16px">
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc;width:38%">MKD Job SL NO</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.mkd_job_sl_no||'—')}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Date</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.job_date||'—')}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Job Name</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(resolvePrintDisplayName(job))}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Die</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.die||'—')}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Plate No</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.plate_no||'—')}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Roll No</td><td style="padding:6px 10px;border:1px solid #e2e8f0;color:#8b5cf6;font-weight:700">${esc(job.roll_no||'—')}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Material</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.material_name||job.paper_type||'—')} / ${esc(String(job.gsm||'—'))} GSM</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Dimension</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((job.width_mm||'—')+'mm × '+(job.length_mtr||'—')+'m')}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Label Size / Repeat / Dir</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.label_size||'—')+' / '+(card.repeat_mm||'—')+' / '+(card.direction||'—'))}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Order MTR / QTY</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.order_mtr||'—')+' / '+(card.order_qty||'—'))}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Reel No C1 / C2</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.reel_no_c1||'—')+' / '+(card.reel_no_c2||'—'))}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Width C1 / C2</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.width_c1||'—')+' / '+(card.width_c2||'—'))}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Length C1 / C2</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.length_c1||'—')+' / '+(card.length_c2||'—'))}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Colour 1-8</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.colour_lanes.filter(Boolean).join(', ')||'—')}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Anilox 1-8</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.anilox_lanes.filter(Boolean).join(', ')||'—')}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Actual Qty / Electricity / Time</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.actual_qty||'—')+' / '+(card.electricity||'—')+' / '+(card.time_spent||'—'))}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Prepared By / Filled By</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.prepared_by||'—')+' / '+(card.filled_by||'—'))}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Status</td><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700">${esc(job.status)}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Started</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${started}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Completed</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${completed}</td></tr>
+        ${dur !== null && dur !== undefined ? `<tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Duration</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${Math.floor(dur/60)}h ${dur%60}m</td></tr>` : ''}
+      </table>
+      <div style="margin-top:30px;display:flex;justify-content:space-between;font-size:.7rem;color:#94a3b8">
+        <div>Operator Signature: _____________________</div>
+        <div>Supervisor Signature: _____________________</div>
+      </div>
+    </div>`;
+  });
+  const w = window.open('', '_blank', 'width=820,height=920');
+  w.document.write(`<!DOCTYPE html><html><head><title>Flexo Job Cards (${selectedJobs.length})</title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>${pages}</body></html>`);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 400);
+}
 
 // ─── Live timers ────────────────────────────────────────────
 function updateTimers() {
@@ -352,10 +593,12 @@ async function updateFPStatus(id, newStatus) {
 
 // ─── Submit operator extra data + complete ──────────────────
 async function submitAndComplete(id) {
+  const job = ALL_JOBS.find(j => j.id == id) || {};
   const form = document.getElementById('dm-operator-form');
   if (!form) return updateFPStatus(id, 'Completed');
 
-  const extraData = {
+  const baseExtra = normalizeCardData(job, job.extra_data_parsed || {});
+  const extraData = Object.assign({}, baseExtra, {
     ink_colors: form.querySelector('[name=ink_colors]')?.value || '',
     cylinder_ref: form.querySelector('[name=cylinder_ref]')?.value || '',
     impression_count: form.querySelector('[name=impression_count]')?.value || '',
@@ -363,8 +606,33 @@ async function submitAndComplete(id) {
     color_match_status: form.querySelector('[name=color_match_status]')?.value || 'Matched',
     wastage_meters: form.querySelector('[name=wastage_meters]')?.value || '',
     operator_notes: form.querySelector('[name=operator_notes]')?.value || '',
-    defects: Array.from(form.querySelectorAll('[name=defects]:checked')).map(c=>c.value)
-  };
+    defects: Array.from(form.querySelectorAll('[name=defects]:checked')).map(c=>c.value),
+    mkd_job_sl_no: getFieldVal(form, 'mkd_job_sl_no'),
+    job_date: getFieldVal(form, 'job_date'),
+    job_name: getFieldVal(form, 'job_name') || resolvePrintDisplayName(job),
+    die: getFieldVal(form, 'die'),
+    plate_no: getFieldVal(form, 'plate_no'),
+    material_company: getFieldVal(form, 'material_company'),
+    material_name: getFieldVal(form, 'material_name'),
+    order_mtr: getNumberFieldVal(form, 'order_mtr'),
+    order_qty: getNumberFieldVal(form, 'order_qty'),
+    reel_no_c1: getFieldVal(form, 'reel_no_c1'),
+    reel_no_c2: getFieldVal(form, 'reel_no_c2'),
+    width_c1: getNumberFieldVal(form, 'width_c1'),
+    width_c2: getNumberFieldVal(form, 'width_c2'),
+    length_c1: getNumberFieldVal(form, 'length_c1'),
+    length_c2: getNumberFieldVal(form, 'length_c2'),
+    label_size: getFieldVal(form, 'label_size'),
+    repeat_mm: getFieldVal(form, 'repeat_mm'),
+    direction: getFieldVal(form, 'direction'),
+    actual_qty: getNumberFieldVal(form, 'actual_qty'),
+    electricity: getFieldVal(form, 'electricity'),
+    time_spent: getFieldVal(form, 'time_spent'),
+    prepared_by: getFieldVal(form, 'prepared_by'),
+    filled_by: getFieldVal(form, 'filled_by'),
+    colour_lanes: Array.from({ length: 8 }, (_, i) => getFieldVal(form, 'colour_lane_' + (i + 1))),
+    anilox_lanes: Array.from({ length: 8 }, (_, i) => getFieldVal(form, 'anilox_lane_' + (i + 1)))
+  });
 
   const fd1 = new FormData();
   fd1.append('csrf_token', CSRF);
@@ -388,6 +656,7 @@ function openPrintDetail(id, mode) {
   const sts = job.status;
   const stsClass = {Queued:'queued',Pending:'pending',Running:'running',Completed:'completed','QC Passed':'completed'}[sts]||'pending';
   const extra = job.extra_data_parsed || {};
+  const card = normalizeCardData(job, extra);
   const createdAt = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
   const startedAt = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
   const completedAt = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
@@ -434,6 +703,31 @@ function openPrintDetail(id, mode) {
     <div class="fp-detail-item"><span class="dl">Supplier</span><span class="dv">${esc(job.company||'—')}</span></div>
   </div></div>`;
 
+  html += `<div class="fp-detail-section"><h3><i class="bi bi-journal-text"></i> Printing Job Card Fields</h3><div class="fp-detail-grid">
+    <div class="fp-detail-item"><span class="dl">MKD Job SL NO</span><span class="dv">${esc(card.mkd_job_sl_no||'—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Date</span><span class="dv">${esc(card.job_date||'—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Job Name</span><span class="dv">${esc(card.job_name||'—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Die</span><span class="dv">${esc(card.die||'—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Plate No</span><span class="dv">${esc(card.plate_no||'—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Material Company</span><span class="dv">${esc(card.material_company||'—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Material Name</span><span class="dv">${esc(card.material_name||'—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Order MTR</span><span class="dv">${esc(card.order_mtr||'—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Order QTY</span><span class="dv">${esc(card.order_qty||'—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Label Size</span><span class="dv">${esc(card.label_size||'—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Repeat</span><span class="dv">${esc(card.repeat_mm||'—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Direction</span><span class="dv">${esc(card.direction||'—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Reel No C1/C2</span><span class="dv">${esc((card.reel_no_c1||'—') + ' / ' + (card.reel_no_c2||'—'))}</span></div>
+    <div class="fp-detail-item"><span class="dl">Width C1/C2</span><span class="dv">${esc((card.width_c1||'—') + ' / ' + (card.width_c2||'—'))}</span></div>
+    <div class="fp-detail-item"><span class="dl">Length C1/C2</span><span class="dv">${esc((card.length_c1||'—') + ' / ' + (card.length_c2||'—'))}</span></div>
+    <div class="fp-detail-item"><span class="dl">Colour 1-8</span><span class="dv">${esc(card.colour_lanes.filter(Boolean).join(', ') || '—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Anilox 1-8</span><span class="dv">${esc(card.anilox_lanes.filter(Boolean).join(', ') || '—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Actual QTY</span><span class="dv">${esc(card.actual_qty||'—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Electricity</span><span class="dv">${esc(card.electricity||'—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Time</span><span class="dv">${esc(card.time_spent||'—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Prepared By</span><span class="dv">${esc(card.prepared_by||'—')}</span></div>
+    <div class="fp-detail-item"><span class="dl">Filled By</span><span class="dv">${esc(card.filled_by||'—')}</span></div>
+  </div></div>`;
+
   // Timeline
   html += `<div class="fp-detail-section"><h3><i class="bi bi-clock-history"></i> Timeline</h3><div class="fp-timeline">
     <div class="fp-timeline-item"><span class="tl-label">Created</span><span class="tl-val">${createdAt}</span></div>
@@ -452,7 +746,7 @@ function openPrintDetail(id, mode) {
   }
 
   // Operator data (if already submitted)
-  if (extra.ink_colors || extra.cylinder_ref || extra.impression_count || extra.operator_notes) {
+  if (extra.ink_colors || extra.cylinder_ref || extra.impression_count || extra.operator_notes || card.mkd_job_sl_no || card.label_size || card.actual_qty) {
     html += `<div class="fp-detail-section"><h3><i class="bi bi-person-badge"></i> Operator Submission</h3><div class="fp-detail-grid">
       <div class="fp-detail-item"><span class="dl">Ink Colors</span><span class="dv">${esc(extra.ink_colors||'—')}</span></div>
       <div class="fp-detail-item"><span class="dl">Cylinder Ref</span><span class="dv">${esc(extra.cylinder_ref||'—')}</span></div>
@@ -466,9 +760,45 @@ function openPrintDetail(id, mode) {
   }
 
   // Operator input form (only for Running jobs or when completing)
-  if (sts === 'Running' || mode === 'complete') {
+  if (sts === 'Running' || mode === 'complete' || IS_OPERATOR_VIEW) {
     html += `<div class="fp-detail-section"><h3><i class="bi bi-pencil-square"></i> Operator Data — Fill Before Completing</h3>
     <form id="dm-operator-form">
+      <div class="fp-form-row">
+        <div class="fp-form-group"><label>MKD Job SL NO</label><input type="text" name="mkd_job_sl_no" value="${esc(card.mkd_job_sl_no||'')}"></div>
+        <div class="fp-form-group"><label>Date</label><input type="date" name="job_date" value="${esc(card.job_date||'')}"></div>
+      </div>
+      <div class="fp-form-row">
+        <div class="fp-form-group"><label>Job Name</label><input type="text" name="job_name" value="${esc(card.job_name||'')}"></div>
+        <div class="fp-form-group"><label>Die</label><input type="text" name="die" value="${esc(card.die||'')}"></div>
+      </div>
+      <div class="fp-form-row">
+        <div class="fp-form-group"><label>Plate No</label><input type="text" name="plate_no" value="${esc(card.plate_no||'')}"></div>
+        <div class="fp-form-group"><label>Material Company</label><input type="text" name="material_company" value="${esc(card.material_company||'')}"></div>
+      </div>
+      <div class="fp-form-row">
+        <div class="fp-form-group"><label>Material Name</label><input type="text" name="material_name" value="${esc(card.material_name||'')}"></div>
+        <div class="fp-form-group"><label>Order MTR</label><input type="number" step="0.01" name="order_mtr" value="${esc(card.order_mtr||'')}"></div>
+      </div>
+      <div class="fp-form-row">
+        <div class="fp-form-group"><label>Order QTY</label><input type="number" step="1" name="order_qty" value="${esc(card.order_qty||'')}"></div>
+        <div class="fp-form-group"><label>Label Size</label><input type="text" name="label_size" value="${esc(card.label_size||'')}"></div>
+      </div>
+      <div class="fp-form-row">
+        <div class="fp-form-group"><label>Repeat</label><input type="text" name="repeat_mm" value="${esc(card.repeat_mm||'')}"></div>
+        <div class="fp-form-group"><label>Direction</label><input type="text" name="direction" value="${esc(card.direction||'')}"></div>
+      </div>
+      <div class="fp-form-row">
+        <div class="fp-form-group"><label>Reel No C1</label><input type="text" name="reel_no_c1" value="${esc(card.reel_no_c1||'')}"></div>
+        <div class="fp-form-group"><label>Reel No C2</label><input type="text" name="reel_no_c2" value="${esc(card.reel_no_c2||'')}"></div>
+      </div>
+      <div class="fp-form-row">
+        <div class="fp-form-group"><label>Width C1</label><input type="number" step="0.01" name="width_c1" value="${esc(card.width_c1||'')}"></div>
+        <div class="fp-form-group"><label>Width C2</label><input type="number" step="0.01" name="width_c2" value="${esc(card.width_c2||'')}"></div>
+      </div>
+      <div class="fp-form-row">
+        <div class="fp-form-group"><label>Length C1</label><input type="number" step="0.01" name="length_c1" value="${esc(card.length_c1||'')}"></div>
+        <div class="fp-form-group"><label>Length C2</label><input type="number" step="0.01" name="length_c2" value="${esc(card.length_c2||'')}"></div>
+      </div>
       <div class="fp-form-row">
         <div class="fp-form-group"><label>Ink Colors</label><input type="text" name="ink_colors" value="${esc(extra.ink_colors||'')}" placeholder="e.g. CMYK, PMS 185"></div>
         <div class="fp-form-group"><label>Cylinder Reference</label><input type="text" name="cylinder_ref" value="${esc(extra.cylinder_ref||'')}" placeholder="e.g. CYL-A-001"></div>
@@ -496,6 +826,30 @@ function openPrintDetail(id, mode) {
         </div>
         <div class="fp-form-group"><label>&nbsp;</label></div>
       </div>
+      <div class="fp-form-row">
+        <div class="fp-form-group"><label>Colour Lanes (1-8)</label>
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">
+            ${Array.from({length:8}, (_,i)=>`<input type="text" name="colour_lane_${i+1}" value="${esc(card.colour_lanes[i]||'')}" placeholder="${i+1}">`).join('')}
+          </div>
+        </div>
+        <div class="fp-form-group"><label>Anilox Lanes (1-8)</label>
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">
+            ${Array.from({length:8}, (_,i)=>`<input type="text" name="anilox_lane_${i+1}" value="${esc(card.anilox_lanes[i]||'')}" placeholder="${i+1}">`).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="fp-form-row">
+        <div class="fp-form-group"><label>Mark Andy Actual QTY</label><input type="number" step="1" name="actual_qty" value="${esc(card.actual_qty||'')}"></div>
+        <div class="fp-form-group"><label>Electricity</label><input type="text" name="electricity" value="${esc(card.electricity||'')}"></div>
+      </div>
+      <div class="fp-form-row">
+        <div class="fp-form-group"><label>Time</label><input type="text" name="time_spent" value="${esc(card.time_spent||'')}"></div>
+        <div class="fp-form-group"><label>Prepared By</label><input type="text" name="prepared_by" value="${esc(card.prepared_by||'')}"></div>
+      </div>
+      <div class="fp-form-row">
+        <div class="fp-form-group"><label>Filled By</label><input type="text" name="filled_by" value="${esc(card.filled_by||'')}"></div>
+        <div class="fp-form-group"><label>&nbsp;</label></div>
+      </div>
       <div class="fp-form-group" style="margin-bottom:0"><label>Operator Notes</label><textarea name="operator_notes" placeholder="Observations, adjustments, ink changes&hellip;">${esc(extra.operator_notes||'')}</textarea></div>
     </form></div>`;
   }
@@ -510,7 +864,9 @@ function openPrintDetail(id, mode) {
   if (sts === 'Pending' && prevDone) fHtml += `<button class="fp-action-btn fp-btn-start" onclick="updateFPStatus(${job.id},'Running')"><i class="bi bi-play-fill"></i> Start Job</button>`;
   if (sts === 'Pending' && !prevDone) fHtml += `<button class="fp-action-btn fp-btn-start" disabled><i class="bi bi-lock-fill"></i> Waiting for Slitting</button>`;
   if (sts === 'Running') fHtml += `<button class="fp-action-btn fp-btn-complete" onclick="submitAndComplete(${job.id})"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
-  fHtml += `<button class="fp-action-btn fp-btn-delete" onclick="deleteJob(${job.id})" title="Admin: Delete"><i class="bi bi-trash"></i></button>`;
+  if (!IS_OPERATOR_VIEW) {
+    fHtml += `<button class="fp-action-btn fp-btn-delete" onclick="deleteJob(${job.id})" title="Admin: Delete"><i class="bi bi-trash"></i></button>`;
+  }
   fHtml += '</div>';
   document.getElementById('dm-footer').innerHTML = fHtml;
 
@@ -544,6 +900,7 @@ function printJobCard(id) {
   const job = ALL_JOBS.find(j => j.id == id);
   if (!job) return;
   const extra = job.extra_data_parsed || {};
+  const card = normalizeCardData(job, extra);
   const created = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
   const started = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
   const completed = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
@@ -563,10 +920,21 @@ function printJobCard(id) {
       </div>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:16px">
+      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc;width:35%">MKD Job SL NO</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.mkd_job_sl_no||'—')}</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Date</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.job_date||'—')}</td></tr>
       <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc;width:35%">Job Name</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(resolvePrintDisplayName(job))}</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Die</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.die||'—')}</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Plate No</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.plate_no||'—')}</td></tr>
       <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Roll No</td><td style="padding:6px 10px;border:1px solid #e2e8f0;color:#8b5cf6;font-weight:700">${esc(job.roll_no||'—')}</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Material Company</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.material_company||'—')}</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Material Name</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.material_name||'—')}</td></tr>
       <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Material / GSM</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(job.paper_type||'—')} / ${esc(job.gsm||'—')} GSM</td></tr>
       <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Dimension</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((job.width_mm||'—')+'mm × '+(job.length_mtr||'—')+'m')}</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Reel No C1 / C2</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.reel_no_c1||'—') + ' / ' + (card.reel_no_c2||'—'))}</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Width C1 / C2</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.width_c1||'—') + ' / ' + (card.width_c2||'—'))}</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Length C1 / C2</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.length_c1||'—') + ' / ' + (card.length_c2||'—'))}</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Label Size / Repeat / Direction</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.label_size||'—') + ' / ' + (card.repeat_mm||'—') + ' / ' + (card.direction||'—'))}</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Order MTR / QTY</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.order_mtr||'—') + ' / ' + (card.order_qty||'—'))}</td></tr>
       <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Weight</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${job.weight_kg ? job.weight_kg+' kg' : '—'}</td></tr>
       <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Supplier</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(job.company||'—')}</td></tr>
       <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Status</td><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700">${esc(job.status)}</td></tr>
@@ -574,6 +942,10 @@ function printJobCard(id) {
       <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Completed</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${completed}</td></tr>
       ${dur !== null && dur !== undefined ? `<tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Duration</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${Math.floor(dur/60)}h ${dur%60}m</td></tr>` : ''}
       ${job.prev_job_no ? `<tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Slitting Job</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(job.prev_job_no)} (${esc(job.prev_job_status||'—')})</td></tr>` : ''}
+      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Colour 1-8</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.colour_lanes.filter(Boolean).join(', ') || '—')}</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Anilox 1-8</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.anilox_lanes.filter(Boolean).join(', ') || '—')}</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Actual Qty / Electricity / Time</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.actual_qty||'—') + ' / ' + (card.electricity||'—') + ' / ' + (card.time_spent||'—'))}</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Prepared By / Filled By</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.prepared_by||'—') + ' / ' + (card.filled_by||'—'))}</td></tr>
     </table>
     ${extra.ink_colors || extra.impression_count ? `
     <div style="font-weight:800;font-size:.75rem;text-transform:uppercase;color:#64748b;margin-bottom:8px">Printing Data</div>

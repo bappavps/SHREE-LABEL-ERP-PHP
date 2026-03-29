@@ -243,6 +243,75 @@ function planning_get_any_key(array $normRow, array $keys) {
     return null;
 }
 
+function planning_is_safe_image_path($path) {
+  $p = str_replace('\\', '/', trim((string)$path));
+  if ($p === '') return false;
+  return strpos($p, 'uploads/planning/') === 0;
+}
+
+function planning_remove_image_file($path) {
+  $p = trim((string)$path);
+  if ($p === '' || !planning_is_safe_image_path($p)) return;
+  $abs = realpath(__DIR__ . '/../../' . ltrim($p, '/'));
+  if ($abs && is_file($abs)) {
+    @unlink($abs);
+    $dir = dirname($abs);
+    if (is_dir($dir)) {
+      $left = @scandir($dir);
+      if (is_array($left) && count($left) <= 2) {
+        @rmdir($dir);
+      }
+    }
+  }
+}
+
+function planning_save_uploaded_image($file, $rowId, $oldPath = '') {
+  if (!is_array($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+    return [false, 'No image selected.', null];
+  }
+  if (($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+    return [false, 'Image upload failed.', null];
+  }
+  if (($file['size'] ?? 0) > 8 * 1024 * 1024) {
+    return [false, 'Image size must be below 8MB.', null];
+  }
+
+  $tmp = (string)($file['tmp_name'] ?? '');
+  $mime = @mime_content_type($tmp);
+  $allowed = [
+    'image/png' => 'png',
+    'image/jpeg' => 'jpg',
+    'image/webp' => 'webp',
+    'image/gif' => 'gif',
+  ];
+  if (!isset($allowed[$mime])) {
+    return [false, 'Only PNG, JPG, WEBP, GIF files are allowed.', null];
+  }
+
+  $ext = $allowed[$mime];
+  $dirRel = 'uploads/planning/' . (int)$rowId;
+  $dirAbs = __DIR__ . '/../../' . $dirRel;
+  if (!is_dir($dirAbs) && !@mkdir($dirAbs, 0777, true)) {
+    return [false, 'Unable to prepare upload directory.', null];
+  }
+
+  $safeName = 'plan_' . (int)$rowId . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+  $absPath = $dirAbs . '/' . $safeName;
+  if (!@move_uploaded_file($tmp, $absPath)) {
+    return [false, 'Unable to save uploaded image.', null];
+  }
+
+  if ($oldPath !== '' && $oldPath !== ($dirRel . '/' . $safeName)) {
+    planning_remove_image_file($oldPath);
+  }
+
+  return [true, '', [
+    'image_path' => $dirRel . '/' . $safeName,
+    'image_name' => (string)($file['name'] ?? $safeName),
+    'image_uploaded_at' => date('Y-m-d H:i:s'),
+  ]];
+}
+
 // AJAX actions for board.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if (!verifyCSRF($_POST['csrf_token'] ?? '')) {
@@ -290,10 +359,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($action === 'delete_row') {
         $id = (int)($_POST['id'] ?? 0);
         if ($id <= 0) planning_json_response(['ok' => false, 'message' => 'Invalid row id.'], 400);
+
+      $sel = $db->prepare("SELECT extra_data FROM planning WHERE id = ? AND department = ? LIMIT 1");
+      $sel->bind_param('is', $id, $department);
+      $sel->execute();
+      $row = $sel->get_result()->fetch_assoc();
+      if ($row) {
+        $extra = json_decode((string)($row['extra_data'] ?? '{}'), true);
+        if (is_array($extra) && !empty($extra['image_path'])) {
+          planning_remove_image_file((string)$extra['image_path']);
+        }
+      }
+
         $del = $db->prepare("DELETE FROM planning WHERE id = ? AND department = ?");
         $del->bind_param('is', $id, $department);
         $ok = $del->execute();
         planning_json_response(['ok' => (bool)$ok, 'message' => $ok ? 'Row deleted.' : 'Delete failed.']);
+    }
+
+    if ($action === 'upload_job_image') {
+      $id = (int)($_POST['id'] ?? 0);
+      if ($id <= 0) planning_json_response(['ok' => false, 'message' => 'Invalid row id.'], 400);
+      if (empty($_FILES['job_image'])) {
+        planning_json_response(['ok' => false, 'message' => 'No image selected.'], 400);
+      }
+
+      $sel = $db->prepare("SELECT extra_data FROM planning WHERE id = ? AND department = ? LIMIT 1");
+      $sel->bind_param('is', $id, $department);
+      $sel->execute();
+      $row = $sel->get_result()->fetch_assoc();
+      if (!$row) {
+        planning_json_response(['ok' => false, 'message' => 'Planning row not found.'], 404);
+      }
+
+      $extra = json_decode((string)($row['extra_data'] ?? '{}'), true);
+      if (!is_array($extra)) $extra = [];
+      $oldPath = trim((string)($extra['image_path'] ?? ''));
+
+      list($saved, $err, $meta) = planning_save_uploaded_image($_FILES['job_image'], $id, $oldPath);
+      if (!$saved || !is_array($meta)) {
+        planning_json_response(['ok' => false, 'message' => $err !== '' ? $err : 'Image upload failed.'], 400);
+      }
+
+      $extra['image_path'] = $meta['image_path'];
+      $extra['image_name'] = $meta['image_name'];
+      $extra['image_uploaded_at'] = $meta['image_uploaded_at'];
+
+      $extraJson = json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+      $up = $db->prepare("UPDATE planning SET extra_data = ? WHERE id = ? AND department = ?");
+      $up->bind_param('sis', $extraJson, $id, $department);
+      $ok = $up->execute();
+      if (!$ok) {
+        planning_remove_image_file((string)$meta['image_path']);
+        planning_json_response(['ok' => false, 'message' => 'Image saved but database update failed.'], 500);
+      }
+
+      planning_json_response([
+        'ok' => true,
+        'message' => 'Image uploaded.',
+        'image_path' => $meta['image_path'],
+        'image_name' => $meta['image_name'],
+        'image_uploaded_at' => $meta['image_uploaded_at'],
+        'image_url' => appUrl($meta['image_path'])
+      ]);
+    }
+
+    if ($action === 'delete_job_image') {
+      $id = (int)($_POST['id'] ?? 0);
+      if ($id <= 0) planning_json_response(['ok' => false, 'message' => 'Invalid row id.'], 400);
+
+      $sel = $db->prepare("SELECT extra_data FROM planning WHERE id = ? AND department = ? LIMIT 1");
+      $sel->bind_param('is', $id, $department);
+      $sel->execute();
+      $row = $sel->get_result()->fetch_assoc();
+      if (!$row) {
+        planning_json_response(['ok' => false, 'message' => 'Planning row not found.'], 404);
+      }
+
+      $extra = json_decode((string)($row['extra_data'] ?? '{}'), true);
+      if (!is_array($extra)) $extra = [];
+      $oldPath = trim((string)($extra['image_path'] ?? ''));
+      if ($oldPath !== '') {
+        planning_remove_image_file($oldPath);
+      }
+
+      unset($extra['image_path'], $extra['image_name'], $extra['image_uploaded_at']);
+      $extraJson = json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+      $up = $db->prepare("UPDATE planning SET extra_data = ? WHERE id = ? AND department = ?");
+      $up->bind_param('sis', $extraJson, $id, $department);
+      $ok = $up->execute();
+      planning_json_response(['ok' => (bool)$ok, 'message' => $ok ? 'Image removed.' : 'Unable to remove image.']);
     }
 
     if ($action === 'create_row') {
@@ -503,12 +658,13 @@ include __DIR__ . '/../../includes/header.php';
             <?php if ($c['key'] === 'sn') continue; ?>
             <th draggable="true" data-col-key="<?= e($c['key']) ?>"><?= e($c['label']) ?></th>
           <?php endforeach; ?>
+          <th>Job Image</th>
         </tr>
       </thead>
       <tbody>
       <?php $visibleColCount = 0; foreach ($columns as $_c) { if ($_c['key'] !== 'sn') $visibleColCount++; } ?>
       <?php if (empty($rows)): ?>
-        <tr><td colspan="<?= $visibleColCount + 3 ?>" class="table-empty"><i class="bi bi-inbox"></i>No planning jobs found.</td></tr>
+        <tr><td colspan="<?= $visibleColCount + 4 ?>" class="table-empty"><i class="bi bi-inbox"></i>No planning jobs found.</td></tr>
       <?php else: ?>
         <?php foreach ($rows as $idx => $r): ?>
           <?php
@@ -516,6 +672,12 @@ include __DIR__ . '/../../includes/header.php';
             $rowStatusVal = 'Pending';
             foreach ($columns as $_sc) { if ($_sc['type'] === 'Status') { $rowStatusVal = (string)($rowVals[$_sc['key']] ?? 'Pending'); break; } }
             $rowSCls = planning_status_pill_class($rowStatusVal);
+            $rowExtra = json_decode((string)($r['extra_data'] ?? '{}'), true);
+            if (!is_array($rowExtra)) $rowExtra = [];
+            $jobImagePath = trim((string)($rowExtra['image_path'] ?? ''));
+            $jobImageName = trim((string)($rowExtra['image_name'] ?? ''));
+            $jobImageUploadedAt = trim((string)($rowExtra['image_uploaded_at'] ?? ''));
+            $jobImageUrl = $jobImagePath !== '' ? appUrl($jobImagePath) : '';
           ?>
           <tr data-id="<?= (int)$r['id'] ?>" class="row-s-<?= $rowSCls ?>">
             <td class="sticky-col">
@@ -553,6 +715,21 @@ include __DIR__ . '/../../includes/header.php';
                 <?php endif; ?>
               </td>
             <?php endforeach; ?>
+            <td class="job-image-cell"
+                data-image-path="<?= e($jobImagePath) ?>"
+                data-image-url="<?= e($jobImageUrl) ?>"
+                data-image-name="<?= e($jobImageName) ?>"
+                data-image-uploaded-at="<?= e($jobImageUploadedAt) ?>">
+              <div class="job-image-box <?= $jobImageUrl !== '' ? 'has-image' : 'no-image' ?>">
+                <?php if ($jobImageUrl !== ''): ?>
+                  <button type="button" class="job-image-thumb-btn" title="Open image">
+                    <img src="<?= e($jobImageUrl) ?>" alt="Job image" class="job-image-thumb">
+                  </button>
+                <?php else: ?>
+                  <button type="button" class="job-image-empty-btn" title="Add image"><i class="bi bi-image"></i></button>
+                <?php endif; ?>
+              </div>
+            </td>
           </tr>
         <?php endforeach; ?>
       <?php endif; ?>
@@ -586,6 +763,10 @@ include __DIR__ . '/../../includes/header.php';
             <?php endif; ?>
           </div>
         <?php endforeach; ?>
+        <div style="grid-column:1 / -1">
+          <label>Job Image (Optional)</label>
+          <input class="form-control" name="job_image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+        </div>
       </div>
       <div class="planning-modal-foot">
         <button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle"></i> Save Entry</button>
@@ -617,6 +798,29 @@ include __DIR__ . '/../../includes/header.php';
   </div>
 </div>
 
+<div class="planning-modal" id="modal-image-viewer" style="display:none">
+  <div class="planning-modal-card image-viewer-modal-card">
+    <div class="planning-modal-head">
+      <h3>Planning Job Image</h3>
+      <button type="button" class="btn btn-ghost btn-sm modal-close"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="image-viewer-toolbar">
+      <div class="image-viewer-meta" id="image-viewer-meta"></div>
+      <div class="image-viewer-controls">
+        <button type="button" class="btn btn-ghost btn-sm" id="image-zoom-out"><i class="bi bi-dash-lg"></i></button>
+        <button type="button" class="btn btn-ghost btn-sm" id="image-zoom-reset">100%</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="image-zoom-in"><i class="bi bi-plus-lg"></i></button>
+        <button type="button" class="btn btn-ghost btn-sm" id="image-upload-btn"><i class="bi bi-upload"></i> Upload</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="image-edit-btn"><i class="bi bi-pencil-square"></i> Edit</button>
+        <button type="button" class="btn btn-danger btn-sm" id="image-delete-btn"><i class="bi bi-trash"></i> Delete</button>
+      </div>
+    </div>
+    <div class="image-viewer-stage" id="image-viewer-stage">
+      <img id="image-viewer-img" alt="Planning job image">
+    </div>
+  </div>
+</div>
+
 <form id="csrf-form" style="display:none">
   <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
   <input type="hidden" name="department" value="<?= e($department) ?>">
@@ -632,12 +836,29 @@ include __DIR__ . '/../../includes/header.php';
   var addModal = document.getElementById('modal-add');
   var cfgModal = document.getElementById('modal-config');
   var detailModal = document.getElementById('modal-plan-detail');
+  var imageViewerModal = document.getElementById('modal-image-viewer');
+  var imageViewerImg = document.getElementById('image-viewer-img');
+  var imageViewerMeta = document.getElementById('image-viewer-meta');
+  var imageZoomInBtn = document.getElementById('image-zoom-in');
+  var imageZoomOutBtn = document.getElementById('image-zoom-out');
+  var imageZoomResetBtn = document.getElementById('image-zoom-reset');
+  var imageUploadBtn = document.getElementById('image-upload-btn');
+  var imageEditBtn = document.getElementById('image-edit-btn');
+  var imageDeleteBtn = document.getElementById('image-delete-btn');
+  var imageViewerStage = document.getElementById('image-viewer-stage');
   var fileInput = document.getElementById('excel-file');
   var btnExportExcel = document.getElementById('btn-export-excel');
   var btnPrintPdf = document.getElementById('btn-print-pdf');
   var columns = <?= json_encode($columns, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
   var csrfToken = document.querySelector('#csrf-form [name="csrf_token"]').value;
   var currentDepartment = <?= json_encode($department, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+  var imageViewerScale = 1;
+  var imageViewerRowId = '';
+  var imageUploadInput = document.createElement('input');
+  imageUploadInput.type = 'file';
+  imageUploadInput.accept = 'image/png,image/jpeg,image/webp,image/gif';
+  imageUploadInput.style.display = 'none';
+  document.body.appendChild(imageUploadInput);
 
   function safeText(value) {
     return String(value == null ? '' : value)
@@ -755,6 +976,14 @@ include __DIR__ . '/../../includes/header.php';
         value: value && value !== '—' ? value : 'NA'
       });
     });
+
+    var imageCell = tr.querySelector('.job-image-cell');
+    if (imageCell) {
+      var imageName = imageCell.getAttribute('data-image-name') || '';
+      var imageUploadedAt = imageCell.getAttribute('data-image-uploaded-at') || '';
+      values.push({ label: 'Job Image', value: imageName !== '' ? imageName : 'Not uploaded' });
+      values.push({ label: 'Image Uploaded At', value: imageUploadedAt !== '' ? imageUploadedAt : 'NA' });
+    }
 
     var container = document.getElementById('plan-detail-content');
     container.innerHTML = values.map(function(item){
@@ -892,6 +1121,22 @@ include __DIR__ . '/../../includes/header.php';
     });
   }
 
+  function postActionForm(form) {
+    form.append('csrf_token', csrfToken);
+    return fetch(window.location.href, { method: 'POST', body: form }).then(function(r){
+      return r.text().then(function(t){
+        var data = null;
+        try { data = JSON.parse(t); } catch (e) {
+          throw new Error('Server returned non-JSON response. ' + String(t || '').slice(0, 180));
+        }
+        if (!r.ok || !data || data.ok === false) {
+          throw new Error((data && data.message) ? data.message : 'Request failed');
+        }
+        return data;
+      });
+    });
+  }
+
   deptSwitch.addEventListener('change', function(){
     var url = new URL(window.location.href);
     url.searchParams.set('department', deptSwitch.value);
@@ -932,9 +1177,122 @@ include __DIR__ . '/../../includes/header.php';
     });
   }
 
+  function updateImageZoom(scale) {
+    imageViewerScale = Math.max(0.25, Math.min(5, scale));
+    if (imageViewerImg) {
+      imageViewerImg.style.transform = 'scale(' + imageViewerScale + ')';
+      imageViewerImg.style.transformOrigin = 'center center';
+    }
+    if (imageZoomResetBtn) {
+      imageZoomResetBtn.textContent = Math.round(imageViewerScale * 100) + '%';
+    }
+  }
+
+  function setRowImageData(tr, meta) {
+    var cell = tr.querySelector('.job-image-cell');
+    if (!cell) return;
+
+    var imagePath = String(meta.image_path || '').trim();
+    var imageUrl = String(meta.image_url || '').trim();
+    var imageName = String(meta.image_name || '').trim();
+    var imageUploadedAt = String(meta.image_uploaded_at || '').trim();
+
+    cell.setAttribute('data-image-path', imagePath);
+    cell.setAttribute('data-image-url', imageUrl);
+    cell.setAttribute('data-image-name', imageName);
+    cell.setAttribute('data-image-uploaded-at', imageUploadedAt);
+
+    var box = cell.querySelector('.job-image-box');
+    if (!box) return;
+
+    if (imageUrl !== '') {
+      box.classList.remove('no-image');
+      box.classList.add('has-image');
+      box.innerHTML = '' +
+        '<button type="button" class="job-image-thumb-btn" title="Open image">' +
+          '<img src="' + safeText(imageUrl) + '" alt="Job image" class="job-image-thumb">' +
+        '</button>';
+      return;
+    }
+
+    box.classList.remove('has-image');
+    box.classList.add('no-image');
+    box.innerHTML = '' +
+      '<button type="button" class="job-image-empty-btn" title="Add image"><i class="bi bi-image"></i></button>';
+  }
+
+  function openImageViewerForRow(tr) {
+    var cell = tr.querySelector('.job-image-cell');
+    if (!cell) return;
+    var imageUrl = String(cell.getAttribute('data-image-url') || '').trim();
+    var imageName = String(cell.getAttribute('data-image-name') || '').trim();
+    var imageUploadedAt = String(cell.getAttribute('data-image-uploaded-at') || '').trim();
+    var jobNo = tr.querySelector('.job-no-cell strong') ? tr.querySelector('.job-no-cell strong').textContent.trim() : '';
+
+    imageViewerRowId = tr.getAttribute('data-id') || '';
+    if (imageUrl !== '') {
+      imageViewerImg.src = imageUrl;
+      imageViewerImg.style.display = '';
+      imageViewerStage.classList.remove('is-empty');
+      imageViewerStage.setAttribute('data-empty', '');
+      imageDeleteBtn.disabled = false;
+    } else {
+      imageViewerImg.removeAttribute('src');
+      imageViewerImg.style.display = 'none';
+      imageViewerStage.classList.add('is-empty');
+      imageViewerStage.setAttribute('data-empty', 'No image uploaded. Click Upload or Edit to add one.');
+      imageDeleteBtn.disabled = true;
+    }
+
+    imageViewerMeta.innerHTML = '<strong>' + safeText(jobNo || 'Planning Job') + '</strong>' +
+      (imageName !== '' ? '<span>' + safeText(imageName) + '</span>' : '') +
+      (imageUploadedAt !== '' ? '<small>Uploaded: ' + safeText(imageUploadedAt) + '</small>' : '');
+    updateImageZoom(1);
+    openModal(imageViewerModal);
+  }
+
+  function uploadImageForRow(tr, file) {
+    var rowId = tr.getAttribute('data-id');
+    if (!rowId || !file) return;
+    var form = new FormData();
+    form.append('action', 'upload_job_image');
+    form.append('id', rowId);
+    form.append('job_image', file);
+    postActionForm(form).then(function(res){
+      setRowImageData(tr, res || {});
+      toast('Job image uploaded');
+      if (imageViewerModal.style.display === 'flex') {
+        openImageViewerForRow(tr);
+      }
+    }).catch(function(err){
+      toast(err.message || 'Image upload failed', true);
+    });
+  }
+
+  function removeImageForRow(tr) {
+    var rowId = tr.getAttribute('data-id');
+    if (!rowId) return;
+    confirmDialog('Delete this planning job image?', function(){
+      postAction({ action: 'delete_job_image', id: rowId }).then(function(){
+        setRowImageData(tr, {});
+        if (imageViewerModal && imageViewerModal.style.display === 'flex') {
+          closeModal(imageViewerModal);
+        }
+        toast('Job image removed');
+      }).catch(function(err){
+        toast(err.message || 'Unable to delete image', true);
+      });
+    });
+  }
+
   boardTable.addEventListener('click', function(e){
     var tr = e.target.closest('tr[data-id]');
     if (!tr) return;
+
+    if (e.target.closest('.job-image-thumb-btn,.job-image-empty-btn')) {
+      openImageViewerForRow(tr);
+      return;
+    }
 
     if (e.target.closest('.job-no-cell')) {
       openPlanDetail(tr);
@@ -1012,7 +1370,7 @@ include __DIR__ . '/../../includes/header.php';
   });
 
   boardTable.addEventListener('dblclick', function(e){
-    if (e.target.closest('.btn-edit,.btn-save,.btn-cancel,.btn-delete')) return;
+    if (e.target.closest('.btn-edit,.btn-save,.btn-cancel,.btn-delete,.job-image-thumb-btn,.job-image-empty-btn')) return;
     var tr = e.target.closest('tr[data-id]');
     if (!tr || tr.classList.contains('is-editing')) return;
     setRowEditMode(tr, true);
@@ -1022,7 +1380,53 @@ include __DIR__ . '/../../includes/header.php';
   normalizeRenderedStatuses();
 
   function openModal(el) { el.style.display = 'flex'; }
-  function closeModal(el) { el.style.display = 'none'; }
+  function closeModal(el) {
+    el.style.display = 'none';
+    if (el === imageViewerModal) {
+      imageViewerRowId = '';
+      imageViewerImg.removeAttribute('src');
+      imageViewerImg.style.display = '';
+      imageViewerStage.classList.remove('is-empty');
+      imageViewerStage.setAttribute('data-empty', '');
+      imageDeleteBtn.disabled = false;
+      imageViewerMeta.textContent = '';
+      updateImageZoom(1);
+    }
+  }
+
+  imageZoomInBtn.addEventListener('click', function(){ updateImageZoom(imageViewerScale + 0.25); });
+  imageZoomOutBtn.addEventListener('click', function(){ updateImageZoom(imageViewerScale - 0.25); });
+  imageZoomResetBtn.addEventListener('click', function(){ updateImageZoom(1); });
+  imageUploadBtn.addEventListener('click', function(){
+    if (!imageViewerRowId) return;
+    var row = boardTable.querySelector('tr[data-id="' + imageViewerRowId + '"]');
+    if (!row) return;
+    imageUploadInput.value = '';
+    imageUploadInput.onchange = function(){
+      var file = imageUploadInput.files && imageUploadInput.files[0];
+      if (!file) return;
+      uploadImageForRow(row, file);
+    };
+    imageUploadInput.click();
+  });
+  imageEditBtn.addEventListener('click', function(){
+    if (!imageViewerRowId) return;
+    var row = boardTable.querySelector('tr[data-id="' + imageViewerRowId + '"]');
+    if (!row) return;
+    imageUploadInput.value = '';
+    imageUploadInput.onchange = function(){
+      var file = imageUploadInput.files && imageUploadInput.files[0];
+      if (!file) return;
+      uploadImageForRow(row, file);
+    };
+    imageUploadInput.click();
+  });
+  imageDeleteBtn.addEventListener('click', function(){
+    if (!imageViewerRowId) return;
+    var row = boardTable.querySelector('tr[data-id="' + imageViewerRowId + '"]');
+    if (!row) return;
+    removeImageForRow(row);
+  });
 
   document.getElementById('btn-add-row').addEventListener('click', function(){ openModal(addModal); });
   btnExportExcel.addEventListener('click', exportPlanningExcel);
@@ -1038,7 +1442,7 @@ include __DIR__ . '/../../includes/header.php';
     });
   });
 
-  [addModal, cfgModal, detailModal].forEach(function(m){
+  [addModal, cfgModal, detailModal, imageViewerModal].forEach(function(m){
     m.addEventListener('click', function(e){ if (e.target === m) closeModal(m); });
   });
 
@@ -1047,11 +1451,26 @@ include __DIR__ . '/../../includes/header.php';
     var fd = new FormData(e.target);
     var payload = { action: 'create_row' };
     var rowValues = {};
-    fd.forEach(function(v, k){ payload[k] = v; });
-    fd.forEach(function(v, k){ rowValues[k] = v; });
+    var jobImage = fd.get('job_image');
+    fd.forEach(function(v, k){
+      if (k === 'job_image') return;
+      payload[k] = v;
+      rowValues[k] = v;
+    });
     payload.row_values_json = JSON.stringify(rowValues);
 
-    postAction(payload).then(function(){
+    postAction(payload).then(function(res){
+      var createdId = parseInt(res && res.id ? res.id : '0', 10);
+      if (jobImage && typeof jobImage === 'object' && jobImage.size > 0 && createdId > 0) {
+        var upForm = new FormData();
+        upForm.append('action', 'upload_job_image');
+        upForm.append('id', String(createdId));
+        upForm.append('job_image', jobImage);
+        return postActionForm(upForm).then(function(){
+          toast('New job added with image');
+          window.location.reload();
+        });
+      }
       toast('New job added');
       window.location.reload();
     }).catch(function(err){ toast(err.message || 'Create failed', true); });
@@ -1228,6 +1647,91 @@ include __DIR__ . '/../../includes/header.php';
 .planning-board-table thead .sticky-col { z-index: 6; }
 .job-no-cell { white-space: nowrap; color: #1e40af; font-size: .82rem; letter-spacing: .02em; }
 .job-no-cell strong { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.job-image-cell { min-width: 74px; text-align: center; }
+.job-image-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+}
+.job-image-thumb-btn {
+  border: none;
+  padding: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+.job-image-thumb {
+  width: 56px;
+  height: 40px;
+  object-fit: cover;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(2, 6, 23, .12);
+}
+.job-image-empty-btn {
+  width: 56px;
+  height: 40px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.job-image-empty-btn:hover,
+.job-image-thumb-btn:hover .job-image-thumb { border-color: #60a5fa; }
+
+.image-viewer-modal-card {
+  width: min(760px, 100%);
+}
+.image-viewer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.image-viewer-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: #334155;
+}
+.image-viewer-meta strong {
+  font-size: .9rem;
+  color: #0f172a;
+}
+.image-viewer-meta span,
+.image-viewer-meta small {
+  font-size: .76rem;
+}
+.image-viewer-controls {
+  display: flex;
+  gap: 6px;
+}
+.image-viewer-stage {
+  background: #0f172a;
+  min-height: 42vh;
+  max-height: 52vh;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+.image-viewer-stage.is-empty::before {
+  content: attr(data-empty);
+  color: #cbd5e1;
+  font-size: .92rem;
+}
+.image-viewer-stage img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+  box-shadow: 0 18px 38px rgba(15, 23, 42, .5);
+  transition: transform .16s ease;
+}
 
 .planning-modal {
   position: fixed;
@@ -1349,6 +1853,10 @@ include __DIR__ . '/../../includes/header.php';
 @media (max-width: 680px) {
   .planning-grid { grid-template-columns: 1fr; }
   .plan-detail-grid { grid-template-columns: 1fr; }
+  .job-image-cell { min-width: 64px; }
+  .job-image-thumb,
+  .job-image-empty-btn { width: 48px; height: 34px; }
+  .image-viewer-stage { min-height: 36vh; }
 }
 /* ── In-page toast notifications ── */
 #erp-toast-ctr { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none; max-width: 420px; }

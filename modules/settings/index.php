@@ -664,7 +664,7 @@ include __DIR__ . '/../../includes/header.php';
           <label>Company Logo</label>
           <input type="file" name="company_logo" accept="image/png,image/jpeg,image/webp,image/gif">
           <?php if (!empty($settings['logo_path'])): ?>
-            <div class="settings-preview mt-8"><img src="<?= e(BASE_URL . '/' . ltrim($settings['logo_path'], '/')) ?>" alt="Current logo"></div>
+            <div class="settings-preview mt-8"><img src="<?= e(appUrl($settings['logo_path'])) ?>" alt="Current logo"></div>
           <?php endif; ?>
         </div>
 
@@ -672,7 +672,7 @@ include __DIR__ . '/../../includes/header.php';
           <label>Animated Flag Image</label>
           <input type="file" name="animated_flag" accept="image/png,image/jpeg,image/webp,image/gif">
           <?php if (!empty($settings['animated_flag_path'])): ?>
-            <div class="settings-preview mt-8"><img src="<?= e(BASE_URL . '/' . ltrim($settings['animated_flag_path'], '/')) ?>" alt="Current flag"></div>
+            <div class="settings-preview mt-8"><img src="<?= e(appUrl($settings['animated_flag_path'])) ?>" alt="Current flag"></div>
           <?php endif; ?>
         </div>
 
@@ -732,7 +732,7 @@ include __DIR__ . '/../../includes/header.php';
         <?php foreach ($filteredLibrary as $idx => $img): ?>
           <div class="library-card library-card-modern">
             <div class="library-chip"><?= e($libraryCategories[$img['category'] ?? 'misc'] ?? 'Misc') ?></div>
-            <div class="library-thumb"><img src="<?= e(BASE_URL . '/' . ltrim((string)$img['path'], '/')) ?>" alt="Library image"></div>
+            <div class="library-thumb"><img src="<?= e(appUrl((string)$img['path'])) ?>" alt="Library image"></div>
             <div class="library-meta">
               <div class="library-name"><?= e((string)($img['name'] ?? 'image')) ?></div>
               <?php if (($img['category'] ?? '') === 'product-type' && !empty($img['paper_type'])): ?>

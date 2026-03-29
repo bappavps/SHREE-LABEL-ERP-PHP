@@ -5,7 +5,7 @@ require_once __DIR__ . '/includes/functions.php';
 $settings = getAppSettings();
 $companyName = trim((string)($settings['company_name'] ?? '')) ?: APP_NAME;
 $logoPath = trim((string)($settings['logo_path'] ?? ''));
-$iconSrc = $logoPath !== '' ? (BASE_URL . '/' . ltrim($logoPath, '/')) : (BASE_URL . '/assets/img/logo.svg');
+$iconSrc = $logoPath !== '' ? appUrl($logoPath) : appUrl('assets/img/logo.svg');
 $themeColor = trim((string)($settings['sidebar_button_color'] ?? '#22c55e')) ?: '#22c55e';
 $iconExt = strtolower(pathinfo($iconSrc, PATHINFO_EXTENSION));
 $mimeMap = [
@@ -22,8 +22,8 @@ $manifest = [
     'name' => $companyName,
     'short_name' => substr($companyName, 0, 12),
     'description' => $companyName . ' ERP',
-    'start_url' => BASE_URL . '/index.php',
-    'scope' => BASE_URL . '/',
+    'start_url' => appUrl('index.php'),
+    'scope' => appUrl(''),
     'display' => 'standalone',
     'background_color' => '#ffffff',
     'theme_color' => $themeColor,

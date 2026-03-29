@@ -38,7 +38,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
   <div class="sidebar-brand">
     <div class="brand-icon">
       <?php if ($sidebarLogoPath !== ''): ?>
-        <img src="<?= e(BASE_URL . '/' . ltrim($sidebarLogoPath, '/')) ?>" alt="Logo" class="sidebar-logo-img">
+        <img src="<?= e(appUrl($sidebarLogoPath)) ?>" alt="Logo" class="sidebar-logo-img">
       <?php else: ?>
         <i class="bi bi-layers"></i>
       <?php endif; ?>

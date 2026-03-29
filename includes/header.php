@@ -24,9 +24,9 @@ $animatedFlagSrc = '';
 if ($animatedFlagUrl !== '' && filter_var($animatedFlagUrl, FILTER_VALIDATE_URL)) {
   $animatedFlagSrc = $animatedFlagUrl;
 } elseif ($animatedFlagPath !== '') {
-  $animatedFlagSrc = BASE_URL . '/' . ltrim($animatedFlagPath, '/');
+  $animatedFlagSrc = appUrl($animatedFlagPath);
 }
-$companyLogoUrl = $logoPath !== '' ? (BASE_URL . '/' . ltrim($logoPath, '/')) : (BASE_URL . '/assets/img/logo.svg');
+$companyLogoUrl = $logoPath !== '' ? appUrl($logoPath) : appUrl('assets/img/logo.svg');
 $themeColor = (string)($appSettings['sidebar_button_color'] ?? '#22c55e');
 ?>
 <!DOCTYPE html>
@@ -37,12 +37,12 @@ $themeColor = (string)($appSettings['sidebar_button_color'] ?? '#22c55e');
 <title><?= e($pageTitle) ?> — <?= APP_NAME ?></title>
 <link rel="icon" href="<?= e($companyLogoUrl) ?>">
 <link rel="apple-touch-icon" href="<?= e($companyLogoUrl) ?>">
-<link rel="manifest" href="<?= BASE_URL ?>/manifest.php">
+<link rel="manifest" href="<?= e(appUrl('manifest.php')) ?>">
 <meta name="theme-color" content="<?= e($themeColor) ?>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/style.css?v=<?= @filemtime(__DIR__ . '/../assets/css/style.css') ?: time() ?>">
+<link rel="stylesheet" href="<?= e(appUrl('assets/css/style.css')) ?>?v=<?= @filemtime(__DIR__ . '/../assets/css/style.css') ?: time() ?>">
 <style>
 :root {
   --brand: <?= e($sidebarButtonColor) ?>;
@@ -66,7 +66,7 @@ $themeColor = (string)($appSettings['sidebar_button_color'] ?? '#22c55e');
       </button>
       <div class="topbar-brand">
         <?php if ($logoPath !== ''): ?>
-          <img src="<?= e(BASE_URL . '/' . ltrim($logoPath, '/')) ?>" alt="Logo" class="topbar-brand-logo">
+          <img src="<?= e(appUrl($logoPath)) ?>" alt="Logo" class="topbar-brand-logo">
         <?php else: ?>
           <i class="bi bi-layers"></i>
         <?php endif; ?>
