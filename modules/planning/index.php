@@ -359,6 +359,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
       $notes = trim((string)($rowValues['remarks'] ?? $rowValues['notes'] ?? ''));
       $scheduled = planning_try_parse_date($rowValues['dispatch_date'] ?? $rowValues['scheduled_date'] ?? '');
 
+      // Preserve uploaded image metadata stored in extra_data when saving row fields.
+      $selExtra = $db->prepare("SELECT extra_data FROM planning WHERE id = ? AND department = ? LIMIT 1");
+      $selExtra->bind_param('is', $id, $department);
+      $selExtra->execute();
+      $existingRow = $selExtra->get_result()->fetch_assoc();
+      $existingExtra = json_decode((string)($existingRow['extra_data'] ?? '{}'), true);
+      if (!is_array($existingExtra)) $existingExtra = [];
+      foreach (['image_path', 'image_name', 'image_uploaded_at'] as $imgKey) {
+        if (!array_key_exists($imgKey, $rowValues) && array_key_exists($imgKey, $existingExtra)) {
+          $rowValues[$imgKey] = $existingExtra[$imgKey];
+        }
+      }
+
       $extraJson = json_encode($rowValues, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
       $up = $db->prepare("UPDATE planning SET job_name=?, machine=?, operator_name=?, scheduled_date=NULLIF(?, ''), status=?, priority=?, notes=?, extra_data=? WHERE id=? AND department=?");
       $up->bind_param('ssssssssis', $jobName, $machine, $operator, $scheduled, $status, $priority, $notes, $extraJson, $id, $department);
