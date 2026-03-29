@@ -262,6 +262,40 @@ function jobs_attach_live_roll_data(array &$job, array $rollMap): void {
     $job['extra_data_parsed'] = $extra;
 }
 
+function jobs_join_base_url(string $path): string {
+    $path = trim($path);
+    if ($path === '') return '';
+    if (preg_match('/^https?:\/\//i', $path)) return $path;
+    $base = rtrim((string)BASE_URL, '/');
+    $rel = ltrim(str_replace('\\', '/', $path), '/');
+    return $base . '/' . $rel;
+}
+
+function jobs_first_non_empty(array $arr, array $keys, string $fallback = ''): string {
+    foreach ($keys as $k) {
+        if (!array_key_exists($k, $arr)) continue;
+        $v = trim((string)$arr[$k]);
+        if ($v !== '') return $v;
+    }
+    return $fallback;
+}
+
+function jobs_pick_planning_image(array $planningExtra): string {
+    $candidates = [
+        'print_image_url',
+        'planning_image_url',
+        'physical_image_url',
+        'upload_image_url',
+        'image_url',
+        'print_image_path',
+        'planning_image_path',
+        'physical_image_path',
+        'upload_image_path',
+        'image_path',
+    ];
+    return jobs_first_non_empty($planningExtra, $candidates, '');
+}
+
 function jobs_get_chain_jobs(mysqli $db, int $rootJobId): array {
     $chain = [];
     $seen = [];
@@ -503,6 +537,108 @@ try {
         $upd->execute();
 
         echo json_encode(['ok' => true, 'job_id' => $jobId]);
+        break;
+
+    // ─── Upload physical image for printing job ────────────
+    case 'upload_printing_photo':
+        if ($method !== 'POST') {
+            echo json_encode(['ok' => false, 'error' => 'POST required']);
+            break;
+        }
+
+        $jobId = (int)($_POST['job_id'] ?? 0);
+        if ($jobId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Missing job_id']);
+            break;
+        }
+        if (empty($_FILES['photo']) || !is_array($_FILES['photo'])) {
+            echo json_encode(['ok' => false, 'error' => 'Missing photo file']);
+            break;
+        }
+
+        $jobStmt = $db->prepare("SELECT id, job_type, extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $jobStmt->bind_param('i', $jobId);
+        $jobStmt->execute();
+        $job = $jobStmt->get_result()->fetch_assoc();
+        if (!$job) {
+            echo json_encode(['ok' => false, 'error' => 'Job not found']);
+            break;
+        }
+        if ((string)($job['job_type'] ?? '') !== 'Printing') {
+            echo json_encode(['ok' => false, 'error' => 'This upload is only allowed for printing jobs']);
+            break;
+        }
+
+        $file = $_FILES['photo'];
+        if ((int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            echo json_encode(['ok' => false, 'error' => 'Upload failed']);
+            break;
+        }
+        $tmp = (string)($file['tmp_name'] ?? '');
+        if ($tmp === '' || !is_uploaded_file($tmp)) {
+            echo json_encode(['ok' => false, 'error' => 'Invalid upload source']);
+            break;
+        }
+
+        $maxBytes = 8 * 1024 * 1024;
+        $size = (int)($file['size'] ?? 0);
+        if ($size <= 0 || $size > $maxBytes) {
+            echo json_encode(['ok' => false, 'error' => 'Image must be up to 8MB']);
+            break;
+        }
+
+        $mime = '';
+        if (function_exists('finfo_open')) {
+            $fi = finfo_open(FILEINFO_MIME_TYPE);
+            if ($fi) {
+                $mime = (string)finfo_file($fi, $tmp);
+                finfo_close($fi);
+            }
+        }
+
+        $extMap = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+        ];
+        if (!isset($extMap[$mime])) {
+            echo json_encode(['ok' => false, 'error' => 'Only JPG, PNG, or WEBP images are allowed']);
+            break;
+        }
+
+        $uploadDir = __DIR__ . '/../../uploads/jobs/printing';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+            echo json_encode(['ok' => false, 'error' => 'Upload folder is not writable']);
+            break;
+        }
+
+        $fname = 'print_' . $jobId . '_' . date('Ymd_His') . '_' . substr(sha1((string)mt_rand()), 0, 8) . '.' . $extMap[$mime];
+        $absPath = $uploadDir . '/' . $fname;
+        $relPath = 'uploads/jobs/printing/' . $fname;
+
+        if (!move_uploaded_file($tmp, $absPath)) {
+            echo json_encode(['ok' => false, 'error' => 'Failed to move uploaded file']);
+            break;
+        }
+
+        $extra = json_decode((string)($job['extra_data'] ?? '{}'), true);
+        if (!is_array($extra)) $extra = [];
+        $extra['physical_print_photo_path'] = $relPath;
+        $extra['physical_print_photo_url'] = jobs_join_base_url($relPath);
+        $extra['physical_print_photo_uploaded_at'] = date('c');
+        $extra['physical_print_photo_uploaded_by'] = trim((string)($_SESSION['name'] ?? ($_SESSION['user_name'] ?? '')));
+        $safeJson = json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $upd = $db->prepare("UPDATE jobs SET extra_data = ? WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')");
+        $upd->bind_param('si', $safeJson, $jobId);
+        $upd->execute();
+
+        echo json_encode([
+            'ok' => true,
+            'job_id' => $jobId,
+            'photo_path' => $relPath,
+            'photo_url' => jobs_join_base_url($relPath),
+        ]);
         break;
 
     // ─── Get job details ────────────────────────────────────
@@ -943,6 +1079,22 @@ try {
             $planningExtra = json_decode($j['planning_extra_data'] ?? '{}', true) ?: [];
             $j['planning_dispatch_date'] = (string)($planningExtra['dispatch_date'] ?? ($j['planning_scheduled_date'] ?? ''));
             $j['planning_die'] = trim((string)($planningExtra['die'] ?? ''));
+            $j['planning_image_path'] = jobs_pick_planning_image($planningExtra);
+            $j['planning_image_url'] = jobs_join_base_url($j['planning_image_path']);
+            $j['planning_job_date'] = jobs_first_non_empty($planningExtra, ['job_date', 'date'], (string)($j['planning_scheduled_date'] ?? ''));
+            $j['planning_mkd_job_sl_no'] = jobs_first_non_empty($planningExtra, ['mkd_job_sl_no', 'mkd_sl_no', 'mkd_no']);
+            $j['planning_plate_no'] = jobs_first_non_empty($planningExtra, ['plate_no', 'plate', 'plate_number']);
+            $j['planning_label_size'] = jobs_first_non_empty($planningExtra, ['label_size', 'size']);
+            $j['planning_repeat_mm'] = jobs_first_non_empty($planningExtra, ['repeat_mm', 'repeat']);
+            $j['planning_direction'] = jobs_first_non_empty($planningExtra, ['direction']);
+            $j['planning_order_mtr'] = jobs_first_non_empty($planningExtra, ['order_mtr', 'order_meter', 'order_meters']);
+            $j['planning_order_qty'] = jobs_first_non_empty($planningExtra, ['order_qty', 'quantity', 'order_quantity']);
+            $j['planning_reel_no_c1'] = jobs_first_non_empty($planningExtra, ['reel_no_c1', 'reel_c1']);
+            $j['planning_reel_no_c2'] = jobs_first_non_empty($planningExtra, ['reel_no_c2', 'reel_c2']);
+            $j['planning_width_c1'] = jobs_first_non_empty($planningExtra, ['width_c1']);
+            $j['planning_width_c2'] = jobs_first_non_empty($planningExtra, ['width_c2']);
+            $j['planning_length_c1'] = jobs_first_non_empty($planningExtra, ['length_c1']);
+            $j['planning_length_c2'] = jobs_first_non_empty($planningExtra, ['length_c2']);
             $rollNos = jobs_collect_roll_nos($j['extra_data_parsed'], $j);
             $rollMap = jobs_fetch_roll_map($db, $rollNos);
             jobs_attach_live_roll_data($j, $rollMap);

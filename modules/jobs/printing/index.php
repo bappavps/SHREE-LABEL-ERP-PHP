@@ -12,6 +12,7 @@ $companyAddr = $appSettings['company_address'] ?? '';
 $companyGst  = $appSettings['company_gst'] ?? '';
 $logoPath    = $appSettings['logo_path'] ?? '';
 $logoUrl     = $logoPath ? (BASE_URL . '/' . $logoPath) : '';
+$sessionUser = trim((string)($_SESSION['name'] ?? ($_SESSION['user_name'] ?? '')));
 
 // Fetch Printing job cards with roll, planning and previous slitting job details
 $jobs = $db->query("
@@ -181,6 +182,40 @@ include __DIR__ . '/../../../includes/header.php';
 .fp-form-group input:focus,.fp-form-group select:focus,.fp-form-group textarea:focus{outline:none;border-color:var(--fp-brand);box-shadow:0 0 0 2px rgba(139,92,246,.1)}
 .fp-modal-footer{padding:16px 24px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 
+.fp-op-shell{border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;overflow:hidden}
+.fp-op-form{padding:12px;display:grid;gap:12px}
+.fp-op-section{border:1px solid #dbe5f0;border-radius:10px;background:#fff;overflow:hidden}
+.fp-op-h{padding:9px 11px;border-bottom:1px solid #c4b5fd;background:#ede9fe;font-size:.68rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#5b21b6}
+.fp-op-b{padding:10px;display:grid;gap:8px}
+.fp-op-grid-2,.fp-op-grid-3,.fp-op-grid-4{display:grid;gap:8px}
+.fp-op-grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.fp-op-grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.fp-op-grid-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.fp-op-field{display:grid;gap:5px}
+.fp-op-field label{font-size:.62rem;font-weight:800;text-transform:uppercase;color:#64748b;letter-spacing:.03em}
+.fp-op-field input,.fp-op-field select,.fp-op-field textarea{padding:8px 10px;border:1px solid #dbe5f0;border-radius:8px;font-size:.8rem;font-weight:600;font-family:inherit;background:#fcfdff}
+.fp-op-field textarea{min-height:60px;resize:vertical}
+.fp-op-field input:focus,.fp-op-field select:focus,.fp-op-field textarea:focus{outline:none;border-color:var(--fp-brand);box-shadow:0 0 0 2px rgba(139,92,246,.1);background:#fff}
+.fp-op-lanes{display:grid;grid-template-columns:repeat(8,minmax(64px,1fr));gap:8px}
+.fp-op-lane{display:grid;gap:5px}
+.fp-op-lane label{font-size:.58rem;font-weight:800;color:#64748b;text-align:center}
+.fp-op-lane input{text-align:center;padding:7px 6px;border:1px solid #dbe5f0;border-radius:8px;font-size:.76rem;font-weight:700}
+.fp-op-note{font-size:.66rem;color:#64748b;margin:0}
+.fp-op-topstrip{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:14px;padding:10px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc}
+.fp-op-topitem{display:grid;gap:3px}
+.fp-op-topitem .k{font-size:.58rem;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+.fp-op-topitem .v{font-size:.76rem;font-weight:800;color:#0f172a}
+.fp-op-roll-table{width:100%;border-collapse:collapse;font-size:.75rem}
+.fp-op-roll-table th,.fp-op-roll-table td{border:1px solid #dbe5f0;padding:7px 8px;text-align:left;vertical-align:middle}
+.fp-op-roll-table th{background:#f8fafc;font-size:.62rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b}
+.fp-op-mini{font-size:.68rem;color:#64748b}
+.fp-op-lane-row{display:grid;grid-template-columns:70px 1.2fr 1fr;gap:8px;align-items:center}
+.fp-photo-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fp-photo-card{border:1px solid #dbe5f0;border-radius:10px;padding:10px;background:#fff}
+.fp-photo-preview{width:100%;height:160px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc}
+.fp-voice-btn{padding:6px 10px;font-size:.62rem;font-weight:800;text-transform:uppercase;border:1px solid #dbe5f0;border-radius:8px;background:#fff;cursor:pointer;color:#334155}
+.fp-voice-btn.active{background:#fee2e2;border-color:#fca5a5;color:#b91c1c}
+
 .fp-tabs{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
 .fp-tab-btn{padding:7px 14px;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border:1px solid var(--border,#e2e8f0);background:#fff;border-radius:999px;cursor:pointer;color:#64748b;transition:all .15s}
 .fp-tab-btn.active{background:#0f172a;color:#fff;border-color:#0f172a}
@@ -188,7 +223,8 @@ include __DIR__ . '/../../../includes/header.php';
 .fp-tab-btn.active .fp-tab-count{background:rgba(255,255,255,.2);color:#fff}
 .fp-card-check{width:16px;height:16px;cursor:pointer;accent-color:var(--fp-brand);flex-shrink:0;margin-right:2px}
 @media print{.no-print,.breadcrumb,.page-header,.fp-modal-overlay{display:none!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
-@media(max-width:600px){.fp-grid{grid-template-columns:1fr}.fp-stats{grid-template-columns:repeat(2,1fr)}.fp-detail-grid{grid-template-columns:1fr}.fp-form-row{grid-template-columns:1fr}}
+@media(max-width:900px){.fp-op-grid-4{grid-template-columns:repeat(2,minmax(0,1fr))}.fp-op-lanes{grid-template-columns:repeat(4,minmax(72px,1fr))}.fp-op-topstrip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.fp-grid{grid-template-columns:1fr}.fp-stats{grid-template-columns:repeat(2,1fr)}.fp-detail-grid{grid-template-columns:1fr}.fp-form-row{grid-template-columns:1fr}.fp-op-grid-2,.fp-op-grid-3,.fp-op-grid-4{grid-template-columns:1fr}.fp-op-lanes{grid-template-columns:repeat(2,minmax(90px,1fr))}}
 </style>
 
 <div class="fp-header no-print">
@@ -309,11 +345,19 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
       <div style="display:flex;gap:6px;align-items:center" onclick="event.stopPropagation()">
         <input type="checkbox" class="fp-card-check" data-id="<?= $job['id'] ?>" onclick="event.stopPropagation();updatePrintCount()" title="Select for bulk print">
         <?php if ($sts === 'Pending' && $prevDone): ?>
-          <button class="fp-action-btn fp-btn-start" onclick="updateFPStatus(<?= $job['id'] ?>,'Running')"><i class="bi bi-play-fill"></i> Start</button>
+          <?php if ($isOperatorView): ?>
+            <button class="fp-action-btn fp-btn-start" onclick="updateFPStatus(<?= $job['id'] ?>,'Running')"><i class="bi bi-play-fill"></i> Start</button>
+          <?php else: ?>
+            <button class="fp-action-btn fp-btn-view" onclick="openPrintDetail(<?= $job['id'] ?>);event.stopPropagation()"><i class="bi bi-eye"></i> Open</button>
+          <?php endif; ?>
         <?php elseif ($sts === 'Pending' && !$prevDone): ?>
           <button class="fp-action-btn fp-btn-start" disabled title="Slitting job must complete first"><i class="bi bi-lock-fill"></i> Locked</button>
         <?php elseif ($sts === 'Running'): ?>
-          <button class="fp-action-btn fp-btn-complete" onclick="openPrintDetail(<?= $job['id'] ?>,'complete')"><i class="bi bi-check-lg"></i> Complete</button>
+          <?php if ($isOperatorView): ?>
+            <button class="fp-action-btn fp-btn-complete" onclick="openPrintDetail(<?= $job['id'] ?>,'complete')"><i class="bi bi-check-lg"></i> Complete</button>
+          <?php else: ?>
+            <button class="fp-action-btn fp-btn-view" onclick="openPrintDetail(<?= $job['id'] ?>);event.stopPropagation()"><i class="bi bi-eye"></i> Open</button>
+          <?php endif; ?>
         <?php endif; ?>
         <button class="fp-action-btn fp-btn-view" onclick="printJobCard(<?= $job['id'] ?>)" title="Print"><i class="bi bi-printer"></i></button>
       </div>
@@ -398,6 +442,7 @@ const CSRF = '<?= e($csrf) ?>';
 const API_BASE = '<?= BASE_URL ?>/modules/jobs/api.php';
 const BASE_URL = '<?= BASE_URL ?>';
 const IS_OPERATOR_VIEW = <?= $isOperatorView ? 'true' : 'false' ?>;
+const CURRENT_USER = <?= json_encode($sessionUser, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const ALL_JOBS = <?= json_encode($jobs, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 let activeStatusFilter = 'Queued';
@@ -415,34 +460,128 @@ function getNumberFieldVal(form, name) {
 
 function normalizeCardData(job, extra) {
   const out = Object.assign({}, extra || {});
-  out.mkd_job_sl_no = String(out.mkd_job_sl_no || '').trim();
-  out.job_date = String(out.job_date || '').trim();
+  out.mkd_job_sl_no = String(out.mkd_job_sl_no || job.planning_mkd_job_sl_no || '').trim();
+  out.job_date = String(out.job_date || job.planning_job_date || '').trim();
   out.job_name = String(out.job_name || resolvePrintDisplayName(job)).trim();
-  out.die = String(out.die || '').trim();
-  out.plate_no = String(out.plate_no || '').trim();
+  out.die = String(out.die || job.planning_die || '').trim();
+  out.plate_no = String(out.plate_no || job.planning_plate_no || '').trim();
   out.material_company = String(out.material_company || job.company || '').trim();
   out.material_name = String(out.material_name || job.paper_type || '').trim();
-  out.order_mtr = out.order_mtr ?? '';
-  out.order_qty = out.order_qty ?? '';
-  out.reel_no_c1 = String(out.reel_no_c1 || '').trim();
-  out.reel_no_c2 = String(out.reel_no_c2 || '').trim();
-  out.width_c1 = out.width_c1 ?? (job.width_mm || '');
-  out.width_c2 = out.width_c2 ?? (job.width_mm || '');
-  out.length_c1 = out.length_c1 ?? (job.length_mtr || '');
-  out.length_c2 = out.length_c2 ?? (job.length_mtr || '');
-  out.label_size = String(out.label_size || '').trim();
-  out.repeat_mm = String(out.repeat_mm || '').trim();
-  out.direction = String(out.direction || '').trim();
+  out.order_mtr = out.order_mtr ?? (job.planning_order_mtr ?? '');
+  out.order_qty = out.order_qty ?? (job.planning_order_qty ?? '');
+  out.reel_no_c1 = String(out.reel_no_c1 || job.planning_reel_no_c1 || '').trim();
+  out.reel_no_c2 = String(out.reel_no_c2 || job.planning_reel_no_c2 || '').trim();
+  out.width_c1 = out.width_c1 ?? (job.planning_width_c1 ?? (job.width_mm || ''));
+  out.width_c2 = out.width_c2 ?? (job.planning_width_c2 ?? (job.width_mm || ''));
+  out.length_c1 = out.length_c1 ?? (job.planning_length_c1 ?? (job.length_mtr || ''));
+  out.length_c2 = out.length_c2 ?? (job.planning_length_c2 ?? (job.length_mtr || ''));
+  out.label_size = String(out.label_size || job.planning_label_size || '').trim();
+  out.repeat_mm = String(out.repeat_mm || job.planning_repeat_mm || '').trim();
+  out.direction = String(out.direction || job.planning_direction || '').trim();
   out.actual_qty = out.actual_qty ?? '';
   out.electricity = String(out.electricity || '').trim();
   out.time_spent = String(out.time_spent || '').trim();
-  out.prepared_by = String(out.prepared_by || '').trim();
+  out.prepared_by = String(out.prepared_by || CURRENT_USER || '').trim();
   out.filled_by = String(out.filled_by || '').trim();
+  out.defects_text = String(out.defects_text || (Array.isArray(out.defects) ? out.defects.join(', ') : '') || '').trim();
+  out.physical_print_photo_url = String(out.physical_print_photo_url || '').trim();
+  out.physical_print_photo_path = String(out.physical_print_photo_path || '').trim();
+  out.total_wastage_meters = out.total_wastage_meters ?? out.wastage_meters ?? '';
   if (!Array.isArray(out.colour_lanes)) out.colour_lanes = ['', '', '', '', '', '', '', ''];
   if (!Array.isArray(out.anilox_lanes)) out.anilox_lanes = ['', '', '', '', '', '', '', ''];
   out.colour_lanes = out.colour_lanes.slice(0, 8).concat(Array(Math.max(0, 8 - out.colour_lanes.length)).fill('')).map(v => String(v || '').trim());
   out.anilox_lanes = out.anilox_lanes.slice(0, 8).concat(Array(Math.max(0, 8 - out.anilox_lanes.length)).fill('')).map(v => String(v || '').trim());
+
+  const materialRows = Array.isArray(out.material_rows) ? out.material_rows : [];
+  out.material_rows = materialRows.length ? materialRows : [{
+    roll_no: String(job.roll_no || '').trim(),
+    material_company: out.material_company,
+    material_name: out.material_name,
+    order_mtr: out.order_mtr,
+    order_qty: out.order_qty,
+    color_match_status: String(out.color_match_status || 'Matched').trim(),
+    wastage_meters: out.wastage_meters ?? '',
+  }];
+
+  if (!Array.isArray(out.roll_wastage_rows) || !out.roll_wastage_rows.length) {
+    out.roll_wastage_rows = out.material_rows.map(r => ({
+      roll_no: String(r.roll_no || '').trim(),
+      color_match_status: String(r.color_match_status || out.color_match_status || 'Matched').trim(),
+      wastage_meters: r.wastage_meters ?? '',
+    }));
+  }
+
+  if (!Array.isArray(out.color_anilox_rows) || !out.color_anilox_rows.length) {
+    out.color_anilox_rows = Array.from({ length: 8 }, (_, i) => {
+      const colorVal = String(out.colour_lanes[i] || '').trim();
+      const anVal = String(out.anilox_lanes[i] || '').trim();
+      return {
+        lane: i + 1,
+        color_code: colorVal,
+        color_name: '',
+        anilox_value: anVal,
+        anilox_custom: '',
+      };
+    });
+  }
   return out;
+}
+
+function toLocalDateInputValue(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const dt = new Date(raw);
+  if (Number.isNaN(dt.getTime())) return '';
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const d = String(dt.getDate()).padStart(2, '0');
+  return `${dt.getFullYear()}-${m}-${d}`;
+}
+
+function toSafeNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function secondsToHms(seconds) {
+  const sec = Math.max(0, Math.floor(Number(seconds) || 0));
+  const h = String(Math.floor(sec / 3600)).padStart(2, '0');
+  const m = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
+  const s = String(sec % 60).padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
+function bindFlexoFormBehavior(container) {
+  if (!container) return;
+  const totalField = container.querySelector('[name=total_wastage_meters]');
+  const refreshWastage = () => {
+    const sum = Array.from(container.querySelectorAll('[name^="roll_wastage_"]')).reduce((acc, el) => acc + toSafeNumber(el.value), 0);
+    if (totalField) totalField.value = sum ? String(sum.toFixed(2)) : '';
+  };
+
+  container.querySelectorAll('[name^="roll_wastage_"]').forEach(el => {
+    el.addEventListener('input', refreshWastage);
+  });
+  refreshWastage();
+
+  container.querySelectorAll('[data-lane-row]').forEach(row => {
+    const colorSel = row.querySelector('[data-role="color-select"]');
+    const colorName = row.querySelector('[data-role="color-name"]');
+    const anSel = row.querySelector('[data-role="anilox-select"]');
+    const anCustom = row.querySelector('[data-role="anilox-custom"]');
+    const sync = () => {
+      if (colorName) {
+        const c = String(colorSel?.value || '');
+        colorName.style.display = c && c !== 'None' ? '' : 'none';
+      }
+      if (anCustom) {
+        anCustom.style.display = String(anSel?.value || '') === 'Custom' ? '' : 'none';
+      }
+    };
+    if (colorSel) colorSel.addEventListener('change', sync);
+    if (anSel) anSel.addEventListener('change', sync);
+    sync();
+  });
 }
 
 function resolvePrintDisplayName(job) {
@@ -533,47 +672,10 @@ async function printSelectedJobs() {
   for (const [idx, job] of selectedJobs.entries()) {
     const extra = job.extra_data_parsed || {};
     const card = normalizeCardData(job, extra);
-    const created   = job.created_at   ? new Date(job.created_at).toLocaleString()   : '—';
-    const started   = job.started_at   ? new Date(job.started_at).toLocaleString()   : '—';
-    const completed = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
-    const dur = job.duration_minutes;
     const pb  = idx < selectedJobs.length - 1 ? 'page-break-after:always;' : '';
     const jqrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
     const jqrDataUrl = await generateQR(jqrUrl);
-    const jqrHtml = jqrDataUrl ? `<div style="text-align:center;margin-left:12px"><img src="${jqrDataUrl}" style="width:90px;height:90px;display:block"><div style="font-size:.5rem;color:#94a3b8;margin-top:2px;text-align:center">Scan to open</div></div>` : '';
-    pages += `<div style="font-family:'Segoe UI',Arial,sans-serif;padding:24px;max-width:700px;margin:0 auto;${pb}">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;border-bottom:3px solid #8b5cf6;padding-bottom:12px">
-        <div>${COMPANY.logo ? `<img src="${COMPANY.logo}" style="height:40px;margin-bottom:4px;display:block">` : ''}<div style="font-weight:900;font-size:1.1rem">${esc(COMPANY.name)}</div><div style="font-size:.7rem;color:#64748b">${esc(COMPANY.address)}</div>${COMPANY.gst ? `<div style="font-size:.65rem;color:#94a3b8">GST: ${esc(COMPANY.gst)}</div>` : ''}</div>
-        <div style="display:flex;align-items:flex-start"><div style="text-align:right"><div style="font-size:1.2rem;font-weight:900;color:#8b5cf6">${esc(job.job_no)}</div><div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:#64748b">Flexo Printing Job Card</div><div style="font-size:.65rem;color:#94a3b8;margin-top:4px">${created}</div></div>${jqrHtml}</div>
-      </div>
-      <table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:16px">
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc;width:38%">MKD Job SL NO</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.mkd_job_sl_no||'—')}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Date</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.job_date||'—')}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Job Name</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(resolvePrintDisplayName(job))}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Die</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.die||'—')}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Plate No</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.plate_no||'—')}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Roll No</td><td style="padding:6px 10px;border:1px solid #e2e8f0;color:#8b5cf6;font-weight:700">${esc(job.roll_no||'—')}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Material</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.material_name||job.paper_type||'—')} / ${esc(String(job.gsm||'—'))} GSM</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Dimension</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((job.width_mm||'—')+'mm × '+(job.length_mtr||'—')+'m')}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Label Size / Repeat / Dir</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.label_size||'—')+' / '+(card.repeat_mm||'—')+' / '+(card.direction||'—'))}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Order MTR / QTY</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.order_mtr||'—')+' / '+(card.order_qty||'—'))}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Reel No C1 / C2</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.reel_no_c1||'—')+' / '+(card.reel_no_c2||'—'))}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Width C1 / C2</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.width_c1||'—')+' / '+(card.width_c2||'—'))}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Length C1 / C2</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.length_c1||'—')+' / '+(card.length_c2||'—'))}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Colour 1-8</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.colour_lanes.filter(Boolean).join(', ')||'—')}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Anilox 1-8</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.anilox_lanes.filter(Boolean).join(', ')||'—')}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Actual Qty / Electricity / Time</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.actual_qty||'—')+' / '+(card.electricity||'—')+' / '+(card.time_spent||'—'))}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Prepared By / Filled By</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.prepared_by||'—')+' / '+(card.filled_by||'—'))}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Status</td><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700">${esc(job.status)}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Started</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${started}</td></tr>
-        <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Completed</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${completed}</td></tr>
-        ${dur !== null && dur !== undefined ? `<tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Duration</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${Math.floor(dur/60)}h ${dur%60}m</td></tr>` : ''}
-      </table>
-      <div style="margin-top:30px;display:flex;justify-content:space-between;font-size:.7rem;color:#94a3b8">
-        <div>Operator Signature: _____________________</div>
-        <div>Supervisor Signature: _____________________</div>
-      </div>
-    </div>`;
+    pages += `<div style="${pb}">${renderPrintCardHtml(job, card, extra, jqrDataUrl)}</div>`;
   }
   const w = window.open('', '_blank', 'width=820,height=920');
   w.document.write(`<!DOCTYPE html><html><head><title>Flexo Job Cards (${selectedJobs.length})</title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>${pages}</body></html>`);
@@ -619,41 +721,71 @@ async function submitAndComplete(id) {
   const form = document.getElementById('dm-operator-form');
   if (!form) return updateFPStatus(id, 'Completed');
 
+  const rollRows = Array.from(form.querySelectorAll('[data-roll-row]')).map((row, idx) => ({
+    idx: idx + 1,
+    roll_no: String(row.dataset.rollNo || '').trim(),
+    material_company: String(row.dataset.materialCompany || '').trim(),
+    material_name: String(row.dataset.materialName || '').trim(),
+    order_mtr: String(row.dataset.orderMtr || '').trim(),
+    order_qty: String(row.dataset.orderQty || '').trim(),
+    color_match_status: getFieldVal(form, 'color_match_status_' + idx) || 'Matched',
+    wastage_meters: getNumberFieldVal(form, 'roll_wastage_' + idx),
+  }));
+
+  const laneRows = Array.from(form.querySelectorAll('[data-lane-row]')).map((row, idx) => ({
+    lane: idx + 1,
+    color_code: getFieldVal(row, 'color_lane_code_' + idx),
+    color_name: getFieldVal(row, 'color_lane_name_' + idx),
+    anilox_value: getFieldVal(row, 'anilox_lane_value_' + idx),
+    anilox_custom: getFieldVal(row, 'anilox_lane_custom_' + idx),
+  }));
+
+  const startedTs = job.started_at ? new Date(job.started_at).getTime() : 0;
+  const elapsed = startedTs ? Math.floor((Date.now() - startedTs) / 1000) : 0;
+  const autoTimeSpent = secondsToHms(elapsed);
+
   const baseExtra = normalizeCardData(job, job.extra_data_parsed || {});
   const extraData = Object.assign({}, baseExtra, {
     ink_colors: form.querySelector('[name=ink_colors]')?.value || '',
     cylinder_ref: form.querySelector('[name=cylinder_ref]')?.value || '',
     impression_count: form.querySelector('[name=impression_count]')?.value || '',
     print_speed: form.querySelector('[name=print_speed]')?.value || '',
-    color_match_status: form.querySelector('[name=color_match_status]')?.value || 'Matched',
-    wastage_meters: form.querySelector('[name=wastage_meters]')?.value || '',
+    color_match_status: getFieldVal(form, 'color_match_status_0') || 'Matched',
+    wastage_meters: getFieldVal(form, 'total_wastage_meters') || '',
+    total_wastage_meters: getFieldVal(form, 'total_wastage_meters') || '',
+    roll_wastage_rows: rollRows,
+    material_rows: rollRows,
     operator_notes: form.querySelector('[name=operator_notes]')?.value || '',
-    defects: Array.from(form.querySelectorAll('[name=defects]:checked')).map(c=>c.value),
-    mkd_job_sl_no: getFieldVal(form, 'mkd_job_sl_no'),
-    job_date: getFieldVal(form, 'job_date'),
-    job_name: getFieldVal(form, 'job_name') || resolvePrintDisplayName(job),
-    die: getFieldVal(form, 'die'),
-    plate_no: getFieldVal(form, 'plate_no'),
-    material_company: getFieldVal(form, 'material_company'),
-    material_name: getFieldVal(form, 'material_name'),
-    order_mtr: getNumberFieldVal(form, 'order_mtr'),
-    order_qty: getNumberFieldVal(form, 'order_qty'),
-    reel_no_c1: getFieldVal(form, 'reel_no_c1'),
-    reel_no_c2: getFieldVal(form, 'reel_no_c2'),
-    width_c1: getNumberFieldVal(form, 'width_c1'),
-    width_c2: getNumberFieldVal(form, 'width_c2'),
-    length_c1: getNumberFieldVal(form, 'length_c1'),
-    length_c2: getNumberFieldVal(form, 'length_c2'),
-    label_size: getFieldVal(form, 'label_size'),
-    repeat_mm: getFieldVal(form, 'repeat_mm'),
-    direction: getFieldVal(form, 'direction'),
+    defects_text: getFieldVal(form, 'defects_text'),
+    defects: getFieldVal(form, 'defects_text') ? [getFieldVal(form, 'defects_text')] : [],
+    mkd_job_sl_no: getFieldVal(form, 'mkd_job_sl_no_locked'),
+    job_date: getFieldVal(form, 'job_date_locked'),
+    job_name: getFieldVal(form, 'job_name_locked') || resolvePrintDisplayName(job),
+    die: getFieldVal(form, 'die_locked'),
+    plate_no: getFieldVal(form, 'plate_no_locked'),
+    material_company: getFieldVal(form, 'material_company_locked'),
+    material_name: getFieldVal(form, 'material_name_locked'),
+    order_mtr: getNumberFieldVal(form, 'order_mtr_locked'),
+    order_qty: getNumberFieldVal(form, 'order_qty_locked'),
+    reel_no_c1: getFieldVal(form, 'reel_no_c1_locked'),
+    reel_no_c2: getFieldVal(form, 'reel_no_c2_locked'),
+    width_c1: getNumberFieldVal(form, 'width_c1_locked'),
+    width_c2: getNumberFieldVal(form, 'width_c2_locked'),
+    length_c1: getNumberFieldVal(form, 'length_c1_locked'),
+    length_c2: getNumberFieldVal(form, 'length_c2_locked'),
+    label_size: getFieldVal(form, 'label_size_locked'),
+    repeat_mm: getFieldVal(form, 'repeat_mm_locked'),
+    direction: getFieldVal(form, 'direction_locked'),
     actual_qty: getNumberFieldVal(form, 'actual_qty'),
     electricity: getFieldVal(form, 'electricity'),
-    time_spent: getFieldVal(form, 'time_spent'),
-    prepared_by: getFieldVal(form, 'prepared_by'),
-    filled_by: getFieldVal(form, 'filled_by'),
-    colour_lanes: Array.from({ length: 8 }, (_, i) => getFieldVal(form, 'colour_lane_' + (i + 1))),
-    anilox_lanes: Array.from({ length: 8 }, (_, i) => getFieldVal(form, 'anilox_lane_' + (i + 1)))
+    time_spent: getFieldVal(form, 'time_spent') || autoTimeSpent,
+    prepared_by: getFieldVal(form, 'prepared_by') || CURRENT_USER,
+    filled_by: getFieldVal(form, 'filled_by') || CURRENT_USER,
+    colour_lanes: laneRows.map(r => String(r.color_code || '').trim()),
+    anilox_lanes: laneRows.map(r => String(r.anilox_value === 'Custom' ? r.anilox_custom : r.anilox_value || '').trim()),
+    color_anilox_rows: laneRows,
+    physical_print_photo_url: getFieldVal(form, 'physical_print_photo_url'),
+    physical_print_photo_path: getFieldVal(form, 'physical_print_photo_path')
   });
 
   const fd1 = new FormData();
@@ -668,6 +800,84 @@ async function submitAndComplete(id) {
   } catch(e) { alert('Network error'); return; }
 
   await updateFPStatus(id, 'Completed');
+}
+
+function renderLaneSelectOptions(selected) {
+  const opts = ['None', 'Cyan', 'Magenta', 'Yellow', 'Black', 'P1', 'P2', 'P3', 'P4', 'UV', 'Other'];
+  return opts.map(o => `<option value="${o}"${String(selected||'')===o?' selected':''}>${o}</option>`).join('');
+}
+
+function renderAniloxOptions(selected) {
+  const opts = ['None', '60', '80', '100', '120', '140', '160', 'Custom'];
+  return opts.map(o => `<option value="${o}"${String(selected||'')===o?' selected':''}>${o}</option>`).join('');
+}
+
+async function handlePrintingPhotoUpload(input, jobId) {
+  const file = input?.files?.[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'upload_printing_photo');
+  fd.append('job_id', jobId);
+  fd.append('photo', file);
+  input.disabled = true;
+  try {
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) {
+      alert('Image upload failed: ' + (data.error || 'Unknown'));
+      return;
+    }
+    const img = document.getElementById('physical-photo-preview');
+    if (img) img.src = data.photo_url || '';
+    const f1 = document.querySelector('[name=physical_print_photo_url]');
+    const f2 = document.querySelector('[name=physical_print_photo_path]');
+    if (f1) f1.value = data.photo_url || '';
+    if (f2) f2.value = data.photo_path || '';
+  } catch (err) {
+    alert('Image upload network error: ' + err.message);
+  } finally {
+    input.disabled = false;
+  }
+}
+
+let voiceRec = null;
+function startVoiceToField(fieldName, btn) {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    alert('Voice input is not supported in this browser.');
+    return;
+  }
+  if (voiceRec) {
+    try { voiceRec.stop(); } catch (_) {}
+    voiceRec = null;
+  }
+  const input = document.querySelector('[name="' + fieldName + '"]');
+  if (!input) return;
+  const rec = new SpeechRecognition();
+  rec.lang = 'en-IN';
+  rec.interimResults = true;
+  rec.continuous = false;
+  let finalText = '';
+  if (btn) btn.classList.add('active');
+  rec.onresult = (event) => {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      const t = String(event.results[i][0]?.transcript || '');
+      if (event.results[i].isFinal) finalText += t + ' ';
+      else interim += t;
+    }
+    input.value = (finalText + interim).trim();
+  };
+  rec.onerror = () => {
+    if (btn) btn.classList.remove('active');
+  };
+  rec.onend = () => {
+    if (btn) btn.classList.remove('active');
+    voiceRec = null;
+  };
+  voiceRec = rec;
+  rec.start();
 }
 
 // ─── Detail modal ───────────────────────────────────────────
@@ -685,6 +895,34 @@ async function openPrintDetail(id, mode) {
   const dur = job.duration_minutes;
   const startedTs = job.started_at ? new Date(job.started_at).getTime() : 0;
   const prevDone = !job.previous_job_id || !job.prev_job_status || ['Completed','QC Passed','Closed','Finalized'].includes(job.prev_job_status);
+  const elapsedSec = startedTs ? Math.floor((Date.now() - startedTs) / 1000) : 0;
+
+  const rollRows = (Array.isArray(card.roll_wastage_rows) && card.roll_wastage_rows.length ? card.roll_wastage_rows : card.material_rows).map((row, idx) => ({
+    idx,
+    roll_no: String(row.roll_no || (idx === 0 ? (job.roll_no || '') : '')).trim(),
+    material_company: String(row.material_company || card.material_company || job.company || '').trim(),
+    material_name: String(row.material_name || card.material_name || job.paper_type || '').trim(),
+    order_mtr: row.order_mtr ?? card.order_mtr ?? '',
+    order_qty: row.order_qty ?? card.order_qty ?? '',
+    color_match_status: String(row.color_match_status || card.color_match_status || 'Matched').trim(),
+    wastage_meters: row.wastage_meters ?? '',
+  }));
+
+  const laneRows = Array.from({ length: 8 }, (_, i) => {
+    const lr = Array.isArray(card.color_anilox_rows) ? (card.color_anilox_rows[i] || {}) : {};
+    const colorCode = String(lr.color_code || card.colour_lanes[i] || 'None').trim() || 'None';
+    const anValRaw = String(lr.anilox_value || card.anilox_lanes[i] || 'None').trim() || 'None';
+    return {
+      lane: i + 1,
+      color_code: colorCode,
+      color_name: String(lr.color_name || '').trim(),
+      anilox_value: ['None','60','80','100','120','140','160','Custom'].includes(anValRaw) ? anValRaw : 'Custom',
+      anilox_custom: ['None','60','80','100','120','140','160','Custom'].includes(anValRaw) ? String(lr.anilox_custom || '').trim() : anValRaw,
+    };
+  });
+
+  const planningImage = String(job.planning_image_url || '').trim();
+  const physicalImage = String(card.physical_print_photo_url || '').trim();
 
   document.getElementById('dm-jobno').textContent = job.job_no;
   const badge = document.getElementById('dm-status-badge');
@@ -695,7 +933,6 @@ async function openPrintDetail(id, mode) {
   const viewQrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no || '')}`;
   const viewQrDataUrl = await generateQR(viewQrUrl);
 
-  // Sequencing info
   if (job.prev_job_no) {
     const pvColor = prevDone ? '#16a34a' : '#f59e0b';
     html += `<div class="fp-detail-section" style="padding:12px;background:${prevDone?'#f0fdf4':'#fef3c7'};border-radius:10px;border-left:4px solid ${pvColor}">
@@ -703,7 +940,6 @@ async function openPrintDetail(id, mode) {
         <i class="bi bi-${prevDone?'check-circle-fill':'lock-fill'}" style="color:${pvColor}"></i>
         Previous Job: <span style="color:var(--fp-brand)">${esc(job.prev_job_no)}</span>
         — <span style="color:${pvColor}">${esc(job.prev_job_status||'—')}</span>
-        ${prevDone?'<span style="font-size:.65rem;color:#16a34a">(Ready for printing)</span>':'<span style="font-size:.65rem;color:#f59e0b">(Slitting must complete first)</span>'}
       </div>
     </div>`;
   }
@@ -714,192 +950,139 @@ async function openPrintDetail(id, mode) {
         <div style="font-size:.7rem;font-weight:800;text-transform:uppercase;color:#64748b;letter-spacing:.05em">Job Card QR</div>
         <div style="font-size:.74rem;color:#475569">Scan to open this flexo job card on mobile/desktop</div>
       </div>
-      <div style="text-align:center">
-        <img src="${viewQrDataUrl}" alt="Job QR" style="width:96px;height:96px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:4px">
-      </div>
+      <div style="text-align:center"><img src="${viewQrDataUrl}" alt="Job QR" style="width:96px;height:96px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:4px"></div>
     </div>`;
   }
 
-  // Job Info
-  html += `<div class="fp-detail-section"><h3><i class="bi bi-info-circle"></i> Job Information</h3><div class="fp-detail-grid">
-    <div class="fp-detail-item"><span class="dl">Job No</span><span class="dv" style="color:var(--fp-brand)">${esc(job.job_no)}</span></div>
-    <div class="fp-detail-item"><span class="dl">Job Name</span><span class="dv">${esc(resolvePrintDisplayName(job))}</span></div>
-    <div class="fp-detail-item"><span class="dl">Department</span><span class="dv">Flexo Printing</span></div>
-    <div class="fp-detail-item"><span class="dl">Priority</span><span class="dv">${esc(job.planning_priority||'Normal')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Sequence</span><span class="dv">#${job.sequence_order||2}</span></div>
-  </div></div>`;
+  // Date + Department heading at top of job card
+  html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#ede9fe;border-radius:10px;margin-bottom:10px;border:1px solid #c4b5fd">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="font-size:.9rem;font-weight:900;color:#5b21b6"><i class="bi bi-calendar3"></i> Date: ${esc(card.job_date || '—')}</div>
+      <div style="font-size:.82rem;font-weight:900;color:#7c3aed;padding:4px 12px;background:#f5f3ff;border-radius:6px">Department: Flexo Printing</div>
+    </div>
+    <div style="font-size:.72rem;font-weight:700;color:#6d28d9">Status: ${esc(job.status || '—')}</div>
+  </div>`;
 
-  // Material Info
-  html += `<div class="fp-detail-section"><h3><i class="bi bi-box"></i> Material Information</h3><div class="fp-detail-grid">
-    <div class="fp-detail-item"><span class="dl">Roll No</span><span class="dv" style="color:var(--fp-brand)">${esc(job.roll_no||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Paper Type</span><span class="dv">${esc(job.paper_type||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">GSM</span><span class="dv">${esc(job.gsm||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Width × Length</span><span class="dv">${esc((job.width_mm||'—')+'mm × '+(job.length_mtr||'—')+'m')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Weight</span><span class="dv">${job.weight_kg ? job.weight_kg+' kg' : '—'}</span></div>
-    <div class="fp-detail-item"><span class="dl">Supplier</span><span class="dv">${esc(job.company||'—')}</span></div>
-  </div></div>`;
-
-  html += `<div class="fp-detail-section"><h3><i class="bi bi-journal-text"></i> Printing Job Card Fields</h3><div class="fp-detail-grid">
-    <div class="fp-detail-item"><span class="dl">MKD Job SL NO</span><span class="dv">${esc(card.mkd_job_sl_no||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Date</span><span class="dv">${esc(card.job_date||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Job Name</span><span class="dv">${esc(card.job_name||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Die</span><span class="dv">${esc(card.die||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Plate No</span><span class="dv">${esc(card.plate_no||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Material Company</span><span class="dv">${esc(card.material_company||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Material Name</span><span class="dv">${esc(card.material_name||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Order MTR</span><span class="dv">${esc(card.order_mtr||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Order QTY</span><span class="dv">${esc(card.order_qty||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Label Size</span><span class="dv">${esc(card.label_size||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Repeat</span><span class="dv">${esc(card.repeat_mm||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Direction</span><span class="dv">${esc(card.direction||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Reel No C1/C2</span><span class="dv">${esc((card.reel_no_c1||'—') + ' / ' + (card.reel_no_c2||'—'))}</span></div>
-    <div class="fp-detail-item"><span class="dl">Width C1/C2</span><span class="dv">${esc((card.width_c1||'—') + ' / ' + (card.width_c2||'—'))}</span></div>
-    <div class="fp-detail-item"><span class="dl">Length C1/C2</span><span class="dv">${esc((card.length_c1||'—') + ' / ' + (card.length_c2||'—'))}</span></div>
-    <div class="fp-detail-item"><span class="dl">Colour 1-8</span><span class="dv">${esc(card.colour_lanes.filter(Boolean).join(', ') || '—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Anilox 1-8</span><span class="dv">${esc(card.anilox_lanes.filter(Boolean).join(', ') || '—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Actual QTY</span><span class="dv">${esc(card.actual_qty||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Electricity</span><span class="dv">${esc(card.electricity||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Time</span><span class="dv">${esc(card.time_spent||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Prepared By</span><span class="dv">${esc(card.prepared_by||'—')}</span></div>
-    <div class="fp-detail-item"><span class="dl">Filled By</span><span class="dv">${esc(card.filled_by||'—')}</span></div>
-  </div></div>`;
-
-  // Timeline
-  html += `<div class="fp-detail-section"><h3><i class="bi bi-clock-history"></i> Timeline</h3><div class="fp-timeline">
-    <div class="fp-timeline-item"><span class="tl-label">Created</span><span class="tl-val">${createdAt}</span></div>
-    <div class="fp-timeline-item"><span class="tl-label">Started</span><span class="tl-val purple">${startedAt}</span></div>
-    <div class="fp-timeline-item"><span class="tl-label">Completed</span><span class="tl-val green">${completedAt}</span></div>`;
-  if (sts === 'Running' && startedTs) {
-    html += `<div class="fp-timeline-item"><span class="tl-label">Elapsed</span><span class="tl-val fp-timer" data-started="${startedTs}" style="color:var(--fp-brand);font-size:.9rem">00:00:00</span></div>`;
-  } else if (dur !== null && dur !== undefined) {
-    html += `<div class="fp-timeline-item"><span class="tl-label">Duration</span><span class="tl-val green">${Math.floor(dur/60)}h ${dur%60}m</span></div>`;
-  }
-  html += `</div></div>`;
-
-  // Notes
+  // Note field (PLN, JMB, FLX IDs and Job name)
   if (job.notes_display || job.notes) {
-    html += `<div class="fp-detail-section"><h3><i class="bi bi-sticky"></i> Notes</h3><div style="font-size:.82rem;color:#475569;line-height:1.5;background:#f8fafc;padding:12px;border-radius:8px">${esc(job.notes_display || job.notes)}</div></div>`;
+    html += `<div style="padding:10px 14px;background:#fef3c7;border-radius:10px;margin-bottom:10px;border:1px solid #fcd34d;font-size:.78rem;color:#92400e">
+      <div style="font-weight:800;font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;color:#78350f"><i class="bi bi-sticky"></i> Note</div>
+      <div style="font-weight:700">${esc(job.notes_display || job.notes || '')}</div>
+    </div>`;
   }
 
-  // Operator data (if already submitted)
-  if (extra.ink_colors || extra.cylinder_ref || extra.impression_count || extra.operator_notes || card.mkd_job_sl_no || card.label_size || card.actual_qty) {
-    html += `<div class="fp-detail-section"><h3><i class="bi bi-person-badge"></i> Operator Submission</h3><div class="fp-detail-grid">
-      <div class="fp-detail-item"><span class="dl">Ink Colors</span><span class="dv">${esc(extra.ink_colors||'—')}</span></div>
-      <div class="fp-detail-item"><span class="dl">Cylinder Ref</span><span class="dv">${esc(extra.cylinder_ref||'—')}</span></div>
-      <div class="fp-detail-item"><span class="dl">Impressions</span><span class="dv">${esc(extra.impression_count||'—')}</span></div>
-      <div class="fp-detail-item"><span class="dl">Print Speed</span><span class="dv">${esc(extra.print_speed||'—')} m/min</span></div>
-      <div class="fp-detail-item"><span class="dl">Color Match</span><span class="dv">${esc(extra.color_match_status||'—')}</span></div>
-      <div class="fp-detail-item"><span class="dl">Wastage</span><span class="dv">${esc(extra.wastage_meters||'—')} m</span></div>
-      <div class="fp-detail-item"><span class="dl">Notes</span><span class="dv">${esc(extra.operator_notes||'—')}</span></div>
-      ${extra.defects && extra.defects.length ? `<div class="fp-detail-item"><span class="dl">Defects</span><span class="dv">${extra.defects.join(', ')}</span></div>` : ''}
-    </div></div>`;
-  }
+  html += `<div class="fp-op-topstrip" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+    <div class="fp-op-topitem"><div class="k">Created</div><div class="v">${esc(createdAt)}</div></div>
+    <div class="fp-op-topitem"><div class="k">Started</div><div class="v">${esc(startedAt)}</div></div>
+    <div class="fp-op-topitem"><div class="k">Completed</div><div class="v">${esc(completedAt)}</div></div>
+    <div class="fp-op-topitem"><div class="k">Elapsed</div><div class="v">${startedTs ? secondsToHms(elapsedSec) : '—'}</div></div>
+  </div>`;
 
-  // Operator input form (only for Running jobs or when completing)
-  if (sts === 'Running' || mode === 'complete' || IS_OPERATOR_VIEW) {
-    html += `<div class="fp-detail-section"><h3><i class="bi bi-pencil-square"></i> Operator Data — Fill Before Completing</h3>
-    <form id="dm-operator-form">
-      <div class="fp-form-row">
-        <div class="fp-form-group"><label>MKD Job SL NO</label><input type="text" name="mkd_job_sl_no" value="${esc(card.mkd_job_sl_no||'')}"></div>
-        <div class="fp-form-group"><label>Date</label><input type="date" name="job_date" value="${esc(card.job_date||'')}"></div>
+  html += `<div class="fp-detail-section fp-op-shell"><div class="fp-op-form">
+    <div class="fp-op-section"><div class="fp-op-h">Job Information</div><div class="fp-op-b fp-op-grid-4">
+      <div class="fp-op-field"><label>Job No</label><input type="text" value="${esc(job.job_no||'—')}" readonly></div>
+      <div class="fp-op-field"><label>Job Name</label><input type="text" value="${esc(resolvePrintDisplayName(job))}" readonly></div>
+      <div class="fp-op-field"><label>Department</label><input type="text" value="Flexo Printing" readonly></div>
+      <div class="fp-op-field"><label>Priority / Sequence</label><input type="text" value="${esc((job.planning_priority||'Normal') + ' / #' + (job.sequence_order||2))}" readonly></div>
+    </div></div>
+  </div></div>`;
+
+  if (IS_OPERATOR_VIEW && (sts === 'Running' || mode === 'complete' || sts === 'Pending')) {
+    html += `<div class="fp-detail-section fp-op-shell"><h3><i class="bi bi-pencil-square"></i> Operator Data — Fill Before Completing</h3>
+    <form id="dm-operator-form" class="fp-op-form">
+      <div class="fp-op-section"><div class="fp-op-h">Locked Planning Fields</div><div class="fp-op-b fp-op-grid-3">
+        <div class="fp-op-field"><label>Job Name</label><input type="text" name="job_name_locked" value="${esc(card.job_name||resolvePrintDisplayName(job))}" readonly></div>
+        <div class="fp-op-field"><label>Die</label><input type="text" name="die_locked" value="${esc(card.die||'')}" readonly></div>
+        <div class="fp-op-field"><label>Plate No</label><input type="text" name="plate_no_locked" value="${esc(card.plate_no||'')}" readonly></div>
+        <div class="fp-op-field"><label>Material Company</label><input type="text" name="material_company_locked" value="${esc(card.material_company||'')}" readonly></div>
+        <div class="fp-op-field"><label>Material Name</label><input type="text" name="material_name_locked" value="${esc(card.material_name||'')}" readonly></div>
+        <div class="fp-op-field"><label>Order MTR</label><input type="text" name="order_mtr_locked" value="${esc(card.order_mtr||'')}" readonly></div>
+        <div class="fp-op-field"><label>Order QTY</label><input type="text" name="order_qty_locked" value="${esc(card.order_qty||'')}" readonly></div>
+        <div class="fp-op-field"><label>Label Size</label><input type="text" name="label_size_locked" value="${esc(card.label_size||'')}" readonly></div>
+        <div class="fp-op-field"><label>Repeat</label><input type="text" name="repeat_mm_locked" value="${esc(card.repeat_mm||'')}" readonly></div>
+        <div class="fp-op-field"><label>Direction</label><input type="text" name="direction_locked" value="${esc(card.direction||'')}" readonly></div>
       </div>
-      <div class="fp-form-row">
-        <div class="fp-form-group"><label>Job Name</label><input type="text" name="job_name" value="${esc(card.job_name||'')}"></div>
-        <div class="fp-form-group"><label>Die</label><input type="text" name="die" value="${esc(card.die||'')}"></div>
+      <input type="hidden" name="mkd_job_sl_no_locked" value="${esc(card.mkd_job_sl_no||'')}">
+      <input type="hidden" name="job_date_locked" value="${esc(toLocalDateInputValue(card.job_date||''))}">
+      <input type="hidden" name="reel_no_c1_locked" value="${esc(card.reel_no_c1||'')}">
+      <input type="hidden" name="reel_no_c2_locked" value="${esc(card.reel_no_c2||'')}">
+      <input type="hidden" name="width_c1_locked" value="${esc(card.width_c1||'')}">
+      <input type="hidden" name="width_c2_locked" value="${esc(card.width_c2||'')}">
+      <input type="hidden" name="length_c1_locked" value="${esc(card.length_c1||'')}">
+      <input type="hidden" name="length_c2_locked" value="${esc(card.length_c2||'')}">
       </div>
-      <div class="fp-form-row">
-        <div class="fp-form-group"><label>Plate No</label><input type="text" name="plate_no" value="${esc(card.plate_no||'')}"></div>
-        <div class="fp-form-group"><label>Material Company</label><input type="text" name="material_company" value="${esc(card.material_company||'')}"></div>
-      </div>
-      <div class="fp-form-row">
-        <div class="fp-form-group"><label>Material Name</label><input type="text" name="material_name" value="${esc(card.material_name||'')}"></div>
-        <div class="fp-form-group"><label>Order MTR</label><input type="number" step="0.01" name="order_mtr" value="${esc(card.order_mtr||'')}"></div>
-      </div>
-      <div class="fp-form-row">
-        <div class="fp-form-group"><label>Order QTY</label><input type="number" step="1" name="order_qty" value="${esc(card.order_qty||'')}"></div>
-        <div class="fp-form-group"><label>Label Size</label><input type="text" name="label_size" value="${esc(card.label_size||'')}"></div>
-      </div>
-      <div class="fp-form-row">
-        <div class="fp-form-group"><label>Repeat</label><input type="text" name="repeat_mm" value="${esc(card.repeat_mm||'')}"></div>
-        <div class="fp-form-group"><label>Direction</label><input type="text" name="direction" value="${esc(card.direction||'')}"></div>
-      </div>
-      <div class="fp-form-row">
-        <div class="fp-form-group"><label>Reel No C1</label><input type="text" name="reel_no_c1" value="${esc(card.reel_no_c1||'')}"></div>
-        <div class="fp-form-group"><label>Reel No C2</label><input type="text" name="reel_no_c2" value="${esc(card.reel_no_c2||'')}"></div>
-      </div>
-      <div class="fp-form-row">
-        <div class="fp-form-group"><label>Width C1</label><input type="number" step="0.01" name="width_c1" value="${esc(card.width_c1||'')}"></div>
-        <div class="fp-form-group"><label>Width C2</label><input type="number" step="0.01" name="width_c2" value="${esc(card.width_c2||'')}"></div>
-      </div>
-      <div class="fp-form-row">
-        <div class="fp-form-group"><label>Length C1</label><input type="number" step="0.01" name="length_c1" value="${esc(card.length_c1||'')}"></div>
-        <div class="fp-form-group"><label>Length C2</label><input type="number" step="0.01" name="length_c2" value="${esc(card.length_c2||'')}"></div>
-      </div>
-      <div class="fp-form-row">
-        <div class="fp-form-group"><label>Ink Colors</label><input type="text" name="ink_colors" value="${esc(extra.ink_colors||'')}" placeholder="e.g. CMYK, PMS 185"></div>
-        <div class="fp-form-group"><label>Cylinder Reference</label><input type="text" name="cylinder_ref" value="${esc(extra.cylinder_ref||'')}" placeholder="e.g. CYL-A-001"></div>
-      </div>
-      <div class="fp-form-row">
-        <div class="fp-form-group"><label>Impression Count</label><input type="number" name="impression_count" value="${esc(extra.impression_count||'')}" placeholder="e.g. 15000"></div>
-        <div class="fp-form-group"><label>Print Speed (m/min)</label><input type="number" step="0.1" name="print_speed" value="${esc(extra.print_speed||'')}" placeholder="e.g. 120"></div>
-      </div>
-      <div class="fp-form-row">
-        <div class="fp-form-group"><label>Color Match Status</label><select name="color_match_status">
-          <option value="Matched"${extra.color_match_status==='Matched'?' selected':''}>Matched</option>
-          <option value="Slight Variation"${extra.color_match_status==='Slight Variation'?' selected':''}>Slight Variation</option>
-          <option value="Mismatch"${extra.color_match_status==='Mismatch'?' selected':''}>Mismatch</option>
-        </select></div>
-        <div class="fp-form-group"><label>Wastage (meters)</label><input type="number" step="0.1" name="wastage_meters" value="${esc(extra.wastage_meters||'')}" placeholder="e.g. 5.2"></div>
-      </div>
-      <div class="fp-form-row">
-        <div class="fp-form-group"><label>Defects Found</label>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;padding:6px 0">
-            <label style="font-size:.75rem;font-weight:600;cursor:pointer"><input type="checkbox" name="defects" value="Ink Smudge"${(extra.defects||[]).includes('Ink Smudge')?' checked':''}> Ink Smudge</label>
-            <label style="font-size:.75rem;font-weight:600;cursor:pointer"><input type="checkbox" name="defects" value="Misalignment"${(extra.defects||[]).includes('Misalignment')?' checked':''}> Misalignment</label>
-            <label style="font-size:.75rem;font-weight:600;cursor:pointer"><input type="checkbox" name="defects" value="Color Fade"${(extra.defects||[]).includes('Color Fade')?' checked':''}> Color Fade</label>
-            <label style="font-size:.75rem;font-weight:600;cursor:pointer"><input type="checkbox" name="defects" value="Plate Damage"${(extra.defects||[]).includes('Plate Damage')?' checked':''}> Plate Damage</label>
-          </div>
-        </div>
-        <div class="fp-form-group"><label>&nbsp;</label></div>
-      </div>
-      <div class="fp-form-row">
-        <div class="fp-form-group"><label>Colour Lanes (1-8)</label>
-          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">
-            ${Array.from({length:8}, (_,i)=>`<input type="text" name="colour_lane_${i+1}" value="${esc(card.colour_lanes[i]||'')}" placeholder="${i+1}">`).join('')}
-          </div>
-        </div>
-        <div class="fp-form-group"><label>Anilox Lanes (1-8)</label>
-          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">
-            ${Array.from({length:8}, (_,i)=>`<input type="text" name="anilox_lane_${i+1}" value="${esc(card.anilox_lanes[i]||'')}" placeholder="${i+1}">`).join('')}
-          </div>
-        </div>
-      </div>
-      <div class="fp-form-row">
-        <div class="fp-form-group"><label>Mark Andy Actual QTY</label><input type="number" step="1" name="actual_qty" value="${esc(card.actual_qty||'')}"></div>
-        <div class="fp-form-group"><label>Electricity</label><input type="text" name="electricity" value="${esc(card.electricity||'')}"></div>
-      </div>
-      <div class="fp-form-row">
-        <div class="fp-form-group"><label>Time</label><input type="text" name="time_spent" value="${esc(card.time_spent||'')}"></div>
-        <div class="fp-form-group"><label>Prepared By</label><input type="text" name="prepared_by" value="${esc(card.prepared_by||'')}"></div>
-      </div>
-      <div class="fp-form-row">
-        <div class="fp-form-group"><label>Filled By</label><input type="text" name="filled_by" value="${esc(card.filled_by||'')}"></div>
-        <div class="fp-form-group"><label>&nbsp;</label></div>
-      </div>
-      <div class="fp-form-group" style="margin-bottom:0"><label>Operator Notes</label><textarea name="operator_notes" placeholder="Observations, adjustments, ink changes&hellip;">${esc(extra.operator_notes||'')}</textarea></div>
+
+      <div class="fp-op-section"><div class="fp-op-h">Roll-wise Material and Wastage</div><div class="fp-op-b">
+        <table class="fp-op-roll-table"><thead><tr><th>#</th><th>Roll No</th><th>Material</th><th>Order MTR</th><th>Order QTY</th><th>Color Match</th><th>Wastage (m)</th></tr></thead><tbody>
+          ${rollRows.map((r, idx) => `<tr data-roll-row data-roll-no="${esc(r.roll_no)}" data-material-company="${esc(r.material_company)}" data-material-name="${esc(r.material_name)}" data-order-mtr="${esc(r.order_mtr)}" data-order-qty="${esc(r.order_qty)}"><td>${idx+1}</td><td>${esc(r.roll_no||'—')}</td><td>${esc((r.material_company||'—')+' / '+(r.material_name||'—'))}</td><td>${esc(r.order_mtr||'—')}</td><td>${esc(r.order_qty||'—')}</td><td><select name="color_match_status_${idx}"><option value="Matched"${r.color_match_status==='Matched'?' selected':''}>Matched</option><option value="Slight Variation"${r.color_match_status==='Slight Variation'?' selected':''}>Slight Variation</option><option value="Mismatch"${r.color_match_status==='Mismatch'?' selected':''}>Mismatch</option></select></td><td><input type="number" step="0.01" name="roll_wastage_${idx}" value="${esc(r.wastage_meters||'')}" placeholder="0.00"></td></tr>`).join('')}
+        </tbody></table>
+        <div style="margin-top:8px;max-width:220px"><div class="fp-op-field"><label>Total Wastage (m)</label><input type="text" name="total_wastage_meters" value="${esc(card.total_wastage_meters||'')}" readonly></div></div>
+      </div></div>
+
+      <div class="fp-op-section"><div class="fp-op-h">Color + Anilox (Color 1-8)</div><div class="fp-op-b" style="gap:10px">
+        ${laneRows.map((r, idx) => `<div class="fp-op-lane-row" data-lane-row><div class="fp-op-mini"><strong>Color ${idx+1}</strong></div><div style="display:grid;gap:6px"><select data-role="color-select" name="color_lane_code_${idx}">${renderLaneSelectOptions(r.color_code)}</select><input data-role="color-name" type="text" name="color_lane_name_${idx}" value="${esc(r.color_name||'')}" placeholder="Color name" style="display:none"></div><div style="display:grid;gap:6px"><select data-role="anilox-select" name="anilox_lane_value_${idx}">${renderAniloxOptions(r.anilox_value)}</select><input data-role="anilox-custom" type="text" name="anilox_lane_custom_${idx}" value="${esc(r.anilox_custom||'')}" placeholder="Custom anilox" style="display:none"></div></div>`).join('')}
+      </div></div>
+
+      <div class="fp-op-section"><div class="fp-op-h">Planning vs Physical Print Image</div><div class="fp-op-b"><div class="fp-photo-grid"><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Planning Image</strong></div><img class="fp-photo-preview" src="${esc(planningImage || '')}" alt="Planning image" onerror="this.style.opacity='0.4';this.alt='Planning image not available'"></div><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Physical Image</strong></div><img id="physical-photo-preview" class="fp-photo-preview" src="${esc(physicalImage || '')}" alt="Physical image" onerror="this.style.opacity='0.4';this.alt='Physical image not available'"><input type="hidden" name="physical_print_photo_url" value="${esc(physicalImage || '')}"><input type="hidden" name="physical_print_photo_path" value="${esc(card.physical_print_photo_path || '')}">${IS_OPERATOR_VIEW ? `<div style="margin-top:8px"><input type="file" accept="image/png,image/jpeg,image/webp" onchange="handlePrintingPhotoUpload(this, ${job.id})"></div>` : ''}</div></div></div></div>
+
+      <div class="fp-op-section"><div class="fp-op-h">Production and Signoff</div><div class="fp-op-b fp-op-grid-4">
+        <div class="fp-op-field"><label>Production Total Quantity</label><input type="number" step="1" name="actual_qty" value="${esc(card.actual_qty||'')}"></div>
+        <div class="fp-op-field"><label>Electricity</label><input type="text" name="electricity" value="${esc(card.electricity||'')}"></div>
+        <div class="fp-op-field"><label>Time</label><input type="text" name="time_spent" value="${esc(card.time_spent||secondsToHms(elapsedSec))}" readonly></div>
+        <div class="fp-op-field"><label>Prepared By</label><input type="text" name="prepared_by" value="${esc(card.prepared_by||CURRENT_USER||'')}" readonly></div>
+      </div><div class="fp-op-b fp-op-grid-2"><div class="fp-op-field"><label>Filled By</label><input type="text" name="filled_by" value="${esc(card.filled_by||CURRENT_USER||'')}" readonly></div><div class="fp-op-field"><label>Defects Found</label><select name="defects_text">${['','Light Color','Dark Color','Plate Damage','Registration Error','Ink Smudge','Ink Spreading','Dot Missing','Streaks','Hazing','Scratch Marks','Material Defect','Other'].map(o=>o?'<option value="'+o+'"'+(card.defects_text===o?' selected':'')+'>'+o+'</option>':'<option value="">-- Select --</option>').join('')}</select></div></div><div class="fp-op-b fp-op-grid-2"><div class="fp-op-field"><label>Operator Notes</label><textarea name="operator_notes" placeholder="Observations, adjustments, ink changes&hellip;">${esc(extra.operator_notes||'')}</textarea></div><div class="fp-op-field"><label>Voice Notes</label><div style="display:flex;align-items:center;gap:8px"><button type="button" class="fp-voice-btn" onclick="startVoiceToField('operator_notes', this)"><i class="bi bi-mic"></i> Speak Notes</button></div></div></div></div>
     </form></div>`;
+  } else {
+    // Production (non-operator) read-only view — same format
+    html += `<div class="fp-detail-section fp-op-shell"><div class="fp-op-form">
+      <div class="fp-op-section"><div class="fp-op-h">Locked Planning Fields</div><div class="fp-op-b fp-op-grid-3">
+        <div class="fp-op-field"><label>Job Name</label><input type="text" value="${esc(card.job_name||resolvePrintDisplayName(job))}" readonly></div>
+        <div class="fp-op-field"><label>Die</label><input type="text" value="${esc(card.die||'')}" readonly></div>
+        <div class="fp-op-field"><label>Plate No</label><input type="text" value="${esc(card.plate_no||'')}" readonly></div>
+        <div class="fp-op-field"><label>Material Company</label><input type="text" value="${esc(card.material_company||'')}" readonly></div>
+        <div class="fp-op-field"><label>Material Name</label><input type="text" value="${esc(card.material_name||'')}" readonly></div>
+        <div class="fp-op-field"><label>Order MTR</label><input type="text" value="${esc(card.order_mtr||'')}" readonly></div>
+        <div class="fp-op-field"><label>Order QTY</label><input type="text" value="${esc(card.order_qty||'')}" readonly></div>
+        <div class="fp-op-field"><label>Label Size</label><input type="text" value="${esc(card.label_size||'')}" readonly></div>
+        <div class="fp-op-field"><label>Repeat</label><input type="text" value="${esc(card.repeat_mm||'')}" readonly></div>
+        <div class="fp-op-field"><label>Direction</label><input type="text" value="${esc(card.direction||'')}" readonly></div>
+      </div></div>
+
+      <div class="fp-op-section"><div class="fp-op-h">Roll-wise Material and Wastage</div><div class="fp-op-b">
+        <table class="fp-op-roll-table"><thead><tr><th>#</th><th>Roll No</th><th>Material</th><th>Order MTR</th><th>Order QTY</th><th>Color Match</th><th>Wastage (m)</th></tr></thead><tbody>
+          ${rollRows.map((r, idx) => `<tr><td>${idx+1}</td><td>${esc(r.roll_no||'—')}</td><td>${esc((r.material_company||'—')+' / '+(r.material_name||'—'))}</td><td>${esc(r.order_mtr||'—')}</td><td>${esc(r.order_qty||'—')}</td><td>${esc(r.color_match_status||'—')}</td><td>${esc(String(r.wastage_meters??'—'))}</td></tr>`).join('')}
+        </tbody></table>
+        <div style="margin-top:8px;max-width:220px"><div class="fp-op-field"><label>Total Wastage (m)</label><input type="text" value="${esc(card.total_wastage_meters||'')}" readonly></div></div>
+      </div></div>
+
+      <div class="fp-op-section"><div class="fp-op-h">Color + Anilox (Color 1-8)</div><div class="fp-op-b" style="gap:10px">
+        ${laneRows.map((r, idx) => `<div class="fp-op-lane-row"><div class="fp-op-mini"><strong>Color ${idx+1}</strong></div><div><input type="text" value="${esc(r.color_code||'—')}" readonly style="width:100%"></div><div><input type="text" value="${esc((r.anilox_value==='Custom'?r.anilox_custom:r.anilox_value)||'—')}" readonly style="width:100%"></div></div>`).join('')}
+      </div></div>
+
+      <div class="fp-op-section"><div class="fp-op-h">Planning vs Physical Print Image</div><div class="fp-op-b"><div class="fp-photo-grid"><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Planning Image</strong></div><img class="fp-photo-preview" src="${esc(planningImage || '')}" alt="Planning image" onerror="this.style.opacity='0.4';this.alt='Not available'"></div><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Physical Image</strong></div><img class="fp-photo-preview" src="${esc(physicalImage || '')}" alt="Physical image" onerror="this.style.opacity='0.4';this.alt='Not available'"></div></div></div></div>
+
+      <div class="fp-op-section"><div class="fp-op-h">Production and Signoff</div><div class="fp-op-b fp-op-grid-4">
+        <div class="fp-op-field"><label>Production Total Quantity</label><input type="text" value="${esc(card.actual_qty||'—')}" readonly></div>
+        <div class="fp-op-field"><label>Electricity</label><input type="text" value="${esc(card.electricity||'—')}" readonly></div>
+        <div class="fp-op-field"><label>Time</label><input type="text" value="${esc(card.time_spent||'—')}" readonly></div>
+        <div class="fp-op-field"><label>Prepared By</label><input type="text" value="${esc(card.prepared_by||'—')}" readonly></div>
+      </div><div class="fp-op-b fp-op-grid-2"><div class="fp-op-field"><label>Filled By</label><input type="text" value="${esc(card.filled_by||'—')}" readonly></div><div class="fp-op-field"><label>Defects Found</label><input type="text" value="${esc(card.defects_text||'—')}" readonly></div></div>
+      ${extra.operator_notes ? `<div class="fp-op-b"><div class="fp-op-field"><label>Operator Notes</label><div style="padding:8px 10px;border:1px solid #dbe5f0;border-radius:8px;font-size:.8rem;font-weight:600;background:#fcfdff;min-height:40px">${esc(extra.operator_notes)}</div></div></div>` : ''}
+      </div>
+    </div></div>`;
   }
 
   document.getElementById('dm-body').innerHTML = html;
   updateTimers();
+  bindFlexoFormBehavior(document.getElementById('dm-operator-form'));
 
   // Footer actions
   let fHtml = '<div style="display:flex;gap:8px">';
   fHtml += `<button class="fp-action-btn fp-btn-print" onclick="printJobCard(${job.id})"><i class="bi bi-printer"></i> Print</button>`;
   fHtml += '</div><div style="display:flex;gap:8px">';
-  if (sts === 'Pending' && prevDone) fHtml += `<button class="fp-action-btn fp-btn-start" onclick="updateFPStatus(${job.id},'Running')"><i class="bi bi-play-fill"></i> Start Job</button>`;
+  if (sts === 'Pending' && prevDone && IS_OPERATOR_VIEW) fHtml += `<button class="fp-action-btn fp-btn-start" onclick="updateFPStatus(${job.id},'Running')"><i class="bi bi-play-fill"></i> Start Job</button>`;
   if (sts === 'Pending' && !prevDone) fHtml += `<button class="fp-action-btn fp-btn-start" disabled><i class="bi bi-lock-fill"></i> Waiting for Slitting</button>`;
-  if (sts === 'Running') fHtml += `<button class="fp-action-btn fp-btn-complete" onclick="submitAndComplete(${job.id})"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
+  if (sts === 'Running' && IS_OPERATOR_VIEW) fHtml += `<button class="fp-action-btn fp-btn-complete" onclick="submitAndComplete(${job.id})"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
   if (!IS_OPERATOR_VIEW) {
     fHtml += `<button class="fp-action-btn fp-btn-delete" onclick="deleteJob(${job.id})" title="Admin: Delete"><i class="bi bi-trash"></i></button>`;
   }
@@ -937,83 +1120,162 @@ async function printJobCard(id) {
   if (!job) return;
   const extra = job.extra_data_parsed || {};
   const card = normalizeCardData(job, extra);
-  const created = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
-  const started = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
-  const completed = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
-  const dur = job.duration_minutes;
-
   const qrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
   const qrDataUrl = await generateQR(qrUrl);
-  const qrHtml = qrDataUrl ? `<div style="text-align:center;margin-left:12px"><img src="${qrDataUrl}" style="width:90px;height:90px;display:block"><div style="font-size:.5rem;color:#94a3b8;margin-top:2px;text-align:center">Scan to open</div></div>` : '';
-
-  const html = `<div style="font-family:'Segoe UI',Arial,sans-serif;padding:24px;max-width:700px;margin:0 auto">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;border-bottom:3px solid #8b5cf6;padding-bottom:12px">
-      <div>${COMPANY.logo ? `<img src="${COMPANY.logo}" style="height:40px;margin-bottom:4px;display:block">` : ''}
-        <div style="font-weight:900;font-size:1.1rem">${esc(COMPANY.name)}</div>
-        <div style="font-size:.7rem;color:#64748b">${esc(COMPANY.address)}</div>
-        ${COMPANY.gst ? `<div style="font-size:.65rem;color:#94a3b8">GST: ${esc(COMPANY.gst)}</div>` : ''}
-      </div>
-      <div style="display:flex;align-items:flex-start">
-        <div style="text-align:right">
-          <div style="font-size:1.2rem;font-weight:900;color:#8b5cf6">${esc(job.job_no)}</div>
-          <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:#64748b">Flexo Printing Job Card</div>
-          <div style="font-size:.65rem;color:#94a3b8;margin-top:4px">${created}</div>
-        </div>
-        ${qrHtml}
-      </div>
-    </div>
-    <table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:16px">
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc;width:35%">MKD Job SL NO</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.mkd_job_sl_no||'—')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Date</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.job_date||'—')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc;width:35%">Job Name</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(resolvePrintDisplayName(job))}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Die</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.die||'—')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Plate No</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.plate_no||'—')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Roll No</td><td style="padding:6px 10px;border:1px solid #e2e8f0;color:#8b5cf6;font-weight:700">${esc(job.roll_no||'—')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Material Company</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.material_company||'—')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Material Name</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.material_name||'—')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Material / GSM</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(job.paper_type||'—')} / ${esc(job.gsm||'—')} GSM</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Dimension</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((job.width_mm||'—')+'mm × '+(job.length_mtr||'—')+'m')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Reel No C1 / C2</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.reel_no_c1||'—') + ' / ' + (card.reel_no_c2||'—'))}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Width C1 / C2</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.width_c1||'—') + ' / ' + (card.width_c2||'—'))}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Length C1 / C2</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.length_c1||'—') + ' / ' + (card.length_c2||'—'))}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Label Size / Repeat / Direction</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.label_size||'—') + ' / ' + (card.repeat_mm||'—') + ' / ' + (card.direction||'—'))}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Order MTR / QTY</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.order_mtr||'—') + ' / ' + (card.order_qty||'—'))}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Weight</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${job.weight_kg ? job.weight_kg+' kg' : '—'}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Supplier</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(job.company||'—')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Status</td><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700">${esc(job.status)}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Started</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${started}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Completed</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${completed}</td></tr>
-      ${dur !== null && dur !== undefined ? `<tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Duration</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${Math.floor(dur/60)}h ${dur%60}m</td></tr>` : ''}
-      ${job.prev_job_no ? `<tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Slitting Job</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(job.prev_job_no)} (${esc(job.prev_job_status||'—')})</td></tr>` : ''}
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Colour 1-8</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.colour_lanes.filter(Boolean).join(', ') || '—')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Anilox 1-8</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.anilox_lanes.filter(Boolean).join(', ') || '—')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Actual Qty / Electricity / Time</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.actual_qty||'—') + ' / ' + (card.electricity||'—') + ' / ' + (card.time_spent||'—'))}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Prepared By / Filled By</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc((card.prepared_by||'—') + ' / ' + (card.filled_by||'—'))}</td></tr>
-    </table>
-    ${extra.ink_colors || extra.impression_count ? `
-    <div style="font-weight:800;font-size:.75rem;text-transform:uppercase;color:#64748b;margin-bottom:8px">Printing Data</div>
-    <table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:16px">
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc;width:35%">Ink Colors</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(extra.ink_colors||'—')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Cylinder Ref</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(extra.cylinder_ref||'—')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Impressions</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(extra.impression_count||'—')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Speed</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(extra.print_speed||'—')} m/min</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Color Match</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(extra.color_match_status||'—')}</td></tr>
-      <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Wastage</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(extra.wastage_meters||'—')} m</td></tr>
-      ${extra.defects && extra.defects.length ? `<tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Defects</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${extra.defects.join(', ')}</td></tr>` : ''}
-      ${extra.operator_notes ? `<tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc">Notes</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(extra.operator_notes)}</td></tr>` : ''}
-    </table>` : ''}
-    ${(job.notes_display || job.notes) ? `<div style="font-size:.75rem;color:#475569;margin-bottom:16px;padding:10px;background:#f8fafc;border-radius:8px"><strong>Notes:</strong> ${esc(job.notes_display || job.notes)}</div>` : ''}
-    <div style="margin-top:40px;display:flex;justify-content:space-between;font-size:.7rem;color:#94a3b8">
-      <div>Operator Signature: _____________________</div>
-      <div>Supervisor Signature: _____________________</div>
-    </div>
-  </div>`;
-
-  const w = window.open('', '_blank', 'width=800,height=900');
+  const html = renderPrintCardHtml(job, card, extra, qrDataUrl);
+  const w = window.open('', '_blank', 'width=820,height=920');
   w.document.write(`<!DOCTYPE html><html><head><title>Job Card - ${esc(job.job_no)}</title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>${html}</body></html>`);
   w.document.close();
   w.focus();
   setTimeout(() => w.print(), 400);
+}
+
+function renderPrintCardHtml(job, card, extra, qrDataUrl) {
+  const created = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
+  const started = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
+  const completed = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
+  const dur = Number(job.duration_minutes);
+  const durText = Number.isFinite(dur) ? `${Math.floor(dur/60)}h ${dur%60}m` : '—';
+  const rollRows = Array.isArray(card.roll_wastage_rows) && card.roll_wastage_rows.length ? card.roll_wastage_rows : card.material_rows;
+  const laneRows = Array.isArray(card.color_anilox_rows) && card.color_anilox_rows.length ? card.color_anilox_rows : Array.from({ length: 8 }, (_, i) => ({
+    lane: i + 1,
+    color_code: card.colour_lanes[i] || '',
+    color_name: '',
+    anilox_value: card.anilox_lanes[i] || '',
+    anilox_custom: '',
+  }));
+  const planningImage = String(job.planning_image_url || '').trim();
+  const physicalImage = String(card.physical_print_photo_url || '').trim();
+
+  const qrHtml = qrDataUrl
+    ? `<div style="text-align:center;margin-left:12px"><img src="${qrDataUrl}" style="width:90px;height:90px;display:block"><div style="font-size:.56rem;color:#64748b;margin-top:2px">Scan job card</div></div>`
+    : '';
+
+  return `<div style="font-family:'Segoe UI',Arial,sans-serif;padding:20px;max-width:760px;margin:0 auto;color:#0f172a">
+    <div style="border:2px solid #111827;border-radius:12px;overflow:hidden">
+      <!-- HEADER -->
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:12px 14px;background:#f8fafc;border-bottom:2px solid #111827">
+        <div>
+          ${COMPANY.logo ? `<img src="${COMPANY.logo}" style="height:36px;margin-bottom:4px;display:block">` : ''}
+          <div style="font-weight:900;font-size:1.02rem;letter-spacing:.02em">${esc(COMPANY.name || 'Company')}</div>
+          <div style="font-size:.66rem;color:#475569">${esc(COMPANY.address || '')}</div>
+          ${COMPANY.gst ? `<div style="font-size:.62rem;color:#64748b">GST: ${esc(COMPANY.gst)}</div>` : ''}
+        </div>
+        <div style="display:flex;align-items:flex-start">
+          <div style="text-align:right">
+            <div style="font-size:.66rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#475569">Department</div>
+            <div style="font-size:.92rem;font-weight:900;color:#5b21b6">Flexo Printing</div>
+            <div style="font-size:1.2rem;font-weight:900;color:#0f172a;line-height:1.1">${esc(job.job_no || '—')}</div>
+            <div style="font-size:.6rem;color:#64748b">Generated: ${esc(created)}</div>
+          </div>
+          ${qrHtml}
+        </div>
+      </div>
+
+      <!-- DATE BAR -->
+      <div style="padding:8px 14px;background:#ede9fe;border-bottom:1px solid #c4b5fd;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:.76rem;font-weight:900;color:#5b21b6">Date: ${esc(card.job_date || '—')}</div>
+        <div style="font-size:.68rem;font-weight:700;color:#6d28d9">Status: ${esc(job.status || '—')}</div>
+      </div>
+
+      <!-- NOTE (PLN, JMB, FLX IDs) -->
+      ${(job.notes_display || job.notes) ? `<div style="padding:8px 14px;background:#fef3c7;border-bottom:1px solid #fcd34d;font-size:.7rem;color:#92400e"><strong>Note:</strong> ${esc(job.notes_display || job.notes || '')}</div>` : ''}
+
+      <!-- STATUS BAR -->
+      <div style="padding:10px 12px;border-bottom:1px solid #cbd5e1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;font-size:.66rem">
+        <div><div style="color:#64748b;text-transform:uppercase;font-weight:800">Status</div><div style="font-weight:800">${esc(job.status || '—')}</div></div>
+        <div><div style="color:#64748b;text-transform:uppercase;font-weight:800">Started</div><div style="font-weight:700">${esc(started)}</div></div>
+        <div><div style="color:#64748b;text-transform:uppercase;font-weight:800">Completed</div><div style="font-weight:700">${esc(completed)}</div></div>
+        <div><div style="color:#64748b;text-transform:uppercase;font-weight:800">Duration</div><div style="font-weight:700">${esc(durText)}</div></div>
+      </div>
+
+      <div style="padding:10px 12px">
+        <!-- LOCKED PLANNING FIELDS (no MKD, no Date, no Reel/Width/Length) -->
+        <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#5b21b6;background:#ede9fe;padding:5px 8px;border-radius:4px">Locked Planning Fields</div>
+        <table style="width:100%;border-collapse:collapse;font-size:.72rem;margin-bottom:10px">
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(resolvePrintDisplayName(job))}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Die / Plate</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((card.die||'—') + ' / ' + (card.plate_no||'—'))}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Material</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((card.material_company||'—') + ' / ' + (card.material_name||'—'))}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Order MTR / QTY</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((card.order_mtr||'—') + ' / ' + (card.order_qty||'—'))}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Label Size</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(card.label_size||'—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Repeat / Direction</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((card.repeat_mm||'—') + ' / ' + (card.direction||'—'))}</td></tr>
+        </table>
+
+        <!-- ROLL-WISE MATERIAL AND WASTAGE -->
+        <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#5b21b6;background:#ede9fe;padding:5px 8px;border-radius:4px">Roll-wise Material and Wastage</div>
+        <table style="width:100%;border-collapse:collapse;font-size:.7rem;margin-bottom:10px">
+          <thead><tr>
+            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">#</th>
+            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Roll</th>
+            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Material</th>
+            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Order MTR</th>
+            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Order QTY</th>
+            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Color Match</th>
+            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Wastage (m)</th>
+          </tr></thead>
+          <tbody>
+            ${rollRows.map((r, i) => `<tr>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${i + 1}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.roll_no||'—')}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc((r.material_company||card.material_company||'—') + ' / ' + (r.material_name||card.material_name||'—'))}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.order_mtr||card.order_mtr||'—')}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.order_qty||card.order_qty||'—')}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.color_match_status||'—')}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(String(r.wastage_meters ?? '—'))}</td>
+            </tr>`).join('')}
+            <tr><td colspan="6" style="padding:6px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;text-align:right">Total Wastage</td><td style="padding:6px 7px;border:1px solid #cbd5e1;font-weight:800">${esc(card.total_wastage_meters || card.wastage_meters || '—')}</td></tr>
+          </tbody>
+        </table>
+
+        <!-- COLOR + ANILOX (Color 1-8) -->
+        <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#5b21b6;background:#ede9fe;padding:5px 8px;border-radius:4px">Color + Anilox (Color 1-8)</div>
+        <table style="width:100%;border-collapse:collapse;font-size:.7rem;margin-bottom:10px">
+          <thead><tr>
+            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Color</th>
+            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Color Code</th>
+            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Color Name</th>
+            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Anilox</th>
+          </tr></thead>
+          <tbody>
+            ${laneRows.map((r, i) => `<tr>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1;font-weight:700">Color ${i + 1}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.color_code || '—')}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.color_name || '—')}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc((r.anilox_value === 'Custom' ? r.anilox_custom : r.anilox_value) || '—')}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+
+        <!-- IMAGES -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div style="border:1px solid #cbd5e1;border-radius:8px;padding:8px">
+            <div style="font-size:.62rem;font-weight:800;text-transform:uppercase;color:#5b21b6;margin-bottom:6px">Planning Image</div>
+            ${planningImage ? `<img src="${esc(planningImage)}" style="width:100%;height:130px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0">` : `<div style="height:130px;border:1px dashed #cbd5e1;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.68rem;color:#94a3b8">Not available</div>`}
+          </div>
+          <div style="border:1px solid #cbd5e1;border-radius:8px;padding:8px">
+            <div style="font-size:.62rem;font-weight:800;text-transform:uppercase;color:#5b21b6;margin-bottom:6px">Physical Image</div>
+            ${physicalImage ? `<img src="${esc(physicalImage)}" style="width:100%;height:130px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0">` : `<div style="height:130px;border:1px dashed #cbd5e1;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.68rem;color:#94a3b8">Not available</div>`}
+          </div>
+        </div>
+
+        <!-- EXECUTION SUMMARY -->
+        <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#5b21b6;background:#ede9fe;padding:5px 8px;border-radius:4px">Execution Summary</div>
+        <table style="width:100%;border-collapse:collapse;font-size:.72rem">
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Production Total Qty</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(card.actual_qty||'—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Electricity</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(card.electricity||'—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Time</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(card.time_spent||'—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Prepared / Filled</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((card.prepared_by||'—') + ' / ' + (card.filled_by||'—'))}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Defects</td><td colspan="3" style="padding:5px 7px;border:1px solid #cbd5e1">${esc(card.defects_text || (Array.isArray(extra.defects) ? extra.defects.join(', ') : '—') || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Operator Notes</td><td colspan="3" style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.operator_notes || '—')}</td></tr>
+        </table>
+      </div>
+
+      <!-- FOOTER -->
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border-top:2px solid #111827;background:#f8fafc">
+        <div style="font-size:.68rem;color:#475569">Operator Signature: _____________________</div>
+        <div style="font-size:.68rem;color:#475569">Supervisor Signature: _____________________</div>
+      </div>
+      <div style="padding:6px 12px;font-size:.58rem;color:#64748b;display:flex;justify-content:space-between;border-top:1px solid #cbd5e1">
+        <span>Document: Flexo Printing Job Card | ${esc(COMPANY.name || '')}</span>
+        <span>Printed at ${esc(new Date().toLocaleString())}</span>
+      </div>
+    </div>
+  </div>`;
 }
 
 function generateQR(text) {

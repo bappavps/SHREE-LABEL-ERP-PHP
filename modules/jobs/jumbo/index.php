@@ -1388,7 +1388,6 @@ async function openJobDetail(id, mode) {
   fHtml += `<button class="jc-action-btn jc-btn-print" onclick="printJobCard(${job.id})"><i class="bi bi-printer"></i> Job Card Print</button>`;
   fHtml += `<button class="jc-action-btn jc-btn-view" onclick="printLabelsForJob(${job.id})"><i class="bi bi-upc-scan"></i> Label Print</button>`;
   fHtml += '</div><div style="display:flex;gap:8px">';
-  if (sts === 'Pending') fHtml += `<button class="jc-action-btn jc-btn-complete" onclick="updateJobStatus(${job.id}, 'Closed')"><i class="bi bi-check-lg"></i> Close Jumbo Job</button>`;
   fHtml += `<button class="jc-action-btn jc-btn-delete" onclick="deleteJob(${job.id})" title="Admin: Delete"><i class="bi bi-trash"></i></button>`;
   fHtml += '</div>';
   document.getElementById('dm-footer').innerHTML = fHtml;
