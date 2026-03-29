@@ -386,8 +386,44 @@ $barPalette = ['#16a34a','#0ea5e9','#f59e0b','#8b5cf6','#ef4444','#14b8a6','#647
     </div>
   </div>
 
-  <!-- Quick Actions -->
+  <!-- Quick Actions + QR Scanner -->
   <div>
+
+    <!-- ERP QR Scanner -->
+    <style>
+    .db-qr-type-badge{display:inline-block;font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;padding:2px 8px;border-radius:999px;margin-bottom:7px}
+    .db-qr-type-roll{background:#d1fae5;color:#065f46}
+    .db-qr-type-job{background:#dbeafe;color:#1e40af}
+    .db-qr-type-slitting{background:#ede9fe;color:#5b21b6}
+    .db-qr-type-url{background:#f1f5f9;color:#475569}
+    .db-qr-result-ok{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px}
+    .db-qr-result-err{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 14px}
+    .db-qr-label{font-size:.82rem;font-weight:700;color:#0f172a;margin-bottom:10px;line-height:1.4}
+    .db-qr-go{display:block;width:100%;padding:10px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-size:.82rem;font-weight:800;cursor:pointer;text-align:center;text-decoration:none;box-sizing:border-box}
+    .db-qr-go:hover{background:#6d28d9;color:#fff}
+    #db-qr-toggle{background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:.75rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px}
+    #db-qr-viewport{display:none;background:#000;overflow:hidden;border-radius:0 0 0 0;max-height:300px}
+    #db-qr-viewport.open{display:block}
+    </style>
+    <div class="card mb-20">
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <span class="card-title"><i class="bi bi-qr-code-scan" style="color:#7c3aed"></i> ERP QR Scanner</span>
+        <button id="db-qr-toggle" onclick="dbQrToggle()">
+          <i class="bi bi-camera-video" id="db-qr-icon"></i>
+          <span id="db-qr-btn-text">Tap to Scan</span>
+        </button>
+      </div>
+      <div id="db-qr-viewport"><div id="db-qr-reader" style="width:100%"></div></div>
+      <div class="card-body">
+        <div id="db-qr-result" style="display:none"></div>
+        <div id="db-qr-idle" style="text-align:center;padding:14px 0;color:#94a3b8">
+          <i class="bi bi-qr-code" style="font-size:2.2rem;opacity:.25;display:block;margin-bottom:8px"></i>
+          <div style="font-size:.78rem">Tap <strong>Tap to Scan</strong> and point camera at any ERP QR code<br><span style="font-size:.7rem;opacity:.7">Roll labels &nbsp;·&nbsp; Job cards &nbsp;·&nbsp; Slitting sheets</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Actions -->
     <div class="card mb-20">
       <div class="card-header"><span class="card-title">Quick Actions</span></div>
       <div class="card-body">
@@ -400,8 +436,94 @@ $barPalette = ['#16a34a','#0ea5e9','#f59e0b','#8b5cf6','#ef4444','#14b8a6','#647
       </div>
     </div>
 
-
   </div>
 </div>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  var RESOLVE = '<?= BASE_URL ?>/modules/scan/index.php?action=resolve';
+  var scanner  = null;
+  var active   = false;
+  var cooldown = false;
+
+  window.dbQrToggle = function(){
+    active ? stopScan() : startScan();
+  };
+
+  function startScan(){
+    document.getElementById('db-qr-viewport').classList.add('open');
+    document.getElementById('db-qr-idle').style.display   = 'none';
+    document.getElementById('db-qr-result').style.display = 'none';
+    document.getElementById('db-qr-btn-text').textContent  = 'Stop Camera';
+    document.getElementById('db-qr-icon').className        = 'bi bi-stop-circle';
+    document.getElementById('db-qr-toggle').style.background = '#ef4444';
+    active = true;
+
+    scanner = new Html5QrcodeScanner('db-qr-reader',
+      {fps: 15, qrbox: {width: 240, height: 240}}, false);
+    scanner.render(function(text){
+      if (cooldown) return;
+      cooldown = true;
+      setTimeout(function(){ cooldown = false; }, 3000);
+      resolveQr(text);
+    }, function(){});
+  }
+
+  function stopScan(){
+    if (scanner){ try{ scanner.clear(); }catch(e){} scanner = null; }
+    active = false;
+    document.getElementById('db-qr-viewport').classList.remove('open');
+    document.getElementById('db-qr-btn-text').textContent    = 'Tap to Scan';
+    document.getElementById('db-qr-icon').className          = 'bi bi-camera-video';
+    document.getElementById('db-qr-toggle').style.background = '#7c3aed';
+  }
+
+  function resolveQr(text){
+    var fd = new FormData();
+    fd.append('qr', text);
+    fetch(RESOLVE, {method: 'POST', body: fd, credentials: 'same-origin'})
+      .then(function(r){ return r.json(); })
+      .then(function(res){ stopScan(); showResult(res); })
+      .catch(function(){ stopScan(); showResult({ok: false, error: 'Network error.'}); });
+  }
+
+  function showResult(res){
+    var box  = document.getElementById('db-qr-result');
+    var idle = document.getElementById('db-qr-idle');
+    idle.style.display = 'none';
+    box.style.display  = '';
+
+    if (res.ok) {
+      var typeLabel = {roll:'Paper Roll', job:'Job Card', slitting:'Slitting', url:'ERP Page'}[res.type] || res.type;
+      var typeCls   = {roll:'db-qr-type-roll', job:'db-qr-type-job', slitting:'db-qr-type-slitting', url:'db-qr-type-url'}[res.type] || 'db-qr-type-url';
+      box.innerHTML =
+        '<div class="db-qr-result-ok">'
+        + '<span class="db-qr-type-badge ' + typeCls + '">' + esc(typeLabel) + '</span>'
+        + '<div class="db-qr-label">' + esc(res.label || '') + '</div>'
+        + '<a href="' + esc(res.url) + '" class="db-qr-go"><i class="bi bi-arrow-right-circle"></i> Open Page</a>'
+        + '</div>'
+        + '<div style="text-align:center;margin-top:10px">'
+        + '<button onclick="dbQrReset()" style="background:none;border:none;color:#64748b;font-size:.75rem;cursor:pointer;font-weight:700"><i class="bi bi-arrow-repeat"></i> Scan Another</button>'
+        + '</div>';
+    } else {
+      box.innerHTML =
+        '<div class="db-qr-result-err">'
+        + '<div style="display:flex;align-items:center;gap:8px;color:#dc2626;font-weight:700;margin-bottom:8px"><i class="bi bi-x-circle-fill"></i> Not Recognised</div>'
+        + '<div style="font-size:.8rem;color:#64748b;margin-bottom:10px">' + esc(res.error || 'Unknown error') + '</div>'
+        + '<button onclick="dbQrToggle()" style="background:#f1f5f9;border:none;border-radius:8px;padding:8px 14px;font-size:.78rem;font-weight:700;cursor:pointer;width:100%"><i class="bi bi-arrow-repeat"></i> Try Again</button>'
+        + '</div>';
+    }
+  }
+
+  window.dbQrReset = function(){
+    document.getElementById('db-qr-result').style.display = 'none';
+    document.getElementById('db-qr-idle').style.display   = '';
+  };
+
+  function esc(s){ var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+})();
+</script>
 
 <?php include __DIR__ . '/../../includes/footer.php'; ?>
