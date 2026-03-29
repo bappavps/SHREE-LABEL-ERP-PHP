@@ -375,9 +375,11 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
   </div>
 </div>
 
+<script src="<?= BASE_URL ?>/assets/js/qrcode.min.js"></script>
 <script>
 const CSRF = '<?= e($csrf) ?>';
 const API_BASE = '<?= BASE_URL ?>/modules/jobs/api.php';
+const BASE_URL = '<?= BASE_URL ?>';
 const IS_OPERATOR_VIEW = <?= $isOperatorView ? 'true' : 'false' ?>;
 const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const ALL_JOBS = <?= json_encode($jobs, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
@@ -506,12 +508,12 @@ function updatePrintCount() {
   }
 }
 
-function printSelectedJobs() {
+async function printSelectedJobs() {
   const checkedIds = Array.from(document.querySelectorAll('.fp-card-check:checked')).map(c => parseInt(c.dataset.id));
   if (!checkedIds.length) { alert('No job cards selected.'); return; }
   const selectedJobs = ALL_JOBS.filter(j => checkedIds.includes(j.id));
   let pages = '';
-  selectedJobs.forEach((job, idx) => {
+  for (const [idx, job] of selectedJobs.entries()) {
     const extra = job.extra_data_parsed || {};
     const card = normalizeCardData(job, extra);
     const created   = job.created_at   ? new Date(job.created_at).toLocaleString()   : '—';
@@ -519,10 +521,13 @@ function printSelectedJobs() {
     const completed = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
     const dur = job.duration_minutes;
     const pb  = idx < selectedJobs.length - 1 ? 'page-break-after:always;' : '';
+    const jqrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
+    const jqrDataUrl = await generateQR(jqrUrl);
+    const jqrHtml = jqrDataUrl ? `<div style="text-align:center;margin-left:12px"><img src="${jqrDataUrl}" style="width:90px;height:90px;display:block"><div style="font-size:.5rem;color:#94a3b8;margin-top:2px;text-align:center">Scan to open</div></div>` : '';
     pages += `<div style="font-family:'Segoe UI',Arial,sans-serif;padding:24px;max-width:700px;margin:0 auto;${pb}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;border-bottom:3px solid #8b5cf6;padding-bottom:12px">
         <div>${COMPANY.logo ? `<img src="${COMPANY.logo}" style="height:40px;margin-bottom:4px;display:block">` : ''}<div style="font-weight:900;font-size:1.1rem">${esc(COMPANY.name)}</div><div style="font-size:.7rem;color:#64748b">${esc(COMPANY.address)}</div>${COMPANY.gst ? `<div style="font-size:.65rem;color:#94a3b8">GST: ${esc(COMPANY.gst)}</div>` : ''}</div>
-        <div style="text-align:right"><div style="font-size:1.2rem;font-weight:900;color:#8b5cf6">${esc(job.job_no)}</div><div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:#64748b">Flexo Printing Job Card</div><div style="font-size:.65rem;color:#94a3b8;margin-top:4px">${created}</div></div>
+        <div style="display:flex;align-items:flex-start"><div style="text-align:right"><div style="font-size:1.2rem;font-weight:900;color:#8b5cf6">${esc(job.job_no)}</div><div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:#64748b">Flexo Printing Job Card</div><div style="font-size:.65rem;color:#94a3b8;margin-top:4px">${created}</div></div>${jqrHtml}</div>
       </div>
       <table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:16px">
         <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;font-weight:700;background:#f8fafc;width:38%">MKD Job SL NO</td><td style="padding:6px 10px;border:1px solid #e2e8f0">${esc(card.mkd_job_sl_no||'—')}</td></tr>
@@ -552,7 +557,7 @@ function printSelectedJobs() {
         <div>Supervisor Signature: _____________________</div>
       </div>
     </div>`;
-  });
+  }
   const w = window.open('', '_blank', 'width=820,height=920');
   w.document.write(`<!DOCTYPE html><html><head><title>Flexo Job Cards (${selectedJobs.length})</title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>${pages}</body></html>`);
   w.document.close();
@@ -896,7 +901,7 @@ async function deleteJob(id) {
 }
 
 // ─── Print Job Card ─────────────────────────────────────────
-function printJobCard(id) {
+async function printJobCard(id) {
   const job = ALL_JOBS.find(j => j.id == id);
   if (!job) return;
   const extra = job.extra_data_parsed || {};
@@ -906,6 +911,10 @@ function printJobCard(id) {
   const completed = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
   const dur = job.duration_minutes;
 
+  const qrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
+  const qrDataUrl = await generateQR(qrUrl);
+  const qrHtml = qrDataUrl ? `<div style="text-align:center;margin-left:12px"><img src="${qrDataUrl}" style="width:90px;height:90px;display:block"><div style="font-size:.5rem;color:#94a3b8;margin-top:2px;text-align:center">Scan to open</div></div>` : '';
+
   const html = `<div style="font-family:'Segoe UI',Arial,sans-serif;padding:24px;max-width:700px;margin:0 auto">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;border-bottom:3px solid #8b5cf6;padding-bottom:12px">
       <div>${COMPANY.logo ? `<img src="${COMPANY.logo}" style="height:40px;margin-bottom:4px;display:block">` : ''}
@@ -913,10 +922,13 @@ function printJobCard(id) {
         <div style="font-size:.7rem;color:#64748b">${esc(COMPANY.address)}</div>
         ${COMPANY.gst ? `<div style="font-size:.65rem;color:#94a3b8">GST: ${esc(COMPANY.gst)}</div>` : ''}
       </div>
-      <div style="text-align:right">
-        <div style="font-size:1.2rem;font-weight:900;color:#8b5cf6">${esc(job.job_no)}</div>
-        <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:#64748b">Flexo Printing Job Card</div>
-        <div style="font-size:.65rem;color:#94a3b8;margin-top:4px">${created}</div>
+      <div style="display:flex;align-items:flex-start">
+        <div style="text-align:right">
+          <div style="font-size:1.2rem;font-weight:900;color:#8b5cf6">${esc(job.job_no)}</div>
+          <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:#64748b">Flexo Printing Job Card</div>
+          <div style="font-size:.65rem;color:#94a3b8;margin-top:4px">${created}</div>
+        </div>
+        ${qrHtml}
       </div>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:16px">
@@ -973,6 +985,31 @@ function printJobCard(id) {
   setTimeout(() => w.print(), 400);
 }
 
+function generateQR(text) {
+  return new Promise(function(resolve) {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;overflow:hidden';
+    document.body.appendChild(el);
+    const inner = document.createElement('div');
+    el.appendChild(inner);
+    try {
+      new QRCode(inner, { text: text, width: 160, height: 160, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+    } catch(e) { document.body.removeChild(el); resolve(''); return; }
+    setTimeout(function() {
+      const canvas = inner.querySelector('canvas');
+      const img = inner.querySelector('img');
+      let url = '';
+      if (canvas) url = canvas.toDataURL('image/png');
+      else if (img && img.src && img.src.startsWith('data:')) url = img.src;
+      document.body.removeChild(el);
+      resolve(url);
+    }, 150);
+  });
+}
+(function(){
+  const autoId = new URLSearchParams(window.location.search).get('auto_job');
+  if (autoId) setTimeout(function(){ try { openPrintDetail(parseInt(autoId)); } catch(e){} }, 600);
+})();
 function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
 </script>
 

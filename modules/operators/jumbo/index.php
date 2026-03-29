@@ -609,6 +609,7 @@ $historyCount = $finishedCount;
 <!-- ═══ PRINT AREA (hidden, used for browser print) ═══ -->
 <div class="jc-print-area" id="jcPrintArea"></div>
 
+<script src="<?= BASE_URL ?>/assets/js/qrcode.min.js"></script>
 <script>
 const CSRF = '<?= e($csrf) ?>';
 const BASE_URL = '<?= BASE_URL ?>';
@@ -1584,7 +1585,7 @@ async function deleteJob(id) {
 }
 
 // ─── Print Job Card ─────────────────────────────────────────
-function printJobCard(id) {
+async function printJobCard(id) {
   const job = ALL_JOBS.find(j => j.id == id);
   if (!job) return;
   openJobDetail(id);
@@ -1592,6 +1593,9 @@ function printJobCard(id) {
   if (!modalBody) return;
   const template = document.getElementById('dm-print-template')?.value || 'executive';
   const nowText = new Date().toLocaleString();
+  const qrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
+  const qrDataUrl = await generateQR(qrUrl);
+  const qrHtml = qrDataUrl ? `<div style="text-align:right;margin-top:6px"><img src="${qrDataUrl}" style="width:80px;height:80px;display:inline-block"><div style="font-size:.5rem;color:#94a3b8;margin-top:2px">Scan to open</div></div>` : '';
   const html = `
     <div class="jc-print-sheet template-${template}">
       <header class="jc-print-header">
@@ -1607,6 +1611,7 @@ function printJobCard(id) {
           <div class="jc-print-title">Jumbo Slitting Job Card</div>
           <div class="jc-print-job">${esc(job.job_no || '—')}</div>
           <div class="jc-print-meta">Printed: ${esc(nowText)}</div>
+          ${qrHtml}
         </div>
       </header>
       <main class="jc-print-content">${modalBody.innerHTML}</main>
@@ -1696,6 +1701,31 @@ async function printLabelsForJob(id) {
   }
 }
 
+function generateQR(text) {
+  return new Promise(function(resolve) {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;overflow:hidden';
+    document.body.appendChild(el);
+    const inner = document.createElement('div');
+    el.appendChild(inner);
+    try {
+      new QRCode(inner, { text: text, width: 160, height: 160, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+    } catch(e) { document.body.removeChild(el); resolve(''); return; }
+    setTimeout(function() {
+      const canvas = inner.querySelector('canvas');
+      const img = inner.querySelector('img');
+      let url = '';
+      if (canvas) url = canvas.toDataURL('image/png');
+      else if (img && img.src && img.src.startsWith('data:')) url = img.src;
+      document.body.removeChild(el);
+      resolve(url);
+    }, 150);
+  });
+}
+(function(){
+  const autoId = new URLSearchParams(window.location.search).get('auto_job');
+  if (autoId) setTimeout(function(){ try { openJobDetail(parseInt(autoId)); } catch(e){} }, 600);
+})();
 function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
 </script>
 

@@ -978,7 +978,9 @@ include __DIR__ . '/../../includes/header.php';
     });
 
     var imageCell = tr.querySelector('.job-image-cell');
+    var imageUrl = '';
     if (imageCell) {
+      imageUrl = String(imageCell.getAttribute('data-image-url') || '').trim();
       var imageName = imageCell.getAttribute('data-image-name') || '';
       var imageUploadedAt = imageCell.getAttribute('data-image-uploaded-at') || '';
       values.push({ label: 'Job Image', value: imageName !== '' ? imageName : 'Not uploaded' });
@@ -986,12 +988,25 @@ include __DIR__ . '/../../includes/header.php';
     }
 
     var container = document.getElementById('plan-detail-content');
-    container.innerHTML = values.map(function(item){
+    var detailHtml = values.map(function(item){
       return '<div class="plan-detail-item">' +
         '<div class="plan-detail-label">' + safeText(item.label) + '</div>' +
         '<div class="plan-detail-value">' + safeText(item.value) + '</div>' +
       '</div>';
     }).join('');
+
+    var imagePreviewHtml = '';
+    if (imageUrl !== '') {
+      imagePreviewHtml = '' +
+        '<div class="plan-detail-item" style="grid-column:1 / -1">' +
+          '<div class="plan-detail-label">Job Image Preview</div>' +
+          '<div class="plan-detail-value" style="padding-top:8px">' +
+            '<img src="' + safeText(imageUrl) + '" alt="Job image preview" style="max-width:100%;max-height:320px;border-radius:10px;border:1px solid #e2e8f0;object-fit:contain;background:#f8fafc">' +
+          '</div>' +
+        '</div>';
+    }
+
+    container.innerHTML = imagePreviewHtml + detailHtml;
     openModal(detailModal);
   }
 
