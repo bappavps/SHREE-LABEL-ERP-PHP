@@ -237,7 +237,7 @@ include __DIR__ . '/../../../includes/header.php';
         ?>
         <tr data-search="<?= htmlspecialchars($searchStr, ENT_QUOTES) ?>">
           <td style="color:#94a3b8;font-weight:700"><?= $i+1 ?></td>
-          <td style="font-weight:800;color:var(--pr-brand);white-space:nowrap"><?= htmlspecialchars($r['job_no'] ?? '—') ?></td>
+          <td style="font-weight:800;white-space:nowrap"><?php if (!empty($r['id']) && !empty($r['job_no'])): ?><a href="<?= BASE_URL ?>/modules/jobs/printing/index.php?auto_job=<?= (int)$r['id'] ?>" style="color:var(--pr-brand);text-decoration:underline;text-underline-offset:3px" title="Open Job Card"><?= htmlspecialchars($r['job_no']) ?></a><?php else: ?><span style="color:var(--pr-brand)"><?= htmlspecialchars($r['job_no'] ?? '—') ?></span><?php endif; ?></td>
           <td style="max-width:130px"><?= htmlspecialchars($r['planning_job_name'] ?? '—') ?></td>
           <td style="font-weight:700"><?= htmlspecialchars($r['mkd_job_sl_no'] ?: '—') ?></td>
           <td style="white-space:nowrap"><?= htmlspecialchars($r['roll_no'] ?? '—') ?></td>

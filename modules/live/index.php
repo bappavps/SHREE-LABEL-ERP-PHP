@@ -268,6 +268,7 @@ function getStageIdx(job){
   const ps=(job.planning_status||'').toLowerCase();
   const dept=(job.department||'').toLowerCase();
   const jn=String(job.job_no||'').toUpperCase();
+  const pp=(job.printing_planning||'').toLowerCase();
 
   // Dispatch — only when planning has explicitly progressed to dispatch
   if(ps.includes('dispatch')) return 5;
@@ -277,6 +278,12 @@ function getStageIdx(job){
 
   // Flat Binding
   if(ps.includes('binding')||ps.includes('flat')) return 3;
+
+  // Printing Done — completed printing job advances past Printing stage
+  if(pp.includes('printing') && (pp.includes('done')||pp.includes('completed'))) return 3;
+
+  // Printing — FLX job completed but printing_planning not yet set
+  if((dept.includes('print')||jn.startsWith('FLX/')) && (s==='completed'||s==='closed'||s==='finalized')) return 3;
 
   // Printing
   if(ps.includes('printing')) return 2;

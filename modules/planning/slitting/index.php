@@ -197,7 +197,7 @@ include __DIR__ . '/../../../includes/header.php';
         ?>
         <tr data-search="<?= htmlspecialchars($searchStr, ENT_QUOTES) ?>">
           <td style="color:#94a3b8;font-weight:700"><?= $i+1 ?></td>
-          <td style="font-weight:800;color:#0ea5a4;white-space:nowrap"><?= htmlspecialchars($r['job_no'] ?? '—') ?></td>
+          <td style="font-weight:800;white-space:nowrap"><?php if (!empty($r['id']) && !empty($r['job_no'])): ?><a href="<?= BASE_URL ?>/modules/jobs/jumbo/index.php?auto_job=<?= (int)$r['id'] ?>" style="color:#0ea5a4;text-decoration:underline;text-underline-offset:3px" title="Open Job Card"><?= htmlspecialchars($r['job_no']) ?></a><?php else: ?><span style="color:#0ea5a4"><?= htmlspecialchars($r['job_no'] ?? '—') ?></span><?php endif; ?></td>
           <td style="max-width:160px"><?= htmlspecialchars($r['planning_job_name'] ?? '—') ?></td>
           <td style="font-weight:700;white-space:nowrap"><?= htmlspecialchars($r['roll_no'] ?? '—') ?></td>
           <td><?= htmlspecialchars($r['supplier'] ?? '—') ?><br><span style="font-size:.65rem;color:#94a3b8"><?= htmlspecialchars($r['paper_type'] ?? '') ?></span></td>

@@ -433,7 +433,7 @@ try {
             foreach ($childRollsClose as $cr) {
                 $crn = trim((string)($cr['roll_no'] ?? ''));
                 if ($crn !== '') {
-                    $updCr = $db->prepare("UPDATE paper_stock SET status = 'Job Assign' WHERE roll_no = ? AND status = 'Slitting'");
+                    $updCr = $db->prepare("UPDATE paper_stock SET status = 'Job Assign', date_used = NOW() WHERE roll_no = ? AND status = 'Slitting'");
                     $updCr->bind_param('s', $crn);
                     $updCr->execute();
                 }
@@ -461,6 +461,30 @@ try {
                 $nIns = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, 'success')");
                 $nIns->bind_param('iss', $nxtJob['id'], $nxtJob['department'], $nMsg);
                 $nIns->execute();
+            }
+
+            // Printing completion should reflect in planning board as Printing Done.
+            $jobTypeNow = strtolower(trim((string)($job['job_type'] ?? '')));
+            if (in_array($jobTypeNow, ['printing', 'flexo'], true)) {
+                $planId = (int)($job['planning_id'] ?? 0);
+                if ($planId > 0) {
+                    $planExtraStmt = $db->prepare("SELECT extra_data FROM planning WHERE id = ? LIMIT 1");
+                    if ($planExtraStmt) {
+                        $planExtraStmt->bind_param('i', $planId);
+                        $planExtraStmt->execute();
+                        $planRow = $planExtraStmt->get_result()->fetch_assoc();
+                        if ($planRow) {
+                            $pExtra = json_decode((string)($planRow['extra_data'] ?? '{}'), true) ?: [];
+                            $pExtra['printing_planning'] = 'Printing Done';
+                            $pExtraJson = json_encode($pExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                            $upPlanExtra = $db->prepare("UPDATE planning SET extra_data = ? WHERE id = ?");
+                            if ($upPlanExtra) {
+                                $upPlanExtra->bind_param('si', $pExtraJson, $planId);
+                                $upPlanExtra->execute();
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1095,6 +1119,7 @@ try {
             $j['planning_width_c2'] = jobs_first_non_empty($planningExtra, ['width_c2']);
             $j['planning_length_c1'] = jobs_first_non_empty($planningExtra, ['length_c1']);
             $j['planning_length_c2'] = jobs_first_non_empty($planningExtra, ['length_c2']);
+            $j['printing_planning'] = trim((string)($planningExtra['printing_planning'] ?? ''));
             $rollNos = jobs_collect_roll_nos($j['extra_data_parsed'], $j);
             $rollMap = jobs_fetch_roll_map($db, $rollNos);
             jobs_attach_live_roll_data($j, $rollMap);

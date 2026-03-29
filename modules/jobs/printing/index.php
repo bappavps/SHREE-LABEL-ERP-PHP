@@ -81,6 +81,74 @@ foreach ($jobs as &$j) {
 }
 unset($j);
 
+// ─── Fetch child rolls from previous slitting jobs for each printing job ───
+$prevJobIds = array_filter(array_unique(array_map(fn($j) => (int)($j['previous_job_id'] ?? 0), $jobs)));
+$prevJobExtraMap = []; // prev_job_id => extra_data parsed
+if (!empty($prevJobIds)) {
+    $ph = implode(',', array_fill(0, count($prevJobIds), '?'));
+    $types = str_repeat('i', count($prevJobIds));
+    $pStmt = $db->prepare("SELECT id, extra_data FROM jobs WHERE id IN ($ph)");
+    $pStmt->bind_param($types, ...$prevJobIds);
+    $pStmt->execute();
+    $pRows = $pStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($pRows as $pr) {
+        $prevJobExtraMap[(int)$pr['id']] = json_decode($pr['extra_data'] ?? '{}', true) ?: [];
+    }
+}
+
+// Collect all child roll_nos from slitting jobs
+$allChildRollNos = [];
+foreach ($jobs as &$j) {
+    $prevId = (int)($j['previous_job_id'] ?? 0);
+    $prevExtra = $prevJobExtraMap[$prevId] ?? [];
+    $childRolls = is_array($prevExtra['child_rolls'] ?? null) ? $prevExtra['child_rolls'] : [];
+    foreach ($childRolls as $cr) {
+        $rn = trim((string)($cr['roll_no'] ?? ''));
+        if ($rn !== '') $allChildRollNos[$rn] = true;
+    }
+}
+unset($j);
+
+// Fetch paper_stock data for all child rolls
+$childRollStockMap = []; // roll_no => paper_stock data
+if (!empty($allChildRollNos)) {
+    $rollList = array_keys($allChildRollNos);
+    $ph = implode(',', array_fill(0, count($rollList), '?'));
+    $types = str_repeat('s', count($rollList));
+    $psStmt = $db->prepare("SELECT roll_no, paper_type, company, width_mm, length_mtr, gsm, weight_kg, status FROM paper_stock WHERE roll_no IN ($ph)");
+    $psStmt->bind_param($types, ...$rollList);
+    $psStmt->execute();
+    $psRows = $psStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($psRows as $ps) {
+        $childRollStockMap[$ps['roll_no']] = $ps;
+    }
+}
+
+// Attach slitting_rolls array to each printing job
+foreach ($jobs as &$j) {
+    $prevId = (int)($j['previous_job_id'] ?? 0);
+    $prevExtra = $prevJobExtraMap[$prevId] ?? [];
+    $childRolls = is_array($prevExtra['child_rolls'] ?? null) ? $prevExtra['child_rolls'] : [];
+    $slittingRolls = [];
+    foreach ($childRolls as $cr) {
+        $rn = trim((string)($cr['roll_no'] ?? ''));
+        if ($rn === '') continue;
+        $stock = $childRollStockMap[$rn] ?? [];
+        $slittingRolls[] = [
+            'roll_no' => $rn,
+            'parent_roll_no' => trim((string)($cr['parent_roll_no'] ?? '')),
+            'company' => $stock['company'] ?? '',
+            'paper_type' => $stock['paper_type'] ?? '',
+            'width_mm' => (float)($stock['width_mm'] ?? $cr['width'] ?? 0),
+            'length_mtr' => (float)($stock['length_mtr'] ?? $cr['length'] ?? 0),
+            'gsm' => (float)($stock['gsm'] ?? 0),
+            'status' => $stock['status'] ?? '',
+        ];
+    }
+    $j['slitting_rolls'] = $slittingRolls;
+}
+unset($j);
+
 // Notification count
 $notifCount = 0;
 $nRes = $db->query("SELECT COUNT(*) as cnt FROM job_notifications WHERE (department = 'flexo_printing' OR department IS NULL) AND is_read = 0");
@@ -357,9 +425,22 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
       <?php if ($job['planning_job_name']): ?>
       <div class="fp-card-row"><span class="fp-label">Job Name</span><span class="fp-value"><?= e($job['planning_job_name']) ?></span></div>
       <?php endif; ?>
-      <div class="fp-card-row"><span class="fp-label">Roll No</span><span class="fp-value" style="color:var(--fp-brand)"><?= e($job['roll_no'] ?? '—') ?></span></div>
-      <div class="fp-card-row"><span class="fp-label">Material</span><span class="fp-value"><?= e($job['paper_type'] ?? '—') ?></span></div>
+      <div class="fp-card-row"><span class="fp-label">Roll No</span><span class="fp-value" style="color:var(--fp-brand)"><?php
+        $slRolls = $job['slitting_rolls'] ?? [];
+        if (!empty($slRolls)) {
+          echo e(implode(', ', array_column($slRolls, 'roll_no')));
+        } else {
+          echo e($job['roll_no'] ?? '—');
+        }
+      ?></span></div>
+      <div class="fp-card-row"><span class="fp-label">Material</span><span class="fp-value"><?= e(($job['company'] ?? '—') . ' / ' . ($job['paper_type'] ?? '—')) ?></span></div>
+      <?php if (!empty($slRolls)): ?>
+      <?php foreach ($slRolls as $sr): ?>
+      <div class="fp-card-row"><span class="fp-label"><?= e($sr['roll_no']) ?></span><span class="fp-value" style="font-size:.72rem"><?= e($sr['width_mm'] . 'mm × ' . $sr['length_mtr'] . 'm') ?></span></div>
+      <?php endforeach; ?>
+      <?php else: ?>
       <div class="fp-card-row"><span class="fp-label">Dimension</span><span class="fp-value"><?= e(($job['width_mm'] ?? '—') . 'mm × ' . ($job['length_mtr'] ?? '—') . 'm') ?></span></div>
+      <?php endif; ?>
       <?php if ($isQueued || !$prevDone): ?>
       <div class="fp-card-row">
         <span class="fp-gate-info"><i class="bi bi-lock-fill"></i> Waiting for slitting: <?= e($job['prev_job_no'] ?? '—') ?> (<?= e($job['prev_job_status'] ?? '—') ?>)</span>
@@ -518,21 +599,81 @@ function normalizeCardData(job, extra) {
   out.physical_print_photo_url = String(out.physical_print_photo_url || '').trim();
   out.physical_print_photo_path = String(out.physical_print_photo_path || '').trim();
   out.total_wastage_meters = out.total_wastage_meters ?? out.wastage_meters ?? '';
-  if (!Array.isArray(out.colour_lanes)) out.colour_lanes = ['Cyan', 'Magenta', 'Yellow', 'Black', '', '', '', ''];
-  if (!Array.isArray(out.anilox_lanes)) out.anilox_lanes = ['', '', '', '', '', '', '', ''];
-  out.colour_lanes = out.colour_lanes.slice(0, 8).concat(Array(Math.max(0, 8 - out.colour_lanes.length)).fill('')).map(v => String(v || '').trim());
-  out.anilox_lanes = out.anilox_lanes.slice(0, 8).concat(Array(Math.max(0, 8 - out.anilox_lanes.length)).fill('')).map(v => String(v || '').trim());
+  const DEFAULT_COLORS = ['Cyan', 'Magenta', 'Yellow', 'Black', 'None', 'None', 'None', 'None'];
+  const DEFAULT_ANILOX = ['700', '600', '800', '550', 'None', 'None', 'None', 'None'];
+  if (!Array.isArray(out.colour_lanes)) out.colour_lanes = DEFAULT_COLORS.slice();
+  if (!Array.isArray(out.anilox_lanes)) out.anilox_lanes = DEFAULT_ANILOX.slice();
+  out.colour_lanes = out.colour_lanes
+    .slice(0, 8)
+    .concat(Array(Math.max(0, 8 - out.colour_lanes.length)).fill(''))
+    .map((v, i) => {
+      const t = String(v || '').trim();
+      return t !== '' ? t : DEFAULT_COLORS[i];
+    });
+  out.anilox_lanes = out.anilox_lanes
+    .slice(0, 8)
+    .concat(Array(Math.max(0, 8 - out.anilox_lanes.length)).fill(''))
+    .map((v, i) => {
+      const t = String(v || '').trim();
+      return t !== '' ? t : DEFAULT_ANILOX[i];
+    });
 
   const materialRows = Array.isArray(out.material_rows) ? out.material_rows : [];
-  out.material_rows = materialRows.length ? materialRows : [{
-    roll_no: String(job.roll_no || '').trim(),
-    material_company: out.material_company,
-    material_name: out.material_name,
-    order_mtr: out.order_mtr,
-    order_qty: out.order_qty,
-    color_match_status: String(out.color_match_status || 'Matched').trim(),
-    wastage_meters: out.wastage_meters ?? '',
-  }];
+  // Use slitting_rolls (child rolls from previous slitting job) when available
+  const slittingRolls = Array.isArray(job.slitting_rolls) ? job.slitting_rolls : [];
+  if (slittingRolls.length) {
+    // Build from slitting child rolls, merging any saved per-roll data
+    const savedByRoll = {};
+    materialRows.forEach(mr => { if (mr.roll_no) savedByRoll[mr.roll_no] = mr; });
+    const savedWastByRoll = {};
+    (Array.isArray(out.roll_wastage_rows) ? out.roll_wastage_rows : []).forEach(wr => { if (wr.roll_no) savedWastByRoll[wr.roll_no] = wr; });
+    out.material_rows = slittingRolls.map(sr => {
+      const rn = String(sr.roll_no || '').trim();
+      const saved = savedByRoll[rn] || {};
+      return {
+        roll_no: rn,
+        parent_roll_no: String(sr.parent_roll_no || '').trim(),
+        material_company: String(sr.company || out.material_company || '').trim(),
+        material_name: String(sr.paper_type || out.material_name || '').trim(),
+        slitted_width: sr.width_mm || '',
+        slitted_length: sr.length_mtr || '',
+        order_mtr: saved.order_mtr ?? out.order_mtr,
+        order_qty: saved.order_qty ?? out.order_qty,
+        color_match_status: String(saved.color_match_status || out.color_match_status || 'Matched').trim(),
+        wastage_meters: saved.wastage_meters ?? out.wastage_meters ?? '',
+      };
+    });
+    // Also rebuild roll_wastage_rows from slitting child rolls
+    out.roll_wastage_rows = slittingRolls.map(sr => {
+      const rn = String(sr.roll_no || '').trim();
+      const sw = savedWastByRoll[rn] || {};
+      return {
+        roll_no: rn,
+        parent_roll_no: String(sr.parent_roll_no || '').trim(),
+        material_company: String(sr.company || out.material_company || '').trim(),
+        material_name: String(sr.paper_type || out.material_name || '').trim(),
+        slitted_width: sr.width_mm || '',
+        slitted_length: sr.length_mtr || '',
+        color_match_status: String(sw.color_match_status || out.color_match_status || 'Matched').trim(),
+        wastage_meters: sw.wastage_meters ?? '',
+      };
+    });
+  } else if (materialRows.length) {
+    out.material_rows = materialRows;
+  } else {
+    out.material_rows = [{
+      roll_no: String(job.roll_no || '').trim(),
+      parent_roll_no: '',
+      material_company: out.material_company,
+      material_name: out.material_name,
+      slitted_width: job.width_mm || '',
+      slitted_length: job.length_mtr || '',
+      order_mtr: out.order_mtr,
+      order_qty: out.order_qty,
+      color_match_status: String(out.color_match_status || 'Matched').trim(),
+      wastage_meters: out.wastage_meters ?? '',
+    }];
+  }
 
   if (!Array.isArray(out.roll_wastage_rows) || !out.roll_wastage_rows.length) {
     out.roll_wastage_rows = out.material_rows.map(r => ({
@@ -545,12 +686,13 @@ function normalizeCardData(job, extra) {
   if (!Array.isArray(out.color_anilox_rows) || !out.color_anilox_rows.length) {
     const CMYK_DEFAULTS = ['Cyan','Magenta','Yellow','Black'];
     out.color_anilox_rows = Array.from({ length: 8 }, (_, i) => {
-      const colorVal = String(out.colour_lanes[i] || '').trim() || (i < 4 ? CMYK_DEFAULTS[i] : '');
-      const anVal = String(out.anilox_lanes[i] || '').trim();
+      const colorVal = String(out.colour_lanes[i] || '').trim() || (i < 4 ? CMYK_DEFAULTS[i] : 'None');
+      const anVal = String(out.anilox_lanes[i] || '').trim() || (i < 4 ? ['700','600','800','550'][i] : 'None');
+      const colorName = ['Cyan','Magenta','Yellow','Black'].includes(colorVal) ? colorVal : (colorVal === 'None' ? 'None' : '');
       return {
         lane: i + 1,
         color_code: colorVal,
-        color_name: '',
+        color_name: colorName,
         anilox_value: anVal,
         anilox_custom: '',
       };
@@ -789,13 +931,23 @@ async function startJobWithTimer(id) {
   _timerJobId = id;
   _timerStart = Date.now();
   const job = ALL_JOBS.find(j => j.id == id) || {};
+  // Update ALL_JOBS so openPrintDetail sees Running status
+  job.status = 'Running';
+  job.started_at = new Date().toISOString();
   const jobLabel = resolvePrintDisplayName(job) || ('Job #' + id);
+  const jobNo = job.job_no || '';
+  const paperCo = job.company || '';
+  const paperType = job.paper_type || '';
 
   const overlay = document.createElement('div');
   overlay.className = 'fp-timer-overlay';
   overlay.id = 'fpTimerOverlay';
   overlay.innerHTML = `
-    <div class="fp-timer-jobinfo"><i class="bi bi-printer"></i> ${jobLabel}</div>
+    <div class="fp-timer-jobinfo">
+      <div style="font-size:1.3rem;font-weight:900;letter-spacing:.03em">${esc(jobNo)}</div>
+      <div style="margin-top:4px">${esc(jobLabel)}</div>
+      ${paperCo || paperType ? `<div style="margin-top:4px;font-size:.85rem;opacity:.8">${esc(paperCo)}${paperCo && paperType ? ' — ' : ''}${esc(paperType)}</div>` : ''}
+    </div>
     <div class="fp-timer-display" id="fpTimerCounter">00:00:00</div>
     <div class="fp-timer-actions">
       <button class="fp-timer-btn-cancel" onclick="cancelTimer()"><i class="bi bi-x-lg"></i> Cancel</button>
@@ -832,6 +984,8 @@ function cancelTimer() {
   })();
 }
 
+let _uploadedPhotoUrl = '';
+
 function endTimer() {
   if (_timerInterval) clearInterval(_timerInterval);
   _timerInterval = null;
@@ -839,6 +993,7 @@ function endTimer() {
   if (ov) ov.remove();
   const jobId = _timerJobId;
   _timerJobId = null;
+  _uploadedPhotoUrl = '';
   // Auto-open camera for physical photo, then open detail form
   const camInput = document.createElement('input');
   camInput.type = 'file';
@@ -857,7 +1012,18 @@ function endTimer() {
       try {
         const res = await fetch(API_BASE, { method: 'POST', body: fd });
         const data = await res.json();
-        if (!data.ok) alert('Photo upload failed: ' + (data.error || 'Unknown'));
+        if (data.ok) {
+          _uploadedPhotoUrl = data.photo_url || '';
+          // Update ALL_JOBS so openPrintDetail sees the photo
+          const j = ALL_JOBS.find(x => x.id == jobId);
+          if (j) {
+            if (!j.extra_data_parsed) j.extra_data_parsed = {};
+            j.extra_data_parsed.physical_print_photo_url = _uploadedPhotoUrl;
+            j.extra_data_parsed.physical_print_photo_path = data.photo_path || '';
+          }
+        } else {
+          alert('Photo upload failed: ' + (data.error || 'Unknown'));
+        }
       } catch (err) { alert('Photo upload error: ' + err.message); }
     }
     camInput.remove();
@@ -880,6 +1046,9 @@ async function submitAndComplete(id) {
   const rollRows = Array.from(form.querySelectorAll('[data-roll-row]')).map((row, idx) => ({
     idx: idx + 1,
     roll_no: String(row.dataset.rollNo || '').trim(),
+    parent_roll_no: String(row.dataset.parentRollNo || '').trim(),
+    slitted_width: String(row.dataset.slittedWidth || '').trim(),
+    slitted_length: String(row.dataset.slittedLength || '').trim(),
     material_company: String(row.dataset.materialCompany || '').trim(),
     material_name: String(row.dataset.materialName || '').trim(),
     order_mtr: String(row.dataset.orderMtr || '').trim(),
@@ -1058,23 +1227,32 @@ async function openPrintDetail(id, mode) {
   const rollRows = (Array.isArray(card.roll_wastage_rows) && card.roll_wastage_rows.length ? card.roll_wastage_rows : card.material_rows).map((row, idx) => ({
     idx,
     roll_no: String(row.roll_no || (idx === 0 ? (job.roll_no || '') : '')).trim(),
+    parent_roll_no: String(row.parent_roll_no || '').trim(),
     material_company: String(row.material_company || card.material_company || job.company || '').trim(),
     material_name: String(row.material_name || card.material_name || job.paper_type || '').trim(),
+    slitted_width: row.slitted_width ?? '',
+    slitted_length: row.slitted_length ?? '',
     order_mtr: row.order_mtr ?? card.order_mtr ?? '',
     order_qty: row.order_qty ?? card.order_qty ?? '',
     color_match_status: String(row.color_match_status || card.color_match_status || 'Matched').trim(),
     wastage_meters: row.wastage_meters ?? '',
   }));
 
+  const totalAllocatedMtr = parseFloat(card.order_mtr) || 0;
+  const totalAssignedMtr = rollRows.reduce((sum, r) => sum + (parseFloat(r.slitted_length) || 0), 0);
+  const mtrMatch = totalAllocatedMtr > 0 && totalAssignedMtr >= totalAllocatedMtr;
+  const mtrShort = totalAllocatedMtr > 0 ? totalAllocatedMtr - totalAssignedMtr : 0;
+
   const laneRows = Array.from({ length: 8 }, (_, i) => {
     const lr = Array.isArray(card.color_anilox_rows) ? (card.color_anilox_rows[i] || {}) : {};
     const colorCode = String(lr.color_code || card.colour_lanes[i] || 'None').trim() || 'None';
     const anValRaw = String(lr.anilox_value || card.anilox_lanes[i] || 'None').trim() || 'None';
     const ALL_ANILOX = ['None','60','80','100','120','140','160','250','300','400','500','550','600','700','750','800','850','900','1000','1100','1200','1300','1400','Custom'];
+    const fallbackColorName = ['Cyan','Magenta','Yellow','Black'].includes(colorCode) ? colorCode : (colorCode === 'None' ? 'None' : '');
     return {
       lane: i + 1,
       color_code: colorCode,
-      color_name: String(lr.color_name || '').trim(),
+      color_name: String(lr.color_name || fallbackColorName).trim(),
       anilox_value: ALL_ANILOX.includes(anValRaw) ? anValRaw : 'Custom',
       anilox_custom: ALL_ANILOX.includes(anValRaw) ? String(lr.anilox_custom || '').trim() : anValRaw,
     };
@@ -1172,10 +1350,14 @@ async function openPrintDetail(id, mode) {
       </div>
 
       <div class="fp-op-section"><div class="fp-op-h">Roll-wise Material and Wastage</div><div class="fp-op-b">
-        <table class="fp-op-roll-table"><thead><tr><th>#</th><th>Roll No</th><th>Material</th><th>Order MTR</th><th>Order QTY</th><th>Color Match</th><th>Wastage (m)</th></tr></thead><tbody>
-          ${rollRows.map((r, idx) => `<tr data-roll-row data-roll-no="${esc(r.roll_no)}" data-material-company="${esc(r.material_company)}" data-material-name="${esc(r.material_name)}" data-order-mtr="${esc(r.order_mtr)}" data-order-qty="${esc(r.order_qty)}"><td>${idx+1}</td><td>${esc(r.roll_no||'—')}</td><td>${esc((r.material_company||'—')+' / '+(r.material_name||'—'))}</td><td>${esc(r.order_mtr||'—')}</td><td>${esc(r.order_qty||'—')}</td><td><select name="color_match_status_${idx}"><option value="Matched"${r.color_match_status==='Matched'?' selected':''}>Matched</option><option value="Slight Variation"${r.color_match_status==='Slight Variation'?' selected':''}>Slight Variation</option><option value="Mismatch"${r.color_match_status==='Mismatch'?' selected':''}>Mismatch</option></select></td><td><input type="number" step="0.01" name="roll_wastage_${idx}" value="${esc(r.wastage_meters||'')}" placeholder="0.00"></td></tr>`).join('')}
-        </tbody></table>
-        <div style="margin-top:8px;max-width:220px"><div class="fp-op-field"><label>Total Wastage (m)</label><input type="text" name="total_wastage_meters" value="${esc(card.total_wastage_meters||'')}" readonly></div></div>
+        <table class="fp-op-roll-table"><thead><tr><th>#</th><th>Roll No</th><th>Material</th><th>Slitted Size</th><th>Length (m)</th><th>Color Match</th><th>Wastage (m)</th></tr></thead><tbody>
+          ${rollRows.map((r, idx) => `<tr data-roll-row data-roll-no="${esc(r.roll_no)}" data-parent-roll-no="${esc(r.parent_roll_no||'')}" data-slitted-width="${esc(r.slitted_width||'')}" data-slitted-length="${esc(r.slitted_length||'')}" data-material-company="${esc(r.material_company)}" data-material-name="${esc(r.material_name)}" data-order-mtr="${esc(r.order_mtr)}" data-order-qty="${esc(r.order_qty)}"><td>${idx+1}</td><td style="font-weight:700;color:var(--fp-brand)">${esc(r.roll_no||'—')}</td><td>${esc(r.material_name||'—')}</td><td>${r.slitted_width ? esc(r.slitted_width+'mm') : '—'}</td><td style="font-weight:700">${r.slitted_length ? esc(r.slitted_length) : '—'}</td><td><select name="color_match_status_${idx}"><option value="Matched"${r.color_match_status==='Matched'?' selected':''}>Matched</option><option value="Slight Variation"${r.color_match_status==='Slight Variation'?' selected':''}>Slight Variation</option><option value="Mismatch"${r.color_match_status==='Mismatch'?' selected':''}>Mismatch</option></select></td><td><input type="number" step="0.01" name="roll_wastage_${idx}" value="${esc(r.wastage_meters||'')}" placeholder="0.00"></td></tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr><td colspan="4" style="text-align:right;font-weight:800;padding:8px 10px;background:#f8fafc;border-top:2px solid #e2e8f0">Total Assigned Roll MTR</td><td style="font-weight:900;padding:8px 10px;background:#f8fafc;border-top:2px solid #e2e8f0">${totalAssignedMtr}</td><td colspan="2" style="padding:8px 10px;background:#f8fafc;border-top:2px solid #e2e8f0"></td></tr>
+          <tr><td colspan="4" style="text-align:right;font-weight:800;padding:8px 10px;background:#f0fdf4">Job Allocated MTR</td><td style="font-weight:900;padding:8px 10px;background:#f0fdf4">${totalAllocatedMtr || '—'}</td><td colspan="2" style="padding:8px 10px;background:${mtrMatch?'#f0fdf4':'#fef3c7'};font-weight:800;color:${mtrMatch?'#16a34a':'#d97706'}"><i class="bi bi-${mtrMatch?'check-circle-fill':'exclamation-triangle-fill'}"></i> ${mtrMatch ? 'Sufficient' : (totalAllocatedMtr > 0 ? 'Short by '+mtrShort+'m' : '—')}</td></tr>
+          <tr><td colspan="5"></td><td style="text-align:right;font-weight:800;padding:8px 10px;background:#f8fafc">Total Wastage</td><td style="font-weight:800;padding:8px 10px;background:#f8fafc"><input type="text" name="total_wastage_meters" value="${esc(card.total_wastage_meters||'')}" readonly style="width:80px;font-weight:800"></td></tr>
+        </tfoot></table>
       </div></div>
 
       <div class="fp-op-section"><div class="fp-op-h">Color + Anilox (Color 1-8)</div><div class="fp-op-b" style="gap:10px">
@@ -1209,10 +1391,14 @@ async function openPrintDetail(id, mode) {
       </div></div>
 
       <div class="fp-op-section"><div class="fp-op-h">Roll-wise Material and Wastage</div><div class="fp-op-b">
-        <table class="fp-op-roll-table"><thead><tr><th>#</th><th>Roll No</th><th>Material</th><th>Order MTR</th><th>Order QTY</th><th>Color Match</th><th>Wastage (m)</th></tr></thead><tbody>
-          ${rollRows.map((r, idx) => `<tr><td>${idx+1}</td><td>${esc(r.roll_no||'—')}</td><td>${esc((r.material_company||'—')+' / '+(r.material_name||'—'))}</td><td>${esc(r.order_mtr||'—')}</td><td>${esc(r.order_qty||'—')}</td><td>${esc(r.color_match_status||'—')}</td><td>${esc(String(r.wastage_meters??'—'))}</td></tr>`).join('')}
-        </tbody></table>
-        <div style="margin-top:8px;max-width:220px"><div class="fp-op-field"><label>Total Wastage (m)</label><input type="text" value="${esc(card.total_wastage_meters||'')}" readonly></div></div>
+        <table class="fp-op-roll-table"><thead><tr><th>#</th><th>Roll No</th><th>Material</th><th>Slitted Size</th><th>Length (m)</th><th>Color Match</th><th>Wastage (m)</th></tr></thead><tbody>
+          ${rollRows.map((r, idx) => `<tr><td>${idx+1}</td><td style="font-weight:700;color:var(--fp-brand)">${esc(r.roll_no||'—')}</td><td>${esc(r.material_name||'—')}</td><td>${r.slitted_width ? esc(r.slitted_width+'mm') : '—'}</td><td style="font-weight:700">${r.slitted_length ? esc(r.slitted_length) : '—'}</td><td>${esc(r.color_match_status||'—')}</td><td>${esc(String(r.wastage_meters??'—'))}</td></tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr><td colspan="4" style="text-align:right;font-weight:800;padding:8px 10px;background:#f8fafc;border-top:2px solid #e2e8f0">Total Assigned Roll MTR</td><td style="font-weight:900;padding:8px 10px;background:#f8fafc;border-top:2px solid #e2e8f0">${totalAssignedMtr}</td><td colspan="2" style="padding:8px 10px;background:#f8fafc;border-top:2px solid #e2e8f0"></td></tr>
+          <tr><td colspan="4" style="text-align:right;font-weight:800;padding:8px 10px;background:#f0fdf4">Job Allocated MTR</td><td style="font-weight:900;padding:8px 10px;background:#f0fdf4">${totalAllocatedMtr || '—'}</td><td colspan="2" style="padding:8px 10px;background:${mtrMatch?'#f0fdf4':'#fef3c7'};font-weight:800;color:${mtrMatch?'#16a34a':'#d97706'}"><i class="bi bi-${mtrMatch?'check-circle-fill':'exclamation-triangle-fill'}"></i> ${mtrMatch ? 'Sufficient' : (totalAllocatedMtr > 0 ? 'Short by '+mtrShort+'m' : '—')}</td></tr>
+          <tr><td colspan="5"></td><td style="text-align:right;font-weight:800;padding:8px 10px;background:#f8fafc">Total Wastage</td><td style="font-weight:800;padding:8px 10px;background:#f8fafc">${esc(card.total_wastage_meters || card.wastage_meters || '—')}</td></tr>
+        </tfoot></table>
       </div></div>
 
       <div class="fp-op-section"><div class="fp-op-h">Color + Anilox (Color 1-8)</div><div class="fp-op-b" style="gap:10px">
@@ -1241,9 +1427,15 @@ async function openPrintDetail(id, mode) {
   let fHtml = '<div style="display:flex;gap:8px">';
   fHtml += `<button class="fp-action-btn fp-btn-print" onclick="printJobCard(${job.id})"><i class="bi bi-printer"></i> Print</button>`;
   fHtml += '</div><div style="display:flex;gap:8px">';
-  if (sts === 'Pending' && prevDone && IS_OPERATOR_VIEW) fHtml += `<button class="fp-action-btn fp-btn-start" onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-fill"></i> Start Job</button>`;
-  if (sts === 'Pending' && !prevDone) fHtml += `<button class="fp-action-btn fp-btn-start" disabled><i class="bi bi-lock-fill"></i> Waiting for Slitting</button>`;
-  if (sts === 'Running' && IS_OPERATOR_VIEW) fHtml += `<button class="fp-action-btn fp-btn-complete" onclick="submitAndComplete(${job.id})"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
+  if (mode === 'complete' && IS_OPERATOR_VIEW) {
+    fHtml += `<button class="fp-action-btn fp-btn-complete" onclick="submitAndComplete(${job.id})"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
+  } else if (sts === 'Pending' && prevDone && IS_OPERATOR_VIEW) {
+    fHtml += `<button class="fp-action-btn fp-btn-start" onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-fill"></i> Start Job</button>`;
+  } else if (sts === 'Pending' && !prevDone) {
+    fHtml += `<button class="fp-action-btn fp-btn-start" disabled><i class="bi bi-lock-fill"></i> Waiting for Slitting</button>`;
+  } else if (sts === 'Running' && IS_OPERATOR_VIEW) {
+    fHtml += `<button class="fp-action-btn fp-btn-complete" onclick="submitAndComplete(${job.id})"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
+  }
   if (!IS_OPERATOR_VIEW) {
     fHtml += `<button class="fp-action-btn fp-btn-delete" onclick="deleteJob(${job.id})" title="Admin: Delete"><i class="bi bi-trash"></i></button>`;
   }
@@ -1298,13 +1490,32 @@ function renderPrintCardHtml(job, card, extra, qrDataUrl) {
   const dur = Number(job.duration_minutes);
   const durText = Number.isFinite(dur) ? `${Math.floor(dur/60)}h ${dur%60}m` : '—';
   const rollRows = Array.isArray(card.roll_wastage_rows) && card.roll_wastage_rows.length ? card.roll_wastage_rows : card.material_rows;
+  const totalAllocatedMtr = parseFloat(card.order_mtr) || 0;
+  const totalAssignedMtr = rollRows.reduce((sum, r) => sum + (parseFloat(r.slitted_length) || 0), 0);
+  const mtrMatch = totalAllocatedMtr > 0 && totalAssignedMtr >= totalAllocatedMtr;
+  const mtrShort = totalAllocatedMtr > 0 ? totalAllocatedMtr - totalAssignedMtr : 0;
   const laneRows = Array.isArray(card.color_anilox_rows) && card.color_anilox_rows.length ? card.color_anilox_rows : Array.from({ length: 8 }, (_, i) => ({
     lane: i + 1,
-    color_code: card.colour_lanes[i] || '',
-    color_name: '',
-    anilox_value: card.anilox_lanes[i] || '',
+    color_code: card.colour_lanes[i] || ['Cyan', 'Magenta', 'Yellow', 'Black', 'None', 'None', 'None', 'None'][i],
+    color_name: card.colour_lanes[i] || ['Cyan', 'Magenta', 'Yellow', 'Black', 'None', 'None', 'None', 'None'][i],
+    anilox_value: card.anilox_lanes[i] || ['700', '600', '800', '550', 'None', 'None', 'None', 'None'][i],
     anilox_custom: '',
   }));
+  const laneColorStyle = (v) => {
+    const s = String(v || 'None');
+    if (s === 'Cyan') return 'background:#e0f7fa;color:#0f766e;font-weight:800';
+    if (s === 'Magenta') return 'background:#fce4ec;color:#9d174d;font-weight:800';
+    if (s === 'Yellow') return 'background:#fffde7;color:#a16207;font-weight:800';
+    if (s === 'Black') return 'background:#eceff1;color:#111827;font-weight:800';
+    return 'background:#f8fafc;color:#64748b;font-weight:700';
+  };
+  const laneColorName = (r) => {
+    const cc = String(r.color_code || 'None');
+    const cn = String(r.color_name || '').trim();
+    if (cn !== '') return cn;
+    if (['Cyan','Magenta','Yellow','Black','None'].includes(cc)) return cc;
+    return '—';
+  };
   const planningImage = String(job.planning_image_url || '').trim();
   const physicalImage = String(card.physical_print_photo_url || '').trim();
 
@@ -1364,25 +1575,29 @@ function renderPrintCardHtml(job, card, extra, qrDataUrl) {
         <table style="width:100%;border-collapse:collapse;font-size:.7rem;margin-bottom:10px">
           <thead><tr>
             <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">#</th>
-            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Roll</th>
+            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Roll No</th>
             <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Material</th>
-            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Order MTR</th>
-            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Order QTY</th>
+            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Slitted Size</th>
+            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Length (m)</th>
             <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Color Match</th>
             <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Wastage (m)</th>
           </tr></thead>
           <tbody>
             ${rollRows.map((r, i) => `<tr>
               <td style="padding:5px 6px;border:1px solid #cbd5e1">${i + 1}</td>
-              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.roll_no||'—')}</td>
-              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc((r.material_company||card.material_company||'—') + ' / ' + (r.material_name||card.material_name||'—'))}</td>
-              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.order_mtr||card.order_mtr||'—')}</td>
-              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.order_qty||card.order_qty||'—')}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1;font-weight:700;color:#5b21b6">${esc(r.roll_no||'—')}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.material_name||card.material_name||'—')}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${r.slitted_width ? esc(r.slitted_width+'mm') : '—'}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1;font-weight:700">${r.slitted_length ? esc(String(r.slitted_length)) : '—'}</td>
               <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.color_match_status||'—')}</td>
               <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(String(r.wastage_meters ?? '—'))}</td>
             </tr>`).join('')}
-            <tr><td colspan="6" style="padding:6px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;text-align:right">Total Wastage</td><td style="padding:6px 7px;border:1px solid #cbd5e1;font-weight:800">${esc(card.total_wastage_meters || card.wastage_meters || '—')}</td></tr>
           </tbody>
+          <tfoot>
+            <tr><td colspan="4" style="padding:6px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;text-align:right">Total Assigned Roll MTR</td><td style="padding:6px 7px;border:1px solid #cbd5e1;font-weight:900;background:#f8fafc">${totalAssignedMtr}</td><td colspan="2" style="border:1px solid #cbd5e1;background:#f8fafc"></td></tr>
+            <tr><td colspan="4" style="padding:6px 7px;border:1px solid #cbd5e1;background:#f0fdf4;font-weight:800;text-align:right">Job Allocated MTR</td><td style="padding:6px 7px;border:1px solid #cbd5e1;font-weight:900;background:#f0fdf4">${totalAllocatedMtr || '—'}</td><td colspan="2" style="padding:6px 7px;border:1px solid #cbd5e1;background:${mtrMatch?'#f0fdf4':'#fef3c7'};font-weight:800;color:${mtrMatch?'#16a34a':'#d97706'}">${mtrMatch ? '✓ Sufficient' : (totalAllocatedMtr > 0 ? '⚠ Short by '+mtrShort+'m' : '—')}</td></tr>
+            <tr><td colspan="5" style="border:1px solid #cbd5e1"></td><td style="padding:6px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;text-align:right">Total Wastage</td><td style="padding:6px 7px;border:1px solid #cbd5e1;font-weight:800">${esc(card.total_wastage_meters || card.wastage_meters || '—')}</td></tr>
+          </tfoot>
         </table>
 
         <!-- COLOR + ANILOX (Color 1-8) -->
@@ -1397,9 +1612,9 @@ function renderPrintCardHtml(job, card, extra, qrDataUrl) {
           <tbody>
             ${laneRows.map((r, i) => `<tr>
               <td style="padding:5px 6px;border:1px solid #cbd5e1;font-weight:700">Color ${i + 1}</td>
-              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.color_code || '—')}</td>
-              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.color_name || '—')}</td>
-              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc((r.anilox_value === 'Custom' ? r.anilox_custom : r.anilox_value) || '—')}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1;${laneColorStyle(r.color_code)}">${esc(r.color_code || 'None')}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1;${laneColorStyle(laneColorName(r))}">${esc(laneColorName(r))}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc((r.anilox_value === 'Custom' ? r.anilox_custom : r.anilox_value) || 'None')}</td>
             </tr>`).join('')}
           </tbody>
         </table>
