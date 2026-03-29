@@ -15,9 +15,37 @@ CREATE TABLE IF NOT EXISTS `users` (
   `email`      VARCHAR(150)  NOT NULL UNIQUE,
   `password`   VARCHAR(255)  NOT NULL,
   `role`       ENUM('admin','manager','operator','viewer') NOT NULL DEFAULT 'operator',
+  `group_id`   INT DEFAULT NULL,
   `is_active`  TINYINT(1)    NOT NULL DEFAULT 1,
   `created_at` TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `updated_at` TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY `idx_users_group_id` (`group_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------
+-- Table: user_groups
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `user_groups` (
+  `id`          INT AUTO_INCREMENT PRIMARY KEY,
+  `name`        VARCHAR(100) NOT NULL UNIQUE,
+  `description` VARCHAR(255) DEFAULT NULL,
+  `is_active`   TINYINT(1) NOT NULL DEFAULT 1,
+  `created_at`  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------
+-- Table: group_page_permissions
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `group_page_permissions` (
+  `id`         INT AUTO_INCREMENT PRIMARY KEY,
+  `group_id`   INT NOT NULL,
+  `page_path`  VARCHAR(190) NOT NULL,
+  `can_view`   TINYINT(1) NOT NULL DEFAULT 1,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uq_group_page` (`group_id`,`page_path`),
+  KEY `idx_perm_group` (`group_id`),
+  CONSTRAINT `fk_gpp_group` FOREIGN KEY (`group_id`) REFERENCES `user_groups`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------

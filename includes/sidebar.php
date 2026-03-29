@@ -10,6 +10,9 @@ $sidebarCompanyName = function_exists('getErpDisplayName') ? getErpDisplayName($
 $sidebarLogoPath = (string)($appSettings['logo_path'] ?? '');
 
 function navItem($href, $icon, $label, $currentFile) {
+    if (function_exists('canAccessPath') && !canAccessPath($href)) {
+        return '';
+    }
     $isActive = strpos($currentFile, $href) !== false;
     return '<a href="' . BASE_URL . $href . '" class="nav-item' . ($isActive ? ' active' : '') . '">'
          . '<i class="bi bi-' . $icon . '"></i>'
@@ -18,6 +21,9 @@ function navItem($href, $icon, $label, $currentFile) {
 }
 
 function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = '', $icon = '') {
+  if (function_exists('canAccessPath') && !canAccessPath($href)) {
+    return '';
+  }
   $isActive = strpos($currentFile, $href) !== false;
   if (!$isActive && !empty($aliases)) {
     foreach ($aliases as $alias) {
@@ -202,6 +208,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
         <?= navSubItem('/modules/master/index.php',       'Master Data',              $currentFile, [], '', 'database') ?>
         <?= navSubItem('/modules/stock-import/index.php', 'Stock Import and Export',  $currentFile, [], '', 'arrow-left-right') ?>
         <?= navSubItem('/modules/users/index.php',        'User Management',          $currentFile, [], '', 'people') ?>
+        <?= navSubItem('/modules/users/groups.php',       'Groups & Permissions',     $currentFile, [], '', 'shield-check') ?>
         <?= navSubItem('/modules/print/index.php',        'Print Studio',             $currentFile, [], '', 'printer') ?>
         <?= navSubItem('/modules/pricing/index.php',      'Pricing Login',            $currentFile, [], '', 'currency-rupee') ?>
         <?= navSubItem('/modules/settings/index.php',     'Settings',                 $currentFile, [], '', 'sliders') ?>

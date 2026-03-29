@@ -4,6 +4,7 @@ require_once __DIR__ . '/../../../includes/functions.php';
 require_once __DIR__ . '/../../../includes/auth_check.php';
 
 $isOperatorView = (string)($_GET['view'] ?? '') === 'operator';
+$canDeleteJobs = isAdmin();
 $pageTitle = $isOperatorView ? 'Flexo Operator' : 'Flexo Printing Jobs';
 $db = getDB();
 $appSettings = getAppSettings();
@@ -616,7 +617,7 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
         <td class="no-print" onclick="event.stopPropagation()">
           <button class="ht-act-btn" onclick="openPrintDetail(<?= (int)$h['id'] ?>)" title="View"><i class="bi bi-eye"></i></button>
           <button class="ht-act-btn ht-print" onclick="printJobCard(<?= (int)$h['id'] ?>)" title="Print"><i class="bi bi-printer"></i></button>
-          <?php if (!$isOperatorView): ?>
+          <?php if ($canDeleteJobs): ?>
           <button class="ht-act-btn ht-delete" onclick="deleteJob(<?= (int)$h['id'] ?>)" title="Delete"><i class="bi bi-trash"></i></button>
           <?php endif; ?>
         </td>
@@ -661,6 +662,7 @@ const CSRF = '<?= e($csrf) ?>';
 const API_BASE = '<?= BASE_URL ?>/modules/jobs/api.php';
 const BASE_URL = '<?= BASE_URL ?>';
 const IS_OPERATOR_VIEW = <?= $isOperatorView ? 'true' : 'false' ?>;
+const IS_ADMIN = <?= $canDeleteJobs ? 'true' : 'false' ?>;
 const CURRENT_USER = <?= json_encode($sessionUser, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const ALL_JOBS = <?= json_encode($jobs, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
@@ -1768,7 +1770,7 @@ async function openPrintDetail(id, mode) {
   } else if (sts === 'Running' && IS_OPERATOR_VIEW) {
     fHtml += `<button class="fp-action-btn fp-btn-complete" onclick="submitAndComplete(${job.id})"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
   }
-  if (!IS_OPERATOR_VIEW) {
+  if (IS_ADMIN) {
     fHtml += `<button class="fp-action-btn fp-btn-delete" onclick="deleteJob(${job.id})" title="Admin: Delete"><i class="bi bi-trash"></i></button>`;
   }
   fHtml += '</div>';
@@ -1786,6 +1788,7 @@ document.getElementById('fpDetailModal').addEventListener('click', function(e) {
 
 // ─── Delete job (admin) ─────────────────────────────────────
 async function deleteJob(id) {
+  if (!IS_ADMIN) { alert('Access denied. Only system admin can delete job cards.'); return; }
   if (!confirm('Delete this job card? If linked reset logic applies, related queued jobs may also be rolled back.')) return;
   const fd = new FormData();
   fd.append('csrf_token', CSRF);

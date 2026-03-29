@@ -149,6 +149,249 @@ function hasRole(...$roles) {
 }
 
 /**
+ * Ensure RBAC schema exists for group-based access control.
+ */
+function ensureRbacSchema() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+
+    $db = getDB();
+
+    $safeSchemaQuery = function($sql) use ($db) {
+        try {
+            $db->query($sql);
+        } catch (Throwable $e) {
+            $msg = strtolower((string)$e->getMessage());
+            $knownSafe = [
+                'duplicate column name',
+                'duplicate key name',
+                'already exists',
+                'errno: 1060',
+                'errno: 1061',
+                'errno: 1050',
+            ];
+            foreach ($knownSafe as $needle) {
+                if (strpos($msg, $needle) !== false) {
+                    return;
+                }
+            }
+            error_log('RBAC schema bootstrap warning: ' . $e->getMessage());
+        }
+    };
+
+    // Users can be assigned to one group.
+    $safeSchemaQuery("ALTER TABLE users ADD COLUMN group_id INT NULL AFTER role");
+    $safeSchemaQuery("ALTER TABLE users ADD INDEX idx_users_group_id (group_id)");
+
+    // Group master.
+    $safeSchemaQuery("CREATE TABLE IF NOT EXISTS user_groups (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL UNIQUE,
+        description VARCHAR(255) NULL,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Group to page permission mapping.
+    $safeSchemaQuery("CREATE TABLE IF NOT EXISTS group_page_permissions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        group_id INT NOT NULL,
+        page_path VARCHAR(190) NOT NULL,
+        can_view TINYINT(1) NOT NULL DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_group_page (group_id, page_path),
+        KEY idx_perm_group (group_id),
+        CONSTRAINT fk_gpp_group FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
+/**
+ * List of assignable application pages for RBAC.
+ */
+function rbacPageCatalog() {
+    return [
+        '/modules/dashboard/index.php' => 'Dashboard',
+
+        '/modules/estimate/index.php' => 'Calculator',
+        '/modules/estimates/index.php' => 'Estimates',
+        '/modules/quotations/index.php' => 'Quotations',
+        '/modules/sales_order/index.php' => 'Sales Orders',
+
+        '/modules/artwork/index.php' => 'Artwork Gallery',
+        '/modules/planning/label/index.php' => 'Planning - Label Printing',
+        '/modules/planning/slitting/index.php' => 'Planning - Jumbo Slitting',
+        '/modules/planning/printing/index.php' => 'Planning - Printing',
+        '/modules/planning/flatbed/index.php' => 'Planning - Flatbed',
+        '/modules/planning/rotery/index.php' => 'Planning - Rotery Die',
+        '/modules/planning/label-slitting/index.php' => 'Planning - Label Slitting',
+        '/modules/planning/batch/index.php' => 'Planning - Batch Printing',
+        '/modules/planning/packing/index.php' => 'Planning - Packaging',
+        '/modules/planning/dispatch/index.php' => 'Planning - Dispatch',
+
+        '/modules/operators/jumbo/index.php' => 'Operator - Jumbo',
+        '/modules/operators/pos/index.php' => 'Operator - POS Roll',
+        '/modules/operators/oneply/index.php' => 'Operator - Only Ply',
+        '/modules/operators/printing/index.php' => 'Operator - Flexo',
+        '/modules/operators/flatbed/index.php' => 'Operator - Flat Bed',
+        '/modules/operators/rotery/index.php' => 'Operator - Rotery Die',
+        '/modules/operators/label-slitting/index.php' => 'Operator - Label Slitting',
+        '/modules/operators/packing/index.php' => 'Operator - Packing',
+
+        '/modules/paper_stock/index.php' => 'Paper Stock',
+        '/modules/audit/index.php' => 'Audit Hub',
+        '/modules/scan/index.php' => 'Scan Terminal',
+        '/modules/inventory/slitting/index.php' => 'Inventory - Slitting',
+        '/modules/inventory/finished/index.php' => 'Inventory - Finished Good',
+        '/modules/inventory/die/index.php' => 'Inventory - Die Tooling',
+
+        '/modules/jobs/jumbo/index.php' => 'Job Card - Jumbo',
+        '/modules/jobs/pos/index.php' => 'Job Card - POS Roll',
+        '/modules/jobs/oneply/index.php' => 'Job Card - One Ply',
+        '/modules/jobs/printing/index.php' => 'Job Card - Flexo Printing',
+        '/modules/jobs/flatbed/index.php' => 'Job Card - Flat Bed',
+        '/modules/jobs/rotery/index.php' => 'Job Card - Rotery Die',
+        '/modules/jobs/label-slitting/index.php' => 'Job Card - Label Slitting',
+        '/modules/jobs/packing/index.php' => 'Job Card - Packing Slip',
+        '/modules/bom/index.php' => 'BOM Master',
+        '/modules/live/index.php' => 'Live Floor',
+
+        '/modules/purchase/index.php' => 'Purchase Order',
+
+        '/modules/qc/index.php' => 'QC Report',
+        '/modules/dispatch/index.php' => 'Dispatch',
+        '/modules/billing/index.php' => 'Billing',
+
+        '/modules/performance/index.php' => 'Performance',
+        '/modules/reports/index.php' => 'Reports',
+        '/modules/reports/jobs.php' => 'Job Reports',
+
+        '/modules/approval/index.php' => 'Job Approval',
+
+        '/modules/master/index.php' => 'Master Data',
+        '/modules/stock-import/index.php' => 'Stock Import and Export',
+        '/modules/users/index.php' => 'User Management',
+        '/modules/users/groups.php' => 'User Groups & Permissions',
+        '/modules/print/index.php' => 'Print Studio',
+        '/modules/pricing/index.php' => 'Pricing Login',
+        '/modules/settings/index.php' => 'Settings',
+    ];
+}
+
+/**
+ * Normalize an app path for RBAC checks.
+ */
+function rbacNormalizePath($path) {
+    $path = (string)$path;
+    if ($path === '') return '/';
+
+    $onlyPath = parse_url($path, PHP_URL_PATH);
+    if (!is_string($onlyPath) || $onlyPath === '') {
+        $onlyPath = $path;
+    }
+    $onlyPath = str_replace('\\', '/', $onlyPath);
+
+    $base = appBaseUrl();
+    if ($base !== '' && strpos($onlyPath, $base . '/') === 0) {
+        $onlyPath = substr($onlyPath, strlen($base));
+    } elseif ($base !== '' && $onlyPath === $base) {
+        $onlyPath = '/';
+    }
+
+    if ($onlyPath === '') $onlyPath = '/';
+    if ($onlyPath[0] !== '/') $onlyPath = '/' . $onlyPath;
+    return $onlyPath;
+}
+
+/**
+ * Current executing page path, normalized for RBAC.
+ */
+function rbacCurrentPath() {
+    $self = (string)($_SERVER['PHP_SELF'] ?? '/');
+    return rbacNormalizePath($self);
+}
+
+/**
+ * Return all page paths the current user can access by group.
+ */
+function rbacUserAllowedPaths($userId = null) {
+    ensureRbacSchema();
+
+    if ($userId === null) {
+        $userId = (int)($_SESSION['user_id'] ?? 0);
+    }
+    if ($userId <= 0) return [];
+
+    if (isAdmin()) {
+        return array_keys(rbacPageCatalog());
+    }
+
+    static $cache = [];
+    if (isset($cache[$userId])) return $cache[$userId];
+
+    $db = getDB();
+    $q = $db->prepare("SELECT gpp.page_path
+        FROM users u
+        INNER JOIN user_groups ug ON ug.id = u.group_id AND ug.is_active = 1
+        INNER JOIN group_page_permissions gpp ON gpp.group_id = ug.id AND gpp.can_view = 1
+        WHERE u.id = ?");
+    $q->bind_param('i', $userId);
+    $q->execute();
+    $rows = $q->get_result()->fetch_all(MYSQLI_ASSOC);
+
+    $allowed = [];
+    foreach ($rows as $r) {
+        $p = rbacNormalizePath((string)($r['page_path'] ?? ''));
+        if ($p !== '') $allowed[$p] = true;
+    }
+    $cache[$userId] = array_keys($allowed);
+    return $cache[$userId];
+}
+
+/**
+ * Check whether current logged-in user can access a path.
+ */
+function canAccessPath($path) {
+    $path = rbacNormalizePath($path);
+
+    // Public or always-allowed authenticated routes.
+    if ($path === '/auth/logout.php') return true;
+    if ($path === '/modules/dashboard/index.php') return true;
+
+    if (isAdmin()) return true;
+
+    // Jobs API is used by Live Floor / Job Card pages for data fetch.
+    if ($path === '/modules/jobs/api.php') {
+        $allowed = rbacUserAllowedPaths();
+        if (in_array('/modules/live/index.php', $allowed, true)) return true;
+        foreach ($allowed as $p) {
+            if (strpos($p, '/modules/jobs/') === 0 || strpos($p, '/modules/operators/') === 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    $catalog = rbacPageCatalog();
+    if (!isset($catalog[$path])) {
+        // If page is not cataloged, deny by default for non-admin.
+        return false;
+    }
+
+    $allowed = rbacUserAllowedPaths();
+    return in_array($path, $allowed, true);
+}
+
+/**
+ * Check permission for the current page.
+ */
+function canAccessCurrentPage() {
+    $path = rbacCurrentPath();
+    return canAccessPath($path);
+}
+
+/**
  * Format a date string to "12 Mar 2026" or "-".
  */
 function formatDate($date) {

@@ -1284,6 +1284,7 @@ try {
     // ─── Delete job with reset (admin only) ─────────────────
     case 'delete_job':
         if ($method !== 'POST') { echo json_encode(['ok' => false, 'error' => 'POST required']); break; }
+        if (!isAdmin()) { echo json_encode(['ok' => false, 'error' => 'Access denied. Only system admin can delete job cards.']); break; }
         $jobId = (int)($_POST['job_id'] ?? 0);
         if (!$jobId) { echo json_encode(['ok' => false, 'error' => 'Missing job_id']); break; }
 

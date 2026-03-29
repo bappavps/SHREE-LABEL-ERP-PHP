@@ -647,6 +647,7 @@ const APP_FOOTER_LEFT = <?= json_encode($appFooterLeft, JSON_HEX_TAG|JSON_HEX_AP
 const APP_FOOTER_RIGHT = <?= json_encode($appFooterRight, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const ALL_JOBS = <?= json_encode(array_values(array_merge($activeJobs, $historyJobs)), JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+const IS_ADMIN = <?= isAdmin() ? 'true' : 'false' ?>;
 let DM_ACTIVE_JOB_ID = 0;
 let DM_ROLL_FILTERS_LOADED = false;
 let DM_MODAL_LOCKED = false;
@@ -1699,6 +1700,7 @@ function translateVoiceText(originalText) {
 
 // ─── Delete job (admin) ─────────────────────────────────────
 async function deleteJob(id) {
+  if (!IS_ADMIN) { alert('Access denied. Only system admin can delete job cards.'); return; }
   if (!confirm('Are you sure you want to delete this job card? This action is soft-delete.')) return;
   const fd = new FormData();
   fd.append('csrf_token', CSRF);

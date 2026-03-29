@@ -11,8 +11,11 @@ if (!isAdmin()) {
 }
 
 $db = getDB();
+ensureRbacSchema();
 $errors = [];
 $roles  = ['admin','manager','operator','viewer'];
+$groupRows = $db->query("SELECT id, name FROM user_groups WHERE is_active = 1 ORDER BY name ASC");
+$groups = $groupRows ? $groupRows->fetch_all(MYSQLI_ASSOC) : [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCSRF($_POST['csrf_token'] ?? '')) {
@@ -23,6 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = $_POST['password']      ?? '';
         $confirm  = $_POST['password_confirm'] ?? '';
         $role     = $_POST['role']          ?? 'operator';
+        $groupId  = (int)($_POST['group_id'] ?? 0);
         $isActive = isset($_POST['is_active']) ? 1 : 0;
 
         if ($name === '')                   $errors[] = 'Name is required.';
@@ -30,6 +34,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (strlen($password) < 8)          $errors[] = 'Password must be at least 8 characters.';
         if ($password !== $confirm)         $errors[] = 'Passwords do not match.';
         if (!in_array($role, $roles))       $errors[] = 'Invalid role.';
+        if ($role !== 'admin' && $groupId <= 0) $errors[] = 'Group is required for non-admin users.';
+
+        if ($groupId > 0) {
+          $gq = $db->prepare("SELECT id FROM user_groups WHERE id = ? AND is_active = 1 LIMIT 1");
+          $gq->bind_param('i', $groupId);
+          $gq->execute();
+          if (!$gq->get_result()->fetch_assoc()) {
+            $errors[] = 'Selected group is invalid or inactive.';
+          }
+        }
 
         if (empty($errors)) {
             // Check email uniqueness
@@ -41,8 +55,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if (empty($errors)) {
             $hash = password_hash($password, PASSWORD_BCRYPT);
-            $ins  = $db->prepare("INSERT INTO users (name, email, password, role, is_active) VALUES (?,?,?,?,?)");
-            $ins->bind_param('ssssi', $name, $email, $hash, $role, $isActive);
+            $ins  = $db->prepare("INSERT INTO users (name, email, password, role, group_id, is_active) VALUES (?,?,?, ?, NULLIF(?,0), ?)");
+            $ins->bind_param('ssssii', $name, $email, $hash, $role, $groupId, $isActive);
             if ($ins->execute()) {
                 setFlash('success',"User {$name} created successfully.");
                 redirect(BASE_URL.'/modules/users/index.php');
@@ -101,6 +115,16 @@ include __DIR__ . '/../../includes/header.php';
             <option value="<?= $r ?>" <?= ($_POST['role']??'operator')===$r?'selected':'' ?>><?= ucfirst($r) ?></option>
             <?php endforeach; ?>
           </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Group <span class="req">*</span></label>
+          <select name="group_id" class="form-control">
+            <option value="0">Select Group</option>
+            <?php foreach ($groups as $g): ?>
+            <option value="<?= (int)$g['id'] ?>" <?= ((int)($_POST['group_id'] ?? 0) === (int)$g['id']) ? 'selected' : '' ?>><?= e($g['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+          <small class="text-muted">Admin role can be kept unassigned; others require a group.</small>
         </div>
         <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:4px">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer">

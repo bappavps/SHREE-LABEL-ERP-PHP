@@ -14,6 +14,10 @@ if (isset($_SESSION['user_id'])) {
 
 $error = '';
 
+if (function_exists('ensureRbacSchema')) {
+  ensureRbacSchema();
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCSRF($_POST['csrf_token'] ?? '')) {
         $error = 'Invalid request. Please refresh and try again.';
@@ -25,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Email and password are required.';
         } else {
             $db   = getDB();
-            $stmt = $db->prepare("SELECT id, name, email, password, role FROM users WHERE email = ? AND is_active = 1 LIMIT 1");
+            $stmt = $db->prepare("SELECT id, name, email, password, role, group_id FROM users WHERE email = ? AND is_active = 1 LIMIT 1");
             $stmt->bind_param('s', $email);
             $stmt->execute();
             $user = $stmt->get_result()->fetch_assoc();
@@ -36,6 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['user_name'] = $user['name'];
                 $_SESSION['user_email']= $user['email'];
                 $_SESSION['role']      = $user['role'];
+                $_SESSION['group_id']  = isset($user['group_id']) ? (int)$user['group_id'] : 0;
                 redirect(BASE_URL . '/modules/dashboard/index.php');
             } else {
                 $error = 'Invalid email or password.';
@@ -210,20 +215,22 @@ if ($loginBg === '') {
     </div>
     <?php endif; ?>
 
-    <form method="POST" autocomplete="off" class="login-form">
+    <form method="POST" autocomplete="on" class="login-form" id="loginForm">
       <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
 
       <div class="form-group">
         <label for="email">Email Address</label>
         <input type="email" id="email" name="email"
                class="form-control" placeholder="you@company.com"
-               value="<?= e($_POST['email'] ?? '') ?>" required autofocus>
+           value="<?= e($_POST['email'] ?? '') ?>" required autofocus
+           autocomplete="username" inputmode="email" spellcheck="false" autocapitalize="off">
       </div>
 
       <div class="form-group">
         <label for="password">Password</label>
         <input type="password" id="password" name="password"
-               class="form-control" placeholder="••••••••" required>
+           class="form-control" placeholder="••••••••" required
+           autocomplete="current-password" spellcheck="false" autocapitalize="off">
       </div>
 
       <div class="mt-20">

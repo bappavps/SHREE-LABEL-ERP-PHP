@@ -12,24 +12,30 @@ if (!isAdmin()) {
 }
 
 $db = getDB();
+ensureRbacSchema();
 $fSearch = trim($_GET['search'] ?? '');
 
 $where = ['1=1']; $params = []; $types = '';
 if ($fSearch !== '') {
     $like    = '%'.$fSearch.'%';
-    $where[] = '(name LIKE ? OR email LIKE ?)';
+  $where[] = '(u.name LIKE ? OR u.email LIKE ?)';
     $params  = [$like,$like]; $types = 'ss';
 }
 $whereSQL = implode(' AND ', $where);
 
 $perPage = 20; $page = max(1,(int)($_GET['page'] ?? 1)); $offset = ($page-1)*$perPage;
 
-$totalQ = $db->prepare("SELECT COUNT(*) AS c FROM users WHERE {$whereSQL}");
+$totalQ = $db->prepare("SELECT COUNT(*) AS c FROM users u WHERE {$whereSQL}");
 if ($types) $totalQ->bind_param($types,...$params);
 $totalQ->execute();
 $total = (int)$totalQ->get_result()->fetch_assoc()['c'];
 
-$listQ = $db->prepare("SELECT * FROM users WHERE {$whereSQL} ORDER BY id ASC LIMIT ? OFFSET ?");
+$listQ = $db->prepare("SELECT u.*, ug.name AS group_name
+  FROM users u
+  LEFT JOIN user_groups ug ON ug.id = u.group_id
+  WHERE {$whereSQL}
+  ORDER BY u.id ASC
+  LIMIT ? OFFSET ?");
 $listQ->bind_param($types.'ii',...[...$params,$perPage,$offset]);
 $listQ->execute();
 $users = $listQ->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -43,7 +49,10 @@ include __DIR__ . '/../../includes/header.php';
 </div>
 <div class="page-header">
   <div><h1>User Management</h1><p>Manage system accounts and roles.</p></div>
-  <a href="add.php" class="btn btn-primary"><i class="bi bi-person-plus"></i> Add User</a>
+  <div class="d-flex gap-8">
+    <a href="groups.php" class="btn btn-ghost"><i class="bi bi-people"></i> Groups & Permissions</a>
+    <a href="add.php" class="btn btn-primary"><i class="bi bi-person-plus"></i> Add User</a>
+  </div>
 </div>
 
 <form method="GET" class="filter-bar mb-0">
@@ -66,11 +75,11 @@ include __DIR__ . '/../../includes/header.php';
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Created</th><th>Actions</th></tr>
+        <tr><th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Group</th><th>Status</th><th>Created</th><th>Actions</th></tr>
       </thead>
       <tbody>
         <?php if (empty($users)): ?>
-        <tr><td colspan="7" class="table-empty"><i class="bi bi-inbox"></i>No users found.</td></tr>
+        <tr><td colspan="8" class="table-empty"><i class="bi bi-inbox"></i>No users found.</td></tr>
         <?php else: ?>
         <?php foreach ($users as $i => $u): ?>
         <tr>
@@ -81,6 +90,13 @@ include __DIR__ . '/../../includes/header.php';
             <span class="badge <?= $u['role']==='admin'?'badge-warning':'badge-consumed' ?>">
               <?= e(ucfirst($u['role'])) ?>
             </span>
+          </td>
+          <td>
+            <?php if (!empty($u['group_name'])): ?>
+              <span class="badge badge-info"><?= e($u['group_name']) ?></span>
+            <?php else: ?>
+              <span class="text-muted">Unassigned</span>
+            <?php endif; ?>
           </td>
           <td>
             <?php if ($u['is_active']): ?>

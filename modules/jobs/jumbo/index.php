@@ -4,6 +4,7 @@ require_once __DIR__ . '/../../../includes/functions.php';
 require_once __DIR__ . '/../../../includes/auth_check.php';
 
 $isOperatorView = (string)($_GET['view'] ?? '') === 'operator';
+$canDeleteJobs = isAdmin();
 $pageTitle = $isOperatorView ? 'Jumbo Operator' : 'Jumbo Job Cards';
 $db = getDB();
 $appSettings = getAppSettings();
@@ -736,7 +737,7 @@ $historyCount = $finishedCount;
         <td class="no-print" onclick="event.stopPropagation()">
           <button class="ht-act-btn" onclick="openJobDetail(<?= (int)$h['id'] ?>)" title="View"><i class="bi bi-eye"></i></button>
           <button class="ht-act-btn ht-print" onclick="printJobCard(<?= (int)$h['id'] ?>)" title="Print"><i class="bi bi-printer"></i></button>
-          <?php if (!$isOperatorView): ?>
+          <?php if ($canDeleteJobs): ?>
           <button class="ht-act-btn ht-delete" onclick="deleteJob(<?= (int)$h['id'] ?>)" title="Delete"><i class="bi bi-trash"></i></button>
           <?php endif; ?>
         </td>
@@ -795,6 +796,7 @@ const APP_FOOTER_RIGHT = <?= json_encode($appFooterRight, JSON_HEX_TAG|JSON_HEX_
 const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const ALL_JOBS = <?= json_encode(array_values(array_merge($activeJobs, $historyJobs)), JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const IS_OPERATOR_VIEW = <?= $isOperatorView ? 'true' : 'false' ?>;
+const IS_ADMIN = <?= $canDeleteJobs ? 'true' : 'false' ?>;
 const JC_AUTO_REFRESH_MS = 45000;
 
 function formatDepartmentLabel(dept) {
@@ -1588,7 +1590,7 @@ async function openJobDetail(id, mode) {
     }
     // No End/Complete in modal for Running unless in complete mode
   }
-  if (!IS_OPERATOR_VIEW) {
+  if (IS_ADMIN) {
     fHtml += `<button class="jc-action-btn jc-btn-delete" onclick="deleteJob(${job.id})" title="Admin: Delete"><i class="bi bi-trash"></i></button>`;
   }
   fHtml += '</div>';
@@ -1783,6 +1785,7 @@ document.getElementById('jcDetailModal').addEventListener('click', function(e) {
 
 // ─── Delete job (admin) ─────────────────────────────────────
 async function deleteJob(id) {
+  if (!IS_ADMIN) { alert('Access denied. Only system admin can delete job cards.'); return; }
   if (!confirm('Delete this job card and reset linked paper stock, planning status, and downstream queued jobs?')) return;
   const fd = new FormData();
   fd.append('csrf_token', CSRF);

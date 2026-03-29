@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../includes/auth_check.php';
 
 $db   = getDB();
 $csrf = generateCSRF();
+$isSysAdmin = isAdmin();
 $appSettings = getAppSettings();
 
 $allowedPerPage = [10, 20, 50, 100];
@@ -429,7 +430,9 @@ include __DIR__ . '/../../includes/header.php';
   <div class="ps-selected-actions">
     <button type="button" class="btn btn-sm" style="background:#ef4444;color:#fff;border:none" onclick="psBulkExport('pdf','selected')"><i class="bi bi-file-earmark-pdf"></i> Export PDF</button>
     <button type="button" class="btn btn-sm" style="background:#22c55e;color:#fff;border:none" onclick="psBulkExport('csv','selected')"><i class="bi bi-file-earmark-excel"></i> Export Excel</button>
+    <?php if ($isSysAdmin): ?>
     <button type="button" class="btn btn-sm" style="background:#dc2626;color:#fff;border:none" onclick="psBulkDelete()"><i class="bi bi-trash3"></i> Delete</button>
+    <?php endif; ?>
   </div>
 </div>
 
@@ -514,7 +517,7 @@ include __DIR__ . '/../../includes/header.php';
         }
 
         // --- Recursive render function ---
-        function renderRollTree($nodes, $level = 0, &$slNo = 1, $offset = 0, $allColumns, $csrf, $parentLines = []) {
+        function renderRollTree($nodes, $allColumns, $csrf, $isSysAdmin, $level = 0, &$slNo = 1, $offset = 0, $parentLines = []) {
           // Sort children by last suffix ascending (A, B, C, D, 1, 2, ...)
           usort($nodes, function($a, $b) {
             $aSuf = array_slice(explode('-', $a['roll_no']), -1)[0];
@@ -574,7 +577,9 @@ include __DIR__ . '/../../includes/header.php';
             echo '<a href="#" class="act-slit" title="Slitting" onclick="psGoSlitting(this);return false"><i class="bi bi-scissors"></i></a>';
             echo '<a href="#" class="act-art" title="Artwork" onclick="alert(\'Artwork feature coming soon\');return false"><i class="bi bi-image"></i></a>';
             echo '<a href="#" class="act-print" title="Print Label" onclick="psPrintSingleLabel('.e($r['id']).');return false"><i class="bi bi-printer"></i></a>';
-            echo '<a href="delete.php?id='.e($r['id']).'&csrf='.$csrf.'" class="act-del" title="Delete" data-confirm="Delete roll '.e($r['roll_no']).'? This cannot be undone."><i class="bi bi-trash"></i></a>';
+            if ($isSysAdmin) {
+              echo '<a href="delete.php?id='.e($r['id']).'&csrf='.$csrf.'" class="act-del" title="Delete" data-confirm="Delete roll '.e($r['roll_no']).'? This cannot be undone."><i class="bi bi-trash"></i></a>';
+            }
             echo '</div>';
             echo '</td>';
             echo '</tr>';
@@ -586,12 +591,12 @@ include __DIR__ . '/../../includes/header.php';
               if ($level > 0) {
                 $childParentLines[$level - 1] = !$isLast;
               }
-              renderRollTree($r['children'], $level+1, $slNo, $offset, $allColumns, $csrf, $childParentLines);
+              renderRollTree($r['children'], $allColumns, $csrf, $isSysAdmin, $level+1, $slNo, $offset, $childParentLines);
             }
           }
         }
         $slNo = 1;
-        renderRollTree($roots, 0, $slNo, $offset, $allColumns, $csrf);
+        renderRollTree($roots, $allColumns, $csrf, $isSysAdmin, 0, $slNo, $offset);
         ?>
       <?php endif; ?>
       </tbody>
@@ -643,6 +648,7 @@ include __DIR__ . '/../../includes/header.php';
   var showingCount = document.getElementById('showing-count');
   var recordBadge = document.getElementById('grid-record-badge');
   var isAllRowsMode = <?= $isAllRows ? 'true' : 'false' ?>;
+  var IS_SYS_ADMIN = <?= $isSysAdmin ? 'true' : 'false' ?>;
 
   var qf = {
     search: document.getElementById('qf-search'),
@@ -1283,6 +1289,7 @@ include __DIR__ . '/../../includes/header.php';
   };
 
   window.psBulkDelete = function(){
+    if (!IS_SYS_ADMIN) { alert('Access denied. Only system admin can delete paper stock.'); return; }
     var ids = selectedIds();
     if (!ids.length) { alert('Select at least one roll.'); return; }
     if (!confirm('Delete ' + ids.length + ' roll(s)? This cannot be undone.')) return;
