@@ -19,6 +19,7 @@ $jobs = $db->query("
     SELECT j.*, ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,
            ps.status AS roll_status, ps.lot_batch_no,
            p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority,
+           p.extra_data AS planning_extra_data,
            prev.job_no AS prev_job_no, prev.status AS prev_job_status
     FROM jobs j
     LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no
@@ -33,6 +34,24 @@ $jobs = $db->query("
 // Parse extra_data for each job
 foreach ($jobs as &$j) {
     $j['extra_data_parsed'] = json_decode($j['extra_data'] ?? '{}', true) ?: [];
+    // Parse planning extra_data into planning_* fields
+    $ped = json_decode($j['planning_extra_data'] ?? '{}', true) ?: [];
+    $j['planning_die'] = $ped['die'] ?? '';
+    $j['planning_plate_no'] = $ped['plate_no'] ?? '';
+    $j['planning_label_size'] = $ped['size'] ?? '';
+    $j['planning_repeat_mm'] = $ped['repeat'] ?? '';
+    $j['planning_direction'] = $ped['roll_direction'] ?? '';
+    $j['planning_order_mtr'] = $ped['allocate_mtrs'] ?? '';
+    $j['planning_order_qty'] = $ped['qty_pcs'] ?? '';
+    $j['planning_job_date'] = $ped['order_date'] ?? '';
+    $j['planning_mkd_job_sl_no'] = $ped['mkd_job_sl_no'] ?? '';
+    $j['planning_core_size'] = $ped['core_size'] ?? '';
+    $j['planning_qty_per_roll'] = $ped['qty_per_roll'] ?? '';
+    $j['planning_material'] = $ped['material'] ?? '';
+    $j['planning_paper_size'] = $ped['paper_size'] ?? '';
+    $j['planning_remarks'] = $ped['remarks'] ?? '';
+    $j['planning_image_url'] = !empty($ped['image_path']) ? (BASE_URL . '/' . $ped['image_path']) : '';
+    unset($j['planning_extra_data']); // Don't send raw blob to JS
     $planningName = trim((string)($j['planning_job_name'] ?? ''));
     if ($planningName !== '') {
       $j['display_job_name'] = $planningName;
@@ -184,9 +203,10 @@ include __DIR__ . '/../../../includes/header.php';
 
 .fp-op-shell{border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;overflow:hidden}
 .fp-op-form{padding:12px;display:grid;gap:12px}
-.fp-op-section{border:1px solid #dbe5f0;border-radius:10px;background:#fff;overflow:hidden}
+.fp-op-section{border:1px solid #dbe5f0;border-radius:10px;background:#fff;overflow:hidden;display:flex;flex-direction:column}
 .fp-op-h{padding:9px 11px;border-bottom:1px solid #c4b5fd;background:#ede9fe;font-size:.68rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#5b21b6}
 .fp-op-b{padding:10px;display:grid;gap:8px}
+.fp-op-b + .fp-op-b{border-top:1px solid #ede9fe;margin-top:0}
 .fp-op-grid-2,.fp-op-grid-3,.fp-op-grid-4{display:grid;gap:8px}
 .fp-op-grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
 .fp-op-grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
@@ -225,6 +245,17 @@ include __DIR__ . '/../../../includes/header.php';
 @media print{.no-print,.breadcrumb,.page-header,.fp-modal-overlay{display:none!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
 @media(max-width:900px){.fp-op-grid-4{grid-template-columns:repeat(2,minmax(0,1fr))}.fp-op-lanes{grid-template-columns:repeat(4,minmax(72px,1fr))}.fp-op-topstrip{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.fp-grid{grid-template-columns:1fr}.fp-stats{grid-template-columns:repeat(2,1fr)}.fp-detail-grid{grid-template-columns:1fr}.fp-form-row{grid-template-columns:1fr}.fp-op-grid-2,.fp-op-grid-3,.fp-op-grid-4{grid-template-columns:1fr}.fp-op-lanes{grid-template-columns:repeat(2,minmax(90px,1fr))}}
+
+/* Timer overlay */
+.fp-timer-overlay{position:fixed;inset:0;z-index:20000;background:rgba(15,23,42,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;backdrop-filter:blur(4px)}
+.fp-timer-display{font-size:4rem;font-weight:900;font-variant-numeric:tabular-nums;color:#fff;letter-spacing:.04em;text-shadow:0 2px 12px rgba(0,0,0,.3)}
+.fp-timer-jobinfo{color:rgba(255,255,255,.7);font-size:1rem;text-align:center;font-weight:600}
+.fp-timer-actions{display:flex;gap:16px}
+.fp-timer-actions button{padding:12px 32px;font-size:.95rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;border:none;border-radius:999px;cursor:pointer;transition:all .15s}
+.fp-timer-btn-cancel{background:#64748b;color:#fff}
+.fp-timer-btn-cancel:hover{background:#475569}
+.fp-timer-btn-end{background:#16a34a;color:#fff}
+.fp-timer-btn-end:hover{background:#15803d}
 </style>
 
 <div class="fp-header no-print">
@@ -251,23 +282,23 @@ $completedJobs = count(array_filter($jobs, fn($j) => in_array($j['status'], ['Co
 $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
 ?>
 <div class="fp-stats no-print">
-  <div class="fp-stat">
+  <div class="fp-stat" style="cursor:pointer" onclick="clickStatFilter('all')">
     <div class="fp-stat-icon" style="background:#faf5ff;color:var(--fp-brand)"><i class="bi bi-printer"></i></div>
     <div><div class="fp-stat-val"><?= $totalJobs ?></div><div class="fp-stat-label">Total Print Jobs</div></div>
   </div>
-  <div class="fp-stat">
+  <div class="fp-stat" style="cursor:pointer" onclick="clickStatFilter('Queued')">
     <div class="fp-stat-icon" style="background:#f1f5f9;color:#64748b"><i class="bi bi-lock"></i></div>
     <div><div class="fp-stat-val"><?= $queuedJobs ?></div><div class="fp-stat-label">Queued</div></div>
   </div>
-  <div class="fp-stat">
+  <div class="fp-stat" style="cursor:pointer" onclick="clickStatFilter('Pending')">
     <div class="fp-stat-icon" style="background:#fef3c7;color:#f59e0b"><i class="bi bi-hourglass-split"></i></div>
     <div><div class="fp-stat-val"><?= $pendingJobs ?></div><div class="fp-stat-label">Pending</div></div>
   </div>
-  <div class="fp-stat">
+  <div class="fp-stat" style="cursor:pointer" onclick="clickStatFilter('Running')">
     <div class="fp-stat-icon" style="background:#dbeafe;color:#3b82f6"><i class="bi bi-play-circle"></i></div>
     <div><div class="fp-stat-val"><?= $runningJobs ?></div><div class="fp-stat-label">Running</div></div>
   </div>
-  <div class="fp-stat">
+  <div class="fp-stat" style="cursor:pointer" onclick="clickStatFilter('Completed')">
     <div class="fp-stat-icon" style="background:#dcfce7;color:#16a34a"><i class="bi bi-check-circle"></i></div>
     <div><div class="fp-stat-val"><?= $completedJobs ?></div><div class="fp-stat-label">Completed</div></div>
   </div>
@@ -282,8 +313,8 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
 <div class="fp-filters no-print">
   <input type="text" class="fp-search" id="fpSearch" placeholder="Search by job no, roll, company&hellip;">
   <button class="fp-filter-btn" onclick="filterFP('all',this)">All</button>
-  <button class="fp-filter-btn active" onclick="filterFP('Queued',this)">Queued</button>
-  <button class="fp-filter-btn" onclick="filterFP('Pending',this)">Pending</button>
+  <button class="fp-filter-btn" onclick="filterFP('Queued',this)">Queued</button>
+  <button class="fp-filter-btn active" onclick="filterFP('Pending',this)">Pending</button>
   <button class="fp-filter-btn" onclick="filterFP('Running',this)">Running</button>
   <button class="fp-filter-btn" onclick="filterFP('Completed',this)">Completed</button>
   <button id="fpPrintSelBtn" onclick="printSelectedJobs()" style="display:none;padding:6px 14px;font-size:.7rem;font-weight:800;text-transform:uppercase;border:none;background:var(--fp-brand);color:#fff;border-radius:20px;cursor:pointer;align-items:center;gap:6px;letter-spacing:.04em"><i class="bi bi-printer-fill"></i> Print Selected (<span id="fpSelCount">0</span>)</button>
@@ -346,7 +377,7 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
         <input type="checkbox" class="fp-card-check" data-id="<?= $job['id'] ?>" onclick="event.stopPropagation();updatePrintCount()" title="Select for bulk print">
         <?php if ($sts === 'Pending' && $prevDone): ?>
           <?php if ($isOperatorView): ?>
-            <button class="fp-action-btn fp-btn-start" onclick="updateFPStatus(<?= $job['id'] ?>,'Running')"><i class="bi bi-play-fill"></i> Start</button>
+            <button class="fp-action-btn fp-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>)"><i class="bi bi-play-fill"></i> Start</button>
           <?php else: ?>
             <button class="fp-action-btn fp-btn-view" onclick="openPrintDetail(<?= $job['id'] ?>);event.stopPropagation()"><i class="bi bi-eye"></i> Open</button>
           <?php endif; ?>
@@ -445,7 +476,7 @@ const IS_OPERATOR_VIEW = <?= $isOperatorView ? 'true' : 'false' ?>;
 const CURRENT_USER = <?= json_encode($sessionUser, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const ALL_JOBS = <?= json_encode($jobs, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
-let activeStatusFilter = 'Queued';
+let activeStatusFilter = 'Pending';
 
 function getFieldVal(form, name) {
   return String(form.querySelector('[name="' + name + '"]')?.value || '').trim();
@@ -487,7 +518,7 @@ function normalizeCardData(job, extra) {
   out.physical_print_photo_url = String(out.physical_print_photo_url || '').trim();
   out.physical_print_photo_path = String(out.physical_print_photo_path || '').trim();
   out.total_wastage_meters = out.total_wastage_meters ?? out.wastage_meters ?? '';
-  if (!Array.isArray(out.colour_lanes)) out.colour_lanes = ['', '', '', '', '', '', '', ''];
+  if (!Array.isArray(out.colour_lanes)) out.colour_lanes = ['Cyan', 'Magenta', 'Yellow', 'Black', '', '', '', ''];
   if (!Array.isArray(out.anilox_lanes)) out.anilox_lanes = ['', '', '', '', '', '', '', ''];
   out.colour_lanes = out.colour_lanes.slice(0, 8).concat(Array(Math.max(0, 8 - out.colour_lanes.length)).fill('')).map(v => String(v || '').trim());
   out.anilox_lanes = out.anilox_lanes.slice(0, 8).concat(Array(Math.max(0, 8 - out.anilox_lanes.length)).fill('')).map(v => String(v || '').trim());
@@ -512,8 +543,9 @@ function normalizeCardData(job, extra) {
   }
 
   if (!Array.isArray(out.color_anilox_rows) || !out.color_anilox_rows.length) {
+    const CMYK_DEFAULTS = ['Cyan','Magenta','Yellow','Black'];
     out.color_anilox_rows = Array.from({ length: 8 }, (_, i) => {
-      const colorVal = String(out.colour_lanes[i] || '').trim();
+      const colorVal = String(out.colour_lanes[i] || '').trim() || (i < 4 ? CMYK_DEFAULTS[i] : '');
       const anVal = String(out.anilox_lanes[i] || '').trim();
       return {
         lane: i + 1,
@@ -564,19 +596,30 @@ function bindFlexoFormBehavior(container) {
   });
   refreshWastage();
 
+  const CMYK_COLORS = ['Cyan','Magenta','Yellow','Black'];
+  const cmykAniloxOpts = ['None','250','300','400','500','550','600','700','750','800','850','900','1000','1100','1200','1300','1400','Custom'];
+  const defaultAniloxOpts = ['None','60','80','100','120','140','160','Custom'];
   container.querySelectorAll('[data-lane-row]').forEach(row => {
     const colorSel = row.querySelector('[data-role="color-select"]');
     const colorName = row.querySelector('[data-role="color-name"]');
     const anSel = row.querySelector('[data-role="anilox-select"]');
     const anCustom = row.querySelector('[data-role="anilox-custom"]');
+    const COLOR_BG = {
+      'Cyan':'#e0f7fa','Magenta':'#fce4ec','Yellow':'#fffde7','Black':'#eceff1',
+      'P1':'#e8eaf6','P2':'#e0f2f1','P3':'#fff3e0','P4':'#f3e5f5','UV':'#ede7f6','Other':'#f5f5f5'
+    };
     const sync = () => {
-      if (colorName) {
-        const c = String(colorSel?.value || '');
-        colorName.style.display = c && c !== 'None' ? '' : 'none';
+      const c = String(colorSel?.value || '');
+      const isCMYK = CMYK_COLORS.includes(c);
+      if (colorName) colorName.style.display = (c && c !== 'None' && !isCMYK) ? '' : 'none';
+      if (colorSel) colorSel.style.background = COLOR_BG[c] || '#fcfdff';
+      if (anSel) {
+        const curVal = anSel.value;
+        const opts = isCMYK ? cmykAniloxOpts : defaultAniloxOpts;
+        anSel.innerHTML = opts.map(o => `<option value="${o}"${o===curVal?' selected':''}>${o}</option>`).join('');
+        if (!opts.includes(curVal)) anSel.value = 'None';
       }
-      if (anCustom) {
-        anCustom.style.display = String(anSel?.value || '') === 'Custom' ? '' : 'none';
-      }
+      if (anCustom) anCustom.style.display = String(anSel?.value || '') === 'Custom' ? '' : 'none';
     };
     if (colorSel) colorSel.addEventListener('change', sync);
     if (anSel) anSel.addEventListener('change', sync);
@@ -617,6 +660,16 @@ function filterFP(status, btn) {
   activeStatusFilter = status;
   document.querySelectorAll('.fp-filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+  applyFPFilters();
+}
+
+function clickStatFilter(status) {
+  activeStatusFilter = status;
+  document.querySelectorAll('.fp-filter-btn').forEach(b => {
+    b.classList.toggle('active', b.textContent.trim() === (status === 'all' ? 'All' : status));
+  });
+  // Ensure active tab is on Job Cards
+  switchFPTab('active');
   applyFPFilters();
 }
 
@@ -715,6 +768,109 @@ async function updateFPStatus(id, newStatus) {
   } catch (err) { alert('Network error: ' + err.message); }
 }
 
+// ─── Start Job with Timer Overlay ───────────────────────────
+let _timerInterval = null;
+let _timerStart = 0;
+let _timerJobId = null;
+
+async function startJobWithTimer(id) {
+  if (!confirm('Start this job?')) return;
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'update_status');
+  fd.append('job_id', id);
+  fd.append('status', 'Running');
+  try {
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) { alert('Error: ' + (data.error || 'Unknown')); return; }
+  } catch (err) { alert('Network error: ' + err.message); return; }
+
+  _timerJobId = id;
+  _timerStart = Date.now();
+  const job = ALL_JOBS.find(j => j.id == id) || {};
+  const jobLabel = resolvePrintDisplayName(job) || ('Job #' + id);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'fp-timer-overlay';
+  overlay.id = 'fpTimerOverlay';
+  overlay.innerHTML = `
+    <div class="fp-timer-jobinfo"><i class="bi bi-printer"></i> ${jobLabel}</div>
+    <div class="fp-timer-display" id="fpTimerCounter">00:00:00</div>
+    <div class="fp-timer-actions">
+      <button class="fp-timer-btn-cancel" onclick="cancelTimer()"><i class="bi bi-x-lg"></i> Cancel</button>
+      <button class="fp-timer-btn-end" onclick="endTimer()"><i class="bi bi-stop-fill"></i> End</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  _timerInterval = setInterval(() => {
+    const diff = Math.floor((Date.now() - _timerStart) / 1000);
+    const h = String(Math.floor(diff/3600)).padStart(2,'0');
+    const m = String(Math.floor((diff%3600)/60)).padStart(2,'0');
+    const s = String(diff%60).padStart(2,'0');
+    const el = document.getElementById('fpTimerCounter');
+    if (el) el.textContent = h + ':' + m + ':' + s;
+  }, 1000);
+}
+
+function cancelTimer() {
+  if (_timerInterval) clearInterval(_timerInterval);
+  _timerInterval = null;
+  const ov = document.getElementById('fpTimerOverlay');
+  if (ov) ov.remove();
+  // Revert status back to Pending
+  (async () => {
+    const fd = new FormData();
+    fd.append('csrf_token', CSRF);
+    fd.append('action', 'update_status');
+    fd.append('job_id', _timerJobId);
+    fd.append('status', 'Pending');
+    try { await fetch(API_BASE, { method: 'POST', body: fd }); } catch(e) {}
+    _timerJobId = null;
+    location.reload();
+  })();
+}
+
+function endTimer() {
+  if (_timerInterval) clearInterval(_timerInterval);
+  _timerInterval = null;
+  const ov = document.getElementById('fpTimerOverlay');
+  if (ov) ov.remove();
+  const jobId = _timerJobId;
+  _timerJobId = null;
+  // Auto-open camera for physical photo, then open detail form
+  const camInput = document.createElement('input');
+  camInput.type = 'file';
+  camInput.accept = 'image/*';
+  camInput.capture = 'environment';
+  camInput.style.display = 'none';
+  document.body.appendChild(camInput);
+  camInput.addEventListener('change', async function() {
+    const file = camInput.files?.[0];
+    if (file) {
+      const fd = new FormData();
+      fd.append('csrf_token', CSRF);
+      fd.append('action', 'upload_printing_photo');
+      fd.append('job_id', jobId);
+      fd.append('photo', file);
+      try {
+        const res = await fetch(API_BASE, { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!data.ok) alert('Photo upload failed: ' + (data.error || 'Unknown'));
+      } catch (err) { alert('Photo upload error: ' + err.message); }
+    }
+    camInput.remove();
+    openPrintDetail(jobId, 'complete');
+  });
+  // If user cancels camera, still open the form
+  camInput.addEventListener('cancel', function() {
+    camInput.remove();
+    openPrintDetail(jobId, 'complete');
+  });
+  camInput.click();
+}
+
 // ─── Submit operator extra data + complete ──────────────────
 async function submitAndComplete(id) {
   const job = ALL_JOBS.find(j => j.id == id) || {};
@@ -807,8 +963,10 @@ function renderLaneSelectOptions(selected) {
   return opts.map(o => `<option value="${o}"${String(selected||'')===o?' selected':''}>${o}</option>`).join('');
 }
 
-function renderAniloxOptions(selected) {
-  const opts = ['None', '60', '80', '100', '120', '140', '160', 'Custom'];
+function renderAniloxOptions(selected, forCMYK) {
+  const cmykOpts = ['None','250','300','400','500','550','600','700','750','800','850','900','1000','1100','1200','1300','1400','Custom'];
+  const defaultOpts = ['None','60','80','100','120','140','160','Custom'];
+  const opts = forCMYK ? cmykOpts : defaultOpts;
   return opts.map(o => `<option value="${o}"${String(selected||'')===o?' selected':''}>${o}</option>`).join('');
 }
 
@@ -912,12 +1070,13 @@ async function openPrintDetail(id, mode) {
     const lr = Array.isArray(card.color_anilox_rows) ? (card.color_anilox_rows[i] || {}) : {};
     const colorCode = String(lr.color_code || card.colour_lanes[i] || 'None').trim() || 'None';
     const anValRaw = String(lr.anilox_value || card.anilox_lanes[i] || 'None').trim() || 'None';
+    const ALL_ANILOX = ['None','60','80','100','120','140','160','250','300','400','500','550','600','700','750','800','850','900','1000','1100','1200','1300','1400','Custom'];
     return {
       lane: i + 1,
       color_code: colorCode,
       color_name: String(lr.color_name || '').trim(),
-      anilox_value: ['None','60','80','100','120','140','160','Custom'].includes(anValRaw) ? anValRaw : 'Custom',
-      anilox_custom: ['None','60','80','100','120','140','160','Custom'].includes(anValRaw) ? String(lr.anilox_custom || '').trim() : anValRaw,
+      anilox_value: ALL_ANILOX.includes(anValRaw) ? anValRaw : 'Custom',
+      anilox_custom: ALL_ANILOX.includes(anValRaw) ? String(lr.anilox_custom || '').trim() : anValRaw,
     };
   });
 
@@ -1020,14 +1179,15 @@ async function openPrintDetail(id, mode) {
       </div></div>
 
       <div class="fp-op-section"><div class="fp-op-h">Color + Anilox (Color 1-8)</div><div class="fp-op-b" style="gap:10px">
-        ${laneRows.map((r, idx) => `<div class="fp-op-lane-row" data-lane-row><div class="fp-op-mini"><strong>Color ${idx+1}</strong></div><div style="display:grid;gap:6px"><select data-role="color-select" name="color_lane_code_${idx}">${renderLaneSelectOptions(r.color_code)}</select><input data-role="color-name" type="text" name="color_lane_name_${idx}" value="${esc(r.color_name||'')}" placeholder="Color name" style="display:none"></div><div style="display:grid;gap:6px"><select data-role="anilox-select" name="anilox_lane_value_${idx}">${renderAniloxOptions(r.anilox_value)}</select><input data-role="anilox-custom" type="text" name="anilox_lane_custom_${idx}" value="${esc(r.anilox_custom||'')}" placeholder="Custom anilox" style="display:none"></div></div>`).join('')}
+        ${laneRows.map((r, idx) => `<div class="fp-op-lane-row" data-lane-row><div class="fp-op-mini"><strong>Color ${idx+1}</strong></div><div style="display:grid;gap:6px"><select data-role="color-select" name="color_lane_code_${idx}">${renderLaneSelectOptions(r.color_code)}</select><input data-role="color-name" type="text" name="color_lane_name_${idx}" value="${esc(r.color_name||'')}" placeholder="Color name" style="display:none"></div><div style="display:grid;gap:6px"><select data-role="anilox-select" name="anilox_lane_value_${idx}">${renderAniloxOptions(r.anilox_value, ['Cyan','Magenta','Yellow','Black'].includes(r.color_code))}</select><input data-role="anilox-custom" type="text" name="anilox_lane_custom_${idx}" value="${esc(r.anilox_custom||'')}" placeholder="Custom anilox" style="display:none"></div></div>`).join('')}
       </div></div>
 
-      <div class="fp-op-section"><div class="fp-op-h">Planning vs Physical Print Image</div><div class="fp-op-b"><div class="fp-photo-grid"><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Planning Image</strong></div><img class="fp-photo-preview" src="${esc(planningImage || '')}" alt="Planning image" onerror="this.style.opacity='0.4';this.alt='Planning image not available'"></div><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Physical Image</strong></div><img id="physical-photo-preview" class="fp-photo-preview" src="${esc(physicalImage || '')}" alt="Physical image" onerror="this.style.opacity='0.4';this.alt='Physical image not available'"><input type="hidden" name="physical_print_photo_url" value="${esc(physicalImage || '')}"><input type="hidden" name="physical_print_photo_path" value="${esc(card.physical_print_photo_path || '')}">${IS_OPERATOR_VIEW ? `<div style="margin-top:8px"><input type="file" accept="image/png,image/jpeg,image/webp" onchange="handlePrintingPhotoUpload(this, ${job.id})"></div>` : ''}</div></div></div></div>
+      <div class="fp-op-section"><div class="fp-op-h">Planning vs Physical Print Image</div><div class="fp-op-b"><div class="fp-photo-grid"><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Planning Image</strong></div><img class="fp-photo-preview" src="${esc(planningImage || '')}" alt="Planning image" onerror="this.style.opacity='0.4';this.alt='Planning image not available'"></div><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Physical Image</strong></div><img id="physical-photo-preview" class="fp-photo-preview" src="${esc(physicalImage || '')}" alt="Physical image" onerror="this.style.opacity='0.4';this.alt='Physical image not available'"><input type="hidden" name="physical_print_photo_url" value="${esc(physicalImage || '')}"><input type="hidden" name="physical_print_photo_path" value="${esc(card.physical_print_photo_path || '')}"><input type="file" id="fp-camera-input" accept="image/*" capture="environment" style="display:none" onchange="handlePrintingPhotoUpload(this, ${job.id})"></div></div></div></div>
 
-      <div class="fp-op-section"><div class="fp-op-h">Production and Signoff</div><div class="fp-op-b fp-op-grid-4">
+      <div class="fp-op-section"><div class="fp-op-h">Production and Signoff</div><div class="fp-op-b fp-op-grid-2">
         <div class="fp-op-field"><label>Production Total Quantity</label><input type="number" step="1" name="actual_qty" value="${esc(card.actual_qty||'')}"></div>
         <div class="fp-op-field"><label>Electricity</label><input type="text" name="electricity" value="${esc(card.electricity||'')}"></div>
+      </div><div class="fp-op-b fp-op-grid-2">
         <div class="fp-op-field"><label>Time</label><input type="text" name="time_spent" value="${esc(card.time_spent||secondsToHms(elapsedSec))}" readonly></div>
         <div class="fp-op-field"><label>Prepared By</label><input type="text" name="prepared_by" value="${esc(card.prepared_by||CURRENT_USER||'')}" readonly></div>
       </div><div class="fp-op-b fp-op-grid-2"><div class="fp-op-field"><label>Filled By</label><input type="text" name="filled_by" value="${esc(card.filled_by||CURRENT_USER||'')}" readonly></div><div class="fp-op-field"><label>Defects Found</label><select name="defects_text">${['','Light Color','Dark Color','Plate Damage','Registration Error','Ink Smudge','Ink Spreading','Dot Missing','Streaks','Hazing','Scratch Marks','Material Defect','Other'].map(o=>o?'<option value="'+o+'"'+(card.defects_text===o?' selected':'')+'>'+o+'</option>':'<option value="">-- Select --</option>').join('')}</select></div></div><div class="fp-op-b fp-op-grid-2"><div class="fp-op-field"><label>Operator Notes</label><textarea name="operator_notes" placeholder="Observations, adjustments, ink changes&hellip;">${esc(extra.operator_notes||'')}</textarea></div><div class="fp-op-field"><label>Voice Notes</label><div style="display:flex;align-items:center;gap:8px"><button type="button" class="fp-voice-btn" onclick="startVoiceToField('operator_notes', this)"><i class="bi bi-mic"></i> Speak Notes</button></div></div></div></div>
@@ -1061,9 +1221,10 @@ async function openPrintDetail(id, mode) {
 
       <div class="fp-op-section"><div class="fp-op-h">Planning vs Physical Print Image</div><div class="fp-op-b"><div class="fp-photo-grid"><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Planning Image</strong></div><img class="fp-photo-preview" src="${esc(planningImage || '')}" alt="Planning image" onerror="this.style.opacity='0.4';this.alt='Not available'"></div><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Physical Image</strong></div><img class="fp-photo-preview" src="${esc(physicalImage || '')}" alt="Physical image" onerror="this.style.opacity='0.4';this.alt='Not available'"></div></div></div></div>
 
-      <div class="fp-op-section"><div class="fp-op-h">Production and Signoff</div><div class="fp-op-b fp-op-grid-4">
+      <div class="fp-op-section"><div class="fp-op-h">Production and Signoff</div><div class="fp-op-b fp-op-grid-2">
         <div class="fp-op-field"><label>Production Total Quantity</label><input type="text" value="${esc(card.actual_qty||'—')}" readonly></div>
         <div class="fp-op-field"><label>Electricity</label><input type="text" value="${esc(card.electricity||'—')}" readonly></div>
+      </div><div class="fp-op-b fp-op-grid-2">
         <div class="fp-op-field"><label>Time</label><input type="text" value="${esc(card.time_spent||'—')}" readonly></div>
         <div class="fp-op-field"><label>Prepared By</label><input type="text" value="${esc(card.prepared_by||'—')}" readonly></div>
       </div><div class="fp-op-b fp-op-grid-2"><div class="fp-op-field"><label>Filled By</label><input type="text" value="${esc(card.filled_by||'—')}" readonly></div><div class="fp-op-field"><label>Defects Found</label><input type="text" value="${esc(card.defects_text||'—')}" readonly></div></div>
@@ -1080,7 +1241,7 @@ async function openPrintDetail(id, mode) {
   let fHtml = '<div style="display:flex;gap:8px">';
   fHtml += `<button class="fp-action-btn fp-btn-print" onclick="printJobCard(${job.id})"><i class="bi bi-printer"></i> Print</button>`;
   fHtml += '</div><div style="display:flex;gap:8px">';
-  if (sts === 'Pending' && prevDone && IS_OPERATOR_VIEW) fHtml += `<button class="fp-action-btn fp-btn-start" onclick="updateFPStatus(${job.id},'Running')"><i class="bi bi-play-fill"></i> Start Job</button>`;
+  if (sts === 'Pending' && prevDone && IS_OPERATOR_VIEW) fHtml += `<button class="fp-action-btn fp-btn-start" onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-fill"></i> Start Job</button>`;
   if (sts === 'Pending' && !prevDone) fHtml += `<button class="fp-action-btn fp-btn-start" disabled><i class="bi bi-lock-fill"></i> Waiting for Slitting</button>`;
   if (sts === 'Running' && IS_OPERATOR_VIEW) fHtml += `<button class="fp-action-btn fp-btn-complete" onclick="submitAndComplete(${job.id})"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
   if (!IS_OPERATOR_VIEW) {
