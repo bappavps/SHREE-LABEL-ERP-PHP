@@ -430,6 +430,11 @@ textarea.ps-prop-input { resize:vertical;min-height:50px; }
 .ps-field-btn:hover i { color:#6366f1; }
 .ps-field-btn span { font-size:10px;font-weight:700;text-transform:uppercase;color:#64748b; }
 .ps-field-btn:hover span { color:#6366f1; }
+.ps-field-code-btn { width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:8px 10px;border:none;background:none;cursor:pointer;border-radius:8px;transition:background .15s;text-align:left; }
+.ps-field-code-btn:hover { background:rgba(99,102,241,.06); }
+.ps-field-code-label { font-size:9px;font-weight:700;text-transform:uppercase;color:#64748b; }
+.ps-field-code-value { font-size:10px;font-weight:700;color:#0f172a;background:#eef2ff;padding:2px 6px;border-radius:5px;word-break:break-all; }
+.ps-field-code-preview { font-size:9px;color:#94a3b8; }
 @media print { #ps-editor, #ps-gallery, .ps-toast, #ps-create-modal, #ps-delete-modal { display:none!important; } }
 </style>
 
@@ -481,7 +486,15 @@ const PLACEHOLDERS = {
   GENERAL: [
     { key:'{{job.companyName}}', label:'Company Name', icon:'bi-building', preview:'Shree Label Creation' },
     { key:'{{job.companyAddress}}', label:'Company Address', icon:'bi-file-text', preview:'Phase 1, Industrial Estate' },
-    { key:'{{job.date}}', label:'Current Date', icon:'bi-calendar3', preview:new Date().toLocaleDateString() }
+    { key:'{{job.date}}', label:'Current Print Date', icon:'bi-calendar3', preview:'3/30/2026' },
+    { key:'{{received_date}}', label:'Received Date', icon:'bi-calendar-event', preview:'30 Mar 2026' },
+    { key:'{{job.receivedDate}}', label:'Received Date Slash', icon:'bi-calendar-event', preview:'3/29/2026' },
+    { key:'{{print_date}}', label:'Print Date Slash', icon:'bi-calendar3', preview:'3/30/2026' },
+    { key:'{{today_date}}', label:'Print Date Text', icon:'bi-calendar3', preview:'30 Mar 2026' },
+    { key:'{{job.date_ddmmyyyy}}', label:'Print Date DD/MM/YYYY', icon:'bi-calendar3', preview:'30/03/2026' },
+    { key:'{{job.date_yyyymmdd}}', label:'Print Date YYYY-MM-DD', icon:'bi-calendar3', preview:'2026-03-30' },
+    { key:'{{received_date_ddmmyyyy}}', label:'Received Date DD/MM/YYYY', icon:'bi-calendar-event', preview:'29/03/2026' },
+    { key:'{{received_date_yyyymmdd}}', label:'Received Date YYYY-MM-DD', icon:'bi-calendar-event', preview:'2026-03-29' }
   ],
   INVENTORY: [
     { key:'{{roll_no}}', label:'Roll Number', icon:'bi-box', preview:'T-1038-A' },
@@ -503,9 +516,77 @@ const PLACEHOLDERS = {
   ]
 };
 
+const DATE_FORMAT_OPTIONS = [
+  { value:'{{job.date}}', label:'Current print date', preview:'3/30/2026' },
+  { value:'{{today_date}}', label:'Current print date text', preview:'30 Mar 2026' },
+  { value:'{{job.date_ddmmyyyy}}', label:'Current print date DD/MM/YYYY', preview:'30/03/2026' },
+  { value:'{{job.date_yyyymmdd}}', label:'Current print date YYYY-MM-DD', preview:'2026-03-30' },
+  { value:'{{received_date}}', label:'Received date text', preview:'30 Mar 2026' },
+  { value:'{{job.receivedDate}}', label:'Received date slash', preview:'3/29/2026' },
+  { value:'{{received_date_ddmmyyyy}}', label:'Received date DD/MM/YYYY', preview:'29/03/2026' },
+  { value:'{{received_date_yyyymmdd}}', label:'Received date YYYY-MM-DD', preview:'2026-03-29' }
+];
+
+const JOB_CARD_VARIABLE_GROUPS = {
+  CORE: [
+    '{{job.batchId}}',
+    '{{job.machineId}}',
+    '{{job.operator}}',
+    '{{job.jobNo}}',
+    '{{job.type}}',
+    '{{job.status}}',
+    '{{job.notes}}'
+  ],
+  PLANNING: [
+    '{{job.planningId}}',
+    '{{job.planningJobName}}',
+    '{{job.planningStatus}}',
+    '{{job.planningPriority}}',
+    '{{job.planningDate}}',
+    '{{job.planningDie}}',
+    '{{job.planningPlateNo}}',
+    '{{job.planningLabelSize}}',
+    '{{job.planningRepeatMm}}',
+    '{{job.planningDirection}}',
+    '{{job.planningOrderMtr}}',
+    '{{job.planningOrderQty}}',
+    '{{job.planningCoreSize}}',
+    '{{job.planningQtyPerRoll}}',
+    '{{job.planningMaterial}}',
+    '{{job.planningPaperSize}}',
+    '{{job.planningRemarks}}',
+    '{{job.planningDispatchDate}}'
+  ],
+  MATERIAL: [
+    '{{job.rollNo}}',
+    '{{job.paperType}}',
+    '{{job.paperCompany}}',
+    '{{job.width}}',
+    '{{job.length}}',
+    '{{job.gsm}}',
+    '{{job.weight}}',
+    '{{job.sqm}}',
+    '{{job.lotBatchNo}}'
+  ],
+  PRODUCTION: [
+    '{{sourceMaterials}}',
+    '{{slittingOutputs}}',
+    '{{job.previousJobNo}}',
+    '{{job.previousJobStatus}}',
+    '{{job.department}}',
+    '{{job.durationMinutes}}',
+    '{{job.startedAt}}',
+    '{{job.completedAt}}'
+  ]
+};
+
 // Build preview data map
 const PREVIEW_DATA = {};
 Object.values(PLACEHOLDERS).flat().forEach(p => { PREVIEW_DATA[p.key.replace(/[{}]/g,'')] = p.preview; });
+Object.values(JOB_CARD_VARIABLE_GROUPS).flat().forEach(function(code) {
+  const key = code.replace(/[{}]/g, '');
+  if (!(key in PREVIEW_DATA)) PREVIEW_DATA[key] = key;
+});
 
 // ============================================================
 // STATE
@@ -525,6 +606,19 @@ function psUuid() {
 }
 function psEscHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 function psProcessText(text) { if(!text) return ''; return text.replace(/\{\{(.+?)\}\}/g, (m,k) => PREVIEW_DATA[k.trim()]||m); }
+function psInsertDateVariable(code) {
+  psAddElement('text', null, code);
+}
+
+function psInsertVariableCode(code) {
+  const normalized = String(code || '').trim();
+  if (!normalized) return;
+  if (normalized === '{{sourceMaterials}}' || normalized === '{{slittingOutputs}}') {
+    psAddElement('table', normalized.replace(/[{}]/g,''));
+    return;
+  }
+  psAddElement('text', null, normalized);
+}
 
 function psToast(msg, type) {
   const t = document.getElementById('ps-toast');
@@ -715,6 +809,17 @@ function psRenderComponents() {
 function psRenderErpFields() {
   const c = document.getElementById('ps-erp-fields');
   let html = '';
+  html += '<div style="padding:10px 10px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc">';
+  html += '<p style="font-size:8px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px">Date Format Picker</p>';
+  html += '<div style="display:grid;gap:6px">';
+  DATE_FORMAT_OPTIONS.forEach(function(opt) {
+    html += '<button class="ps-field-code-btn" onclick="psInsertDateVariable(\''+psEscHtml(opt.value)+'\')">';
+    html += '<span class="ps-field-code-label">'+psEscHtml(opt.label)+'</span>';
+    html += '<code class="ps-field-code-value">'+psEscHtml(opt.value)+'</code>';
+    html += '<span class="ps-field-code-preview">'+psEscHtml(opt.preview)+'</span>';
+    html += '</button>';
+  });
+  html += '</div></div>';
   Object.entries(PLACEHOLDERS).forEach(([group, fields]) => {
     html += '<div style="padding:8px"><p style="font-size:8px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;padding:0 6px;margin:0 0 4px">'+group+'</p>';
     fields.forEach(f => {
@@ -724,6 +829,21 @@ function psRenderErpFields() {
     });
     html += '</div>';
   });
+  html += '<div style="padding:10px;border-top:1px solid #e2e8f0;background:#fff">';
+  html += '<p style="font-size:8px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px">Job Card Variable Codes</p>';
+  Object.entries(JOB_CARD_VARIABLE_GROUPS).forEach(function(entry) {
+    const group = entry[0];
+    const codes = entry[1];
+    html += '<div style="margin-bottom:10px">';
+    html += '<div style="font-size:8px;font-weight:800;color:#cbd5e1;text-transform:uppercase;letter-spacing:1px;padding:0 4px 4px">'+psEscHtml(group)+'</div>';
+    codes.forEach(function(code) {
+      html += '<button class="ps-field-code-btn" onclick="psInsertVariableCode(\''+psEscHtml(code)+'\')">';
+      html += '<code class="ps-field-code-value">'+psEscHtml(code)+'</code>';
+      html += '</button>';
+    });
+    html += '</div>';
+  });
+  html += '</div>';
   c.innerHTML = html;
 }
 

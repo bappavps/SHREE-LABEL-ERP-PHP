@@ -269,12 +269,19 @@ include __DIR__ . '/../../includes/header.php';
 .ps-summary-body{overflow:hidden;transition:max-height .3s ease,opacity .2s ease;max-height:600px;opacity:1}
 .ps-summary-body.collapsed{max-height:0;opacity:0;margin:0;padding:0}
 
-/* === Collapsible Action Column === */
+/* === Collapsible Action Column (right) === */
 .action-col-hidden .sticky-action{display:none !important}
 .ps-action-toggle{position:absolute;right:0;top:50%;transform:translateY(-50%);z-index:25;width:24px;height:48px;display:flex;align-items:center;justify-content:center;background:#f8fafc;border:1px solid var(--border);border-right:none;border-radius:8px 0 0 8px;cursor:pointer;color:#64748b;font-size:12px;box-shadow:-2px 0 8px rgba(0,0,0,.06);transition:all .15s}
 .ps-action-toggle:hover{background:#fff;color:#0f172a;box-shadow:-2px 0 12px rgba(0,0,0,.1)}
 .ps-action-toggle i{transition:transform .2s ease}
 .ps-action-toggle.expanded i{transform:rotate(180deg)}
+
+/* === Collapsible Left Columns (check + sl + roll) === */
+.left-col-hidden .sticky-check,.left-col-hidden .sticky-sl,.left-col-hidden .sticky-roll{display:none !important}
+.ps-left-toggle{position:absolute;left:0;top:50%;transform:translateY(-50%);z-index:25;width:24px;height:48px;display:flex;align-items:center;justify-content:center;background:#f8fafc;border:1px solid var(--border);border-left:none;border-radius:0 8px 8px 0;cursor:pointer;color:#64748b;font-size:12px;box-shadow:2px 0 8px rgba(0,0,0,.06);transition:all .15s}
+.ps-left-toggle:hover{background:#fff;color:#0f172a;box-shadow:2px 0 12px rgba(0,0,0,.1)}
+.ps-left-toggle i{transition:transform .2s ease}
+.ps-left-toggle.expanded i{transform:rotate(180deg)}
 
 @media print{
   .no-print{display:none !important}
@@ -467,6 +474,9 @@ include __DIR__ . '/../../includes/header.php';
   <div style="position:relative">
     <button type="button" class="ps-action-toggle no-print" id="ps-action-toggle" onclick="toggleActionColumn()" title="Toggle Action column">
       <i class="bi bi-chevron-left"></i>
+    </button>
+    <button type="button" class="ps-left-toggle no-print" id="ps-left-toggle" onclick="toggleLeftColumns()" title="Toggle Checkbox / SL No. / Roll No. columns">
+      <i class="bi bi-chevron-right"></i>
     </button>
     <div class="table-wrap">
     <table id="ps-table" class="action-col-hidden">
@@ -892,29 +902,20 @@ include __DIR__ . '/../../includes/header.php';
     }
   });
 
-  // Debounce timeout for quick filter input events to prevent stuttering on first keystroke
+  // Quick-filter input — filter rows immediately, NO page redirect (no jerk)
   var qfDebounceTimer = null;
 
   Object.keys(qf).forEach(function(k){
+    if (!qf[k]) return;
     qf[k].addEventListener('input', function(){
-      if (!ensureAllRowsMode()) return;
-      
-      // Debounce applyAllFilters on input events (300ms delay)
-      if (qfDebounceTimer) {
-        clearTimeout(qfDebounceTimer);
-      }
+      if (qfDebounceTimer) clearTimeout(qfDebounceTimer);
       qfDebounceTimer = setTimeout(function(){
         applyAllFilters();
         qfDebounceTimer = null;
-      }, 300);
+      }, 250);
     });
     qf[k].addEventListener('change', function(){
-      if (!ensureAllRowsMode()) return;
-      // Immediate apply on change (for select pickers and date inputs)
-      if (qfDebounceTimer) {
-        clearTimeout(qfDebounceTimer);
-        qfDebounceTimer = null;
-      }
+      if (qfDebounceTimer) { clearTimeout(qfDebounceTimer); qfDebounceTimer = null; }
       applyAllFilters();
     });
   });
@@ -1527,6 +1528,33 @@ include __DIR__ . '/../../includes/header.php';
       btn.classList.add('expanded');
     }
     // default is collapsed (class already applied in HTML)
+  })();
+
+  // === Collapsible Left Columns (checkbox + SL + Roll) ===
+  window.toggleLeftColumns = function(){
+    var tbl = document.getElementById('ps-table');
+    var btn = document.getElementById('ps-left-toggle');
+    var isHidden = tbl.classList.contains('left-col-hidden');
+    if (isHidden) {
+      tbl.classList.remove('left-col-hidden');
+      btn.classList.remove('expanded');
+      localStorage.setItem('ps_left_collapsed', '0');
+    } else {
+      tbl.classList.add('left-col-hidden');
+      btn.classList.add('expanded');
+      localStorage.setItem('ps_left_collapsed', '1');
+    }
+  };
+
+  // Restore left column collapse state (default: expanded/visible)
+  (function(){
+    var saved = localStorage.getItem('ps_left_collapsed');
+    var tbl = document.getElementById('ps-table');
+    var btn = document.getElementById('ps-left-toggle');
+    if (saved === '1') {
+      tbl.classList.add('left-col-hidden');
+      btn.classList.add('expanded');
+    }
   })();
 })();
 </script>

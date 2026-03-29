@@ -96,9 +96,16 @@ if ($tplRes) { while ($t = $tplRes->fetch_assoc()) $templates[] = $t; }
 
 // JS-safe roll data (includes Firebase Print Studio compatible aliases)
 $companyAddr = $appSettings['company_address'] ?? '';
-$jsRolls = array_map(function($r) use ($companyName, $companyAddr) {
+$printNow = new DateTime('now', new DateTimeZone('Asia/Kolkata'));
+$printDateSlash = $printNow->format('n/j/Y');
+$printDateFormatted = $printNow->format('d M Y');
+$printDateDdMmYyyy = $printNow->format('d/m/Y');
+$printDateYmd = $printNow->format('Y-m-d');
+$jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSlash, $printDateFormatted, $printDateDdMmYyyy, $printDateYmd) {
     $dateFormatted  = ($r['date_received'] ?? '') ? date('d M Y', strtotime($r['date_received'])) : '';
-    $dateSlash      = ($r['date_received'] ?? '') ? date('n/j/Y', strtotime($r['date_received'])) : date('n/j/Y');
+    $dateSlash      = ($r['date_received'] ?? '') ? date('n/j/Y', strtotime($r['date_received'])) : '';
+    $dateDdMmYyyy   = ($r['date_received'] ?? '') ? date('d/m/Y', strtotime($r['date_received'])) : '';
+    $dateYmd        = ($r['date_received'] ?? '') ? date('Y-m-d', strtotime($r['date_received'])) : '';
     $lengthVal      = number_format((float)($r['length_mtr'] ?? 0), 0);
     $sqmVal         = number_format((float)($r['sqm'] ?? 0), 2);
     $weightVal      = ($r['weight_kg'] !== null && $r['weight_kg'] !== '') ? (string)$r['weight_kg'] : '0';
@@ -136,14 +143,62 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr) {
         'width'               => $widthVal,
         'length'              => $lengthVal,
         'weight'              => $weightVal,
-        'roll_url'            => '',
+        'roll_url'            => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$r['id'],
         'view_url'            => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$r['id'],
         'job.companyName'     => $companyName,
         'job.companyAddress'  => $companyAddr,
-        'job.date'            => $dateSlash,
+        // Use actual print date for template field job.date.
+        'job.date'            => $printDateSlash,
+        'print_date'          => $printDateSlash,
+        'today_date'          => $printDateFormatted,
+        'received_date'       => $dateFormatted,
+        'job.receivedDate'    => $dateSlash,
+        'job.date_ddmmyyyy'   => $printDateDdMmYyyy,
+        'job.date_yyyymmdd'   => $printDateYmd,
+        'received_date_ddmmyyyy' => $dateDdMmYyyy,
+        'received_date_yyyymmdd' => $dateYmd,
         'job.batchId'         => $jobNo ?: $lotBatch,
         'job.machineId'       => '',
         'job.operator'        => '',
+        'job.jobNo'           => $jobNo,
+        'job.type'            => '',
+        'job.status'          => $r['status'] ?? '',
+        'job.notes'           => $r['remarks'] ?? '',
+        'job.planningId'      => '',
+        'job.planningJobName' => $r['job_name'] ?? '',
+        'job.planningStatus'  => '',
+        'job.planningPriority'=> '',
+        'job.planningDate'    => '',
+        'job.planningDie'     => '',
+        'job.planningPlateNo' => '',
+        'job.planningLabelSize' => $r['job_size'] ?? '',
+        'job.planningRepeatMm' => '',
+        'job.planningDirection' => '',
+        'job.planningOrderMtr' => $lengthVal,
+        'job.planningOrderQty' => '',
+        'job.planningCoreSize' => '',
+        'job.planningQtyPerRoll' => '',
+        'job.planningMaterial' => $paperType,
+        'job.planningPaperSize' => $r['job_size'] ?? '',
+        'job.planningRemarks' => $r['remarks'] ?? '',
+        'job.planningDispatchDate' => '',
+        'job.rollNo'          => $rollNo,
+        'job.paperType'       => $paperType,
+        'job.paperCompany'    => $paperCompany,
+        'job.width'           => $widthVal,
+        'job.length'          => $lengthVal,
+        'job.gsm'             => $gsmVal,
+        'job.weight'          => $weightVal,
+        'job.sqm'             => $sqmVal,
+        'job.lotBatchNo'      => $lotBatch,
+        'job.previousJobNo'   => '',
+        'job.previousJobStatus' => '',
+        'job.department'      => '',
+        'job.durationMinutes' => '',
+        'job.startedAt'       => '',
+        'job.completedAt'     => '',
+        'sourceMaterials'     => '',
+        'slittingOutputs'     => '',
     ];
 }, $rolls);
 
@@ -310,6 +365,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f1f5f9; color: #
 .bl-date { font-size: 8px; color: #94a3b8; font-weight: 600; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script>
 // Fallback: if CDN fails, provide a minimal placeholder generator
 if (typeof qrcode === 'undefined') {
@@ -607,7 +663,7 @@ function renderCustomLabel(roll, tpl) {
             div.appendChild(textInner);
             canvas.appendChild(div);
         }
-        else if (el.type === 'qr' || el.type === 'barcode') {
+        else if (el.type === 'qr') {
             var qrWrap = document.createElement('div');
             qrWrap.style.position = 'absolute';
             qrWrap.style.left = px + 'px';
@@ -632,6 +688,70 @@ function renderCustomLabel(roll, tpl) {
             }
             canvas.appendChild(qrWrap);
         }
+        else if (el.type === 'barcode') {
+            var bcWrap = document.createElement('div');
+            bcWrap.style.position = 'absolute';
+            bcWrap.style.left = px + 'px';
+            bcWrap.style.top = py + 'px';
+            bcWrap.style.width = pw + 'px';
+            bcWrap.style.height = ph + 'px';
+            bcWrap.style.display = 'flex';
+            bcWrap.style.alignItems = 'center';
+            bcWrap.style.justifyContent = 'center';
+            bcWrap.style.zIndex = '1';
+            if (rot) bcWrap.style.transform = 'rotate(' + rot + 'deg)';
+            var bcVal = replacePlaceholders(el.content || el.placeholder || '', roll);
+            if (!bcVal || bcVal === '') bcVal = roll.roll_no || 'PREVIEW';
+            var bcFmt = el.barcodeType || 'CODE128';
+            if (bcFmt === 'EAN13' || bcFmt === 'UPC') bcVal = '123456789012';
+            if (typeof JsBarcode !== 'undefined') {
+                var svgNS = 'http://www.w3.org/2000/svg';
+                var bcSvg = document.createElementNS(svgNS, 'svg');
+                bcWrap.appendChild(bcSvg);
+                try {
+                    JsBarcode(bcSvg, bcVal, { format: bcFmt, height: Math.max(20, ph - 30), width: 1.5, fontSize: 10, displayValue: true, margin: 4 });
+                } catch(e) {
+                    bcWrap.innerHTML = '<div style="font-size:10px;color:#94a3b8;text-align:center">Barcode Error</div>';
+                }
+            } else {
+                bcWrap.innerHTML = generateQR(bcVal, Math.min(pw, ph));
+            }
+            canvas.appendChild(bcWrap);
+        }
+        else if (el.type === 'field' || el.type === 'title') {
+            var align = sty.textAlign || 'left';
+            var jc = align === 'center' ? 'center' : (align === 'right' ? 'flex-end' : 'flex-start');
+            var div = document.createElement('div');
+            div.style.position = 'absolute';
+            div.style.left = px + 'px';
+            div.style.top = py + 'px';
+            div.style.width = pw + 'px';
+            div.style.height = ph + 'px';
+            div.style.overflow = 'hidden';
+            div.style.display = 'flex';
+            div.style.alignItems = 'center';
+            div.style.justifyContent = jc;
+            div.style.zIndex = '1';
+            if (sty.backgroundColor && sty.backgroundColor !== 'transparent') div.style.backgroundColor = sty.backgroundColor;
+            if (parseFloat(sty.borderWidth) > 0) div.style.border = (sty.borderWidth || 1) + 'px ' + (sty.lineStyle || 'solid') + ' ' + (sty.borderColor || '#000');
+            if (parseFloat(sty.borderRadius) > 0) div.style.borderRadius = sty.borderRadius + 'px';
+            if (rot) div.style.transform = 'rotate(' + rot + 'deg)';
+            var rawText = el.type === 'field' ? (el.placeholder || el.content || '') : (el.content || '');
+            var content = replacePlaceholders(rawText, roll);
+            var textInner = document.createElement('div');
+            textInner.style.width = '100%';
+            textInner.style.textAlign = align;
+            textInner.style.fontSize = (sty.fontSize || 14) + 'px';
+            textInner.style.fontWeight = sty.fontWeight || 'normal';
+            textInner.style.fontFamily = getFontFamily(sty.fontFamily);
+            textInner.style.color = sty.color || '#000';
+            textInner.style.opacity = (sty.opacity != null) ? sty.opacity : 1;
+            textInner.style.wordBreak = 'break-word';
+            textInner.style.lineHeight = '1.3';
+            textInner.textContent = content;
+            div.appendChild(textInner);
+            canvas.appendChild(div);
+        }
         else if (el.type === 'line' || el.type === 'divider') {
             var line = document.createElement('div');
             line.style.position = 'absolute';
@@ -645,7 +765,7 @@ function renderCustomLabel(roll, tpl) {
             if (rot) line.style.transform = 'rotate(' + rot + 'deg)';
             canvas.appendChild(line);
         }
-        else if (el.type === 'rect' || el.type === 'shape' || el.type === 'circle') {
+        else if (el.type === 'rect' || el.type === 'rectangle' || el.type === 'shape' || el.type === 'circle') {
             var rect = document.createElement('div');
             rect.style.position = 'absolute';
             rect.style.left = px + 'px';

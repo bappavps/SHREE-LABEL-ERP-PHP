@@ -294,6 +294,7 @@ include __DIR__ . '/../../../includes/header.php';
 .fp-op-topitem{display:grid;gap:3px}
 .fp-op-topitem .k{font-size:.58rem;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
 .fp-op-topitem .v{font-size:.76rem;font-weight:800;color:#0f172a}
+.fp-op-roll-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%}
 .fp-op-roll-table{width:100%;border-collapse:collapse;font-size:.75rem}
 .fp-op-roll-table th,.fp-op-roll-table td{border:1px solid #dbe5f0;padding:7px 8px;text-align:left;vertical-align:middle}
 .fp-op-roll-table th{background:#f8fafc;font-size:.62rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b}
@@ -1684,14 +1685,14 @@ async function openPrintDetail(id, mode) {
       </div>
 
       <div class="fp-op-section"><div class="fp-op-h">Roll-wise Material and Wastage</div><div class="fp-op-b">
-        <table class="fp-op-roll-table"><thead><tr><th>#</th><th>Roll No</th><th>Material</th><th>Slitted Size</th><th>Length (m)</th><th>Color Match</th><th>Wastage (m)</th></tr></thead><tbody>
+        <div class="fp-op-roll-wrap"><table class="fp-op-roll-table"><thead><tr><th>#</th><th>Roll No</th><th>Material</th><th>Slitted Size</th><th>Length (m)</th><th>Color Match</th><th>Wastage (m)</th></tr></thead><tbody>
           ${rollRows.map((r, idx) => `<tr data-roll-row data-roll-no="${esc(r.roll_no)}" data-parent-roll-no="${esc(r.parent_roll_no||'')}" data-slitted-width="${esc(r.slitted_width||'')}" data-slitted-length="${esc(r.slitted_length||'')}" data-material-company="${esc(r.material_company)}" data-material-name="${esc(r.material_name)}" data-order-mtr="${esc(r.order_mtr)}" data-order-qty="${esc(r.order_qty)}"><td>${idx+1}</td><td style="font-weight:700;color:var(--fp-brand)">${esc(r.roll_no||'—')}</td><td>${esc(r.material_name||'—')}</td><td>${r.slitted_width ? esc(r.slitted_width+'mm') : '—'}</td><td style="font-weight:700">${r.slitted_length ? esc(r.slitted_length) : '—'}</td><td><select name="color_match_status_${idx}"><option value="Matched"${r.color_match_status==='Matched'?' selected':''}>Matched</option><option value="Slight Variation"${r.color_match_status==='Slight Variation'?' selected':''}>Slight Variation</option><option value="Mismatch"${r.color_match_status==='Mismatch'?' selected':''}>Mismatch</option></select></td><td><input type="number" step="0.01" name="roll_wastage_${idx}" value="${esc(r.wastage_meters||'')}" placeholder="0.00"></td></tr>`).join('')}
         </tbody>
         <tfoot>
           <tr><td colspan="4" style="text-align:right;font-weight:800;padding:8px 10px;background:#f8fafc;border-top:2px solid #e2e8f0">Total Assigned Roll MTR</td><td style="font-weight:900;padding:8px 10px;background:#f8fafc;border-top:2px solid #e2e8f0">${totalAssignedMtr}</td><td colspan="2" style="padding:8px 10px;background:#f8fafc;border-top:2px solid #e2e8f0"></td></tr>
           <tr><td colspan="4" style="text-align:right;font-weight:800;padding:8px 10px;background:#f0fdf4">Job Allocated MTR</td><td style="font-weight:900;padding:8px 10px;background:#f0fdf4">${totalAllocatedMtr || '—'}</td><td colspan="2" style="padding:8px 10px;background:${mtrMatch?'#f0fdf4':'#fef3c7'};font-weight:800;color:${mtrMatch?'#16a34a':'#d97706'}"><i class="bi bi-${mtrMatch?'check-circle-fill':'exclamation-triangle-fill'}"></i> ${mtrMatch ? 'Sufficient' : (totalAllocatedMtr > 0 ? 'Short by '+mtrShort+'m' : '—')}</td></tr>
           <tr><td colspan="5"></td><td style="text-align:right;font-weight:800;padding:8px 10px;background:#f8fafc">Total Wastage</td><td style="font-weight:800;padding:8px 10px;background:#f8fafc"><input type="text" name="total_wastage_meters" value="${esc(card.total_wastage_meters||'')}" readonly style="width:80px;font-weight:800"></td></tr>
-        </tfoot></table>
+        </tfoot></table></div>
       </div></div>
 
       <div class="fp-op-section"><div class="fp-op-h">Color + Anilox (Color 1-8)</div><div class="fp-op-b" style="gap:10px">
@@ -1725,14 +1726,14 @@ async function openPrintDetail(id, mode) {
       </div></div>
 
       <div class="fp-op-section"><div class="fp-op-h">Roll-wise Material and Wastage</div><div class="fp-op-b">
-        <table class="fp-op-roll-table"><thead><tr><th>#</th><th>Roll No</th><th>Material</th><th>Slitted Size</th><th>Length (m)</th><th>Color Match</th><th>Wastage (m)</th></tr></thead><tbody>
+        <div class="fp-op-roll-wrap"><table class="fp-op-roll-table"><thead><tr><th>#</th><th>Roll No</th><th>Material</th><th>Slitted Size</th><th>Length (m)</th><th>Color Match</th><th>Wastage (m)</th></tr></thead><tbody>
           ${rollRows.map((r, idx) => `<tr><td>${idx+1}</td><td style="font-weight:700;color:var(--fp-brand)">${esc(r.roll_no||'—')}</td><td>${esc(r.material_name||'—')}</td><td>${r.slitted_width ? esc(r.slitted_width+'mm') : '—'}</td><td style="font-weight:700">${r.slitted_length ? esc(r.slitted_length) : '—'}</td><td>${esc(r.color_match_status||'—')}</td><td>${esc(String(r.wastage_meters??'—'))}</td></tr>`).join('')}
         </tbody>
         <tfoot>
           <tr><td colspan="4" style="text-align:right;font-weight:800;padding:8px 10px;background:#f8fafc;border-top:2px solid #e2e8f0">Total Assigned Roll MTR</td><td style="font-weight:900;padding:8px 10px;background:#f8fafc;border-top:2px solid #e2e8f0">${totalAssignedMtr}</td><td colspan="2" style="padding:8px 10px;background:#f8fafc;border-top:2px solid #e2e8f0"></td></tr>
           <tr><td colspan="4" style="text-align:right;font-weight:800;padding:8px 10px;background:#f0fdf4">Job Allocated MTR</td><td style="font-weight:900;padding:8px 10px;background:#f0fdf4">${totalAllocatedMtr || '—'}</td><td colspan="2" style="padding:8px 10px;background:${mtrMatch?'#f0fdf4':'#fef3c7'};font-weight:800;color:${mtrMatch?'#16a34a':'#d97706'}"><i class="bi bi-${mtrMatch?'check-circle-fill':'exclamation-triangle-fill'}"></i> ${mtrMatch ? 'Sufficient' : (totalAllocatedMtr > 0 ? 'Short by '+mtrShort+'m' : '—')}</td></tr>
           <tr><td colspan="5"></td><td style="text-align:right;font-weight:800;padding:8px 10px;background:#f8fafc">Total Wastage</td><td style="font-weight:800;padding:8px 10px;background:#f8fafc">${esc(card.total_wastage_meters || card.wastage_meters || '—')}</td></tr>
-        </tfoot></table>
+        </tfoot></table></div>
       </div></div>
 
       <div class="fp-op-section"><div class="fp-op-h">Color + Anilox (Color 1-8)</div><div class="fp-op-b" style="gap:10px">
