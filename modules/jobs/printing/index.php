@@ -481,54 +481,161 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
 </div><!-- end fpPanelActive -->
 
 <div id="fpPanelHistory" style="display:none">
-<div class="card no-print" style="margin-top:8px">
-  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-    <span class="card-title"><i class="bi bi-clock-history"></i> Flexo Printing History (Completed / QC Passed)</span>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <input type="text" id="fpHistorySearch" placeholder="Search history..." oninput="filterHistory(this.value)" style="padding:6px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:.78rem;outline:none">
-      <span style="font-size:.72rem;color:#64748b;font-weight:700"><?= $historyCount ?> records</span>
-      <button onclick="window.print()" style="padding:5px 12px;font-size:.65rem;font-weight:800;text-transform:uppercase;border:none;background:var(--fp-brand);color:#fff;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:5px"><i class="bi bi-printer"></i> Print</button>
-    </div>
+
+<style>
+/* ── History Table Styles ── */
+.ht-filter-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.ht-search{padding:8px 14px;border:1px solid var(--border,#e2e8f0);border-radius:10px;font-size:.82rem;min-width:200px;outline:none;transition:border .15s}
+.ht-search:focus{border-color:var(--fp-brand)}
+.ht-date-input{padding:7px 12px;border:1px solid var(--border,#e2e8f0);border-radius:10px;font-size:.76rem;outline:none}
+.ht-date-input:focus{border-color:var(--fp-brand)}
+.ht-period-btn{padding:5px 13px;font-size:.66rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border:1px solid var(--border,#e2e8f0);background:#fff;border-radius:20px;cursor:pointer;transition:all .15s;color:#64748b}
+.ht-period-btn.active{background:#0f172a;color:#fff;border-color:#0f172a}
+.ht-label{font-size:.62rem;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:.03em}
+.ht-bulk-bar{display:none;background:linear-gradient(135deg,#1e40af,#1e3a8a);color:#fff;border-radius:12px;padding:12px 20px;margin-bottom:12px;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;box-shadow:0 4px 16px rgba(30,64,175,.25)}
+.ht-bulk-bar.visible{display:flex}
+.ht-bulk-btn{padding:5px 13px;border-radius:8px;font-weight:700;font-size:.7rem;cursor:pointer;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.12);color:#fff}
+.ht-bulk-btn:hover{background:rgba(255,255,255,.22)}
+.ht-bulk-print{padding:7px 16px;background:var(--fp-brand);color:#fff;border:none;border-radius:8px;font-weight:800;font-size:.74rem;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 8px rgba(var(--fp-brand),.3)}
+.ht-bulk-print:hover{opacity:.9}
+.ht-table-wrap{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:14px;overflow:hidden}
+.ht-table{width:100%;border-collapse:collapse;font-size:.78rem}
+.ht-table thead{background:linear-gradient(135deg,#f8fafc,#f1f5f9);position:sticky;top:0;z-index:2}
+.ht-table th{padding:11px 13px;font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#64748b;text-align:left;border-bottom:2px solid #e2e8f0;white-space:nowrap;cursor:pointer;user-select:none}
+.ht-table th:hover{color:#0f172a}
+.ht-table th .ht-sort{margin-left:3px;font-size:.52rem;opacity:.4}
+.ht-table th.sorted .ht-sort{opacity:1;color:var(--fp-brand)}
+.ht-table td{padding:9px 13px;border-bottom:1px solid #f1f5f9;color:#1e293b;font-weight:600;vertical-align:middle}
+.ht-table tbody tr{transition:background .1s;cursor:pointer}
+.ht-table tbody tr:hover{background:#fdf4ff}
+.ht-table tbody tr.ht-selected{background:#fdf4ff;outline:2px solid var(--fp-brand);outline-offset:-2px}
+.ht-table .ht-cb-cell{width:34px;text-align:center}
+.ht-table .ht-cb-cell input{width:16px;height:16px;accent-color:var(--fp-brand);cursor:pointer}
+.ht-jobno{font-weight:900;color:#0f172a;font-size:.8rem}
+.ht-dim{color:#94a3b8;font-size:.72rem}
+.ht-badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:.56rem;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
+.ht-badge-completed{background:#dcfce7;color:#166534}
+.ht-badge-closed{background:#dcfce7;color:#166534}
+.ht-badge-finalized{background:#dbeafe;color:#1e40af}
+.ht-badge-qcpassed{background:#d1fae5;color:#065f46}
+.ht-badge-default{background:#f1f5f9;color:#64748b}
+.ht-act-btn{padding:4px 9px;font-size:.58rem;font-weight:800;text-transform:uppercase;border:1px solid var(--border,#e2e8f0);background:#fff;border-radius:6px;cursor:pointer;transition:all .12s;display:inline-flex;align-items:center;gap:3px;color:#475569}
+.ht-act-btn:hover{background:#f1f5f9}
+.ht-act-btn.ht-print{color:#8b5cf6;border-color:#c4b5fd}
+.ht-act-btn.ht-print:hover{background:#f5f3ff}
+.ht-act-btn.ht-delete{color:#dc2626;border-color:#fecaca}
+.ht-act-btn.ht-delete:hover{background:#fee2e2}
+.ht-pagination{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;flex-wrap:wrap;gap:10px}
+.ht-page-info{font-size:.7rem;color:#64748b;font-weight:600}
+.ht-page-btns{display:flex;gap:4px}
+.ht-page-btn{padding:5px 11px;border:1px solid var(--border,#e2e8f0);background:#fff;border-radius:8px;font-size:.7rem;font-weight:700;cursor:pointer;color:#475569;transition:all .12s}
+.ht-page-btn:hover{background:#f1f5f9}
+.ht-page-btn.active{background:var(--fp-brand);color:#fff;border-color:var(--fp-brand)}
+.ht-page-btn:disabled{opacity:.4;cursor:not-allowed}
+.ht-per-page{padding:5px 10px;border:1px solid var(--border,#e2e8f0);border-radius:8px;font-size:.7rem;outline:none}
+@media(max-width:768px){.ht-table-wrap{overflow-x:auto}}
+</style>
+
+<!-- History Filter Bar -->
+<div class="ht-filter-bar no-print" style="margin-top:14px">
+  <input type="text" class="ht-search" id="htSearch" placeholder="Search job no, roll, company, material&hellip;">
+  <span class="ht-label">Period:</span>
+  <button class="ht-period-btn active" onclick="htSetPeriod('all',this)">All</button>
+  <button class="ht-period-btn" onclick="htSetPeriod('today',this)">Today</button>
+  <button class="ht-period-btn" onclick="htSetPeriod('week',this)">Week</button>
+  <button class="ht-period-btn" onclick="htSetPeriod('month',this)">Month</button>
+  <button class="ht-period-btn" onclick="htSetPeriod('year',this)">Year</button>
+  <span class="ht-label" style="margin-left:4px">Custom:</span>
+  <input type="date" class="ht-date-input" id="htDateFrom" title="From date">
+  <span style="color:#94a3b8;font-size:.7rem">to</span>
+  <input type="date" class="ht-date-input" id="htDateTo" title="To date">
+  <button class="ht-period-btn" onclick="htApplyCustomDate()" style="background:var(--fp-brand);color:#fff;border-color:var(--fp-brand)"><i class="bi bi-funnel"></i> Apply</button>
+</div>
+
+<!-- History Bulk Bar -->
+<div class="ht-bulk-bar no-print" id="htBulkBar">
+  <div style="display:flex;align-items:center;gap:10px">
+    <i class="bi bi-check2-square" style="font-size:1.1rem"></i>
+    <span style="font-weight:800;font-size:.82rem"><span id="htSelectedCount">0</span> Selected</span>
   </div>
-  <div style="overflow:auto">
-    <table id="fpHistoryTable" style="width:100%;border-collapse:collapse;font-size:.78rem">
-      <thead>
-        <tr style="background:#f8fafc">
-          <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Job No</th>
-          <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Job Name</th>
-          <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Roll No</th>
-          <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Material</th>
-          <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Status</th>
-          <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Started</th>
-          <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Completed</th>
-          <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Duration</th>
-        </tr>
-      </thead>
-      <tbody id="fpHistoryBody">
-        <?php if (empty($historyJobs)): ?>
-          <tr><td colspan="8" style="padding:20px;text-align:center;color:#94a3b8">No completed jobs yet.</td></tr>
-        <?php else: ?>
-          <?php foreach ($historyJobs as $h):
-            $hDur = $h['duration_minutes'] ?? null;
-            $hDurStr = ($hDur !== null) ? (floor($hDur/60).'h '.($hDur%60).'m') : '—';
-            $hStarted = $h['started_at'] ? date('d M Y, H:i', strtotime($h['started_at'])) : '—';
-            $hCompleted = $h['completed_at'] ? date('d M Y, H:i', strtotime($h['completed_at'])) : '—';
-            $hSearch = e(strtolower(($h['job_no']??'').' '.($h['planning_job_name']??'').' '.($h['display_job_name']??'').' '.($h['roll_no']??'')));
-          ?>
-          <tr data-search="<?= $hSearch ?>" style="cursor:pointer" onclick="openPrintDetail(<?= $h['id'] ?>)" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;font-weight:700;color:var(--fp-brand)"><?= e($h['job_no']) ?></td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['planning_job_name'] ?? $h['display_job_name'] ?? '—') ?></td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['roll_no'] ?? '—') ?></td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['paper_type'] ?? '—') ?></td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><span class="fp-badge fp-badge-completed"><?= e($h['status']) ?></span></td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= $hStarted ?></td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= $hCompleted ?></td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= $hDurStr ?></td>
-          </tr>
-          <?php endforeach; ?>
-        <?php endif; ?>
-      </tbody>
-    </table>
+  <div style="display:flex;gap:8px;align-items:center">
+    <button class="ht-bulk-btn" onclick="htSelectAllVisible()">Select All</button>
+    <button class="ht-bulk-btn" onclick="htDeselectAll()">Deselect All</button>
+    <button class="ht-bulk-print" onclick="htBulkPrint()"><i class="bi bi-printer-fill"></i> Print Selected</button>
+  </div>
+</div>
+
+<!-- History Table -->
+<div class="ht-table-wrap">
+  <table class="ht-table" id="htTable">
+    <thead>
+      <tr>
+        <th class="ht-cb-cell no-print"><input type="checkbox" id="htCheckAll" onchange="htToggleAll(this.checked)" title="Select all"></th>
+        <th onclick="htSortCol(0)">#<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(1)">Job No<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(2)">Job Name<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(3)">Roll No<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(4)">Material<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(5)">Status<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(6)">Started<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(7)">Completed<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(8)">Duration<span class="ht-sort">▲▼</span></th>
+        <th class="no-print">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="htBody">
+    <?php if (empty($historyJobs)): ?>
+      <tr><td colspan="11" style="padding:40px;text-align:center;color:#94a3b8"><i class="bi bi-inbox" style="font-size:2rem;opacity:.3"></i><br>No completed jobs yet</td></tr>
+    <?php else: ?>
+      <?php foreach ($historyJobs as $idx => $h):
+        $hSts = $h['status'];
+        $hStsLower = strtolower(str_replace(' ', '', $hSts));
+        $hStsClass = match($hStsLower) { 'closed'=>'closed','finalized'=>'finalized','completed'=>'completed','qcpassed'=>'qcpassed', default=>'default' };
+        $hDur = $h['duration_minutes'] ?? null;
+        $hDurStr = ($hDur !== null) ? (floor($hDur/60).'h '.($hDur%60).'m') : '—';
+        $hStarted = $h['started_at'] ? date('d M Y, H:i', strtotime($h['started_at'])) : '—';
+        $hCompleted = $h['completed_at'] ? date('d M Y, H:i', strtotime($h['completed_at'])) : ($h['updated_at'] ? date('d M Y, H:i', strtotime($h['updated_at'])) : '—');
+        $hSearch = strtolower(($h['job_no']??'').' '.($h['planning_job_name']??'').' '.($h['display_job_name']??'').' '.($h['roll_no']??'').' '.($h['paper_type']??'').' '.($h['company']??''));
+      ?>
+      <tr data-id="<?= (int)$h['id'] ?>"
+          data-completed="<?= e($h['completed_at'] ?? $h['updated_at'] ?? $h['created_at'] ?? '') ?>"
+          data-search="<?= e($hSearch) ?>"
+          onclick="openPrintDetail(<?= (int)$h['id'] ?>)">
+        <td class="ht-cb-cell no-print">
+          <input type="checkbox" class="ht-row-cb" data-job-id="<?= (int)$h['id'] ?>" onclick="event.stopPropagation();htUpdateBulk()">
+        </td>
+        <td class="ht-dim"><?= $idx + 1 ?></td>
+        <td><span class="ht-jobno"><?= e($h['job_no']) ?></span></td>
+        <td><?= e($h['planning_job_name'] ?? $h['display_job_name'] ?? '—') ?></td>
+        <td style="color:var(--fp-brand);font-weight:800"><?= e($h['roll_no'] ?? '—') ?></td>
+        <td><?= e($h['paper_type'] ?? '—') ?></td>
+        <td><span class="ht-badge ht-badge-<?= $hStsClass ?>"><?= e($hSts) ?></span></td>
+        <td class="ht-dim"><?= $hStarted ?></td>
+        <td class="ht-dim"><?= $hCompleted ?></td>
+        <td class="ht-dim"><?= $hDurStr ?></td>
+        <td class="no-print" onclick="event.stopPropagation()">
+          <button class="ht-act-btn" onclick="openPrintDetail(<?= (int)$h['id'] ?>)" title="View"><i class="bi bi-eye"></i></button>
+          <button class="ht-act-btn ht-print" onclick="printJobCard(<?= (int)$h['id'] ?>)" title="Print"><i class="bi bi-printer"></i></button>
+          <?php if (!$isOperatorView): ?>
+          <button class="ht-act-btn ht-delete" onclick="deleteJob(<?= (int)$h['id'] ?>)" title="Delete"><i class="bi bi-trash"></i></button>
+          <?php endif; ?>
+        </td>
+      </tr>
+      <?php endforeach; ?>
+    <?php endif; ?>
+    </tbody>
+  </table>
+  <div class="ht-pagination no-print" id="htPagination">
+    <div class="ht-page-info" id="htPageInfo">Showing 0–0 of 0</div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <select class="ht-per-page" id="htPerPage" onchange="htGoPage(1)">
+        <option value="25">25 / page</option>
+        <option value="50">50 / page</option>
+        <option value="100">100 / page</option>
+        <option value="all">Show All</option>
+      </select>
+      <div class="ht-page-btns" id="htPageBtns"></div>
+    </div>
   </div>
 </div>
 </div><!-- end fpPanelHistory -->
@@ -832,6 +939,7 @@ function switchFPTab(tab) {
     panelHistory.style.display = '';
     btnActive.classList.remove('active');
     btnHistory.classList.add('active');
+    htGoPage(1);
   } else {
     panelActive.style.display  = '';
     panelHistory.style.display = 'none';
@@ -840,13 +948,237 @@ function switchFPTab(tab) {
   }
 }
 
-// ─── History search ──────────────────────────────────────────
-function filterHistory(q) {
-  q = (q || '').toLowerCase();
-  document.querySelectorAll('#fpHistoryBody tr[data-search]').forEach(row => {
-    row.style.display = (row.dataset.search || '').includes(q) ? '' : 'none';
+// ─── History table: search/filter/sort/pagination/bulk ──────
+let HT_PERIOD = 'all';
+let HT_PAGE = 1;
+let HT_SORT = { col: -1, asc: true };
+
+function htVisibleRows() {
+  const rows = Array.from(document.querySelectorAll('#htBody tr[data-id]'));
+  const q = (document.getElementById('htSearch')?.value || '').trim().toLowerCase();
+  const now = new Date();
+  const from = document.getElementById('htDateFrom')?.value || '';
+  const to = document.getElementById('htDateTo')?.value || '';
+
+  return rows.filter(function(tr) {
+    if (q && !(tr.dataset.search || '').includes(q)) return false;
+    if (HT_PERIOD === 'all') return true;
+
+    const dRaw = tr.dataset.completed || '';
+    if (!dRaw) return false;
+    const d = new Date(dRaw);
+    if (isNaN(d.getTime())) return false;
+
+    if (HT_PERIOD === 'today') {
+      return d.toISOString().slice(0, 10) === now.toISOString().slice(0, 10);
+    }
+    if (HT_PERIOD === 'week') {
+      const dow = now.getDay() || 7;
+      const start = new Date(now);
+      start.setDate(now.getDate() - dow + 1);
+      start.setHours(0, 0, 0, 0);
+      return d >= start;
+    }
+    if (HT_PERIOD === 'month') {
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    }
+    if (HT_PERIOD === 'year') {
+      return d.getFullYear() === now.getFullYear();
+    }
+    if (HT_PERIOD === 'custom') {
+      const day = d.toISOString().slice(0, 10);
+      if (from && day < from) return false;
+      if (to && day > to) return false;
+      return true;
+    }
+    return true;
   });
 }
+
+function htSetPeriod(period, btn) {
+  HT_PERIOD = period;
+  document.querySelectorAll('.ht-period-btn').forEach(function(b) { b.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
+  const df = document.getElementById('htDateFrom');
+  const dt = document.getElementById('htDateTo');
+  if (df) df.value = '';
+  if (dt) dt.value = '';
+  htGoPage(1);
+}
+
+function htApplyCustomDate() {
+  const from = document.getElementById('htDateFrom')?.value || '';
+  const to = document.getElementById('htDateTo')?.value || '';
+  if (!from && !to) return;
+  HT_PERIOD = 'custom';
+  document.querySelectorAll('.ht-period-btn').forEach(function(b) { b.classList.remove('active'); });
+  htGoPage(1);
+}
+
+function htGoPage(page) {
+  const visible = htVisibleRows();
+  const perSel = document.getElementById('htPerPage')?.value || '25';
+  const per = perSel === 'all' ? visible.length : parseInt(perSel, 10);
+  const perSafe = per > 0 ? per : Math.max(visible.length, 1);
+  const totalPages = Math.max(1, Math.ceil(visible.length / perSafe));
+  HT_PAGE = Math.max(1, Math.min(page, totalPages));
+
+  const start = (HT_PAGE - 1) * perSafe;
+  const end = start + perSafe;
+
+  document.querySelectorAll('#htBody tr[data-id]').forEach(function(tr) { tr.style.display = 'none'; });
+  visible.forEach(function(tr, i) {
+    tr.style.display = (i >= start && i < end) ? '' : 'none';
+  });
+
+  const shownEnd = Math.min(end, visible.length);
+  const info = document.getElementById('htPageInfo');
+  if (info) info.textContent = 'Showing ' + (visible.length ? (start + 1) : 0) + '–' + shownEnd + ' of ' + visible.length;
+
+  const btns = document.getElementById('htPageBtns');
+  if (btns) {
+    let html = '<button class="ht-page-btn" onclick="htGoPage(' + (HT_PAGE - 1) + ')" ' + (HT_PAGE <= 1 ? 'disabled' : '') + '>‹</button>';
+    for (let p = 1; p <= totalPages; p++) {
+      if (totalPages > 7 && p > 2 && p < totalPages - 1 && Math.abs(p - HT_PAGE) > 1) {
+        if (p === 3 || p === totalPages - 2) html += '<span style="padding:0 6px;color:#94a3b8">…</span>';
+        continue;
+      }
+      html += '<button class="ht-page-btn ' + (p === HT_PAGE ? 'active' : '') + '" onclick="htGoPage(' + p + ')">' + p + '</button>';
+    }
+    html += '<button class="ht-page-btn" onclick="htGoPage(' + (HT_PAGE + 1) + ')" ' + (HT_PAGE >= totalPages ? 'disabled' : '') + '>›</button>';
+    btns.innerHTML = html;
+  }
+
+  htUpdateBulk();
+}
+
+function htSortCol(colIdx) {
+  const tbody = document.getElementById('htBody');
+  if (!tbody) return;
+  const rows = Array.from(tbody.querySelectorAll('tr[data-id]'));
+  if (!rows.length) return;
+
+  const asc = HT_SORT.col === colIdx ? !HT_SORT.asc : true;
+  HT_SORT = { col: colIdx, asc: asc };
+
+  rows.sort(function(a, b) {
+    const aText = (a.children[colIdx + 1]?.textContent || '').trim();
+    const bText = (b.children[colIdx + 1]?.textContent || '').trim();
+    const aNum = parseFloat(aText);
+    const bNum = parseFloat(bText);
+    if (!isNaN(aNum) && !isNaN(bNum)) return asc ? (aNum - bNum) : (bNum - aNum);
+    const aDate = Date.parse(aText);
+    const bDate = Date.parse(bText);
+    if (!isNaN(aDate) && !isNaN(bDate)) return asc ? (aDate - bDate) : (bDate - aDate);
+    return asc ? aText.localeCompare(bText) : bText.localeCompare(aText);
+  });
+
+  rows.forEach(function(r) { tbody.appendChild(r); });
+  document.querySelectorAll('#htTable th').forEach(function(th, i) {
+    th.classList.toggle('sorted', i === colIdx + 1);
+    const icon = th.querySelector('.ht-sort');
+    if (icon) icon.textContent = (i === colIdx + 1) ? (asc ? '▲' : '▼') : '▲▼';
+  });
+  htGoPage(1);
+}
+
+function htUpdateBulk() {
+  const selected = document.querySelectorAll('.ht-row-cb:checked').length;
+  const bar = document.getElementById('htBulkBar');
+  const count = document.getElementById('htSelectedCount');
+  if (count) count.textContent = selected;
+  if (bar) bar.classList.toggle('visible', selected > 0);
+  document.querySelectorAll('.ht-row-cb').forEach(function(cb) {
+    const tr = cb.closest('tr');
+    if (tr) tr.classList.toggle('ht-selected', cb.checked);
+  });
+}
+
+function htToggleAll(checked) {
+  document.querySelectorAll('#htBody tr[data-id]').forEach(function(tr) {
+    if (tr.style.display === 'none') return;
+    const cb = tr.querySelector('.ht-row-cb');
+    if (cb) cb.checked = checked;
+  });
+  htUpdateBulk();
+}
+
+function htSelectAllVisible() {
+  document.querySelectorAll('#htBody tr[data-id]').forEach(function(tr) {
+    if (tr.style.display === 'none') return;
+    const cb = tr.querySelector('.ht-row-cb');
+    if (cb) cb.checked = true;
+  });
+  const master = document.getElementById('htCheckAll');
+  if (master) master.checked = true;
+  htUpdateBulk();
+}
+
+function htDeselectAll() {
+  document.querySelectorAll('.ht-row-cb').forEach(function(cb) { cb.checked = false; });
+  const master = document.getElementById('htCheckAll');
+  if (master) master.checked = false;
+  htUpdateBulk();
+}
+
+function htBulkPrint() {
+  const ids = Array.from(document.querySelectorAll('.ht-row-cb:checked')).map(function(cb) { return cb.dataset.jobId; });
+  if (!ids.length) { alert('No history job selected'); return; }
+  const jobs = ids.map(function(id) { return ALL_JOBS.find(function(j) { return j.id == id; }); }).filter(Boolean);
+  if (!jobs.length) return;
+
+  const nowText = new Date().toLocaleString();
+  let pages = '';
+  jobs.forEach(function(job, idx) {
+    const extra = job.extra_data_parsed || {};
+    const startedAt = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
+    const completedAt = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
+    pages += '<div class="print-page" ' + (idx > 0 ? 'style="page-break-before:always"' : '') + '>'
+      + '<div class="p-header"><div class="p-brand">'
+      + (COMPANY.logo ? '<img src="' + COMPANY.logo + '" style="max-height:36px;max-width:100px;display:block">' : '')
+      + '<div><div class="p-company">' + esc(COMPANY.name || 'Company') + '</div>'
+      + '<div class="p-meta">' + esc(COMPANY.address || '') + '</div>'
+      + (COMPANY.gst ? '<div class="p-meta">GST: ' + esc(COMPANY.gst) + '</div>' : '')
+      + '</div></div><div style="text-align:right">'
+      + '<div class="p-title">Flexo Printing Job Card</div>'
+      + '<div class="p-jobno">' + esc(job.job_no || '—') + '</div>'
+      + '<div class="p-meta">Printed: ' + esc(nowText) + '</div>'
+      + '</div></div>'
+      + '<table class="p-table">'
+      + '<tr><th>Job Name</th><td>' + esc(job.planning_job_name || job.display_job_name || '—') + '</td><th>Status</th><td>' + esc(job.status || '—') + '</td></tr>'
+      + '<tr><th>Roll No</th><td>' + esc(job.roll_no || '—') + '</td><th>Material</th><td>' + esc(job.paper_type || '—') + '</td></tr>'
+      + '<tr><th>Started</th><td>' + esc(startedAt) + '</td><th>Completed</th><td>' + esc(completedAt) + '</td></tr>'
+      + '<tr><th>Wastage</th><td>' + esc(extra.wastage_kg || extra.operator_wastage_kg || '—') + ' kg</td><th>Notes</th><td>' + esc(extra.operator_notes || extra.operator_remarks || '—') + '</td></tr>'
+      + '</table>'
+      + '<div class="p-footer"><span>' + esc(APP_FOOTER_LEFT || '') + '</span><span>Page ' + (idx + 1) + ' of ' + jobs.length + '</span><span>' + esc(APP_FOOTER_RIGHT || '') + '</span></div>'
+      + '</div>';
+  });
+
+  const w = window.open('', '_blank', 'width=800,height=900');
+  w.document.write('<!DOCTYPE html><html><head><title>Bulk Print - ' + jobs.length + ' Job Cards</title><style>'
+    + '@page{margin:10mm}'
+    + '*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}'
+    + 'body{font-family:"Segoe UI",Arial,sans-serif;color:#1f2937;margin:0;padding:0}'
+    + '.print-page{padding:8px}'
+    + '.p-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:12px}'
+    + '.p-brand{display:flex;gap:10px;align-items:flex-start}'
+    + '.p-company{font-size:1rem;font-weight:800;color:#0f172a}'
+    + '.p-title{font-size:.8rem;font-weight:800;text-transform:uppercase;color:#334155}'
+    + '.p-jobno{font-size:1.1rem;font-weight:900;color:#8b5cf6}'
+    + '.p-meta{font-size:.65rem;color:#64748b}'
+    + '.p-table{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:.8rem}'
+    + '.p-table th{background:#f8fafc;padding:8px 10px;border:1px solid #e2e8f0;font-weight:700;color:#334155;white-space:nowrap;width:15%}'
+    + '.p-table td{padding:8px 10px;border:1px solid #e2e8f0;width:35%}'
+    + '.p-footer{display:flex;justify-content:space-between;border-top:1px solid #e2e8f0;padding-top:6px;font-size:.6rem;color:#94a3b8}'
+    + '</style></head><body>' + pages + '</body></html>');
+  w.document.close();
+  w.focus();
+  setTimeout(function() { w.print(); }, 400);
+}
+
+document.getElementById('htSearch')?.addEventListener('input', function() {
+  htGoPage(1);
+});
 
 // ─── Multi-select print ──────────────────────────────────────
 function updatePrintCount() {

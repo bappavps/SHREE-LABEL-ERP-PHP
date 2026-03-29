@@ -303,8 +303,11 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-badge-normal{background:#e0f2fe;color:#075985}
 @keyframes pulse-badge{0%,100%{opacity:1}50%{opacity:.6}}
 .jc-action-btn{padding:5px 12px;font-size:.65rem;font-weight:800;text-transform:uppercase;border:none;border-radius:8px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:4px}
-.jc-btn-complete{background:var(--jc-blue);color:#fff}
-.jc-btn-complete:hover{background:#2563eb}
+.jc-btn-start{background:var(--jc-brand);color:#fff}
+.jc-btn-start:hover{background:#7c3aed}
+.jc-btn-start:disabled{opacity:.4;cursor:not-allowed}
+.jc-btn-complete{background:#16a34a;color:#fff}
+.jc-btn-complete:hover{background:#15803d}
 .jc-btn-view{background:#f1f5f9;color:#475569;border:1px solid var(--border,#e2e8f0)}
 .jc-btn-view:hover{background:#e2e8f0}
 .jc-btn-print{background:#8b5cf6;color:#fff}
@@ -454,11 +457,11 @@ $activeCount = $totalCount;
 $historyCount = $finishedCount;
 ?>
 <div class="jc-stats no-print">
-  <div class="jc-stat active" data-filter="all" onclick="filterFromStat('all')">
+  <div class="jc-stat" data-filter="all" onclick="filterFromStat('all')">
     <div class="jc-stat-icon" style="background:#f0fdf4;color:#22c55e"><i class="bi bi-boxes"></i></div>
     <div><div class="jc-stat-val"><?= $totalCount ?></div><div class="jc-stat-label">Job Detials</div></div>
   </div>
-  <div class="jc-stat" data-filter="Pending" onclick="filterFromStat('Pending')">
+  <div class="jc-stat active" data-filter="Pending" onclick="filterFromStat('Pending')">
     <div class="jc-stat-icon" style="background:#fef3c7;color:#f59e0b"><i class="bi bi-hourglass-split"></i></div>
     <div><div class="jc-stat-val"><?= $pendingCount ?></div><div class="jc-stat-label">Pending</div></div>
   </div>
@@ -480,14 +483,13 @@ $historyCount = $finishedCount;
   <button id="jcTabBtnActive" class="jc-tab-btn active" type="button" onclick="switchJumboTab('active')">Job Detials <span class="jc-tab-count"><?= $activeCount ?></span></button>
   <button id="jcTabBtnHistory" class="jc-tab-btn" type="button" onclick="switchJumboTab('history')">History <span class="jc-tab-count"><?= $historyCount ?></span></button>
 </div>
-  <button id="jcTabBtnDeletedLogs" class="jc-tab-btn" type="button" onclick="switchJumboTab('deleted_logs')"><i class="bi bi-trash3"></i> Deleted Logs</button>
 
 <div id="jcPanelActive">
 
 <div class="jc-filters no-print">
   <input type="text" class="jc-search" id="jcSearch" placeholder="Search by job no, roll, company&hellip;">
-  <button class="jc-filter-btn active" onclick="filterJobs('all',this)">All</button>
-  <button class="jc-filter-btn" onclick="filterJobs('Pending',this)">Pending</button>
+  <button class="jc-filter-btn" onclick="filterJobs('all',this)">All</button>
+  <button class="jc-filter-btn active" onclick="filterJobs('Pending',this)">Pending</button>
   <button class="jc-filter-btn" onclick="filterJobs('Running',this)">Running</button>
   <button class="jc-filter-btn" onclick="filterJobs('Hold',this)">Hold</button>
   <button class="jc-filter-btn" onclick="filterJobs('Finished',this)">Finished</button>
@@ -502,7 +504,8 @@ $historyCount = $finishedCount;
 <?php else: ?>
   <?php foreach ($activeJobs as $idx => $job):
     $sts = $job['status'];
-    $stsClass = match($sts) { 'Pending'=>'pending', 'Closed','Finalized'=>'completed', default=>'pending' };
+    $stsClass = match($sts) { 'Pending'=>'pending', 'Running'=>'running', 'Closed','Finalized'=>'completed', default=>'pending' };
+    $startedTs = $job['started_at'] ? strtotime($job['started_at']) * 1000 : 0;
     $rSts = $job['roll_status'] ?? '';
     $rStsClass = strtolower(str_replace(' ', '', $rSts)) === 'slitting' ? 'slitting' : $stsClass;
     $pri = $job['planning_priority'] ?? 'Normal';
@@ -534,12 +537,20 @@ $historyCount = $finishedCount;
       <div class="jc-card-row"><span class="jc-label">Dimension</span><span class="jc-value"><?= e(($job['width_mm'] ?? '—') . 'mm × ' . ($job['length_mtr'] ?? '—') . 'm') ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Started</span><span class="jc-value"><?= e($startedAt) ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Ended</span><span class="jc-value"><?= e($completedAt) ?></span></div>
-      <div class="jc-card-row"><span class="jc-label">Plan Flow</span><span class="jc-value">Pending</span></div>
+      <?php if ($sts === 'Running' && $startedTs): ?>
+      <div class="jc-card-row"><span class="jc-label">Elapsed</span><span class="jc-timer" data-started="<?= $startedTs ?>" style="color:var(--jc-blue);font-weight:700">00:00:00</span></div>
+      <?php endif; ?>
     </div>
     <div class="jc-card-foot">
       <div class="jc-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
-      <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
-        <button class="jc-action-btn jc-btn-view" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-folder2-open"></i> Open</button>
+      <div style="display:flex;gap:6px;align-items:center" onclick="event.stopPropagation()">
+        <?php if ($sts === 'Pending' && $isOperatorView): ?>
+          <button class="jc-action-btn jc-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>)"><i class="bi bi-play-fill"></i> Start</button>
+        <?php elseif ($sts === 'Running' && $isOperatorView): ?>
+          <button class="jc-action-btn jc-btn-complete" onclick="openJobDetail(<?= $job['id'] ?>,'complete')"><i class="bi bi-check-lg"></i> Complete</button>
+        <?php else: ?>
+          <button class="jc-action-btn jc-btn-view" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-folder2-open"></i> Open</button>
+        <?php endif; ?>
         <button class="jc-action-btn jc-btn-view" onclick="printJobCard(<?= $job['id'] ?>)" title="Print"><i class="bi bi-printer"></i></button>
       </div>
     </div>
@@ -631,6 +642,8 @@ $historyCount = $finishedCount;
 .ht-act-btn:hover{background:#f1f5f9}
 .ht-act-btn.ht-print{color:#8b5cf6;border-color:#c4b5fd}
 .ht-act-btn.ht-print:hover{background:#f5f3ff}
+.ht-act-btn.ht-delete{color:#dc2626;border-color:#fecaca}
+.ht-act-btn.ht-delete:hover{background:#fee2e2}
 .ht-pagination{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;flex-wrap:wrap;gap:10px}
 .ht-page-info{font-size:.7rem;color:#64748b;font-weight:600}
 .ht-page-btns{display:flex;gap:4px}
@@ -723,6 +736,9 @@ $historyCount = $finishedCount;
         <td class="no-print" onclick="event.stopPropagation()">
           <button class="ht-act-btn" onclick="openJobDetail(<?= (int)$h['id'] ?>)" title="View"><i class="bi bi-eye"></i></button>
           <button class="ht-act-btn ht-print" onclick="printJobCard(<?= (int)$h['id'] ?>)" title="Print"><i class="bi bi-printer"></i></button>
+          <?php if (!$isOperatorView): ?>
+          <button class="ht-act-btn ht-delete" onclick="deleteJob(<?= (int)$h['id'] ?>)" title="Delete"><i class="bi bi-trash"></i></button>
+          <?php endif; ?>
         </td>
       </tr>
       <?php endforeach; ?>
@@ -745,24 +761,7 @@ $historyCount = $finishedCount;
 
 </div>
 
-<div id="jcPanelDeletedLogs" style="display:none">
-<div class="card no-print" style="margin-top:18px">
-  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-    <span class="card-title"><i class="bi bi-trash3"></i> Deleted Job Card Log</span>
-    <div style="display:flex;gap:8px;align-items:center">
-      <select id="dalFilter" class="form-control" style="height:32px;min-width:160px;font-size:.78rem" onchange="loadDeleteAudit()">
-        <option value="">All Actions</option>
-        <option value="completed">Completed Deletes</option>
-        <option value="blocked">Blocked Attempts</option>
-      </select>
-      <button class="jc-action-btn jc-btn-view" onclick="loadDeleteAudit()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
-    </div>
-  </div>
-  <div id="dalTableWrap" style="overflow:auto;padding:8px 0">
-    <div style="padding:24px;color:#94a3b8;text-align:center;font-size:.82rem">Switch to this tab to load deletion logs.</div>
-  </div>
-</div>
-</div>
+
 
 <!-- ═══ DETAIL MODAL ═══ -->
 <div class="jc-modal-overlay" id="jcDetailModal">
@@ -818,19 +817,16 @@ function switchJumboTab(tab) {
   const panels = {
     active:       document.getElementById('jcPanelActive'),
     history:      document.getElementById('jcPanelHistory'),
-    deleted_logs: document.getElementById('jcPanelDeletedLogs'),
   };
   const btns = {
     active:       document.getElementById('jcTabBtnActive'),
     history:      document.getElementById('jcTabBtnHistory'),
-    deleted_logs: document.getElementById('jcTabBtnDeletedLogs'),
   };
   Object.keys(panels).forEach(function(k) {
     if (panels[k]) panels[k].style.display = (k === tab) ? '' : 'none';
     if (btns[k])   btns[k].classList.toggle('active', k === tab);
   });
   if (tab === 'history') htGoPage(1);
-  if (tab === 'deleted_logs') loadDeleteAudit();
 }
 
 // \u2500\u2500\u2500 Filters \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -1096,7 +1092,7 @@ function htBulkPrint() {
       <div class="print-page" ${idx > 0 ? 'style="page-break-before:always"' : ''}>
         <div class="p-header">
           <div class="p-brand">
-            ${COMPANY.logo ? '<img src="' + COMPANY.logo + '" style="max-height:36px;max-width:100px">' : ''}
+            ${COMPANY.logo ? '<img src="' + COMPANY.logo + '" style="max-height:36px;max-width:100px;display:block">' : ''}
             <div>
               <div class="p-company">${esc(COMPANY.name || 'Company')}</div>
               <div class="p-meta">${esc(COMPANY.address || '')}</div>
@@ -1131,7 +1127,7 @@ function htBulkPrint() {
     '*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}' +
     'body{font-family:"Segoe UI",Arial,sans-serif;color:#1f2937;margin:0;padding:0}' +
     '.print-page{padding:8px}' +
-    '.p-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e40af;padding-bottom:10px;margin-bottom:14px}' +
+    '.p-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:12px}' +
     '.p-brand{display:flex;gap:10px;align-items:flex-start}' +
     '.p-company{font-size:1rem;font-weight:800;color:#0f172a}' +
     '.p-title{font-size:.8rem;font-weight:800;text-transform:uppercase;color:#334155}' +
@@ -1144,7 +1140,7 @@ function htBulkPrint() {
   '</style></head><body>' + pages + '</body></html>');
   w.document.close();
   w.focus();
-  setTimeout(function() { w.print(); }, 500);
+  setTimeout(() => w.print(), 400);
 }
 
 document.getElementById('htSearch')?.addEventListener('input', function() {
@@ -1210,6 +1206,7 @@ async function startJobWithTimer(id) {
     if (!data.ok) { alert('Error: ' + (data.error || 'Unknown')); return; }
   } catch (err) { alert('Network error: ' + err.message); return; }
 
+  document.getElementById('jcDetailModal').classList.remove('active');
   _timerJobId = id;
   _timerStart = Date.now();
   const job = ALL_JOBS.find(j => j.id == id) || {};
@@ -1271,7 +1268,6 @@ function endTimer() {
   if (ov) ov.remove();
   const jobId = _timerJobId;
   _timerJobId = null;
-  // Open detail in complete mode (no camera — user can upload anytime from the detail)
   openJobDetail(jobId, 'complete');
 }
 
@@ -1345,7 +1341,7 @@ async function openJobDetail(id, mode) {
   if (!job) return;
 
   const sts = job.status;
-  const stsClass = {Pending:'pending',Closed:'completed',Finalized:'completed'}[sts]||'pending';
+  const stsClass = {Pending:'pending',Running:'running',Closed:'completed',Finalized:'completed'}[sts]||'pending';
   const extra = job.extra_data_parsed || {};
   const createdAt = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
   const startedAt = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
@@ -1527,6 +1523,23 @@ async function openJobDetail(id, mode) {
     html += opEntryHtml;
   }
 
+  // ── Editable Operator Form (only in complete mode, operator view) ──
+  if (mode === 'complete' && IS_OPERATOR_VIEW && sts === 'Running') {
+    html += `<div class="jc-op-section"><div class="jc-op-h"><i class="bi bi-pencil-square"></i> Operator Data — Fill Before Completing</div>
+    <form id="dm-operator-form" class="jc-op-b" style="display:grid;gap:10px">
+      <div class="jc-op-field"><label>Output Weight (kg)</label><input type="number" name="actual_output_weight" value="${esc(extra.actual_output_weight || '')}"></div>
+      <div class="jc-op-field"><label>Wastage (kg)</label><input type="number" step="0.01" name="wastage_kg" value="${esc(extra.wastage_kg || extra.operator_wastage_kg || '')}"></div>
+      <div class="jc-op-field"><label>Roll Condition</label><select name="roll_condition"><option value="Good" ${extra.roll_condition === 'Good' ? 'selected' : ''}>Good</option><option value="Fair" ${extra.roll_condition === 'Fair' ? 'selected' : ''}>Fair</option><option value="Poor" ${extra.roll_condition === 'Poor' ? 'selected' : ''}>Poor</option></select></div>
+      <div class="jc-op-field"><label>Operator Notes</label><textarea name="operator_notes" style="min-height:80px">${esc(extra.operator_notes || extra.operator_remarks || '')}</textarea></div>
+      <div class="jc-op-field"><label>Defects Found</label><div style="display:grid;gap:6px">
+        <label><input type="checkbox" name="defects" value="Length Issue" ${Array.isArray(extra.defects) && extra.defects.includes('Length Issue') ? 'checked' : ''}> Length Issue</label>
+        <label><input type="checkbox" name="defects" value="Width Issue" ${Array.isArray(extra.defects) && extra.defects.includes('Width Issue') ? 'checked' : ''}> Width Issue</label>
+        <label><input type="checkbox" name="defects" value="Quality Issue" ${Array.isArray(extra.defects) && extra.defects.includes('Quality Issue') ? 'checked' : ''}> Quality Issue</label>
+        <label><input type="checkbox" name="defects" value="Damage" ${Array.isArray(extra.defects) && extra.defects.includes('Damage') ? 'checked' : ''}> Damage</label>
+      </div></div>
+    </form></div>`;
+  }
+
   // ── Photo Upload (always available) ──
   {
     const existingPhoto = extra.jumbo_photo_url || '';
@@ -1561,24 +1574,40 @@ async function openJobDetail(id, mode) {
   document.getElementById('dm-body').innerHTML = '<div class="jc-op-form">' + html + '</div>';
   updateTimers();
 
-  // Footer actions
+  // Footer actions (Flexo-style logic)
   let fHtml = '<div style="display:flex;gap:8px">';
   fHtml += '<select id="dm-print-template" class="form-control" style="height:32px;min-width:140px"><option value="executive">Executive</option><option value="compact">Compact</option></select>';
   fHtml += `<button class="jc-action-btn jc-btn-print" onclick="printJobCard(${job.id})"><i class="bi bi-printer"></i> Job Card Print</button>`;
   fHtml += `<button class="jc-action-btn jc-btn-view" onclick="printLabelsForJob(${job.id})"><i class="bi bi-upc-scan"></i> Label Print</button>`;
   fHtml += '</div><div style="display:flex;gap:8px">';
-  if (mode === 'complete' && IS_OPERATOR_VIEW) {
-    fHtml += `<button class="jc-action-btn jc-btn-complete" onclick="submitAndClose(${job.id})" style="background:#16a34a;color:#fff;border-color:#16a34a"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
-  } else if (sts === 'Pending' && IS_OPERATOR_VIEW) {
-    fHtml += `<button class="jc-action-btn jc-btn-start" onclick="startJobWithTimer(${job.id})" style="background:var(--jc-brand);color:#fff;border-color:var(--jc-brand)"><i class="bi bi-play-fill"></i> Start Job</button>`;
-  } else if (sts === 'Running' && IS_OPERATOR_VIEW) {
-    fHtml += `<button class="jc-action-btn jc-btn-complete" onclick="submitAndClose(${job.id})" style="background:#16a34a;color:#fff;border-color:#16a34a"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
+  if (IS_OPERATOR_VIEW) {
+    if (mode === 'complete' && sts === 'Running') {
+      fHtml += `<button class="jc-action-btn jc-btn-complete" onclick="submitAndClose(${job.id})" style="background:#16a34a;color:#fff;border-color:#16a34a"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
+    } else if (sts === 'Pending') {
+      fHtml += `<button class="jc-action-btn jc-btn-start" onclick="startJobWithTimer(${job.id})" style="background:var(--jc-brand);color:#fff;border-color:var(--jc-brand)"><i class="bi bi-play-fill"></i> Start Job</button>`;
+    }
+    // No End/Complete in modal for Running unless in complete mode
   }
   if (!IS_OPERATOR_VIEW) {
     fHtml += `<button class="jc-action-btn jc-btn-delete" onclick="deleteJob(${job.id})" title="Admin: Delete"><i class="bi bi-trash"></i></button>`;
   }
   fHtml += '</div>';
   document.getElementById('dm-footer').innerHTML = fHtml;
+
+  // Disable form fields unless in complete mode
+  setTimeout(() => {
+    const form = document.getElementById('dm-operator-form');
+    if (form) {
+      const formEls = form.querySelectorAll('input, select, textarea');
+      formEls.forEach(el => {
+        if (mode === 'complete' && sts === 'Running') {
+          el.disabled = false;
+        } else {
+          el.disabled = true;
+        }
+      });
+    }
+  }, 50);
 
   document.getElementById('jcDetailModal').classList.add('active');
 
@@ -1771,48 +1800,6 @@ async function deleteJob(id) {
   } catch (err) { alert('Network error: ' + err.message); }
 }
 
-// --- Delete Audit Log ---------------------------------------------------
-async function loadDeleteAudit() {
-  const wrap = document.getElementById('dalTableWrap');
-  if (!wrap) return;
-  const filter = (document.getElementById('dalFilter') || {}).value || '';
-  wrap.innerHTML = '<p style="padding:12px;color:#64748b">Loading...</p>';
-  try {
-    const params = new URLSearchParams({ action: 'get_delete_audit', csrf_token: CSRF, limit: '200' });
-    if (filter) params.set('status', filter);
-    const res = await fetch(API_BASE + '?' + params.toString());
-    const data = await res.json();
-    const rows = Array.isArray(data.records) ? data.records : (Array.isArray(data.entries) ? data.entries : []);
-    if (!data.ok || !rows.length) {
-      wrap.innerHTML = '<p style="padding:12px;color:#64748b">' + esc(data.error || 'No deleted job records found.') + '</p>';
-      return;
-    }
-    let tbl = '<table style="width:100%;border-collapse:collapse;font-size:.73rem"><tr style="background:#f3f4f6"><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db">Date/Time</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db">Job No</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db">Parent Roll</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db">Result</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db">Rolls Removed</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db">Stock Restored</th><th style="padding:8px;text-align:left;border-bottom:1px solid #d1d5db">Deleted By</th></tr>';
-    rows.forEach(function(e) {
-      const actionStatus = String(e.action_status || e.status || '').toLowerCase();
-      const resultBadge = (actionStatus === 'completed' || actionStatus === 'deleted')
-        ? '<span style="background:#dcfce7;color:#166534;padding:2px 6px;border-radius:4px;font-size:.7rem">Deleted</span>'
-        : '<span style="background:#fee2e2;color:#991b1b;padding:2px 6px;border-radius:4px;font-size:.7rem">Blocked</span>';
-      const stockOk = Number(e.parent_restored || 0) > 0
-        ? '<span style="color:#16a34a">&#10003;</span>'
-        : '<span style="color:#dc2626">&#10007;</span>';
-      tbl += '<tr>'
-        + '<td style="padding:8px;border-bottom:1px solid #e5e7eb;white-space:nowrap">' + esc(e.created_at || e.deleted_at || '') + '</td>'
-        + '<td style="padding:8px;border-bottom:1px solid #e5e7eb;font-weight:700;color:var(--jc-brand)">' + esc(e.root_job_no || e.job_no || ('ID ' + (e.root_job_id || e.job_id || ''))) + '</td>'
-        + '<td style="padding:8px;border-bottom:1px solid #e5e7eb">' + esc(e.parent_roll_no || e.parent_roll || '--') + '</td>'
-        + '<td style="padding:8px;border-bottom:1px solid #e5e7eb">' + resultBadge + '</td>'
-        + '<td style="padding:8px;border-bottom:1px solid #e5e7eb">' + esc(((e.removed_child_rolls ?? e.rolls_removed) ?? '--') + '') + '</td>'
-        + '<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center">' + stockOk + '</td>'
-        + '<td style="padding:8px;border-bottom:1px solid #e5e7eb">' + esc(e.requested_by_name || e.deleted_by || '--') + '</td>'
-        + '</tr>';
-    });
-    tbl += '</table>';
-    wrap.innerHTML = tbl;
-  } catch (err) {
-    wrap.innerHTML = '<p style="padding:12px;color:#dc2626">Error: ' + esc(err.message) + '</p>';
-  }
-}
-
 // ─── Print Job Card ─────────────────────────────────────────
 async function printJobCard(id) {
   const job = ALL_JOBS.find(j => j.id == id);
@@ -1836,7 +1823,7 @@ async function printJobCard(id) {
           <div>
             <div class="jc-print-company">${esc(COMPANY.name || 'Company')}</div>
             <div class="jc-print-meta">${esc(COMPANY.address || '')}</div>
-            ${COMPANY.gst ? `<div class="jc-print-meta">GST: ${esc(COMPANY.gst)}</div>` : ''}
+            ${COMPANY.gst ? '<div class="jc-print-meta">GST: ' + esc(COMPANY.gst) + '</div>' : ''}
           </div>
         </div>
         <div class="jc-print-brand-right">
@@ -1858,7 +1845,7 @@ async function printJobCard(id) {
     @page{margin:12mm}
     *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
     body{font-family:'Segoe UI',Arial,sans-serif;color:#1f2937}
-    .jc-print-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:12px}
+    .jc-print-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:12px}
     .jc-print-brand-left{display:flex;gap:10px;align-items:flex-start}
     .jc-print-company{font-size:1rem;font-weight:800;color:#0f172a}
     .jc-print-title{font-size:.85rem;font-weight:800;text-transform:uppercase;color:#334155}
@@ -1885,8 +1872,8 @@ async function printJobCard(id) {
     .jc-detail-section{margin-bottom:16px}
     .jc-detail-section h3{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin:0 0 8px}
     .jc-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px}
-    .jc-detail-item .dl{font-size:.62rem;color:#94a3b8;font-weight:700;text-transform:uppercase}
-    .jc-detail-item .dv{font-size:.82rem;color:#0f172a;font-weight:700}
+    .jc-detail-item .dl{font-size:.62rem;font-weight:700;text-transform:uppercase;color:#94a3b8;letter-spacing:.03em}
+    .jc-detail-item .dv{font-size:.82rem;font-weight:700;color:#1e293b}
     .jc-timeline{display:flex;gap:16px;flex-wrap:wrap}
     .template-compact .jc-op-grid-2,.template-compact .jc-op-grid-3,.template-compact .jc-op-grid-4{grid-template-columns:1fr 1fr}
     .template-compact .jc-op-topstrip{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -1951,7 +1938,7 @@ function jcBulkPrint() {
       <div class="print-page" ${idx > 0 ? 'style="page-break-before:always"' : ''}>
         <div class="p-header">
           <div class="p-brand">
-            ${COMPANY.logo ? '<img src="' + COMPANY.logo + '" style="max-height:36px;max-width:100px">' : ''}
+            ${COMPANY.logo ? '<img src="' + COMPANY.logo + '" style="max-height:36px;max-width:100px;display:block">' : ''}
             <div>
               <div class="p-company">${esc(COMPANY.name || 'Company')}</div>
               <div class="p-meta">${esc(COMPANY.address || '')}</div>
@@ -1986,7 +1973,7 @@ function jcBulkPrint() {
     '*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}' +
     'body{font-family:"Segoe UI",Arial,sans-serif;color:#1f2937;margin:0;padding:0}' +
     '.print-page{padding:8px}' +
-    '.p-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e40af;padding-bottom:10px;margin-bottom:14px}' +
+    '.p-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:14px}' +
     '.p-brand{display:flex;gap:10px;align-items:flex-start}' +
     '.p-company{font-size:1rem;font-weight:800;color:#0f172a}' +
     '.p-title{font-size:.8rem;font-weight:800;text-transform:uppercase;color:#334155}' +
@@ -2079,6 +2066,11 @@ function generateQR(text) {
   if (autoId) setTimeout(function(){ try { openJobDetail(parseInt(autoId)); } catch(e){} }, 600);
 })();
 function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
+// Default to Pending filter on page load
+(function(){
+  const pendingBtn = document.querySelector('.jc-filter-btn.active');
+  if (pendingBtn && pendingBtn.textContent.trim() === 'Pending') filterJobs('Pending', pendingBtn);
+})();
 </script>
 
 <?php include __DIR__ . '/../../../includes/footer.php'; ?>

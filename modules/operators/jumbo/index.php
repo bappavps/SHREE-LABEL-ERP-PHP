@@ -263,14 +263,23 @@ include __DIR__ . '/../../../includes/header.php';
 @keyframes pulse-badge{0%,100%{opacity:1}50%{opacity:.6}}
 .jc-action-btn{padding:5px 12px;font-size:.65rem;font-weight:800;text-transform:uppercase;border:none;border-radius:8px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:4px}
 .jc-action-btn:disabled{opacity:.45;cursor:not-allowed;pointer-events:none;filter:grayscale(.2)}
-.jc-btn-complete{background:var(--jc-blue);color:#fff}
-.jc-btn-complete:hover{background:#2563eb}
+.jc-btn-start{background:var(--jc-brand);color:#fff}
+.jc-btn-start:hover{background:#7c3aed}
+.jc-btn-start:disabled{opacity:.4;cursor:not-allowed}
+.jc-btn-complete{background:#16a34a;color:#fff}
+.jc-btn-complete:hover{background:#15803d}
 .jc-btn-view{background:#f1f5f9;color:#475569;border:1px solid var(--border,#e2e8f0)}
 .jc-btn-view:hover{background:#e2e8f0}
 .jc-btn-print{background:#8b5cf6;color:#fff}
 .jc-btn-print:hover{background:#7c3aed}
 .jc-btn-delete{background:#fee2e2;color:#dc2626;border:1px solid #fecaca}
 .jc-btn-delete:hover{background:#fecaca}
+/* Upload area */
+.jc-upload-zone{border:2px dashed #d1e7dd;border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all .2s}
+.jc-upload-zone:hover{border-color:var(--jc-brand);background:#f0fdf4}
+.jc-upload-zone input[type=file]{display:none}
+.jc-upload-preview{margin-top:8px}
+.jc-upload-preview img{max-width:200px;max-height:150px;border-radius:8px;border:1px solid #e2e8f0}
 .jc-time{font-size:.6rem;color:#94a3b8;font-weight:600}
 .jc-empty{text-align:center;padding:60px 20px;color:#94a3b8}
 .jc-empty i{font-size:3rem;opacity:.3}
@@ -365,6 +374,16 @@ include __DIR__ . '/../../../includes/header.php';
   *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
 }
 .jc-print-area{display:none}
+/* Timer overlay (Flexo-style) */
+.jc-timer-overlay{position:fixed;inset:0;z-index:20000;background:rgba(15,23,42,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;backdrop-filter:blur(4px)}
+.jc-timer-jobinfo{text-align:center;color:#fff;font-size:1rem;font-weight:700}
+.jc-timer-display{font-size:4rem;font-weight:900;color:#fff;font-family:'Courier New',monospace;letter-spacing:.06em;text-shadow:0 4px 24px rgba(0,0,0,.4)}
+.jc-timer-actions{display:flex;gap:16px}
+.jc-timer-actions button{padding:14px 32px;font-size:1rem;font-weight:800;border:none;border-radius:12px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;text-transform:uppercase}
+.jc-timer-btn-cancel{background:#ef4444;color:#fff}
+.jc-timer-btn-cancel:hover{background:#dc2626}
+.jc-timer-btn-end{background:#16a34a;color:#fff}
+.jc-timer-btn-end:hover{background:#15803d}
 @media(max-width:600px){.jc-grid{grid-template-columns:1fr}.jc-stats{grid-template-columns:repeat(2,1fr)}.jc-detail-grid{grid-template-columns:1fr}.jc-form-row{grid-template-columns:1fr}.jc-summary-grid,.jc-timing-grid,.jc-action-bar,.jc-roll-check-grid,.jc-picker-filters{grid-template-columns:1fr}.jc-child-shell{margin-left:0}}
 </style>
 
@@ -457,10 +476,20 @@ $historyCount = $finishedCount;
       <div class="jc-card-row"><span class="jc-label">Job Name</span><span class="jc-value"><?= e($job['planning_job_name'] ?? '—') ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Priority</span><span class="jc-value"><?= e($job['planning_priority'] ?? 'Normal') ?></span></div>
     </div>
+    <?php $startedTs = $job['started_at'] ? strtotime($job['started_at']) * 1000 : 0; ?>
+    <?php if ($sts === 'Running' && $startedTs): ?>
+    <div class="jc-card-row"><span class="jc-label">Elapsed</span><span class="jc-timer" data-started="<?= $startedTs ?>" style="color:var(--jc-blue);font-weight:700">00:00:00</span></div>
+    <?php endif; ?>
     <div class="jc-card-foot">
       <div class="jc-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
-      <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
-        <button class="jc-action-btn jc-btn-view" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-folder2-open"></i> Open</button>
+      <div style="display:flex;gap:6px;align-items:center" onclick="event.stopPropagation()">
+        <?php if ($sts === 'Pending'): ?>
+          <button class="jc-action-btn jc-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>)"><i class="bi bi-play-fill"></i> Start</button>
+        <?php elseif ($sts === 'Running'): ?>
+          <button class="jc-action-btn jc-btn-complete" onclick="openJobDetail(<?= $job['id'] ?>,'complete')"><i class="bi bi-check-lg"></i> Complete</button>
+        <?php else: ?>
+          <button class="jc-action-btn jc-btn-view" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-folder2-open"></i> Open</button>
+        <?php endif; ?>
       </div>
     </div>
   </div>
@@ -622,6 +651,9 @@ let DM_ACTIVE_JOB_ID = 0;
 let DM_ROLL_FILTERS_LOADED = false;
 let DM_MODAL_LOCKED = false;
 const DM_AUTO_REFRESH_MS = 45000;
+let _timerInterval = null;
+let _timerStart = null;
+let _timerJobId = null;
 
 function switchJumboTab(tab) {
   const activePanel = document.getElementById('jcPanelActive');
@@ -904,21 +936,8 @@ async function saveExecutionData(id) {
   }
 }
 
-async function startJobFromModal(id) {
-  const job = getJobById(id);
-  const status = String(job?.status || '').toLowerCase();
-  if (['closed', 'finalized', 'completed', 'finished', 'qc passed', 'qc failed'].includes(status)) {
-    alert('Finished job cannot be started again.');
-    return;
-  }
-  if (status === 'running') {
-    // Already running, just re-open with timer
-    DM_MODAL_LOCKED = true;
-    openJobDetail(id);
-    switchDetailTab('execution');
-    return;
-  }
-  // Start without confirm for smooth UX
+async function startJobWithTimer(id) {
+  if (!confirm('Start this job?')) return;
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
   fd.append('action', 'update_status');
@@ -927,37 +946,81 @@ async function startJobFromModal(id) {
   try {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
-    if (!data.ok) {
-      alert('Start error: ' + (data.error || 'Unknown'));
-      return;
-    }
+    if (!data.ok) { alert('Error: ' + (data.error || 'Unknown')); return; }
   } catch (err) { alert('Network error: ' + err.message); return; }
 
-  const liveJob = getJobById(id);
-  if (liveJob) {
-    liveJob.status = 'Running';
-    if (!liveJob.started_at) liveJob.started_at = new Date().toISOString();
-    liveJob.completed_at = null;
-    liveJob.duration_minutes = null;
-  }
+  // Close modal if open
+  document.getElementById('jcDetailModal').classList.remove('active');
 
-  DM_MODAL_LOCKED = true;
-  openJobDetail(id);
-  switchDetailTab('execution');
+  _timerJobId = id;
+  _timerStart = Date.now();
+  const job = getJobById(id) || {};
+  job.status = 'Running';
+  job.started_at = new Date().toISOString();
+  const jobNo = job.job_no || '';
+  const jobLabel = job.planning_job_name || ('Job #' + id);
+  const rollNo = job.roll_no || '';
+  const paperType = job.paper_type || '';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'jc-timer-overlay';
+  overlay.id = 'jcTimerOverlay';
+  overlay.innerHTML = `
+    <div class="jc-timer-jobinfo">
+      <div style="font-size:1.3rem;font-weight:900;letter-spacing:.03em">${esc(jobNo)}</div>
+      <div style="margin-top:4px">${esc(jobLabel)}</div>
+      ${rollNo || paperType ? `<div style="margin-top:4px;font-size:.85rem;opacity:.8">${esc(rollNo)}${rollNo && paperType ? ' — ' : ''}${esc(paperType)}</div>` : ''}
+    </div>
+    <div class="jc-timer-display" id="jcTimerCounter">00:00:00</div>
+    <div class="jc-timer-actions">
+      <button class="jc-timer-btn-cancel" onclick="cancelTimer()"><i class="bi bi-x-lg"></i> Cancel</button>
+      <button class="jc-timer-btn-end" onclick="endTimer()"><i class="bi bi-stop-fill"></i> End</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  _timerInterval = setInterval(() => {
+    const diff = Math.floor((Date.now() - _timerStart) / 1000);
+    const h = String(Math.floor(diff/3600)).padStart(2,'0');
+    const m = String(Math.floor((diff%3600)/60)).padStart(2,'0');
+    const s = String(diff%60).padStart(2,'0');
+    const el = document.getElementById('jcTimerCounter');
+    if (el) el.textContent = h + ':' + m + ':' + s;
+  }, 1000);
 }
 
-async function endJobFromModal(id) {
-  const job = getJobById(id);
-  const status = String(job?.status || '').toLowerCase();
-  if (['closed', 'finalized', 'completed', 'finished', 'qc passed', 'qc failed'].includes(status)) {
-    alert('Finished job is already closed.');
-    return;
-  }
-  if (!confirm('End this job and save operator entry?')) return;
-  // Save operator wastage/notes first
+function cancelTimer() {
+  if (_timerInterval) clearInterval(_timerInterval);
+  _timerInterval = null;
+  const ov = document.getElementById('jcTimerOverlay');
+  if (ov) ov.remove();
+  (async () => {
+    const fd = new FormData();
+    fd.append('csrf_token', CSRF);
+    fd.append('action', 'update_status');
+    fd.append('job_id', _timerJobId);
+    fd.append('status', 'Pending');
+    try { await fetch(API_BASE, { method: 'POST', body: fd }); } catch(e) {}
+    const j = getJobById(_timerJobId);
+    if (j) j.status = 'Pending';
+    _timerJobId = null;
+    location.reload();
+  })();
+}
+
+function endTimer() {
+  if (_timerInterval) clearInterval(_timerInterval);
+  _timerInterval = null;
+  const ov = document.getElementById('jcTimerOverlay');
+  if (ov) ov.remove();
+  const jobId = _timerJobId;
+  _timerJobId = null;
+  openJobDetail(jobId, 'complete');
+}
+
+async function submitAndClose(id) {
   const ok = await saveExecutionData(id);
   if (!ok) return;
-  // Close the job without another confirm
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
   fd.append('action', 'update_status');
@@ -966,13 +1029,43 @@ async function endJobFromModal(id) {
   try {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
-    if (!data.ok) {
-      alert('Close error: ' + (data.error || 'Unknown'));
-      return;
-    }
+    if (!data.ok) { alert('Close error: ' + (data.error || 'Unknown')); return; }
     DM_MODAL_LOCKED = false;
     location.reload();
   } catch (err) { alert('Network error: ' + err.message); }
+}
+
+async function uploadJumboPhoto(jobId) {
+  const input = document.getElementById('jc-photo-input-' + jobId);
+  if (!input || !input.files || !input.files[0]) return;
+  const file = input.files[0];
+  const statusEl = document.getElementById('jc-photo-status-' + jobId);
+  const previewEl = document.getElementById('jc-photo-preview-' + jobId);
+  if (statusEl) statusEl.innerHTML = '<i class="bi bi-hourglass-split"></i> Uploading...';
+
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'upload_jumbo_photo');
+  fd.append('job_id', jobId);
+  fd.append('photo', file);
+  try {
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.ok) {
+      if (statusEl) statusEl.innerHTML = '<i class="bi bi-check-circle" style="color:#16a34a"></i> Uploaded';
+      if (previewEl) previewEl.innerHTML = `<img src="${data.photo_url}" alt="Job Photo">`;
+      const job = getJobById(jobId);
+      if (job) {
+        if (!job.extra_data_parsed) job.extra_data_parsed = {};
+        job.extra_data_parsed.jumbo_photo_url = data.photo_url || '';
+        job.extra_data_parsed.jumbo_photo_path = data.photo_path || '';
+      }
+    } else {
+      if (statusEl) statusEl.innerHTML = '<span style="color:#dc2626">Error: ' + esc(data.error || 'Unknown') + '</span>';
+    }
+  } catch (err) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:#dc2626">Network error</span>';
+  }
 }
 
 function collectEditedRows() {
@@ -1228,32 +1321,34 @@ async function openJobDetail(id, mode) {
       <div class="jc-timing-box"><div class="jc-timing-label">Start Time</div><div class="jc-timing-value">${startedAt}</div></div>
       <div class="jc-timing-box"><div class="jc-timing-label">End Time</div><div class="jc-timing-value">${completedAt}</div></div>
       <div class="jc-timing-box"><div class="jc-timing-label">Current Status</div><div class="jc-timing-value">${esc(sts || 'Pending')}</div></div>
-      <div class="jc-timing-box jc-counter-box"><div class="jc-timing-label">Counter</div><div class="jc-timing-value">${(sts === 'Running' && startedTs) ? `<span class="jc-timer" data-started="${startedTs}">00:00:00</span>` : (dur !== null && dur !== undefined ? `${Math.floor(dur/60)}h ${dur%60}m` : '--:--:--')}</div></div>
+      <div class="jc-timing-box jc-counter-box"><div class="jc-timing-label">Counter</div><div class="jc-timing-value">${(sts === 'Running' && startedTs) ? `<span class="jc-timer" data-started="${startedTs}">00:00:00</span>` : (dur !== null && dur !== undefined ? `${Math.floor(dur/60)}h ${dur%60}m` : (sts === 'Pending' ? '<span style="font-size:.9rem;color:#94a3b8">Not Started</span>' : '--:--:--'))}</div></div>
     </div>
   </div>`;
 
+  const shouldDisableForm = !(mode === 'complete' && sts === 'Running') || isFinishedJob;
+  const formDisabledAttr = shouldDisableForm ? 'disabled' : '';
   const executionFormHtml = `<div class="jc-detail-section"><h3><i class="bi bi-pencil-square"></i> Operator Entry</h3>
     <div class="jc-form-row">
-      <div class="jc-form-group"><label>Wastage (kg)</label><input type="number" step="0.01" min="0" id="dm-wastage-kg" value="${esc(extra.wastage_kg || extra.operator_wastage_kg || '')}" ${isFinishedJob ? 'disabled' : ''}></div>
+      <div class="jc-form-group"><label>Wastage (kg)</label><input type="number" step="0.01" min="0" id="dm-wastage-kg" value="${esc(extra.wastage_kg || extra.operator_wastage_kg || '')}" ${formDisabledAttr}></div>
       <div class="jc-form-group"><label>Operator Remarks (Text or Voice)</label>
         <div style="display:flex;gap:8px;align-items:flex-start">
           <div style="flex:1">
             <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
-              <select id="voiceLangSelect" data-voice-lang="bn-IN" onchange="this.setAttribute('data-voice-lang',this.value);voiceLanguage=this.value" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:.72rem;font-weight:700;color:#334155" ${isFinishedJob ? 'disabled' : ''}>
+              <select id="voiceLangSelect" data-voice-lang="bn-IN" onchange="this.setAttribute('data-voice-lang',this.value);voiceLanguage=this.value" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:.72rem;font-weight:700;color:#334155" ${formDisabledAttr}>
                 <option value="bn-IN">🇧🇩 Bengali</option>
                 <option value="hi-IN">🇮🇳 Hindi</option>
                 <option value="en-US">🇬🇧 English</option>
               </select>
               <span style="font-size:.62rem;color:#94a3b8;font-weight:600">Select language before speaking</span>
             </div>
-            <input type="text" id="dm-operator-notes" placeholder="Type remarks or use voice input..." value="${esc(extra.operator_notes || extra.operator_remarks || '')}" ${isFinishedJob ? 'disabled' : ''} style="width:100%">
+            <input type="text" id="dm-operator-notes" placeholder="Type remarks or use voice input..." value="${esc(extra.operator_notes || extra.operator_remarks || '')}" ${formDisabledAttr} style="width:100%">
             <div id="voiceTranslationDisplay" style="margin-top:8px;padding:10px;background:linear-gradient(135deg,#f0f9ff,#e0f2fe);border:1px solid #bae6fd;border-radius:8px;font-size:.75rem;line-height:1.5;display:none">
               <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><span style="font-size:.9rem">🎤</span><strong style="color:#0369a1;font-size:.68rem;text-transform:uppercase;letter-spacing:.5px">Voice Translation</strong></div>
               <div><strong style="color:#0891b2">Original:</strong> <span id="voiceOriginalText" style="color:#334155"></span></div>
               <div style="margin-top:4px"><strong style="color:#16a34a">English:</strong> <span id="voiceEnglishText" style="color:#1e293b;font-weight:700"></span></div>
             </div>
           </div>
-          <button type="button" id="voiceMicBtn" class="voiceInputBtn" onclick="startVoiceInput()" title="Voice Input" ${isFinishedJob ? 'disabled' : ''} style="padding:8px 12px;background:#0891b2;color:white;border:none;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:700;height:fit-content">
+          <button type="button" id="voiceMicBtn" class="voiceInputBtn" onclick="startVoiceInput()" title="Voice Input" ${formDisabledAttr} style="padding:8px 12px;background:#0891b2;color:white;border:none;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:700;height:fit-content">
             <i class="bi bi-mic-fill"></i> <span class="voiceStatus">Speak</span>
           </button>
         </div>
@@ -1270,6 +1365,17 @@ async function openJobDetail(id, mode) {
 
   // Parent/child roll snapshot (for execution tab clarity)
   let executionRollHtml = '';
+
+  // Photo upload section (always available for operator)
+  const existingPhoto = extra.jumbo_photo_url || '';
+  const photoUploadHtml = `<div class="jc-detail-section"><h3><i class="bi bi-camera"></i> Job Photo</h3>
+    <div class="jc-upload-zone" onclick="document.getElementById('jc-photo-input-${job.id}').click()">
+      <input type="file" id="jc-photo-input-${job.id}" accept="image/*" capture="environment" onchange="uploadJumboPhoto(${job.id})">
+      <div style="font-size:.75rem;color:#64748b"><i class="bi bi-cloud-arrow-up" style="font-size:1.5rem;color:var(--jc-brand)"></i><br>Tap to open camera</div>
+      <div id="jc-photo-status-${job.id}" style="font-size:.7rem;margin-top:6px"></div>
+    </div>
+    <div id="jc-photo-preview-${job.id}" class="jc-upload-preview">${existingPhoto ? `<img src="${existingPhoto}" alt="Job Photo">` : ''}</div>
+  </div>`;
 
   // Parent Roll Details (for edit tab)
   let editHtml = '';
@@ -1392,7 +1498,7 @@ async function openJobDetail(id, mode) {
     editHtml += `<div class="jc-detail-section"><h3><i class="bi bi-lock"></i> Stock Rolls (No Change)</h3><div class="jc-table-shell jc-child-shell"><div style="overflow-x:auto">${stockInfoHtml}</div></div></div>`;
   }
 
-  html += `<div class="jc-tab-panel active" data-panel="execution">${summaryHtml}${timingHtml}${executionRollHtml}${executionFormHtml}</div>`;
+  html += `<div class="jc-tab-panel active" data-panel="execution">${summaryHtml}${timingHtml}${executionRollHtml}${executionFormHtml}${photoUploadHtml}</div>`;
   html += `<div class="jc-tab-panel" data-panel="edit">${editHtml}</div>`;
 
   if (viewQrDataUrl) {
@@ -1409,14 +1515,26 @@ async function openJobDetail(id, mode) {
 
   document.getElementById('dm-body').innerHTML = html;
 
-  // Footer actions
+  // Footer actions (Flexo-style logic)
   let fHtml = '<div style="display:flex;gap:8px">' + (isFinishedJob ? '' : '<button class="jc-action-btn jc-btn-view" onclick="switchDetailTab(\'edit\')"><i class="bi bi-pencil-square"></i> Edit Job</button>') + '</div>';
-  fHtml += '<div id="dm-footer-execution-actions" class="jc-action-bar">';
-  fHtml += `<button class="jc-action-btn jc-btn-complete" onclick="startJobFromModal(${job.id})" ${(sts === 'Running' || isFinishedJob) ? 'disabled' : ''}><i class="bi bi-play-fill"></i> Start Job</button>`;
-  fHtml += `<button class="jc-action-btn jc-btn-complete" onclick="endJobFromModal(${job.id})" ${(sts === 'Closed' || sts === 'Finalized' || isFinishedJob) ? 'disabled' : ''}><i class="bi bi-stop-fill"></i> End Job</button>`;
+  fHtml += '<div id="dm-footer-execution-actions" style="display:flex;gap:8px">';
+  if (mode === 'complete' && sts === 'Running') {
+    fHtml += `<button class="jc-action-btn jc-btn-complete" onclick="submitAndClose(${job.id})"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
+  } else if (sts === 'Pending') {
+    fHtml += `<button class="jc-action-btn jc-btn-start" onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-fill"></i> Start Job</button>`;
+  }
   fHtml += '</div>';
   fHtml += `<div id="dm-footer-edit-actions" style="display:none;align-items:center;gap:8px;">${isFinishedJob ? `<span class="jc-request-state">Finished - Edit Locked</span>` : (hasPendingRequest ? `<span class="jc-request-state">Requesting Approval</span>` : `<button id="dm-request-roll-btn-footer" class="jc-action-btn jc-btn-complete" onclick="submitChangeRequest(${job.id})" disabled data-roll-valid="0" data-validation-message="Enter replacement parent roll number."><i class="bi bi-send"></i> Request Change Roll</button>`)}</div>`;
   document.getElementById('dm-footer').innerHTML = fHtml;
+
+  // Disable operator entry fields unless in complete mode
+  setTimeout(() => {
+    const shouldDisable = !(mode === 'complete' && sts === 'Running') || isFinishedJob;
+    ['dm-wastage-kg', 'dm-operator-notes', 'voiceLangSelect', 'voiceMicBtn'].forEach(elId => {
+      const el = document.getElementById(elId);
+      if (el) el.disabled = shouldDisable;
+    });
+  }, 50);
 
   DM_PARENT_ROLL_CHANGED = false;
 
@@ -1435,11 +1553,6 @@ async function openJobDetail(id, mode) {
 }
 
 function closeDetail() {
-  const job = getJobById(DM_ACTIVE_JOB_ID);
-  if (DM_MODAL_LOCKED || String(job?.status || '') === 'Running') {
-    alert('Job is running. Please press End Job to close and finish this job.');
-    return;
-  }
   document.getElementById('jcDetailModal').classList.remove('active');
 }
 document.getElementById('jcDetailModal').addEventListener('click', function(e) {
@@ -1743,6 +1856,9 @@ function generateQR(text) {
 (function(){
   const autoId = new URLSearchParams(window.location.search).get('auto_job');
   if (autoId) setTimeout(function(){ try { openJobDetail(parseInt(autoId)); } catch(e){} }, 600);
+  // Default to Pending filter
+  const pendingBtn = Array.from(document.querySelectorAll('.jc-filter-btn')).find(b => b.textContent.trim() === 'Pending');
+  if (pendingBtn) pendingBtn.click();
 })();
 function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
 </script>
