@@ -353,6 +353,28 @@ function getDieStageName(job){
   return 'FlatBed';
 }
 
+function isRunningStage(job, idx){
+  const s=String(job.status||'').toLowerCase();
+  const jt=String(job.job_type||'').toLowerCase();
+  const dept=String(job.department||'').toLowerCase();
+
+  if(s!=='running') return false;
+  if(idx===1) return jt==='slitting'||dept.includes('slitting')||dept.includes('jumbo');
+  if(idx===2) return jt==='printing'||dept.includes('print')||String(job.job_no||'').toUpperCase().startsWith('FLX/');
+  if(idx===3) return jt==='finishing'||dept.includes('binding')||dept.includes('finishing')||dept.includes('die');
+  if(idx===4) return dept.includes('pack')||dept.includes('dispatch');
+  return false;
+}
+
+function getPreparingLabel(stageName){
+  if(stageName==='Slitting') return 'Preparing Slitting';
+  if(stageName==='Printing') return 'Preparing Printing';
+  if(stageName==='Packaging') return 'Preparing Packaging';
+  if(stageName==='Dispatch') return 'Preparing Dispatch';
+  if(stageName==='FlatBed'||stageName==='Rotary Die') return 'Preparing Flat Binding';
+  return 'Preparing ' + stageName;
+}
+
 function getStageName(job,idx){
   const cur=getStageIdx(job);
   const dieStageName=getDieStageName(job);
@@ -367,11 +389,21 @@ function getStageName(job,idx){
   }
 
   if(idx===0) return 'Planning';
-  if(idx===1) return 'Slitting';
-  if(idx===2) return 'Printing';
-  if(idx===3) return dieStageName;
-  if(idx===4) return 'Packaging';
-  if(idx===5) return 'Dispatch';
+  if(idx===1){
+    return isRunningStage(job, idx) ? 'Slitting' : 'Preparing Slitting';
+  }
+  if(idx===2){
+    return isRunningStage(job, idx) ? 'Printing' : 'Preparing Printing';
+  }
+  if(idx===3){
+    return isRunningStage(job, idx) ? dieStageName : 'Preparing Flat Binding';
+  }
+  if(idx===4){
+    return isRunningStage(job, idx) ? 'Packaging' : 'Preparing Packaging';
+  }
+  if(idx===5){
+    return isRunningStage(job, idx) ? 'Dispatch' : 'Preparing Dispatch';
+  }
   return 'In Progress';
 }
 

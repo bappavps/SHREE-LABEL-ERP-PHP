@@ -587,8 +587,8 @@ const SLT = (() => {
     if (loadedRolls.find(r => r.roll_no === roll.roll_no)) return;
     loadedRolls.push(roll);
     const autoPlan = getAutoPlanContext();
-    // Default destination: JOB for Slitting status, STOCK otherwise
-    const defaultDest = autoPlan.job_no ? 'JOB' : ((roll.status === 'Slitting') ? 'JOB' : 'STOCK');
+    // Default destination: STOCK unless a plan is already selected.
+    const defaultDest = autoPlan.job_no ? 'JOB' : 'STOCK';
     rollConfigs[roll.roll_no] = {
       runs: [{width: '', length: parseFloat(roll.length_mtr), qty: 1}],
       slitMode: 'MANUAL', // MANUAL or EQUAL_DIVIDE
@@ -772,6 +772,12 @@ const SLT = (() => {
 
     const pw = parseFloat(roll.width_mm);
     const pl = parseFloat(roll.length_mtr);
+    const plannerPlanNoOptions = plannerJobs
+      .map(j => ({
+        planNo: String(j.job_no || '').trim(),
+        jobName: String(j.job_name || '').trim(),
+      }))
+      .filter(v => v.planNo !== '');
 
     let html = '';
 
@@ -792,7 +798,8 @@ const SLT = (() => {
       </div>
       <div class="form-group">
         <label>Job No</label>
-        <input type="text" class="form-control" value="${esc(cfg.job_no)}" onchange="SLT.updateConfig('${esc(activeRollNo)}','job_no',this.value)">
+        <input type="text" class="form-control" list="plannerPlanNoList" placeholder="Type/select PLN/..." value="${esc(cfg.job_no)}" onchange="SLT.updateConfig('${esc(activeRollNo)}','job_no',this.value)">
+        <datalist id="plannerPlanNoList">${plannerPlanNoOptions.map(p => '<option value="' + esc(p.planNo) + '" label="' + esc(p.planNo + ' - ' + (p.jobName || 'No Name')) + '"></option>').join('')}</datalist>
       </div>
       <div class="form-group">
         <label>Job Name</label>
@@ -1104,7 +1111,22 @@ const SLT = (() => {
       if (key === 'job_no') {
         const planNo = String(value || '').trim();
         rollConfigs[rollNo][key] = planNo;
-        if (looksLikePlanNo(planNo)) {
+        if (planNo === '') {
+          selectedJob = null;
+          applyPlanContextToAllRolls({
+            job_no: '',
+            job_name: '',
+            job_size: '',
+            overwriteExisting: true,
+          });
+          loadedRolls.forEach(r => {
+            if (rollConfigs[r.roll_no]) {
+              rollConfigs[r.roll_no].destination = 'STOCK';
+            }
+          });
+          renderPlannerJobs(document.getElementById('plannerSearch').value);
+          renderJobDetail();
+        } else if (looksLikePlanNo(planNo)) {
           const matched = findPlannerJobByPlanNo(planNo);
           if (matched) {
             selectedJob = matched;
@@ -1118,17 +1140,37 @@ const SLT = (() => {
             renderPlannerJobs(document.getElementById('plannerSearch').value);
             renderJobDetail();
           } else {
+            // Unknown PLN should not allow JOB destination.
             applyPlanContextToAllRolls({
-              job_no: planNo,
+              job_no: '',
               job_name: '',
               job_size: '',
-              forceDestinationJob: true,
               overwriteExisting: true,
             });
+            loadedRolls.forEach(r => {
+              if (rollConfigs[r.roll_no]) {
+                rollConfigs[r.roll_no].destination = 'STOCK';
+              }
+            });
+            showToast('Plan not found in pending planning list', 'warning');
           }
+        } else {
+          // Non-PLN value should keep destination as stock.
+          loadedRolls.forEach(r => {
+            if (rollConfigs[r.roll_no]) {
+              rollConfigs[r.roll_no].destination = 'STOCK';
+            }
+          });
         }
       } else {
         rollConfigs[rollNo][key] = value;
+        if (key === 'destination') {
+          const currentPlanNo = String(rollConfigs[rollNo].job_no || '').trim();
+          if (!looksLikePlanNo(currentPlanNo)) {
+            rollConfigs[rollNo].destination = 'STOCK';
+            showToast('Destination stays Stock until a valid PLN is selected', 'warning');
+          }
+        }
       }
       renderConfig();
       renderBatchStatus();
@@ -1256,19 +1298,12 @@ const SLT = (() => {
 
     el.innerHTML = jobs.map(j => {
       const sel = selectedJob && selectedJob.id === j.id;
-      const pri = j.priority || 'Normal';
-      const mat = j.material_type || 'N/A';
-      const dim1 = j.label_width_mm || '—';
-      const dim2 = j.label_length_mm || '—';
-      const mtrs = j.allocate_mtrs ? (' · ' + esc(j.allocate_mtrs) + ' MTR') : '';
       const ppStatus = j.printing_planning || j.status || 'Pending';
       return `<div class="slt-job-item${sel?' selected':''}" onclick="SLT.selectJob(${j.id})">
         <div>
-          <div class="job-label">${esc(j.job_name)}</div>
-          <div class="job-meta">${esc(mat)} · ${esc(dim1)} × ${esc(dim2)}${mtrs}</div>
+          <div class="job-label">${esc(j.job_no || '—')} - ${esc(j.job_name || 'No Name')}</div>
         </div>
         <div style="display:flex;align-items:center;gap:6px">
-          ${j.allocate_mtrs ? '<span style="font-size:.6rem;font-weight:800;background:rgba(34,197,94,.1);color:var(--brand);border:1px solid rgba(34,197,94,.2);padding:2px 8px;border-radius:20px;text-transform:uppercase;white-space:nowrap">REQ: '+esc(j.allocate_mtrs)+' MTR</span>' : ''}
           ${statusBadge(ppStatus)}
         </div>
       </div>`;
@@ -1744,12 +1779,20 @@ const SLT = (() => {
     const jumboCards = jobCards.filter(j => (j.department || '') === 'jumbo_slitting' || (j.job_type || '') === 'Slitting');
     const printingCards = jobCards.filter(j => (j.department || '') === 'flexo_printing' || (j.job_type || '') === 'Printing');
     const primaryJumboCard = jumboCards.length ? jumboCards[0] : null;
+    const isDirectFlexo = !primaryJumboCard && printingCards.length > 0;
+    const primaryPrintingCard = printingCards.length ? printingCards[0] : null;
     const reportIdentity = primaryJumboCard && primaryJumboCard.job_no ? primaryJumboCard.job_no : (b.batch_no || 'N/A');
+    const reportIdentityLabel = isDirectFlexo ? 'Direct Flexo Job Card ID' : 'Jumbo Job Card ID';
+    const reportIdentityValue = isDirectFlexo
+      ? ((primaryPrintingCard && primaryPrintingCard.job_no) ? primaryPrintingCard.job_no : (b.batch_no || 'N/A'))
+      : reportIdentity;
     const parentRows = Object.values(parents).filter(Boolean);
     const totalWasteMm = entries.filter(e => parseInt(e.is_remainder || 0, 10) === 1).reduce((sum, e) => sum + parseFloat(e.slit_width_mm || 0), 0);
     const qrPayload = JSON.stringify({
       type: 'slitting-traceability',
+      route: isDirectFlexo ? 'direct-flexo' : 'jumbo-flexo',
       jumbo_job_card_id: reportIdentity,
+      direct_flexo_job_card_id: isDirectFlexo ? ((primaryPrintingCard && primaryPrintingCard.job_no) ? primaryPrintingCard.job_no : '') : '',
       batch_no: b.batch_no || '',
       planning_job_no: planning.job_no || '',
       planning_job_name: planning.job_name || '',
@@ -1769,7 +1812,7 @@ const SLT = (() => {
     html += '<div class="slt-report-address">' + esc([company.company_mobile || company.company_phone, company.company_email, company.company_gst ? ('GST: ' + company.company_gst) : ''].filter(Boolean).join(' | ') || '—') + '</div>';
     html += '</div></div>';
     html += '<div class="slt-report-brand-right">';
-    html += '<div class="slt-report-id-card"><div class="slt-report-id-label">Jumbo Job Card ID</div><div class="slt-report-id-value">' + esc(reportIdentity) + '</div><div class="slt-report-id-sub">Gen Date: ' + esc(formatDate(b.created_at)) + '</div></div>';
+    html += '<div class="slt-report-id-card"><div class="slt-report-id-label">' + esc(reportIdentityLabel) + '</div><div class="slt-report-id-value">' + esc(reportIdentityValue) + '</div><div class="slt-report-id-sub">Gen Date: ' + esc(formatDate(b.created_at)) + '</div></div>';
     html += '<div class="slt-report-qr-wrap"><div id="slt-report-qr"></div><div class="slt-report-qr-label">Technical Trace ID</div></div>';
     html += '</div></div>';
 

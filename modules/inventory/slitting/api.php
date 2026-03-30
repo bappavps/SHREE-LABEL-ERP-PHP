@@ -138,6 +138,38 @@ function normalizeMaterial($str) {
     return strtolower(preg_replace('/[\s\-]+/', '', trim((string)$str)));
 }
 
+// ─── Helper: Decide whether selected machine should bypass jumbo ─
+function shouldBypassJumboForMachine(mysqli $db, string $machine): bool {
+    $machine = trim($machine);
+    if ($machine === '') return false;
+
+    $machineName = strtolower($machine);
+    $tokens = [$machineName];
+
+    $stmt = $db->prepare("SELECT name, type, section FROM master_machines WHERE name = ? AND status = 'Active' LIMIT 1");
+    if ($stmt) {
+        $stmt->bind_param('s', $machine);
+        if ($stmt->execute()) {
+            $row = $stmt->get_result()->fetch_assoc();
+            if ($row) {
+                $tokens[] = strtolower(trim((string)($row['name'] ?? '')));
+                $tokens[] = strtolower(trim((string)($row['type'] ?? '')));
+                $tokens[] = strtolower(trim((string)($row['section'] ?? '')));
+            }
+        }
+    }
+
+    $haystack = implode(' ', array_filter($tokens, static function($v) {
+        return $v !== '';
+    }));
+
+    // Direct flexo path trigger: Production Manager machine selection.
+    if (strpos($haystack, 'production manager') !== false) return true;
+    if (strpos($haystack, 'productionmanager') !== false) return true;
+
+    return false;
+}
+
 // ─── Route actions ──────────────────────────────────────────
 try {
     switch ($action) {
@@ -469,6 +501,8 @@ try {
                 throw new Exception('Over-cut! Total width ' . round($totalUsedWidth,2) . 'mm exceeds parent ' . round($pw,2) . 'mm');
             }
 
+            $directFlexoBypass = shouldBypassJumboForMachine($db, $machine);
+
             // 3. Create batch (collision-safe for unique batch_no)
             $userId  = $_SESSION['user_id'] ?? null;
             $batchId = 0;
@@ -685,7 +719,8 @@ try {
             $logStmt->bind_param('sisi', $parentRollNo, $parent['id'], $logDesc, $userId);
             $logStmt->execute();
 
-            // 8. Create ONE jumbo job per plan (outside child-roll loop).
+            // 8. Create downstream jobs. If Production Manager machine is selected,
+            // skip jumbo and create/keep flexo printing directly.
             $createdJobCards = [];
             $jobChildRolls = [];
             $stockRolls = [];
@@ -730,102 +765,104 @@ try {
             $displayJobName = ($planningJobName !== '' ? $planningJobName : $jobName);
             $jumboJobId = 0;
             if (!empty($jobChildRolls)) {
-                $existingJumbo = null;
-                if ($planningId > 0) {
-                    $findJ = $db->prepare("SELECT * FROM jobs WHERE job_type = 'Slitting' AND planning_id = ? AND status IN ('Pending','Running') AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
-                    $findJ->bind_param('i', $planningId);
-                    $findJ->execute();
-                    $existingJumbo = $findJ->get_result()->fetch_assoc();
-                } elseif ($planNo !== '') {
-                    $findJ = $db->prepare("SELECT * FROM jobs WHERE job_type = 'Slitting' AND JSON_UNQUOTE(JSON_EXTRACT(extra_data, '$.plan_no')) = ? AND status IN ('Pending','Running') AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
-                    $findJ->bind_param('s', $planNo);
-                    $findJ->execute();
-                    $existingJumbo = $findJ->get_result()->fetch_assoc();
-                }
-
                 $jumboRefNo = '';
-                if ($existingJumbo) {
-                    $oldExtra = json_decode((string)($existingJumbo['extra_data'] ?? '{}'), true) ?: [];
-                    $oldChild = is_array($oldExtra['child_rolls'] ?? null) ? $oldExtra['child_rolls'] : [];
-                    $oldStock = is_array($oldExtra['stock_rolls'] ?? null) ? $oldExtra['stock_rolls'] : [];
-
-                    $mergeByRoll = function(array $rows) {
-                        $m = [];
-                        foreach ($rows as $r) {
-                            $k = (string)($r['roll_no'] ?? '');
-                            if ($k === '') continue;
-                            $m[$k] = $r;
-                        }
-                        return array_values($m);
-                    };
-
-                    $extraPayload['child_rolls'] = $mergeByRoll(array_merge($oldChild, $jobChildRolls));
-                    $extraPayload['stock_rolls'] = $mergeByRoll(array_merge($oldStock, $stockRolls));
-                    $extraPayload['total_roll_count'] = count($extraPayload['child_rolls']) + count($extraPayload['stock_rolls']) + 1;
-
-                    $newExtra = json_encode($extraPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-                    $updJ = $db->prepare("UPDATE jobs SET extra_data = ?, notes = ? WHERE id = ?");
-                    $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | JMB: ' . (string)($existingJumbo['job_no'] ?? 'N/A') . ($displayJobName !== '' ? ' | Job Name : ' . $displayJobName : '');
-                    $jid = (int)$existingJumbo['id'];
-                    $updJ->bind_param('ssi', $newExtra, $notesJ, $jid);
-                    $updJ->execute();
-                    $jumboJobId = $jid;
-                    $jumboRefNo = (string)($existingJumbo['job_no'] ?? '');
-                    $createdJobCards[] = ['job_no' => $existingJumbo['job_no'], 'type' => 'Slitting', 'roll' => $parentRollNo, 'id' => $jumboJobId];
-                } else {
-                    // Derive JMB suffix from planning number (e.g., PLN/2026/0002 → JMB/2026/0002)
-                    $jcNoJumbo = '';
-                    if ($planNo !== '') {
-                        $parts = explode('/', $planNo);
-                        if (count($parts) >= 3) {
-                            $suffix = (string)$parts[2];
-                            $year = (string)($parts[1] ?? date('Y'));
-                            $jcNoJumbo = 'JMB/' . $year . '/' . $suffix;
-                        }
-                    }
-                    
-                    // Fallback to deriveStageJobNo if suffix extraction fails
-                    if ($jcNoJumbo === '') {
-                        $jcNoJumbo = deriveStageJobNo($planNo, 'JMB');
-                    }
-                    if ($jcNoJumbo === '') {
-                        $jcNoJumbo = 'JMB/' . date('Y') . '/' . str_pad((string)$batchId, 4, '0', STR_PAD_LEFT);
+                if (!$directFlexoBypass) {
+                    $existingJumbo = null;
+                    if ($planningId > 0) {
+                        $findJ = $db->prepare("SELECT * FROM jobs WHERE job_type = 'Slitting' AND planning_id = ? AND status IN ('Pending','Running') AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
+                        $findJ->bind_param('i', $planningId);
+                        $findJ->execute();
+                        $existingJumbo = $findJ->get_result()->fetch_assoc();
+                    } elseif ($planNo !== '') {
+                        $findJ = $db->prepare("SELECT * FROM jobs WHERE job_type = 'Slitting' AND JSON_UNQUOTE(JSON_EXTRACT(extra_data, '$.plan_no')) = ? AND status IN ('Pending','Running') AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
+                        $findJ->bind_param('s', $planNo);
+                        $findJ->execute();
+                        $existingJumbo = $findJ->get_result()->fetch_assoc();
                     }
 
-                    $extraJson = json_encode($extraPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-                    $pidJ = $planningId > 0 ? $planningId : null;
-                    $insertedJumbo = false;
-                    for ($jumboAttempt = 0; $jumboAttempt < 30; $jumboAttempt++) {
-                        if ($jumboAttempt > 0) {
-                            $jcNoJumbo = (string)(generateUniqueIdForTable($db, 'jumbo_job', 'jobs', 'job_no') ?? '');
-                            if ($jcNoJumbo === '') {
-                                $jcNoJumbo = 'JMB/' . date('Y') . '/' . str_pad((string)($batchId + $jumboAttempt), 4, '0', STR_PAD_LEFT);
+                    if ($existingJumbo) {
+                        $oldExtra = json_decode((string)($existingJumbo['extra_data'] ?? '{}'), true) ?: [];
+                        $oldChild = is_array($oldExtra['child_rolls'] ?? null) ? $oldExtra['child_rolls'] : [];
+                        $oldStock = is_array($oldExtra['stock_rolls'] ?? null) ? $oldExtra['stock_rolls'] : [];
+
+                        $mergeByRoll = function(array $rows) {
+                            $m = [];
+                            foreach ($rows as $r) {
+                                $k = (string)($r['roll_no'] ?? '');
+                                if ($k === '') continue;
+                                $m[$k] = $r;
+                            }
+                            return array_values($m);
+                        };
+
+                        $extraPayload['child_rolls'] = $mergeByRoll(array_merge($oldChild, $jobChildRolls));
+                        $extraPayload['stock_rolls'] = $mergeByRoll(array_merge($oldStock, $stockRolls));
+                        $extraPayload['total_roll_count'] = count($extraPayload['child_rolls']) + count($extraPayload['stock_rolls']) + 1;
+
+                        $newExtra = json_encode($extraPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        $updJ = $db->prepare("UPDATE jobs SET extra_data = ?, notes = ? WHERE id = ?");
+                        $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | JMB: ' . (string)($existingJumbo['job_no'] ?? 'N/A') . ($displayJobName !== '' ? ' | Job Name : ' . $displayJobName : '');
+                        $jid = (int)$existingJumbo['id'];
+                        $updJ->bind_param('ssi', $newExtra, $notesJ, $jid);
+                        $updJ->execute();
+                        $jumboJobId = $jid;
+                        $jumboRefNo = (string)($existingJumbo['job_no'] ?? '');
+                        $createdJobCards[] = ['job_no' => $existingJumbo['job_no'], 'type' => 'Slitting', 'roll' => $parentRollNo, 'id' => $jumboJobId];
+                    } else {
+                        // Derive JMB suffix from planning number (e.g., PLN/2026/0002 → JMB/2026/0002)
+                        $jcNoJumbo = '';
+                        if ($planNo !== '') {
+                            $parts = explode('/', $planNo);
+                            if (count($parts) >= 3) {
+                                $suffix = (string)$parts[2];
+                                $year = (string)($parts[1] ?? date('Y'));
+                                $jcNoJumbo = 'JMB/' . $year . '/' . $suffix;
                             }
                         }
 
-                        $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | JMB: ' . $jcNoJumbo . ($displayJobName !== '' ? ' | Job Name : ' . $displayJobName : '');
-                        $jcStmtJ = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, notes, extra_data) VALUES (?, ?, NULL, ?, 'Slitting', 'jumbo_slitting', 'Pending', 1, ?, ?)");
-                        $jcStmtJ->bind_param('sisss', $jcNoJumbo, $pidJ, $parentRollNo, $notesJ, $extraJson);
-                        $okJumbo = $jcStmtJ->execute();
-                        if ($okJumbo) {
-                            $jumboJobId = $db->insert_id;
-                            $jumboRefNo = $jcNoJumbo;
-                            $createdJobCards[] = ['job_no' => $jcNoJumbo, 'type' => 'Slitting', 'roll' => $parentRollNo, 'id' => $jumboJobId];
-                            $insertedJumbo = true;
-                            break;
+                        // Fallback to deriveStageJobNo if suffix extraction fails
+                        if ($jcNoJumbo === '') {
+                            $jcNoJumbo = deriveStageJobNo($planNo, 'JMB');
                         }
-                        if ((int)$jcStmtJ->errno === 1062) {
-                            continue;
+                        if ($jcNoJumbo === '') {
+                            $jcNoJumbo = 'JMB/' . date('Y') . '/' . str_pad((string)$batchId, 4, '0', STR_PAD_LEFT);
                         }
-                        throw new Exception('Failed to create jumbo job: ' . $jcStmtJ->error);
-                    }
-                    if (!$insertedJumbo) {
-                        throw new Exception('Failed to create jumbo job: duplicate job number, please retry.');
+
+                        $extraJson = json_encode($extraPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        $pidJ = $planningId > 0 ? $planningId : null;
+                        $insertedJumbo = false;
+                        for ($jumboAttempt = 0; $jumboAttempt < 30; $jumboAttempt++) {
+                            if ($jumboAttempt > 0) {
+                                $jcNoJumbo = (string)(generateUniqueIdForTable($db, 'jumbo_job', 'jobs', 'job_no') ?? '');
+                                if ($jcNoJumbo === '') {
+                                    $jcNoJumbo = 'JMB/' . date('Y') . '/' . str_pad((string)($batchId + $jumboAttempt), 4, '0', STR_PAD_LEFT);
+                                }
+                            }
+
+                            $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | JMB: ' . $jcNoJumbo . ($displayJobName !== '' ? ' | Job Name : ' . $displayJobName : '');
+                            $jcStmtJ = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, notes, extra_data) VALUES (?, ?, NULL, ?, 'Slitting', 'jumbo_slitting', 'Pending', 1, ?, ?)");
+                            $jcStmtJ->bind_param('sisss', $jcNoJumbo, $pidJ, $parentRollNo, $notesJ, $extraJson);
+                            $okJumbo = $jcStmtJ->execute();
+                            if ($okJumbo) {
+                                $jumboJobId = $db->insert_id;
+                                $jumboRefNo = $jcNoJumbo;
+                                $createdJobCards[] = ['job_no' => $jcNoJumbo, 'type' => 'Slitting', 'roll' => $parentRollNo, 'id' => $jumboJobId];
+                                $insertedJumbo = true;
+                                break;
+                            }
+                            if ((int)$jcStmtJ->errno === 1062) {
+                                continue;
+                            }
+                            throw new Exception('Failed to create jumbo job: ' . $jcStmtJ->error);
+                        }
+                        if (!$insertedJumbo) {
+                            throw new Exception('Failed to create jumbo job: duplicate job number, please retry.');
+                        }
                     }
                 }
 
                 // Keep one downstream printing job per plan as queued.
-                if ($jumboJobId > 0 && $planningId > 0) {
+                if ($planningId > 0) {
                     $chkP = $db->prepare("SELECT id, job_no FROM jobs WHERE job_type = 'Printing' AND planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
                     $chkP->bind_param('i', $planningId);
                     $chkP->execute();
@@ -842,9 +879,16 @@ try {
                             }
                             if ($jcNoFlex === '') continue;
 
-                            $notesF = 'Flexo printing queued from Jumbo | Plan: ' . ($planNo ?: 'N/A') . ' | Jumbo: ' . ($jumboRefNo !== '' ? $jumboRefNo : 'N/A') . ' I Flexo: ' . $jcNoFlex . ($displayJobName !== '' ? ' | Job name : ' . $displayJobName : '');
-                            $jcStmtF = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Printing', 'flexo_printing', 'Queued', 2, ?, ?)");
-                            $jcStmtF->bind_param('sisss', $jcNoFlex, $planningId, $parentRollNo, $jumboJobId, $notesF);
+                            $notesF = $directFlexoBypass
+                                ? ('Flexo printing queued directly from slitting terminal | Plan: ' . ($planNo ?: 'N/A') . ' | Machine: ' . $machine . ' I Flexo: ' . $jcNoFlex . ($displayJobName !== '' ? ' | Job name : ' . $displayJobName : ''))
+                                : ('Flexo printing queued from Jumbo | Plan: ' . ($planNo ?: 'N/A') . ' | Jumbo: ' . ($jumboRefNo !== '' ? $jumboRefNo : 'N/A') . ' I Flexo: ' . $jcNoFlex . ($displayJobName !== '' ? ' | Job name : ' . $displayJobName : ''));
+                            if ($directFlexoBypass) {
+                                $jcStmtF = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Printing', 'flexo_printing', 'Queued', 2, NULL, ?)");
+                                $jcStmtF->bind_param('siss', $jcNoFlex, $planningId, $parentRollNo, $notesF);
+                            } else {
+                                $jcStmtF = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Printing', 'flexo_printing', 'Queued', 2, ?, ?)");
+                                $jcStmtF->bind_param('sisss', $jcNoFlex, $planningId, $parentRollNo, $jumboJobId, $notesF);
+                            }
                             $okFlex = $jcStmtF->execute();
                             if ($okFlex) {
                                 $createdJobCards[] = ['job_no' => $jcNoFlex, 'type' => 'Printing', 'roll' => $parentRollNo, 'id' => $db->insert_id];
@@ -860,7 +904,9 @@ try {
                     } else {
                         $existingPrintId = (int)($existingPrint['id'] ?? 0);
                         $existingFlexNo = trim((string)($existingPrint['job_no'] ?? ''));
-                        $notesF = 'Flexo printing queued from Jumbo | Plan: ' . ($planNo ?: 'N/A') . ' | Jumbo: ' . ($jumboRefNo !== '' ? $jumboRefNo : 'N/A') . ' I Flexo: ' . ($existingFlexNo !== '' ? $existingFlexNo : 'N/A') . ($displayJobName !== '' ? ' | Job name : ' . $displayJobName : '');
+                        $notesF = $directFlexoBypass
+                            ? ('Flexo printing queued directly from slitting terminal | Plan: ' . ($planNo ?: 'N/A') . ' | Machine: ' . $machine . ' I Flexo: ' . ($existingFlexNo !== '' ? $existingFlexNo : 'N/A') . ($displayJobName !== '' ? ' | Job name : ' . $displayJobName : ''))
+                            : ('Flexo printing queued from Jumbo | Plan: ' . ($planNo ?: 'N/A') . ' | Jumbo: ' . ($jumboRefNo !== '' ? $jumboRefNo : 'N/A') . ' I Flexo: ' . ($existingFlexNo !== '' ? $existingFlexNo : 'N/A') . ($displayJobName !== '' ? ' | Job name : ' . $displayJobName : ''));
                         if ($existingPrintId > 0) {
                             $updFlexNotes = $db->prepare("UPDATE jobs SET notes = ? WHERE id = ?");
                             $updFlexNotes->bind_param('si', $notesF, $existingPrintId);
@@ -871,9 +917,10 @@ try {
             }
 
             // 9. Update planning status to a valid planning enum state.
+            $planningStatusTarget = $directFlexoBypass ? 'Queued' : 'Preparing Slitting';
             if ($planNo !== '') {
-                $updPlanNo = $db->prepare("UPDATE planning SET status = 'Preparing Slitting' WHERE job_no = ?");
-                $updPlanNo->bind_param('s', $planNo);
+                $updPlanNo = $db->prepare("UPDATE planning SET status = ? WHERE job_no = ?");
+                $updPlanNo->bind_param('ss', $planningStatusTarget, $planNo);
                 $updPlanNo->execute();
 
                 $extraStmt = $db->prepare("SELECT id, extra_data FROM planning WHERE job_no = ? LIMIT 1");
@@ -882,7 +929,7 @@ try {
                 $extraRow = $extraStmt->get_result()->fetch_assoc();
                 if ($extraRow) {
                     $extraData = json_decode((string)($extraRow['extra_data'] ?? '{}'), true) ?: [];
-                    $extraData['printing_planning'] = 'Preparing Slitting';
+                    $extraData['printing_planning'] = $planningStatusTarget;
                     $newExtra = json_encode($extraData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                     $pid = (int)$extraRow['id'];
                     $updExtra = $db->prepare("UPDATE planning SET extra_data = ? WHERE id = ?");
@@ -890,8 +937,8 @@ try {
                     $updExtra->execute();
                 }
             } elseif ($planningId > 0) {
-                $updPlan = $db->prepare("UPDATE planning SET status = 'Preparing Slitting' WHERE id = ?");
-                $updPlan->bind_param('i', $planningId);
+                $updPlan = $db->prepare("UPDATE planning SET status = ? WHERE id = ?");
+                $updPlan->bind_param('si', $planningStatusTarget, $planningId);
                 $updPlan->execute();
             }
 
@@ -914,7 +961,8 @@ try {
                 'children' => $childRolls,
                 'remainder_action' => $remainderAction,
                 'job_cards' => $createdJobCards,
-                'planning_status' => ($planningId > 0 || $planNo !== '') ? 'Preparing Slitting' : null,
+                'planning_status' => ($planningId > 0 || $planNo !== '') ? $planningStatusTarget : null,
+                'direct_flexo_bypass' => $directFlexoBypass,
             ]);
 
         } catch (Exception $ex) {
