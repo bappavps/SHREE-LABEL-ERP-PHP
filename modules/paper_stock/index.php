@@ -416,6 +416,10 @@ include __DIR__ . '/../../includes/header.php';
     </div>
   </div>
   <div class="ps-qf-item">
+    <label>Width Range (MM)</label>
+    <input type="text" id="qf-width-range" placeholder="e.g. 150 - 300">
+  </div>
+  <div class="ps-qf-item">
     <label>Received From</label>
     <input type="date" id="qf-date-from">
   </div>
@@ -668,6 +672,7 @@ include __DIR__ . '/../../includes/header.php';
     type: document.getElementById('qf-type'),
     gsm: document.getElementById('qf-gsm'),
     status: document.getElementById('qf-status'),
+    widthRange: document.getElementById('qf-width-range'),
     dateFrom: document.getElementById('qf-date-from'),
     dateTo: document.getElementById('qf-date-to')
   };
@@ -711,6 +716,20 @@ include __DIR__ . '/../../includes/header.php';
     var type = (qf.type.value || '').toLowerCase().trim();
     var gsm = (qf.gsm.value || '').toLowerCase().trim();
     var status = (qf.status.value || '').toLowerCase().trim();
+    var widthRange = (qf.widthRange.value || '').trim();
+
+    if (widthRange) {
+      var parts = widthRange.split('-');
+      if (parts.length === 2) {
+        var minW = parseFloat(parts[0].replace(/[^0-9.]/g, ''));
+        var maxW = parseFloat(parts[1].replace(/[^0-9.]/g, ''));
+        if (!isNaN(minW) && !isNaN(maxW)) {
+          if (minW > maxW) { var t = minW; minW = maxW; maxW = t; }
+          var rowW = parseFloat(cellText(tr, 'width_mm').replace(/[^0-9.]/g, ''));
+          if (isNaN(rowW) || rowW < minW || rowW > maxW) return false;
+        }
+      }
+    }
 
     var rowText = (tr.textContent || '').toLowerCase();
     if (search && rowText.indexOf(search) === -1) return false;

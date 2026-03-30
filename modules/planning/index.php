@@ -829,6 +829,23 @@ include __DIR__ . '/../../includes/header.php';
   </div>
 </div>
 
+<div class="planning-modal" id="modal-import-map" style="display:none">
+  <div class="planning-modal-card">
+    <div class="planning-modal-head">
+      <h3>Excel Column Mapping</h3>
+      <button type="button" class="btn btn-ghost btn-sm modal-close"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div style="padding:10px 16px 0;color:#475569;font-size:.82rem">
+      Map uploaded Excel columns to Planning fields before import.
+    </div>
+    <div id="import-map-list" class="import-map-list"></div>
+    <div class="planning-modal-foot">
+      <button type="button" class="btn btn-ghost" id="btn-import-map-cancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btn-import-map-apply"><i class="bi bi-check2-circle"></i> Import Mapped Rows</button>
+    </div>
+  </div>
+</div>
+
 <div class="planning-modal" id="modal-plan-detail" style="display:none">
   <div class="planning-modal-card">
     <div class="planning-modal-head">
@@ -876,6 +893,7 @@ include __DIR__ . '/../../includes/header.php';
   var deptSwitch = document.getElementById('dept-switch');
   var addModal = document.getElementById('modal-add');
   var cfgModal = document.getElementById('modal-config');
+  var importMapModal = document.getElementById('modal-import-map');
   var detailModal = document.getElementById('modal-plan-detail');
   var imageViewerModal = document.getElementById('modal-image-viewer');
   var imageViewerImg = document.getElementById('image-viewer-img');
@@ -890,11 +908,16 @@ include __DIR__ . '/../../includes/header.php';
   var fileInput = document.getElementById('excel-file');
   var btnExportExcel = document.getElementById('btn-export-excel');
   var btnPrintPdf = document.getElementById('btn-print-pdf');
+  var importMapList = document.getElementById('import-map-list');
+  var btnImportMapApply = document.getElementById('btn-import-map-apply');
+  var btnImportMapCancel = document.getElementById('btn-import-map-cancel');
   var columns = <?= json_encode($columns, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
   var csrfToken = document.querySelector('#csrf-form [name="csrf_token"]').value;
   var currentDepartment = <?= json_encode($department, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
   var imageViewerScale = 1;
   var imageViewerRowId = '';
+  var pendingImportRows = [];
+  var pendingImportHeaders = [];
   var imageUploadInput = document.createElement('input');
   imageUploadInput.type = 'file';
   imageUploadInput.accept = 'image/png,image/jpeg,image/webp,image/gif';
@@ -1446,6 +1469,12 @@ include __DIR__ . '/../../includes/header.php';
   function openModal(el) { el.style.display = 'flex'; }
   function closeModal(el) {
     el.style.display = 'none';
+    if (el === importMapModal) {
+      pendingImportRows = [];
+      pendingImportHeaders = [];
+      importMapList.innerHTML = '';
+      fileInput.value = '';
+    }
     if (el === imageViewerModal) {
       imageViewerRowId = '';
       imageViewerImg.removeAttribute('src');
@@ -1506,7 +1535,7 @@ include __DIR__ . '/../../includes/header.php';
     });
   });
 
-  [addModal, cfgModal, detailModal, imageViewerModal].forEach(function(m){
+  [addModal, cfgModal, importMapModal, detailModal, imageViewerModal].forEach(function(m){
     m.addEventListener('click', function(e){ if (e.target === m) closeModal(m); });
   });
 
@@ -1541,6 +1570,153 @@ include __DIR__ . '/../../includes/header.php';
   });
 
   document.getElementById('btn-import').addEventListener('click', function(){ fileInput.click(); });
+
+  function normKey(v) {
+    return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  function importTargetOptions() {
+    var built = {};
+    var out = [];
+
+    columns.forEach(function(col){
+      if (!col || !col.key || col.key === 'sn') return;
+      var key = String(col.key);
+      if (built[key]) return;
+      built[key] = true;
+      out.push({ key: key, label: String(col.label || key) });
+    });
+
+    [
+      { key: 'name', label: 'Job Name' },
+      { key: 'dispatch_date', label: 'Dispatch Date' },
+      { key: 'order_date', label: 'Order Date' },
+      { key: 'remarks', label: 'Remarks' },
+      { key: 'priority', label: 'Priority' },
+      { key: 'machine', label: 'Machine' },
+      { key: 'operator_name', label: 'Operator Name' }
+    ].forEach(function(t){
+      if (!built[t.key]) {
+        built[t.key] = true;
+        out.push(t);
+      }
+    });
+
+    return out;
+  }
+
+  function suggestImportTarget(header, targets) {
+    var n = normKey(header).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    var nSimple = n.replace(/_/g, '');
+    var map = {
+      name: ['name', 'jobname', 'job_name'],
+      dispatch_date: ['dispatchdate', 'dispatch_date', 'dateofdispatch'],
+      order_date: ['orderdate', 'order_date'],
+      printing_planning: ['printingplanning', 'printing_planing', 'planning', 'status', 'planing'],
+      plate_no: ['plateno', 'plate_no', 'plate'],
+      size: ['size', 'labelsize', 'label_size'],
+      repeat: ['repeat', 'repeatmm', 'repeat_mm'],
+      material: ['material'],
+      paper_size: ['papersize', 'paper_size'],
+      die: ['die'],
+      allocate_mtrs: ['allocatemtrs', 'allocate_mtrs', 'mtrs', 'allocatemeters'],
+      qty_pcs: ['qtypcs', 'qty_pcs', 'qty', 'quantity'],
+      core_size: ['coresize', 'core_size', 'core'],
+      qty_per_roll: ['qtyperroll', 'qty_per_roll', 'qtyroll'],
+      roll_direction: ['rolldirection', 'roll_direction', 'direction'],
+      remarks: ['remarks', 'notes'],
+      machine: ['machine'],
+      operator_name: ['operatorname', 'operator_name', 'operator'],
+      priority: ['priority']
+    };
+
+    for (var key in map) {
+      if (!Object.prototype.hasOwnProperty.call(map, key)) continue;
+      if (map[key].indexOf(nSimple) !== -1 || map[key].indexOf(n) !== -1) return key;
+    }
+
+    var byKey = targets.find(function(t){ return normKey(t.key).replace(/[^a-z0-9]+/g, '') === nSimple; });
+    if (byKey) return byKey.key;
+    var byLabel = targets.find(function(t){ return normKey(t.label).replace(/[^a-z0-9]+/g, '') === nSimple; });
+    if (byLabel) return byLabel.key;
+    return '';
+  }
+
+  function openImportMapping(headers, rows) {
+    var targets = importTargetOptions();
+    pendingImportHeaders = headers.slice();
+    pendingImportRows = rows.slice();
+    importMapList.innerHTML = '';
+
+    headers.forEach(function(h){
+      var row = document.createElement('div');
+      row.className = 'import-map-row';
+
+      var source = document.createElement('div');
+      source.className = 'import-map-src';
+      source.textContent = String(h || '(blank header)');
+
+      var select = document.createElement('select');
+      select.className = 'form-control import-map-select';
+      select.setAttribute('data-source-header', String(h || ''));
+      select.innerHTML = '<option value="">Ignore this column</option>';
+      targets.forEach(function(t){
+        select.innerHTML += '<option value="' + safeText(t.key) + '">' + safeText(t.label) + ' (' + safeText(t.key) + ')</option>';
+      });
+
+      var guess = suggestImportTarget(h, targets);
+      if (guess) select.value = guess;
+
+      row.appendChild(source);
+      row.appendChild(select);
+      importMapList.appendChild(row);
+    });
+
+    openModal(importMapModal);
+  }
+
+  function runMappedImport() {
+    var map = {};
+    importMapList.querySelectorAll('select[data-source-header]').forEach(function(sel){
+      var src = String(sel.getAttribute('data-source-header') || '');
+      var dst = String(sel.value || '');
+      if (src !== '' && dst !== '') map[src] = dst;
+    });
+
+    var normalizedRows = pendingImportRows.map(function(raw){
+      var out = {};
+      Object.keys(raw || {}).forEach(function(srcKey){
+        var dstKey = map[srcKey] || '';
+        if (!dstKey) return;
+        out[dstKey] = raw[srcKey];
+      });
+      return out;
+    }).filter(function(r){
+      return Object.keys(r).length > 0;
+    });
+
+    if (!normalizedRows.length) {
+      toast('No mapped columns selected for import.', true);
+      return;
+    }
+
+    var hasJobName = normalizedRows.some(function(r){
+      return String(r.name == null ? '' : r.name).trim() !== '';
+    });
+    if (!hasJobName) {
+      toast('Map at least one Excel column to Job Name (name).', true);
+      return;
+    }
+
+    postAction({ action: 'import_rows', rows_json: JSON.stringify(normalizedRows) }).then(function(res){
+      closeModal(importMapModal);
+      toast('Import successful: ' + (res.count || 0) + ' rows');
+      window.location.reload();
+    }).catch(function(err){
+      toast(err.message || 'Import failed', true);
+    });
+  }
+
   fileInput.addEventListener('change', function(e){
     var file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -1554,30 +1730,48 @@ include __DIR__ . '/../../includes/header.php';
       try {
         var wb = XLSX.read(evt.target.result, { type: 'array' });
         var ws = wb.Sheets[wb.SheetNames[0]];
-        var rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-        if (!rows.length) { toast('No rows found in file', true); return; }
+        var matrix = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        if (!Array.isArray(matrix) || matrix.length < 2) {
+          toast('No data rows found in file', true);
+          return;
+        }
 
-        var normalizedRows = rows.map(function(row){
-          var out = {};
-          Object.keys(row).forEach(function(k){
-            var nk = String(k || '').replace(/\s+/g, ' ').trim().toLowerCase();
-            out[nk] = row[k];
-          });
-          return out;
+        var headers = (matrix[0] || []).map(function(h, idx){
+          var v = String(h == null ? '' : h).trim();
+          return v !== '' ? v : ('Column ' + (idx + 1));
         });
 
-        postAction({ action: 'import_rows', rows_json: JSON.stringify(normalizedRows) }).then(function(res){
-          toast('Import successful: ' + (res.count || 0) + ' rows');
-          window.location.reload();
-        }).catch(function(err){ toast(err.message || 'Import failed', true); });
+        var rows = matrix.slice(1).map(function(cells){
+          var rowObj = {};
+          headers.forEach(function(h, idx){
+            rowObj[h] = (cells && typeof cells[idx] !== 'undefined') ? cells[idx] : '';
+          });
+          return rowObj;
+        }).filter(function(rowObj){
+          return Object.keys(rowObj).some(function(k){
+            return String(rowObj[k] == null ? '' : rowObj[k]).trim() !== '';
+          });
+        });
+
+        if (!rows.length) {
+          toast('No data rows found in file', true);
+          return;
+        }
+
+        openImportMapping(headers, rows);
       } catch (err) {
         toast('Unable to read Excel file: ' + (err && err.message ? err.message : 'unknown error'), true);
       } finally {
-        fileInput.value = '';
+        if (importMapModal.style.display !== 'flex') {
+          fileInput.value = '';
+        }
       }
     };
     reader.readAsArrayBuffer(file);
   });
+
+  btnImportMapApply.addEventListener('click', runMappedImport);
+  btnImportMapCancel.addEventListener('click', function(){ closeModal(importMapModal); });
 
   function renderConfigList() {
     var list = document.getElementById('config-list');
@@ -1869,6 +2063,29 @@ include __DIR__ . '/../../includes/header.php';
   letter-spacing: .04em;
 }
 .config-list { padding: 14px 16px; display: grid; gap: 8px; }
+.import-map-list {
+  padding: 14px 16px;
+  display: grid;
+  gap: 8px;
+  max-height: 52vh;
+  overflow: auto;
+}
+.import-map-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 8px 10px;
+}
+.import-map-src {
+  font-size: .8rem;
+  color: #0f172a;
+  font-weight: 700;
+  word-break: break-word;
+}
 .plan-detail-grid {
   padding: 16px;
   display: grid;
@@ -1916,6 +2133,7 @@ include __DIR__ . '/../../includes/header.php';
 }
 @media (max-width: 680px) {
   .planning-grid { grid-template-columns: 1fr; }
+  .import-map-row { grid-template-columns: 1fr; }
   .plan-detail-grid { grid-template-columns: 1fr; }
   .job-image-cell { min-width: 64px; }
   .job-image-thumb,

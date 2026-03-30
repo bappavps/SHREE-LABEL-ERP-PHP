@@ -393,15 +393,10 @@ function esc(s){const d=document.createElement('div');d.textContent=s||'';return
 /* ─── Fetch & Render ─── */
 async function flLoad(){
   try{
-    const pSlit=new URLSearchParams({action:'list_jobs',csrf_token:FL_CSRF,job_type:'Slitting',limit:'500'});
-    const pPrint=new URLSearchParams({action:'list_jobs',csrf_token:FL_CSRF,job_type:'Printing',limit:'500'});
-    const [rSlit,rPrint]=await Promise.all([
-      fetch(FL_API+'?'+pSlit.toString()),
-      fetch(FL_API+'?'+pPrint.toString())
-    ]);
-    const [dSlit,dPrint]=await Promise.all([rSlit.json(),rPrint.json()]);
-    if(!dSlit.ok||!Array.isArray(dSlit.jobs))throw new Error('Slitting API error');
-    if(!dPrint.ok||!Array.isArray(dPrint.jobs))throw new Error('Printing API error');
+    const pLive=new URLSearchParams({action:'list_live_floor',csrf_token:FL_CSRF,limit:'600'});
+    const rLive=await fetch(FL_API+'?'+pLive.toString(), { cache:'no-store' });
+    const dLive=await rLive.json();
+    if(!dLive.ok||!Array.isArray(dLive.jobs))throw new Error('Live API error');
 
     const today=new Date();today.setHours(0,0,0,0);
     const isVisibleJob=(j)=>{
@@ -411,8 +406,13 @@ async function flLoad(){
       return true;
     };
 
-    const slittingJobs=(dSlit.jobs||[]).filter(isVisibleJob);
-    const printingJobs=(dPrint.jobs||[]).filter(isVisibleJob);
+    const allJobs=(dLive.jobs||[]).filter(isVisibleJob);
+    const slittingJobs=allJobs.filter(j=>String(j.job_type||'')==='Slitting');
+    const printingJobs=allJobs.filter(j=>String(j.job_type||'')==='Printing');
+    const planningOnlyJobs=allJobs.filter(j=>{
+      const jt=String(j.job_type||'');
+      return jt!=='Slitting'&&jt!=='Printing';
+    });
 
     // If a slitting job is already completed and has a linked printing job, show the printing card only.
     const printByPrevId=new Set(
@@ -427,7 +427,7 @@ async function flLoad(){
       return !printByPrevId.has(Number(j.id||0));
     });
 
-    const jobs=[...slittingVisible,...printingJobs];
+    const jobs=[...slittingVisible,...printingJobs,...planningOnlyJobs];
 
     renderJobs(jobs);
     renderStats(jobs);
@@ -497,7 +497,13 @@ function renderStats(jobs){
 
 /* ─── Init ─── */
 flLoad();
-setInterval(flLoad,60000);
+setInterval(flLoad,10000);
+
+// Refresh immediately when user returns to the tab/window.
+document.addEventListener('visibilitychange', function(){
+  if(!document.hidden) flLoad();
+});
+window.addEventListener('focus', flLoad);
 
 /* ─── Midnight full reload ─── */
 (function(){const n=new Date(),m=new Date(n);m.setHours(24,0,0,0);setTimeout(()=>location.reload(),m-n);})();

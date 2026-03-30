@@ -355,6 +355,12 @@ function rbacUserAllowedPaths($userId = null) {
 function canAccessPath($path) {
     $path = rbacNormalizePath($path);
 
+    // Treat paper stock child pages as part of the Paper Stock module permission.
+    // This allows users who can open the list page to perform add/edit/delete actions.
+    if (strpos($path, '/modules/paper_stock/') === 0 && $path !== '/modules/paper_stock/view.php') {
+        $path = '/modules/paper_stock/index.php';
+    }
+
     // Public or always-allowed authenticated routes.
     if ($path === '/auth/logout.php') return true;
     if ($path === '/modules/dashboard/index.php') return true;

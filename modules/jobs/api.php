@@ -1228,6 +1228,121 @@ try {
         echo json_encode(['ok' => true, 'jobs' => $jobs]);
         break;
 
+    // ─── Live Floor unified feed (jobs + pending planning rows) ───────
+    case 'list_live_floor':
+        $limit = min(800, max(1, (int)($_GET['limit'] ?? 400)));
+
+        jobs_ensure_change_request_table($db);
+
+        $jobsSql = "SELECT j.*, ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,
+                   ps.status AS roll_status,
+                   p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority, p.created_at AS planning_created_at, p.scheduled_date AS planning_scheduled_date, p.extra_data AS planning_extra_data,
+                       prev.job_no AS prev_job_no, prev.status AS prev_job_status,
+                       COALESCE(req.pending_count, 0) AS pending_change_requests
+                FROM jobs j
+                LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no
+                LEFT JOIN planning p ON j.planning_id = p.id
+                LEFT JOIN jobs prev ON j.previous_job_id = prev.id
+                LEFT JOIN (
+                    SELECT job_id, COUNT(*) AS pending_count
+                    FROM job_change_requests
+                    WHERE request_type = 'jumbo_roll_update' AND status = 'Pending'
+                    GROUP BY job_id
+                ) req ON req.job_id = j.id
+                WHERE (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')
+                  AND j.job_type IN ('Slitting','Printing')
+                ORDER BY j.created_at DESC
+                LIMIT ?";
+
+        $jobsStmt = $db->prepare($jobsSql);
+        $jobsStmt->bind_param('i', $limit);
+        $jobsStmt->execute();
+        $jobs = $jobsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+        foreach ($jobs as &$j) {
+            $j['extra_data_parsed'] = json_decode($j['extra_data'] ?? '{}', true) ?: [];
+            $planningExtra = json_decode($j['planning_extra_data'] ?? '{}', true) ?: [];
+            $j['planning_dispatch_date'] = (string)($planningExtra['dispatch_date'] ?? ($j['planning_scheduled_date'] ?? ''));
+            $j['planning_die'] = trim((string)($planningExtra['die'] ?? ''));
+            $j['planning_image_path'] = jobs_pick_planning_image($planningExtra);
+            $j['planning_image_url'] = jobs_join_base_url($j['planning_image_path']);
+            $j['planning_job_date'] = jobs_first_non_empty($planningExtra, ['job_date', 'date'], (string)($j['planning_scheduled_date'] ?? ''));
+            $j['planning_mkd_job_sl_no'] = jobs_first_non_empty($planningExtra, ['mkd_job_sl_no', 'mkd_sl_no', 'mkd_no']);
+            $j['planning_plate_no'] = jobs_first_non_empty($planningExtra, ['plate_no', 'plate', 'plate_number']);
+            $j['planning_label_size'] = jobs_first_non_empty($planningExtra, ['label_size', 'size']);
+            $j['planning_repeat_mm'] = jobs_first_non_empty($planningExtra, ['repeat_mm', 'repeat']);
+            $j['planning_direction'] = jobs_first_non_empty($planningExtra, ['direction']);
+            $j['planning_order_mtr'] = jobs_first_non_empty($planningExtra, ['order_mtr', 'order_meter', 'order_meters']);
+            $j['planning_order_qty'] = jobs_first_non_empty($planningExtra, ['order_qty', 'quantity', 'order_quantity']);
+            $j['planning_reel_no_c1'] = jobs_first_non_empty($planningExtra, ['reel_no_c1', 'reel_c1']);
+            $j['planning_reel_no_c2'] = jobs_first_non_empty($planningExtra, ['reel_no_c2', 'reel_c2']);
+            $j['planning_width_c1'] = jobs_first_non_empty($planningExtra, ['width_c1']);
+            $j['planning_width_c2'] = jobs_first_non_empty($planningExtra, ['width_c2']);
+            $j['planning_length_c1'] = jobs_first_non_empty($planningExtra, ['length_c1']);
+            $j['planning_length_c2'] = jobs_first_non_empty($planningExtra, ['length_c2']);
+            $j['printing_planning'] = trim((string)($planningExtra['printing_planning'] ?? ''));
+            $rollNos = jobs_collect_roll_nos($j['extra_data_parsed'], $j);
+            $rollMap = jobs_fetch_roll_map($db, $rollNos);
+            jobs_attach_live_roll_data($j, $rollMap);
+        }
+        unset($j);
+
+        // Include planning rows that are not yet converted to any active job card.
+        $planSql = "SELECT p.id, p.job_no, p.job_name, p.status, p.priority, p.created_at, p.scheduled_date, p.extra_data
+                    FROM planning p
+                    LEFT JOIN jobs j ON j.planning_id = p.id
+                        AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')
+                    WHERE j.id IS NULL
+                    ORDER BY p.created_at DESC
+                    LIMIT ?";
+        $planStmt = $db->prepare($planSql);
+        $planStmt->bind_param('i', $limit);
+        $planStmt->execute();
+        $planRows = $planStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+        foreach ($planRows as $p) {
+            $planningExtra = json_decode((string)($p['extra_data'] ?? '{}'), true) ?: [];
+            $jobs[] = [
+                'id' => 'plan-' . (int)$p['id'],
+                'job_no' => (string)($p['job_no'] ?? ''),
+                'status' => 'Pending',
+                'job_type' => 'Planning',
+                'department' => 'planning',
+                'roll_no' => '',
+                'paper_type' => '',
+                'company' => '',
+                'width_mm' => null,
+                'length_mtr' => null,
+                'gsm' => null,
+                'weight_kg' => null,
+                'planning_job_name' => (string)($p['job_name'] ?? ''),
+                'planning_status' => trim((string)($p['status'] ?? '')) !== '' ? (string)$p['status'] : 'Pending',
+                'planning_priority' => trim((string)($p['priority'] ?? '')) !== '' ? (string)$p['priority'] : 'Normal',
+                'planning_created_at' => (string)($p['created_at'] ?? ''),
+                'planning_scheduled_date' => (string)($p['scheduled_date'] ?? ''),
+                'planning_extra_data' => (string)($p['extra_data'] ?? '{}'),
+                'planning_dispatch_date' => (string)($planningExtra['dispatch_date'] ?? ($p['scheduled_date'] ?? '')),
+                'planning_die' => trim((string)($planningExtra['die'] ?? '')),
+                'planning_image_path' => jobs_pick_planning_image($planningExtra),
+                'planning_image_url' => jobs_join_base_url(jobs_pick_planning_image($planningExtra)),
+                'planning_job_date' => jobs_first_non_empty($planningExtra, ['job_date', 'date'], (string)($p['scheduled_date'] ?? '')),
+                'printing_planning' => trim((string)($planningExtra['printing_planning'] ?? '')),
+                'prev_job_no' => '',
+                'prev_job_status' => '',
+                'pending_change_requests' => 0,
+                'extra_data' => '{}',
+                'extra_data_parsed' => [],
+                'created_at' => (string)($p['created_at'] ?? ''),
+                'started_at' => null,
+                'completed_at' => null,
+                'deleted_at' => null,
+                'previous_job_id' => 0,
+            ];
+        }
+
+        echo json_encode(['ok' => true, 'jobs' => $jobs]);
+        break;
+
     // ─── Get notifications ──────────────────────────────────
     case 'get_notifications':
         $dept = trim($_GET['department'] ?? '');
