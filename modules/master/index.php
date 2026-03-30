@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../includes/auth_check.php';
 $db = getDB();
 $errors = [];
 $settings = getAppSettings();
+ensurePaperMasterSchema();
 // ============================================================
 // Auto-create master tables if they don't exist
 // ============================================================
@@ -172,7 +173,8 @@ function getById($db, $table, $id) {
 // TAB & CSRF SETUP
 // ============================================================
 $activeTab = $_GET['tab'] ?? 'raw_materials';
-$allowedTabs = ['raw_materials', 'bom', 'suppliers', 'machines', 'cylinders', 'clients', 'prefix'];
+$allowedTabs = ['raw_materials', 'bom', 'suppliers', 'machines', 'cylinders', 'clients', 'paper_masters', 'prefix'];
+$isSystemAdmin = isAdmin();
 if (!in_array($activeTab, $allowedTabs, true)) $activeTab = 'raw_materials';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -512,6 +514,144 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   // ============================================================
+  // PAPER COMPANIES CRUD
+  // ============================================================
+  if ($action === 'add_paper_company') {
+    if (!$isSystemAdmin) {
+      setFlash('error', 'Only system admin can manage paper companies.');
+      redirect(BASE_URL . '/modules/master/index.php?tab=paper_masters');
+    }
+
+    $name = trim((string)($_POST['paper_company_name'] ?? ''));
+    $isActive = isset($_POST['paper_company_is_active']) ? 1 : 0;
+
+    if ($name === '') {
+      setFlash('error', 'Paper company name is required.');
+    } else {
+      $stmt = $db->prepare("INSERT INTO master_paper_companies (name, is_active) VALUES (?, ?)");
+      $stmt->bind_param('si', $name, $isActive);
+      if ($stmt->execute()) {
+        setFlash('success', 'Paper company added successfully.');
+      } else {
+        setFlash('error', 'Error adding paper company. Name may already exist.');
+      }
+    }
+    redirect(BASE_URL . '/modules/master/index.php?tab=paper_masters');
+  }
+
+  if ($action === 'edit_paper_company') {
+    if (!$isSystemAdmin) {
+      setFlash('error', 'Only system admin can manage paper companies.');
+      redirect(BASE_URL . '/modules/master/index.php?tab=paper_masters');
+    }
+
+    $id = (int)($_POST['paper_company_id'] ?? 0);
+    $name = trim((string)($_POST['paper_company_name'] ?? ''));
+    $isActive = isset($_POST['paper_company_is_active']) ? 1 : 0;
+
+    if ($id <= 0 || $name === '') {
+      setFlash('error', 'Invalid paper company data.');
+    } else {
+      $stmt = $db->prepare("UPDATE master_paper_companies SET name=?, is_active=? WHERE id=?");
+      $stmt->bind_param('sii', $name, $isActive, $id);
+      if ($stmt->execute()) {
+        setFlash('success', 'Paper company updated successfully.');
+      } else {
+        setFlash('error', 'Error updating paper company. Name may already exist.');
+      }
+    }
+    redirect(BASE_URL . '/modules/master/index.php?tab=paper_masters');
+  }
+
+  if ($action === 'delete_paper_company') {
+    if (!$isSystemAdmin) {
+      setFlash('error', 'Only system admin can manage paper companies.');
+      redirect(BASE_URL . '/modules/master/index.php?tab=paper_masters');
+    }
+
+    $id = (int)($_POST['paper_company_id'] ?? 0);
+    if ($id > 0) {
+      $stmt = $db->prepare("DELETE FROM master_paper_companies WHERE id = ?");
+      $stmt->bind_param('i', $id);
+      if ($stmt->execute()) {
+        setFlash('success', 'Paper company deleted successfully.');
+      } else {
+        setFlash('error', 'Unable to delete paper company.');
+      }
+    }
+    redirect(BASE_URL . '/modules/master/index.php?tab=paper_masters');
+  }
+
+  // ============================================================
+  // PAPER TYPES CRUD
+  // ============================================================
+  if ($action === 'add_paper_type') {
+    if (!$isSystemAdmin) {
+      setFlash('error', 'Only system admin can manage paper types.');
+      redirect(BASE_URL . '/modules/master/index.php?tab=paper_masters');
+    }
+
+    $name = trim((string)($_POST['paper_type_name'] ?? ''));
+    $isActive = isset($_POST['paper_type_is_active']) ? 1 : 0;
+
+    if ($name === '') {
+      setFlash('error', 'Paper type name is required.');
+    } else {
+      $stmt = $db->prepare("INSERT INTO master_paper_types (name, is_active) VALUES (?, ?)");
+      $stmt->bind_param('si', $name, $isActive);
+      if ($stmt->execute()) {
+        setFlash('success', 'Paper type added successfully.');
+      } else {
+        setFlash('error', 'Error adding paper type. Name may already exist.');
+      }
+    }
+    redirect(BASE_URL . '/modules/master/index.php?tab=paper_masters');
+  }
+
+  if ($action === 'edit_paper_type') {
+    if (!$isSystemAdmin) {
+      setFlash('error', 'Only system admin can manage paper types.');
+      redirect(BASE_URL . '/modules/master/index.php?tab=paper_masters');
+    }
+
+    $id = (int)($_POST['paper_type_id'] ?? 0);
+    $name = trim((string)($_POST['paper_type_name'] ?? ''));
+    $isActive = isset($_POST['paper_type_is_active']) ? 1 : 0;
+
+    if ($id <= 0 || $name === '') {
+      setFlash('error', 'Invalid paper type data.');
+    } else {
+      $stmt = $db->prepare("UPDATE master_paper_types SET name=?, is_active=? WHERE id=?");
+      $stmt->bind_param('sii', $name, $isActive, $id);
+      if ($stmt->execute()) {
+        setFlash('success', 'Paper type updated successfully.');
+      } else {
+        setFlash('error', 'Error updating paper type. Name may already exist.');
+      }
+    }
+    redirect(BASE_URL . '/modules/master/index.php?tab=paper_masters');
+  }
+
+  if ($action === 'delete_paper_type') {
+    if (!$isSystemAdmin) {
+      setFlash('error', 'Only system admin can manage paper types.');
+      redirect(BASE_URL . '/modules/master/index.php?tab=paper_masters');
+    }
+
+    $id = (int)($_POST['paper_type_id'] ?? 0);
+    if ($id > 0) {
+      $stmt = $db->prepare("DELETE FROM master_paper_types WHERE id = ?");
+      $stmt->bind_param('i', $id);
+      if ($stmt->execute()) {
+        setFlash('success', 'Paper type deleted successfully.');
+      } else {
+        setFlash('error', 'Unable to delete paper type.');
+      }
+    }
+    redirect(BASE_URL . '/modules/master/index.php?tab=paper_masters');
+  }
+
+  // ============================================================
   // BOMs CRUD
   // ============================================================
   if ($action === 'add_bom') {
@@ -842,6 +982,10 @@ $raw_materials = [];
 $machines = [];
 $cylinders = [];
 $clients = [];
+$paperCompanies = [];
+$paperTypes = [];
+$stockCompanies = [];
+$stockTypes = [];
 $boms = [];
 
 if ($activeTab === 'suppliers' || $activeTab === 'raw_materials') {
@@ -858,6 +1002,18 @@ if ($activeTab === 'cylinders') {
 }
 if ($activeTab === 'clients') {
   $clients = getMasterRecords($db, 'master_clients', 'created_at DESC');
+}
+if ($activeTab === 'paper_masters') {
+  ensurePaperMasterSchema();
+  $paperCompanies = getMasterRecords($db, 'master_paper_companies', 'name ASC');
+  $paperTypes     = getMasterRecords($db, 'master_paper_types',     'name ASC');
+  // Existing values already saved in paper_stock (read-only reference)
+  $stockCompanies = [];
+  $res = $db->query("SELECT DISTINCT company FROM paper_stock WHERE company IS NOT NULL AND TRIM(company)<>'' ORDER BY company");
+  if ($res) { while ($r = $res->fetch_assoc()) $stockCompanies[] = $r['company']; }
+  $stockTypes = [];
+  $res = $db->query("SELECT DISTINCT paper_type FROM paper_stock WHERE paper_type IS NOT NULL AND TRIM(paper_type)<>'' ORDER BY paper_type");
+  if ($res) { while ($r = $res->fetch_assoc()) $stockTypes[] = $r['paper_type']; }
 }
 if ($activeTab === 'bom') {
   $boms = getMasterRecords($db, 'master_boms', 'created_at DESC');
@@ -903,6 +1059,7 @@ if ($activeTab === 'clients' && $editClientId > 0) {
     <a class="settings-tab <?= $activeTab==='machines'?'active':'' ?>" href="?tab=machines">Machines</a>
     <a class="settings-tab <?= $activeTab==='cylinders'?'active':'' ?>" href="?tab=cylinders">Cylinders</a>
     <a class="settings-tab <?= $activeTab==='clients'?'active':'' ?>" href="?tab=clients">Clients</a>
+    <a class="settings-tab <?= $activeTab==='paper_masters'?'active':'' ?>" href="?tab=paper_masters">Paper Lists</a>
     <a class="settings-tab <?= $activeTab==='prefix'?'active':'' ?>" href="?tab=prefix">Number Prefix Settings</a>
   </div>
 
@@ -1499,6 +1656,208 @@ if ($activeTab === 'clients' && $editClientId > 0) {
 
     <?php endif; ?>
 
+    <?php if ($activeTab === 'paper_masters'): ?>
+      <!-- Paper Companies section -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header" style="padding:14px 16px">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:0;width:100%">
+            <input type="checkbox" id="chkCompanies" checked
+              onchange="document.getElementById('companiesSection').style.display=this.checked?'block':'none'"
+              style="width:18px;height:18px;accent-color:#f97316;flex-shrink:0">
+            <span class="card-title" style="margin:0">Paper Companies</span>
+            <?php if ($isSystemAdmin): ?>
+              <button class="btn btn-sm btn-primary" style="margin-left:auto" onclick="event.preventDefault();openPaperCompanyModal()">
+                <i class="bi bi-plus"></i> Add Company
+              </button>
+            <?php endif; ?>
+          </label>
+        </div>
+        <div id="companiesSection" class="card-body" style="padding-top:12px">
+          <div class="alert alert-info" style="margin-bottom:14px;font-size:0.875rem">
+            Only system admin can add or edit these names. Active entries appear as suggestions in Add Roll — users can type to filter but must select from the list. Old rolls with unlisted values still show their saved data.
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+            <div>
+              <h6 style="font-weight:600;margin:0 0 8px;color:#374151;font-size:0.9rem"><i class="bi bi-list-check"></i> Master List</h6>
+              <div class="table-responsive">
+                <table class="table" style="font-size:0.875rem">
+                  <thead>
+                    <tr>
+                      <th>Name</th><th>Status</th><th>Updated</th>
+                      <?php if ($isSystemAdmin): ?><th>Actions</th><?php endif; ?>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <?php if (empty($paperCompanies)): ?>
+                      <tr><td colspan="4" class="text-muted">No paper companies added yet.</td></tr>
+                    <?php else: ?>
+                      <?php foreach ($paperCompanies as $pc): ?>
+                        <tr>
+                          <td><?= e($pc['name']) ?></td>
+                          <td><span class="badge" style="background:<?= (int)$pc['is_active']===1?'#10b981':'#6b7280' ?>;color:white;padding:3px 8px;border-radius:4px;font-size:0.8rem"><?= (int)$pc['is_active']===1?'Active':'Inactive' ?></span></td>
+                          <td><?= !empty($pc['updated_at'])?e(date('M d, Y',strtotime($pc['updated_at']))):'-' ?></td>
+                          <?php if ($isSystemAdmin): ?>
+                            <td>
+                              <button class="btn btn-xs btn-info" onclick="editPaperCompany(<?= (int)$pc['id'] ?>)"><i class="bi bi-pencil"></i></button>
+                              <button class="btn btn-xs btn-danger" onclick="confirmDelete('paper_company', <?= (int)$pc['id'] ?>)"><i class="bi bi-trash"></i></button>
+                            </td>
+                          <?php endif; ?>
+                        </tr>
+                      <?php endforeach; ?>
+                    <?php endif; ?>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <h6 style="font-weight:600;margin:0 0 8px;color:#374151;font-size:0.9rem"><i class="bi bi-archive"></i> Existing in Paper Stock <small style="font-weight:400;color:#9ca3af">(reference)</small></h6>
+              <?php if (empty($stockCompanies)): ?>
+                <p class="text-muted" style="font-size:0.875rem">No company values saved in paper stock yet.</p>
+              <?php else: ?>
+                <div style="display:flex;flex-wrap:wrap;gap:6px">
+                  <?php
+                    $masterCompanyNames = array_column($paperCompanies, 'name');
+                    foreach ($stockCompanies as $sc):
+                      $inMaster = in_array($sc, $masterCompanyNames, true);
+                  ?>
+                    <span title="<?= $inMaster?'In master list':'Legacy value — not in master list' ?>"
+                      style="display:inline-block;padding:4px 10px;border-radius:20px;font-size:0.8rem;font-weight:500;background:<?= $inMaster?'#dcfce7':'#fef3c7' ?>;color:<?= $inMaster?'#166534':'#92400e' ?>;border:1px solid <?= $inMaster?'#86efac':'#fcd34d' ?>">
+                      <?= e($sc) ?><?= $inMaster ? '' : ' ⚠' ?>
+                    </span>
+                  <?php endforeach; ?>
+                </div>
+                <p style="font-size:0.78rem;color:#9ca3af;margin-top:8px"><i class="bi bi-info-circle"></i> Green = in master. Yellow ⚠ = legacy value (still shown on existing rolls).</p>
+              <?php endif; ?>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Paper Types section -->
+      <div class="card">
+        <div class="card-header" style="padding:14px 16px">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:0;width:100%">
+            <input type="checkbox" id="chkTypes" checked
+              onchange="document.getElementById('typesSection').style.display=this.checked?'block':'none'"
+              style="width:18px;height:18px;accent-color:#f97316;flex-shrink:0">
+            <span class="card-title" style="margin:0">Paper Types</span>
+            <?php if ($isSystemAdmin): ?>
+              <button class="btn btn-sm btn-primary" style="margin-left:auto" onclick="event.preventDefault();openPaperTypeModal()">
+                <i class="bi bi-plus"></i> Add Type
+              </button>
+            <?php endif; ?>
+          </label>
+        </div>
+        <div id="typesSection" class="card-body" style="padding-top:12px">
+          <div class="alert alert-info" style="margin-bottom:14px;font-size:0.875rem">
+            Only system admin can add or edit paper types. Active entries appear as suggestions in Add Roll — users can type to filter but must select from the list.
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+            <div>
+              <h6 style="font-weight:600;margin:0 0 8px;color:#374151;font-size:0.9rem"><i class="bi bi-list-check"></i> Master List</h6>
+              <div class="table-responsive">
+                <table class="table" style="font-size:0.875rem">
+                  <thead>
+                    <tr>
+                      <th>Name</th><th>Status</th><th>Updated</th>
+                      <?php if ($isSystemAdmin): ?><th>Actions</th><?php endif; ?>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <?php if (empty($paperTypes)): ?>
+                      <tr><td colspan="4" class="text-muted">No paper types added yet.</td></tr>
+                    <?php else: ?>
+                      <?php foreach ($paperTypes as $pt): ?>
+                        <tr>
+                          <td><?= e($pt['name']) ?></td>
+                          <td><span class="badge" style="background:<?= (int)$pt['is_active']===1?'#10b981':'#6b7280' ?>;color:white;padding:3px 8px;border-radius:4px;font-size:0.8rem"><?= (int)$pt['is_active']===1?'Active':'Inactive' ?></span></td>
+                          <td><?= !empty($pt['updated_at'])?e(date('M d, Y',strtotime($pt['updated_at']))):'-' ?></td>
+                          <?php if ($isSystemAdmin): ?>
+                            <td>
+                              <button class="btn btn-xs btn-info" onclick="editPaperType(<?= (int)$pt['id'] ?>)"><i class="bi bi-pencil"></i></button>
+                              <button class="btn btn-xs btn-danger" onclick="confirmDelete('paper_type', <?= (int)$pt['id'] ?>)"><i class="bi bi-trash"></i></button>
+                            </td>
+                          <?php endif; ?>
+                        </tr>
+                      <?php endforeach; ?>
+                    <?php endif; ?>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <h6 style="font-weight:600;margin:0 0 8px;color:#374151;font-size:0.9rem"><i class="bi bi-archive"></i> Existing in Paper Stock <small style="font-weight:400;color:#9ca3af">(reference)</small></h6>
+              <?php if (empty($stockTypes)): ?>
+                <p class="text-muted" style="font-size:0.875rem">No paper type values saved in paper stock yet.</p>
+              <?php else: ?>
+                <div style="display:flex;flex-wrap:wrap;gap:6px">
+                  <?php
+                    $masterTypeNames = array_column($paperTypes, 'name');
+                    foreach ($stockTypes as $st):
+                      $inMaster = in_array($st, $masterTypeNames, true);
+                  ?>
+                    <span title="<?= $inMaster?'In master list':'Legacy value — not in master list' ?>"
+                      style="display:inline-block;padding:4px 10px;border-radius:20px;font-size:0.8rem;font-weight:500;background:<?= $inMaster?'#dcfce7':'#fef3c7' ?>;color:<?= $inMaster?'#166534':'#92400e' ?>;border:1px solid <?= $inMaster?'#86efac':'#fcd34d' ?>">
+                      <?= e($st) ?><?= $inMaster ? '' : ' ⚠' ?>
+                    </span>
+                  <?php endforeach; ?>
+                </div>
+                <p style="font-size:0.78rem;color:#9ca3af;margin-top:8px"><i class="bi bi-info-circle"></i> Green = in master. Yellow ⚠ = legacy value (still shown on existing rolls).</p>
+              <?php endif; ?>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Paper Company Modal -->
+      <div id="paperCompanyModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000">
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:90%;max-width:480px;background:white;border-radius:8px;box-shadow:0 4px 6px rgba(0,0,0,0.1);padding:24px">
+          <h3 style="margin:0 0 20px;font-size:1.25rem">Add / Edit Paper Company</h3>
+          <form method="POST" id="paperCompanyForm">
+            <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
+            <input type="hidden" name="action" id="paperCompanyAction" value="add_paper_company">
+            <input type="hidden" name="paper_company_id" id="paperCompanyId" value="">
+            <div style="margin-bottom:16px">
+              <label style="display:block;margin-bottom:4px;font-weight:500">Paper Company Name *</label>
+              <input type="text" name="paper_company_name" id="paperCompanyName" required style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px">
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:16px">
+              <input type="checkbox" name="paper_company_is_active" id="paperCompanyIsActive" value="1" checked style="width:16px;height:16px">
+              <span>Active and available in Add Roll</span>
+            </label>
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:24px">
+              <button type="button" class="btn btn-secondary" onclick="closePaperCompanyModal()">Cancel</button>
+              <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Paper Type Modal -->
+      <div id="paperTypeModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000">
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:90%;max-width:480px;background:white;border-radius:8px;box-shadow:0 4px 6px rgba(0,0,0,0.1);padding:24px">
+          <h3 style="margin:0 0 20px;font-size:1.25rem">Add / Edit Paper Type</h3>
+          <form method="POST" id="paperTypeForm">
+            <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
+            <input type="hidden" name="action" id="paperTypeAction" value="add_paper_type">
+            <input type="hidden" name="paper_type_id" id="paperTypeId" value="">
+            <div style="margin-bottom:16px">
+              <label style="display:block;margin-bottom:4px;font-weight:500">Paper Type Name *</label>
+              <input type="text" name="paper_type_name" id="paperTypeName" required style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px">
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:16px">
+              <input type="checkbox" name="paper_type_is_active" id="paperTypeIsActive" value="1" checked style="width:16px;height:16px">
+              <span>Active and available in Add Roll</span>
+            </label>
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:24px">
+              <button type="button" class="btn btn-secondary" onclick="closePaperTypeModal()">Cancel</button>
+              <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    <?php endif; ?>
+
     <?php if ($activeTab === 'prefix'): ?>
       <form method="POST" class="form-grid-2" id="prefix-settings-form">
         <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
@@ -1669,6 +2028,8 @@ if ($activeTab === 'clients' && $editClientId > 0) {
 const suppliersData = <?= json_encode($suppliers, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 const clientsData = <?= json_encode($clients, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 const machinesData = <?= json_encode($machines, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+const paperCompaniesData = <?= json_encode($paperCompanies, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+const paperTypesData = <?= json_encode($paperTypes, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 
 var currentDeleteType = '';
 var currentDeleteId = '';
@@ -1678,6 +2039,8 @@ var deleteFieldMap = {
   'machine': { action: 'delete_machine', field: 'machine_id' },
   'cylinder': { action: 'delete_cylinder', field: 'cylinder_id' },
   'client': { action: 'delete_client', field: 'client_id' },
+  'paper_company': { action: 'delete_paper_company', field: 'paper_company_id' },
+  'paper_type': { action: 'delete_paper_type', field: 'paper_type_id' },
   'bom': { action: 'delete_bom', field: 'bom_id' }
 };
 
@@ -1856,6 +2219,64 @@ function closeClientModal() {
   document.getElementById('clientModal').style.display = 'none';
 }
 
+function openPaperCompanyModal() {
+  document.getElementById('paperCompanyForm').reset();
+  document.getElementById('paperCompanyAction').value = 'add_paper_company';
+  document.getElementById('paperCompanyId').value = '';
+  document.getElementById('paperCompanyIsActive').checked = true;
+  document.getElementById('paperCompanyModal').style.display = 'flex';
+}
+
+function closePaperCompanyModal() {
+  document.getElementById('paperCompanyModal').style.display = 'none';
+}
+
+function editPaperCompany(id) {
+  var rows = paperCompaniesData;
+  var item = null;
+  for (var i = 0; i < rows.length; i++) {
+    if (parseInt(rows[i].id, 10) === parseInt(id, 10)) {
+      item = rows[i];
+      break;
+    }
+  }
+  if (!item) return;
+  document.getElementById('paperCompanyAction').value = 'edit_paper_company';
+  document.getElementById('paperCompanyId').value = item.id || '';
+  document.getElementById('paperCompanyName').value = item.name || '';
+  document.getElementById('paperCompanyIsActive').checked = parseInt(item.is_active, 10) === 1;
+  document.getElementById('paperCompanyModal').style.display = 'flex';
+}
+
+function openPaperTypeModal() {
+  document.getElementById('paperTypeForm').reset();
+  document.getElementById('paperTypeAction').value = 'add_paper_type';
+  document.getElementById('paperTypeId').value = '';
+  document.getElementById('paperTypeIsActive').checked = true;
+  document.getElementById('paperTypeModal').style.display = 'flex';
+}
+
+function closePaperTypeModal() {
+  document.getElementById('paperTypeModal').style.display = 'none';
+}
+
+function editPaperType(id) {
+  var rows = paperTypesData;
+  var item = null;
+  for (var i = 0; i < rows.length; i++) {
+    if (parseInt(rows[i].id, 10) === parseInt(id, 10)) {
+      item = rows[i];
+      break;
+    }
+  }
+  if (!item) return;
+  document.getElementById('paperTypeAction').value = 'edit_paper_type';
+  document.getElementById('paperTypeId').value = item.id || '';
+  document.getElementById('paperTypeName').value = item.name || '';
+  document.getElementById('paperTypeIsActive').checked = parseInt(item.is_active, 10) === 1;
+  document.getElementById('paperTypeModal').style.display = 'flex';
+}
+
 function editClient(id) {
   var rows = clientsData;
   var item = null;
@@ -1921,6 +2342,8 @@ document.addEventListener('keydown', function(e) {
     document.getElementById('machineModal').style.display = 'none';
     document.getElementById('cylinderModal').style.display = 'none';
     document.getElementById('clientModal').style.display = 'none';
+    document.getElementById('paperCompanyModal').style.display = 'none';
+    document.getElementById('paperTypeModal').style.display = 'none';
     document.getElementById('bomModal').style.display = 'none';
     document.getElementById('deleteModal').style.display = 'none';
     document.getElementById('uploadModal').style.display = 'none';

@@ -11,13 +11,16 @@ $errors = [];
 $old    = [];
 $prefilledRollNo = getIdPreview('roll');
 
-// Fetch existing companies & paper types for dropdown options
-$companyOptions = [];
-$typeOptions = [];
-$cRes = $db->query("SELECT DISTINCT company FROM paper_stock WHERE company IS NOT NULL AND TRIM(company)<>'' ORDER BY company");
-if($cRes){ while($cr = $cRes->fetch_assoc()) $companyOptions[] = trim($cr['company']); }
-$tRes = $db->query("SELECT DISTINCT paper_type FROM paper_stock WHERE paper_type IS NOT NULL AND TRIM(paper_type)<>'' ORDER BY paper_type");
-if($tRes){ while($tr = $tRes->fetch_assoc()) $typeOptions[] = trim($tr['paper_type']); }
+// Fetch admin-managed paper companies and paper types.
+// Combined list: active master entries + all distinct values already in paper_stock.
+$companyOptions = getMasterPaperCompanies(true);
+$typeOptions    = getMasterPaperTypes(true);
+
+// Merge with existing paper_stock values so old names remain selectable
+$res = $db->query("SELECT DISTINCT company FROM paper_stock WHERE company IS NOT NULL AND TRIM(company)<>'' ORDER BY company");
+if ($res) { while ($r = $res->fetch_assoc()) { if (!in_array($r['company'], $companyOptions, true)) $companyOptions[] = $r['company']; } sort($companyOptions); }
+$res = $db->query("SELECT DISTINCT paper_type FROM paper_stock WHERE paper_type IS NOT NULL AND TRIM(paper_type)<>'' ORDER BY paper_type");
+if ($res) { while ($r = $res->fetch_assoc()) { if (!in_array($r['paper_type'], $typeOptions, true)) $typeOptions[] = $r['paper_type']; } sort($typeOptions); }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCSRF($_POST['csrf_token'] ?? '')) {
@@ -43,6 +46,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($paper_type === '') $errors[] = 'Paper Type is required.';
         if ($company === '')    $errors[] = 'Company is required.';
+        if ($company !== '' && !in_array($company, $companyOptions, true)) $errors[] = 'Select a valid Paper Company from the suggestions list.';
+        if ($paper_type !== '' && !in_array($paper_type, $typeOptions, true)) $errors[] = 'Select a valid Paper Type from the suggestions list.';
         if (!is_numeric($width_mm) || $width_mm <= 0)   $errors[] = 'Width must be a positive number.';
         if (!is_numeric($length_mtr) || $length_mtr <= 0) $errors[] = 'Length must be a positive number.';
 
@@ -172,13 +177,15 @@ include __DIR__ . '/../../includes/header.php';
         </div>
         <div class="form-group">
           <label>Paper Company <span style="color:red">*</span></label>
-          <input type="hidden" name="company" id="company-hidden" value="<?= e($old['company'] ?? '') ?>" required>
+          <input type="hidden" name="company" id="company-hidden" value="<?= e($old['company'] ?? '') ?>">
           <div id="company-dd-container"></div>
+          <span class="form-hint">Type to search — select from master or existing stock values.</span>
         </div>
         <div class="form-group">
           <label>Paper Type <span style="color:red">*</span></label>
-          <input type="hidden" name="paper_type" id="type-dd-hidden" value="<?= e($old['paper_type'] ?? '') ?>" required>
+          <input type="hidden" name="paper_type" id="type-dd-hidden" value="<?= e($old['paper_type'] ?? '') ?>">
           <div id="type-dd-container"></div>
+          <span class="form-hint">Type to search — select from master or existing stock values.</span>
         </div>
       </div>
     </div>
@@ -301,20 +308,24 @@ include __DIR__ . '/../../includes/header.php';
     statusVal
   );
 
-  var companies = <?= json_encode(array_values($companyOptions), JSON_UNESCAPED_UNICODE) ?>;
+  // Paper Company typeahead (strict — must select from list)
+  var companyOptions = <?= json_encode(array_values($companyOptions), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
   initSearchDropdown(
     document.getElementById('company-dd-container'),
     document.getElementById('company-hidden'),
-    companies,
-    'Search or type company…'
+    companyOptions,
+    'Search paper company…',
+    true
   );
 
-  var types = <?= json_encode(array_values($typeOptions), JSON_UNESCAPED_UNICODE) ?>;
+  // Paper Type typeahead (strict — must select from list)
+  var typeOptionsArr = <?= json_encode(array_values($typeOptions), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
   initSearchDropdown(
     document.getElementById('type-dd-container'),
     document.getElementById('type-dd-hidden'),
-    types,
-    'Search or type paper type…'
+    typeOptionsArr,
+    'Search paper type…',
+    true
   );
 
   // Product type image preview

@@ -317,6 +317,28 @@ CREATE TABLE IF NOT EXISTS `master_clients` (
   `updated_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- --------------------------------
+-- Table: master_paper_companies
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `master_paper_companies` (
+  `id`         INT AUTO_INCREMENT PRIMARY KEY,
+  `name`       VARCHAR(150) NOT NULL UNIQUE,
+  `is_active`  TINYINT(1) NOT NULL DEFAULT 1,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------
+-- Table: master_paper_types
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `master_paper_types` (
+  `id`         INT AUTO_INCREMENT PRIMARY KEY,
+  `name`       VARCHAR(150) NOT NULL UNIQUE,
+  `is_active`  TINYINT(1) NOT NULL DEFAULT 1,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- --------------------------------

@@ -224,3 +224,27 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
            .sidebar-footer .nav-item:hover { background: rgba(239,68,68,.12); }</style>
   </div>
 </nav>
+
+<script>
+(function(){
+  var sidebar = document.querySelector('.sidebar');
+  if (!sidebar) return;
+
+  // Remove nested parents that have no visible sub-items.
+  sidebar.querySelectorAll('.nav-sub-nest').forEach(function(nest){
+    var hasChild = !!nest.querySelector('.nav-sub-children .nav-sub-item');
+    if (!hasChild) {
+      nest.style.display = 'none';
+    }
+  });
+
+  // Hide top-level groups that have no visible links.
+  sidebar.querySelectorAll('.nav-group').forEach(function(group){
+    var hasDirect = !!group.querySelector('.nav-sub > .nav-sub-item');
+    var hasNested = !!group.querySelector('.nav-sub-nest:not([style*="display: none"]) .nav-sub-item');
+    if (!hasDirect && !hasNested) {
+      group.style.display = 'none';
+    }
+  });
+})();
+</script>

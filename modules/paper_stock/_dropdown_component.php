@@ -275,13 +275,14 @@ window.initStatusDropdown = function(container, hiddenInput, customInput, initia
 };
 
 /* ──────────────────────────────────────────────────────────────
-   initSearchDropdown(container, hiddenInput, options, placeholder)
+   initSearchDropdown(container, hiddenInput, options, placeholder, strict)
    — Editable text input with dark suggestions panel.
-   — User can ALWAYS type, delete, edit freely.
-   — Selecting from list fills the input (still editable after).
-   — Custom/free text always accepted.
+   — User can type to filter; selecting from list commits the value.
+   — strict=true: value MUST be selected from list; blur clears if not matched.
+   — strict=false (default): free text also accepted.
    ────────────────────────────────────────────────────────────── */
-window.initSearchDropdown = function(container, hiddenInput, options, placeholder){
+window.initSearchDropdown = function(container, hiddenInput, options, placeholder, strict){
+  strict = strict === true;
   var current = hiddenInput.value || '';
 
   // Build wrapper with editable input + arrow icon
@@ -323,7 +324,7 @@ window.initSearchDropdown = function(container, hiddenInput, options, placeholde
       visibleCount++;
     });
     if(visibleCount === 0){
-      html += '<div class="erp-dd-empty">'+(q ? 'No matches — your typed value will be used' : 'No options available')+'</div>';
+      html += '<div class="erp-dd-empty">'+(q ? (strict ? 'No matches in master or stock list.' : 'No matches — your typed value will be used') : 'No options available')+'</div>';
     }
     html += '</div>';
     panel.innerHTML = html;
@@ -361,10 +362,14 @@ window.initSearchDropdown = function(container, hiddenInput, options, placeholde
   container.appendChild(wrap);
   container.appendChild(panel);
 
-  // Sync hidden input whenever user types
+  // Sync hidden input whenever user types (non-strict); strict mode requires selection
   input.addEventListener('input', function(){
-    hiddenInput.value = this.value;
-    hiddenInput.dispatchEvent(new Event('change', {bubbles:true}));
+    if(!strict){
+      hiddenInput.value = this.value;
+      hiddenInput.dispatchEvent(new Event('change', {bubbles:true}));
+    } else {
+      hiddenInput.value = '';
+    }
     if(panel.classList.contains('open')){
       buildList();
     } else {
@@ -381,7 +386,18 @@ window.initSearchDropdown = function(container, hiddenInput, options, placeholde
 
   // Close on blur (small delay to allow item mousedown to fire first)
   input.addEventListener('blur', function(){
-    setTimeout(function(){ closePanel(); }, 150);
+    setTimeout(function(){
+      closePanel();
+      if(strict){
+        var typed = input.value.trim();
+        var matched = false;
+        for(var i = 0; i < options.length; i++){
+          var val = typeof options[i] === 'string' ? options[i] : options[i].value;
+          if(val === typed){ matched = true; break; }
+        }
+        if(!matched){ input.value = ''; hiddenInput.value = ''; }
+      }
+    }, 150);
   });
 
   // Keyboard: Enter to close, Escape to close, Arrow navigation

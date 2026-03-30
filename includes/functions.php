@@ -208,10 +208,91 @@ function ensureRbacSchema() {
 }
 
 /**
+ * Ensure admin-managed paper master tables exist.
+ */
+function ensurePaperMasterSchema() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+
+    $db = getDB();
+    $queries = [
+        "CREATE TABLE IF NOT EXISTS master_paper_companies (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(150) NOT NULL UNIQUE,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS master_paper_types (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(150) NOT NULL UNIQUE,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+    ];
+
+    foreach ($queries as $sql) {
+        try {
+            $db->query($sql);
+        } catch (Throwable $e) {
+            error_log('Paper master schema bootstrap warning: ' . $e->getMessage());
+        }
+    }
+}
+
+/**
+ * Return admin-managed paper company names.
+ */
+function getMasterPaperCompanies($activeOnly = true) {
+    ensurePaperMasterSchema();
+    $db = getDB();
+    $sql = "SELECT name FROM master_paper_companies";
+    if ($activeOnly) {
+        $sql .= " WHERE is_active = 1";
+    }
+    $sql .= " ORDER BY name ASC";
+
+    $result = $db->query($sql);
+    $items = [];
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $name = trim((string)($row['name'] ?? ''));
+            if ($name !== '') $items[] = $name;
+        }
+    }
+    return $items;
+}
+
+/**
+ * Return admin-managed paper type names.
+ */
+function getMasterPaperTypes($activeOnly = true) {
+    ensurePaperMasterSchema();
+    $db = getDB();
+    $sql = "SELECT name FROM master_paper_types";
+    if ($activeOnly) {
+        $sql .= " WHERE is_active = 1";
+    }
+    $sql .= " ORDER BY name ASC";
+
+    $result = $db->query($sql);
+    $items = [];
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $name = trim((string)($row['name'] ?? ''));
+            if ($name !== '') $items[] = $name;
+        }
+    }
+    return $items;
+}
+
+/**
  * List of assignable application pages for RBAC.
  */
 function rbacPageCatalog() {
-    return [
+    $base = [
         '/modules/dashboard/index.php' => 'Dashboard',
 
         '/modules/estimate/index.php' => 'Calculator',
@@ -230,18 +311,18 @@ function rbacPageCatalog() {
         '/modules/planning/packing/index.php' => 'Planning - Packaging',
         '/modules/planning/dispatch/index.php' => 'Planning - Dispatch',
 
-        '/modules/operators/jumbo/index.php' => 'Operator - Jumbo',
-        '/modules/operators/pos/index.php' => 'Operator - POS Roll',
-        '/modules/operators/oneply/index.php' => 'Operator - Only Ply',
-        '/modules/operators/printing/index.php' => 'Operator - Flexo',
-        '/modules/operators/flatbed/index.php' => 'Operator - Flat Bed',
-        '/modules/operators/rotery/index.php' => 'Operator - Rotery Die',
-        '/modules/operators/label-slitting/index.php' => 'Operator - Label Slitting',
-        '/modules/operators/packing/index.php' => 'Operator - Packing',
+        '/modules/operators/jumbo/index.php' => 'Machine Operator - Jumbo',
+        '/modules/operators/pos/index.php' => 'Machine Operator - POS Roll',
+        '/modules/operators/oneply/index.php' => 'Machine Operator - One Ply',
+        '/modules/operators/printing/index.php' => 'Machine Operator - Flexo Printing',
+        '/modules/operators/flatbed/index.php' => 'Machine Operator - Flat Bed',
+        '/modules/operators/rotery/index.php' => 'Machine Operator - Rotery Die',
+        '/modules/operators/label-slitting/index.php' => 'Machine Operator - Label Slitting',
+        '/modules/operators/packing/index.php' => 'Machine Operator - Packing',
 
         '/modules/paper_stock/index.php' => 'Paper Stock',
         '/modules/audit/index.php' => 'Audit Hub',
-        '/modules/scan/index.php' => 'Scan Terminal',
+        '/modules/scan/index.php' => 'Physical Stock Scan Terminal',
         '/modules/inventory/slitting/index.php' => 'Inventory - Slitting',
         '/modules/inventory/finished/index.php' => 'Inventory - Finished Good',
         '/modules/inventory/die/index.php' => 'Inventory - Die Tooling',
@@ -277,6 +358,47 @@ function rbacPageCatalog() {
         '/modules/pricing/index.php' => 'Pricing Login',
         '/modules/settings/index.php' => 'Settings',
     ];
+
+    // Auto-discover page-level functions under each cataloged module path
+    // (e.g. add.php, edit.php, delete.php, export.php) for granular assignment.
+    $catalog = $base;
+    $actionMap = [
+        'add.php' => 'Add',
+        'edit.php' => 'Edit',
+        'delete.php' => 'Delete',
+        'view.php' => 'View',
+        'export.php' => 'Export',
+        'import.php' => 'Import',
+        'batch_delete.php' => 'Batch Delete',
+        'label.php' => 'Print Label',
+    ];
+
+    foreach ($base as $path => $label) {
+        $dir = str_replace('\\', '/', dirname($path));
+        if ($dir === '.' || $dir === '/') continue;
+
+        $absDir = realpath(__DIR__ . '/..' . $dir);
+        if ($absDir === false || !is_dir($absDir)) continue;
+
+        $files = glob($absDir . DIRECTORY_SEPARATOR . '*.php');
+        if (!is_array($files)) continue;
+
+        foreach ($files as $absFile) {
+            $file = basename((string)$absFile);
+            if ($file === 'index.php') continue;
+            if (strpos($file, '_') === 0) continue;
+            if ($file === 'api.php') continue;
+
+            $route = rbacNormalizePath($dir . '/' . $file);
+            if (isset($catalog[$route])) continue;
+
+            $actionLabel = $actionMap[$file] ?? ucwords(str_replace(['-', '_'], ' ', pathinfo($file, PATHINFO_FILENAME)));
+            $catalog[$route] = $label . ' - ' . $actionLabel;
+        }
+    }
+
+    ksort($catalog);
+    return $catalog;
 }
 
 /**
@@ -355,20 +477,12 @@ function rbacUserAllowedPaths($userId = null) {
 function canAccessPath($path) {
     $path = rbacNormalizePath($path);
 
-    // Treat paper stock child pages as part of the Paper Stock module permission.
-    // This allows users who can open the list page to perform add/edit/delete actions.
-    if (strpos($path, '/modules/paper_stock/') === 0 && $path !== '/modules/paper_stock/view.php') {
-        $path = '/modules/paper_stock/index.php';
-    }
-
     // Public or always-allowed authenticated routes.
     if ($path === '/auth/logout.php') return true;
     if ($path === '/modules/dashboard/index.php') return true;
 
     // QR scanning and view-only pages — accessible to all logged-in users.
-    if ($path === '/modules/scan/index.php') return true;   // scanner + resolve API
     if ($path === '/modules/scan/job.php') return true;     // job card QR viewer
-    if ($path === '/modules/paper_stock/view.php') return true; // roll detail viewer
 
     if (isAdmin()) return true;
 
