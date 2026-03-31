@@ -4,7 +4,7 @@ require_once __DIR__ . '/../../../includes/functions.php';
 require_once __DIR__ . '/../../../includes/auth_check.php';
 
 $isOperatorView = (string)($_GET['view'] ?? '') === 'operator';
-$canDeleteJobs = isAdmin();
+$canDeleteJobs = isAdmin() && !$isOperatorView;
 $pageTitle = $isOperatorView ? 'Jumbo Operator' : 'Jumbo Job Cards';
 $db = getDB();
 $appSettings = getAppSettings();
@@ -410,9 +410,32 @@ include __DIR__ . '/../../../includes/header.php';
 .rc-footer{margin-top:14px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
 .rc-btn-accept{padding:8px 20px;border-radius:8px;border:none;font-weight:800;font-size:.78rem;cursor:pointer;display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;box-shadow:0 2px 8px rgba(22,163,74,.3);transition:all .15s}
 .rc-btn-accept:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(22,163,74,.4)}
+.rc-btn-update{padding:8px 16px;border-radius:8px;border:1px solid #bfdbfe;background:#dbeafe;color:#1d4ed8;font-weight:800;font-size:.78rem;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.rc-btn-update:hover{background:#bfdbfe}
 .rc-btn-reject{padding:8px 16px;border-radius:8px;border:1px solid #fecaca;background:#fee2e2;color:#dc2626;font-weight:800;font-size:.78rem;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 .rc-btn-reject:hover{background:#fecaca}
 .rc-loading{text-align:center;padding:20px;color:#92400e;font-size:.8rem;font-weight:600}
+.rc-summary{margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.rc-summary-box{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px}
+.rc-summary-box h4{margin:0 0 6px;font-size:.64rem;color:#475569;text-transform:uppercase;letter-spacing:.05em}
+.rc-summary-box ul{margin:0;padding-left:16px;font-size:.72rem;color:#334155}
+.rc-editor{margin-top:12px;border:1px solid #cbd5e1;background:#f8fafc;border-radius:10px;overflow:hidden}
+.rc-editor-head{padding:9px 10px;background:#e2e8f0;border-bottom:1px solid #cbd5e1;font-size:.72rem;font-weight:800;color:#1e293b;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.rc-editor-body{padding:10px;display:grid;gap:10px}
+.rc-editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.rc-group{border:1px solid #d1d5db;border-radius:8px;background:#fff;overflow:hidden}
+.rc-group h5{margin:0;padding:8px 10px;font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #e5e7eb}
+.rc-group-old h5{background:#f1f5f9;color:#475569}
+.rc-group-new h5{background:#dbeafe;color:#1d4ed8}
+.rc-roll-table{width:100%;border-collapse:collapse;font-size:.7rem}
+.rc-roll-table th,.rc-roll-table td{border:1px solid #e2e8f0;padding:6px 7px;text-align:left;vertical-align:middle}
+.rc-roll-table th{background:#f8fafc;color:#475569;font-size:.6rem;text-transform:uppercase;letter-spacing:.04em}
+.rc-roll-table input,.rc-roll-table select{width:100%;min-width:68px;height:28px;border:1px solid #cbd5e1;border-radius:6px;padding:4px 6px;font-size:.72rem;font-weight:600}
+.rc-editor-note{font-size:.7rem;color:#475569}
+.rc-editor-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.rc-btn-apply{padding:8px 16px;border:none;border-radius:8px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-weight:800;font-size:.76rem;cursor:pointer}
+.rc-btn-apply:disabled{opacity:.6;cursor:not-allowed}
+.rc-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;background:#dbeafe;color:#1e40af;padding:3px 9px;font-size:.62rem;font-weight:900;letter-spacing:.04em;text-transform:uppercase}
 
 /* Print */
 @media print{
@@ -798,6 +821,8 @@ const ALL_JOBS = <?= json_encode(array_values(array_merge($activeJobs, $historyJ
 const IS_OPERATOR_VIEW = <?= $isOperatorView ? 'true' : 'false' ?>;
 const IS_ADMIN = <?= $canDeleteJobs ? 'true' : 'false' ?>;
 const JC_AUTO_REFRESH_MS = 45000;
+const RC_REQUEST_CACHE = {};
+let RC_EDITOR_STATE = null;
 
 function formatDepartmentLabel(dept) {
   const map = { jumbo_slitting: 'Jumbo Slitting', flexo_printing: 'Flexo Printing' };
@@ -1638,6 +1663,7 @@ async function loadRollChangeComparison(job) {
       return;
     }
     const req = data.requests[0];
+    RC_REQUEST_CACHE[String(req.id || '')] = req;
     const reqPayload = req.payload || {};
     const newRollNo = String(reqPayload.parent_roll_no || '').trim();
     if (!newRollNo) { placeholder.remove(); return; }
@@ -1654,6 +1680,12 @@ async function loadRollChangeComparison(job) {
     const curRollNo = String(p.roll_no || extra.parent_roll || job.roll_no || '').trim();
     const liveMap = job.live_roll_map || {};
     const curLive = liveMap[curRollNo] || {};
+    const oldStatusRaw = String(p.original_status || curLive.status || 'Main').trim();
+    const oldPrevStatus = oldStatusRaw === '' || oldStatusRaw.toLowerCase() === 'slitting' ? 'Main' : oldStatusRaw;
+
+    const rows = Array.isArray(reqPayload.rows) ? reqPayload.rows : [];
+    const oldSummary = summarizeRequestRows(rows, curRollNo);
+    const newSummary = summarizeRequestRows(rows, newRollNo);
 
     // Build comparison HTML
     let html = '<div class="rc-panel">';
@@ -1697,11 +1729,19 @@ async function loadRollChangeComparison(job) {
       html += '<div class="rc-remarks-box"><strong><i class="bi bi-chat-left-text"></i> Operator Remarks:</strong> ' + esc(opRemarks) + '</div>';
     }
 
-    // Accept / Reject buttons
+    html += '<div class="rc-summary">';
+    html += '<div class="rc-summary-box"><h4>Old Roll Slits (' + esc(curRollNo || '--') + ')</h4>' + oldSummary + '</div>';
+    html += '<div class="rc-summary-box"><h4>Suggested Slits (' + esc(newRollNo || '--') + ')</h4>' + newSummary + '</div>';
+    html += '</div>';
+
+    // Update / Accept / Reject buttons
     html += '<div class="rc-footer">';
+    html += '<button class="rc-btn-update" onclick="openManagerRollUpdateEditor(' + job.id + ',' + req.id + ',\'' + escJs(curRollNo) + '\',\'' + escJs(oldPrevStatus) + '\')"><i class="bi bi-pencil-square"></i> Update Slitting</button>';
     html += '<button class="rc-btn-accept" onclick="acceptRollChange(' + job.id + ',' + req.id + ')"><i class="bi bi-check-circle"></i> Accept: Delete &amp; Recreate with New Roll</button>';
     html += '<button class="rc-btn-reject" onclick="rejectRollChange(' + job.id + ',' + req.id + ')"><i class="bi bi-x-circle"></i> Reject Request</button>';
     html += '</div>';
+
+    html += '<div id="rc-editor-wrap"></div>';
 
     html += '</div>'; // .rc-panel
     placeholder.innerHTML = html;
@@ -1709,6 +1749,186 @@ async function loadRollChangeComparison(job) {
   } catch (err) {
     placeholder.innerHTML = '<div class="rc-panel"><div class="rc-loading" style="color:#dc2626"><i class="bi bi-exclamation-triangle"></i> Failed to load change request: ' + esc(err.message) + '</div></div>';
   }
+}
+
+function escJs(v) {
+  return String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '');
+}
+
+function summarizeRequestRows(rows, parentRollNo) {
+  const list = Array.isArray(rows) ? rows : [];
+  const parent = String(parentRollNo || '').trim().toLowerCase();
+  const filtered = list.filter(r => {
+    const pr = String((r && r.parent_roll_no) || '').trim().toLowerCase();
+    return parent === '' || pr === '' || pr === parent;
+  });
+  if (!filtered.length) return '<div class="rc-editor-note">No rows found.</div>';
+  const lines = filtered.slice(0, 6).map(r => {
+    const roll = String((r && r.roll_no) || '--').trim() || '--';
+    const width = Number((r && r.width) || 0);
+    const length = Number((r && r.length) || 0);
+    const bucket = String((r && r.bucket) || 'child').toLowerCase() === 'stock' ? 'Stock' : 'Child';
+    return '<li><strong>' + esc(roll) + '</strong> • ' + esc(bucket) + ' • ' + esc(width + ' x ' + length) + '</li>';
+  });
+  const more = filtered.length > 6 ? ('<li>+' + (filtered.length - 6) + ' more row(s)</li>') : '';
+  return '<ul>' + lines.join('') + more + '</ul>';
+}
+
+function openManagerRollUpdateEditor(jobId, requestId, oldParentRoll, oldParentPrevStatus) {
+  const wrap = document.getElementById('rc-editor-wrap');
+  if (!wrap) return;
+  const job = ALL_JOBS.find(j => Number(j.id) === Number(jobId));
+  const req = RC_REQUEST_CACHE[String(requestId)] || null;
+  if (!job || !req) {
+    wrap.innerHTML = '<div class="rc-editor"><div class="rc-editor-body"><div class="rc-editor-note" style="color:#dc2626">Unable to load request state for update.</div></div></div>';
+    return;
+  }
+
+  const payload = req.payload || {};
+  const newParentRoll = String(payload.parent_roll_no || '').trim();
+  const allRows = Array.isArray(payload.rows) ? payload.rows : [];
+  const oldParent = String(oldParentRoll || '').trim();
+
+  const oldRows = allRows.filter(r => String((r && r.parent_roll_no) || '').trim().toLowerCase() === oldParent.toLowerCase());
+  const suggestedRowsRaw = allRows.filter(r => {
+    const pr = String((r && r.parent_roll_no) || '').trim().toLowerCase();
+    return pr === '' || pr === String(newParentRoll).toLowerCase();
+  });
+  const suggestedRows = suggestedRowsRaw.length ? suggestedRowsRaw : allRows;
+
+  RC_EDITOR_STATE = {
+    jobId: Number(jobId),
+    requestId: Number(requestId),
+    oldParentRoll: oldParent,
+    oldParentPrevStatus: String(oldParentPrevStatus || 'Main'),
+    newParentRoll: newParentRoll,
+    suggestedSelected: true,
+  };
+
+  let html = '<div class="rc-editor">';
+  html += '<div class="rc-editor-head"><span><i class="bi bi-sliders"></i> Manager Update Mode</span><span class="rc-badge"><i class="bi bi-stars"></i> Suggested Roll Selected</span></div>';
+  html += '<div class="rc-editor-body">';
+  html += '<div class="rc-editor-note">Old parent <strong>' + esc(oldParent || '--') + '</strong> will be restored to previous status <strong>' + esc(RC_EDITOR_STATE.oldParentPrevStatus) + '</strong> after update.</div>';
+  html += '<div class="rc-editor-grid">';
+  html += '<div class="rc-group rc-group-old"><h5>Current Old Slitting (Read-only)</h5>' + renderUpdateRowsTable(oldRows, false, 'old') + '</div>';
+  html += '<div class="rc-group rc-group-new"><h5>Suggested Roll Slitting (Editable)</h5>' + renderUpdateRowsTable(suggestedRows, true, 'new') + '</div>';
+  html += '</div>';
+  html += '<div class="rc-editor-actions">';
+  html += '<button class="rc-btn-update" onclick="toggleSuggestedRollSelection()"><i class="bi bi-check2-circle"></i> Use Suggested Roll</button>';
+  html += '<button id="rc-btn-apply-update" class="rc-btn-apply" onclick="applyManagerRollUpdate()"><i class="bi bi-save2"></i> Update</button>';
+  html += '</div>';
+  html += '</div>';
+  html += '</div>';
+
+  wrap.innerHTML = html;
+}
+
+function renderUpdateRowsTable(rows, editable, prefix) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return '<div class="rc-editor-note" style="padding:8px">No rows available.</div>';
+  let html = '<table class="rc-roll-table"><thead><tr><th>Roll</th><th>Bucket</th><th>Width</th><th>Length</th><th>Status</th><th>Remarks</th></tr></thead><tbody>';
+  list.forEach((r, idx) => {
+    const roll = String((r && r.roll_no) || '').trim();
+    const bucket = String((r && r.bucket) || 'child').toLowerCase() === 'stock' ? 'stock' : 'child';
+    const width = Number((r && r.width) || 0);
+    const length = Number((r && r.length) || 0);
+    const status = String((r && r.status) || (bucket === 'stock' ? 'Stock' : 'Job Assign'));
+    const remarks = String((r && r.remarks) || '');
+    if (editable) {
+      html += '<tr>';
+      html += '<td><input data-rc-field="roll_no" data-rc-row="' + idx + '" value="' + esc(roll) + '"></td>';
+      html += '<td><select data-rc-field="bucket" data-rc-row="' + idx + '"><option value="child"' + (bucket === 'child' ? ' selected' : '') + '>Child</option><option value="stock"' + (bucket === 'stock' ? ' selected' : '') + '>Stock</option></select></td>';
+      html += '<td><input type="number" step="0.01" min="0" data-rc-field="width" data-rc-row="' + idx + '" value="' + esc(width + '') + '"></td>';
+      html += '<td><input type="number" step="0.01" min="0" data-rc-field="length" data-rc-row="' + idx + '" value="' + esc(length + '') + '"></td>';
+      html += '<td><input data-rc-field="status" data-rc-row="' + idx + '" value="' + esc(status) + '"></td>';
+      html += '<td><input data-rc-field="remarks" data-rc-row="' + idx + '" value="' + esc(remarks) + '"></td>';
+      html += '</tr>';
+    } else {
+      html += '<tr><td>' + esc(roll || '--') + '</td><td>' + esc(bucket) + '</td><td>' + esc(width + '') + '</td><td>' + esc(length + '') + '</td><td>' + esc(status || '--') + '</td><td>' + esc(remarks || '--') + '</td></tr>';
+    }
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+function toggleSuggestedRollSelection() {
+  if (!RC_EDITOR_STATE) return;
+  RC_EDITOR_STATE.suggestedSelected = true;
+  alert('Suggested roll selected. Old parent roll will be restored to previous status on Update.');
+}
+
+function collectManagerUpdateRows() {
+  const rows = [];
+  const nodes = document.querySelectorAll('[data-rc-field="roll_no"]');
+  nodes.forEach(node => {
+    const idx = String(node.getAttribute('data-rc-row') || '').trim();
+    if (idx === '') return;
+    const q = (field) => document.querySelector('[data-rc-field="' + field + '"][data-rc-row="' + idx + '"]');
+    const rollNo = String(q('roll_no')?.value || '').trim();
+    if (!rollNo) return;
+    const bucket = String(q('bucket')?.value || 'child').trim().toLowerCase() === 'stock' ? 'stock' : 'child';
+    const width = Number(q('width')?.value || 0);
+    const length = Number(q('length')?.value || 0);
+    const status = String(q('status')?.value || (bucket === 'stock' ? 'Stock' : 'Job Assign')).trim();
+    const remarks = String(q('remarks')?.value || '').trim();
+    rows.push({
+      roll_no: rollNo,
+      bucket: bucket,
+      parent_roll_no: RC_EDITOR_STATE ? RC_EDITOR_STATE.newParentRoll : '',
+      width: width,
+      length: length,
+      status: status,
+      remarks: remarks,
+      wastage: 0,
+    });
+  });
+  return rows;
+}
+
+async function applyManagerRollUpdate() {
+  if (!RC_EDITOR_STATE) return;
+  if (!RC_EDITOR_STATE.suggestedSelected) {
+    alert('Please select suggested roll before Update.');
+    return;
+  }
+  const rows = collectManagerUpdateRows();
+  if (!rows.length) {
+    alert('No suggested rows found to update.');
+    return;
+  }
+
+  const btn = document.getElementById('rc-btn-apply-update');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Updating...'; }
+
+  const note = prompt('Optional manager note for this update:', 'Updated in manager embedded mode');
+  if (note === null) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-save2"></i> Update'; }
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'apply_jumbo_manager_roll_update');
+  fd.append('job_id', String(RC_EDITOR_STATE.jobId));
+  fd.append('request_id', String(RC_EDITOR_STATE.requestId));
+  fd.append('old_parent_roll_no', String(RC_EDITOR_STATE.oldParentRoll || ''));
+  fd.append('old_parent_prev_status', String(RC_EDITOR_STATE.oldParentPrevStatus || 'Main'));
+  fd.append('rows_json', JSON.stringify(rows));
+  fd.append('review_note', String(note || ''));
+
+  try {
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.ok) {
+      alert('Manager update applied successfully. Job metadata kept unchanged and selected roll updated.');
+      location.reload();
+      return;
+    }
+    alert('Update failed: ' + (data.error || 'Unknown'));
+  } catch (err) {
+    alert('Network error: ' + err.message);
+  }
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-save2"></i> Update'; }
 }
 
 function rcRow(label, value) {

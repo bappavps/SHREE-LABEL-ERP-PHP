@@ -262,6 +262,26 @@ function jobs_attach_live_roll_data(array &$job, array $rollMap): void {
     $job['extra_data_parsed'] = $extra;
 }
 
+function jobs_normalize_stock_status(string $statusRaw, string $bucket): string {
+    $s = strtolower(trim($statusRaw));
+    if (strpos($s, 'stock') !== false) return 'Stock';
+    if (strpos($s, 'prod') !== false) return 'In Production';
+    if (strpos($s, 'slit') !== false) return 'Slitting';
+    if (strpos($s, 'consum') !== false) return 'Consumed';
+    if (strpos($s, 'job') !== false) return 'Job Assign';
+    return $bucket === 'stock' ? 'Stock' : 'Job Assign';
+}
+
+function jobs_safe_parent_restore_status(string $statusRaw): string {
+    $s = trim($statusRaw);
+    if ($s === '') return 'Main';
+    $allowed = ['Main', 'Stock', 'Job Assign', 'In Production', 'Consumed', 'Slitting', 'Slitted'];
+    foreach ($allowed as $ok) {
+        if (strcasecmp($ok, $s) === 0) return $ok;
+    }
+    return 'Main';
+}
+
 function jobs_join_base_url(string $path): string {
     $path = trim($path);
     if ($path === '') return '';
@@ -978,6 +998,10 @@ try {
         $parentRollNo = trim((string)($_POST['parent_roll_no'] ?? ''));
         $operatorWastageKg = (float)($_POST['wastage_kg'] ?? 0);
         $operatorRemarks = trim((string)($_POST['operator_remarks'] ?? ''));
+        $changeReason = trim((string)($_POST['change_reason'] ?? ''));
+        $rollChangesJson = (string)($_POST['roll_changes_json'] ?? '[]');
+        $rollChanges = json_decode($rollChangesJson, true);
+        if (!is_array($rollChanges)) $rollChanges = [];
         $rows = json_decode($rowsJson, true);
         if (!is_array($rows)) $rows = [];
 
@@ -1009,6 +1033,7 @@ try {
         $payload = [
             'job_id' => $jobId,
             'parent_roll_no' => $parentRollNo,
+            'roll_changes' => $rollChanges,
             'rows' => $rows,
             'generated_child_roll_nos' => array_values(array_map(function($row) {
                 return (string)($row['roll_no'] ?? '');
@@ -1017,6 +1042,7 @@ try {
             }))),
             'wastage_kg' => $operatorWastageKg,
             'operator_remarks' => $operatorRemarks,
+            'change_reason' => $changeReason,
             'requested_at_iso' => date('c'),
         ];
         $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -1152,6 +1178,304 @@ try {
         $nIns->execute();
 
         echo json_encode(['ok' => true, 'request_id' => $requestId, 'decision' => $decision]);
+        break;
+
+    // ─── Manager update: apply suggested roll without delete/recreate ───
+    case 'apply_jumbo_manager_roll_update':
+        if ($method !== 'POST') {
+            echo json_encode(['ok' => false, 'error' => 'POST required']);
+            break;
+        }
+        if (!hasRole('admin', 'manager')) {
+            echo json_encode(['ok' => false, 'error' => 'Only admin/manager can apply manager update']);
+            break;
+        }
+
+        jobs_ensure_change_request_table($db);
+        jobs_ensure_delete_audit_table($db);
+
+        $jobId = (int)($_POST['job_id'] ?? 0);
+        $requestId = (int)($_POST['request_id'] ?? 0);
+        $oldParentRoll = trim((string)($_POST['old_parent_roll_no'] ?? ''));
+        $oldParentPrevStatus = jobs_safe_parent_restore_status((string)($_POST['old_parent_prev_status'] ?? 'Main'));
+        $rowsJson = (string)($_POST['rows_json'] ?? '[]');
+        $reviewNote = trim((string)($_POST['review_note'] ?? ''));
+        $rows = json_decode($rowsJson, true);
+        if (!is_array($rows)) $rows = [];
+
+        if ($jobId <= 0 || $requestId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Missing job_id or request_id']);
+            break;
+        }
+
+        $jobStmt = $db->prepare("SELECT * FROM jobs WHERE id = ? AND job_type = 'Slitting' AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $jobStmt->bind_param('i', $jobId);
+        $jobStmt->execute();
+        $job = $jobStmt->get_result()->fetch_assoc();
+        if (!$job) {
+            echo json_encode(['ok' => false, 'error' => 'Jumbo slitting job not found']);
+            break;
+        }
+
+        $reqStmt = $db->prepare("SELECT * FROM job_change_requests WHERE id = ? AND job_id = ? AND request_type = 'jumbo_roll_update' AND status = 'Pending' LIMIT 1");
+        $reqStmt->bind_param('ii', $requestId, $jobId);
+        $reqStmt->execute();
+        $changeReq = $reqStmt->get_result()->fetch_assoc();
+        if (!$changeReq) {
+            echo json_encode(['ok' => false, 'error' => 'Pending change request not found']);
+            break;
+        }
+
+        $payload = json_decode((string)($changeReq['payload_json'] ?? '{}'), true);
+        if (!is_array($payload)) $payload = [];
+        $newParentRoll = trim((string)($payload['parent_roll_no'] ?? ''));
+        if ($newParentRoll === '') {
+            echo json_encode(['ok' => false, 'error' => 'Suggested parent roll missing in request']);
+            break;
+        }
+
+        $extra = json_decode((string)($job['extra_data'] ?? '{}'), true);
+        if (!is_array($extra)) $extra = [];
+        if ($oldParentRoll === '') {
+            $oldParentRoll = trim((string)($extra['parent_roll'] ?? ($extra['parent_details']['roll_no'] ?? $job['roll_no'] ?? '')));
+        }
+        if ($oldParentRoll === '') {
+            echo json_encode(['ok' => false, 'error' => 'Old parent roll is required']);
+            break;
+        }
+
+        // Keep same guard rails as accept flow for downstream progression.
+        $chain = jobs_get_chain_jobs($db, $jobId);
+        $blocked = [];
+        foreach ($chain as $cj) {
+            if ((int)($cj['id'] ?? 0) === $jobId) continue;
+            $st = trim((string)($cj['status'] ?? ''));
+            if (!in_array($st, ['Queued', 'Pending'], true)) {
+                $blocked[] = ['id' => (int)$cj['id'], 'job_no' => (string)($cj['job_no'] ?? ''), 'status' => $st];
+            }
+        }
+        if (!empty($blocked)) {
+            echo json_encode(['ok' => false, 'error' => 'Update blocked: downstream jobs already progressed.', 'blocked_jobs' => $blocked]);
+            break;
+        }
+
+        $newRollStmt = $db->prepare("SELECT * FROM paper_stock WHERE roll_no = ? LIMIT 1");
+        $newRollStmt->bind_param('s', $newParentRoll);
+        $newRollStmt->execute();
+        $newParentData = $newRollStmt->get_result()->fetch_assoc();
+        if (!$newParentData) {
+            echo json_encode(['ok' => false, 'error' => 'Suggested parent roll not found in paper stock']);
+            break;
+        }
+
+        $reviewedBy = (int)($_SESSION['user_id'] ?? 0);
+        $reviewedByName = trim((string)($_SESSION['name'] ?? ($_SESSION['user_name'] ?? 'Manager')));
+        if ($reviewNote === '') $reviewNote = 'Manager updated roll/slits in embedded update mode';
+
+        $db->begin_transaction();
+        try {
+            $existingChild = is_array($extra['child_rolls'] ?? null) ? $extra['child_rolls'] : [];
+            $existingStock = is_array($extra['stock_rolls'] ?? null) ? $extra['stock_rolls'] : [];
+            $baseParent = trim((string)($extra['parent_roll'] ?? ($extra['parent_details']['roll_no'] ?? '')));
+
+            $isOldParentRow = function(array $row) use ($oldParentRoll, $baseParent): bool {
+                $pr = trim((string)($row['parent_roll_no'] ?? ''));
+                if ($pr !== '') return strcasecmp($pr, $oldParentRoll) === 0;
+                return $baseParent !== '' && strcasecmp($baseParent, $oldParentRoll) === 0;
+            };
+
+            $keepChild = [];
+            $keepStock = [];
+            $removedChildRollNos = [];
+
+            foreach ($existingChild as $row) {
+                if (is_array($row) && $isOldParentRow($row)) {
+                    $rn = trim((string)($row['roll_no'] ?? ''));
+                    if ($rn !== '') $removedChildRollNos[$rn] = true;
+                    continue;
+                }
+                $keepChild[] = $row;
+            }
+            foreach ($existingStock as $row) {
+                if (is_array($row) && $isOldParentRow($row)) {
+                    $rn = trim((string)($row['roll_no'] ?? ''));
+                    if ($rn !== '') $removedChildRollNos[$rn] = true;
+                    continue;
+                }
+                $keepStock[] = $row;
+            }
+
+            $removedRollCount = 0;
+            if (!empty($removedChildRollNos)) {
+                $list = array_values(array_keys($removedChildRollNos));
+                $ph = implode(',', array_fill(0, count($list), '?'));
+                $types = str_repeat('s', count($list));
+                $delStmt = $db->prepare("DELETE FROM paper_stock WHERE roll_no IN ($ph)");
+                $delStmt->bind_param($types, ...$list);
+                $delStmt->execute();
+                $removedRollCount = (int)$delStmt->affected_rows;
+            }
+
+            // Restore the replaced parent roll to previous pre-slitting status.
+            $upOldParent = $db->prepare("UPDATE paper_stock SET status = ?, date_used = NULL WHERE roll_no = ?");
+            $upOldParent->bind_param('ss', $oldParentPrevStatus, $oldParentRoll);
+            $upOldParent->execute();
+
+            $newRowsChild = [];
+            $newRowsStock = [];
+            $updExistingRoll = $db->prepare("UPDATE paper_stock SET paper_type = ?, company = ?, width_mm = ?, length_mtr = ?, gsm = ?, weight_kg = ?, sqm = ?, remarks = ?, status = ?, job_no = ?, job_name = ?, date_used = NOW() WHERE roll_no = ?");
+            $insNewRoll = $db->prepare("INSERT INTO paper_stock (roll_no, paper_type, company, width_mm, length_mtr, gsm, weight_kg, sqm, status, job_no, job_name, date_used, remarks, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?)");
+            $selRoll = $db->prepare("SELECT id FROM paper_stock WHERE roll_no = ? LIMIT 1");
+
+            foreach ($rows as $r) {
+                if (!is_array($r)) continue;
+                $rollNo = trim((string)($r['roll_no'] ?? ''));
+                if ($rollNo === '') continue;
+
+                $bucket = strtolower(trim((string)($r['bucket'] ?? 'child'))) === 'stock' ? 'stock' : 'child';
+                $width = (float)($r['width'] ?? 0);
+                $length = (float)($r['length'] ?? 0);
+                $wastage = (float)($r['wastage'] ?? 0);
+                $remarks = trim((string)($r['remarks'] ?? ''));
+                $rowStatus = jobs_normalize_stock_status((string)($r['status'] ?? ''), $bucket);
+                $sqm = ($width > 0 && $length > 0) ? round(($width / 1000) * $length, 2) : 0;
+
+                $entry = [
+                    'roll_no' => $rollNo,
+                    'parent_roll_no' => $newParentRoll,
+                    'width' => $width,
+                    'length' => $length,
+                    'wastage' => $wastage,
+                    'remarks' => $remarks,
+                    'status' => $rowStatus,
+                    'sqm' => $sqm,
+                ];
+                if ($bucket === 'stock') $newRowsStock[] = $entry;
+                else $newRowsChild[] = $entry;
+
+                $paperType = (string)($newParentData['paper_type'] ?? '');
+                $company = (string)($newParentData['company'] ?? '');
+                $gsm = (float)($newParentData['gsm'] ?? 0);
+                $weight = null;
+                if ($width > 0 && $length > 0 && $gsm > 0) {
+                    $weight = round((($width / 1000) * $length * $gsm) / 1000, 2);
+                }
+                $jobNo = (string)($job['job_no'] ?? '');
+                $jobName = jobs_display_job_name($job);
+
+                $selRoll->bind_param('s', $rollNo);
+                $selRoll->execute();
+                $exists = $selRoll->get_result()->fetch_assoc();
+                if ($exists) {
+                    $updExistingRoll->bind_param('ssdddddsssss', $paperType, $company, $width, $length, $gsm, $weight, $sqm, $remarks, $rowStatus, $jobNo, $jobName, $rollNo);
+                    $updExistingRoll->execute();
+                } else {
+                    $insNewRoll->bind_param('sssdddddssssi', $rollNo, $paperType, $company, $width, $length, $gsm, $weight, $sqm, $rowStatus, $jobNo, $jobName, $remarks, $reviewedBy);
+                    $insNewRoll->execute();
+                }
+            }
+
+            $parentRolls = $extra['parent_rolls'] ?? [];
+            if (is_string($parentRolls)) {
+                $parentRolls = preg_split('/\s*,\s*/', trim($parentRolls), -1, PREG_SPLIT_NO_EMPTY);
+            }
+            if (!is_array($parentRolls)) $parentRolls = [];
+            if (empty($parentRolls)) $parentRolls = [$oldParentRoll];
+
+            $normalizedParents = [];
+            $replaced = false;
+            foreach ($parentRolls as $pr) {
+                $prn = trim((string)$pr);
+                if ($prn === '') continue;
+                if (strcasecmp($prn, $oldParentRoll) === 0) {
+                    $normalizedParents[$newParentRoll] = true;
+                    $replaced = true;
+                } else {
+                    $normalizedParents[$prn] = true;
+                }
+            }
+            if (!$replaced) $normalizedParents[$newParentRoll] = true;
+
+            $newParentOriginalStatus = trim((string)($newParentData['status'] ?? 'Main'));
+            if ($newParentOriginalStatus === '') $newParentOriginalStatus = 'Main';
+
+            $extraParentRoll = trim((string)($extra['parent_roll'] ?? ''));
+            $extra['parent_roll'] = (strcasecmp($extraParentRoll, $oldParentRoll) === 0) ? $newParentRoll : ($extraParentRoll !== '' ? $extraParentRoll : $newParentRoll);
+            $extra['parent_rolls'] = array_values(array_keys($normalizedParents));
+            $extra['parent_details'] = [
+                'roll_no' => $newParentRoll,
+                'original_status' => $newParentOriginalStatus,
+                'remarks' => (string)($newParentData['remarks'] ?? ''),
+                'width_mm' => (float)($newParentData['width_mm'] ?? 0),
+                'length_mtr' => (float)($newParentData['length_mtr'] ?? 0),
+                'gsm' => (float)($newParentData['gsm'] ?? 0),
+                'weight_kg' => (float)($newParentData['weight_kg'] ?? 0),
+                'paper_type' => (string)($newParentData['paper_type'] ?? ''),
+                'company' => (string)($newParentData['company'] ?? ''),
+            ];
+            $extra['child_rolls'] = array_values(array_merge($keepChild, $newRowsChild));
+            $extra['stock_rolls'] = array_values(array_merge($keepStock, $newRowsStock));
+            $extra['roll_change_from'] = $oldParentRoll;
+            $extra['roll_change_to'] = $newParentRoll;
+            $extra['roll_change_request_id'] = $requestId;
+            $extra['manager_update_mode'] = true;
+            $extra['manager_updated_at'] = date('c');
+
+            $jobRollNo = trim((string)($job['roll_no'] ?? ''));
+            $nextRollNo = (strcasecmp($jobRollNo, $oldParentRoll) === 0) ? $newParentRoll : ($jobRollNo !== '' ? $jobRollNo : $newParentRoll);
+
+            $notes = trim((string)($job['notes'] ?? ''));
+            if ($reviewNote !== '') $notes = trim($notes . "\nManager update: " . $reviewNote);
+            $extraJson = json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $updJob = $db->prepare("UPDATE jobs SET roll_no = ?, extra_data = ?, notes = ?, status = 'Pending', started_at = NULL, completed_at = NULL, updated_at = NOW() WHERE id = ?");
+            $updJob->bind_param('sssi', $nextRollNo, $extraJson, $notes, $jobId);
+            $updJob->execute();
+
+            $markNewParent = $db->prepare("UPDATE paper_stock SET status = 'Slitting', date_used = NOW() WHERE roll_no = ?");
+            $markNewParent->bind_param('s', $newParentRoll);
+            $markNewParent->execute();
+
+            $updReq = $db->prepare("UPDATE job_change_requests SET status = 'Approved', reviewed_by = ?, reviewed_by_name = ?, reviewed_at = NOW(), review_note = ? WHERE id = ?");
+            $updReq->bind_param('issi', $reviewedBy, $reviewedByName, $reviewNote, $requestId);
+            $updReq->execute();
+
+            $planId = (int)($job['planning_id'] ?? 0);
+            $rootJobNo = (string)($job['job_no'] ?? '');
+            $rootType = (string)($job['job_type'] ?? '');
+            $snapshot = json_encode([
+                'action' => 'roll_change_manager_update',
+                'old_parent_roll' => $oldParentRoll,
+                'new_parent_roll' => $newParentRoll,
+                'request_id' => $requestId,
+                'removed_child_rolls' => $removedRollCount,
+                'new_child_rows' => count($newRowsChild),
+                'new_stock_rows' => count($newRowsStock),
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $auditIns = $db->prepare("INSERT INTO job_delete_audit (root_job_id, root_job_no, root_job_type, planning_id, parent_roll_no, action_status, deleted_root, deleted_child_jobs, removed_child_rolls, parent_restored, planning_restored, reset_snapshot_json, requested_by, requested_by_name) VALUES (?, ?, ?, ?, ?, 'completed', 0, 0, ?, 1, 1, ?, ?, ?)");
+            if ($auditIns) {
+                $auditIns->bind_param('issisisis', $jobId, $rootJobNo, $rootType, $planId, $oldParentRoll, $removedRollCount, $snapshot, $reviewedBy, $reviewedByName);
+                $auditIns->execute();
+            }
+
+            $notifMsg = ($rootJobNo !== '' ? $rootJobNo : ('JOB-' . $jobId)) . ' manager update applied: ' . $oldParentRoll . ' -> ' . $newParentRoll;
+            $notifDept = (string)($job['department'] ?? 'jumbo_slitting');
+            $nIns = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, 'success')");
+            $nIns->bind_param('iss', $jobId, $notifDept, $notifMsg);
+            $nIns->execute();
+
+            $db->commit();
+            echo json_encode([
+                'ok' => true,
+                'job_id' => $jobId,
+                'job_no' => $rootJobNo,
+                'old_parent_roll' => $oldParentRoll,
+                'new_parent_roll' => $newParentRoll,
+                'removed_child_rolls' => $removedRollCount,
+            ]);
+        } catch (Throwable $th) {
+            $db->rollback();
+            echo json_encode(['ok' => false, 'error' => 'Manager update failed: ' . $th->getMessage()]);
+        }
         break;
 
     // ─── List jobs by department ─────────────────────────────

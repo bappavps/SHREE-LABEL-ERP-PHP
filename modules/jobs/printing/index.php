@@ -4,7 +4,7 @@ require_once __DIR__ . '/../../../includes/functions.php';
 require_once __DIR__ . '/../../../includes/auth_check.php';
 
 $isOperatorView = (string)($_GET['view'] ?? '') === 'operator';
-$canDeleteJobs = isAdmin();
+$canDeleteJobs = isAdmin() && !$isOperatorView;
 $pageTitle = $isOperatorView ? 'Flexo Operator' : 'Flexo Printing Jobs';
 $db = getDB();
 $appSettings = getAppSettings();

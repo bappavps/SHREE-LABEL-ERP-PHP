@@ -842,7 +842,17 @@ try {
                             $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | JMB: ' . $jcNoJumbo . ($displayJobName !== '' ? ' | Job Name : ' . $displayJobName : '');
                             $jcStmtJ = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, notes, extra_data) VALUES (?, ?, NULL, ?, 'Slitting', 'jumbo_slitting', 'Pending', 1, ?, ?)");
                             $jcStmtJ->bind_param('sisss', $jcNoJumbo, $pidJ, $parentRollNo, $notesJ, $extraJson);
-                            $okJumbo = $jcStmtJ->execute();
+                            $okJumbo = false;
+                            try {
+                                $okJumbo = $jcStmtJ->execute();
+                            } catch (Throwable $insertErr) {
+                                // In strict mysqli mode duplicate key throws directly; keep retry behavior.
+                                if ((int)($jcStmtJ->errno ?? 0) === 1062 || stripos((string)$insertErr->getMessage(), 'Duplicate entry') !== false) {
+                                    $okJumbo = false;
+                                } else {
+                                    throw $insertErr;
+                                }
+                            }
                             if ($okJumbo) {
                                 $jumboJobId = $db->insert_id;
                                 $jumboRefNo = $jcNoJumbo;
@@ -889,7 +899,16 @@ try {
                                 $jcStmtF = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Printing', 'flexo_printing', 'Queued', 2, ?, ?)");
                                 $jcStmtF->bind_param('sisss', $jcNoFlex, $planningId, $parentRollNo, $jumboJobId, $notesF);
                             }
-                            $okFlex = $jcStmtF->execute();
+                            $okFlex = false;
+                            try {
+                                $okFlex = $jcStmtF->execute();
+                            } catch (Throwable $insertErr) {
+                                if ((int)($jcStmtF->errno ?? 0) === 1062 || stripos((string)$insertErr->getMessage(), 'Duplicate entry') !== false) {
+                                    $okFlex = false;
+                                } else {
+                                    throw $insertErr;
+                                }
+                            }
                             if ($okFlex) {
                                 $createdJobCards[] = ['job_no' => $jcNoFlex, 'type' => 'Printing', 'roll' => $parentRollNo, 'id' => $db->insert_id];
                                 break;

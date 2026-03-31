@@ -323,6 +323,27 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-roll-check .rk{font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#64748b}
 .jc-roll-check .rv{font-size:.82rem;font-weight:700;color:#0f172a;margin-top:4px}
 .jc-roll-check-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
+.jc-parent-ref{margin-top:10px;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc}
+.jc-parent-ref h4{margin:0 0 8px;font-size:.64rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#475569}
+.jc-parent-ref-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.jc-parent-ref-item{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:8px}
+.jc-parent-ref-item .k{font-size:.58rem;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+.jc-parent-ref-item .v{font-size:.78rem;font-weight:800;color:#0f172a;margin-top:2px}
+.jc-inline-suggest{margin-top:8px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;max-height:200px;overflow:auto;display:none}
+.jc-inline-suggest-row{display:grid;grid-template-columns:1.2fr 1fr .7fr .7fr auto;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid #eef2f7}
+.jc-inline-suggest-row:last-child{border-bottom:none}
+.jc-inline-suggest-row .rn{font-weight:900;color:var(--jc-brand)}
+.jc-inline-suggest-row .meta{font-size:.68rem;color:#64748b;font-weight:700}
+.jc-inline-empty{padding:10px;font-size:.72rem;color:#64748b;text-align:center}
+.jc-parent-select-row{transition:background .15s}
+.jc-parent-select-row-selected td{background:#fef2f2 !important}
+.jc-auto-meta{margin-top:8px;font-size:.7rem;color:#475569;font-weight:700}
+.jc-auto-list{margin-top:8px;border:1px solid #dbe3ea;border-radius:10px;background:#fff;display:none;overflow:auto;max-height:220px}
+.jc-auto-list table{width:100%;border-collapse:collapse;font-size:.72rem}
+.jc-auto-list th,.jc-auto-list td{padding:8px 10px;border-bottom:1px solid #eef2f7;text-align:left}
+.jc-auto-list thead th{position:sticky;top:0;background:#f8fafc;font-size:.64rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b}
+.jc-auto-list tr.jc-auto-best td{background:#ecfdf5}
+.dm-edit-input{width:100%;min-width:70px;height:30px;border:1px solid #cbd5e1;border-radius:6px;padding:4px 6px;font-size:.72rem;font-weight:700}
 
 /* ── Detail Modal ── */
 .jc-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;padding:20px}
@@ -384,7 +405,7 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-timer-btn-cancel:hover{background:#dc2626}
 .jc-timer-btn-end{background:#16a34a;color:#fff}
 .jc-timer-btn-end:hover{background:#15803d}
-@media(max-width:600px){.jc-grid{grid-template-columns:1fr}.jc-stats{grid-template-columns:repeat(2,1fr)}.jc-detail-grid{grid-template-columns:1fr}.jc-form-row{grid-template-columns:1fr}.jc-summary-grid,.jc-timing-grid,.jc-action-bar,.jc-roll-check-grid,.jc-picker-filters{grid-template-columns:1fr}.jc-child-shell{margin-left:0}}
+@media(max-width:600px){.jc-grid{grid-template-columns:1fr}.jc-stats{grid-template-columns:repeat(2,1fr)}.jc-detail-grid{grid-template-columns:1fr}.jc-form-row{grid-template-columns:1fr}.jc-summary-grid,.jc-timing-grid,.jc-action-bar,.jc-roll-check-grid,.jc-picker-filters{grid-template-columns:1fr}.jc-child-shell{margin-left:0}.jc-roll-pick-row{flex-wrap:wrap}.jc-roll-pick-row input{min-width:0;width:100%}.dm-change-section .jc-roll-pick-row{flex-direction:column;align-items:stretch}.dm-change-section .jc-roll-pick-row input{width:100%}.dm-change-section .jc-roll-pick-row button{width:100%;justify-content:center}.dm-change-section h3{font-size:.85rem}.dm-subst-detail-grid{grid-template-columns:1fr 1fr !important}#dm-edit-parent-table{font-size:.72rem}#dm-edit-parent-table th,#dm-edit-parent-table td{padding:6px 4px}.dm-change-roll-detail .jc-roll-check-grid{grid-template-columns:1fr 1fr}#dm-roll-change-sections{margin:0 -4px}}
 </style>
 
 <div class="jc-header no-print">
@@ -531,38 +552,151 @@ $historyCount = $finishedCount;
 </div>
 
 <div id="jcPanelHistory" style="display:none">
-<div class="card no-print" style="margin-top:18px">
-  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-    <span class="card-title"><i class="bi bi-clock-history"></i> Jumbo History (Closed / Finalized)</span>
-    <span style="font-size:.72rem;color:#64748b;font-weight:700"><?= $historyCount ?> records</span>
+<style>
+.ht-filter-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.ht-search{padding:8px 14px;border:1px solid var(--border,#e2e8f0);border-radius:10px;font-size:.82rem;min-width:200px;outline:none;transition:border .15s}
+.ht-search:focus{border-color:var(--jc-brand)}
+.ht-date-input{padding:7px 12px;border:1px solid var(--border,#e2e8f0);border-radius:10px;font-size:.76rem;outline:none}
+.ht-date-input:focus{border-color:var(--jc-brand)}
+.ht-period-btn{padding:5px 13px;font-size:.66rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border:1px solid var(--border,#e2e8f0);background:#fff;border-radius:20px;cursor:pointer;transition:all .15s;color:#64748b}
+.ht-period-btn.active{background:#0f172a;color:#fff;border-color:#0f172a}
+.ht-label{font-size:.62rem;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:.03em}
+.ht-bulk-bar{display:none;background:linear-gradient(135deg,#15803d,#166534);color:#fff;border-radius:12px;padding:12px 20px;margin-bottom:12px;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;box-shadow:0 4px 16px rgba(21,128,61,.25)}
+.ht-bulk-bar.visible{display:flex}
+.ht-bulk-btn{padding:5px 13px;border-radius:8px;font-weight:700;font-size:.7rem;cursor:pointer;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.12);color:#fff}
+.ht-bulk-btn:hover{background:rgba(255,255,255,.22)}
+.ht-bulk-print{padding:7px 16px;background:var(--jc-brand);color:#fff;border:none;border-radius:8px;font-weight:800;font-size:.74rem;cursor:pointer;display:flex;align-items:center;gap:5px}
+.ht-bulk-print:hover{opacity:.9}
+.ht-table-wrap{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:14px;overflow:hidden}
+.ht-table{width:100%;border-collapse:collapse;font-size:.78rem}
+.ht-table thead{background:linear-gradient(135deg,#f8fafc,#f1f5f9);position:sticky;top:0;z-index:2}
+.ht-table th{padding:11px 13px;font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#64748b;text-align:left;border-bottom:2px solid #e2e8f0;white-space:nowrap;cursor:pointer;user-select:none}
+.ht-table th:hover{color:#0f172a}
+.ht-table th .ht-sort{margin-left:3px;font-size:.52rem;opacity:.4}
+.ht-table th.sorted .ht-sort{opacity:1;color:var(--jc-brand)}
+.ht-table td{padding:9px 13px;border-bottom:1px solid #f1f5f9;color:#1e293b;font-weight:600;vertical-align:middle}
+.ht-table tbody tr{transition:background .1s;cursor:pointer}
+.ht-table tbody tr:hover{background:#f0fdf4}
+.ht-table tbody tr.ht-selected{background:#f0fdf4;outline:2px solid var(--jc-brand);outline-offset:-2px}
+.ht-table .ht-cb-cell{width:34px;text-align:center}
+.ht-table .ht-cb-cell input{width:16px;height:16px;accent-color:var(--jc-brand);cursor:pointer}
+.ht-jobno{font-weight:900;color:#0f172a;font-size:.8rem}
+.ht-dim{color:#94a3b8;font-size:.72rem}
+.ht-badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:.56rem;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
+.ht-badge-completed{background:#dcfce7;color:#166534}
+.ht-badge-closed{background:#dcfce7;color:#166534}
+.ht-badge-finalized{background:#dbeafe;color:#1e40af}
+.ht-badge-qcpassed{background:#d1fae5;color:#065f46}
+.ht-badge-default{background:#f1f5f9;color:#64748b}
+.ht-act-btn{padding:4px 9px;font-size:.58rem;font-weight:800;text-transform:uppercase;border:1px solid var(--border,#e2e8f0);background:#fff;border-radius:6px;cursor:pointer;transition:all .12s;display:inline-flex;align-items:center;gap:3px;color:#475569}
+.ht-act-btn:hover{background:#f1f5f9}
+.ht-act-btn.ht-print{color:#8b5cf6;border-color:#c4b5fd}
+.ht-act-btn.ht-print:hover{background:#f5f3ff}
+.ht-pagination{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;flex-wrap:wrap;gap:10px}
+.ht-page-info{font-size:.7rem;color:#64748b;font-weight:600}
+.ht-page-btns{display:flex;gap:4px}
+.ht-page-btn{padding:5px 11px;border:1px solid var(--border,#e2e8f0);background:#fff;border-radius:8px;font-size:.7rem;font-weight:700;cursor:pointer;color:#475569;transition:all .12s}
+.ht-page-btn:hover{background:#f1f5f9}
+.ht-page-btn.active{background:var(--jc-brand);color:#fff;border-color:var(--jc-brand)}
+.ht-page-btn:disabled{opacity:.4;cursor:not-allowed}
+.ht-per-page{padding:5px 10px;border:1px solid var(--border,#e2e8f0);border-radius:8px;font-size:.7rem;outline:none}
+@media(max-width:768px){.ht-table-wrap{overflow-x:auto}}
+</style>
+
+<div class="ht-filter-bar no-print" style="margin-top:14px">
+  <input type="text" class="ht-search" id="htSearch" placeholder="Search job no, roll, company, material&hellip;">
+  <span class="ht-label">Period:</span>
+  <button class="ht-period-btn active" onclick="htSetPeriod('all',this)">All</button>
+  <button class="ht-period-btn" onclick="htSetPeriod('today',this)">Today</button>
+  <button class="ht-period-btn" onclick="htSetPeriod('week',this)">Week</button>
+  <button class="ht-period-btn" onclick="htSetPeriod('month',this)">Month</button>
+  <button class="ht-period-btn" onclick="htSetPeriod('year',this)">Year</button>
+  <span class="ht-label" style="margin-left:4px">Custom:</span>
+  <input type="date" class="ht-date-input" id="htDateFrom" title="From date">
+  <span style="color:#94a3b8;font-size:.7rem">to</span>
+  <input type="date" class="ht-date-input" id="htDateTo" title="To date">
+  <button class="ht-period-btn" onclick="htApplyCustomDate()" style="background:var(--jc-brand);color:#fff;border-color:var(--jc-brand)"><i class="bi bi-funnel"></i> Apply</button>
+</div>
+
+<div class="ht-bulk-bar no-print" id="htBulkBar">
+  <div style="display:flex;align-items:center;gap:10px">
+    <i class="bi bi-check2-square" style="font-size:1.1rem"></i>
+    <span style="font-weight:800;font-size:.82rem"><span id="htSelectedCount">0</span> Selected</span>
   </div>
-  <div style="overflow:auto">
-    <table class="jc-table" style="width:100%;border-collapse:collapse;font-size:.78rem">
-      <thead>
-        <tr>
-          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid #e2e8f0">Job No</th>
-          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid #e2e8f0">Plan</th>
-          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid #e2e8f0">Roll</th>
-          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid #e2e8f0">Status</th>
-          <th style="padding:10px 12px;text-align:left;border-bottom:1px solid #e2e8f0">Closed At</th>
-        </tr>
-      </thead>
-      <tbody>
-      <?php if (empty($historyJobs)): ?>
-        <tr><td colspan="5" style="padding:12px;color:#94a3b8">No closed/finalized jumbo jobs yet.</td></tr>
-      <?php else: ?>
-        <?php foreach ($historyJobs as $h): ?>
-          <tr>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;font-weight:700"><?= e($h['job_no']) ?></td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['planning_job_name'] ?? '—') ?></td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['roll_no'] ?? '—') ?></td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['status']) ?></td>
-            <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9"><?= e($h['completed_at'] ?? $h['updated_at'] ?? $h['created_at'] ?? '—') ?></td>
-          </tr>
-        <?php endforeach; ?>
-      <?php endif; ?>
-      </tbody>
-    </table>
+  <div style="display:flex;gap:8px;align-items:center">
+    <button class="ht-bulk-btn" onclick="htSelectAllVisible()">Select All</button>
+    <button class="ht-bulk-btn" onclick="htDeselectAll()">Deselect All</button>
+    <button class="ht-bulk-print" onclick="htBulkPrint()"><i class="bi bi-printer-fill"></i> Print Selected</button>
+  </div>
+</div>
+
+<div class="ht-table-wrap">
+  <table class="ht-table" id="htTable">
+    <thead>
+      <tr>
+        <th class="ht-cb-cell no-print"><input type="checkbox" id="htCheckAll" onchange="htToggleAll(this.checked)" title="Select all"></th>
+        <th onclick="htSortCol(0)">#<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(1)">Job No<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(2)">Job Name<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(3)">Roll No<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(4)">Material<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(5)">Status<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(6)">Started<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(7)">Completed<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(8)">Duration<span class="ht-sort">▲▼</span></th>
+        <th class="no-print">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="htBody">
+    <?php if (empty($historyJobs)): ?>
+      <tr><td colspan="11" style="padding:40px;text-align:center;color:#94a3b8"><i class="bi bi-inbox" style="font-size:2rem;opacity:.3"></i><br>No completed jobs yet</td></tr>
+    <?php else: ?>
+      <?php foreach ($historyJobs as $idx => $h):
+        $hSts = $h['status'];
+        $hStsLower = strtolower(str_replace(' ', '', $hSts));
+        $hStsClass = match($hStsLower) { 'closed'=>'closed','finalized'=>'finalized','completed'=>'completed','qcpassed'=>'qcpassed', default=>'default' };
+        $hDur = $h['duration_minutes'] ?? null;
+        $hDurStr = ($hDur !== null) ? (floor($hDur/60).'h '.($hDur%60).'m') : '—';
+        $hStarted = $h['started_at'] ? date('d M Y, H:i', strtotime($h['started_at'])) : '—';
+        $hCompleted = $h['completed_at'] ? date('d M Y, H:i', strtotime($h['completed_at'])) : ($h['updated_at'] ? date('d M Y, H:i', strtotime($h['updated_at'])) : '—');
+        $hSearch = strtolower(($h['job_no']??'').' '.($h['planning_job_name']??'').' '.($h['roll_no']??'').' '.($h['paper_type']??'').' '.($h['company']??''));
+      ?>
+      <tr data-id="<?= (int)$h['id'] ?>"
+          data-completed="<?= e($h['completed_at'] ?? $h['updated_at'] ?? $h['created_at'] ?? '') ?>"
+          data-search="<?= e($hSearch) ?>"
+          onclick="openJobDetail(<?= (int)$h['id'] ?>)">
+        <td class="ht-cb-cell no-print">
+          <input type="checkbox" class="ht-row-cb" data-job-id="<?= (int)$h['id'] ?>" onclick="event.stopPropagation();htUpdateBulk()">
+        </td>
+        <td class="ht-dim"><?= $idx + 1 ?></td>
+        <td><span class="ht-jobno"><?= e($h['job_no']) ?></span></td>
+        <td><?= e($h['planning_job_name'] ?? '—') ?></td>
+        <td style="color:var(--jc-brand);font-weight:800"><?= e($h['roll_no'] ?? '—') ?></td>
+        <td><?= e($h['paper_type'] ?? '—') ?></td>
+        <td><span class="ht-badge ht-badge-<?= $hStsClass ?>"><?= e($hSts) ?></span></td>
+        <td class="ht-dim"><?= $hStarted ?></td>
+        <td class="ht-dim"><?= $hCompleted ?></td>
+        <td class="ht-dim"><?= $hDurStr ?></td>
+        <td class="no-print" onclick="event.stopPropagation()">
+          <button class="ht-act-btn" onclick="openJobDetail(<?= (int)$h['id'] ?>)" title="View"><i class="bi bi-eye"></i></button>
+          <button class="ht-act-btn ht-print" onclick="printJobCard(<?= (int)$h['id'] ?>)" title="Print"><i class="bi bi-printer"></i></button>
+        </td>
+      </tr>
+      <?php endforeach; ?>
+    <?php endif; ?>
+    </tbody>
+  </table>
+  <div class="ht-pagination no-print" id="htPagination">
+    <div class="ht-page-info" id="htPageInfo">Showing 0–0 of 0</div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <select class="ht-per-page" id="htPerPage" onchange="htGoPage(1)">
+        <option value="25">25 / page</option>
+        <option value="50">50 / page</option>
+        <option value="100">100 / page</option>
+        <option value="all">Show All</option>
+      </select>
+      <div class="ht-page-btns" id="htPageBtns"></div>
+    </div>
   </div>
 </div>
 </div>
@@ -594,6 +728,9 @@ $historyCount = $finishedCount;
       <button class="jc-action-btn jc-btn-view" type="button" onclick="closeRollPicker()"><i class="bi bi-x-lg"></i></button>
     </div>
     <div class="jc-picker-body">
+      <div id="rp-changing-roll-banner" style="display:none;background:#fff3e0;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:.85rem;color:#92400e">
+        <i class="bi bi-arrow-repeat"></i> <strong>Changing Roll:</strong> <span id="rp-changing-roll-text"></span>
+      </div>
       <div class="jc-picker-filters">
         <div class="jc-form-group">
           <label>Search Roll / Material / Company</label>
@@ -639,6 +776,7 @@ $historyCount = $finishedCount;
 <div class="jc-print-area" id="jcPrintArea"></div>
 
 <script src="<?= BASE_URL ?>/assets/js/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 const CSRF = '<?= e($csrf) ?>';
 const BASE_URL = '<?= BASE_URL ?>';
@@ -647,10 +785,12 @@ const APP_FOOTER_LEFT = <?= json_encode($appFooterLeft, JSON_HEX_TAG|JSON_HEX_AP
 const APP_FOOTER_RIGHT = <?= json_encode($appFooterRight, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const ALL_JOBS = <?= json_encode(array_values(array_merge($activeJobs, $historyJobs)), JSON_HEX_TAG|JSON_HEX_APOS) ?>;
-const IS_ADMIN = <?= isAdmin() ? 'true' : 'false' ?>;
+const IS_ADMIN = false;
 let DM_ACTIVE_JOB_ID = 0;
 let DM_ROLL_FILTERS_LOADED = false;
 let DM_MODAL_LOCKED = false;
+let DM_SELECTED_PARENT_ROLLS = [];
+let DM_AUTO_REQUIRED_WIDTH = 0;
 const DM_AUTO_REFRESH_MS = 45000;
 let _timerInterval = null;
 let _timerStart = null;
@@ -667,6 +807,7 @@ function switchJumboTab(tab) {
     historyPanel.style.display = '';
     activeBtn.classList.remove('active');
     historyBtn.classList.add('active');
+    htGoPage(1);
   } else {
     activePanel.style.display = '';
     historyPanel.style.display = 'none';
@@ -674,6 +815,238 @@ function switchJumboTab(tab) {
     historyBtn.classList.remove('active');
   }
 }
+
+// ─── History table: search/filter/sort/pagination/bulk ──────
+let HT_PERIOD = 'all';
+let HT_PAGE = 1;
+let HT_SORT = { col: -1, asc: true };
+
+function htVisibleRows() {
+  const rows = Array.from(document.querySelectorAll('#htBody tr[data-id]'));
+  const q = (document.getElementById('htSearch')?.value || '').trim().toLowerCase();
+  const now = new Date();
+  const from = document.getElementById('htDateFrom')?.value || '';
+  const to = document.getElementById('htDateTo')?.value || '';
+
+  return rows.filter(function(tr) {
+    if (q && !(tr.dataset.search || '').includes(q)) return false;
+    if (HT_PERIOD === 'all') return true;
+
+    const dRaw = tr.dataset.completed || '';
+    if (!dRaw) return false;
+    const d = new Date(dRaw);
+    if (isNaN(d.getTime())) return false;
+
+    if (HT_PERIOD === 'today') {
+      return d.toISOString().slice(0, 10) === now.toISOString().slice(0, 10);
+    }
+    if (HT_PERIOD === 'week') {
+      const dow = now.getDay() || 7;
+      const start = new Date(now);
+      start.setDate(now.getDate() - dow + 1);
+      start.setHours(0, 0, 0, 0);
+      return d >= start;
+    }
+    if (HT_PERIOD === 'month') {
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    }
+    if (HT_PERIOD === 'year') {
+      return d.getFullYear() === now.getFullYear();
+    }
+    if (HT_PERIOD === 'custom') {
+      const day = d.toISOString().slice(0, 10);
+      if (from && day < from) return false;
+      if (to && day > to) return false;
+      return true;
+    }
+    return true;
+  });
+}
+
+function htSetPeriod(period, btn) {
+  HT_PERIOD = period;
+  document.querySelectorAll('.ht-period-btn').forEach(function(b) { b.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
+  const df = document.getElementById('htDateFrom');
+  const dt = document.getElementById('htDateTo');
+  if (df) df.value = '';
+  if (dt) dt.value = '';
+  htGoPage(1);
+}
+
+function htApplyCustomDate() {
+  const from = document.getElementById('htDateFrom')?.value || '';
+  const to = document.getElementById('htDateTo')?.value || '';
+  if (!from && !to) return;
+  HT_PERIOD = 'custom';
+  document.querySelectorAll('.ht-period-btn').forEach(function(b) { b.classList.remove('active'); });
+  htGoPage(1);
+}
+
+function htGoPage(page) {
+  const visible = htVisibleRows();
+  const perSel = document.getElementById('htPerPage')?.value || '25';
+  const per = perSel === 'all' ? visible.length : parseInt(perSel, 10);
+  const perSafe = per > 0 ? per : Math.max(visible.length, 1);
+  const totalPages = Math.max(1, Math.ceil(visible.length / perSafe));
+  HT_PAGE = Math.max(1, Math.min(page, totalPages));
+
+  const start = (HT_PAGE - 1) * perSafe;
+  const end = start + perSafe;
+
+  document.querySelectorAll('#htBody tr[data-id]').forEach(function(tr) { tr.style.display = 'none'; });
+  visible.forEach(function(tr, i) {
+    tr.style.display = (i >= start && i < end) ? '' : 'none';
+  });
+
+  const shownEnd = Math.min(end, visible.length);
+  const info = document.getElementById('htPageInfo');
+  if (info) info.textContent = 'Showing ' + (visible.length ? (start + 1) : 0) + '–' + shownEnd + ' of ' + visible.length;
+
+  const btns = document.getElementById('htPageBtns');
+  if (btns) {
+    let html = '<button class="ht-page-btn" onclick="htGoPage(' + (HT_PAGE - 1) + ')" ' + (HT_PAGE <= 1 ? 'disabled' : '') + '>‹</button>';
+    for (let p = 1; p <= totalPages; p++) {
+      if (totalPages > 7 && p > 2 && p < totalPages - 1 && Math.abs(p - HT_PAGE) > 1) {
+        if (p === 3 || p === totalPages - 2) html += '<span style="padding:0 6px;color:#94a3b8">…</span>';
+        continue;
+      }
+      html += '<button class="ht-page-btn ' + (p === HT_PAGE ? 'active' : '') + '" onclick="htGoPage(' + p + ')">' + p + '</button>';
+    }
+    html += '<button class="ht-page-btn" onclick="htGoPage(' + (HT_PAGE + 1) + ')" ' + (HT_PAGE >= totalPages ? 'disabled' : '') + '>›</button>';
+    btns.innerHTML = html;
+  }
+
+  htUpdateBulk();
+}
+
+function htSortCol(colIdx) {
+  const tbody = document.getElementById('htBody');
+  if (!tbody) return;
+  const rows = Array.from(tbody.querySelectorAll('tr[data-id]'));
+  if (!rows.length) return;
+
+  const asc = HT_SORT.col === colIdx ? !HT_SORT.asc : true;
+  HT_SORT = { col: colIdx, asc: asc };
+
+  rows.sort(function(a, b) {
+    const aText = (a.children[colIdx + 1]?.textContent || '').trim();
+    const bText = (b.children[colIdx + 1]?.textContent || '').trim();
+    const aNum = parseFloat(aText);
+    const bNum = parseFloat(bText);
+    if (!isNaN(aNum) && !isNaN(bNum)) return asc ? (aNum - bNum) : (bNum - aNum);
+    const aDate = Date.parse(aText);
+    const bDate = Date.parse(bText);
+    if (!isNaN(aDate) && !isNaN(bDate)) return asc ? (aDate - bDate) : (bDate - aDate);
+    return asc ? aText.localeCompare(bText) : bText.localeCompare(aText);
+  });
+
+  rows.forEach(function(r) { tbody.appendChild(r); });
+  document.querySelectorAll('#htTable th').forEach(function(th, i) {
+    th.classList.toggle('sorted', i === colIdx + 1);
+    const icon = th.querySelector('.ht-sort');
+    if (icon) icon.textContent = (i === colIdx + 1) ? (asc ? '▲' : '▼') : '▲▼';
+  });
+  htGoPage(1);
+}
+
+function htUpdateBulk() {
+  const selected = document.querySelectorAll('.ht-row-cb:checked').length;
+  const bar = document.getElementById('htBulkBar');
+  const count = document.getElementById('htSelectedCount');
+  if (count) count.textContent = selected;
+  if (bar) bar.classList.toggle('visible', selected > 0);
+  document.querySelectorAll('.ht-row-cb').forEach(function(cb) {
+    const tr = cb.closest('tr');
+    if (tr) tr.classList.toggle('ht-selected', cb.checked);
+  });
+}
+
+function htToggleAll(checked) {
+  document.querySelectorAll('#htBody tr[data-id]').forEach(function(tr) {
+    if (tr.style.display === 'none') return;
+    const cb = tr.querySelector('.ht-row-cb');
+    if (cb) cb.checked = checked;
+  });
+  htUpdateBulk();
+}
+
+function htSelectAllVisible() {
+  document.querySelectorAll('#htBody tr[data-id]').forEach(function(tr) {
+    if (tr.style.display === 'none') return;
+    const cb = tr.querySelector('.ht-row-cb');
+    if (cb) cb.checked = true;
+  });
+  const master = document.getElementById('htCheckAll');
+  if (master) master.checked = true;
+  htUpdateBulk();
+}
+
+function htDeselectAll() {
+  document.querySelectorAll('.ht-row-cb').forEach(function(cb) { cb.checked = false; });
+  const master = document.getElementById('htCheckAll');
+  if (master) master.checked = false;
+  htUpdateBulk();
+}
+
+function htBulkPrint() {
+  const ids = Array.from(document.querySelectorAll('.ht-row-cb:checked')).map(function(cb) { return cb.dataset.jobId; });
+  if (!ids.length) { alert('No history job selected'); return; }
+  const jobs = ids.map(function(id) { return ALL_JOBS.find(function(j) { return j.id == id; }); }).filter(Boolean);
+  if (!jobs.length) return;
+
+  const nowText = new Date().toLocaleString();
+  let pages = '';
+  jobs.forEach(function(job, idx) {
+    const extra = job.extra_data_parsed || {};
+    const startedAt = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
+    const completedAt = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
+    pages += '<div class="print-page" ' + (idx > 0 ? 'style="page-break-before:always"' : '') + '>'
+      + '<div class="p-header"><div class="p-brand">'
+      + (COMPANY.logo ? '<img src="' + COMPANY.logo + '" style="max-height:36px;max-width:100px;display:block">' : '')
+      + '<div><div class="p-company">' + esc(COMPANY.name || 'Company') + '</div>'
+      + '<div class="p-meta">' + esc(COMPANY.address || '') + '</div>'
+      + (COMPANY.gst ? '<div class="p-meta">GST: ' + esc(COMPANY.gst) + '</div>' : '')
+      + '</div></div><div style="text-align:right">'
+      + '<div class="p-title">Jumbo Slitting Job Card</div>'
+      + '<div class="p-jobno">' + esc(job.job_no || '—') + '</div>'
+      + '<div class="p-meta">Printed: ' + esc(nowText) + '</div>'
+      + '</div></div>'
+      + '<table class="p-table">'
+      + '<tr><th>Job Name</th><td>' + esc(job.planning_job_name || '—') + '</td><th>Status</th><td>' + esc(job.status || '—') + '</td></tr>'
+      + '<tr><th>Roll No</th><td>' + esc(job.roll_no || '—') + '</td><th>Material</th><td>' + esc(job.paper_type || '—') + '</td></tr>'
+      + '<tr><th>Started</th><td>' + esc(startedAt) + '</td><th>Completed</th><td>' + esc(completedAt) + '</td></tr>'
+      + '<tr><th>Wastage</th><td>' + esc(extra.wastage_kg || extra.operator_wastage_kg || '—') + ' kg</td><th>Notes</th><td>' + esc(extra.operator_notes || extra.operator_remarks || '—') + '</td></tr>'
+      + '</table>'
+      + '<div class="p-footer"><span>' + esc(APP_FOOTER_LEFT || '') + '</span><span>Page ' + (idx + 1) + ' of ' + jobs.length + '</span><span>' + esc(APP_FOOTER_RIGHT || '') + '</span></div>'
+      + '</div>';
+  });
+
+  const w = window.open('', '_blank', 'width=800,height=900');
+  w.document.write('<!DOCTYPE html><html><head><title>Bulk Print - ' + jobs.length + ' Job Cards</title><style>'
+    + '@page{margin:10mm}'
+    + '*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}'
+    + 'body{font-family:"Segoe UI",Arial,sans-serif;color:#1f2937;margin:0;padding:0}'
+    + '.print-page{padding:8px}'
+    + '.p-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:12px}'
+    + '.p-brand{display:flex;gap:10px;align-items:flex-start}'
+    + '.p-company{font-size:1rem;font-weight:800;color:#0f172a}'
+    + '.p-title{font-size:.8rem;font-weight:800;text-transform:uppercase;color:#334155}'
+    + '.p-jobno{font-size:1.1rem;font-weight:900;color:#16a34a}'
+    + '.p-meta{font-size:.65rem;color:#64748b}'
+    + '.p-table{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:.8rem}'
+    + '.p-table th{background:#f8fafc;padding:8px 10px;border:1px solid #e2e8f0;font-weight:700;color:#334155;white-space:nowrap;width:15%}'
+    + '.p-table td{padding:8px 10px;border:1px solid #e2e8f0;width:35%}'
+    + '.p-footer{display:flex;justify-content:space-between;border-top:1px solid #e2e8f0;padding-top:6px;font-size:.6rem;color:#94a3b8}'
+    + '</style></head><body>' + pages + '</body></html>');
+  w.document.close();
+  w.focus();
+  setTimeout(function() { w.print(); }, 400);
+}
+
+document.getElementById('htSearch')?.addEventListener('input', function() {
+  htGoPage(1);
+});
 
 // ─── Filters ────────────────────────────────────────────────
 function filterJobs(status, btn) {
@@ -872,13 +1245,28 @@ async function loadRollSuggestions() {
 }
 
 function selectRollFromPicker(rollNo) {
-  const input = document.getElementById('dm-parent-roll-input');
   const job = getJobById(DM_ACTIVE_JOB_ID);
-  if (!input || !job) return;
-  input.value = String(rollNo || '').trim();
-  DM_PARENT_ROLL_CHANGED = true;
-  refreshRollPreview();
-  lookupReplacementRoll(job);
+  if (!job) return;
+  const trimmed = String(rollNo || '').trim();
+
+  if (DM_ACTIVE_CHANGE_ROLL) {
+    // Multi-roll mode: put into the correct brown section input
+    const inp = document.querySelector('.dm-change-roll-input[data-for-roll=\"' + DM_ACTIVE_CHANGE_ROLL + '\"]');
+    if (inp) {
+      inp.value = trimmed;
+      if (DM_ROLL_CHANGE_MAP[DM_ACTIVE_CHANGE_ROLL]) DM_ROLL_CHANGE_MAP[DM_ACTIVE_CHANGE_ROLL].newRollNo = trimmed;
+      lookupSubstituteRoll(DM_ACTIVE_CHANGE_ROLL, trimmed);
+    }
+  } else {
+    // Fallback: legacy single input
+    const input = document.getElementById('dm-parent-roll-input');
+    if (input) {
+      input.value = trimmed;
+      DM_PARENT_ROLL_CHANGED = true;
+      refreshRollPreview();
+      lookupReplacementRoll(job);
+    }
+  }
   closeRollPicker();
 }
 
@@ -889,6 +1277,23 @@ async function openRollPicker() {
   const modal = document.getElementById('dmRollPickerModal');
   if (!modal) return;
   modal.classList.add('active');
+
+  // Show which roll is being changed at top of picker
+  const banner = document.getElementById('rp-changing-roll-banner');
+  const bannerText = document.getElementById('rp-changing-roll-text');
+  if (banner && bannerText) {
+    if (DM_ACTIVE_CHANGE_ROLL) {
+      const row = document.querySelector('#dm-edit-parent-table tr[data-roll=\"' + DM_ACTIVE_CHANGE_ROLL + '\"]');
+      const cells = row ? row.querySelectorAll('td') : [];
+      const company = cells[2]?.textContent || '';
+      const material = cells[3]?.textContent || '';
+      const width = cells[4]?.textContent || '';
+      bannerText.textContent = DM_ACTIVE_CHANGE_ROLL + (company && company !== '--' ? ' | ' + company : '') + (material && material !== '--' ? ' | ' + material : '') + (width && width !== '--' ? ' | Width: ' + width + 'mm' : '');
+      banner.style.display = 'block';
+    } else {
+      banner.style.display = 'none';
+    }
+  }
 
   const paperFilter = document.getElementById('rp-paper-filter');
   if (paperFilter && !paperFilter.value && job.paper_type) {
@@ -1110,15 +1515,254 @@ function refreshRollPreview() {
   if (parentPreview) parentPreview.textContent = nextParent || '-';
 
   document.querySelectorAll('#dm-roll-preview-table tbody tr[data-original-roll]').forEach(tr => {
-    const originalParent = tr.getAttribute('data-original-parent') || '';
-    const originalRoll = tr.getAttribute('data-original-roll') || '';
-    const nextChild = deriveChildRollFromParent(nextParent, originalParent, originalRoll);
-    tr.setAttribute('data-roll', nextChild);
-    const cell = tr.querySelector('.dm-preview-roll');
-    if (cell) cell.textContent = nextChild || '-';
+    // Keep child roll row identity intact; only parent reference changes in preview.
+    const rollInput = tr.querySelector('[data-field="roll_no"]');
+    const stableRoll = String(rollInput?.value || tr.getAttribute('data-original-roll') || tr.getAttribute('data-roll') || '').trim();
+    tr.setAttribute('data-roll', stableRoll);
     const parentCell = tr.querySelector('.dm-preview-parent');
     if (parentCell) parentCell.textContent = nextParent || '-';
   });
+}
+
+function syncParentSelectionUI() {
+  const checks = Array.from(document.querySelectorAll('.dm-parent-select-cb'));
+  DM_SELECTED_PARENT_ROLLS = checks.filter(cb => cb.checked).map(cb => String(cb.value || '').trim()).filter(Boolean);
+  checks.forEach(cb => {
+    const tr = cb.closest('tr');
+    if (tr) tr.classList.toggle('jc-parent-select-row-selected', !!cb.checked);
+  });
+  const hint = document.getElementById('dm-parent-selection-hint');
+  if (hint) {
+    hint.textContent = DM_SELECTED_PARENT_ROLLS.length
+      ? ('Selected parent roll(s): ' + DM_SELECTED_PARENT_ROLLS.join(', '))
+      : 'Select at least one parent roll for auto search.';
+  }
+}
+
+function getRequiredWidthForAutoSearch(job) {
+  if (!job) return 0;
+  const editableRows = Array.from(document.querySelectorAll('#dm-roll-preview-table tbody tr[data-roll]'));
+  let editableSum = 0;
+  editableRows.forEach(tr => {
+    const statusEl = tr.querySelector('[data-field="status"]');
+    const widthEl = tr.querySelector('[data-field="width"]');
+    const statusRaw = String(statusEl?.value || tr.dataset.status || 'Job Assign').toLowerCase();
+    if (!statusRaw.includes('job')) return;
+    const w = Number(widthEl?.value || tr.dataset.width || 0);
+    if (Number.isFinite(w) && w > 0) editableSum += w;
+  });
+  if (editableSum > 0) return Number(editableSum.toFixed(2));
+
+  const extra = job.extra_data_parsed || {};
+  const childRows = Array.isArray(extra.child_rolls) ? extra.child_rolls : [];
+  let sum = 0;
+  childRows.forEach(r => {
+    const w = Number(r.width ?? r.width_mm ?? 0);
+    if (Number.isFinite(w) && w > 0) sum += w;
+  });
+  if (sum > 0) return Number(sum.toFixed(2));
+
+  const selectedChecks = Array.from(document.querySelectorAll('.dm-parent-select-cb:checked'));
+  let parentSum = 0;
+  selectedChecks.forEach(cb => {
+    const tr = cb.closest('tr');
+    const w = Number(tr?.dataset?.width || 0);
+    if (Number.isFinite(w) && w > 0) parentSum += w;
+  });
+  if (parentSum > 0) return Number(parentSum.toFixed(2));
+
+  const fallback = Number(job.width_mm ?? extra.parent_details?.width_mm ?? 0);
+  return Number.isFinite(fallback) && fallback > 0 ? Number(fallback.toFixed(2)) : 0;
+}
+
+function renderAutoSearchCandidates(rows, requiredWidth) {
+  const box = document.getElementById('dm-auto-roll-list');
+  if (!box) return;
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) {
+    box.style.display = 'block';
+    box.innerHTML = '<div class="jc-inline-empty">No substitute rolls found for required width ' + esc(String(requiredWidth || 0)) + ' mm.</div>';
+    return;
+  }
+
+  box.style.display = 'block';
+  box.innerHTML = '<table><thead><tr><th>Roll</th><th>Company</th><th>Type</th><th>Width</th><th>Length</th><th>Wastage</th><th>Action</th></tr></thead><tbody>'
+    + list.map((r, idx) => {
+      const rn = String(r.roll_no || '').trim();
+      const wastage = Number(r.wastage_mm || 0);
+      return '<tr class="' + (idx === 0 ? 'jc-auto-best' : '') + '">'
+        + '<td style="font-weight:800;color:var(--jc-brand)">' + esc(rn || '-') + (idx === 0 ? ' <span style="font-size:.6rem;color:#16a34a">BEST</span>' : '') + '</td>'
+        + '<td>' + esc(String(r.company || '-')) + '</td>'
+        + '<td>' + esc(String(r.paper_type || '-')) + '</td>'
+        + '<td>' + esc(String(r.width_mm || '-')) + '</td>'
+        + '<td>' + esc(String(r.length_mtr || '-')) + '</td>'
+        + '<td>' + esc(String(wastage.toFixed(2))) + '</td>'
+        + '<td><button type="button" class="jc-action-btn jc-btn-complete" onclick="selectAutoCandidate(\'' + escJs(rn) + '\')">Use</button></td>'
+        + '</tr>';
+    }).join('')
+    + '</tbody></table>';
+}
+
+function selectAutoCandidate(rollNo) {
+  const input = document.getElementById('dm-parent-roll-input');
+  const job = getJobById(DM_ACTIVE_JOB_ID);
+  if (!input || !job) return;
+  input.value = String(rollNo || '').trim();
+  DM_PARENT_ROLL_CHANGED = true;
+  refreshRollPreview();
+  lookupReplacementRoll(job);
+}
+
+async function runAutoSearchForParents() {
+  const job = getJobById(DM_ACTIVE_JOB_ID);
+  if (!job) return;
+  syncParentSelectionUI();
+  if (!DM_SELECTED_PARENT_ROLLS.length) {
+    alert('Select at least one parent roll before auto search.');
+    return;
+  }
+
+  const requiredWidth = getRequiredWidthForAutoSearch(job);
+  DM_AUTO_REQUIRED_WIDTH = requiredWidth;
+  const meta = document.getElementById('dm-auto-search-meta');
+  if (meta) meta.textContent = requiredWidth > 0
+    ? ('Required width from job size: ' + requiredWidth + ' mm')
+    : 'Required width could not be derived from job data.';
+
+  if (!(requiredWidth > 0)) {
+    renderAutoSearchCandidates([], 0);
+    return;
+  }
+
+  const selectedRow = document.querySelector('.dm-parent-select-cb:checked')?.closest('tr');
+  const company = String(selectedRow?.dataset?.company || job.company || '').trim();
+  const paperType = String(selectedRow?.dataset?.paperType || job.paper_type || '').trim();
+
+  try {
+    const url = new URL(API_BASE, window.location.origin);
+    url.searchParams.set('action', 'get_roll_suggestions');
+    if (paperType) url.searchParams.set('paper_type', paperType);
+    if (company) url.searchParams.set('company', company);
+    url.searchParams.set('limit', '300');
+    const res = await fetch(url.toString());
+    const data = await res.json();
+    if (!data.ok) {
+      renderAutoSearchCandidates([], requiredWidth);
+      return;
+    }
+
+    const selectedSet = new Set(DM_SELECTED_PARENT_ROLLS.map(s => s.toLowerCase()));
+    const all = (Array.isArray(data.rolls) ? data.rolls : []).filter(r => {
+      const rn = String(r.roll_no || '').trim().toLowerCase();
+      if (!rn || selectedSet.has(rn)) return false;
+      const w = Number(r.width_mm || 0);
+      return Number.isFinite(w) && w >= requiredWidth;
+    });
+
+    const exact = all.filter(r => Math.abs(Number(r.width_mm || 0) - requiredWidth) < 0.01)
+      .sort((a, b) => Number(b.length_mtr || 0) - Number(a.length_mtr || 0));
+    if (exact.length) {
+      const bestExact = exact[0];
+      const input = document.getElementById('dm-parent-roll-input');
+      if (input) {
+        input.value = String(bestExact.roll_no || '').trim();
+        DM_PARENT_ROLL_CHANGED = true;
+        refreshRollPreview();
+        lookupReplacementRoll(job);
+      }
+      renderAutoSearchCandidates(exact.slice(0, 20).map(r => ({ ...r, wastage_mm: Number(r.width_mm || 0) - requiredWidth })), requiredWidth);
+      return;
+    }
+
+    const bigger = all
+      .map(r => {
+        const width = Number(r.width_mm || 0);
+        return {
+          ...r,
+          width_mm: width,
+          length_mtr: Number(r.length_mtr || 0),
+          wastage_mm: Number((width - requiredWidth).toFixed(2)),
+          id_num: Number(r.id || 0),
+        };
+      })
+      .sort((a, b) => {
+        if (a.wastage_mm !== b.wastage_mm) return a.wastage_mm - b.wastage_mm;
+        if (a.width_mm !== b.width_mm) return a.width_mm - b.width_mm;
+        if (a.length_mtr !== b.length_mtr) return b.length_mtr - a.length_mtr;
+        return b.id_num - a.id_num;
+      });
+
+    renderAutoSearchCandidates(bigger.slice(0, 40), requiredWidth);
+  } catch (err) {
+    renderAutoSearchCandidates([], requiredWidth);
+  }
+}
+
+function renderInlineParentSuggestions(job, rows) {
+  const box = document.getElementById('dm-inline-parent-suggest');
+  if (!box) return;
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) {
+    box.innerHTML = '<div class="jc-inline-empty">No suitable roll suggestions found.</div>';
+    box.style.display = 'block';
+    return;
+  }
+  box.innerHTML = list.slice(0, 8).map(r => {
+    const rn = String(r.roll_no || '').trim();
+    const pt = String(r.paper_type || '-');
+    const co = String(r.company || '-');
+    const wd = String(r.width_mm ?? '-');
+    const ln = String(r.length_mtr ?? '-');
+    return '<div class="jc-inline-suggest-row">'
+      + '<div class="rn">' + esc(rn || '-') + '</div>'
+      + '<div class="meta">' + esc(pt) + ' • ' + esc(co) + '</div>'
+      + '<div class="meta">W: ' + esc(wd) + '</div>'
+      + '<div class="meta">L: ' + esc(ln) + '</div>'
+      + '<button type="button" class="jc-action-btn jc-btn-complete" onclick="selectInlineParentSuggestion(\'' + escJs(rn) + '\')">Use</button>'
+      + '</div>';
+  }).join('');
+  box.style.display = 'block';
+}
+
+async function loadInlineParentSuggestions(job) {
+  const input = document.getElementById('dm-parent-roll-input');
+  const box = document.getElementById('dm-inline-parent-suggest');
+  if (!input || !box || !job) return;
+  const q = String(input.value || '').trim();
+  if (!DM_PARENT_ROLL_CHANGED || q.length < 2) {
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  try {
+    const url = new URL(API_BASE, window.location.origin);
+    url.searchParams.set('action', 'get_roll_suggestions');
+    url.searchParams.set('q', q);
+    if (job.paper_type) url.searchParams.set('paper_type', String(job.paper_type));
+    if (job.company) url.searchParams.set('company', String(job.company));
+    url.searchParams.set('limit', '20');
+    const res = await fetch(url.toString());
+    const data = await res.json();
+    if (!data.ok) {
+      box.style.display = 'none';
+      return;
+    }
+    renderInlineParentSuggestions(job, data.rolls || []);
+  } catch (err) {
+    box.style.display = 'none';
+  }
+}
+
+function selectInlineParentSuggestion(rollNo) {
+  const input = document.getElementById('dm-parent-roll-input');
+  const job = getJobById(DM_ACTIVE_JOB_ID);
+  if (!input || !job) return;
+  input.value = String(rollNo || '').trim();
+  DM_PARENT_ROLL_CHANGED = true;
+  refreshRollPreview();
+  lookupReplacementRoll(job);
+  const box = document.getElementById('dm-inline-parent-suggest');
+  if (box) box.style.display = 'none';
 }
 
 function setRequestButtonState(enabled, message) {
@@ -1129,11 +1773,309 @@ function setRequestButtonState(enabled, message) {
   requestBtn.dataset.validationMessage = String(message || 'Enter a valid suitable roll before sending request.');
 }
 
+function escJs(v) {
+  return String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '');
+}
+
 let DM_PARENT_ROLL_CHANGED = false;
+
+let DM_REASON_VOICE = null;
+let DM_REASON_LISTENING = false;
+let DM_REASON_VOICE_LANG = 'hi-IN';
+
+function startReasonVoice() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) { alert('Voice input not supported. Use Chrome, Edge, or Safari.'); return; }
+  if (!DM_REASON_VOICE) {
+    DM_REASON_VOICE = new SpeechRecognition();
+    DM_REASON_VOICE.continuous = false;
+    DM_REASON_VOICE.interimResults = true;
+    DM_REASON_VOICE.onstart = function() {
+      DM_REASON_LISTENING = true;
+      const btn = document.getElementById('dm-reason-voice-btn');
+      if (btn) { btn.classList.add('listening'); btn.innerHTML = '<i class="bi bi-mic-fill"></i> <span class="voiceStatus">Listening...</span>'; btn.style.background = '#dc2626'; }
+    };
+    DM_REASON_VOICE.onresult = function(e) {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          const transcript = e.results[i][0].transcript;
+          const field = document.getElementById('dm-change-reason');
+          if (field) { const cur = field.value.trim(); field.value = (cur ? cur + ' ' : '') + transcript; }
+          translateReasonVoice(transcript);
+        }
+      }
+    };
+    DM_REASON_VOICE.onerror = function(e) {
+      console.error('Voice error:', e.error);
+      updateReasonVoiceBtn('Error');
+    };
+    DM_REASON_VOICE.onend = function() {
+      DM_REASON_LISTENING = false;
+      updateReasonVoiceBtn('Done');
+      setTimeout(() => updateReasonVoiceBtn('Speak'), 2000);
+    };
+  }
+  if (DM_REASON_LISTENING) {
+    DM_REASON_VOICE.stop();
+    updateReasonVoiceBtn('Stopped');
+  } else {
+    document.getElementById('dm-reason-voice-display').style.display = 'none';
+    const langSel = document.getElementById('dm-reason-lang-select');
+    DM_REASON_VOICE_LANG = langSel ? langSel.value : 'hi-IN';
+    DM_REASON_VOICE.lang = DM_REASON_VOICE_LANG;
+    DM_REASON_VOICE.start();
+  }
+}
+
+function updateReasonVoiceBtn(status) {
+  const btn = document.getElementById('dm-reason-voice-btn');
+  if (!btn) return;
+  btn.classList.remove('listening');
+  btn.innerHTML = '<i class="bi bi-mic-fill"></i> <span class="voiceStatus">' + status + '</span>';
+  btn.style.background = status === 'Listening...' ? '#dc2626' : '#d97706';
+}
+
+function translateReasonVoice(originalText) {
+  const langMap = { 'bn-IN': 'bn', 'hi-IN': 'hi', 'en-US': 'en' };
+  const sourceLang = langMap[DM_REASON_VOICE_LANG] || 'en';
+  document.getElementById('dm-reason-voice-original').textContent = originalText;
+  document.getElementById('dm-reason-voice-display').style.display = 'block';
+  if (sourceLang === 'en') { document.getElementById('dm-reason-voice-english').textContent = originalText; return; }
+  document.getElementById('dm-reason-voice-english').textContent = 'Translating...';
+  fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(originalText) + '&langpair=' + sourceLang + '|en')
+    .then(r => r.json())
+    .then(data => {
+      if (data.responseStatus === 200 && data.responseData?.translatedText) {
+        document.getElementById('dm-reason-voice-english').textContent = data.responseData.translatedText;
+      } else { document.getElementById('dm-reason-voice-english').textContent = originalText; }
+    })
+    .catch(() => { document.getElementById('dm-reason-voice-english').textContent = originalText; });
+}
+
+// ─── QR Scanner for roll input ──────────────────────────────
+let DM_QR_SCANNER = null;
+
+function openQrScannerFor(origRoll) {
+  DM_ACTIVE_CHANGE_ROLL = origRoll;
+  // Create scanner modal overlay
+  let overlay = document.getElementById('dm-qr-scanner-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'dm-qr-scanner-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
+    overlay.innerHTML = `
+      <div style="background:#fff;border-radius:16px;padding:20px;max-width:400px;width:100%">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h3 style="margin:0;font-size:1rem"><i class="bi bi-qr-code-scan"></i> Scan Roll QR Code</h3>
+          <button onclick="closeQrScanner()" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:#64748b"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div id="dm-qr-reader" style="width:100%"></div>
+        <div id="dm-qr-status" style="text-align:center;margin-top:10px;font-size:.82rem;color:#64748b">Point camera at QR/barcode on roll label</div>
+      </div>`;
+    document.body.appendChild(overlay);
+  }
+  overlay.style.display = 'flex';
+  // Start scanner
+  if (DM_QR_SCANNER) { try { DM_QR_SCANNER.clear(); } catch(e){} DM_QR_SCANNER = null; }
+  DM_QR_SCANNER = new Html5QrcodeScanner('dm-qr-reader', { fps: 15, qrbox: { width: 250, height: 250 }, rememberLastUsedCamera: true }, false);
+  DM_QR_SCANNER.render(function(decodedText) {
+    // Success
+    const rollNo = String(decodedText || '').trim();
+    if (rollNo && DM_ACTIVE_CHANGE_ROLL) {
+      const inp = document.querySelector('.dm-change-roll-input[data-for-roll=\"' + DM_ACTIVE_CHANGE_ROLL + '\"]');
+      if (inp) {
+        inp.value = rollNo;
+        if (DM_ROLL_CHANGE_MAP[DM_ACTIVE_CHANGE_ROLL]) DM_ROLL_CHANGE_MAP[DM_ACTIVE_CHANGE_ROLL].newRollNo = rollNo;
+        lookupSubstituteRoll(DM_ACTIVE_CHANGE_ROLL, rollNo);
+      }
+    }
+    closeQrScanner();
+  }, function(err) {
+    // Ignore scan errors (continuous scanning)
+  });
+}
+
+function closeQrScanner() {
+  const overlay = document.getElementById('dm-qr-scanner-overlay');
+  if (overlay) overlay.style.display = 'none';
+  if (DM_QR_SCANNER) { try { DM_QR_SCANNER.clear(); } catch(e){} DM_QR_SCANNER = null; }
+}
+
+// ─── Per-roll change sections ───────────────────────────────
+let DM_ACTIVE_CHANGE_ROLL = ''; // which original parent roll the picker is targeting
+let DM_ROLL_CHANGE_MAP = {};    // { originalRollNo: { newRollNo, validated, details } }
+
+function rebuildRollChangeSections() {
+  const container = document.getElementById('dm-roll-change-sections');
+  if (!container) return;
+  const checked = Array.from(document.querySelectorAll('#dm-edit-parent-table .dm-parent-select-cb:checked'));
+  const checkedRolls = checked.map(cb => cb.value);
+
+  // Remove sections for unchecked rolls
+  Object.keys(DM_ROLL_CHANGE_MAP).forEach(rn => {
+    if (!checkedRolls.includes(rn)) delete DM_ROLL_CHANGE_MAP[rn];
+  });
+
+  // Preserve existing input values
+  container.querySelectorAll('.dm-change-section').forEach(sec => {
+    const origRoll = sec.dataset.originalRoll;
+    const inp = sec.querySelector('.dm-change-roll-input');
+    if (origRoll && inp && DM_ROLL_CHANGE_MAP[origRoll]) {
+      DM_ROLL_CHANGE_MAP[origRoll].newRollNo = inp.value.trim();
+    }
+  });
+
+  if (checkedRolls.length === 0) {
+    container.innerHTML = '';
+    updateChangeRequestButton();
+    return;
+  }
+
+  let html = '';
+  checkedRolls.forEach(function(origRoll) {
+    const existing = DM_ROLL_CHANGE_MAP[origRoll] || {};
+    DM_ROLL_CHANGE_MAP[origRoll] = existing;
+    const safeId = CSS.escape(origRoll);
+    const inputVal = existing.newRollNo || '';
+    // Get parent roll info from table row
+    const row = document.querySelector('#dm-edit-parent-table tr[data-roll=\"' + origRoll + '\"]');
+    const cells = row ? row.querySelectorAll('td') : [];
+    const company = cells[2]?.textContent || '';
+    const material = cells[3]?.textContent || '';
+    const width = cells[4]?.textContent || '';
+
+    html += `<div class="dm-change-section jc-detail-section" data-original-roll="${esc(origRoll)}" style="background:#8b4513;border-radius:12px;padding:14px;margin-bottom:16px">
+      <h3 style="color:#fff;margin-top:0"><i class="bi bi-arrow-repeat"></i> Change: <span style="color:#fbbf24">${esc(origRoll)}</span>
+        <span style="font-size:.75rem;font-weight:400;color:#d4a574">${company && company !== '--' ? ' | ' + esc(company) : ''}${material && material !== '--' ? ' | ' + esc(material) : ''}${width && width !== '--' ? ' | W:' + esc(width) : ''}</span>
+      </h3>
+      <div class="jc-form-row" style="margin-bottom:10px">
+        <div class="jc-form-group"><label style="color:#f5f5f5">Substitute Roll</label>
+          <div class="jc-roll-pick-row">
+            <input type="text" class="dm-change-roll-input" data-for-roll="${esc(origRoll)}" value="${esc(inputVal)}" placeholder="Enter substitute roll number" autocomplete="off" style="border:1px solid #d4a574;padding:8px 12px">
+            <button type="button" class="jc-action-btn jc-btn-view" onclick="openRollPickerFor('${esc(origRoll).replace(/'/g, '&#39;')}')" style="background:#d4a574;color:#1f1f1f"><i class="bi bi-search"></i> Browse</button>
+            <button type="button" class="jc-action-btn jc-btn-view" onclick="openQrScannerFor('${esc(origRoll).replace(/'/g, '&#39;')}')" style="background:#d4a574;color:#1f1f1f"><i class="bi bi-qr-code-scan"></i> QR</button>
+          </div>
+        </div>
+      </div>
+      <div class="dm-change-roll-detail" data-detail-for="${esc(origRoll)}">${existing.detailHtml || ''}</div>
+    </div>`;
+  });
+  container.innerHTML = html;
+
+  // Attach input listeners for each section
+  container.querySelectorAll('.dm-change-roll-input').forEach(inp => {
+    inp.addEventListener('input', function() {
+      const origRoll = this.dataset.forRoll;
+      if (DM_ROLL_CHANGE_MAP[origRoll]) DM_ROLL_CHANGE_MAP[origRoll].newRollNo = this.value.trim();
+      lookupSubstituteRoll(origRoll, this.value.trim());
+    });
+  });
+}
+
+function openRollPickerFor(origRoll) {
+  DM_ACTIVE_CHANGE_ROLL = origRoll;
+  openRollPicker();
+}
+
+async function lookupSubstituteRoll(origRoll, rollNo) {
+  const job = getJobById(DM_ACTIVE_JOB_ID);
+  if (!job) return;
+  const detailBox = document.querySelector('.dm-change-roll-detail[data-detail-for=\"' + origRoll + '\"]');
+  if (!detailBox) return;
+  const entry = DM_ROLL_CHANGE_MAP[origRoll] || {};
+  DM_ROLL_CHANGE_MAP[origRoll] = entry;
+  entry.newRollNo = rollNo;
+
+  if (!rollNo) {
+    entry.validated = false;
+    entry.detailHtml = '';
+    detailBox.innerHTML = '';
+    updateChangeRequestButton();
+    return;
+  }
+
+  if (rollNo.toLowerCase() === origRoll.toLowerCase()) {
+    entry.validated = false;
+    entry.detailHtml = '<div style="color:#fca5a5;padding:6px 0;font-size:.82rem">Same as original roll. Enter a different roll.</div>';
+    detailBox.innerHTML = entry.detailHtml;
+    updateChangeRequestButton();
+    return;
+  }
+
+  try {
+    const url = new URL(API_BASE, window.location.origin);
+    url.searchParams.set('action', 'get_roll_lookup');
+    url.searchParams.set('roll_no', rollNo);
+    const res = await fetch(url.toString());
+    const data = await res.json();
+    if (!data.ok || !data.roll) {
+      entry.validated = false;
+      entry.detailHtml = '<div style="color:#fca5a5;padding:6px 0;font-size:.82rem"><i class="bi bi-x-circle"></i> Roll not found.</div>';
+      detailBox.innerHTML = entry.detailHtml;
+      updateChangeRequestButton();
+      return;
+    }
+    const roll = data.roll;
+    const requiredType = String(job.paper_type || '').trim().toLowerCase();
+    const rollType = String(roll.paper_type || '').trim().toLowerCase();
+    const typeOk = requiredType === '' || rollType === requiredType;
+    const statusOk = ['main', 'stock', 'job assign', 'available'].includes(String(roll.status || '').trim().toLowerCase());
+    const suitable = typeOk && statusOk;
+    let statusMsg = suitable ? '<span style="color:#86efac"><i class="bi bi-check-circle"></i> Suitable roll</span>' : '<span style="color:#fca5a5"><i class="bi bi-exclamation-triangle"></i> ' + (!typeOk ? 'Paper type mismatch' : 'Status not suitable') + '</span>';
+
+    entry.validated = suitable;
+    entry.detailHtml = `<div style="background:rgba(0,0,0,.2);border-radius:8px;padding:10px;margin-top:6px">
+      <div style="margin-bottom:6px;font-size:.82rem">${statusMsg}</div>
+      <div class="dm-subst-detail-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;font-size:.8rem">
+        <div><span style="color:#d4a574">Paper Type:</span> <span style="color:#fff">${esc(roll.paper_type || '-')}</span></div>
+        <div><span style="color:#d4a574">Company:</span> <span style="color:#fff">${esc(roll.company || '-')}</span></div>
+        <div><span style="color:#d4a574">Status:</span> <span style="color:#fff">${esc(roll.status || '-')}</span></div>
+        <div><span style="color:#d4a574">Width:</span> <span style="color:#fff">${esc(String(roll.width_mm || '-'))}</span></div>
+        <div><span style="color:#d4a574">Length:</span> <span style="color:#fff">${esc(String(roll.length_mtr || '-'))}</span></div>
+        <div><span style="color:#d4a574">GSM:</span> <span style="color:#fff">${esc(String(roll.gsm || '-'))}</span></div>
+      </div>
+    </div>`;
+    detailBox.innerHTML = entry.detailHtml;
+    updateChangeRequestButton();
+  } catch (err) {
+    entry.validated = false;
+    entry.detailHtml = '<div style="color:#fca5a5;padding:6px 0;font-size:.82rem">Lookup failed. Try again.</div>';
+    detailBox.innerHTML = entry.detailHtml;
+    updateChangeRequestButton();
+  }
+}
+
+function updateChangeRequestButton() {
+  const btn = document.getElementById('dm-request-roll-btn-footer');
+  if (!btn) return;
+  const checkedRolls = Array.from(document.querySelectorAll('#dm-edit-parent-table .dm-parent-select-cb:checked')).map(cb => cb.value);
+  if (checkedRolls.length === 0) {
+    btn.disabled = true;
+    btn.dataset.rollValid = '0';
+    btn.dataset.validationMessage = 'Select at least one parent roll to change.';
+    return;
+  }
+  let allValid = true;
+  let missing = [];
+  checkedRolls.forEach(rn => {
+    const entry = DM_ROLL_CHANGE_MAP[rn];
+    if (!entry || !entry.newRollNo) { allValid = false; missing.push(rn); }
+    else if (!entry.validated) { allValid = false; missing.push(rn); }
+  });
+  if (allValid) {
+    btn.disabled = false;
+    btn.dataset.rollValid = '1';
+    btn.dataset.validationMessage = '';
+  } else {
+    btn.disabled = true;
+    btn.dataset.rollValid = '0';
+    btn.dataset.validationMessage = missing.length ? 'Enter valid substitute roll for: ' + missing.join(', ') : 'Enter valid substitute rolls for all selected parent rolls.';
+  }
+}
 
 async function submitChangeRequest(id) {
   const requestBtn = document.getElementById('dm-request-roll-btn-footer') || document.getElementById('dm-request-roll-btn');
-  const validationMessage = requestBtn?.dataset.validationMessage || 'Please enter a valid suitable roll before sending request.';
+  const validationMessage = requestBtn?.dataset.validationMessage || 'Please enter valid substitute rolls for all selected parent rolls.';
   if (!requestBtn || requestBtn.disabled || requestBtn.dataset.rollValid !== '1') {
     alert(validationMessage);
     return;
@@ -1141,16 +2083,19 @@ async function submitChangeRequest(id) {
   const rows = collectEditedRows();
   const wastage = Number(document.getElementById('dm-wastage-kg')?.value || 0);
   const remarks = document.getElementById('dm-operator-notes')?.value || '';
-  const parentRollNo = String(document.getElementById('dm-parent-roll-input')?.value || '').trim();
-  const job = getJobById(id);
-  const originalParentRoll = String((job?.extra_data_parsed?.parent_details && job.extra_data_parsed.parent_details.roll_no) || job?.extra_data_parsed?.parent_roll || job?.roll_no || '').trim();
+  const changeReason = String(document.getElementById('dm-change-reason')?.value || '').trim();
 
-  if (!parentRollNo) {
-    alert('Enter replacement parent roll number first.');
-    return;
-  }
-  if (originalParentRoll && parentRollNo.toLowerCase() === originalParentRoll.toLowerCase()) {
-    alert('Enter a different parent roll number before sending request.');
+  // Build roll change mappings from all brown sections
+  const rollChanges = [];
+  Object.keys(DM_ROLL_CHANGE_MAP).forEach(origRoll => {
+    const entry = DM_ROLL_CHANGE_MAP[origRoll];
+    if (entry && entry.newRollNo && entry.validated) {
+      rollChanges.push({ original_roll: origRoll, substitute_roll: entry.newRollNo });
+    }
+  });
+
+  if (rollChanges.length === 0) {
+    alert('Select parent rolls and enter valid substitute rolls.');
     return;
   }
 
@@ -1158,10 +2103,12 @@ async function submitChangeRequest(id) {
   fd.append('csrf_token', CSRF);
   fd.append('action', 'submit_jumbo_change_request');
   fd.append('job_id', id);
-  fd.append('parent_roll_no', parentRollNo);
+  fd.append('parent_roll_no', rollChanges[0].substitute_roll);
+  fd.append('roll_changes_json', JSON.stringify(rollChanges));
   fd.append('rows_json', JSON.stringify(rows));
   fd.append('wastage_kg', String(wastage));
   fd.append('operator_remarks', remarks);
+  fd.append('change_reason', changeReason);
 
   try {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
@@ -1241,7 +2188,7 @@ async function lookupReplacementRoll(job) {
     const typeOk = requiredType === '' || rollType === requiredType;
     const statusOk = ['main', 'stock', 'job assign', 'available'].includes(String(roll.status || '').trim().toLowerCase());
 
-    const requiredWidth = Number(job.width_mm ?? job.extra_data_parsed?.parent_details?.width_mm ?? 0);
+    const requiredWidth = Number(getRequiredWidthForAutoSearch(job) || job.width_mm || job.extra_data_parsed?.parent_details?.width_mm || 0);
     const rollWidth = Number(roll.width_mm ?? 0);
 
     const canCheckWidth = Number.isFinite(requiredWidth) && requiredWidth > 0 && Number.isFinite(rollWidth) && rollWidth > 0;
@@ -1378,7 +2325,7 @@ async function openJobDetail(id, mode) {
     <div id="jc-photo-preview-${job.id}" class="jc-upload-preview">${existingPhoto ? `<img src="${existingPhoto}" alt="Job Photo">` : ''}</div>
   </div>`;
 
-  // Parent Roll Details (for edit tab)
+  // Edit tab: same layout as execution tab + brown parent selection box (NO timing, NO operator entry, NO photo)
   let editHtml = '';
   editHtml += summaryHtml;
 
@@ -1386,6 +2333,7 @@ async function openJobDetail(id, mode) {
   {
     const liveRollMap = job.live_roll_map || {};
     const p = extra.parent_details || {};
+    const refChildRows = Array.isArray(extra.child_rolls) ? extra.child_rolls : [];
     const seenParents = {};
     const primaryPRN = String((p.roll_no) || extra.parent_roll || job.roll_no || '').trim();
     if (primaryPRN !== '') seenParents[primaryPRN] = true;
@@ -1410,6 +2358,7 @@ async function openJobDetail(id, mode) {
       if (prn !== '') seenParents[prn] = true;
     });
     const allParentRollNos = Object.keys(seenParents);
+    const parentRowsMeta = [];
     if (allParentRollNos.length > 0) {
       let parentTableHtml = '<table class="jc-soft-table"><tr><th>Roll No</th><th>Paper Company</th><th>Material</th><th>Width</th><th>Length</th><th>Weight</th><th>Sqr Mtr</th><th>GSM</th><th>Status</th><th>Remarks</th></tr>';
       allParentRollNos.forEach(function(prn) {
@@ -1424,21 +2373,40 @@ async function openJobDetail(id, mode) {
         const gsm       = live.gsm !== undefined ? live.gsm : (isPrimary ? (p.gsm ?? job.gsm ?? '--') : '--');
         const liveStatus  = live.status  || '--';
         const liveRemarks = live.remarks !== undefined ? live.remarks : (isPrimary ? (p.remarks || '') : '');
+        parentRowsMeta.push({
+          roll_no: prn,
+          company: company || '',
+          paper_type: ptype || '',
+          width_mm: Number(width || 0),
+          length_mtr: Number(length || 0),
+          status: liveStatus || '',
+          remarks: liveRemarks || ''
+        });
         parentTableHtml += `<tr><td style="color:var(--jc-brand);font-weight:700">${esc(prn)}</td><td>${esc(company || '--')}</td><td>${esc(ptype || '--')}</td><td>${esc(width + '')}</td><td>${esc(length + '')}</td><td>${esc(weight + '')}</td><td>${esc(sqm + '')}</td><td>${esc(gsm + '')}</td><td>${esc(liveStatus)}</td><td>${esc(liveRemarks || '--')}</td></tr>`;
       });
       parentTableHtml += '</table>';
       executionRollHtml += `<div class="jc-detail-section"><h3><i class="bi bi-inbox"></i> Parent Roll${allParentRollNos.length > 1 ? 's' : ''}</h3><div class="jc-table-shell jc-parent-shell"><div style="overflow-x:auto">${parentTableHtml}</div></div></div>`;
-    }
 
-    // Edit tab: change parent roll section (uses first/primary parent)
-    if (primaryPRN) {
-      editHtml += `<div class="jc-detail-section"><h3><i class="bi bi-inbox"></i> Change Parent Roll</h3>
-        <div class="jc-form-row">
-          <div class="jc-form-group"><label>Parent Roll Number</label><div class="jc-roll-pick-row"><input type="text" id="dm-parent-roll-input" value="" placeholder="Current: ${esc(primaryPRN)}" onclick="openRollPicker()" autocomplete="off"><button type="button" class="jc-action-btn jc-btn-view" onclick="openRollPicker()"><i class="bi bi-search"></i> Browse</button></div></div>
-          <div class="jc-form-group"><label>Requested Parent Preview</label><div class="jc-timing-box"><div class="jc-timing-value" id="dm-parent-roll-preview">-</div></div></div>
-        </div>
-        <div id="dm-roll-check" class="jc-roll-check"><div id="dm-roll-check-message" class="rv">Enter replacement parent roll number.</div><div id="dm-roll-check-detail"></div></div>
-      </div>`;
+      // Edit tab: parent roll table WITH checkboxes for selection
+      let editParentTableHtml = '<table class="jc-soft-table" id="dm-edit-parent-table"><tr><th style="width:40px"><i class="bi bi-check2-square"></i></th><th>Roll No</th><th>Paper Company</th><th>Material</th><th>Width</th><th>Length</th><th>Weight</th><th>Sqr Mtr</th><th>GSM</th><th>Status</th><th>Remarks</th></tr>';
+      allParentRollNos.forEach(function(prn) {
+        const live      = liveRollMap[prn] || {};
+        const isPrimary = (prn === primaryPRN);
+        const company   = live.company    || (isPrimary ? (p.company    || job.company    || '') : '');
+        const ptype     = live.paper_type || (isPrimary ? (p.paper_type || job.paper_type || '') : '');
+        const width     = live.width_mm   !== undefined ? live.width_mm   : (isPrimary ? (p.width_mm  ?? job.width_mm  ?? '--') : '--');
+        const length    = live.length_mtr !== undefined ? live.length_mtr : (isPrimary ? (p.length_mtr ?? job.length_mtr ?? '--') : '--');
+        const weight    = live.weight_kg  !== undefined ? live.weight_kg  : (isPrimary ? (p.weight_kg ?? job.weight_kg ?? '--') : '--');
+        const sqm       = isPrimary ? (p.sqm ?? '--') : '--';
+        const gsm       = live.gsm !== undefined ? live.gsm : (isPrimary ? (p.gsm ?? job.gsm ?? '--') : '--');
+        const liveStatus  = live.status  || '--';
+        const liveRemarks = live.remarks !== undefined ? live.remarks : (isPrimary ? (p.remarks || '') : '');
+        editParentTableHtml += `<tr data-roll="${esc(prn)}"><td style="text-align:center"><input type="checkbox" class="dm-parent-select-cb" value="${esc(prn)}"></td><td style="color:var(--jc-brand);font-weight:700">${esc(prn)}</td><td>${esc(company || '--')}</td><td>${esc(ptype || '--')}</td><td>${esc(width + '')}</td><td>${esc(length + '')}</td><td>${esc(weight + '')}</td><td>${esc(sqm + '')}</td><td>${esc(gsm + '')}</td><td>${esc(liveStatus)}</td><td>${esc(liveRemarks || '--')}</td></tr>`;
+      });
+      editParentTableHtml += '</table>';
+      editHtml += `<div class="jc-detail-section"><h3><i class="bi bi-inbox"></i> Parent Roll${allParentRollNos.length > 1 ? 's' : ''} <span style="font-size:.75rem;font-weight:400;color:#64748b">(select to change)</span></h3><div class="jc-table-shell jc-parent-shell"><div style="overflow-x:auto">${editParentTableHtml}</div></div></div>`;
+      // Dynamic container for brown change sections (one per checked roll)
+      editHtml += `<div id="dm-roll-change-sections"></div>`;
     }
   }
 
@@ -1479,25 +2447,40 @@ async function openJobDetail(id, mode) {
 
   if (allRows.length) {
     let executionRowsHtml = '<table class="jc-soft-table"><thead><tr><th>Parent Roll</th><th>Child Roll</th><th>Type</th><th>Width</th><th>Length</th><th>Status</th><th>Wastage</th><th>Remarks</th></tr></thead><tbody>';
-
-    let childPreviewHtml = '<table id="dm-roll-preview-table" class="jc-soft-table"><thead><tr><th>Parent Roll No</th><th>Child Roll No.</th><th>Width</th><th>Length</th><th>Type</th><th>Weight</th><th>Sqr Mtr</th><th>GSM</th><th>Wastage</th><th>Status</th><th>Remarks</th></tr></thead><tbody>';
-    let stockInfoHtml = '<table class="jc-soft-table"><thead><tr><th>Parent Roll No</th><th>Stock Roll No.</th><th>Width</th><th>Length</th><th>Type</th><th>Weight</th><th>Sqr Mtr</th><th>GSM</th><th>Wastage</th><th>Status</th><th>Remarks</th></tr></thead><tbody>';
     allRows.forEach(function(r) {
-      const bucket = (r.status === 'Stock') ? 'stock' : 'child';
       executionRowsHtml += `<tr><td style="font-weight:700">${esc(r.parent_roll_no || '—')}</td><td style="color:var(--jc-brand);font-weight:700">${esc(r.roll_no || '—')}</td><td>${esc(r.type || '—')}</td><td>${esc((r.width ?? '—') + '')}</td><td>${esc((r.length ?? '—') + '')}</td><td>${esc(r.status || '—')}</td><td>${esc((r.wastage ?? 0) + '')}</td><td>${esc(r.remarks || '—')}</td></tr>`;
-      if (bucket === 'child') {
-        childPreviewHtml += `<tr data-roll="${esc(r.roll_no || '')}" data-original-roll="${esc(r.roll_no || '')}" data-original-parent="${esc(originalParentRoll)}" data-bucket="child" data-width="${esc((r.width ?? 0) + '')}" data-length="${esc((r.length ?? 0) + '')}" data-wastage="${esc((r.wastage ?? 0) + '')}" data-status="${esc(r.status || 'Job Assign')}" data-remarks="${esc(r.remarks || '')}"><td class="dm-preview-parent" style="font-weight:700">${esc(originalParentRoll || r.parent_roll_no || '—')}</td><td class="dm-preview-roll" style="color:var(--jc-brand);font-weight:700">${esc(r.roll_no || '—')}</td><td>${esc((r.width ?? '—') + '')}</td><td>${esc((r.length ?? '—') + '')}</td><td>${esc(r.type || '—')}</td><td>${esc((r.weight_kg ?? '—') + '')}</td><td>${esc((r.sqm ?? '—') + '')}</td><td>${esc((r.gsm ?? '—') + '')}</td><td>${esc((r.wastage ?? 0) + '')}</td><td>${esc(r.status || '—')}</td><td>${esc(r.remarks || '—')}</td></tr>`;
-      } else {
-        stockInfoHtml += `<tr><td style="font-weight:700">${esc(r.parent_roll_no || '—')}</td><td style="color:var(--jc-brand);font-weight:700">${esc(r.roll_no || '—')}</td><td>${esc((r.width ?? '—') + '')}</td><td>${esc((r.length ?? '—') + '')}</td><td>${esc(r.type || '—')}</td><td>${esc((r.weight_kg ?? '—') + '')}</td><td>${esc((r.sqm ?? '—') + '')}</td><td>${esc((r.gsm ?? '—') + '')}</td><td>${esc((r.wastage ?? 0) + '')}</td><td>${esc(r.status || '—')}</td><td>${esc(r.remarks || '—')}</td></tr>`;
-      }
     });
     executionRowsHtml += '</tbody></table>';
-    childPreviewHtml += '</tbody></table>';
-    stockInfoHtml += '</tbody></table>';
     executionRollHtml += `<div class="jc-detail-section"><h3><i class="bi bi-table"></i> Child / Stock Rolls</h3><div class="jc-table-shell jc-child-shell"><div style="overflow-x:auto">${executionRowsHtml}</div></div></div>`;
-    editHtml += `<div class="jc-detail-section"><h3><i class="bi bi-arrow-repeat"></i> Child Roll Preview</h3><div class="jc-table-shell jc-child-shell"><div style="overflow-x:auto">${childPreviewHtml}</div></div></div>`;
-    editHtml += `<div class="jc-detail-section"><h3><i class="bi bi-lock"></i> Stock Rolls (No Change)</h3><div class="jc-table-shell jc-child-shell"><div style="overflow-x:auto">${stockInfoHtml}</div></div></div>`;
+    // Edit tab uses the exact same child/stock table (read-only, same as execution)
+    editHtml += `<div class="jc-detail-section"><h3><i class="bi bi-table"></i> Child / Stock Rolls</h3><div class="jc-table-shell jc-child-shell"><div style="overflow-x:auto">${executionRowsHtml}</div></div></div>`;
   }
+
+  // Edit tab: reason for change (text + voice)
+  editHtml += `<div class="jc-detail-section" style="background:#fef3c7;border-radius:12px;padding:14px;margin-bottom:16px">
+    <h3 style="margin-top:0;color:#92400e"><i class="bi bi-chat-left-text"></i> Reason for Change</h3>
+    <div style="display:flex;gap:8px;align-items:flex-start">
+      <div style="flex:1">
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+          <select id="dm-reason-lang-select" onchange="this.setAttribute('data-voice-lang',this.value)" style="padding:4px 8px;border:1px solid #d97706;border-radius:6px;font-size:.72rem;font-weight:700;color:#92400e">
+            <option value="bn-IN">🇧🇩 Bengali</option>
+            <option value="hi-IN" selected>🇮🇳 Hindi</option>
+            <option value="en-US">🇬🇧 English</option>
+          </select>
+          <span style="font-size:.62rem;color:#92400e80;font-weight:600">Select language before speaking</span>
+        </div>
+        <input type="text" id="dm-change-reason" placeholder="Type reason or use voice..." style="width:100%;border:1px solid #d97706;border-radius:8px;padding:8px 12px;font-size:.85rem">
+        <div id="dm-reason-voice-display" style="margin-top:8px;padding:10px;background:linear-gradient(135deg,#fffbeb,#fef3c7);border:1px solid #f59e0b;border-radius:8px;font-size:.75rem;line-height:1.5;display:none">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><span style="font-size:.9rem">🎤</span><strong style="color:#92400e;font-size:.68rem;text-transform:uppercase;letter-spacing:.5px">Voice Translation</strong></div>
+          <div><strong style="color:#d97706">Original:</strong> <span id="dm-reason-voice-original" style="color:#92400e"></span></div>
+          <div style="margin-top:4px"><strong style="color:#16a34a">English:</strong> <span id="dm-reason-voice-english" style="color:#1e293b;font-weight:700"></span></div>
+        </div>
+      </div>
+      <button type="button" id="dm-reason-voice-btn" class="voiceInputBtn" onclick="startReasonVoice()" title="Voice Input" style="padding:8px 12px;background:#d97706;color:white;border:none;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:700;height:fit-content">
+        <i class="bi bi-mic-fill"></i> <span class="voiceStatus">Speak</span>
+      </button>
+    </div>
+  </div>`;
 
   html += `<div class="jc-tab-panel active" data-panel="execution">${summaryHtml}${timingHtml}${executionRollHtml}${executionFormHtml}${photoUploadHtml}</div>`;
   html += `<div class="jc-tab-panel" data-panel="edit">${editHtml}</div>`;
@@ -1543,10 +2526,24 @@ async function openJobDetail(id, mode) {
     setRequestButtonState(false, 'Change parent roll number first, then enter a valid available roll.');
   }
 
+  document.querySelectorAll('.dm-parent-select-cb').forEach(cb => {
+    cb.addEventListener('change', function() {
+      // Highlight selected parent roll rows with light color
+      document.querySelectorAll('#dm-edit-parent-table tr[data-roll]').forEach(tr => {
+        const chk = tr.querySelector('.dm-parent-select-cb');
+        if (chk && chk.checked) {
+          tr.style.backgroundColor = '#fff3e0';
+        } else {
+          tr.style.backgroundColor = '';
+        }
+      });
+      // Rebuild brown change sections for all checked rolls
+      rebuildRollChangeSections();
+    });
+  });
+
   document.getElementById('dm-parent-roll-input')?.addEventListener('input', function() {
-    DM_PARENT_ROLL_CHANGED = true;
-    refreshRollPreview();
-    lookupReplacementRoll(job);
+    // legacy fallback – not used with per-section inputs
   });
   refreshRollPreview();
   updateTimers();
