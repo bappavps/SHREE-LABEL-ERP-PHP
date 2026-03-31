@@ -243,7 +243,7 @@ function saveUploadedImage($fileKey, $targetDir, $prefix) {
 }
 
 $activeTab = $_GET['tab'] ?? 'company';
-$allowedTabs = ['company', 'library', 'theme', 'backup'];
+$allowedTabs = ['company', 'library', 'theme', 'backup', 'update'];
 if (!in_array($activeTab, $allowedTabs, true)) $activeTab = 'company';
 
 // Support paper_type parameter from paper stock view
@@ -578,6 +578,322 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     setFlash('success', 'Full backup restored successfully (database + images/settings).');
     redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
   }
+
+  // ── Apply System Update ──
+  if ($action === 'apply_update') {
+    if (!isAdmin()) {
+      setFlash('error', 'Only administrators can apply system updates.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=update');
+    }
+
+    $fileInput = $_FILES['update_file'] ?? null;
+    if (empty($fileInput) || !is_array($fileInput) || ($fileInput['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+      setFlash('error', 'Please select a valid update ZIP file.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=update');
+    }
+    if (($fileInput['size'] ?? 0) > 50 * 1024 * 1024) {
+      setFlash('error', 'Update file too large. Maximum 50 MB.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=update');
+    }
+    $fname = strtolower((string)($fileInput['name'] ?? ''));
+    if (substr($fname, -4) !== '.zip') {
+      setFlash('error', 'Only .zip update packages are accepted.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=update');
+    }
+    if (!class_exists('ZipArchive')) {
+      setFlash('error', 'ZipArchive PHP extension is required.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=update');
+    }
+
+    $zip = new ZipArchive();
+    if ($zip->open((string)$fileInput['tmp_name']) !== true) {
+      setFlash('error', 'Cannot open update ZIP file.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=update');
+    }
+
+    // Read manifest
+    $manifestJson = $zip->getFromName('manifest.json');
+    if ($manifestJson === false) {
+      $zip->close();
+      setFlash('error', 'Invalid update package: manifest.json not found.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=update');
+    }
+    $manifest = json_decode($manifestJson, true);
+    if (!is_array($manifest) || empty($manifest['version']) || empty($manifest['files'])) {
+      $zip->close();
+      setFlash('error', 'Invalid manifest.json: missing version or files list.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=update');
+    }
+
+    // Validate checksum
+    $checksumData = '';
+    foreach ((array)$manifest['files'] as $relPath) {
+      $content = $zip->getFromName('files/' . $relPath);
+      if ($content !== false) {
+        $checksumData .= hash('sha256', $content);
+      }
+    }
+    foreach ((array)($manifest['migrations'] ?? []) as $mf) {
+      $content = $zip->getFromName('migrations/' . $mf);
+      if ($content !== false) {
+        $checksumData .= hash('sha256', $content);
+      }
+    }
+    if (!empty($manifest['checksum']) && hash('sha256', $checksumData) !== $manifest['checksum']) {
+      $zip->close();
+      setFlash('error', 'Checksum verification failed. The update package may be corrupted.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=update');
+    }
+
+    // Security: validate all file paths
+    $projectRoot = str_replace('\\', '/', realpath(__DIR__ . '/../../') ?: (__DIR__ . '/../../'));
+    foreach ((array)$manifest['files'] as $relPath) {
+      $relPath = str_replace('\\', '/', (string)$relPath);
+      if (strpos($relPath, '..') !== false || $relPath === 'config/db.php') {
+        $zip->close();
+        setFlash('error', 'Security violation: invalid file path in update package.');
+        redirect(BASE_URL . '/modules/settings/index.php?tab=update');
+      }
+    }
+
+    // ZIP bomb check: total uncompressed size limit (100 MB)
+    $totalSize = 0;
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+      $stat = $zip->statIndex($i);
+      if ($stat) $totalSize += (int)($stat['size'] ?? 0);
+    }
+    if ($totalSize > 100 * 1024 * 1024) {
+      $zip->close();
+      setFlash('error', 'Update package too large when extracted (>100 MB).');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=update');
+    }
+
+    // ── Auto-backup before applying ──
+    $backupsDir = $projectRoot . '/uploads/updates/backups';
+    if (!is_dir($backupsDir)) {
+      @mkdir($backupsDir, 0755, true);
+    }
+    $stamp = date('Ymd_His');
+    $preBackupPath = $backupsDir . '/pre_update_v' . preg_replace('/[^a-zA-Z0-9._-]/', '_', $manifest['version']) . '_' . $stamp . '.zip';
+
+    $bkZip = new ZipArchive();
+    if ($bkZip->open($preBackupPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true) {
+      // Backup files that will be overwritten
+      foreach ((array)$manifest['files'] as $relPath) {
+        $absPath = $projectRoot . '/' . str_replace('\\', '/', $relPath);
+        if (is_file($absPath)) {
+          $bkZip->addFile($absPath, 'files/' . $relPath);
+        }
+      }
+      // Backup database
+      if (!isset($db) || !($db instanceof mysqli)) $db = getDB();
+      $bkSql = buildDatabaseBackupSql($db);
+      if ($bkSql !== '') {
+        $bkZip->addFromString('backup/database.sql', $bkSql);
+      }
+      // Save old version in backup manifest
+      $bkManifest = [
+        'version' => APP_VERSION,
+        'timestamp' => date('c'),
+        'description' => 'Pre-update backup before applying v' . $manifest['version'],
+        'files' => (array)$manifest['files'],
+      ];
+      $bkZip->addFromString('manifest.json', json_encode($bkManifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+      $bkZip->close();
+    }
+
+    // ── Extract files ──
+    $extractedCount = 0;
+    foreach ((array)$manifest['files'] as $relPath) {
+      $relPath = str_replace('\\', '/', (string)$relPath);
+      $content = $zip->getFromName('files/' . $relPath);
+      if ($content === false) continue;
+      $absTarget = $projectRoot . '/' . $relPath;
+      $targetDir = dirname($absTarget);
+      if (!is_dir($targetDir)) {
+        @mkdir($targetDir, 0755, true);
+      }
+      if (file_put_contents($absTarget, $content) !== false) {
+        $extractedCount++;
+      }
+    }
+
+    // ── Run SQL migrations ──
+    $migrationResults = [];
+    $migrations = (array)($manifest['migrations'] ?? []);
+    sort($migrations);
+    if (!empty($migrations)) {
+      if (!isset($db) || !($db instanceof mysqli)) $db = getDB();
+      foreach ($migrations as $mf) {
+        $sqlContent = $zip->getFromName('migrations/' . $mf);
+        if ($sqlContent === false || trim($sqlContent) === '') continue;
+        $res = restoreDatabaseFromSql($db, $sqlContent);
+        $migrationResults[] = [
+          'file' => $mf,
+          'ok' => $res['ok'],
+          'error' => $res['error'] ?? '',
+        ];
+      }
+    }
+
+    $zip->close();
+
+    // ── Bump APP_VERSION in config/db.php ──
+    $configPath = $projectRoot . '/config/db.php';
+    if (is_file($configPath) && is_writable($configPath)) {
+      $configContent = file_get_contents($configPath);
+      if ($configContent !== false) {
+        $newVersion = preg_replace('/[^a-zA-Z0-9._-]/', '', $manifest['version']);
+        $configContent = preg_replace(
+          "/('APP_VERSION'\s*=>\s*')[^']*(')/",
+          '${1}' . $newVersion . '${2}',
+          $configContent
+        );
+        file_put_contents($configPath, $configContent);
+      }
+    }
+
+    // ── Log update ──
+    $logFile = $projectRoot . '/data/update_log.json';
+    $log = [];
+    if (is_file($logFile)) {
+      $logRaw = file_get_contents($logFile);
+      $log = json_decode($logRaw, true);
+      if (!is_array($log)) $log = [];
+    }
+    $failedMigrations = array_filter($migrationResults, function($r) { return !$r['ok']; });
+    $log[] = [
+      'version'         => $manifest['version'],
+      'from_version'    => $manifest['from_version'] ?? APP_VERSION,
+      'description'     => $manifest['description'] ?? '',
+      'timestamp'       => date('c'),
+      'files_count'     => $extractedCount,
+      'files'           => (array)$manifest['files'],
+      'migrations_run'  => count($migrationResults),
+      'migrations_failed' => count($failedMigrations),
+      'backup_path'     => str_replace($projectRoot . '/', '', $preBackupPath),
+      'applied_by'      => $_SESSION['username'] ?? 'admin',
+    ];
+    file_put_contents($logFile, json_encode($log, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
+    // Build result message
+    $msg = "Update v{$manifest['version']} applied: {$extractedCount} file(s) updated";
+    if (!empty($migrationResults)) {
+      $msg .= ', ' . count($migrationResults) . ' migration(s) executed';
+    }
+    if (!empty($failedMigrations)) {
+      $failNames = array_map(function($r) { return $r['file']; }, $failedMigrations);
+      $msg .= '. WARNING: Failed migrations: ' . implode(', ', $failNames);
+      setFlash('error', $msg);
+    } else {
+      $msg .= '.';
+      setFlash('success', $msg);
+    }
+    redirect(BASE_URL . '/modules/settings/index.php?tab=update');
+  }
+
+  // ── Rollback Update ──
+  if ($action === 'rollback_update') {
+    if (!isAdmin()) {
+      setFlash('error', 'Only administrators can rollback updates.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=update');
+    }
+
+    $rollbackIdx = (int)($_POST['rollback_index'] ?? -1);
+    $projectRoot = str_replace('\\', '/', realpath(__DIR__ . '/../../') ?: (__DIR__ . '/../../'));
+    $logFile = $projectRoot . '/data/update_log.json';
+    $log = [];
+    if (is_file($logFile)) {
+      $log = json_decode(file_get_contents($logFile), true);
+      if (!is_array($log)) $log = [];
+    }
+
+    if ($rollbackIdx < 0 || !isset($log[$rollbackIdx])) {
+      setFlash('error', 'Invalid rollback target.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=update');
+    }
+
+    $entry = $log[$rollbackIdx];
+    $backupZipPath = $projectRoot . '/' . ($entry['backup_path'] ?? '');
+    if (!is_file($backupZipPath)) {
+      setFlash('error', 'Pre-update backup file not found. Cannot rollback.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=update');
+    }
+
+    $zip = new ZipArchive();
+    if ($zip->open($backupZipPath) !== true) {
+      setFlash('error', 'Cannot open backup ZIP for rollback.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=update');
+    }
+
+    // Restore files
+    $restoredCount = 0;
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+      $eName = str_replace('\\', '/', (string)$zip->getNameIndex($i));
+      if (strpos($eName, 'files/') === 0 && substr($eName, -1) !== '/') {
+        $relPath = substr($eName, 6); // strip 'files/'
+        if (strpos($relPath, '..') !== false) continue;
+        $content = $zip->getFromIndex($i);
+        if ($content === false) continue;
+        $absTarget = $projectRoot . '/' . $relPath;
+        $targetDir = dirname($absTarget);
+        if (!is_dir($targetDir)) @mkdir($targetDir, 0755, true);
+        if (file_put_contents($absTarget, $content) !== false) {
+          $restoredCount++;
+        }
+      }
+    }
+
+    // Restore database if backup contains it
+    $sqlDump = $zip->getFromName('backup/database.sql');
+    $dbRestored = false;
+    if ($sqlDump !== false && trim($sqlDump) !== '') {
+      if (!isset($db) || !($db instanceof mysqli)) $db = getDB();
+      $dbRes = restoreDatabaseFromSql($db, $sqlDump);
+      $dbRestored = $dbRes['ok'];
+    }
+
+    // Read old version from backup manifest
+    $bkManifestJson = $zip->getFromName('manifest.json');
+    $zip->close();
+
+    $oldVersion = $entry['from_version'] ?? '';
+    if ($bkManifestJson !== false) {
+      $bkManifest = json_decode($bkManifestJson, true);
+      if (is_array($bkManifest) && !empty($bkManifest['version'])) {
+        $oldVersion = $bkManifest['version'];
+      }
+    }
+
+    // Revert APP_VERSION
+    if ($oldVersion !== '') {
+      $configPath = $projectRoot . '/config/db.php';
+      if (is_file($configPath) && is_writable($configPath)) {
+        $configContent = file_get_contents($configPath);
+        if ($configContent !== false) {
+          $safeVer = preg_replace('/[^a-zA-Z0-9._-]/', '', $oldVersion);
+          $configContent = preg_replace(
+            "/('APP_VERSION'\s*=>\s*')[^']*(')/",
+            '${1}' . $safeVer . '${2}',
+            $configContent
+          );
+          file_put_contents($configPath, $configContent);
+        }
+      }
+    }
+
+    // Mark rollback in log
+    $log[$rollbackIdx]['rolled_back']    = true;
+    $log[$rollbackIdx]['rolled_back_at'] = date('c');
+    $log[$rollbackIdx]['rolled_back_by'] = $_SESSION['username'] ?? 'admin';
+    file_put_contents($logFile, json_encode($log, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
+    $msg = "Rollback complete: {$restoredCount} file(s) restored";
+    if ($dbRestored) $msg .= ', database restored';
+    $msg .= ", version reverted to {$oldVersion}.";
+    setFlash('success', $msg);
+    redirect(BASE_URL . '/modules/settings/index.php?tab=update');
+  }
 }
 
 $filteredLibrary = [];
@@ -620,6 +936,7 @@ include __DIR__ . '/../../includes/header.php';
     <a class="settings-tab <?= $activeTab==='library'?'active':'' ?>" href="?tab=library">Image Library</a>
     <a class="settings-tab <?= $activeTab==='theme'?'active':'' ?>" href="?tab=theme">Color Theme</a>
     <a class="settings-tab <?= $activeTab==='backup'?'active':'' ?>" href="?tab=backup">Backup &amp; Restore</a>
+    <a class="settings-tab <?= $activeTab==='update'?'active':'' ?>" href="?tab=update">System Update</a>
   </div>
 
   <div class="settings-body">
@@ -859,6 +1176,315 @@ include __DIR__ . '/../../includes/header.php';
           </table>
         </div>
       </div>
+    <?php endif; ?>
+
+    <?php if ($activeTab === 'update'): ?>
+      <?php
+        // Load update log
+        $updateLogFile = realpath(__DIR__ . '/../../') . '/data/update_log.json';
+        $updateLog = [];
+        if (is_file($updateLogFile)) {
+          $raw = file_get_contents($updateLogFile);
+          $updateLog = json_decode($raw, true);
+          if (!is_array($updateLog)) $updateLog = [];
+        }
+        $lastUpdate = !empty($updateLog) ? end($updateLog) : null;
+      ?>
+
+      <!-- Version Banner -->
+      <div class="upd-version-banner">
+        <div class="upd-version-main">
+          <div class="upd-version-icon"><i class="bi bi-box-seam"></i></div>
+          <div>
+            <span class="upd-version-label">Current Version</span>
+            <span class="upd-version-number"><?= e(APP_VERSION) ?></span>
+          </div>
+        </div>
+        <div class="upd-version-meta">
+          <?php if ($lastUpdate): ?>
+            <span><i class="bi bi-clock-history"></i> Last updated: <?= e(date('d M Y, H:i', strtotime($lastUpdate['timestamp'] ?? ''))) ?></span>
+            <span><i class="bi bi-person"></i> By: <?= e($lastUpdate['applied_by'] ?? 'admin') ?></span>
+          <?php else: ?>
+            <span><i class="bi bi-info-circle"></i> No updates applied yet</span>
+          <?php endif; ?>
+        </div>
+      </div>
+
+      <div class="backup-grid mt-16">
+        <!-- Upload Update Panel -->
+        <div class="backup-panel">
+          <h3><i class="bi bi-cloud-arrow-up"></i> Apply Update</h3>
+          <p>Upload an update package (.zip) created with the build tool. A backup is created automatically before applying.</p>
+          <form method="POST" enctype="multipart/form-data" class="mt-12" onsubmit="return confirm('Apply this update? A backup will be created automatically before changes are applied.');">
+            <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
+            <input type="hidden" name="action" value="apply_update">
+            <div class="upd-upload-zone" id="upd-drop-zone">
+              <input type="file" name="update_file" id="upd-file-input" accept=".zip" required>
+              <div class="upd-upload-placeholder" id="upd-placeholder">
+                <i class="bi bi-file-earmark-zip" style="font-size:28px;color:#3b82f6"></i>
+                <span>Choose update ZIP or drag &amp; drop</span>
+                <small>Max 50 MB &middot; .zip only</small>
+              </div>
+              <div class="upd-upload-selected" id="upd-selected" style="display:none">
+                <i class="bi bi-file-earmark-check" style="font-size:24px;color:#16a34a"></i>
+                <span id="upd-file-name"></span>
+                <small id="upd-file-size"></small>
+              </div>
+            </div>
+            <div class="mt-12">
+              <button class="btn btn-primary" type="submit"><i class="bi bi-rocket-takeoff"></i> Apply Update</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Package Builder Info -->
+        <div class="backup-panel" style="background:linear-gradient(135deg,#f8fafc 0%,#eef6ff 100%)">
+          <h3><i class="bi bi-tools"></i> Build Update Package</h3>
+          <p>Use the CLI tool to create update packages from your git changes.</p>
+          <div class="upd-code-block mt-12">
+            <code>cd <?= e(realpath(__DIR__ . '/../../') ?: __DIR__ . '/../../') ?></code>
+            <code>php build_update.php</code>
+          </div>
+          <div class="upd-steps mt-12">
+            <div class="upd-step"><span class="upd-step-num">1</span><span>Make changes in VS Code &amp; commit to Git</span></div>
+            <div class="upd-step"><span class="upd-step-num">2</span><span>Run <strong>php build_update.php</strong> in terminal</span></div>
+            <div class="upd-step"><span class="upd-step-num">3</span><span>Choose version &amp; select changed files</span></div>
+            <div class="upd-step"><span class="upd-step-num">4</span><span>Upload the generated ZIP here</span></div>
+          </div>
+          <div class="mt-12" style="font-size:.82rem;color:#64748b">
+            <strong>Package format:</strong> manifest.json + files/ + migrations/<br>
+            <strong>SQL migrations:</strong> Place .sql files in <code>pending_migrations/</code> before building
+          </div>
+        </div>
+      </div>
+
+      <!-- Update History -->
+      <div class="card mt-16">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+          <span class="card-title"><i class="bi bi-clock-history"></i> Update History</span>
+          <span class="badge badge-draft"><?= count($updateLog) ?> update(s)</span>
+        </div>
+        <div class="card-body" style="overflow-x:auto">
+          <?php if (empty($updateLog)): ?>
+            <div class="table-empty"><i class="bi bi-inbox"></i>No updates have been applied yet.</div>
+          <?php else: ?>
+            <table style="font-size:.82rem;width:100%">
+              <thead>
+                <tr>
+                  <th style="padding:8px 6px">#</th>
+                  <th style="padding:8px 6px">Version</th>
+                  <th style="padding:8px 6px">Description</th>
+                  <th style="padding:8px 6px">Date</th>
+                  <th style="padding:8px 6px">Files</th>
+                  <th style="padding:8px 6px">Migrations</th>
+                  <th style="padding:8px 6px">Applied By</th>
+                  <th style="padding:8px 6px">Status</th>
+                  <th style="padding:8px 6px">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php foreach (array_reverse($updateLog, true) as $idx => $entry): ?>
+                  <tr>
+                    <td style="padding:6px"><?= (int)$idx + 1 ?></td>
+                    <td style="padding:6px">
+                      <strong>v<?= e($entry['version'] ?? '') ?></strong>
+                      <br><small class="text-muted">from v<?= e($entry['from_version'] ?? '') ?></small>
+                    </td>
+                    <td style="padding:6px"><?= e($entry['description'] ?? '—') ?></td>
+                    <td style="padding:6px;white-space:nowrap"><?= e(date('d M Y H:i', strtotime($entry['timestamp'] ?? ''))) ?></td>
+                    <td style="padding:6px;text-align:center"><?= (int)($entry['files_count'] ?? 0) ?></td>
+                    <td style="padding:6px;text-align:center">
+                      <?= (int)($entry['migrations_run'] ?? 0) ?>
+                      <?php if (($entry['migrations_failed'] ?? 0) > 0): ?>
+                        <span class="badge badge-cancelled"><?= (int)$entry['migrations_failed'] ?> failed</span>
+                      <?php endif; ?>
+                    </td>
+                    <td style="padding:6px"><?= e($entry['applied_by'] ?? 'admin') ?></td>
+                    <td style="padding:6px">
+                      <?php if (!empty($entry['rolled_back'])): ?>
+                        <span class="badge badge-cancelled">Rolled Back</span>
+                      <?php else: ?>
+                        <span class="badge badge-available">Applied</span>
+                      <?php endif; ?>
+                    </td>
+                    <td style="padding:6px">
+                      <?php if (empty($entry['rolled_back']) && !empty($entry['backup_path'])): ?>
+                        <form method="POST" style="margin:0" onsubmit="return confirm('Rollback this update? This will restore files and database to the pre-update state.');">
+                          <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
+                          <input type="hidden" name="action" value="rollback_update">
+                          <input type="hidden" name="rollback_index" value="<?= (int)$idx ?>">
+                          <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-arrow-counterclockwise"></i> Rollback</button>
+                        </form>
+                      <?php else: ?>
+                        <span class="text-muted">—</span>
+                      <?php endif; ?>
+                    </td>
+                  </tr>
+                <?php endforeach; ?>
+              </tbody>
+            </table>
+          <?php endif; ?>
+        </div>
+      </div>
+
+      <style>
+      .upd-version-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 18px 22px;
+        border-radius: 16px;
+        color: #fff;
+        background: linear-gradient(135deg, #0f172a 0%, #1e40af 55%, #0ea5e9 100%);
+        box-shadow: 0 12px 28px rgba(29, 78, 216, .2);
+      }
+      .upd-version-main { display: flex; align-items: center; gap: 14px; }
+      .upd-version-icon {
+        width: 48px; height: 48px;
+        display: grid; place-items: center;
+        background: rgba(255,255,255,.15);
+        border-radius: 12px;
+        font-size: 22px;
+        backdrop-filter: blur(6px);
+      }
+      .upd-version-label {
+        display: block;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: .1em;
+        opacity: .8;
+      }
+      .upd-version-number {
+        display: block;
+        font-size: 24px;
+        font-weight: 800;
+        letter-spacing: -.02em;
+        margin-top: 2px;
+      }
+      .upd-version-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: .82rem;
+        opacity: .85;
+        text-align: right;
+      }
+      .upd-upload-zone {
+        position: relative;
+        border: 2px dashed #cbd5e1;
+        border-radius: 12px;
+        padding: 24px;
+        text-align: center;
+        transition: .18s ease;
+        background: #fafbfc;
+        cursor: pointer;
+      }
+      .upd-upload-zone.drag-over {
+        border-color: #3b82f6;
+        background: #eff6ff;
+      }
+      .upd-upload-zone input[type="file"] {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+        width: 100%;
+        height: 100%;
+      }
+      .upd-upload-placeholder,
+      .upd-upload-selected {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        pointer-events: none;
+      }
+      .upd-upload-placeholder span,
+      .upd-upload-selected span { font-weight: 600; color: #334155; font-size: .92rem; }
+      .upd-upload-placeholder small,
+      .upd-upload-selected small { color: #94a3b8; font-size: .78rem; }
+      .upd-code-block {
+        background: #0f172a;
+        color: #e2e8f0;
+        border-radius: 10px;
+        padding: 14px 16px;
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-size: .82rem;
+        line-height: 1.7;
+      }
+      .upd-code-block code {
+        display: block;
+        color: #67e8f9;
+      }
+      .upd-code-block code::before {
+        content: '> ';
+        color: #64748b;
+      }
+      .upd-steps { display: grid; gap: 10px; }
+      .upd-step {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: .85rem;
+        color: #334155;
+      }
+      .upd-step-num {
+        width: 24px; height: 24px;
+        display: grid; place-items: center;
+        background: #dbeafe;
+        color: #1d4ed8;
+        border-radius: 50%;
+        font-size: .72rem;
+        font-weight: 800;
+        flex-shrink: 0;
+      }
+      @media (max-width: 720px) {
+        .upd-version-banner { flex-direction: column; align-items: flex-start; }
+        .upd-version-meta { text-align: left; }
+      }
+      </style>
+
+      <script>
+      (function(){
+        var fileInput = document.getElementById('upd-file-input');
+        var placeholder = document.getElementById('upd-placeholder');
+        var selected = document.getElementById('upd-selected');
+        var fileNameEl = document.getElementById('upd-file-name');
+        var fileSizeEl = document.getElementById('upd-file-size');
+        var dropZone = document.getElementById('upd-drop-zone');
+
+        if (fileInput) {
+          fileInput.addEventListener('change', function(){
+            if (fileInput.files && fileInput.files[0]) {
+              var f = fileInput.files[0];
+              placeholder.style.display = 'none';
+              selected.style.display = '';
+              fileNameEl.textContent = f.name;
+              fileSizeEl.textContent = (f.size / 1024 / 1024).toFixed(2) + ' MB';
+            } else {
+              placeholder.style.display = '';
+              selected.style.display = 'none';
+            }
+          });
+        }
+
+        if (dropZone) {
+          ['dragenter','dragover'].forEach(function(ev){
+            dropZone.addEventListener(ev, function(e){ e.preventDefault(); dropZone.classList.add('drag-over'); });
+          });
+          ['dragleave','drop'].forEach(function(ev){
+            dropZone.addEventListener(ev, function(e){ e.preventDefault(); dropZone.classList.remove('drag-over'); });
+          });
+          dropZone.addEventListener('drop', function(e){
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+              fileInput.files = e.dataTransfer.files;
+              fileInput.dispatchEvent(new Event('change'));
+            }
+          });
+        }
+      })();
+      </script>
     <?php endif; ?>
   </div>
 </div>
