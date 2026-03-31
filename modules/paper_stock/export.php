@@ -143,54 +143,403 @@ function fmtCell($key, $val) {
 }
 
 // ── CSV / Excel Export ────────────────────────────────────────
-if ($format === 'csv') {
-    $filename = 'Paper_Stock_Export_' . date('Y-m-d_His') . '.csv';
-    header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="' . $filename . '"');
-    header('Pragma: no-cache');
+if ($format === 'csv' || $format === 'xlsx') {
 
-    $out = fopen('php://output', 'w');
-    fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF)); // UTF-8 BOM for Excel
-
-    // Company info header rows
-    fputcsv($out, [$companyName]);
-    if ($companyTagline) fputcsv($out, [$companyTagline]);
-    if ($companyAddress) fputcsv($out, [$companyAddress]);
-    $contactParts = [];
-    if ($companyPhone) $contactParts[] = 'Ph: ' . $companyPhone;
-    if ($companyEmail) $contactParts[] = $companyEmail;
-    if ($companyGST) $contactParts[] = 'GST: ' . $companyGST;
-    if ($contactParts) fputcsv($out, [implode('  |  ', $contactParts)]);
-    fputcsv($out, ['Paper Stock Report — Generated: ' . date('d M Y, h:i A')]);
-    fputcsv($out, ['Mode: ' . ($mode === 'selected' ? 'Selected Rolls (' . count($rolls) . ')' : 'All Rolls (' . count($rolls) . ')')]);
-    fputcsv($out, []); // blank row separator
-
-    // Column header row
-    $headerRow = ['SL No.'];
-    foreach ($columns as $label) $headerRow[] = $label;
-    fputcsv($out, $headerRow);
-
-    // Data rows
-    foreach ($rolls as $i => $r) {
-        $row = [$i + 1];
-        foreach (array_keys($columns) as $key) {
-            $val = $r[$key] ?? '';
-            if ($key === 'purchase_rate' && $val !== '') $val = (float)$val;
-            elseif ($key === 'sqm') $val = (float)($r['sqm'] ?? 0);
-            $row[] = $val;
-        }
-        fputcsv($out, $row);
+    // --- Helper: XML-escape a string ---
+    function xmlEsc($s) {
+        return htmlspecialchars((string)$s, ENT_QUOTES | ENT_XML1, 'UTF-8');
     }
 
-    // Summary rows
-    fputcsv($out, []);
-    fputcsv($out, ['SUMMARY']);
-    fputcsv($out, ['Total Rolls', count($rolls)]);
-    fputcsv($out, ['Total Running Meter (MTR)', number_format($totalMtr, 0)]);
-    fputcsv($out, ['Total Surface Area (SQM)', number_format($totalSqm, 2)]);
-    fputcsv($out, ['Total Weight (KG)', number_format($totalWeight, 2)]);
+    // --- Helper: build an Excel XML cell ---
+    function xlCell($val, $styleId = 's_body', $type = 'String') {
+        $escaped = xmlEsc($val);
+        return "<Cell ss:StyleID=\"{$styleId}\"><Data ss:Type=\"{$type}\">{$escaped}</Data></Cell>";
+    }
+    function xlNumCell($val, $styleId = 's_num') {
+        $n = is_numeric($val) ? $val : 0;
+        return "<Cell ss:StyleID=\"{$styleId}\"><Data ss:Type=\"Number\">{$n}</Data></Cell>";
+    }
+    function xlMergeCell($val, $mergeAcross, $styleId = 's_body') {
+        $escaped = xmlEsc($val);
+        return "<Cell ss:StyleID=\"{$styleId}\" ss:MergeAcross=\"{$mergeAcross}\"><Data ss:Type=\"String\">{$escaped}</Data></Cell>";
+    }
 
-    fclose($out);
+    $numericCols = ['width_mm','length_mtr','sqm','gsm','weight_kg','purchase_rate'];
+    $colCount = count($columns) + 1; // +1 for SL column
+    $mergeCount = $colCount - 1;     // MergeAcross value
+
+    $filename = 'Paper_Stock_Export_' . date('Y-m-d_His') . '.xls';
+    header('Content-Type: application/vnd.ms-excel');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Pragma: no-cache');
+    header('Cache-Control: no-cache, must-revalidate');
+
+    // --- Column widths ---
+    $colWidths = [40]; // SL column
+    foreach (array_keys($columns) as $key) {
+        if ($key === 'roll_no') $colWidths[] = 100;
+        elseif ($key === 'company') $colWidths[] = 130;
+        elseif ($key === 'paper_type') $colWidths[] = 110;
+        elseif ($key === 'job_name') $colWidths[] = 140;
+        elseif ($key === 'remarks') $colWidths[] = 150;
+        elseif ($key === 'status') $colWidths[] = 90;
+        elseif ($key === 'date_received' || $key === 'date_used') $colWidths[] = 95;
+        elseif ($key === 'purchase_rate') $colWidths[] = 100;
+        elseif ($key === 'lot_batch_no' || $key === 'company_roll_no') $colWidths[] = 110;
+        elseif (in_array($key, $numericCols)) $colWidths[] = 80;
+        else $colWidths[] = 100;
+    }
+
+    // --- Status color mapping ---
+    $statusColors = [
+        'main'          => ['bg' => '#EDE9FE', 'fg' => '#6D28D9'],
+        'stock'         => ['bg' => '#DCFCE7', 'fg' => '#15803D'],
+        'slitting'      => ['bg' => '#FFF7ED', 'fg' => '#C2410C'],
+        'job-assign'    => ['bg' => '#FEF2F2', 'fg' => '#B91C1C'],
+        'in-production' => ['bg' => '#ECFEFF', 'fg' => '#0E7490'],
+        'consumed'      => ['bg' => '#F1F5F9', 'fg' => '#475569'],
+        'available'     => ['bg' => '#EFF6FF', 'fg' => '#1D4ED8'],
+        'assigned'      => ['bg' => '#FEFCE8', 'fg' => '#A16207'],
+    ];
+
+    echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+    echo '<?mso-application progid="Excel.Sheet"?>' . "\n";
+?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+
+<Styles>
+  <!-- Company name -->
+  <Style ss:ID="s_company">
+    <Font ss:FontName="Calibri" ss:Size="16" ss:Bold="1" ss:Color="#0F172A"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+  <!-- Company tagline -->
+  <Style ss:ID="s_tagline">
+    <Font ss:FontName="Calibri" ss:Size="10" ss:Italic="1" ss:Color="#64748B"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+  <!-- Company detail line -->
+  <Style ss:ID="s_detail">
+    <Font ss:FontName="Calibri" ss:Size="9" ss:Color="#475569"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+  <!-- Report title bar -->
+  <Style ss:ID="s_title">
+    <Font ss:FontName="Calibri" ss:Size="12" ss:Bold="1" ss:Color="#FFFFFF"/>
+    <Interior ss:Color="#0F172A" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0F172A"/>
+    </Borders>
+  </Style>
+  <!-- Column header -->
+  <Style ss:ID="s_header">
+    <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/>
+    <Interior ss:Color="#1E40AF" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1E3A8A"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#2563EB"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#2563EB"/>
+      <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1E3A8A"/>
+    </Borders>
+  </Style>
+  <!-- Column header (numeric, right-aligned) -->
+  <Style ss:ID="s_header_num">
+    <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/>
+    <Interior ss:Color="#1E40AF" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Right" ss:Vertical="Center" ss:WrapText="1"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1E3A8A"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#2563EB"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#2563EB"/>
+      <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1E3A8A"/>
+    </Borders>
+  </Style>
+  <!-- Body cell (white row) -->
+  <Style ss:ID="s_body">
+    <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#1E293B"/>
+    <Alignment ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    </Borders>
+  </Style>
+  <!-- Body cell (alternate gray row) -->
+  <Style ss:ID="s_body_alt">
+    <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#1E293B"/>
+    <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+    <Alignment ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    </Borders>
+  </Style>
+  <!-- Numeric cell (white row) -->
+  <Style ss:ID="s_num">
+    <Font ss:FontName="Consolas" ss:Size="10" ss:Color="#1E293B"/>
+    <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    </Borders>
+  </Style>
+  <!-- Numeric cell (alternate gray row) -->
+  <Style ss:ID="s_num_alt">
+    <Font ss:FontName="Consolas" ss:Size="10" ss:Color="#1E293B"/>
+    <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    </Borders>
+  </Style>
+  <!-- SL No cell (centered, white) -->
+  <Style ss:ID="s_sl">
+    <Font ss:FontName="Calibri" ss:Size="9" ss:Color="#94A3B8"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    </Borders>
+  </Style>
+  <!-- SL No cell (alternate gray) -->
+  <Style ss:ID="s_sl_alt">
+    <Font ss:FontName="Calibri" ss:Size="9" ss:Color="#94A3B8"/>
+    <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    </Borders>
+  </Style>
+  <!-- Currency (₹) white row -->
+  <Style ss:ID="s_cur">
+    <Font ss:FontName="Consolas" ss:Size="10" ss:Color="#1E293B"/>
+    <NumberFormat ss:Format="₹#,##0.00"/>
+    <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    </Borders>
+  </Style>
+  <!-- Currency (₹) alt row -->
+  <Style ss:ID="s_cur_alt">
+    <Font ss:FontName="Consolas" ss:Size="10" ss:Color="#1E293B"/>
+    <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+    <NumberFormat ss:Format="₹#,##0.00"/>
+    <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    </Borders>
+  </Style>
+  <!-- Summary label -->
+  <Style ss:ID="s_sum_label">
+    <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#0F172A"/>
+    <Interior ss:Color="#F0FDF4" ss:Pattern="Solid"/>
+    <Alignment ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BBF7D0"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BBF7D0"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BBF7D0"/>
+      <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BBF7D0"/>
+    </Borders>
+  </Style>
+  <!-- Summary value -->
+  <Style ss:ID="s_sum_val">
+    <Font ss:FontName="Consolas" ss:Size="11" ss:Bold="1" ss:Color="#15803D"/>
+    <Interior ss:Color="#F0FDF4" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BBF7D0"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BBF7D0"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BBF7D0"/>
+      <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BBF7D0"/>
+    </Borders>
+  </Style>
+  <!-- Summary title bar -->
+  <Style ss:ID="s_sum_title">
+    <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/>
+    <Interior ss:Color="#15803D" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#166534"/>
+    </Borders>
+  </Style>
+  <!-- Footer -->
+  <Style ss:ID="s_footer">
+    <Font ss:FontName="Calibri" ss:Size="9" ss:Italic="1" ss:Color="#94A3B8"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0F172A"/>
+    </Borders>
+  </Style>
+  <!-- Blank -->
+  <Style ss:ID="s_blank">
+    <Alignment ss:Vertical="Center"/>
+  </Style>
+  <!-- Status styles (dynamic) -->
+<?php foreach ($statusColors as $slug => $colors): ?>
+  <Style ss:ID="s_st_<?= str_replace('-','_',$slug) ?>">
+    <Font ss:FontName="Calibri" ss:Size="9" ss:Bold="1" ss:Color="<?= $colors['fg'] ?>"/>
+    <Interior ss:Color="<?= $colors['bg'] ?>" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    </Borders>
+  </Style>
+<?php endforeach; ?>
+</Styles>
+
+<Worksheet ss:Name="Paper Stock">
+<Table>
+<?php foreach ($colWidths as $w): ?>
+  <Column ss:AutoFitWidth="0" ss:Width="<?= $w ?>"/>
+<?php endforeach; ?>
+
+  <!-- Company Name -->
+  <Row ss:Height="28">
+    <?= xlMergeCell($companyName, $mergeCount, 's_company') ?>
+  </Row>
+<?php if ($companyTagline): ?>
+  <Row ss:Height="18">
+    <?= xlMergeCell($companyTagline, $mergeCount, 's_tagline') ?>
+  </Row>
+<?php endif; ?>
+<?php if ($companyAddress): ?>
+  <Row ss:Height="16">
+    <?= xlMergeCell($companyAddress, $mergeCount, 's_detail') ?>
+  </Row>
+<?php endif; ?>
+<?php
+  $contactParts = [];
+  if ($companyPhone) $contactParts[] = 'Ph: ' . $companyPhone;
+  if ($companyEmail) $contactParts[] = $companyEmail;
+  if ($companyGST) $contactParts[] = 'GST: ' . $companyGST;
+  if ($contactParts):
+?>
+  <Row ss:Height="16">
+    <?= xlMergeCell(implode('  |  ', $contactParts), $mergeCount, 's_detail') ?>
+  </Row>
+<?php endif; ?>
+
+  <!-- Blank row -->
+  <Row ss:Height="8"><Cell ss:StyleID="s_blank"/></Row>
+
+  <!-- Report Title Bar -->
+  <Row ss:Height="26">
+    <?= xlMergeCell('PAPER STOCK REPORT — ' . date('d M Y, h:i A') . '  |  ' . ($mode === 'selected' ? 'Selected: ' . count($rolls) . ' roll(s)' : 'All Rolls: ' . count($rolls)), $mergeCount, 's_title') ?>
+  </Row>
+
+  <!-- Blank row -->
+  <Row ss:Height="6"><Cell ss:StyleID="s_blank"/></Row>
+
+  <!-- Column Headers -->
+  <Row ss:Height="24">
+    <Cell ss:StyleID="s_header"><Data ss:Type="String">SL No.</Data></Cell>
+<?php foreach ($columns as $key => $label):
+    $isNum = in_array($key, $numericCols);
+?>
+    <Cell ss:StyleID="<?= $isNum ? 's_header_num' : 's_header' ?>"><Data ss:Type="String"><?= xmlEsc($label) ?></Data></Cell>
+<?php endforeach; ?>
+  </Row>
+
+  <!-- Data Rows -->
+<?php foreach ($rolls as $i => $r):
+    $alt = ($i % 2 === 1);
+    $slStyle = $alt ? 's_sl_alt' : 's_sl';
+    $bodyStyle = $alt ? 's_body_alt' : 's_body';
+    $numStyle = $alt ? 's_num_alt' : 's_num';
+    $curStyle = $alt ? 's_cur_alt' : 's_cur';
+?>
+  <Row ss:Height="20">
+    <?= xlNumCell($i + 1, $slStyle) ?>
+<?php foreach (array_keys($columns) as $key):
+    $val = $r[$key] ?? '';
+    $isNum = in_array($key, $numericCols);
+
+    // Status column — use colored style
+    if ($key === 'status' && $val !== '') {
+        $slug = strtolower(str_replace(' ', '-', trim($val)));
+        $stStyleId = isset($statusColors[$slug]) ? 's_st_' . str_replace('-','_',$slug) : $bodyStyle;
+        echo '    ' . xlCell(strtoupper($val), $stStyleId) . "\n";
+    }
+    // Currency column
+    elseif ($key === 'purchase_rate') {
+        echo '    ' . xlNumCell((float)$val, $curStyle) . "\n";
+    }
+    // SQM (computed)
+    elseif ($key === 'sqm') {
+        echo '    ' . xlNumCell(round((float)($r['sqm'] ?? 0), 2), $numStyle) . "\n";
+    }
+    // Other numeric
+    elseif ($isNum) {
+        echo '    ' . xlNumCell($val, $numStyle) . "\n";
+    }
+    // Date columns
+    elseif (($key === 'date_received' || $key === 'date_used') && $val) {
+        echo '    ' . xlCell(date('d M Y', strtotime($val)), $bodyStyle) . "\n";
+    }
+    // Text
+    else {
+        echo '    ' . xlCell($val !== '' ? $val : '-', $bodyStyle) . "\n";
+    }
+endforeach; ?>
+  </Row>
+<?php endforeach; ?>
+
+  <!-- Blank row -->
+  <Row ss:Height="10"><Cell ss:StyleID="s_blank"/></Row>
+
+  <!-- Summary Title -->
+  <Row ss:Height="24">
+    <?= xlMergeCell('SUMMARY', $mergeCount, 's_sum_title') ?>
+  </Row>
+
+  <!-- Summary Rows -->
+  <Row ss:Height="22">
+    <?= xlCell('Total Rolls', 's_sum_label') ?>
+    <?= xlNumCell(count($rolls), 's_sum_val') ?>
+  </Row>
+  <Row ss:Height="22">
+    <?= xlCell('Total Running Meter (MTR)', 's_sum_label') ?>
+    <?= xlNumCell(round($totalMtr, 0), 's_sum_val') ?>
+  </Row>
+  <Row ss:Height="22">
+    <?= xlCell('Total Surface Area (SQM)', 's_sum_label') ?>
+    <?= xlNumCell(round($totalSqm, 2), 's_sum_val') ?>
+  </Row>
+  <Row ss:Height="22">
+    <?= xlCell('Total Weight (KG)', 's_sum_label') ?>
+    <?= xlNumCell(round($totalWeight, 2), 's_sum_val') ?>
+  </Row>
+
+  <!-- Blank row -->
+  <Row ss:Height="8"><Cell ss:StyleID="s_blank"/></Row>
+
+  <!-- Footer -->
+  <Row ss:Height="18">
+    <?= xlMergeCell($companyName . ' — Paper Stock Report  |  Generated: ' . date('d M Y, h:i A') . '  |  ' . count($rolls) . ' records', $mergeCount, 's_footer') ?>
+  </Row>
+
+</Table>
+</Worksheet>
+</Workbook>
+<?php
     exit;
 }
 

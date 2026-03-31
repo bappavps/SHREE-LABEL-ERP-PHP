@@ -301,7 +301,7 @@ include __DIR__ . '/../../includes/header.php';
   </div>
   <div class="ps-action-bar no-print">
     <button type="button" class="ps-action-btn red" onclick="psBulkExport('pdf','auto')"><i class="bi bi-file-earmark-pdf"></i> Export PDF</button>
-    <button type="button" class="ps-action-btn green" onclick="psBulkExport('csv','auto')"><i class="bi bi-file-earmark-excel"></i> Export Excel</button>
+    <button type="button" class="ps-action-btn green" onclick="psBulkExport('xlsx','auto')"><i class="bi bi-file-earmark-excel"></i> Export Excel</button>
     <button type="button" id="top-print-label-btn" class="ps-action-btn blue" onclick="psPrintLabels()" disabled><i class="bi bi-printer"></i> Print Label</button>
     <button type="button" class="ps-action-btn blue" onclick="psPrintStockReport()"><i class="bi bi-file-earmark-richtext"></i> Print Stock Report</button>
     <div style="position:relative;display:inline-block">
@@ -440,7 +440,7 @@ include __DIR__ . '/../../includes/header.php';
   </div>
   <div class="ps-selected-actions">
     <button type="button" class="btn btn-sm" style="background:#ef4444;color:#fff;border:none" onclick="psBulkExport('pdf','selected')"><i class="bi bi-file-earmark-pdf"></i> Export PDF</button>
-    <button type="button" class="btn btn-sm" style="background:#22c55e;color:#fff;border:none" onclick="psBulkExport('csv','selected')"><i class="bi bi-file-earmark-excel"></i> Export Excel</button>
+    <button type="button" class="btn btn-sm" style="background:#22c55e;color:#fff;border:none" onclick="psBulkExport('xlsx','selected')"><i class="bi bi-file-earmark-excel"></i> Export Excel</button>
     <?php if ($isSysAdmin): ?>
     <button type="button" class="btn btn-sm" style="background:#dc2626;color:#fff;border:none" onclick="psBulkDelete()"><i class="bi bi-trash3"></i> Delete</button>
     <?php endif; ?>
