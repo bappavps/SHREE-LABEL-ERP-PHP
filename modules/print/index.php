@@ -1357,6 +1357,9 @@ async function psPrint() {
   const canvasEl = document.getElementById('studio-canvas');
   if (!canvasEl || !currentTemplate) return;
 
+  const mode = await choosePrintMode();
+  if (!mode) return;
+
   const btn = document.getElementById('ps-print-btn');
   btn.disabled = true;
   btn.innerHTML = '<i class="bi bi-arrow-repeat spin-icon"></i> Rendering...';
@@ -1387,7 +1390,8 @@ async function psPrint() {
     document.body.appendChild(iframe);
     const doc = iframe.contentWindow.document;
     doc.open();
-    doc.write('<html><head><title>Print</title><style>@page{size:'+currentTemplate.paperWidth+'mm '+currentTemplate.paperHeight+'mm;margin:0}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{margin:0;padding:0;width:100%;height:100%}img{width:100%;height:100%;object-fit:contain;display:block}</style></head><body><img src="'+imgData+'"></body></html>');
+    const bwFilter = mode === 'bw' ? 'filter:grayscale(100%) contrast(1.2);-webkit-filter:grayscale(100%) contrast(1.2);' : '';
+    doc.write('<html><head><title>Print</title><style>@page{size:'+currentTemplate.paperWidth+'mm '+currentTemplate.paperHeight+'mm;margin:0}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{margin:0;padding:0;width:100%;height:100%}img{width:100%;height:100%;object-fit:contain;display:block;'+bwFilter+'}</style></head><body><img src="'+imgData+'"></body></html>');
     doc.close();
     setTimeout(function(){
       try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch(pe){}

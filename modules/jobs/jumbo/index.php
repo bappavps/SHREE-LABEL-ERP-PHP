@@ -642,6 +642,8 @@ $historyCount = $finishedCount;
 .ht-bulk-btn:hover{background:rgba(255,255,255,.22)}
 .ht-bulk-print{padding:7px 16px;background:#22c55e;color:#fff;border:none;border-radius:8px;font-weight:800;font-size:.74rem;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 8px rgba(34,197,94,.3)}
 .ht-bulk-print:hover{background:#16a34a}
+.ht-bulk-delete{padding:7px 16px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-weight:800;font-size:.74rem;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 8px rgba(220,38,38,.3)}
+.ht-bulk-delete:hover{background:#b91c1c}
 .ht-table-wrap{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:14px;overflow:hidden}
 .ht-table{width:100%;border-collapse:collapse;font-size:.78rem}
 .ht-table thead{background:linear-gradient(135deg,#f8fafc,#f1f5f9);position:sticky;top:0;z-index:2}
@@ -705,6 +707,9 @@ $historyCount = $finishedCount;
     <button class="ht-bulk-btn" onclick="htSelectAllVisible()">Select All</button>
     <button class="ht-bulk-btn" onclick="htDeselectAll()">Deselect All</button>
     <button class="ht-bulk-print" onclick="htBulkPrint()"><i class="bi bi-printer-fill"></i> Print Selected</button>
+    <?php if ($canDeleteJobs): ?>
+    <button class="ht-bulk-delete" onclick="htBulkDelete()"><i class="bi bi-trash-fill"></i> Delete Selected</button>
+    <?php endif; ?>
   </div>
 </div>
 
@@ -1108,66 +1113,53 @@ function htBulkPrint() {
   const jobs = ids.map(function(id) { return ALL_JOBS.find(function(j) { return j.id == id; }); }).filter(Boolean);
   if (!jobs.length) return;
 
-  const nowText = new Date().toLocaleString();
-  let pages = '';
+  (async function() {
+    const mode = await choosePrintMode();
+    if (!mode) return;
+    let pages = '';
+    for (let idx = 0; idx < jobs.length; idx++) {
+      const job = jobs[idx];
+      const qrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
+      const qrDataUrl = await generateQR(qrUrl);
+      const pb = idx < jobs.length - 1 ? 'page-break-after:always;' : '';
+      let cardHtml = renderJumboPrintCardHtml(job, qrDataUrl);
+      if (mode === 'bw') cardHtml = printBwTransform(cardHtml);
+      pages += `<div style="${pb}">${cardHtml}</div>`;
+    }
+    const w = window.open('', '_blank', 'width=820,height=920');
+    w.document.write('<!DOCTYPE html><html><head><title>History Bulk Print - ' + jobs.length + ' Job Cards</title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>' + pages + '</body></html>');
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 400);
+  })();
+}
 
-  jobs.forEach(function(job, idx) {
-    const extra = job.extra_data_parsed || {};
-    const startedAt = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
-    const completedAt = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
-    pages += `
-      <div class="print-page" ${idx > 0 ? 'style="page-break-before:always"' : ''}>
-        <div class="p-header">
-          <div class="p-brand">
-            ${COMPANY.logo ? '<img src="' + COMPANY.logo + '" style="max-height:36px;max-width:100px;display:block">' : ''}
-            <div>
-              <div class="p-company">${esc(COMPANY.name || 'Company')}</div>
-              <div class="p-meta">${esc(COMPANY.address || '')}</div>
-              ${COMPANY.gst ? '<div class="p-meta">GST: ' + esc(COMPANY.gst) + '</div>' : ''}
-            </div>
-          </div>
-          <div style="text-align:right">
-            <div class="p-title">Jumbo History Job Card</div>
-            <div class="p-jobno">${esc(job.job_no || '—')}</div>
-            <div class="p-meta">Printed: ${esc(nowText)}</div>
-          </div>
-        </div>
-        <table class="p-table">
-          <tr><th>Job Name</th><td>${esc(job.planning_job_name || job.display_job_name || '—')}</td><th>Status</th><td>${esc(job.status || '—')}</td></tr>
-          <tr><th>Roll No</th><td>${esc(job.roll_no || '—')}</td><th>Material</th><td>${esc(job.paper_type || '—')}</td></tr>
-          <tr><th>Width</th><td>${esc((job.width_mm || '—') + ' mm')}</td><th>Length</th><td>${esc((job.length_mtr || '—') + ' m')}</td></tr>
-          <tr><th>GSM</th><td>${esc(job.gsm || '—')}</td><th>Weight</th><td>${esc((job.weight_kg || '—') + ' kg')}</td></tr>
-          <tr><th>Started</th><td>${esc(startedAt)}</td><th>Completed</th><td>${esc(completedAt)}</td></tr>
-          <tr><th>Wastage</th><td>${esc(extra.wastage_kg || extra.operator_wastage_kg || '—')} kg</td><th>Notes</th><td>${esc(extra.operator_notes || extra.operator_remarks || '—')}</td></tr>
-        </table>
-        <div class="p-footer">
-          <span>${esc(APP_FOOTER_LEFT || '')}</span>
-          <span>Page ${idx + 1} of ${jobs.length}</span>
-          <span>${esc(APP_FOOTER_RIGHT || '')}</span>
-        </div>
-      </div>`;
-  });
+async function htBulkDelete() {
+  if (!IS_ADMIN) { alert('Access denied. Only system admin can delete job cards.'); return; }
+  const ids = Array.from(document.querySelectorAll('.ht-row-cb:checked')).map(cb => cb.dataset.jobId);
+  if (!ids.length) { alert('No history jobs selected'); return; }
+  if (!confirm(`Delete ${ids.length} selected job card(s)?\n\nThis will reset linked paper stock, planning status, and downstream queued jobs for each.`)) return;
 
-  const w = window.open('', '_blank', 'width=800,height=900');
-  w.document.write('<!DOCTYPE html><html><head><title>History Bulk Print - ' + jobs.length + ' Job Cards</title><style>' +
-    '@page{margin:10mm}' +
-    '*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}' +
-    'body{font-family:"Segoe UI",Arial,sans-serif;color:#1f2937;margin:0;padding:0}' +
-    '.print-page{padding:8px}' +
-    '.p-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:12px}' +
-    '.p-brand{display:flex;gap:10px;align-items:flex-start}' +
-    '.p-company{font-size:1rem;font-weight:800;color:#0f172a}' +
-    '.p-title{font-size:.8rem;font-weight:800;text-transform:uppercase;color:#334155}' +
-    '.p-jobno{font-size:1.1rem;font-weight:900;color:#16a34a}' +
-    '.p-meta{font-size:.65rem;color:#64748b}' +
-    '.p-table{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:.8rem}' +
-    '.p-table th{background:#f8fafc;padding:8px 10px;border:1px solid #e2e8f0;font-weight:700;color:#334155;white-space:nowrap;width:15%}' +
-    '.p-table td{padding:8px 10px;border:1px solid #e2e8f0;width:35%}' +
-    '.p-footer{display:flex;justify-content:space-between;border-top:1px solid #e2e8f0;padding-top:6px;font-size:.6rem;color:#94a3b8}' +
-  '</style></head><body>' + pages + '</body></html>');
-  w.document.close();
-  w.focus();
-  setTimeout(() => w.print(), 400);
+  let ok = 0, failed = 0, errors = [];
+  for (const id of ids) {
+    const fd = new FormData();
+    fd.append('csrf_token', CSRF);
+    fd.append('action', 'delete_job');
+    fd.append('job_id', id);
+    try {
+      const res = await fetch(API_BASE, { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data.ok) { ok++; }
+      else {
+        failed++;
+        const job = ALL_JOBS.find(j => j.id == id);
+        const label = job ? job.job_no : ('ID ' + id);
+        errors.push(`${label}: ${data.error || 'Unknown error'}`);
+      }
+    } catch (err) { failed++; errors.push('ID ' + id + ': ' + err.message); }
+  }
+  if (errors.length) alert(`Deleted: ${ok}, Failed: ${failed}\n\n${errors.join('\n')}`);
+  if (ok > 0) location.reload();
 }
 
 document.getElementById('htSearch')?.addEventListener('input', function() {
@@ -2023,87 +2015,235 @@ async function deleteJob(id) {
   } catch (err) { alert('Network error: ' + err.message); }
 }
 
+// ─── Print Mode Chooser & B&W Transform ────────────────────
+function choosePrintMode() {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99999;display:flex;align-items:center;justify-content:center';
+    overlay.innerHTML = `<div style="background:#fff;border-radius:16px;padding:28px 32px;max-width:380px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center;font-family:'Segoe UI',Arial,sans-serif">
+      <div style="font-size:1.1rem;font-weight:900;color:#0f172a;margin-bottom:4px">Print Mode</div>
+      <div style="font-size:.78rem;color:#64748b;margin-bottom:20px">Select print mode for best output quality</div>
+      <div style="display:flex;gap:12px;justify-content:center">
+        <button id="_pm_color" style="flex:1;padding:16px 12px;border:2px solid #22c55e;border-radius:12px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);cursor:pointer;transition:all .15s">
+          <div style="font-size:1.5rem;margin-bottom:6px">🎨</div>
+          <div style="font-weight:800;font-size:.88rem;color:#166534">Color</div>
+          <div style="font-size:.65rem;color:#64748b;margin-top:2px">Full color print</div>
+        </button>
+        <button id="_pm_bw" style="flex:1;padding:16px 12px;border:2px solid #64748b;border-radius:12px;background:linear-gradient(135deg,#f8fafc,#e2e8f0);cursor:pointer;transition:all .15s">
+          <div style="font-size:1.5rem;margin-bottom:6px">⬛</div>
+          <div style="font-weight:800;font-size:.88rem;color:#0f172a">Black & White</div>
+          <div style="font-size:.65rem;color:#64748b;margin-top:2px">High contrast B&W</div>
+        </button>
+      </div>
+      <button id="_pm_cancel" style="margin-top:16px;padding:8px 24px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;font-size:.76rem;font-weight:700;cursor:pointer">Cancel</button>
+    </div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('_pm_color').onclick = () => { document.body.removeChild(overlay); resolve('color'); };
+    document.getElementById('_pm_bw').onclick = () => { document.body.removeChild(overlay); resolve('bw'); };
+    document.getElementById('_pm_cancel').onclick = () => { document.body.removeChild(overlay); resolve(null); };
+    overlay.onclick = e => { if (e.target === overlay) { document.body.removeChild(overlay); resolve(null); } };
+  });
+}
+
+function printBwTransform(html) {
+  const map = {
+    '166534':'000000','15803d':'000000','16a34a':'000000',
+    '1e40af':'000000','5b21b6':'000000','6d28d9':'000000',
+    'a16207':'000000','92400e':'000000','d97706':'333333',
+    '0f766e':'000000','9d174d':'000000','0891b2':'333333',
+    'dcfce7':'e0e0e0','f0fdf4':'f0f0f0','d1fae5':'e0e0e0',
+    'dbeafe':'d8d8d8','ede9fe':'e0e0e0',
+    'fef3c7':'e8e8e8','fffde7':'f0f0f0',
+    'e0f7fa':'e8e8e8','fce4ec':'e8e8e8','eceff1':'e0e0e0','fee2e2':'e8e8e8',
+    'bbf7d0':'999999','bfdbfe':'999999','c4b5fd':'999999',
+    'd1e7dd':'999999','bae6fd':'999999','fcd34d':'999999',
+    'cbd5e1':'aaaaaa','e2e8f0':'bbbbbb',
+    'f8fafc':'f2f2f2','f1f5f9':'efefef',
+  };
+  let result = html;
+  for (const [from, to] of Object.entries(map)) {
+    result = result.replace(new RegExp('#' + from, 'gi'), '#' + to);
+  }
+  return result;
+}
+
 // ─── Print Job Card ─────────────────────────────────────────
+function renderJumboPrintCardHtml(job, qrDataUrl) {
+  const extra = job.extra_data_parsed || {};
+  const liveRollMap = job.live_roll_map || {};
+  const created = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
+  const started = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
+  const completed = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
+  const dur = Number(job.duration_minutes);
+  const durText = Number.isFinite(dur) ? `${Math.floor(dur/60)}h ${dur%60}m` : '—';
+  const p = extra.parent_details || {};
+  const primaryPRN = String((p.roll_no) || extra.parent_roll || job.roll_no || '').trim();
+
+  const qrHtml = qrDataUrl
+    ? `<div style="text-align:center;margin-left:12px"><img src="${qrDataUrl}" style="width:90px;height:90px;display:block"><div style="font-size:.56rem;color:#64748b;margin-top:2px">Scan job card</div></div>`
+    : '';
+
+  // Collect parent rolls
+  const seenParents = {};
+  if (primaryPRN !== '') seenParents[primaryPRN] = true;
+  const parentRollsRaw = extra.parent_rolls;
+  if (Array.isArray(parentRollsRaw)) parentRollsRaw.forEach(pr => { const s = String(pr||'').trim(); if (s) seenParents[s] = true; });
+  else if (typeof parentRollsRaw === 'string' && parentRollsRaw.trim()) parentRollsRaw.split(',').forEach(pr => { const s = String(pr||'').trim(); if (s) seenParents[s] = true; });
+  (Array.isArray(extra.child_rolls) ? extra.child_rolls : []).forEach(r => { const s = String(r.parent_roll_no||'').trim(); if (s) seenParents[s] = true; });
+  (Array.isArray(extra.stock_rolls) ? extra.stock_rolls : []).forEach(r => { const s = String(r.parent_roll_no||'').trim(); if (s) seenParents[s] = true; });
+  const allParentRollNos = Object.keys(seenParents).sort((a,b) => a.localeCompare(b, undefined, {numeric:true}));
+
+  let parentTableHtml = '';
+  if (allParentRollNos.length) {
+    parentTableHtml = `<tr><td colspan="4" style="padding:0"><div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#166534;background:#dcfce7;padding:6px 8px;border-radius:4px;margin:8px 0 4px">Parent Roll${allParentRollNos.length > 1 ? 's' : ''}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:.7rem;margin-bottom:6px">
+        <thead><tr>
+          <th style="padding:5px 6px;border:1px solid #bbf7d0;background:#dcfce7;color:#166534;font-weight:800;font-size:.62rem">Roll No</th>
+          <th style="padding:5px 6px;border:1px solid #bbf7d0;background:#dcfce7;color:#166534;font-weight:800;font-size:.62rem">Paper Company</th>
+          <th style="padding:5px 6px;border:1px solid #bbf7d0;background:#dcfce7;color:#166534;font-weight:800;font-size:.62rem">Material</th>
+          <th style="padding:5px 6px;border:1px solid #bbf7d0;background:#dcfce7;color:#166534;font-weight:800;font-size:.62rem">Width (mm)</th>
+          <th style="padding:5px 6px;border:1px solid #bbf7d0;background:#dcfce7;color:#166534;font-weight:800;font-size:.62rem">Length (m)</th>
+          <th style="padding:5px 6px;border:1px solid #bbf7d0;background:#dcfce7;color:#166534;font-weight:800;font-size:.62rem">Weight (kg)</th>
+          <th style="padding:5px 6px;border:1px solid #bbf7d0;background:#dcfce7;color:#166534;font-weight:800;font-size:.62rem">GSM</th>
+          <th style="padding:5px 6px;border:1px solid #bbf7d0;background:#dcfce7;color:#166534;font-weight:800;font-size:.62rem">Status</th>
+          <th style="padding:5px 6px;border:1px solid #bbf7d0;background:#dcfce7;color:#166534;font-weight:800;font-size:.62rem">Remarks</th>
+        </tr></thead><tbody>`;
+    allParentRollNos.forEach(prn => {
+      const live = liveRollMap[prn] || {};
+      const isPrimary = (prn === primaryPRN);
+      const company = live.company || (isPrimary ? (p.company || job.company || '') : '');
+      const ptype = live.paper_type || (isPrimary ? (p.paper_type || job.paper_type || '') : '');
+      const width = live.width_mm !== undefined ? live.width_mm : (isPrimary ? (p.width_mm ?? job.width_mm ?? '—') : '—');
+      const length = live.length_mtr !== undefined ? live.length_mtr : (isPrimary ? (p.length_mtr ?? job.length_mtr ?? '—') : '—');
+      const weight = live.weight_kg !== undefined ? live.weight_kg : (isPrimary ? (p.weight_kg ?? job.weight_kg ?? '—') : '—');
+      const gsm = live.gsm !== undefined ? live.gsm : (isPrimary ? (p.gsm ?? job.gsm ?? '—') : '—');
+      const rstatus = live.status || '—';
+      const remarks = live.remarks !== undefined ? live.remarks : (isPrimary ? (p.remarks || '') : '');
+      parentTableHtml += `<tr>
+        <td style="padding:5px 6px;border:1px solid #d1e7dd;font-weight:800;color:#166534">${esc(prn)}</td>
+        <td style="padding:5px 6px;border:1px solid #d1e7dd">${esc(company||'—')}</td>
+        <td style="padding:5px 6px;border:1px solid #d1e7dd">${esc(ptype||'—')}</td>
+        <td style="padding:5px 6px;border:1px solid #d1e7dd">${esc(width+'')}</td>
+        <td style="padding:5px 6px;border:1px solid #d1e7dd">${esc(length+'')}</td>
+        <td style="padding:5px 6px;border:1px solid #d1e7dd">${esc(weight+'')}</td>
+        <td style="padding:5px 6px;border:1px solid #d1e7dd">${esc(gsm+'')}</td>
+        <td style="padding:5px 6px;border:1px solid #d1e7dd">${esc(rstatus)}</td>
+        <td style="padding:5px 6px;border:1px solid #d1e7dd">${esc(remarks||'—')}</td>
+      </tr>`;
+    });
+    parentTableHtml += '</tbody></table></td></tr>';
+  }
+
+  const childRows = Array.isArray(extra.child_rolls) ? extra.child_rolls : [];
+  const stockRows = Array.isArray(extra.stock_rolls) ? extra.stock_rolls : [];
+  const allRows = [];
+  childRows.forEach(r => allRows.push({ parent_roll_no: r.parent_roll_no || extra.parent_roll || job.roll_no || '', roll_no: r.roll_no || '', type: r.paper_type || job.paper_type || '', width: (r.width ?? r.width_mm ?? '—'), length: (r.length ?? r.length_mtr ?? '—'), wastage: (r.wastage ?? 0), remarks: r.remarks || '', status: 'Job Assign' }));
+  stockRows.forEach(r => allRows.push({ parent_roll_no: r.parent_roll_no || extra.parent_roll || job.roll_no || '', roll_no: r.roll_no || '', type: r.paper_type || job.paper_type || '', width: (r.width ?? r.width_mm ?? '—'), length: (r.length ?? r.length_mtr ?? '—'), wastage: (r.wastage ?? 0), remarks: r.remarks || '', status: 'Stock' }));
+  allRows.sort((a,b) => String(a.roll_no||'').localeCompare(String(b.roll_no||''), undefined, {numeric:true}));
+
+  let childTableHtml = '';
+  if (allRows.length) {
+    childTableHtml = `<tr><td colspan="4" style="padding:0"><div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#1e40af;background:#dbeafe;padding:6px 8px;border-radius:4px;margin:8px 0 4px">Child / Stock Rolls (${allRows.length})</div>
+      <table style="width:100%;border-collapse:collapse;font-size:.7rem;margin-bottom:6px">
+        <thead><tr>
+          <th style="padding:5px 6px;border:1px solid #bfdbfe;background:#dbeafe;color:#1e40af;font-weight:800;font-size:.62rem">#</th>
+          <th style="padding:5px 6px;border:1px solid #bfdbfe;background:#dbeafe;color:#1e40af;font-weight:800;font-size:.62rem">Parent Roll</th>
+          <th style="padding:5px 6px;border:1px solid #bfdbfe;background:#dbeafe;color:#1e40af;font-weight:800;font-size:.62rem">Child Roll</th>
+          <th style="padding:5px 6px;border:1px solid #bfdbfe;background:#dbeafe;color:#1e40af;font-weight:800;font-size:.62rem">Type</th>
+          <th style="padding:5px 6px;border:1px solid #bfdbfe;background:#dbeafe;color:#1e40af;font-weight:800;font-size:.62rem">Width</th>
+          <th style="padding:5px 6px;border:1px solid #bfdbfe;background:#dbeafe;color:#1e40af;font-weight:800;font-size:.62rem">Length</th>
+          <th style="padding:5px 6px;border:1px solid #bfdbfe;background:#dbeafe;color:#1e40af;font-weight:800;font-size:.62rem">Status</th>
+          <th style="padding:5px 6px;border:1px solid #bfdbfe;background:#dbeafe;color:#1e40af;font-weight:800;font-size:.62rem">Wastage</th>
+          <th style="padding:5px 6px;border:1px solid #bfdbfe;background:#dbeafe;color:#1e40af;font-weight:800;font-size:.62rem">Remarks</th>
+        </tr></thead><tbody>`;
+    allRows.forEach((r, i) => {
+      const bg = i % 2 === 0 ? '#ffffff' : '#f8fafc';
+      childTableHtml += `<tr style="background:${bg}">
+        <td style="padding:5px 6px;border:1px solid #e2e8f0;color:#94a3b8;text-align:center">${i+1}</td>
+        <td style="padding:5px 6px;border:1px solid #e2e8f0;font-weight:700">${esc(r.parent_roll_no||'—')}</td>
+        <td style="padding:5px 6px;border:1px solid #e2e8f0;font-weight:800;color:#166534">${esc(r.roll_no||'—')}</td>
+        <td style="padding:5px 6px;border:1px solid #e2e8f0">${esc(r.type||'—')}</td>
+        <td style="padding:5px 6px;border:1px solid #e2e8f0">${esc(r.width+'')}</td>
+        <td style="padding:5px 6px;border:1px solid #e2e8f0">${esc(r.length+'')}</td>
+        <td style="padding:5px 6px;border:1px solid #e2e8f0">${esc(r.status||'—')}</td>
+        <td style="padding:5px 6px;border:1px solid #e2e8f0">${esc(r.wastage+'')}</td>
+        <td style="padding:5px 6px;border:1px solid #e2e8f0">${esc(r.remarks||'—')}</td>
+      </tr>`;
+    });
+    childTableHtml += '</tbody></table></td></tr>';
+  }
+
+  const existingPhoto = extra.jumbo_photo_url || '';
+  const photoHtml = existingPhoto
+    ? `<tr><td colspan="4" style="padding:0"><div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#a16207;background:#fef3c7;padding:6px 8px;border-radius:4px;margin:8px 0 4px">Job Photo</div><div style="margin-bottom:6px"><img src="${esc(existingPhoto)}" style="max-width:300px;max-height:180px;border-radius:8px;border:1px solid #e2e8f0"></div></td></tr>`
+    : '';
+
+  return `<div style="font-family:'Segoe UI',Arial,sans-serif;padding:20px;max-width:760px;margin:0 auto;color:#0f172a">
+    <div style="border:2px solid #166534;border-radius:12px;overflow:hidden">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border-bottom:2px solid #166534">
+        <div>
+          ${COMPANY.logo ? `<img src="${COMPANY.logo}" style="height:36px;margin-bottom:4px;display:block">` : ''}
+          <div style="font-weight:900;font-size:1.02rem;letter-spacing:.02em">${esc(COMPANY.name || 'Company')}</div>
+          <div style="font-size:.66rem;color:#475569">${esc(COMPANY.address || '')}</div>
+          ${COMPANY.gst ? `<div style="font-size:.62rem;color:#64748b">GST: ${esc(COMPANY.gst)}</div>` : ''}
+        </div>
+        <div style="display:flex;align-items:flex-start">
+          <div style="text-align:right">
+            <div style="font-size:.66rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#475569">Department</div>
+            <div style="font-size:.92rem;font-weight:900;color:#166534">Jumbo Slitting</div>
+            <div style="font-size:1.2rem;font-weight:900;color:#0f172a;line-height:1.1">${esc(job.job_no || '—')}</div>
+            <div style="font-size:.6rem;color:#64748b">Generated: ${esc(created)}</div>
+          </div>
+          ${qrHtml}
+        </div>
+      </div>
+      <div style="padding:8px 14px;background:#dcfce7;border-bottom:1px solid #bbf7d0;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:.76rem;font-weight:900;color:#166534">Job: ${esc(job.planning_job_name || '—')}</div>
+        <div style="font-size:.68rem;font-weight:700;color:#15803d">Priority: ${esc(job.planning_priority || 'Normal')}</div>
+      </div>
+      <div style="padding:10px 12px;border-bottom:1px solid #cbd5e1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;font-size:.66rem">
+        <div><div style="color:#64748b;text-transform:uppercase;font-weight:800;font-size:.58rem">Status</div><div style="font-weight:800">${esc(job.status || '—')}</div></div>
+        <div><div style="color:#64748b;text-transform:uppercase;font-weight:800;font-size:.58rem">Started</div><div style="font-weight:700">${esc(started)}</div></div>
+        <div><div style="color:#64748b;text-transform:uppercase;font-weight:800;font-size:.58rem">Completed</div><div style="font-weight:700">${esc(completed)}</div></div>
+        <div><div style="color:#64748b;text-transform:uppercase;font-weight:800;font-size:.58rem">Duration</div><div style="font-weight:700">${esc(durText)}</div></div>
+      </div>
+      <div style="padding:10px 12px">
+        <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#166534;background:#dcfce7;padding:5px 8px;border-radius:4px">Job Details</div>
+        <table style="width:100%;border-collapse:collapse;font-size:.72rem;margin-bottom:10px">
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_job_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job No</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#166534">${esc(job.job_no || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Roll No</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.roll_no || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Material</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.paper_type || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Width</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.width_mm || '—') + ' mm')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Length</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.length_mtr || '—') + ' m')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">GSM</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.gsm || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Weight</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.weight_kg || '—') + ' kg')}</td></tr>
+        </table>
+        ${parentTableHtml ? `<table style="width:100%">${parentTableHtml}</table>` : ''}
+        ${childTableHtml ? `<table style="width:100%">${childTableHtml}</table>` : ''}
+        <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#166534;background:#dcfce7;padding:5px 8px;border-radius:4px;margin-top:8px">Execution Summary</div>
+        <table style="width:100%;border-collapse:collapse;font-size:.72rem">
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Wastage (kg)</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.wastage_kg || extra.operator_wastage_kg || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Operator</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.operator_name || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Remarks</td><td colspan="3" style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.operator_notes || extra.operator_remarks || '—')}</td></tr>
+        </table>
+        ${photoHtml ? `<table style="width:100%">${photoHtml}</table>` : ''}
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border-top:2px solid #166534;background:#f0fdf4">
+        <div style="font-size:.68rem;color:#475569">Operator Signature: _____________________</div>
+        <div style="font-size:.68rem;color:#475569">Supervisor Signature: _____________________</div>
+      </div>
+      <div style="padding:6px 12px;font-size:.58rem;color:#64748b;display:flex;justify-content:space-between;border-top:1px solid #bbf7d0">
+        <span>Document: Jumbo Slitting Job Card | ${esc(COMPANY.name || '')}</span>
+        <span>Printed at ${esc(new Date().toLocaleString())}</span>
+      </div>
+    </div>
+  </div>`;
+}
+
 async function printJobCard(id) {
   const job = ALL_JOBS.find(j => j.id == id);
   if (!job) return;
-  openJobDetail(id);
-  const modalBody = document.getElementById('dm-body');
-  if (!modalBody) return;
-  const template = document.getElementById('dm-print-template')?.value || 'executive';
-  const nowText = new Date().toLocaleString();
   const qrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
   const qrDataUrl = await generateQR(qrUrl);
-  const qrHtml = qrDataUrl ? `<div style="text-align:right;margin-top:6px"><img src="${qrDataUrl}" style="width:80px;height:80px;display:inline-block"><div style="font-size:.5rem;color:#94a3b8;margin-top:2px">Scan to open</div></div>` : '';
-  const tmpBody = document.createElement('div');
-  tmpBody.innerHTML = modalBody.innerHTML;
-  tmpBody.querySelectorAll('.jc-modal-only').forEach(function(el) { el.remove(); });
-  const html = `
-    <div class="jc-print-sheet template-${template}">
-      <header class="jc-print-header">
-        <div class="jc-print-brand-left">
-          ${COMPANY.logo ? `<img src="${COMPANY.logo}" alt="Logo" style="max-height:40px;max-width:120px;display:block">` : ''}
-          <div>
-            <div class="jc-print-company">${esc(COMPANY.name || 'Company')}</div>
-            <div class="jc-print-meta">${esc(COMPANY.address || '')}</div>
-            ${COMPANY.gst ? '<div class="jc-print-meta">GST: ' + esc(COMPANY.gst) + '</div>' : ''}
-          </div>
-        </div>
-        <div class="jc-print-brand-right">
-          <div class="jc-print-title">Jumbo Slitting Job Card</div>
-          <div class="jc-print-job">${esc(job.job_no || '—')}</div>
-          <div class="jc-print-meta">Printed: ${esc(nowText)}</div>
-          ${qrHtml}
-        </div>
-      </header>
-      <main class="jc-print-content">${tmpBody.innerHTML}</main>
-      <footer class="jc-print-footer">
-        <span>${esc(APP_FOOTER_LEFT || '')}</span>
-        <span>${esc(APP_FOOTER_RIGHT || '')}</span>
-      </footer>
-    </div>`;
-
-  const w = window.open('', '_blank', 'width=800,height=900');
-  w.document.write(`<!DOCTYPE html><html><head><title>Job Card - ${esc(job.job_no)}</title><style>
-    @page{margin:12mm}
-    *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
-    body{font-family:'Segoe UI',Arial,sans-serif;color:#1f2937}
-    .jc-print-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:12px}
-    .jc-print-brand-left{display:flex;gap:10px;align-items:flex-start}
-    .jc-print-company{font-size:1rem;font-weight:800;color:#0f172a}
-    .jc-print-title{font-size:.85rem;font-weight:800;text-transform:uppercase;color:#334155}
-    .jc-print-job{font-size:1rem;font-weight:900;color:#16a34a}
-    .jc-print-meta{font-size:.68rem;color:#64748b}
-    .jc-print-footer{display:flex;justify-content:space-between;gap:10px;border-top:1px solid #e2e8f0;padding-top:8px;margin-top:14px;font-size:.66rem;color:#64748b}
-    .jc-op-form{display:grid;gap:12px}
-    .jc-op-section{border:1px solid #d1e7dd;border-radius:10px;background:#fff;overflow:hidden;display:flex;flex-direction:column}
-    .jc-op-h{padding:9px 11px;border-bottom:1px solid #86efac;background:#f0fdf4;font-size:.68rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#166534}
-    .jc-op-b{padding:10px;display:grid;gap:8px}
-    .jc-op-grid-2{display:grid;gap:8px;grid-template-columns:repeat(2,minmax(0,1fr))}
-    .jc-op-grid-3{display:grid;gap:8px;grid-template-columns:repeat(3,minmax(0,1fr))}
-    .jc-op-grid-4{display:grid;gap:8px;grid-template-columns:repeat(4,minmax(0,1fr))}
-    .jc-op-field{display:grid;gap:3px}
-    .jc-op-field label{font-size:.58rem;font-weight:800;text-transform:uppercase;color:#64748b;letter-spacing:.03em}
-    .jc-op-field .fv{padding:6px 8px;border:1px solid #d1e7dd;border-radius:6px;font-size:.78rem;font-weight:600;background:#fcfdff;min-height:18px}
-    .jc-op-topstrip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:10px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc}
-    .jc-op-topitem{display:grid;gap:3px}
-    .jc-op-topitem .k{font-size:.55rem;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
-    .jc-op-topitem .v{font-size:.74rem;font-weight:800;color:#0f172a}
-    .jc-op-roll-table{width:100%;border-collapse:collapse;font-size:.72rem}
-    .jc-op-roll-table th,.jc-op-roll-table td{border:1px solid #d1e7dd;padding:6px 7px;text-align:left;vertical-align:middle}
-    .jc-op-roll-table th{background:#f0fdf4;font-size:.6rem;text-transform:uppercase;letter-spacing:.04em;color:#166534}
-    .jc-detail-section{margin-bottom:16px}
-    .jc-detail-section h3{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin:0 0 8px}
-    .jc-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px}
-    .jc-detail-item .dl{font-size:.62rem;font-weight:700;text-transform:uppercase;color:#94a3b8;letter-spacing:.03em}
-    .jc-detail-item .dv{font-size:.82rem;font-weight:700;color:#1e293b}
-    .jc-timeline{display:flex;gap:16px;flex-wrap:wrap}
-    .template-compact .jc-op-grid-2,.template-compact .jc-op-grid-3,.template-compact .jc-op-grid-4{grid-template-columns:1fr 1fr}
-    .template-compact .jc-op-topstrip{grid-template-columns:repeat(2,minmax(0,1fr))}
-    table{width:100%;border-collapse:collapse}
-    th,td{border:1px solid #dbe3ea;padding:7px 8px;text-align:left}
-    th{background:#f8fafc}
-  </style></head><body>${html}</body></html>`);
+  const html = renderJumboPrintCardHtml(job, qrDataUrl);
+  const w = window.open('', '_blank', 'width=820,height=920');
+  w.document.write(`<!DOCTYPE html><html><head><title>Job Card - ${esc(job.job_no)}</title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>${html}</body></html>`);
   w.document.close();
   w.focus();
   setTimeout(() => w.print(), 400);
@@ -2145,71 +2285,28 @@ function jcDeselectAll() {
 function jcBulkPrint() {
   const checkedIds = Array.from(document.querySelectorAll('.jc-select-check:checked')).map(cb => cb.dataset.jobId);
   if (!checkedIds.length) { alert('No job cards selected'); return; }
-  
   const jobs = checkedIds.map(id => ALL_JOBS.find(j => j.id == id)).filter(Boolean);
   if (!jobs.length) { alert('Could not find selected jobs'); return; }
-  
-  const nowText = new Date().toLocaleString();
-  let pages = '';
-  
-  jobs.forEach((job, idx) => {
-    const extra = job.extra_data_parsed || {};
-    const startedAt = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
-    const completedAt = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
-    
-    pages += `
-      <div class="print-page" ${idx > 0 ? 'style="page-break-before:always"' : ''}>
-        <div class="p-header">
-          <div class="p-brand">
-            ${COMPANY.logo ? '<img src="' + COMPANY.logo + '" style="max-height:36px;max-width:100px;display:block">' : ''}
-            <div>
-              <div class="p-company">${esc(COMPANY.name || 'Company')}</div>
-              <div class="p-meta">${esc(COMPANY.address || '')}</div>
-              ${COMPANY.gst ? '<div class="p-meta">GST: ' + esc(COMPANY.gst) + '</div>' : ''}
-            </div>
-          </div>
-          <div style="text-align:right">
-            <div class="p-title">Jumbo Slitting Job Card</div>
-            <div class="p-jobno">${esc(job.job_no)}</div>
-            <div class="p-meta">Printed: ${esc(nowText)}</div>
-          </div>
-        </div>
-        <table class="p-table">
-          <tr><th>Job Name</th><td>${esc(job.planning_job_name || job.display_job_name || '—')}</td><th>Status</th><td>${esc(job.status)}</td></tr>
-          <tr><th>Roll No</th><td>${esc(job.roll_no || '—')}</td><th>Material</th><td>${esc(job.paper_type || '—')}</td></tr>
-          <tr><th>Width</th><td>${esc((job.width_mm || '—') + ' mm')}</td><th>Length</th><td>${esc((job.length_mtr || '—') + ' m')}</td></tr>
-          <tr><th>GSM</th><td>${esc(job.gsm || '—')}</td><th>Weight</th><td>${esc((job.weight_kg || '—') + ' kg')}</td></tr>
-          <tr><th>Started</th><td>${esc(startedAt)}</td><th>Completed</th><td>${esc(completedAt)}</td></tr>
-          <tr><th>Wastage</th><td>${esc(extra.wastage_kg || extra.operator_wastage_kg || '—')} kg</td><th>Notes</th><td>${esc(extra.operator_notes || extra.operator_remarks || '—')}</td></tr>
-        </table>
-        <div class="p-footer">
-          <span>${esc(APP_FOOTER_LEFT || '')}</span>
-          <span>Page ${idx + 1} of ${jobs.length}</span>
-          <span>${esc(APP_FOOTER_RIGHT || '')}</span>
-        </div>
-      </div>`;
-  });
-  
-  const w = window.open('', '_blank', 'width=800,height=900');
-  w.document.write('<!DOCTYPE html><html><head><title>Bulk Print - ' + jobs.length + ' Job Cards</title><style>' +
-    '@page{margin:10mm}' +
-    '*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}' +
-    'body{font-family:"Segoe UI",Arial,sans-serif;color:#1f2937;margin:0;padding:0}' +
-    '.print-page{padding:8px}' +
-    '.p-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:14px}' +
-    '.p-brand{display:flex;gap:10px;align-items:flex-start}' +
-    '.p-company{font-size:1rem;font-weight:800;color:#0f172a}' +
-    '.p-title{font-size:.8rem;font-weight:800;text-transform:uppercase;color:#334155}' +
-    '.p-jobno{font-size:1.1rem;font-weight:900;color:#16a34a}' +
-    '.p-meta{font-size:.65rem;color:#64748b}' +
-    '.p-table{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:.8rem}' +
-    '.p-table th{background:#f8fafc;padding:8px 10px;border:1px solid #e2e8f0;font-weight:700;color:#334155;white-space:nowrap;width:15%}' +
-    '.p-table td{padding:8px 10px;border:1px solid #e2e8f0;width:35%}' +
-    '.p-footer{display:flex;justify-content:space-between;border-top:1px solid #e2e8f0;padding-top:6px;font-size:.6rem;color:#94a3b8}' +
-  '</style></head><body>' + pages + '</body></html>');
-  w.document.close();
-  w.focus();
-  setTimeout(() => w.print(), 500);
+
+  (async function() {
+    const mode = await choosePrintMode();
+    if (!mode) return;
+    let pages = '';
+    for (let idx = 0; idx < jobs.length; idx++) {
+      const job = jobs[idx];
+      const qrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
+      const qrDataUrl = await generateQR(qrUrl);
+      const pb = idx < jobs.length - 1 ? 'page-break-after:always;' : '';
+      let cardHtml = renderJumboPrintCardHtml(job, qrDataUrl);
+      if (mode === 'bw') cardHtml = printBwTransform(cardHtml);
+      pages += `<div style="${pb}">${cardHtml}</div>`;
+    }
+    const w = window.open('', '_blank', 'width=820,height=920');
+    w.document.write('<!DOCTYPE html><html><head><title>Bulk Print - ' + jobs.length + ' Job Cards</title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>' + pages + '</body></html>');
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 400);
+  })();
 }
 
 async function printLabelsForJob(id) {

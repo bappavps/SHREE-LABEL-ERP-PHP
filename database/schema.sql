@@ -142,6 +142,8 @@ CREATE TABLE IF NOT EXISTS `planning` (
   `scheduled_date` DATE         DEFAULT NULL,
   `status`         ENUM('Pending','Preparing Slitting','Slitting Completed','Queued','In Progress','Completed','On Hold') NOT NULL DEFAULT 'Pending',
   `priority`       ENUM('Low','Normal','High','Urgent') NOT NULL DEFAULT 'Normal',
+  `department`     VARCHAR(80)  DEFAULT NULL,
+  `extra_data`     LONGTEXT     DEFAULT NULL,
   `notes`          TEXT         DEFAULT NULL,
   `created_by`     INT          DEFAULT NULL,
   `created_at`     TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
@@ -281,6 +283,7 @@ CREATE TABLE IF NOT EXISTS `master_machines` (
   `name`       VARCHAR(255) NOT NULL,
   `type`       VARCHAR(100) DEFAULT NULL,
   `section`    VARCHAR(100) DEFAULT NULL,
+  `operator_name` VARCHAR(100) DEFAULT NULL,
   `status`     ENUM('Active','Inactive','Maintenance') NOT NULL DEFAULT 'Active',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -552,3 +555,11 @@ ALTER TABLE `jobs`
 -- planning: expand status ENUM
 ALTER TABLE `planning`
   MODIFY `status` ENUM('Pending','Preparing Slitting','Slitting Completed','Queued','In Progress','Completed','On Hold') NOT NULL DEFAULT 'Pending';
+
+-- planning: add department, extra_data, job_no for existing installs
+ALTER TABLE `planning` ADD COLUMN IF NOT EXISTS `department` VARCHAR(80) DEFAULT NULL;
+ALTER TABLE `planning` ADD COLUMN IF NOT EXISTS `extra_data` LONGTEXT DEFAULT NULL;
+ALTER TABLE `planning` ADD COLUMN IF NOT EXISTS `job_no` VARCHAR(60) DEFAULT NULL;
+
+-- master_machines: add operator_name for existing installs
+ALTER TABLE `master_machines` ADD COLUMN IF NOT EXISTS `operator_name` VARCHAR(100) DEFAULT NULL;

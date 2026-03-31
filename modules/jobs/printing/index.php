@@ -500,6 +500,8 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
 .ht-bulk-btn:hover{background:rgba(255,255,255,.22)}
 .ht-bulk-print{padding:7px 16px;background:var(--fp-brand);color:#fff;border:none;border-radius:8px;font-weight:800;font-size:.74rem;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 8px rgba(var(--fp-brand),.3)}
 .ht-bulk-print:hover{opacity:.9}
+.ht-bulk-delete{padding:7px 16px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-weight:800;font-size:.74rem;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 8px rgba(220,38,38,.3)}
+.ht-bulk-delete:hover{background:#b91c1c}
 .ht-table-wrap{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:14px;overflow:hidden}
 .ht-table{width:100%;border-collapse:collapse;font-size:.78rem}
 .ht-table thead{background:linear-gradient(135deg,#f8fafc,#f1f5f9);position:sticky;top:0;z-index:2}
@@ -564,6 +566,9 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
     <button class="ht-bulk-btn" onclick="htSelectAllVisible()">Select All</button>
     <button class="ht-bulk-btn" onclick="htDeselectAll()">Deselect All</button>
     <button class="ht-bulk-print" onclick="htBulkPrint()"><i class="bi bi-printer-fill"></i> Print Selected</button>
+    <?php if ($canDeleteJobs): ?>
+    <button class="ht-bulk-delete" onclick="htBulkDelete()"><i class="bi bi-trash-fill"></i> Delete Selected</button>
+    <?php endif; ?>
   </div>
 </div>
 
@@ -1130,53 +1135,55 @@ function htBulkPrint() {
   const jobs = ids.map(function(id) { return ALL_JOBS.find(function(j) { return j.id == id; }); }).filter(Boolean);
   if (!jobs.length) return;
 
-  const nowText = new Date().toLocaleString();
-  let pages = '';
-  jobs.forEach(function(job, idx) {
-    const extra = job.extra_data_parsed || {};
-    const startedAt = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
-    const completedAt = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
-    pages += '<div class="print-page" ' + (idx > 0 ? 'style="page-break-before:always"' : '') + '>'
-      + '<div class="p-header"><div class="p-brand">'
-      + (COMPANY.logo ? '<img src="' + COMPANY.logo + '" style="max-height:36px;max-width:100px;display:block">' : '')
-      + '<div><div class="p-company">' + esc(COMPANY.name || 'Company') + '</div>'
-      + '<div class="p-meta">' + esc(COMPANY.address || '') + '</div>'
-      + (COMPANY.gst ? '<div class="p-meta">GST: ' + esc(COMPANY.gst) + '</div>' : '')
-      + '</div></div><div style="text-align:right">'
-      + '<div class="p-title">Flexo Printing Job Card</div>'
-      + '<div class="p-jobno">' + esc(job.job_no || '—') + '</div>'
-      + '<div class="p-meta">Printed: ' + esc(nowText) + '</div>'
-      + '</div></div>'
-      + '<table class="p-table">'
-      + '<tr><th>Job Name</th><td>' + esc(job.planning_job_name || job.display_job_name || '—') + '</td><th>Status</th><td>' + esc(job.status || '—') + '</td></tr>'
-      + '<tr><th>Roll No</th><td>' + esc(job.roll_no || '—') + '</td><th>Material</th><td>' + esc(job.paper_type || '—') + '</td></tr>'
-      + '<tr><th>Started</th><td>' + esc(startedAt) + '</td><th>Completed</th><td>' + esc(completedAt) + '</td></tr>'
-      + '<tr><th>Wastage</th><td>' + esc(extra.wastage_kg || extra.operator_wastage_kg || '—') + ' kg</td><th>Notes</th><td>' + esc(extra.operator_notes || extra.operator_remarks || '—') + '</td></tr>'
-      + '</table>'
-      + '<div class="p-footer"><span>' + esc(APP_FOOTER_LEFT || '') + '</span><span>Page ' + (idx + 1) + ' of ' + jobs.length + '</span><span>' + esc(APP_FOOTER_RIGHT || '') + '</span></div>'
-      + '</div>';
-  });
+  (async function() {
+    const mode = await choosePrintMode();
+    if (!mode) return;
+    let pages = '';
+    for (let idx = 0; idx < jobs.length; idx++) {
+      const job = jobs[idx];
+      const extra = job.extra_data_parsed || {};
+      const card = normalizeCardData(job, extra);
+      const qrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
+      const qrDataUrl = await generateQR(qrUrl);
+      const pb = idx < jobs.length - 1 ? 'page-break-after:always;' : '';
+      let cardHtml = renderPrintCardHtml(job, card, extra, qrDataUrl);
+      if (mode === 'bw') cardHtml = printBwTransform(cardHtml);
+      pages += `<div style="${pb}">${cardHtml}</div>`;
+    }
+    const w = window.open('', '_blank', 'width=820,height=920');
+    w.document.write('<!DOCTYPE html><html><head><title>Bulk Print - ' + jobs.length + ' Job Cards</title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>' + pages + '</body></html>');
+    w.document.close();
+    w.focus();
+    setTimeout(function() { w.print(); }, 400);
+  })();
+}
 
-  const w = window.open('', '_blank', 'width=800,height=900');
-  w.document.write('<!DOCTYPE html><html><head><title>Bulk Print - ' + jobs.length + ' Job Cards</title><style>'
-    + '@page{margin:10mm}'
-    + '*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}'
-    + 'body{font-family:"Segoe UI",Arial,sans-serif;color:#1f2937;margin:0;padding:0}'
-    + '.print-page{padding:8px}'
-    + '.p-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:12px}'
-    + '.p-brand{display:flex;gap:10px;align-items:flex-start}'
-    + '.p-company{font-size:1rem;font-weight:800;color:#0f172a}'
-    + '.p-title{font-size:.8rem;font-weight:800;text-transform:uppercase;color:#334155}'
-    + '.p-jobno{font-size:1.1rem;font-weight:900;color:#8b5cf6}'
-    + '.p-meta{font-size:.65rem;color:#64748b}'
-    + '.p-table{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:.8rem}'
-    + '.p-table th{background:#f8fafc;padding:8px 10px;border:1px solid #e2e8f0;font-weight:700;color:#334155;white-space:nowrap;width:15%}'
-    + '.p-table td{padding:8px 10px;border:1px solid #e2e8f0;width:35%}'
-    + '.p-footer{display:flex;justify-content:space-between;border-top:1px solid #e2e8f0;padding-top:6px;font-size:.6rem;color:#94a3b8}'
-    + '</style></head><body>' + pages + '</body></html>');
-  w.document.close();
-  w.focus();
-  setTimeout(function() { w.print(); }, 400);
+async function htBulkDelete() {
+  if (!IS_ADMIN) { alert('Access denied. Only system admin can delete job cards.'); return; }
+  const ids = Array.from(document.querySelectorAll('.ht-row-cb:checked')).map(cb => cb.dataset.jobId);
+  if (!ids.length) { alert('No history jobs selected'); return; }
+  if (!confirm(`Delete ${ids.length} selected job card(s)?\n\nLinked reset logic will apply for each job (paper stock, planning, downstream jobs).`)) return;
+
+  let ok = 0, failed = 0, errors = [];
+  for (const id of ids) {
+    const fd = new FormData();
+    fd.append('csrf_token', CSRF);
+    fd.append('action', 'delete_job');
+    fd.append('job_id', id);
+    try {
+      const res = await fetch(API_BASE, { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data.ok) { ok++; }
+      else {
+        failed++;
+        const job = ALL_JOBS.find(j => j.id == id);
+        const label = job ? job.job_no : ('ID ' + id);
+        errors.push(`${label}: ${data.error || 'Unknown error'}`);
+      }
+    } catch (err) { failed++; errors.push('ID ' + id + ': ' + err.message); }
+  }
+  if (errors.length) alert(`Deleted: ${ok}, Failed: ${failed}\n\n${errors.join('\n')}`);
+  if (ok > 0) location.reload();
 }
 
 document.getElementById('htSearch')?.addEventListener('input', function() {
@@ -1197,6 +1204,8 @@ function updatePrintCount() {
 async function printSelectedJobs() {
   const checkedIds = Array.from(document.querySelectorAll('.fp-card-check:checked')).map(c => parseInt(c.dataset.id));
   if (!checkedIds.length) { alert('No job cards selected.'); return; }
+  const mode = await choosePrintMode();
+  if (!mode) return;
   const selectedJobs = ALL_JOBS.filter(j => checkedIds.includes(j.id));
   let pages = '';
   for (const [idx, job] of selectedJobs.entries()) {
@@ -1205,7 +1214,9 @@ async function printSelectedJobs() {
     const pb  = idx < selectedJobs.length - 1 ? 'page-break-after:always;' : '';
     const jqrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
     const jqrDataUrl = await generateQR(jqrUrl);
-    pages += `<div style="${pb}">${renderPrintCardHtml(job, card, extra, jqrDataUrl)}</div>`;
+    let cardHtml = renderPrintCardHtml(job, card, extra, jqrDataUrl);
+    if (mode === 'bw') cardHtml = printBwTransform(cardHtml);
+    pages += `<div style="${pb}">${cardHtml}</div>`;
   }
   const w = window.open('', '_blank', 'width=820,height=920');
   w.document.write(`<!DOCTYPE html><html><head><title>Flexo Job Cards (${selectedJobs.length})</title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>${pages}</body></html>`);
@@ -1803,15 +1814,70 @@ async function deleteJob(id) {
   } catch (err) { alert('Network error: ' + err.message); }
 }
 
+// ─── Print Mode Chooser & B&W Transform ────────────────────
+function choosePrintMode() {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99999;display:flex;align-items:center;justify-content:center';
+    overlay.innerHTML = `<div style="background:#fff;border-radius:16px;padding:28px 32px;max-width:380px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center;font-family:'Segoe UI',Arial,sans-serif">
+      <div style="font-size:1.1rem;font-weight:900;color:#0f172a;margin-bottom:4px">Print Mode</div>
+      <div style="font-size:.78rem;color:#64748b;margin-bottom:20px">Select print mode for best output quality</div>
+      <div style="display:flex;gap:12px;justify-content:center">
+        <button id="_pm_color" style="flex:1;padding:16px 12px;border:2px solid #22c55e;border-radius:12px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);cursor:pointer;transition:all .15s">
+          <div style="font-size:1.5rem;margin-bottom:6px">🎨</div>
+          <div style="font-weight:800;font-size:.88rem;color:#166534">Color</div>
+          <div style="font-size:.65rem;color:#64748b;margin-top:2px">Full color print</div>
+        </button>
+        <button id="_pm_bw" style="flex:1;padding:16px 12px;border:2px solid #64748b;border-radius:12px;background:linear-gradient(135deg,#f8fafc,#e2e8f0);cursor:pointer;transition:all .15s">
+          <div style="font-size:1.5rem;margin-bottom:6px">⬛</div>
+          <div style="font-weight:800;font-size:.88rem;color:#0f172a">Black & White</div>
+          <div style="font-size:.65rem;color:#64748b;margin-top:2px">High contrast B&W</div>
+        </button>
+      </div>
+      <button id="_pm_cancel" style="margin-top:16px;padding:8px 24px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;font-size:.76rem;font-weight:700;cursor:pointer">Cancel</button>
+    </div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('_pm_color').onclick = () => { document.body.removeChild(overlay); resolve('color'); };
+    document.getElementById('_pm_bw').onclick = () => { document.body.removeChild(overlay); resolve('bw'); };
+    document.getElementById('_pm_cancel').onclick = () => { document.body.removeChild(overlay); resolve(null); };
+    overlay.onclick = e => { if (e.target === overlay) { document.body.removeChild(overlay); resolve(null); } };
+  });
+}
+
+function printBwTransform(html) {
+  const map = {
+    '166534':'000000','15803d':'000000','16a34a':'000000',
+    '1e40af':'000000','5b21b6':'000000','6d28d9':'000000',
+    'a16207':'000000','92400e':'000000','d97706':'333333',
+    '0f766e':'000000','9d174d':'000000','0891b2':'333333',
+    'dcfce7':'e0e0e0','f0fdf4':'f0f0f0','d1fae5':'e0e0e0',
+    'dbeafe':'d8d8d8','ede9fe':'e0e0e0',
+    'fef3c7':'e8e8e8','fffde7':'f0f0f0',
+    'e0f7fa':'e8e8e8','fce4ec':'e8e8e8','eceff1':'e0e0e0','fee2e2':'e8e8e8',
+    'bbf7d0':'999999','bfdbfe':'999999','c4b5fd':'999999',
+    'd1e7dd':'999999','bae6fd':'999999','fcd34d':'999999',
+    'cbd5e1':'aaaaaa','e2e8f0':'bbbbbb',
+    'f8fafc':'f2f2f2','f1f5f9':'efefef',
+  };
+  let result = html;
+  for (const [from, to] of Object.entries(map)) {
+    result = result.replace(new RegExp('#' + from, 'gi'), '#' + to);
+  }
+  return result;
+}
+
 // ─── Print Job Card ─────────────────────────────────────────
 async function printJobCard(id) {
+  const mode = await choosePrintMode();
+  if (!mode) return;
   const job = ALL_JOBS.find(j => j.id == id);
   if (!job) return;
   const extra = job.extra_data_parsed || {};
   const card = normalizeCardData(job, extra);
   const qrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
   const qrDataUrl = await generateQR(qrUrl);
-  const html = renderPrintCardHtml(job, card, extra, qrDataUrl);
+  let html = renderPrintCardHtml(job, card, extra, qrDataUrl);
+  if (mode === 'bw') html = printBwTransform(html);
   const w = window.open('', '_blank', 'width=820,height=920');
   w.document.write(`<!DOCTYPE html><html><head><title>Job Card - ${esc(job.job_no)}</title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>${html}</body></html>`);
   w.document.close();
