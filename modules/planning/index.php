@@ -13,6 +13,7 @@ $db = getDB();
 try { $db->query("ALTER TABLE planning ADD COLUMN department VARCHAR(80) NOT NULL DEFAULT 'general' AFTER notes"); } catch (Exception $e) {}
 try { $db->query("ALTER TABLE planning ADD COLUMN extra_data LONGTEXT NULL AFTER department"); } catch (Exception $e) {}
 try { $db->query("ALTER TABLE planning ADD COLUMN job_no VARCHAR(60) NULL AFTER id"); } catch (Exception $e) {}
+try { $db->query("ALTER TABLE planning ADD COLUMN sequence_order INT NOT NULL DEFAULT 0 AFTER extra_data"); } catch (Exception $e) {}
 
 // Config table for planning board columns (rename/type/reorder).
 @$db->query("CREATE TABLE IF NOT EXISTS planning_board_columns (
@@ -48,9 +49,10 @@ $defaultColumns = [
   ['key' => 'qty_per_roll', 'label' => 'Qty/Roll', 'type' => 'Text', 'sort' => 15],
   ['key' => 'roll_direction', 'label' => 'Direction', 'type' => 'Text', 'sort' => 16],
   ['key' => 'remarks', 'label' => 'Remarks', 'type' => 'Text', 'sort' => 17],
+  ['key' => 'priority', 'label' => 'Priority', 'type' => 'Priority', 'sort' => 18],
 ];
 
-$allowedTypes = ['Text', 'Number', 'Date', 'Status'];
+$allowedTypes = ['Text', 'Number', 'Date', 'Status', 'Priority'];
 $statusList = ['Pending', 'Preparing Slitting', 'Slitting Completed', 'Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval'];
 $priorityList = ['Low', 'Normal', 'High', 'Urgent'];
 
@@ -95,6 +97,20 @@ function planning_get_columns(mysqli $db, $department, array $defaultColumns) {
     return $defaultColumns;
   }
 
+  // Ensure Priority column exists for every department
+  if (!in_array('priority', $keys, true)) {
+    $maxSort = 0;
+    foreach ($rows as $_r) { $maxSort = max($maxSort, (int)$_r['sort_order']); }
+    $priKey = 'priority'; $priLabel = 'Priority'; $priType = 'Priority'; $priSort = $maxSort + 1;
+    $pIns = $db->prepare("INSERT IGNORE INTO planning_board_columns (department, col_key, col_label, col_type, sort_order) VALUES (?,?,?,?,?)");
+    $pIns->bind_param('ssssi', $department, $priKey, $priLabel, $priType, $priSort);
+    $pIns->execute();
+    $stmt2 = $db->prepare("SELECT col_key, col_label, col_type, sort_order FROM planning_board_columns WHERE department = ? ORDER BY sort_order ASC, id ASC");
+    $stmt2->bind_param('s', $department);
+    $stmt2->execute();
+    $rows = $stmt2->get_result()->fetch_all(MYSQLI_ASSOC);
+  }
+
     $out = [];
     foreach ($rows as $r) {
         $out[] = [
@@ -113,6 +129,8 @@ function planning_get_rows(mysqli $db, $department) {
         LEFT JOIN sales_orders so ON so.id = p.sales_order_id
         WHERE p.department = ?
         ORDER BY
+          CASE WHEN p.sequence_order > 0 THEN 0 ELSE 1 END ASC,
+          p.sequence_order ASC,
           CASE WHEN p.job_no IS NULL OR p.job_no = '' THEN 1 ELSE 0 END ASC,
           CAST(SUBSTRING_INDEX(p.job_no, '/', -1) AS UNSIGNED) ASC,
           p.id ASC");
@@ -228,6 +246,10 @@ function planning_status_badge($status) {
         }
         continue;
       }
+      if ($k === 'priority') {
+        $vals[$k] = (string)($row['priority'] ?? $extra['priority'] ?? 'Normal');
+        continue;
+      }
       if (array_key_exists($k, $extra)) {
         $val = (string)$extra[$k];
         $vals[$k] = $val;
@@ -329,6 +351,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 
     $action = (string)$_POST['action'];
+
+    // Permission guards for AJAX actions
+    $ajaxCanAdd    = currentPageAction('add');
+    $ajaxCanEdit   = currentPageAction('edit');
+    $ajaxCanDelete = currentPageAction('delete');
+
+    if (in_array($action, ['create_row', 'import_rows'], true) && !$ajaxCanAdd) {
+        planning_json_response(['ok' => false, 'message' => 'Permission denied. You do not have Add access.'], 403);
+    }
+    if (in_array($action, ['save_row', 'reorder_rows', 'update_priority', 'upload_job_image', 'save_columns'], true) && !$ajaxCanEdit) {
+        planning_json_response(['ok' => false, 'message' => 'Permission denied. You do not have Edit access.'], 403);
+    }
+    if (in_array($action, ['delete_row', 'delete_job_image'], true) && !$ajaxCanDelete) {
+        planning_json_response(['ok' => false, 'message' => 'Permission denied. You do not have Delete access.'], 403);
+    }
 
     if ($action === 'save_row') {
         $id = (int)($_POST['id'] ?? 0);
@@ -624,12 +661,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         planning_json_response(['ok' => true, 'message' => 'Import completed.', 'count' => $count]);
     }
 
+    if ($action === 'reorder_rows') {
+        $order = json_decode((string)($_POST['order_json'] ?? '[]'), true);
+        if (!is_array($order) || empty($order)) planning_json_response(['ok' => false, 'message' => 'Invalid order data.'], 400);
+        $up = $db->prepare("UPDATE planning SET sequence_order = ? WHERE id = ? AND department = ?");
+        foreach ($order as $idx => $rowId) {
+            $seq = (int)($idx + 1);
+            $rid = (int)$rowId;
+            if ($rid <= 0) continue;
+            $up->bind_param('iis', $seq, $rid, $department);
+            $up->execute();
+        }
+        planning_json_response(['ok' => true, 'message' => 'Sequence updated.']);
+    }
+
+    if ($action === 'update_priority') {
+        $id = (int)($_POST['id'] ?? 0);
+        if ($id <= 0) planning_json_response(['ok' => false, 'message' => 'Invalid row id.'], 400);
+        $newPriority = (string)($_POST['priority'] ?? 'Normal');
+        if (!in_array($newPriority, $priorityList, true)) $newPriority = 'Normal';
+        $sel = $db->prepare("SELECT extra_data FROM planning WHERE id = ? AND department = ? LIMIT 1");
+        $sel->bind_param('is', $id, $department);
+        $sel->execute();
+        $existRow = $sel->get_result()->fetch_assoc();
+        if ($existRow) {
+            $ex = json_decode((string)($existRow['extra_data'] ?? '{}'), true);
+            if (!is_array($ex)) $ex = [];
+            $ex['priority'] = $newPriority;
+            $exJson = json_encode($ex, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $up = $db->prepare("UPDATE planning SET priority = ?, extra_data = ? WHERE id = ? AND department = ?");
+            $up->bind_param('ssis', $newPriority, $exJson, $id, $department);
+            $ok = $up->execute();
+        } else {
+            $ok = false;
+        }
+        planning_json_response(['ok' => (bool)$ok, 'message' => $ok ? 'Priority updated.' : 'Update failed.']);
+    }
+
     planning_json_response(['ok' => false, 'message' => 'Unknown action.'], 400);
 }
 
 $columns = planning_get_columns($db, $department, $defaultColumns);
 $rows = planning_get_rows($db, $department);
 $planningJobPreview = previewNextId('planning') ?: 'Auto-generated on save';
+
+// Granular permissions: admin always gets full access
+$canAdd    = currentPageAction('add');
+$canEdit   = currentPageAction('edit');
+$canDelete = currentPageAction('delete');
 
 $pageTitle = 'Planning Board';
 include __DIR__ . '/../../includes/header.php';
@@ -648,9 +727,13 @@ include __DIR__ . '/../../includes/header.php';
   <div class="d-flex gap-8">
     <button type="button" class="btn btn-ghost" id="btn-print-pdf"><i class="bi bi-printer"></i> Print / PDF</button>
     <button type="button" class="btn btn-ghost" id="btn-export-excel"><i class="bi bi-file-earmark-excel"></i> Export Excel</button>
+    <?php if ($canEdit): ?>
     <button type="button" class="btn btn-ghost" id="btn-board-config"><i class="bi bi-layout-text-window-reverse"></i> Board Layout</button>
+    <?php endif; ?>
+    <?php if ($canAdd): ?>
     <button type="button" class="btn btn-secondary" id="btn-import"><i class="bi bi-file-earmark-arrow-up"></i> Import Excel</button>
     <button type="button" class="btn btn-primary" id="btn-add-row"><i class="bi bi-plus-circle"></i> Add Job Entry</button>
+    <?php endif; ?>
     <input type="file" id="excel-file" accept=".xlsx,.xls" style="display:none">
   </div>
 </div>
@@ -674,6 +757,7 @@ include __DIR__ . '/../../includes/header.php';
     <table id="planning-board-table" class="planning-board-table">
       <thead>
         <tr>
+          <th class="seq-drag-col">&nbsp;</th>
           <th class="sticky-col">Actions</th>
           <th>S.N</th>
           <th>Job No</th>
@@ -687,7 +771,7 @@ include __DIR__ . '/../../includes/header.php';
       <tbody>
       <?php $visibleColCount = 0; foreach ($columns as $_c) { if ($_c['key'] !== 'sn') $visibleColCount++; } ?>
       <?php if (empty($rows)): ?>
-        <tr><td colspan="<?= $visibleColCount + 4 ?>" class="table-empty"><i class="bi bi-inbox"></i>No planning jobs found.</td></tr>
+        <tr><td colspan="<?= $visibleColCount + 5 ?>" class="table-empty"><i class="bi bi-inbox"></i>No planning jobs found.</td></tr>
       <?php else: ?>
         <?php foreach ($rows as $idx => $r): ?>
           <?php
@@ -702,13 +786,18 @@ include __DIR__ . '/../../includes/header.php';
             $jobImageUploadedAt = trim((string)($rowExtra['image_uploaded_at'] ?? ''));
             $jobImageUrl = $jobImagePath !== '' ? appUrl($jobImagePath) : '';
           ?>
-          <tr data-id="<?= (int)$r['id'] ?>" class="row-s-<?= $rowSCls ?>">
+          <tr data-id="<?= (int)$r['id'] ?>" class="row-s-<?= $rowSCls ?>" <?= $canEdit ? 'draggable="true"' : '' ?>>
+            <td class="seq-drag-col <?= $canEdit ? 'seq-drag-handle' : '' ?>" <?= $canEdit ? 'title="Drag to reorder"' : '' ?>><?php if ($canEdit): ?><i class="bi bi-grip-vertical"></i><?php endif; ?></td>
             <td class="sticky-col">
               <div class="row-actions">
+                <?php if ($canEdit): ?>
                 <button class="btn btn-secondary btn-sm btn-edit" type="button" title="Edit"><i class="bi bi-pencil"></i></button>
                 <button class="btn btn-primary btn-sm btn-save" type="button" title="Save" style="display:none"><i class="bi bi-check2-circle"></i></button>
                 <button class="btn btn-ghost btn-sm btn-cancel" type="button" title="Cancel" style="display:none"><i class="bi bi-x-circle"></i></button>
+                <?php endif; ?>
+                <?php if ($canDelete): ?>
                 <button class="btn btn-danger btn-sm btn-delete" type="button" title="Delete"><i class="bi bi-trash"></i></button>
+                <?php endif; ?>
               </div>
             </td>
             <td><?= (int)($idx + 1) ?></td>
@@ -749,6 +838,12 @@ include __DIR__ . '/../../includes/header.php';
                   ?>
                   <select class="cell-input cell-select-status form-control" style="display:none">
                     <?php foreach ($statusOptions as $s): ?><option value="<?= e($s) ?>"<?= $v === $s ? ' selected' : '' ?>><?= e($s) ?></option><?php endforeach; ?>
+                  </select>
+                <?php elseif ($c['type'] === 'Priority'): ?>
+                  <?php $pVal = $v ?: 'Normal'; $pCls = strtolower($pVal); ?>
+                  <span class="cell-display priority-pill priority-pill-<?= e($pCls) ?>"><?= e($pVal) ?></span>
+                  <select class="cell-input cell-select-priority form-control" style="display:none">
+                    <?php foreach ($priorityList as $p): ?><option value="<?= e($p) ?>"<?= $pVal === $p ? ' selected' : '' ?>><?= e($p) ?></option><?php endforeach; ?>
                   </select>
                 <?php else: ?>
                   <span class="cell-display"><?= e($v !== '' ? $v : '—') ?></span>
@@ -799,6 +894,10 @@ include __DIR__ . '/../../includes/header.php';
             <?php if ($c['type'] === 'Status'): ?>
               <input class="form-control" type="text" value="Pending" readonly>
               <input type="hidden" name="<?= e($c['key']) ?>" value="Pending">
+            <?php elseif ($c['type'] === 'Priority'): ?>
+              <select class="form-control" name="<?= e($c['key']) ?>">
+                <?php foreach ($priorityList as $p): ?><option value="<?= e($p) ?>"<?= $p === 'Normal' ? ' selected' : '' ?>><?= e($p) ?></option><?php endforeach; ?>
+              </select>
             <?php else: ?>
               <input class="form-control" name="<?= e($c['key']) ?>" type="<?= $c['type'] === 'Number' ? 'number' : ($c['type'] === 'Date' ? 'date' : 'text') ?>" <?= $c['key'] === 'name' ? 'required' : '' ?>>
             <?php endif; ?>
@@ -914,6 +1013,9 @@ include __DIR__ . '/../../includes/header.php';
   var columns = <?= json_encode($columns, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
   var csrfToken = document.querySelector('#csrf-form [name="csrf_token"]').value;
   var currentDepartment = <?= json_encode($department, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+  var CAN_ADD = <?= $canAdd ? 'true' : 'false' ?>;
+  var CAN_EDIT = <?= $canEdit ? 'true' : 'false' ?>;
+  var CAN_DELETE = <?= $canDelete ? 'true' : 'false' ?>;
   var imageViewerScale = 1;
   var imageViewerRowId = '';
   var pendingImportRows = [];
@@ -944,7 +1046,7 @@ include __DIR__ . '/../../includes/header.php';
   function boardRows() {
     return Array.prototype.slice.call(boardTable.querySelectorAll('tbody tr[data-id]')).map(function(tr){
       var row = [];
-      var snCell = tr.children[1];
+      var snCell = tr.children[2];
       row.push(snCell ? snCell.textContent.trim() : '');
       var jobNoCell = tr.querySelector('.job-no-cell');
       row.push(jobNoCell ? jobNoCell.textContent.trim() : '');
@@ -1036,7 +1138,7 @@ include __DIR__ . '/../../includes/header.php';
         value = disp ? disp.textContent.trim() : td.textContent.trim();
       }
       values.push({
-        label: (headers[idx + 3] || 'Field').trim(),
+        label: (headers[idx + 4] || 'Field').trim(),
         value: value && value !== '—' ? value : 'NA'
       });
     });
@@ -1175,6 +1277,11 @@ include __DIR__ . '/../../includes/header.php';
     return 'pending';
   }
 
+  function applyPriorityStyle(sel) {
+    var v = String(sel.value || 'Normal').trim().toLowerCase();
+    sel.className = 'cell-input cell-select-priority form-control psel-' + v;
+  }
+
   function normalizeRenderedStatuses() {
     boardTable.querySelectorAll('tr[data-id]').forEach(function(tr){
       var statusCell = tr.querySelector('td[data-type="Status"] .cell-display.status-pill');
@@ -1259,6 +1366,10 @@ include __DIR__ . '/../../includes/header.php';
         if (type === 'Status' && input.tagName === 'SELECT') {
           applyStatusStyle(input);
           input.onchange = function(){ applyStatusStyle(this); };
+        }
+        if (type === 'Priority' && input.tagName === 'SELECT') {
+          applyPriorityStyle(input);
+          input.onchange = function(){ applyPriorityStyle(this); };
         }
       }
     });
@@ -1444,6 +1555,10 @@ include __DIR__ . '/../../includes/header.php';
             disp.className = 'cell-display status-pill status-pill-' + pilClass;
             disp.textContent = v || 'Pending';
             applyRowStatus(tr, v);
+          } else if (type === 'Priority') {
+            var pCls = String(v || 'Normal').trim().toLowerCase();
+            disp.className = 'cell-display priority-pill priority-pill-' + pCls;
+            disp.textContent = v || 'Normal';
           } else {
             disp.textContent = v || '—';
           }
@@ -1457,7 +1572,8 @@ include __DIR__ . '/../../includes/header.php';
   });
 
   boardTable.addEventListener('dblclick', function(e){
-    if (e.target.closest('.btn-edit,.btn-save,.btn-cancel,.btn-delete,.job-image-thumb-btn,.job-image-empty-btn')) return;
+    if (!CAN_EDIT) return;
+    if (e.target.closest('.btn-edit,.btn-save,.btn-cancel,.btn-delete,.job-image-thumb-btn,.job-image-empty-btn,.seq-drag-handle')) return;
     var tr = e.target.closest('tr[data-id]');
     if (!tr || tr.classList.contains('is-editing')) return;
     setRowEditMode(tr, true);
@@ -1790,6 +1906,7 @@ include __DIR__ . '/../../includes/header.php';
           '<option value="Number">Number</option>' +
           '<option value="Date">Date</option>' +
           '<option value="Status">Status</option>' +
+          '<option value="Priority">Priority</option>' +
         '</select>';
 
       row.querySelector('.config-type').value = col.type || 'Text';
@@ -1875,6 +1992,65 @@ include __DIR__ . '/../../includes/header.php';
     });
   }
   initColDrag();
+
+  // ── Row drag-to-reorder ──────────────────────────
+  var rowDragFrom = null;
+  var rowDragGrip = false;
+  function initRowDrag() {
+    boardTable.querySelectorAll('tbody tr[data-id]').forEach(function(tr) {
+      tr.onmousedown = function(e) {
+        rowDragGrip = !!e.target.closest('.seq-drag-handle');
+      };
+      tr.ondragstart = function(e) {
+        if (!rowDragGrip) { e.preventDefault(); return; }
+        rowDragFrom = tr;
+        tr.classList.add('row-dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', tr.getAttribute('data-id'));
+      };
+      tr.ondragend = function() {
+        tr.classList.remove('row-dragging');
+        boardTable.querySelectorAll('tbody tr.row-drag-over').forEach(function(x){ x.classList.remove('row-drag-over'); });
+        rowDragFrom = null;
+        rowDragGrip = false;
+      };
+      tr.ondragover = function(e) {
+        if (!rowDragFrom) return;
+        e.preventDefault();
+        boardTable.querySelectorAll('tbody tr.row-drag-over').forEach(function(x){ x.classList.remove('row-drag-over'); });
+        tr.classList.add('row-drag-over');
+      };
+      tr.ondragleave = function() { tr.classList.remove('row-drag-over'); };
+      tr.ondrop = function(e) {
+        e.preventDefault();
+        tr.classList.remove('row-drag-over');
+        if (!rowDragFrom || rowDragFrom === tr) return;
+        var tbody = boardTable.querySelector('tbody');
+        var allRows = Array.prototype.slice.call(tbody.querySelectorAll('tr[data-id]'));
+        var fromIdx = allRows.indexOf(rowDragFrom);
+        var toIdx = allRows.indexOf(tr);
+        if (fromIdx < 0 || toIdx < 0) return;
+        if (fromIdx < toIdx) {
+          tbody.insertBefore(rowDragFrom, tr.nextSibling);
+        } else {
+          tbody.insertBefore(rowDragFrom, tr);
+        }
+        rowDragFrom = null;
+        // Renumber S.N column (index 2: drag-col, actions, S.N)
+        var newRows = Array.prototype.slice.call(tbody.querySelectorAll('tr[data-id]'));
+        var order = [];
+        newRows.forEach(function(r, i) {
+          r.children[2].textContent = String(i + 1);
+          order.push(r.getAttribute('data-id'));
+        });
+        // Save new sequence order
+        postAction({ action: 'reorder_rows', order_json: JSON.stringify(order) }).then(function(){
+          toast('Sequence updated');
+        }).catch(function(err){ toast(err.message || 'Reorder failed', true); });
+      };
+    });
+  }
+  initRowDrag();
 })();
 </script>
 
@@ -2186,7 +2362,29 @@ include __DIR__ . '/../../includes/header.php';
 .status-pill-pending          { background: #94a3b8; }
 .status-pill-printingdone     { background: #0d9488; }
 /* Double-click hint cursor on data cells */
-.planning-board-table tbody tr[data-id]:not(.is-editing) td:not(.sticky-col) { cursor: pointer; }
+.planning-board-table tbody tr[data-id]:not(.is-editing) td:not(.sticky-col):not(.seq-drag-col) { cursor: pointer; }
+/* ── Priority pill badge ── */
+.priority-pill { display: inline-block; font-size: .75rem; font-weight: 700; padding: 3px 14px; border-radius: 4px; letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; color: #fff; }
+.priority-pill-low { background: #94a3b8; }
+.priority-pill-normal { background: #3b82f6; }
+.priority-pill-high { background: #f97316; }
+.priority-pill-urgent { background: #ef4444; animation: pulse-urgent 1.5s ease-in-out infinite; }
+@keyframes pulse-urgent { 0%,100%{ opacity:1; } 50%{ opacity:.78; } }
+/* ── Priority select inline edit ── */
+.cell-select-priority { -webkit-appearance: none; appearance: none; font-size: .78rem; font-weight: 700; text-align: center; border-radius: 4px !important; padding: 3px 14px !important; cursor: pointer; min-width: 100px; border-width: 0 !important; }
+.psel-low     { background: #94a3b8 !important; color: #fff !important; }
+.psel-normal  { background: #3b82f6 !important; color: #fff !important; }
+.psel-high    { background: #f97316 !important; color: #fff !important; }
+.psel-urgent  { background: #ef4444 !important; color: #fff !important; }
+/* ── Row drag-to-reorder ── */
+.seq-drag-col { width: 28px; min-width: 28px; max-width: 28px; text-align: center; padding: 4px 2px !important; }
+.seq-drag-handle { cursor: grab; color: #94a3b8; font-size: 1.1rem; user-select: none; }
+.seq-drag-handle:hover { color: #3b82f6; }
+.seq-drag-handle:active { cursor: grabbing; }
+.row-dragging { opacity: .35; }
+.row-dragging td { background: #dbeafe !important; }
+.row-drag-over { outline: 2px dashed #3b82f6; outline-offset: -2px; }
+.row-drag-over td { background: #eff6ff !important; }
 </style>
 
 <?php include __DIR__ . '/../../includes/footer.php'; ?>

@@ -205,6 +205,11 @@ function ensureRbacSchema() {
         KEY idx_perm_group (group_id),
         CONSTRAINT fk_gpp_group FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Granular action permissions for pages (add/edit/delete).
+    $safeSchemaQuery("ALTER TABLE group_page_permissions ADD COLUMN can_add TINYINT(1) NOT NULL DEFAULT 0 AFTER can_view");
+    $safeSchemaQuery("ALTER TABLE group_page_permissions ADD COLUMN can_edit TINYINT(1) NOT NULL DEFAULT 0 AFTER can_add");
+    $safeSchemaQuery("ALTER TABLE group_page_permissions ADD COLUMN can_delete TINYINT(1) NOT NULL DEFAULT 0 AFTER can_edit");
 }
 
 /**
@@ -514,6 +519,44 @@ function canAccessPath($path) {
 function canAccessCurrentPage() {
     $path = rbacCurrentPath();
     return canAccessPath($path);
+}
+
+/**
+ * Check granular action permission for a page path.
+ * Actions: 'add', 'edit', 'delete'. Admins always get true.
+ */
+function hasPageAction($path, $action) {
+    if (isAdmin()) return true;
+
+    $path = rbacNormalizePath($path);
+    $action = strtolower(trim((string)$action));
+    $column = 'can_' . $action;
+    if (!in_array($column, ['can_add', 'can_edit', 'can_delete'], true)) return false;
+
+    static $cache = [];
+    $userId = (int)($_SESSION['user_id'] ?? 0);
+    if ($userId <= 0) return false;
+    $cacheKey = $userId . ':' . $path . ':' . $column;
+    if (isset($cache[$cacheKey])) return $cache[$cacheKey];
+
+    $db = getDB();
+    $q = $db->prepare("SELECT gpp.{$column}
+        FROM users u
+        INNER JOIN user_groups ug ON ug.id = u.group_id AND ug.is_active = 1
+        INNER JOIN group_page_permissions gpp ON gpp.group_id = ug.id AND gpp.page_path = ?
+        WHERE u.id = ? LIMIT 1");
+    $q->bind_param('si', $path, $userId);
+    $q->execute();
+    $row = $q->get_result()->fetch_assoc();
+    $cache[$cacheKey] = $row ? (bool)(int)$row[$column] : false;
+    return $cache[$cacheKey];
+}
+
+/**
+ * Check granular action permission for the current page.
+ */
+function currentPageAction($action) {
+    return hasPageAction(rbacCurrentPath(), $action);
 }
 
 /**

@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS `group_page_permissions` (
   `group_id`   INT NOT NULL,
   `page_path`  VARCHAR(190) NOT NULL,
   `can_view`   TINYINT(1) NOT NULL DEFAULT 1,
+  `can_add`    TINYINT(1) NOT NULL DEFAULT 0,
+  `can_edit`   TINYINT(1) NOT NULL DEFAULT 0,
+  `can_delete` TINYINT(1) NOT NULL DEFAULT 0,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY `uq_group_page` (`group_id`,`page_path`),
   KEY `idx_perm_group` (`group_id`),
@@ -144,6 +147,7 @@ CREATE TABLE IF NOT EXISTS `planning` (
   `priority`       ENUM('Low','Normal','High','Urgent') NOT NULL DEFAULT 'Normal',
   `department`     VARCHAR(80)  DEFAULT NULL,
   `extra_data`     LONGTEXT     DEFAULT NULL,
+  `sequence_order` INT          NOT NULL DEFAULT 0,
   `notes`          TEXT         DEFAULT NULL,
   `created_by`     INT          DEFAULT NULL,
   `created_at`     TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
@@ -563,3 +567,11 @@ ALTER TABLE `planning` ADD COLUMN IF NOT EXISTS `job_no` VARCHAR(60) DEFAULT NUL
 
 -- master_machines: add operator_name for existing installs
 ALTER TABLE `master_machines` ADD COLUMN IF NOT EXISTS `operator_name` VARCHAR(100) DEFAULT NULL;
+
+-- planning: add sequence_order for job reordering
+ALTER TABLE `planning` ADD COLUMN IF NOT EXISTS `sequence_order` INT NOT NULL DEFAULT 0;
+
+-- group_page_permissions: granular add/edit/delete permissions
+ALTER TABLE `group_page_permissions` ADD COLUMN IF NOT EXISTS `can_add` TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE `group_page_permissions` ADD COLUMN IF NOT EXISTS `can_edit` TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE `group_page_permissions` ADD COLUMN IF NOT EXISTS `can_delete` TINYINT(1) NOT NULL DEFAULT 0;

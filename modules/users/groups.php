@@ -323,6 +323,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $gid = (int)($_POST['gid'] ?? 0);
             $pages = $_POST['pages'] ?? [];
             if (!is_array($pages)) $pages = [];
+            $addPages = $_POST['add_pages'] ?? [];
+            $editPages = $_POST['edit_pages'] ?? [];
+            $deletePages = $_POST['delete_pages'] ?? [];
+            if (!is_array($addPages)) $addPages = [];
+            if (!is_array($editPages)) $editPages = [];
+            if (!is_array($deletePages)) $deletePages = [];
 
             if ($gid <= 0) {
                 $errors[] = 'Invalid group.';
@@ -337,6 +343,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $validPages = array_keys($valid);
 
+            $addSet = [];
+            foreach ($addPages as $p) { $addSet[rbacNormalizePath((string)$p)] = true; }
+            $editSet = [];
+            foreach ($editPages as $p) { $editSet[rbacNormalizePath((string)$p)] = true; }
+            $deleteSet = [];
+            foreach ($deletePages as $p) { $deleteSet[rbacNormalizePath((string)$p)] = true; }
+
             if (empty($errors)) {
                 $db->begin_transaction();
                 try {
@@ -345,9 +358,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $del->execute();
 
                     if (!empty($validPages)) {
-                        $ins = $db->prepare('INSERT INTO group_page_permissions (group_id, page_path, can_view) VALUES (?,?,1)');
+                        $ins = $db->prepare('INSERT INTO group_page_permissions (group_id, page_path, can_view, can_add, can_edit, can_delete) VALUES (?,?,1,?,?,?)');
                         foreach ($validPages as $pagePath) {
-                            $ins->bind_param('is', $gid, $pagePath);
+                            $cAdd = isset($addSet[$pagePath]) ? 1 : 0;
+                            $cEdit = isset($editSet[$pagePath]) ? 1 : 0;
+                            $cDel = isset($deleteSet[$pagePath]) ? 1 : 0;
+                            $ins->bind_param('isiii', $gid, $pagePath, $cAdd, $cEdit, $cDel);
                             $ins->execute();
                         }
                     }
@@ -381,12 +397,16 @@ foreach ($groups as $groupRow) {
 
 $selectedPerms = [];
 if ($selectedGroupId > 0) {
-    $pq = $db->prepare('SELECT page_path FROM group_page_permissions WHERE group_id = ? AND can_view = 1');
+    $pq = $db->prepare('SELECT page_path, can_add, can_edit, can_delete FROM group_page_permissions WHERE group_id = ? AND can_view = 1');
     $pq->bind_param('i', $selectedGroupId);
     $pq->execute();
     $rows = $pq->get_result()->fetch_all(MYSQLI_ASSOC);
     foreach ($rows as $row) {
-        $selectedPerms[rbacNormalizePath((string)$row['page_path'])] = true;
+        $selectedPerms[rbacNormalizePath((string)$row['page_path'])] = [
+            'add' => (int)($row['can_add'] ?? 0) === 1,
+            'edit' => (int)($row['can_edit'] ?? 0) === 1,
+            'delete' => (int)($row['can_delete'] ?? 0) === 1,
+        ];
     }
 }
 
@@ -409,11 +429,17 @@ foreach ($catalog as $path => $label) {
     }
 
     $action = rbac_ui_action_from_item($path, $label, $baseLabel);
+    $permData = $selectedPerms[$path] ?? null;
+    $isGranular = (strpos($path, '/modules/planning/') === 0);
     $moduleCardsBySection[$section][$moduleKey]['items'][] = [
         'path' => $path,
         'action' => $action,
         'hint' => rbac_ui_action_hint($action),
-        'checked' => isset($selectedPerms[$path]),
+        'checked' => $permData !== null,
+        'granular' => $isGranular,
+        'can_add' => $permData ? $permData['add'] : false,
+        'can_edit' => $permData ? $permData['edit'] : false,
+        'can_delete' => $permData ? $permData['delete'] : false,
     ];
 }
 
@@ -654,6 +680,13 @@ include __DIR__ . '/../../includes/header.php';
                         <span class="gp-action-body">
                           <strong><?= e($moduleItem['action']) ?></strong>
                           <small><?= e($moduleItem['hint']) ?></small>
+                          <?php if ($moduleItem['granular']): ?>
+                          <div class="gp-granular-perms">
+                            <label class="gp-granular-cb" title="Allow creating new entries"><input type="checkbox" name="add_pages[]" value="<?= e($moduleItem['path']) ?>" <?= $moduleItem['can_add'] ? 'checked' : '' ?>> <span>Add</span></label>
+                            <label class="gp-granular-cb" title="Allow editing existing entries"><input type="checkbox" name="edit_pages[]" value="<?= e($moduleItem['path']) ?>" <?= $moduleItem['can_edit'] ? 'checked' : '' ?>> <span>Edit</span></label>
+                            <label class="gp-granular-cb" title="Allow deleting entries"><input type="checkbox" name="delete_pages[]" value="<?= e($moduleItem['path']) ?>" <?= $moduleItem['can_delete'] ? 'checked' : '' ?>> <span>Delete</span></label>
+                          </div>
+                          <?php endif; ?>
                         </span>
                       </label>
                     <?php endforeach; ?>
@@ -786,6 +819,29 @@ include __DIR__ . '/../../includes/header.php';
 .gp-action-card input { width: 16px; height: 16px; margin-top: 2px; }
 .gp-action-body strong { display: block; color: #0f172a; font-size: 14px; }
 .gp-action-body small { display: block; margin-top: 4px; color: #64748b; line-height: 1.45; }
+.gp-granular-perms {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #e2e8f0;
+}
+.gp-granular-cb {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  transition: .14s ease;
+}
+.gp-granular-cb:hover { background: #e2e8f0; }
+.gp-granular-cb input { width: 14px; height: 14px; }
+.gp-granular-cb input:checked + span { color: #1d4ed8; }
 .gp-empty-state {
   min-height: 320px;
   display: grid;
@@ -847,7 +903,33 @@ include __DIR__ . '/../../includes/header.php';
     var search = document.getElementById('perm-search');
     if (search) search.addEventListener('input', filterPermItems);
     document.querySelectorAll('.perm-cb').forEach(function(cb){
-      cb.addEventListener('change', updatePermSelectedCount);
+      cb.addEventListener('change', function(){
+        updatePermSelectedCount();
+        // Uncheck granular sub-checkboxes when parent is unchecked
+        if (!cb.checked) {
+          var card = cb.closest('.gp-action-card');
+          if (card) {
+            card.querySelectorAll('.gp-granular-perms input[type="checkbox"]').forEach(function(sub){
+              sub.checked = false;
+            });
+          }
+        }
+      });
+    });
+    // If granular checkbox is checked, auto-check the parent page checkbox
+    document.querySelectorAll('.gp-granular-perms input[type="checkbox"]').forEach(function(sub){
+      sub.addEventListener('change', function(){
+        if (sub.checked) {
+          var card = sub.closest('.gp-action-card');
+          if (card) {
+            var parent = card.querySelector('.perm-cb');
+            if (parent && !parent.checked) {
+              parent.checked = true;
+              updatePermSelectedCount();
+            }
+          }
+        }
+      });
     });
     updatePermSelectedCount();
   });
