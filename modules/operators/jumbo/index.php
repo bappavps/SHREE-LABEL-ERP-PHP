@@ -1135,7 +1135,8 @@ updateTimers();
 function canAutoRefreshOperatorPage() {
   const detailOpen = document.getElementById('jcDetailModal')?.classList.contains('active');
   const pickerOpen = document.getElementById('dmRollPickerModal')?.classList.contains('active');
-  return !detailOpen && !pickerOpen && !DM_MODAL_LOCKED;
+  const timerActive = !!document.getElementById('jcTimerOverlay');
+  return !detailOpen && !pickerOpen && !timerActive && !DM_MODAL_LOCKED;
 }
 
 setInterval(function() {
@@ -1852,14 +1853,79 @@ function translateReasonVoice(originalText) {
     .catch(() => { document.getElementById('dm-reason-voice-english').textContent = originalText; });
 }
 
+// ─── QR scan result → roll number extraction ────────────────
+function extractRollNoFromQr(scanned, callback) {
+  const text = String(scanned || '').trim();
+  if (!text) { callback(''); return; }
+
+  // If it's a URL with ?id= parameter, look up roll_no via API
+  if (text.includes('paper_stock/view.php') && text.includes('id=')) {
+    try {
+      const url = new URL(text, window.location.origin);
+      const stockId = url.searchParams.get('id');
+      if (stockId) {
+        fetch(API_BASE + '?action=get_roll_by_id&id=' + encodeURIComponent(stockId))
+          .then(r => r.json())
+          .then(data => {
+            if (data.ok && data.roll && data.roll.roll_no) {
+              callback(String(data.roll.roll_no).trim());
+            } else {
+              // Fallback: use the ID itself
+              callback(stockId);
+            }
+          })
+          .catch(() => callback(stockId));
+        return;
+      }
+    } catch(e) {}
+  }
+
+  // If it's a URL with /roll/ path (e.g. .../roll/T-1038-A)
+  const rollPathMatch = text.match(/\/roll\/([^\/?#]+)/);
+  if (rollPathMatch) {
+    callback(decodeURIComponent(rollPathMatch[1]));
+    return;
+  }
+
+  // If it's any other URL, try to extract meaningful last segment
+  if (text.startsWith('http://') || text.startsWith('https://')) {
+    try {
+      const url = new URL(text);
+      // Check for roll_no param
+      const rnParam = url.searchParams.get('roll_no') || url.searchParams.get('rn');
+      if (rnParam) { callback(rnParam); return; }
+      // Last path segment
+      const segments = url.pathname.split('/').filter(Boolean);
+      if (segments.length) { callback(decodeURIComponent(segments[segments.length - 1])); return; }
+    } catch(e) {}
+  }
+
+  // Check for "Roll:1363 | Type: Silver..." label format — extract just the number/code
+  const rollLabelMatch = text.match(/^Roll\s*[:：]\s*([^\s|,]+)/i);
+  if (rollLabelMatch) {
+    callback(rollLabelMatch[1].trim());
+    return;
+  }
+
+  // Not a URL — use as-is (plain roll number)
+  callback(text);
+}
+
 // ─── QR Scanner for roll input ──────────────────────────────
 let DM_QR_SCANNER = null;
+let DM_ACTIVE_CHANGE_ROLL = ''; // which original parent roll the picker/QR targets
 
 function openQrScannerFor(origRoll) {
   DM_ACTIVE_CHANGE_ROLL = origRoll;
-  // Create scanner modal overlay
+  // Clean up any previous scanner first
+  if (DM_QR_SCANNER) { try { DM_QR_SCANNER.clear(); } catch(e){} DM_QR_SCANNER = null; }
+
+  // Create or reset scanner modal overlay
   let overlay = document.getElementById('dm-qr-scanner-overlay');
-  if (!overlay) {
+  if (overlay) {
+    const reader = document.getElementById('dm-qr-reader');
+    if (reader) reader.innerHTML = '';
+  } else {
     overlay = document.createElement('div');
     overlay.id = 'dm-qr-scanner-overlay';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
@@ -1875,34 +1941,49 @@ function openQrScannerFor(origRoll) {
     document.body.appendChild(overlay);
   }
   overlay.style.display = 'flex';
-  // Start scanner
-  if (DM_QR_SCANNER) { try { DM_QR_SCANNER.clear(); } catch(e){} DM_QR_SCANNER = null; }
-  DM_QR_SCANNER = new Html5QrcodeScanner('dm-qr-reader', { fps: 15, qrbox: { width: 250, height: 250 }, rememberLastUsedCamera: true }, false);
-  DM_QR_SCANNER.render(function(decodedText) {
-    // Success
-    const rollNo = String(decodedText || '').trim();
-    if (rollNo && DM_ACTIVE_CHANGE_ROLL) {
-      const inp = document.querySelector('.dm-change-roll-input[data-for-roll=\"' + DM_ACTIVE_CHANGE_ROLL + '\"]');
-      if (inp) {
-        inp.value = rollNo;
-        if (DM_ROLL_CHANGE_MAP[DM_ACTIVE_CHANGE_ROLL]) DM_ROLL_CHANGE_MAP[DM_ACTIVE_CHANGE_ROLL].newRollNo = rollNo;
-        lookupSubstituteRoll(DM_ACTIVE_CHANGE_ROLL, rollNo);
-      }
+
+  // Start scanner after short delay so DOM is ready
+  setTimeout(function() {
+    try {
+      DM_QR_SCANNER = new Html5QrcodeScanner('dm-qr-reader', {
+        fps: 10,
+        qrbox: { width: 250, height: 250 },
+        rememberLastUsedCamera: true,
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.EAN_13]
+      }, false);
+      DM_QR_SCANNER.render(function(decodedText) {
+        const scanned = String(decodedText || '').trim();
+        if (!scanned || !DM_ACTIVE_CHANGE_ROLL) return;
+        extractRollNoFromQr(scanned, function(rollNo) {
+          if (!rollNo) return;
+          const inp = document.querySelector('.dm-change-roll-input[data-for-roll="' + DM_ACTIVE_CHANGE_ROLL + '"]');
+          if (inp) {
+            inp.value = rollNo;
+            if (DM_ROLL_CHANGE_MAP[DM_ACTIVE_CHANGE_ROLL]) DM_ROLL_CHANGE_MAP[DM_ACTIVE_CHANGE_ROLL].newRollNo = rollNo;
+            lookupSubstituteRoll(DM_ACTIVE_CHANGE_ROLL, rollNo);
+          }
+          closeQrScanner();
+        });
+      }, function(err) {
+        // Ignore continuous scan misses
+      });
+    } catch(e) {
+      console.error('QR Scanner init error:', e);
+      const statusEl = document.getElementById('dm-qr-status');
+      if (statusEl) statusEl.textContent = 'Error: ' + e.message;
     }
-    closeQrScanner();
-  }, function(err) {
-    // Ignore scan errors (continuous scanning)
-  });
+  }, 150);
 }
 
 function closeQrScanner() {
+  if (DM_QR_SCANNER) { try { DM_QR_SCANNER.clear(); } catch(e){} DM_QR_SCANNER = null; }
   const overlay = document.getElementById('dm-qr-scanner-overlay');
   if (overlay) overlay.style.display = 'none';
-  if (DM_QR_SCANNER) { try { DM_QR_SCANNER.clear(); } catch(e){} DM_QR_SCANNER = null; }
+  const reader = document.getElementById('dm-qr-reader');
+  if (reader) reader.innerHTML = '';
 }
 
 // ─── Per-roll change sections ───────────────────────────────
-let DM_ACTIVE_CHANGE_ROLL = ''; // which original parent roll the picker is targeting
 let DM_ROLL_CHANGE_MAP = {};    // { originalRollNo: { newRollNo, validated, details } }
 
 function rebuildRollChangeSections() {
@@ -2357,7 +2438,9 @@ async function openJobDetail(id, mode) {
       const prn = String(r.parent_roll_no || '').trim();
       if (prn !== '') seenParents[prn] = true;
     });
-    const allParentRollNos = Object.keys(seenParents);
+    const allParentRollNos = Object.keys(seenParents).sort(function(a, b) {
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    });
     const parentRowsMeta = [];
     if (allParentRollNos.length > 0) {
       let parentTableHtml = '<table class="jc-soft-table"><tr><th>Roll No</th><th>Paper Company</th><th>Material</th><th>Width</th><th>Length</th><th>Weight</th><th>Sqr Mtr</th><th>GSM</th><th>Status</th><th>Remarks</th></tr>';
@@ -2446,6 +2529,9 @@ async function openJobDetail(id, mode) {
   });
 
   if (allRows.length) {
+    allRows.sort(function(a, b) {
+      return String(a.roll_no || '').localeCompare(String(b.roll_no || ''), undefined, { numeric: true, sensitivity: 'base' });
+    });
     let executionRowsHtml = '<table class="jc-soft-table"><thead><tr><th>Parent Roll</th><th>Child Roll</th><th>Type</th><th>Width</th><th>Length</th><th>Status</th><th>Wastage</th><th>Remarks</th></tr></thead><tbody>';
     allRows.forEach(function(r) {
       executionRowsHtml += `<tr><td style="font-weight:700">${esc(r.parent_roll_no || '—')}</td><td style="color:var(--jc-brand);font-weight:700">${esc(r.roll_no || '—')}</td><td>${esc(r.type || '—')}</td><td>${esc((r.width ?? '—') + '')}</td><td>${esc((r.length ?? '—') + '')}</td><td>${esc(r.status || '—')}</td><td>${esc((r.wastage ?? 0) + '')}</td><td>${esc(r.remarks || '—')}</td></tr>`;

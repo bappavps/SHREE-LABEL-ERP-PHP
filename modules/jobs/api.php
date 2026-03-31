@@ -878,6 +878,23 @@ try {
         echo json_encode(['ok' => true, 'roll' => $roll]);
         break;
 
+    case 'get_roll_by_id':
+        $stockId = (int)($_GET['id'] ?? 0);
+        if ($stockId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Missing id']);
+            break;
+        }
+        $stmt = $db->prepare("SELECT id, roll_no, paper_type, company, width_mm, length_mtr, gsm, weight_kg, sqm, status FROM paper_stock WHERE id = ? LIMIT 1");
+        $stmt->bind_param('i', $stockId);
+        $stmt->execute();
+        $roll = $stmt->get_result()->fetch_assoc();
+        if (!$roll) {
+            echo json_encode(['ok' => false, 'error' => 'Roll not found']);
+            break;
+        }
+        echo json_encode(['ok' => true, 'roll' => $roll]);
+        break;
+
     // ─── Suggest rolls for operator picker ────────────────
     case 'get_roll_suggestions':
         $q = trim((string)($_GET['q'] ?? ''));
