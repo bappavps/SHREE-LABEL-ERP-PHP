@@ -3,338 +3,369 @@ declare(strict_types=1);
 
 mysqli_report(MYSQLI_REPORT_OFF);
 
-$lockFile   = __DIR__ . '/data/install.lock';
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+$lockFile = __DIR__ . '/data/install.lock';
 $schemaFile = __DIR__ . '/database/schema.sql';
 $runtimeConfigFile = __DIR__ . '/config/db.runtime.php';
-$gitCfgFile = __DIR__ . '/data/github_auto_push.json';
+$migrationDir = __DIR__ . '/pending_migrations';
 
 $log = [];
 $errors = [];
 
+if (empty($_SESSION['setup_csrf'])) {
+    $_SESSION['setup_csrf'] = bin2hex(random_bytes(32));
+}
+
+function h(string $v): string {
+    return htmlspecialchars($v, ENT_QUOTES, 'UTF-8');
+}
+
 function log_ok(string $msg): void {
-  global $log;
-  $log[] = ['ok', $msg];
+    global $log;
+    $log[] = ['ok', $msg];
 }
 
 function log_err(string $msg): void {
-  global $log, $errors;
-  $log[] = ['err', $msg];
-  $errors[] = $msg;
+    global $log, $errors;
+    $log[] = ['err', $msg];
+    $errors[] = $msg;
 }
 
-function e(string $val): string {
-  return htmlspecialchars($val, ENT_QUOTES, 'UTF-8');
+function is_local_request(): bool {
+    $host = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+    $serverAddr = (string)($_SERVER['SERVER_ADDR'] ?? '');
+    return $host === ''
+        || strpos($host, 'localhost') !== false
+        || strpos($host, '127.0.0.1') !== false
+        || substr($host, -6) === '.local'
+        || $serverAddr === '127.0.0.1'
+        || $serverAddr === '::1'
+        || preg_match('/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/', $host)
+        || preg_match('/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/', $serverAddr);
 }
 
+function detect_base_url(): string {
+    $documentRoot = str_replace('\\', '/', (string)(realpath($_SERVER['DOCUMENT_ROOT'] ?? '') ?: ($_SERVER['DOCUMENT_ROOT'] ?? '')));
+    $appRoot = str_replace('\\', '/', (string)(realpath(__DIR__) ?: __DIR__));
+    if ($documentRoot !== '' && $appRoot !== '') {
+        $documentRoot = rtrim($documentRoot, '/');
+        if (stripos($appRoot, $documentRoot) === 0) {
+            $relative = trim(substr($appRoot, strlen($documentRoot)), '/');
+            return $relative === '' ? '' : '/' . $relative;
+        }
+    }
+    return '';
+}
+
+function check_writable(string $path): array {
+    if (!file_exists($path) && !@mkdir($path, 0755, true)) {
+        return [false, 'Missing and could not be created'];
+    }
+    if (!is_writable($path)) {
+        return [false, 'Exists but not writable'];
+    }
+    return [true, 'OK'];
+}
+
+function split_sql_statements(string $sql): array {
+    $sql = preg_replace('/\/\*.*?\*\//s', '', $sql);
+    $sql = preg_replace('/^\s*--.*$/m', '', $sql);
+    $sql = preg_replace('/^\s*#.*$/m', '', $sql);
+    return array_filter(array_map('trim', explode(';', $sql)));
+}
+
+function run_sql_file(mysqli $conn, string $filePath, string $label): int {
+    if (!file_exists($filePath)) {
+        log_err($label . ' missing: ' . basename($filePath));
+        return 1;
+    }
+    $sql = file_get_contents($filePath);
+    if ($sql === false) {
+        log_err($label . ' cannot be read: ' . basename($filePath));
+        return 1;
+    }
+
+    $errs = 0;
+    foreach (split_sql_statements($sql) as $stmt) {
+        if (!$conn->query($stmt)) {
+            $errs++;
+            log_err($label . ' SQL error: ' . $conn->error . ' -- ' . substr($stmt, 0, 120));
+        }
+    }
+
+    if ($errs === 0) {
+        log_ok($label . ' completed successfully.');
+    }
+    return $errs;
+}
+
+$baseUrlDetected = detect_base_url();
 $input = [
-  'db_host' => 'localhost',
-  'db_name' => '',
-  'db_user' => '',
-  'db_pass' => '',
-  'base_url' => '',
-  'profile_target' => 'auto',
-  'app_name' => 'Enterprise ERP',
-  'app_version' => '1.0',
-  'create_database' => '0',
-  'admin_name' => 'System Admin',
-  'admin_email' => 'admin@example.com',
-  'admin_pass' => 'admin123',
-  'enable_git_push' => '0',
-  'git_remote' => 'origin',
-  'git_branch' => 'main',
+    'db_host' => 'localhost',
+    'db_name' => '',
+    'db_user' => '',
+    'db_pass' => '',
+    'base_url' => $baseUrlDetected,
+    'create_database' => '0',
 ];
 
-$currentHost = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
-$isLocalRequest = ($currentHost === ''
-  || strpos($currentHost, 'localhost') !== false
-  || strpos($currentHost, '127.0.0.1') !== false);
+$checks = [
+    ['PHP version >= 8.0', version_compare(PHP_VERSION, '8.0.0', '>='), PHP_VERSION],
+    ['mysqli extension loaded', extension_loaded('mysqli'), extension_loaded('mysqli') ? 'Loaded' : 'Missing'],
+    ['json extension loaded', extension_loaded('json'), extension_loaded('json') ? 'Loaded' : 'Missing'],
+    ['schema.sql present', file_exists($schemaFile), 'database/schema.sql'],
+    ['pending_migrations folder present', is_dir($migrationDir), 'pending_migrations/'],
+];
+
+$pathChecks = [
+    'config' => check_writable(__DIR__ . '/config'),
+    'data' => check_writable(__DIR__ . '/data'),
+    'uploads' => check_writable(__DIR__ . '/uploads'),
+];
+
+$blockingCheckFail = false;
+foreach ($checks as $c) {
+    if (!$c[1]) {
+        $blockingCheckFail = true;
+    }
+}
+foreach ($pathChecks as $pc) {
+    if (!$pc[0]) {
+        $blockingCheckFail = true;
+    }
+}
 
 if (file_exists($lockFile)) {
-  $installedAt = trim((string) @file_get_contents($lockFile));
-  ?>
-  <!doctype html>
-  <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Installer Locked</title>
-    <style>
-      body{font-family:Arial,sans-serif;background:#f8fafc;padding:24px}
-      .card{max-width:760px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px}
-      .warn{color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px}
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <h2>Installer is locked</h2>
-      <p>This ERP appears to be already installed.</p>
-      <p class="warn">Installed at: <?= e($installedAt !== '' ? $installedAt : 'unknown') ?></p>
-      <p>Delete <strong>data/install.lock</strong> only if you need a full reinstall.</p>
-    </div>
-  </body>
-  </html>
-  <?php
-  exit;
+    $installedAt = trim((string)@file_get_contents($lockFile));
+    ?>
+    <!doctype html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>Installer Locked</title>
+      <style>body{font-family:Arial,sans-serif;background:#f8fafc;padding:24px}.card{max-width:780px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px}.warn{color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px}</style>
+    </head>
+    <body>
+      <div class="card">
+        <h2>Installer is locked</h2>
+        <p>This ERP is already installed.</p>
+        <p class="warn">Installed at: <?= h($installedAt !== '' ? $installedAt : 'unknown') ?></p>
+        <p>Delete <strong>data/install.lock</strong> only for a full reinstall.</p>
+      </div>
+    </body>
+    </html>
+    <?php
+    exit;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  foreach ($input as $key => $value) {
-    if (isset($_POST[$key])) {
-      $input[$key] = trim((string) $_POST[$key]);
+    $submittedToken = (string)($_POST['setup_csrf'] ?? '');
+    if (!hash_equals((string)$_SESSION['setup_csrf'], $submittedToken)) {
+        log_err('Invalid setup request token. Please refresh and try again.');
     }
-  }
 
-  $baseUrl = rtrim($input['base_url'], '/');
-
-  $isLocalHost = $isLocalRequest;
-  $detectedEnv = $isLocalHost ? 'local' : 'live';
-  $targetEnv = $input['profile_target'] === 'local' || $input['profile_target'] === 'live'
-    ? $input['profile_target']
-    : $detectedEnv;
-
-  // Shared hosts like InfinityFree usually disable exec/shell access.
-  if (!$isLocalHost && $input['enable_git_push'] === '1') {
-    $input['enable_git_push'] = '0';
-    log_ok('Git auto-push was disabled automatically for non-local hosting.');
-  }
-
-  if ($input['db_host'] === '' || $input['db_name'] === '' || $input['db_user'] === '') {
-    log_err('DB Host, DB Name, and DB Username are required.');
-  }
-  if ($input['app_name'] === '') {
-    log_err('App Name is required.');
-  }
-  if (!filter_var($input['admin_email'], FILTER_VALIDATE_EMAIL)) {
-    log_err('Admin Email is not valid.');
-  }
-  if (strlen($input['admin_pass']) < 6) {
-    log_err('Admin Password must be at least 6 characters.');
-  }
-  if (!file_exists($schemaFile)) {
-    log_err('database/schema.sql not found.');
-  }
-
-  if (empty($errors) && $input['create_database'] === '1') {
-    $serverConn = new mysqli($input['db_host'], $input['db_user'], $input['db_pass']);
-    if ($serverConn->connect_error) {
-      log_err('Cannot connect to server for DB creation: ' . $serverConn->connect_error);
-    } else {
-      $q = "CREATE DATABASE IF NOT EXISTS `" . $serverConn->real_escape_string($input['db_name']) . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
-      if ($serverConn->query($q)) {
-        log_ok('Database create/exists check completed.');
-      } else {
-        log_err('Database create failed: ' . $serverConn->error . ' (Disable "Create DB" on shared hosting)');
-      }
-      $serverConn->close();
-    }
-  }
-
-  if (empty($errors)) {
-    $conn = new mysqli($input['db_host'], $input['db_user'], $input['db_pass'], $input['db_name']);
-    if ($conn->connect_error) {
-      log_err('Cannot connect to MySQL: ' . $conn->connect_error);
-    } else {
-      $conn->set_charset('utf8mb4');
-      log_ok('Connected to target database.');
-
-      $sql = file_get_contents($schemaFile);
-      if ($sql === false) {
-        log_err('Unable to read schema.sql');
-      } else {
-        // Strip comments before splitting statements.
-        $sql = preg_replace('/\/\*.*?\*\//s', '', $sql);
-        $sql = preg_replace('/^\s*--.*$/m', '', $sql);
-        $sql = preg_replace('/^\s*#.*$/m', '', $sql);
-        $stmts = array_filter(array_map('trim', explode(';', $sql)));
-
-        $schemaErrors = 0;
-        foreach ($stmts as $stmt) {
-          if ($stmt === '') {
-            continue;
-          }
-          if (!$conn->query($stmt)) {
-            $schemaErrors++;
-            log_err('SQL Error: ' . $conn->error . ' -- ' . substr($stmt, 0, 120));
-          }
+    foreach ($input as $key => $value) {
+        if (isset($_POST[$key])) {
+            $input[$key] = trim((string)$_POST[$key]);
         }
-        if ($schemaErrors === 0) {
-          log_ok('Schema imported successfully.');
+    }
+
+    $baseUrl = rtrim($input['base_url'], '/');
+    $targetEnv = is_local_request() ? 'local' : 'live';
+
+    if ($blockingCheckFail) {
+        log_err('Environment pre-check failed. Fix FAIL items and retry setup.');
+    }
+    if ($input['db_host'] === '' || $input['db_name'] === '' || $input['db_user'] === '') {
+        log_err('DB Host, DB Name, and DB Username are required.');
+    }
+
+    if (empty($errors) && $input['create_database'] === '1') {
+        $serverConn = new mysqli($input['db_host'], $input['db_user'], $input['db_pass']);
+        if ($serverConn->connect_error) {
+            log_err('Cannot connect to DB server for create-database: ' . $serverConn->connect_error);
         } else {
-          log_err('Schema import finished with ' . $schemaErrors . ' error(s).');
-        }
-      }
-
-      if (empty($errors)) {
-        $adminHash = password_hash($input['admin_pass'], PASSWORD_BCRYPT);
-        $adminRole = 'admin';
-
-        $check = $conn->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
-        if ($check) {
-          $check->bind_param('s', $input['admin_email']);
-          $check->execute();
-          $exists = $check->get_result()->fetch_assoc();
-          $check->close();
-
-          if ($exists) {
-            $upd = $conn->prepare('UPDATE users SET name = ?, password = ?, role = ? WHERE email = ?');
-            if ($upd) {
-              $upd->bind_param('ssss', $input['admin_name'], $adminHash, $adminRole, $input['admin_email']);
-              if ($upd->execute()) {
-                log_ok('Existing admin user updated.');
-              } else {
-                log_err('Admin update failed: ' . $upd->error);
-              }
-              $upd->close();
+            $q = "CREATE DATABASE IF NOT EXISTS `" . $serverConn->real_escape_string($input['db_name']) . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
+            if ($serverConn->query($q)) {
+                log_ok('Database create/exists check completed.');
             } else {
-              log_err('Admin update prepare failed.');
+                log_err('Database create failed: ' . $serverConn->error . ' (disable on shared hosting if needed).');
             }
-          } else {
-            $ins = $conn->prepare('INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)');
-            if ($ins) {
-              $ins->bind_param('ssss', $input['admin_name'], $input['admin_email'], $adminHash, $adminRole);
-              if ($ins->execute()) {
-                log_ok('Admin user created successfully.');
-              } else {
-                log_err('Admin creation failed: ' . $ins->error);
-              }
-              $ins->close();
-            } else {
-              log_err('Admin insert prepare failed.');
-            }
-          }
-        } else {
-          log_err('Admin check prepare failed.');
+            $serverConn->close();
         }
-      }
-
-      if (empty($errors)) {
-        $runtime = [];
-        if (file_exists($runtimeConfigFile)) {
-          $loaded = require $runtimeConfigFile;
-          if (is_array($loaded)) {
-            $runtime = $loaded;
-          }
-        }
-
-        $runtime[$targetEnv] = [
-          'DB_HOST' => $input['db_host'],
-          'DB_USER' => $input['db_user'],
-          'DB_PASS' => $input['db_pass'],
-          'DB_NAME' => $input['db_name'],
-          'BASE_URL' => $baseUrl,
-          'APP_NAME' => $input['app_name'],
-          'APP_VERSION' => $input['app_version'],
-        ];
-
-        $runtimePhp = "<?php\nreturn " . var_export($runtime, true) . ";\n";
-        if (file_put_contents($runtimeConfigFile, $runtimePhp, LOCK_EX) === false) {
-          log_err('Failed to write config/db.runtime.php (check permissions).');
-        } else {
-          log_ok('Runtime profile saved for environment: ' . $targetEnv . '.');
-        }
-      }
-
-      if (empty($errors)) {
-        if (!is_dir(__DIR__ . '/data')) {
-          @mkdir(__DIR__ . '/data', 0755, true);
-        }
-
-        if ($input['enable_git_push'] === '1') {
-          $accessKey = bin2hex(random_bytes(16));
-          $gitCfg = [
-            'enabled' => true,
-            'remote' => $input['git_remote'] !== '' ? $input['git_remote'] : 'origin',
-            'branch' => $input['git_branch'] !== '' ? $input['git_branch'] : 'main',
-            'access_key' => $accessKey,
-          ];
-          if (file_put_contents($gitCfgFile, json_encode($gitCfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), LOCK_EX) === false) {
-            log_err('Could not write Git auto-push config.');
-          } else {
-            log_ok('Git auto-push enabled. Access key: ' . $accessKey);
-          }
-        }
-
-        if (file_put_contents($lockFile, date('c'), LOCK_EX) === false) {
-          log_err('Failed to create install lock file.');
-        } else {
-          log_ok('Install lock file created.');
-        }
-      }
-
-      $conn->close();
     }
-  }
+
+    if (empty($errors)) {
+        $conn = new mysqli($input['db_host'], $input['db_user'], $input['db_pass'], $input['db_name']);
+        if ($conn->connect_error) {
+            log_err('Cannot connect to MySQL: ' . $conn->connect_error);
+        } else {
+            $conn->set_charset('utf8mb4');
+            log_ok('Connected to target database.');
+
+            $schemaErr = run_sql_file($conn, $schemaFile, 'Schema import');
+
+            if ($schemaErr === 0) {
+                $migrationFiles = glob($migrationDir . '/*.sql') ?: [];
+                sort($migrationFiles);
+                if (empty($migrationFiles)) {
+                    log_ok('No pending migration files found.');
+                } else {
+                    foreach ($migrationFiles as $mf) {
+                        run_sql_file($conn, $mf, 'Migration ' . basename($mf));
+                    }
+                }
+            }
+
+            if (empty($errors)) {
+                $adminName = 'System Admin';
+                $adminEmail = 'admin@example.com';
+                $adminPass = 'admin123';
+                $adminHash = password_hash($adminPass, PASSWORD_BCRYPT);
+                $adminRole = 'admin';
+
+                $check = $conn->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
+                if ($check) {
+                    $check->bind_param('s', $adminEmail);
+                    $check->execute();
+                    $exists = $check->get_result()->fetch_assoc();
+                    $check->close();
+
+                    if ($exists) {
+                        $upd = $conn->prepare('UPDATE users SET name = ?, password = ?, role = ?, is_active = 1 WHERE email = ?');
+                        if ($upd) {
+                            $upd->bind_param('ssss', $adminName, $adminHash, $adminRole, $adminEmail);
+                            if ($upd->execute()) {
+                                log_ok('Default admin account updated: admin@example.com / admin123');
+                            } else {
+                                log_err('Default admin update failed: ' . $upd->error);
+                            }
+                            $upd->close();
+                        } else {
+                            log_err('Default admin update prepare failed.');
+                        }
+                    } else {
+                        $ins = $conn->prepare('INSERT INTO users (name, email, password, role, is_active) VALUES (?, ?, ?, ?, 1)');
+                        if ($ins) {
+                            $ins->bind_param('ssss', $adminName, $adminEmail, $adminHash, $adminRole);
+                            if ($ins->execute()) {
+                                log_ok('Default admin account created: admin@example.com / admin123');
+                            } else {
+                                log_err('Default admin create failed: ' . $ins->error);
+                            }
+                            $ins->close();
+                        } else {
+                            log_err('Default admin insert prepare failed.');
+                        }
+                    }
+                } else {
+                    log_err('Default admin check prepare failed.');
+                }
+            }
+
+            if (empty($errors)) {
+                $runtime = [];
+                if (file_exists($runtimeConfigFile)) {
+                    $loaded = require $runtimeConfigFile;
+                    if (is_array($loaded)) {
+                        $runtime = $loaded;
+                    }
+                }
+
+                $runtime[$targetEnv] = [
+                    'DB_HOST' => $input['db_host'],
+                    'DB_USER' => $input['db_user'],
+                    'DB_PASS' => $input['db_pass'],
+                    'DB_NAME' => $input['db_name'],
+                    'BASE_URL' => $baseUrl,
+                    'APP_NAME' => 'Enterprise ERP',
+                    'APP_VERSION' => '1.0',
+                ];
+
+                $runtimePhp = "<?php\nreturn " . var_export($runtime, true) . ";\n";
+                if (file_put_contents($runtimeConfigFile, $runtimePhp, LOCK_EX) === false) {
+                    log_err('Failed to write config/db.runtime.php (check permissions).');
+                } else {
+                    log_ok('Runtime config saved for environment: ' . $targetEnv . '.');
+                }
+            }
+
+            if (empty($errors)) {
+                if (file_put_contents($lockFile, date('c'), LOCK_EX) === false) {
+                    log_err('Failed to create install lock file.');
+                } else {
+                    log_ok('Install lock file created.');
+                }
+            }
+
+            $conn->close();
+        }
+    }
 }
 ?>
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ERP Installer</title>
+<title>ERP One-Click Setup</title>
 <style>
-  body{font-family:Arial,sans-serif;background:#f5f6f8;padding:20px;margin:0}
-  .wrap{max-width:980px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px}
-  h1{margin:0 0 6px}
-  .muted{color:#64748b;font-size:.9rem}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
-  .full{grid-column:1 / -1}
-  label{font-size:.78rem;font-weight:700;color:#334155;display:block;margin-bottom:4px}
-  input{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px}
-  .check{display:flex;gap:8px;align-items:center;padding-top:8px}
-  .check input{width:auto}
-  .btn{margin-top:16px;padding:12px 16px;border:none;border-radius:8px;background:#0f172a;color:#fff;font-weight:700;cursor:pointer}
-  .log{margin-top:16px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:8px;padding:12px}
-  .ok{color:#166534;margin:6px 0}
-  .err{color:#b91c1c;margin:6px 0}
-  .next{margin-top:12px;padding:10px;background:#ecfeff;border:1px solid #a5f3fc;border-radius:8px;color:#155e75}
+body{font-family:Arial,sans-serif;background:#f5f6f8;padding:20px;margin:0}.wrap{max-width:980px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px}
+h1{margin:0 0 6px}.muted{color:#64748b;font-size:.9rem}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}.full{grid-column:1 / -1}
+label{font-size:.78rem;font-weight:700;color:#334155;display:block;margin-bottom:4px}input{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px}
+.check{display:flex;gap:8px;align-items:center;padding-top:8px}.check input{width:auto}.btn{margin-top:16px;padding:12px 16px;border:none;border-radius:8px;background:#0f172a;color:#fff;font-weight:700;cursor:pointer}
+.log{margin-top:16px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:8px;padding:12px}.ok{color:#166534;margin:6px 0}.err{color:#b91c1c;margin:6px 0}
+.next{margin-top:12px;padding:10px;background:#ecfeff;border:1px solid #a5f3fc;border-radius:8px;color:#155e75}
+table{width:100%;border-collapse:collapse;margin:10px 0 16px}th,td{border:1px solid #e2e8f0;padding:8px;text-align:left;font-size:.86rem}th{background:#f8fafc}
+.status-ok{color:#166534;font-weight:700}.status-bad{color:#b91c1c;font-weight:700}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Enterprise ERP Installer</h1>
-  <p class="muted">Fill database credentials, import schema, create admin user, and optionally enable browser-driven Git push.</p>
+  <h1>Enterprise ERP One-Click Setup</h1>
+  <p class="muted">Provide only database details. Setup will auto-check environment, import schema, run pending migrations, create default admin, and lock installer.</p>
+
+  <table>
+    <thead><tr><th>Environment Check</th><th>Status</th><th>Details</th></tr></thead>
+    <tbody>
+    <?php foreach ($checks as $c): ?>
+      <tr><td><?= h($c[0]) ?></td><td class="<?= $c[1] ? 'status-ok' : 'status-bad' ?>"><?= $c[1] ? 'PASS' : 'FAIL' ?></td><td><?= h((string)$c[2]) ?></td></tr>
+    <?php endforeach; ?>
+    <?php foreach ($pathChecks as $name => $pc): ?>
+      <tr><td>Writable: <?= h($name) ?></td><td class="<?= $pc[0] ? 'status-ok' : 'status-bad' ?>"><?= $pc[0] ? 'PASS' : 'FAIL' ?></td><td><?= h($pc[1]) ?></td></tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table>
 
   <form method="post">
+        <input type="hidden" name="setup_csrf" value="<?= h((string)$_SESSION['setup_csrf']) ?>">
     <div class="grid">
-      <div><label>DB Host</label><input name="db_host" value="<?= e($input['db_host']) ?>" required></div>
-      <div><label>DB Name</label><input name="db_name" value="<?= e($input['db_name']) ?>" required></div>
-      <div><label>DB Username</label><input name="db_user" value="<?= e($input['db_user']) ?>" required></div>
-      <div><label>DB Password</label><input type="password" name="db_pass" value="<?= e($input['db_pass']) ?>"></div>
-      <div><label>Base URL (empty for domain root)</label><input name="base_url" value="<?= e($input['base_url']) ?>"></div>
-            <div><label>Save Profile To</label><input name="profile_target" value="<?= e($input['profile_target']) ?>" placeholder="auto | local | live"></div>
-      <div><label>App Name</label><input name="app_name" value="<?= e($input['app_name']) ?>" required></div>
-      <div><label>App Version</label><input name="app_version" value="<?= e($input['app_version']) ?>"></div>
-      <div class="full check"><input type="checkbox" name="create_database" value="1" <?= $input['create_database'] === '1' ? 'checked' : '' ?>><label>Create database automatically (disable for shared hosting)</label></div>
-
-      <div><label>Admin Name</label><input name="admin_name" value="<?= e($input['admin_name']) ?>" required></div>
-      <div><label>Admin Email</label><input type="email" name="admin_email" value="<?= e($input['admin_email']) ?>" required></div>
-      <div><label>Admin Password</label><input type="password" name="admin_pass" value="<?= e($input['admin_pass']) ?>" required></div>
-
-      <div class="full" style="border-top:1px solid #e2e8f0;padding-top:12px;margin-top:4px">
-        <label style="font-size:.9rem">Optional: GitHub Auto Push</label>
-        <?php if (!$isLocalRequest): ?>
-          <div class="muted" style="margin-top:6px;color:#92400e">Detected shared/non-local hosting. Git auto-push remains disabled because shell git is not available on most shared hosts (including InfinityFree).</div>
-        <?php endif; ?>
-      </div>
-      <div class="full check"><input type="checkbox" name="enable_git_push" value="1" <?= $input['enable_git_push'] === '1' ? 'checked' : '' ?> <?= !$isLocalRequest ? 'disabled' : '' ?>><label>Enable browser page for git add/commit/push (local only)</label></div>
-      <div><label>Git Remote</label><input name="git_remote" value="<?= e($input['git_remote']) ?>"></div>
-      <div><label>Git Branch</label><input name="git_branch" value="<?= e($input['git_branch']) ?>"></div>
+      <div><label>DB Host</label><input name="db_host" value="<?= h($input['db_host']) ?>" required></div>
+      <div><label>DB Name</label><input name="db_name" value="<?= h($input['db_name']) ?>" required></div>
+      <div><label>DB Username</label><input name="db_user" value="<?= h($input['db_user']) ?>" required></div>
+      <div><label>DB Password</label><input type="password" name="db_pass" value="<?= h($input['db_pass']) ?>"></div>
+      <div class="full"><label>Base URL (empty for domain root)</label><input name="base_url" value="<?= h($input['base_url']) ?>" placeholder="/erp"></div>
+      <div class="full check"><input type="checkbox" name="create_database" value="1" <?= $input['create_database'] === '1' ? 'checked' : '' ?>><label>Create database automatically (disable for shared hosting if permission denied)</label></div>
     </div>
-    <button class="btn" type="submit">Run Installation</button>
+    <button class="btn" type="submit">Run Automatic Installation</button>
   </form>
 
   <?php if (!empty($log)): ?>
     <div class="log">
       <?php foreach ($log as [$type, $msg]): ?>
-        <div class="<?= $type ?>"><?= $type === 'ok' ? 'OK: ' : 'ERROR: ' ?><?= e((string) $msg) ?></div>
+        <div class="<?= $type ?>"><?= $type === 'ok' ? 'OK: ' : 'ERROR: ' ?><?= h((string)$msg) ?></div>
       <?php endforeach; ?>
     </div>
     <?php if (empty($errors)): ?>
       <div class="next">
-        Installation completed. You can now open <strong><?= e($input['base_url']) ?>/auth/login.php</strong>.
-        If Git auto-push is enabled, use <strong><?= e($input['base_url']) ?>/github_auto_push.php</strong>.
-        Delete setup.php after finishing.
+        Installation completed.<br>
+        Default admin: <strong>admin@example.com</strong> / <strong>admin123</strong><br>
+        Login URL: <strong><?= h(rtrim($input['base_url'], '/')) ?>/auth/login.php</strong><br>
+        For security, delete <strong>setup.php</strong> after first successful login.
       </div>
     <?php endif; ?>
   <?php endif; ?>
