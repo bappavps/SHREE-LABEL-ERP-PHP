@@ -33,24 +33,23 @@ if ($department === '') $department = 'label-printing';
 
 $defaultColumns = [
     ['key' => 'sn', 'label' => 'S.N', 'type' => 'Number', 'sort' => 1],
-  ['key' => 'job_no', 'label' => 'Job No', 'type' => 'Text', 'sort' => 2],
-  ['key' => 'printing_planning', 'label' => 'Status', 'type' => 'Status', 'sort' => 3],
-  ['key' => 'name', 'label' => 'Job Name', 'type' => 'Text', 'sort' => 4],
-  ['key' => 'priority', 'label' => 'Priority', 'type' => 'Priority', 'sort' => 5],
-  ['key' => 'order_date', 'label' => 'Order Date', 'type' => 'Date', 'sort' => 6],
-  ['key' => 'dispatch_date', 'label' => 'Dispatch Date', 'type' => 'Date', 'sort' => 7],
-  ['key' => 'plate_no', 'label' => 'Plate No', 'type' => 'Text', 'sort' => 8],
-  ['key' => 'size', 'label' => 'Size', 'type' => 'Text', 'sort' => 9],
-  ['key' => 'repeat', 'label' => 'Repeat', 'type' => 'Text', 'sort' => 10],
-  ['key' => 'material', 'label' => 'Material', 'type' => 'Text', 'sort' => 11],
-  ['key' => 'paper_size', 'label' => 'Paper Size', 'type' => 'Text', 'sort' => 12],
-  ['key' => 'die', 'label' => 'Die', 'type' => 'Text', 'sort' => 13],
-  ['key' => 'allocate_mtrs', 'label' => 'MTRS', 'type' => 'Number', 'sort' => 14],
-  ['key' => 'qty_pcs', 'label' => 'QTY', 'type' => 'Number', 'sort' => 15],
-  ['key' => 'core_size', 'label' => 'Core', 'type' => 'Text', 'sort' => 16],
-  ['key' => 'qty_per_roll', 'label' => 'Qty/Roll', 'type' => 'Text', 'sort' => 17],
-  ['key' => 'roll_direction', 'label' => 'Direction', 'type' => 'Text', 'sort' => 18],
-  ['key' => 'remarks', 'label' => 'Remarks', 'type' => 'Text', 'sort' => 19],
+  ['key' => 'printing_planning', 'label' => 'Status', 'type' => 'Status', 'sort' => 2],
+  ['key' => 'name', 'label' => 'Job Name', 'type' => 'Text', 'sort' => 3],
+  ['key' => 'priority', 'label' => 'Priority', 'type' => 'Priority', 'sort' => 4],
+  ['key' => 'order_date', 'label' => 'Order Date', 'type' => 'Date', 'sort' => 5],
+  ['key' => 'dispatch_date', 'label' => 'Dispatch Date', 'type' => 'Date', 'sort' => 6],
+  ['key' => 'plate_no', 'label' => 'Plate No', 'type' => 'Text', 'sort' => 7],
+  ['key' => 'size', 'label' => 'Size', 'type' => 'Text', 'sort' => 8],
+  ['key' => 'repeat', 'label' => 'Repeat', 'type' => 'Text', 'sort' => 9],
+  ['key' => 'material', 'label' => 'Material', 'type' => 'Text', 'sort' => 10],
+  ['key' => 'paper_size', 'label' => 'Paper Size', 'type' => 'Text', 'sort' => 11],
+  ['key' => 'die', 'label' => 'Die', 'type' => 'Text', 'sort' => 12],
+  ['key' => 'allocate_mtrs', 'label' => 'MTRS', 'type' => 'Number', 'sort' => 13],
+  ['key' => 'qty_pcs', 'label' => 'QTY', 'type' => 'Number', 'sort' => 14],
+  ['key' => 'core_size', 'label' => 'Core', 'type' => 'Text', 'sort' => 15],
+  ['key' => 'qty_per_roll', 'label' => 'Qty/Roll', 'type' => 'Text', 'sort' => 16],
+  ['key' => 'roll_direction', 'label' => 'Direction', 'type' => 'Text', 'sort' => 17],
+  ['key' => 'remarks', 'label' => 'Remarks', 'type' => 'Text', 'sort' => 18],
 ];
 
 $allowedTypes = ['Text', 'Number', 'Date', 'Status', 'Priority'];
@@ -99,12 +98,12 @@ function planning_get_columns(mysqli $db, $department, array $defaultColumns) {
   }
 
   // Keep main planning board default opening order predictable.
-  // Target first columns: S.N, Job No, Status, Job Name, Priority.
+  // Fixed columns render S.N and Job No before configurable board columns.
   if ($department === 'label-printing') {
-    $targetFirst = ['sn', 'job_no', 'printing_planning', 'name', 'priority'];
+    $targetFirst = ['sn', 'printing_planning', 'name', 'priority'];
     $currentFirst = array_slice($keys, 0, count($targetFirst));
     $needsReset = false;
-    if (!in_array('job_no', $keys, true)) {
+    if (in_array('job_no', $keys, true)) {
       $needsReset = true;
     } elseif ($currentFirst !== $targetFirst) {
       $needsReset = true;
@@ -247,6 +246,24 @@ function planning_status_badge($status) {
     return '';
   }
 
+  function planning_default_dispatch_date($dispatchVal, $orderVal = '', $fallbackScheduled = '') {
+    $dispatch = planning_try_parse_date($dispatchVal);
+    if ($dispatch !== '') return $dispatch;
+
+    $scheduled = planning_try_parse_date($fallbackScheduled);
+    if ($scheduled !== '') return $scheduled;
+
+    $orderDate = planning_try_parse_date($orderVal);
+    if ($orderDate === '') return '';
+
+    try {
+      $dt = new DateTimeImmutable($orderDate);
+      return $dt->modify('+10 days')->format('Y-m-d');
+    } catch (Exception $e) {
+      return '';
+    }
+  }
+
   function planning_extract_row_values(array $row, array $columns, $rowIndex = 0) {
     $extra = json_decode($row['extra_data'] ?? '{}', true);
     if (!is_array($extra)) $extra = [];
@@ -271,6 +288,14 @@ function planning_status_badge($status) {
         $vals[$k] = (string)($row['priority'] ?? $extra['priority'] ?? 'Normal');
         continue;
       }
+      if ($k === 'dispatch_date') {
+        $vals[$k] = planning_default_dispatch_date(
+          $extra['dispatch_date'] ?? '',
+          $extra['order_date'] ?? ($row['order_date'] ?? ''),
+          $row['scheduled_date'] ?? ''
+        );
+        continue;
+      }
       if (array_key_exists($k, $extra)) {
         $val = (string)$extra[$k];
         $vals[$k] = $val;
@@ -278,7 +303,6 @@ function planning_status_badge($status) {
       }
       if ($k === 'name') $vals[$k] = (string)($row['job_name'] ?? '');
       elseif ($k === 'remarks') $vals[$k] = (string)($row['notes'] ?? '');
-      elseif ($k === 'dispatch_date') $vals[$k] = (string)($extra['dispatch_date'] ?? ($row['scheduled_date'] ?? ''));
       else $vals[$k] = (string)($row[$k] ?? '');
     }
     return $vals;
@@ -412,10 +436,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
       $priority = (string)($rowValues['priority'] ?? 'Normal');
         if (!in_array($priority, $priorityList, true)) $priority = 'Normal';
 
+      $rowValues['order_date'] = planning_try_parse_date($rowValues['order_date'] ?? '');
+      $rowValues['dispatch_date'] = planning_default_dispatch_date(
+        $rowValues['dispatch_date'] ?? '',
+        $rowValues['order_date'] ?? '',
+        $rowValues['scheduled_date'] ?? ''
+      );
+
       $machine = trim((string)($rowValues['machine'] ?? ''));
       $operator = trim((string)($rowValues['operator_name'] ?? ''));
       $notes = trim((string)($rowValues['remarks'] ?? $rowValues['notes'] ?? ''));
-      $scheduled = planning_try_parse_date($rowValues['dispatch_date'] ?? $rowValues['scheduled_date'] ?? '');
+      $scheduled = $rowValues['dispatch_date'];
 
       // Preserve uploaded image metadata stored in extra_data when saving row fields.
       $selExtra = $db->prepare("SELECT extra_data FROM planning WHERE id = ? AND department = ? LIMIT 1");
@@ -546,10 +577,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
       $priority = (string)($rowValues['priority'] ?? $_POST['priority'] ?? 'Normal');
         if (!in_array($priority, $priorityList, true)) $priority = 'Normal';
 
+      $rowValues['order_date'] = planning_try_parse_date($rowValues['order_date'] ?? $_POST['order_date'] ?? '');
+      $rowValues['dispatch_date'] = planning_default_dispatch_date(
+        $rowValues['dispatch_date'] ?? '',
+        $rowValues['order_date'] ?? '',
+        $_POST['scheduled_date'] ?? ''
+      );
+
       $machine = trim((string)($rowValues['machine'] ?? $_POST['machine'] ?? ''));
       $operator = trim((string)($rowValues['operator_name'] ?? $_POST['operator_name'] ?? ''));
       $notes = trim((string)($rowValues['remarks'] ?? $_POST['notes'] ?? ''));
-      $scheduled = planning_try_parse_date($rowValues['dispatch_date'] ?? $_POST['scheduled_date'] ?? '');
+      $scheduled = $rowValues['dispatch_date'];
 
       $extraJson = json_encode($rowValues, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
@@ -655,9 +693,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             $machine = (string)(planning_get_any_key($normRow, ['machine']) ?? '');
             $operator = (string)(planning_get_any_key($normRow, ['operator_name', 'operator']) ?? '');
-            $scheduled = planning_try_parse_date($rowValues['dispatch_date'] ?? (planning_get_any_key($normRow, ['scheduled_date', 'scheduled date']) ?? ''));
-            $rowValues['dispatch_date'] = $scheduled;
             $rowValues['order_date'] = planning_try_parse_date($rowValues['order_date'] ?? '');
+            $scheduled = planning_default_dispatch_date(
+              $rowValues['dispatch_date'] ?? '',
+              $rowValues['order_date'] ?? '',
+              planning_get_any_key($normRow, ['scheduled_date', 'scheduled date']) ?? ''
+            );
+            $rowValues['dispatch_date'] = $scheduled;
 
             $status = 'Pending';
             $rowValues['printing_planning'] = 'Pending';

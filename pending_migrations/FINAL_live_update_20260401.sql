@@ -11,6 +11,58 @@
 SET NAMES utf8mb4;
 
 -- ------------------------------------------------------------
+-- Bootstrap base tables for fresh/empty databases
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS planning (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  job_no VARCHAR(60) NULL,
+  sales_order_id INT NULL,
+  job_name VARCHAR(255) NOT NULL,
+  machine VARCHAR(100) NULL,
+  operator_name VARCHAR(100) NULL,
+  scheduled_date DATE NULL,
+  status ENUM('Pending','Preparing Slitting','Slitting Completed','Queued','In Progress','Completed','On Hold') NOT NULL DEFAULT 'Pending',
+  priority ENUM('Low','Normal','High','Urgent') NOT NULL DEFAULT 'Normal',
+  notes TEXT NULL,
+  department VARCHAR(80) NULL,
+  extra_data LONGTEXT NULL,
+  sequence_order INT NOT NULL DEFAULT 0,
+  created_by INT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_planning_job_no(job_no),
+  INDEX idx_planning_status(status),
+  INDEX idx_planning_dept(department)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS jobs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  job_no VARCHAR(30) NOT NULL UNIQUE,
+  planning_id INT NULL,
+  sales_order_id INT NULL,
+  roll_no VARCHAR(50) NULL,
+  job_type ENUM('Slitting','Printing','Finishing','Jumbo','Flexo') NOT NULL DEFAULT 'Printing',
+  status ENUM('Queued','Pending','Running','Closed','Finalized','Completed','QC Passed','QC Failed') DEFAULT 'Pending',
+  started_at DATETIME NULL,
+  completed_at DATETIME NULL,
+  operator_id INT NULL,
+  notes TEXT NULL,
+  extra_data JSON NULL,
+  duration_minutes INT NULL,
+  sequence_order INT NOT NULL DEFAULT 1,
+  department VARCHAR(50) NULL,
+  previous_job_id INT NULL,
+  deleted_at DATETIME NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_jobs_job_no(job_no),
+  INDEX idx_jobs_status(status),
+  INDEX idx_jobs_planning_id(planning_id),
+  INDEX idx_jobs_dept(department),
+  INDEX idx_jobs_deleted_at(deleted_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
 -- Planning table compatibility
 -- ------------------------------------------------------------
 ALTER TABLE planning ADD COLUMN IF NOT EXISTS department VARCHAR(80) NOT NULL DEFAULT 'general' AFTER notes;
@@ -157,23 +209,22 @@ DELETE FROM planning_board_columns WHERE department = 'label-printing';
 
 INSERT INTO planning_board_columns (department, col_key, col_label, col_type, sort_order) VALUES
 ('label-printing', 'sn', 'S.N', 'Number', 1),
-('label-printing', 'job_no', 'Job No', 'Text', 2),
-('label-printing', 'printing_planning', 'Status', 'Status', 3),
-('label-printing', 'name', 'Job Name', 'Text', 4),
-('label-printing', 'priority', 'Priority', 'Priority', 5),
-('label-printing', 'order_date', 'Order Date', 'Date', 6),
-('label-printing', 'dispatch_date', 'Dispatch Date', 'Date', 7),
-('label-printing', 'plate_no', 'Plate No', 'Text', 8),
-('label-printing', 'size', 'Size', 'Text', 9),
-('label-printing', 'repeat', 'Repeat', 'Text', 10),
-('label-printing', 'material', 'Material', 'Text', 11),
-('label-printing', 'paper_size', 'Paper Size', 'Text', 12),
-('label-printing', 'die', 'Die', 'Text', 13),
-('label-printing', 'allocate_mtrs', 'MTRS', 'Number', 14),
-('label-printing', 'qty_pcs', 'QTY', 'Number', 15),
-('label-printing', 'core_size', 'Core', 'Text', 16),
-('label-printing', 'qty_per_roll', 'Qty/Roll', 'Text', 17),
-('label-printing', 'roll_direction', 'Direction', 'Text', 18),
-('label-printing', 'remarks', 'Remarks', 'Text', 19);
+('label-printing', 'printing_planning', 'Status', 'Status', 2),
+('label-printing', 'name', 'Job Name', 'Text', 3),
+('label-printing', 'priority', 'Priority', 'Priority', 4),
+('label-printing', 'order_date', 'Order Date', 'Date', 5),
+('label-printing', 'dispatch_date', 'Dispatch Date', 'Date', 6),
+('label-printing', 'plate_no', 'Plate No', 'Text', 7),
+('label-printing', 'size', 'Size', 'Text', 8),
+('label-printing', 'repeat', 'Repeat', 'Text', 9),
+('label-printing', 'material', 'Material', 'Text', 10),
+('label-printing', 'paper_size', 'Paper Size', 'Text', 11),
+('label-printing', 'die', 'Die', 'Text', 12),
+('label-printing', 'allocate_mtrs', 'MTRS', 'Number', 13),
+('label-printing', 'qty_pcs', 'QTY', 'Number', 14),
+('label-printing', 'core_size', 'Core', 'Text', 15),
+('label-printing', 'qty_per_roll', 'Qty/Roll', 'Text', 16),
+('label-printing', 'roll_direction', 'Direction', 'Text', 17),
+('label-printing', 'remarks', 'Remarks', 'Text', 18);
 
 -- End of migration
