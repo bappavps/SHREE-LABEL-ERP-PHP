@@ -33,23 +33,24 @@ if ($department === '') $department = 'label-printing';
 
 $defaultColumns = [
     ['key' => 'sn', 'label' => 'S.N', 'type' => 'Number', 'sort' => 1],
-  ['key' => 'order_date', 'label' => 'Order Date', 'type' => 'Date', 'sort' => 2],
-  ['key' => 'dispatch_date', 'label' => 'Dispatch Date', 'type' => 'Date', 'sort' => 3],
-  ['key' => 'printing_planning', 'label' => 'Status', 'type' => 'Status', 'sort' => 4],
-  ['key' => 'plate_no', 'label' => 'Plate No', 'type' => 'Text', 'sort' => 5],
-  ['key' => 'name', 'label' => 'Job Name', 'type' => 'Text', 'sort' => 6],
-  ['key' => 'size', 'label' => 'Size', 'type' => 'Text', 'sort' => 7],
-  ['key' => 'repeat', 'label' => 'Repeat', 'type' => 'Text', 'sort' => 8],
-  ['key' => 'material', 'label' => 'Material', 'type' => 'Text', 'sort' => 9],
-  ['key' => 'paper_size', 'label' => 'Paper Size', 'type' => 'Text', 'sort' => 10],
-  ['key' => 'die', 'label' => 'Die', 'type' => 'Text', 'sort' => 11],
-  ['key' => 'allocate_mtrs', 'label' => 'MTRS', 'type' => 'Number', 'sort' => 12],
-  ['key' => 'qty_pcs', 'label' => 'QTY', 'type' => 'Number', 'sort' => 13],
-  ['key' => 'core_size', 'label' => 'Core', 'type' => 'Text', 'sort' => 14],
-  ['key' => 'qty_per_roll', 'label' => 'Qty/Roll', 'type' => 'Text', 'sort' => 15],
-  ['key' => 'roll_direction', 'label' => 'Direction', 'type' => 'Text', 'sort' => 16],
-  ['key' => 'remarks', 'label' => 'Remarks', 'type' => 'Text', 'sort' => 17],
-  ['key' => 'priority', 'label' => 'Priority', 'type' => 'Priority', 'sort' => 18],
+  ['key' => 'job_no', 'label' => 'Job No', 'type' => 'Text', 'sort' => 2],
+  ['key' => 'printing_planning', 'label' => 'Status', 'type' => 'Status', 'sort' => 3],
+  ['key' => 'name', 'label' => 'Job Name', 'type' => 'Text', 'sort' => 4],
+  ['key' => 'priority', 'label' => 'Priority', 'type' => 'Priority', 'sort' => 5],
+  ['key' => 'order_date', 'label' => 'Order Date', 'type' => 'Date', 'sort' => 6],
+  ['key' => 'dispatch_date', 'label' => 'Dispatch Date', 'type' => 'Date', 'sort' => 7],
+  ['key' => 'plate_no', 'label' => 'Plate No', 'type' => 'Text', 'sort' => 8],
+  ['key' => 'size', 'label' => 'Size', 'type' => 'Text', 'sort' => 9],
+  ['key' => 'repeat', 'label' => 'Repeat', 'type' => 'Text', 'sort' => 10],
+  ['key' => 'material', 'label' => 'Material', 'type' => 'Text', 'sort' => 11],
+  ['key' => 'paper_size', 'label' => 'Paper Size', 'type' => 'Text', 'sort' => 12],
+  ['key' => 'die', 'label' => 'Die', 'type' => 'Text', 'sort' => 13],
+  ['key' => 'allocate_mtrs', 'label' => 'MTRS', 'type' => 'Number', 'sort' => 14],
+  ['key' => 'qty_pcs', 'label' => 'QTY', 'type' => 'Number', 'sort' => 15],
+  ['key' => 'core_size', 'label' => 'Core', 'type' => 'Text', 'sort' => 16],
+  ['key' => 'qty_per_roll', 'label' => 'Qty/Roll', 'type' => 'Text', 'sort' => 17],
+  ['key' => 'roll_direction', 'label' => 'Direction', 'type' => 'Text', 'sort' => 18],
+  ['key' => 'remarks', 'label' => 'Remarks', 'type' => 'Text', 'sort' => 19],
 ];
 
 $allowedTypes = ['Text', 'Number', 'Date', 'Status', 'Priority'];
@@ -95,6 +96,26 @@ function planning_get_columns(mysqli $db, $department, array $defaultColumns) {
     $del->execute();
     planning_seed_columns($db, $department, $defaultColumns);
     return $defaultColumns;
+  }
+
+  // Keep main planning board default opening order predictable.
+  // Target first columns: S.N, Job No, Status, Job Name, Priority.
+  if ($department === 'label-printing') {
+    $targetFirst = ['sn', 'job_no', 'printing_planning', 'name', 'priority'];
+    $currentFirst = array_slice($keys, 0, count($targetFirst));
+    $needsReset = false;
+    if (!in_array('job_no', $keys, true)) {
+      $needsReset = true;
+    } elseif ($currentFirst !== $targetFirst) {
+      $needsReset = true;
+    }
+    if ($needsReset) {
+      $del = $db->prepare("DELETE FROM planning_board_columns WHERE department = ?");
+      $del->bind_param('s', $department);
+      $del->execute();
+      planning_seed_columns($db, $department, $defaultColumns);
+      return $defaultColumns;
+    }
   }
 
   // Ensure Priority column exists for every department

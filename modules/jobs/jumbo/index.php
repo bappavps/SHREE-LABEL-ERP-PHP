@@ -553,6 +553,8 @@ $historyCount = $finishedCount;
           <span class="jc-request-state">Request Pending</span>
         <?php elseif (strtolower(trim((string)($job['latest_request_status'] ?? ''))) === 'rejected'): ?>
           <span class="jc-request-state" style="background:#fee2e2;color:#991b1b">Request Rejected</span>
+        <?php elseif (strtolower(trim((string)($job['latest_request_status'] ?? ''))) === 'approved'): ?>
+          <span class="jc-request-state" style="background:#dcfce7;color:#166534">Accepted Done</span>
         <?php endif; ?>
       </div>
     </div>
@@ -2403,6 +2405,16 @@ function generateQR(text) {
 (function(){
   const autoId = new URLSearchParams(window.location.search).get('auto_job');
   if (autoId) setTimeout(function(){ try { openJobDetail(parseInt(autoId)); } catch(e){} }, 600);
+})();
+(function(){
+  const qs = new URLSearchParams(window.location.search);
+  if (qs.get('accepted_done') !== '1') return;
+  const msg = 'Accepted done. Paper roll update applied successfully.';
+  if (typeof showToast === 'function') {
+    showToast(msg, 'success');
+  } else {
+    alert(msg);
+  }
 })();
 function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
 // Default to Pending filter on page load

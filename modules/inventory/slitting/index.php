@@ -1995,7 +1995,11 @@ const SLT = (() => {
       alert('Update Roll success: ' + String(data.new_parent_roll || 'updated'));
       showToast('Roll updated successfully. Redirecting…', 'success');
       setTimeout(() => {
-        window.location.href = '<?= BASE_URL ?>/modules/jobs/jumbo/index.php';
+        const doneUrl = new URL('<?= BASE_URL ?>/modules/jobs/jumbo/index.php', window.location.origin);
+        doneUrl.searchParams.set('accepted_done', '1');
+        if (ACCEPT_JOB_ID > 0) doneUrl.searchParams.set('auto_job', String(ACCEPT_JOB_ID));
+        if (ACCEPT_REQUEST_ID > 0) doneUrl.searchParams.set('request_id', String(ACCEPT_REQUEST_ID));
+        window.location.href = doneUrl.toString();
       }, 700);
     } catch (err) {
       showToast('Network error: ' + err.message, 'error');
