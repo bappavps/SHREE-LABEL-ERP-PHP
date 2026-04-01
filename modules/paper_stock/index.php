@@ -23,8 +23,32 @@ $allowedSort = ['roll_no','status','company','paper_type','width_mm','length_mtr
 $sortCol = in_array($_GET['sort'] ?? '', $allowedSort) ? $_GET['sort'] : 'id';
 $sortDir = (strtolower($_GET['dir'] ?? '') === 'asc') ? 'ASC' : 'DESC';
 
-$totalRes = $db->query('SELECT COUNT(*) AS c FROM paper_stock');
-$total = (int)$totalRes->fetch_assoc()['c'];
+// Server-side global search
+$searchTerm = trim((string)($_GET['search'] ?? ''));
+$searchWhere = '';
+$searchParams = [];
+$searchTypes = '';
+if ($searchTerm !== '') {
+    $searchCols = ['roll_no','company','paper_type','lot_batch_no','company_roll_no','job_no','job_name','remarks','status','gsm','width_mm','weight_kg','length_mtr'];
+    $likeClauses = [];
+    $likeTerm = '%' . $searchTerm . '%';
+    foreach ($searchCols as $sc) {
+        $likeClauses[] = "COALESCE(`{$sc}`,'') LIKE ?";
+        $searchParams[] = $likeTerm;
+        $searchTypes .= 's';
+    }
+    $searchWhere = ' WHERE (' . implode(' OR ', $likeClauses) . ')';
+}
+
+$countSql = 'SELECT COUNT(*) AS c FROM paper_stock' . $searchWhere;
+if ($searchTerm !== '') {
+    $cntStmt = $db->prepare($countSql);
+    $cntStmt->bind_param($searchTypes, ...$searchParams);
+    $cntStmt->execute();
+    $total = (int)$cntStmt->get_result()->fetch_assoc()['c'];
+} else {
+    $total = (int)$db->query($countSql)->fetch_assoc()['c'];
+}
 $perPage = $isAllRows ? max(1, $total) : $perPage;
 $totalPages = max(1, (int)ceil($total / $perPage));
 if ($page > $totalPages) {
@@ -33,15 +57,29 @@ if ($page > $totalPages) {
 }
 
 if ($isAllRows) {
-  $stmt = $db->prepare("SELECT * FROM paper_stock ORDER BY `{$sortCol}` {$sortDir}");
+  $sql = "SELECT * FROM paper_stock{$searchWhere} ORDER BY `{$sortCol}` {$sortDir}";
+  if ($searchTerm !== '') {
+      $stmt = $db->prepare($sql);
+      $stmt->bind_param($searchTypes, ...$searchParams);
+  } else {
+      $stmt = $db->prepare($sql);
+  }
   $stmt->execute();
   $rolls = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
   $page = 1;
   $totalPages = 1;
   $offset = 0;
 } else {
-  $stmt = $db->prepare("SELECT * FROM paper_stock ORDER BY `{$sortCol}` {$sortDir} LIMIT ? OFFSET ?");
-  $stmt->bind_param('ii', $perPage, $offset);
+  $sql = "SELECT * FROM paper_stock{$searchWhere} ORDER BY `{$sortCol}` {$sortDir} LIMIT ? OFFSET ?";
+  if ($searchTerm !== '') {
+      $stmt = $db->prepare($sql);
+      $types = $searchTypes . 'ii';
+      $params = array_merge($searchParams, [$perPage, $offset]);
+      $stmt->bind_param($types, ...$params);
+  } else {
+      $stmt = $db->prepare($sql);
+      $stmt->bind_param('ii', $perPage, $offset);
+  }
   $stmt->execute();
   $rolls = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
@@ -124,9 +162,11 @@ $allColumns = [
     ];
   }
 
-function sortUrl($col, $curSort, $curDir, $perPageRaw) {
+function sortUrl($col, $curSort, $curDir, $perPageRaw, $searchTerm = '') {
     $dir = ($curSort === $col && $curDir === 'ASC') ? 'desc' : 'asc';
-  return '?' . http_build_query(['sort'=>$col,'dir'=>$dir,'per_page'=>$perPageRaw,'page'=>1]);
+    $params = ['sort'=>$col,'dir'=>$dir,'per_page'=>$perPageRaw,'page'=>1];
+    if ($searchTerm !== '') $params['search'] = $searchTerm;
+  return '?' . http_build_query($params);
 }
 function sortIcon($col, $curSort, $curDir) {
     if ($curSort !== $col) return '<i class="bi bi-arrow-down-up" style="opacity:.3;font-size:9px"></i>';
@@ -373,7 +413,7 @@ include __DIR__ . '/../../includes/header.php';
 <div class="ps-quick-filter no-print" id="ps-quick-filter">
   <div class="ps-qf-item">
     <label>Global Search</label>
-    <input type="text" id="qf-search" placeholder="Search everything...">
+    <input type="text" id="qf-search" placeholder="Search everything..." value="<?= e($searchTerm) ?>">
   </div>
   <div class="ps-qf-item">
     <label>Lot / Batch No</label>
@@ -451,6 +491,7 @@ include __DIR__ . '/../../includes/header.php';
   <form method="GET" style="display:flex;align-items:center;gap:8px">
     <input type="hidden" name="sort" value="<?= e($sortCol) ?>">
     <input type="hidden" name="dir" value="<?= e(strtolower($sortDir)) ?>">
+    <?php if ($searchTerm !== ''): ?><input type="hidden" name="search" value="<?= e($searchTerm) ?>"><?php endif; ?>
     <label style="font-size:12px;font-weight:600;color:#64748b">Rows:</label>
     <select name="per_page" onchange="this.form.submit()" style="height:32px;padding:0 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;font-weight:600;background:#fff">
       <?php foreach ($allowedPerPage as $rp): ?>
@@ -461,6 +502,9 @@ include __DIR__ . '/../../includes/header.php';
   </form>
   <span style="font-size:12px;font-weight:600;color:#94a3b8">
     <?= $total === 0 ? 0 : $offset+1 ?>–<?= min($total, $offset+$perPage) ?> of <?= number_format($total) ?> rolls
+    <?php if ($searchTerm !== ''): ?>
+    <span style="color:#f59e0b;margin-left:6px">(filtered by &ldquo;<?= e($searchTerm) ?>&rdquo;)</span>
+    <?php endif; ?>
   </span>
 </div>
 
@@ -491,7 +535,7 @@ include __DIR__ . '/../../includes/header.php';
           <?php foreach ($allColumns as $colKey => [$colLabel, $colStyle, $colAlign]): ?>
           <th class="ps-col ps-col-<?= $colKey ?> <?= $colKey === 'roll_no' ? 'sticky-roll' : '' ?>" data-col-key="<?= $colKey ?>" style="<?= $colStyle ?>;text-align:<?= $colAlign ?>">
             <span class="col-filter-wrap">
-              <a href="<?= sortUrl($colKey, $sortCol, $sortDir, $perPageRaw) ?>" style="color:inherit;text-decoration:none">
+              <a href="<?= sortUrl($colKey, $sortCol, $sortDir, $perPageRaw, $searchTerm) ?>" style="color:inherit;text-decoration:none">
                 <?= e($colLabel) ?> <?= sortIcon($colKey, $sortCol, $sortDir) ?>
               </a>
               <button type="button" class="col-filter-btn no-print" data-filter-col="<?= $colKey ?>" title="Filter <?= e($colLabel) ?>">
@@ -620,7 +664,9 @@ include __DIR__ . '/../../includes/header.php';
 
   <?php
   if (!$isAllRows) {
-      $qStr = http_build_query(['sort'=>$sortCol,'dir'=>strtolower($sortDir),'per_page'=>$perPageRaw,'page'=>'{page}']);
+      $paginParams = ['sort'=>$sortCol,'dir'=>strtolower($sortDir),'per_page'=>$perPageRaw,'page'=>'{page}'];
+      if ($searchTerm !== '') $paginParams['search'] = $searchTerm;
+      $qStr = http_build_query($paginParams);
       echo paginationBar($total, $perPage, $page, BASE_URL . '/modules/paper_stock/index.php?' . $qStr);
   }
   ?>
@@ -632,6 +678,7 @@ include __DIR__ . '/../../includes/header.php';
         <input type="hidden" name="per_page" value="<?= e($perPageRaw) ?>">
         <input type="hidden" name="sort" value="<?= e($sortCol) ?>">
         <input type="hidden" name="dir" value="<?= e(strtolower($sortDir)) ?>">
+        <?php if ($searchTerm !== ''): ?><input type="hidden" name="search" value="<?= e($searchTerm) ?>"><?php endif; ?>
         <label>Go to page</label>
         <input type="number" min="1" max="<?= $totalPages ?>" name="page" value="<?= $page ?>">
         <button type="submit" class="btn btn-sm btn-secondary">Go</button>
@@ -709,7 +756,7 @@ include __DIR__ . '/../../includes/header.php';
   }
 
   function quickMatches(tr){
-    var search = (qf.search.value || '').toLowerCase().trim();
+    // Global search is handled server-side; skip client-side search check
     var lot = (qf.lot.value || '').toLowerCase().trim();
     var roll = (qf.roll.value || '').toLowerCase().trim();
     var company = (qf.company.value || '').toLowerCase().trim();
@@ -730,9 +777,6 @@ include __DIR__ . '/../../includes/header.php';
         }
       }
     }
-
-    var rowText = (tr.textContent || '').toLowerCase();
-    if (search && rowText.indexOf(search) === -1) return false;
 
     if (lot && cellText(tr, 'lot_batch_no').toLowerCase().indexOf(lot) === -1) return false;
     if (roll && cellText(tr, 'roll_no').toLowerCase().indexOf(roll) === -1) return false;
@@ -923,9 +967,44 @@ include __DIR__ . '/../../includes/header.php';
 
   // Quick-filter input — filter rows immediately, NO page redirect (no jerk)
   var qfDebounceTimer = null;
+  var searchDebounceTimer = null;
 
+  // Global search triggers server-side reload (searches full database)
+  if (qf.search) {
+    qf.search.addEventListener('input', function(){
+      if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(function(){
+        var term = (qf.search.value || '').trim();
+        var u = new URL(window.location.href);
+        if (term) {
+          u.searchParams.set('search', term);
+        } else {
+          u.searchParams.delete('search');
+        }
+        u.searchParams.set('page', '1');
+        window.location.href = u.toString();
+      }, 600);
+    });
+    qf.search.addEventListener('keydown', function(e){
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+        var term = (qf.search.value || '').trim();
+        var u = new URL(window.location.href);
+        if (term) {
+          u.searchParams.set('search', term);
+        } else {
+          u.searchParams.delete('search');
+        }
+        u.searchParams.set('page', '1');
+        window.location.href = u.toString();
+      }
+    });
+  }
+
+  // Other quick filters remain client-side
   Object.keys(qf).forEach(function(k){
-    if (!qf[k]) return;
+    if (!qf[k] || k === 'search') return;
     qf[k].addEventListener('input', function(){
       if (qfDebounceTimer) clearTimeout(qfDebounceTimer);
       qfDebounceTimer = setTimeout(function(){
@@ -940,6 +1019,9 @@ include __DIR__ . '/../../includes/header.php';
   });
 
   window.resetQuickFilters = function(){
+    // If server-side search is active, clear and reload
+    var u = new URL(window.location.href);
+    var hadSearch = u.searchParams.has('search');
     Object.keys(qf).forEach(function(k){ qf[k].value = ''; });
     document.querySelectorAll('.ps-qf-picker-btn').forEach(function(btn){
       var label = btn.querySelector('span');
@@ -953,6 +1035,12 @@ include __DIR__ . '/../../includes/header.php';
     });
     if (qf.dateFrom) qf.dateFrom.value = '';
     if (qf.dateTo) qf.dateTo.value = '';
+    if (hadSearch) {
+      u.searchParams.delete('search');
+      u.searchParams.set('page', '1');
+      window.location.href = u.toString();
+      return;
+    }
     applyAllFilters();
   };
 
