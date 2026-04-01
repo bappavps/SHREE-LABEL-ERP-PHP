@@ -488,38 +488,47 @@ const SLT = (() => {
   let selectionMap    = {};    // key -> qty selected
   let wastagePrefs    = {};    // key -> 'STOCK' | 'ADJUST'
   let reportState     = { data: null, template: 'executive' };
+  let acceptRequestWidthMm = 0;
+  let acceptWidthMismatchWarned = false;
 
   // ── Init ───────────────────────────────────────────────────
-  function init() {
-    setExecuteButtonLabel();
-    if (isAcceptMode()) {
-      plannerFilter = 'all';
-      const plannerSearch = document.getElementById('plannerSearch');
-      if (plannerSearch) {
-        plannerSearch.value = '';
-        plannerSearch.disabled = true;
+  async function init() {
+    try {
+      setExecuteButtonLabel();
+      if (isAcceptMode()) {
+        plannerFilter = 'all';
+        const plannerSearch = document.getElementById('plannerSearch');
+        if (plannerSearch) {
+          plannerSearch.value = '';
+          plannerSearch.disabled = true;
+        }
+        await loadAcceptRequestContext();
       }
-    }
-    bindTabs();
-    bindScanInput();
-    loadMachines();
-    loadPlannerJobs();
-    loadHistory();
-    // Keep planner queue current without requiring manual page reload.
-    setInterval(loadPlannerJobs, 12000);
+      bindTabs();
+      bindScanInput();
+      loadMachines();
+      loadPlannerJobs();
+      loadHistory();
+      // Keep planner queue current without requiring manual page reload.
+      setInterval(loadPlannerJobs, 12000);
 
-    // URL param: ?rollNo=XXXX or ?rolls=A,B,C
-    const preload = '<?= e($preloadRoll) ?>';
-    const preloadMulti = '<?= e($preloadRolls) ?>';
-    if (preloadMulti) {
-      const rollList = preloadMulti.split(',').map(s => s.trim()).filter(Boolean);
-      let delay = 500;
-      rollList.forEach(rn => {
-        setTimeout(() => searchAndLoadRoll(rn), delay);
-        delay += 400;
-      });
-    } else if (preload) {
-      setTimeout(() => searchAndLoadRoll(preload), 500);
+      // URL param: ?rollNo=XXXX or ?rolls=A,B,C
+      const preload = '<?= e($preloadRoll) ?>';
+      const preloadMulti = '<?= e($preloadRolls) ?>';
+      if (preloadMulti) {
+        const rollList = preloadMulti.split(',').map(s => s.trim()).filter(Boolean);
+        let delay = 500;
+        rollList.forEach(rn => {
+          setTimeout(() => searchAndLoadRoll(rn), delay);
+          delay += 400;
+        });
+      } else if (preload) {
+        setTimeout(() => searchAndLoadRoll(preload), 500);
+      }
+    } catch (err) {
+      const msg = 'Slitting init failed: ' + (err && err.message ? err.message : 'Unknown error');
+      console.error(msg, err);
+      alert(msg);
     }
   }
 
@@ -1294,6 +1303,42 @@ const SLT = (() => {
     return scoped;
   }
 
+  function detectWidthFromRequestPayload(payload) {
+    const p = payload || {};
+    const rows = Array.isArray(p.rows) ? p.rows : [];
+    const childRows = rows.filter(r => String((r && r.bucket) || '').toLowerCase() !== 'stock');
+    const src = childRows.length ? childRows : rows;
+    for (const r of src) {
+      const w = parseFloat((r && r.width) || 0);
+      if (w > 0) return w;
+    }
+    return 0;
+  }
+
+  async function loadAcceptRequestContext() {
+    if (!isAcceptMode() || ACCEPT_JOB_ID <= 0 || ACCEPT_REQUEST_ID <= 0) return;
+    const data = await apiGet('list_jumbo_change_requests', {
+      status: 'all',
+      job_id: ACCEPT_JOB_ID,
+      limit: 100,
+    });
+    if (!data.ok || !Array.isArray(data.requests)) {
+      showToast('Could not load request context for width auto-detect', 'warning');
+      return;
+    }
+    const req = data.requests.find(r => Number(r.id || 0) === ACCEPT_REQUEST_ID);
+    if (!req) {
+      showToast('Accepted request not found for width auto-detect', 'warning');
+      return;
+    }
+    const w = detectWidthFromRequestPayload(req.payload || {});
+    if (w > 0) {
+      acceptRequestWidthMm = w;
+      return;
+    }
+    showToast('Width not found in old request/job card. Please verify manually.', 'error');
+  }
+
   // ── Auto Planner ───────────────────────────────────────────
   async function loadPlannerJobs() {
     const planningParams = {};
@@ -1456,14 +1501,21 @@ const SLT = (() => {
     const contentEl = document.getElementById('stockAnalysisContent');
     contentEl.innerHTML = '<div class="slt-empty"><i class="bi bi-hourglass-split"></i><p>Analyzing stock options…</p></div>';
 
-    const targetWidth = parseInt(j.label_width_mm) || parseInt(j.paper_size) || 0;
+    const planningWidth = parseFloat(j.label_width_mm) || parseFloat(j.paper_size) || 0;
+    const requestWidth = isAcceptMode() ? (parseFloat(acceptRequestWidthMm) || 0) : 0;
+    const targetWidth = requestWidth > 0 ? requestWidth : planningWidth;
     const material = j.material_type || '';
     const reqMtrs = parseFloat(j.allocate_mtrs) || 0;
 
+    if (isAcceptMode() && requestWidth > 0 && planningWidth > 0 && Math.abs(requestWidth - planningWidth) > 0.5 && !acceptWidthMismatchWarned) {
+      acceptWidthMismatchWarned = true;
+      showToast('Width mismatch: request card width ' + requestWidth + 'mm, planning width ' + planningWidth + 'mm. Using request width.', 'warning');
+    }
+
     if (!material || !targetWidth) {
-      contentEl.innerHTML = '<div class="slt-empty"><i class="bi bi-exclamation-triangle" style="color:#f59e0b"></i><p>Planning job is missing material or paper width, so stock analysis cannot run.</p></div>';
+      contentEl.innerHTML = '<div class="slt-empty"><i class="bi bi-exclamation-triangle" style="color:#f59e0b"></i><p>Paper width is missing in planning/request context, so stock analysis cannot run.</p></div>';
       document.getElementById('btnDeployTerminal').style.display = 'none';
-      document.getElementById('stockModalSummary').innerHTML = 'Update the planning job details, then try again.';
+      document.getElementById('stockModalSummary').innerHTML = 'Set width in planning or ensure accepted request contains roll row widths, then try again.';
       return;
     }
 
@@ -1932,12 +1984,15 @@ const SLT = (() => {
       });
       const data = await res.json();
       if (!data.ok) {
-        showToast(data.error || 'Manager update failed', 'error');
+        const msg = data.error || 'Manager update failed';
+        showToast(msg, 'error');
+        alert('Update Roll failed: ' + msg);
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-play-circle"></i> ' + getExecuteButtonLabel();
         return;
       }
 
+      alert('Update Roll success: ' + String(data.new_parent_roll || 'updated'));
       showToast('Roll updated successfully. Redirecting…', 'success');
       setTimeout(() => {
         window.location.href = '<?= BASE_URL ?>/modules/jobs/jumbo/index.php';

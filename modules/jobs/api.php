@@ -1203,7 +1203,9 @@ try {
             echo json_encode(['ok' => false, 'error' => 'POST required']);
             break;
         }
-        if (!hasRole('admin', 'manager')) {
+        $sessionRole = strtolower(trim((string)($_SESSION['role'] ?? '')));
+        $isManagerish = in_array($sessionRole, ['admin', 'manager', 'system_admin', 'super_admin', 'systemadmin', 'superadmin'], true);
+        if (!$isManagerish && !hasRole('admin', 'manager', 'system_admin', 'super_admin')) {
             echo json_encode(['ok' => false, 'error' => 'Only admin/manager can apply manager update']);
             break;
         }
@@ -1225,7 +1227,7 @@ try {
             break;
         }
 
-        $jobStmt = $db->prepare("SELECT * FROM jobs WHERE id = ? AND job_type = 'Slitting' AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $jobStmt = $db->prepare("SELECT * FROM jobs WHERE id = ? AND (department = 'jumbo_slitting' OR job_type IN ('Slitting','Jumbo')) AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
         $jobStmt->bind_param('i', $jobId);
         $jobStmt->execute();
         $job = $jobStmt->get_result()->fetch_assoc();
@@ -1234,18 +1236,24 @@ try {
             break;
         }
 
-        $reqStmt = $db->prepare("SELECT * FROM job_change_requests WHERE id = ? AND job_id = ? AND request_type = 'jumbo_roll_update' AND status = 'Pending' LIMIT 1");
+        $reqStmt = $db->prepare("SELECT * FROM job_change_requests WHERE id = ? AND job_id = ? AND request_type = 'jumbo_roll_update' AND status IN ('Pending','Approved') LIMIT 1");
         $reqStmt->bind_param('ii', $requestId, $jobId);
         $reqStmt->execute();
         $changeReq = $reqStmt->get_result()->fetch_assoc();
         if (!$changeReq) {
-            echo json_encode(['ok' => false, 'error' => 'Pending change request not found']);
+            echo json_encode(['ok' => false, 'error' => 'Change request not found for this job']);
             break;
         }
 
         $payload = json_decode((string)($changeReq['payload_json'] ?? '{}'), true);
         if (!is_array($payload)) $payload = [];
         $newParentRoll = trim((string)($payload['parent_roll_no'] ?? ''));
+        if ($newParentRoll === '') {
+            $rollChanges = is_array($payload['roll_changes'] ?? null) ? $payload['roll_changes'] : [];
+            if (!empty($rollChanges) && is_array($rollChanges[0] ?? null)) {
+                $newParentRoll = trim((string)($rollChanges[0]['substitute_roll'] ?? ''));
+            }
+        }
         if ($newParentRoll === '') {
             echo json_encode(['ok' => false, 'error' => 'Suggested parent roll missing in request']);
             break;
