@@ -142,6 +142,10 @@ $lowStockCount = 0;
 $r = $db->query("SELECT COUNT(*) AS c FROM paper_stock WHERE status = 'Available' AND length_mtr < 500");
 if ($r) $lowStockCount = (int)$r->fetch_assoc()['c'];
 
+$canUseQrScanner = function_exists('canAccessPath')
+  ? canAccessPath('/modules/scan/index.php')
+  : false;
+
 $pageTitle = 'Dashboard';
 include __DIR__ . '/../../includes/header.php';
 ?>
@@ -398,6 +402,7 @@ $barPalette = ['#16a34a','#0ea5e9','#f59e0b','#8b5cf6','#ef4444','#14b8a6','#647
     .db-qr-type-url{background:#f1f5f9;color:#475569}
     .db-qr-result-ok{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px}
     .db-qr-result-err{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 14px}
+    .db-qr-result-denied{background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:12px 14px}
     .db-qr-label{font-size:.82rem;font-weight:700;color:#0f172a;margin-bottom:10px;line-height:1.4}
     .db-qr-go{display:block;width:100%;padding:10px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-size:.82rem;font-weight:800;cursor:pointer;text-align:center;text-decoration:none;box-sizing:border-box}
     .db-qr-go:hover{background:#6d28d9;color:#fff}
@@ -408,14 +413,20 @@ $barPalette = ['#16a34a','#0ea5e9','#f59e0b','#8b5cf6','#ef4444','#14b8a6','#647
     <div class="card mb-20">
       <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
         <span class="card-title"><i class="bi bi-qr-code-scan" style="color:#7c3aed"></i> ERP QR Scanner</span>
-        <button id="db-qr-toggle" onclick="dbQrToggle()">
+        <button id="db-qr-toggle" onclick="dbQrToggle()" <?= $canUseQrScanner ? '' : 'disabled title="No scanner permission" style="opacity:.5;cursor:not-allowed"' ?>>
           <i class="bi bi-camera-video" id="db-qr-icon"></i>
-          <span id="db-qr-btn-text">Tap to Scan</span>
+          <span id="db-qr-btn-text"><?= $canUseQrScanner ? 'Tap to Scan' : 'Permission Required' ?></span>
         </button>
       </div>
       <div id="db-qr-viewport"><div id="db-qr-reader" style="width:100%"></div></div>
       <div class="card-body">
         <div id="db-qr-result" style="display:none"></div>
+        <?php if (!$canUseQrScanner): ?>
+        <div class="db-qr-result-denied">
+          <div style="display:flex;align-items:center;gap:8px;color:#c2410c;font-weight:700;margin-bottom:8px"><i class="bi bi-shield-lock-fill"></i> Scanner Access Restricted</div>
+          <div style="font-size:.8rem;color:#7c2d12">Your user group does not have permission for QR scanning. Ask admin to enable <strong>Physical Stock Scan Terminal</strong> in Group Permissions.</div>
+        </div>
+        <?php endif; ?>
         <div id="db-qr-idle" style="text-align:center;padding:14px 0;color:#94a3b8">
           <i class="bi bi-qr-code" style="font-size:2.2rem;opacity:.25;display:block;margin-bottom:8px"></i>
           <div style="font-size:.78rem">Tap <strong>Tap to Scan</strong> and point camera at any ERP QR code<br><span style="font-size:.7rem;opacity:.7">Roll labels &nbsp;·&nbsp; Job cards &nbsp;·&nbsp; Slitting sheets</span></div>
@@ -444,11 +455,16 @@ $barPalette = ['#16a34a','#0ea5e9','#f59e0b','#8b5cf6','#ef4444','#14b8a6','#647
 (function(){
   'use strict';
   var RESOLVE = '<?= BASE_URL ?>/modules/scan/index.php?action=resolve';
+  var SCAN_ALLOWED = <?= $canUseQrScanner ? 'true' : 'false' ?>;
   var scanner  = null;
   var active   = false;
   var cooldown = false;
 
   window.dbQrToggle = function(){
+    if (!SCAN_ALLOWED) {
+      showResult({ok: false, error: 'Access denied. Your group does not have scanner permission.'});
+      return;
+    }
     active ? stopScan() : startScan();
   };
 

@@ -486,9 +486,6 @@ function canAccessPath($path) {
     if ($path === '/auth/logout.php') return true;
     if ($path === '/modules/dashboard/index.php') return true;
 
-    // QR scanning and view-only pages — accessible to all logged-in users.
-    if ($path === '/modules/scan/job.php') return true;     // job card QR viewer
-
     if (isAdmin()) return true;
 
     // Jobs API is used by Live Floor / Job Card pages for data fetch.

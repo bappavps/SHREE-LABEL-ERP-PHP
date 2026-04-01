@@ -16,16 +16,28 @@ if (($_GET['action'] ?? '') === 'resolve') {
     $raw = trim((string)($_POST['qr'] ?? $_GET['qr'] ?? ''));
     if ($raw === '') { echo json_encode(['ok' => false, 'error' => 'Empty QR']); exit; }
 
-    // 1. Job card URL: contains modules/scan/job.php?jn=
-    if (preg_match('/modules\/scan\/job\.php\?jn=(.+)$/i', $raw, $m)) {
+    // 1. Job card URL: contains modules/scan/job.php?jn= OR dossier.php?jn=
+    if (preg_match('/modules\/scan\/(?:job|dossier)\.php\?jn=(.+)$/i', $raw, $m)) {
         $jn = urldecode($m[1]);
         echo json_encode(['ok' => true, 'type' => 'job',
-            'label' => 'Job Card: ' . $jn,
-            'url'   => BASE_URL . '/modules/scan/job.php?jn=' . urlencode($jn)]); exit;
+            'label' => 'Job Journey: ' . $jn,
+            'url'   => BASE_URL . '/modules/scan/dossier.php?jn=' . urlencode($jn)]); exit;
     }
-    // 2. Any full ERP URL
-    if (stripos($raw, BASE_URL) === 0) {
-        echo json_encode(['ok' => true, 'type' => 'url', 'label' => 'ERP Page', 'url' => $raw]); exit;
+    // 2. Roll view URL (from printed label QR): .../paper_stock/view.php?id=N
+    if (preg_match('/modules\/paper_stock\/view\.php\?id=(\d+)/i', $raw, $m)) {
+        $rollId = (int)$m[1];
+        $stmt = $db->prepare("SELECT id, roll_no, paper_type, status FROM paper_stock WHERE id = ? LIMIT 1");
+        $stmt->bind_param('i', $rollId); $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        if ($row) {
+            echo json_encode(['ok' => true, 'type' => 'roll',
+                'label' => 'Roll ' . $row['roll_no'] . ' — ' . ($row['paper_type'] ?? '') . ' (' . ($row['status'] ?? '') . ')',
+                'url'   => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$row['id']]);
+        } else {
+            echo json_encode(['ok' => false, 'type' => 'roll_not_found',
+                'error' => 'Roll ID ' . $rollId . ' not found in ERP.']);
+        }
+        exit;
     }
     // 3. Roll label QR payload: "Roll: XXXX | Type: ..."
     if (preg_match('/^ROLL\s*:\s*([^\|]+)/i', $raw, $m)) {
@@ -43,14 +55,18 @@ if (($_GET['action'] ?? '') === 'resolve') {
         }
         exit;
     }
-    // 4. Slitting traceability JSON QR
+    // 4. Any full ERP URL (only when BASE_URL is non-empty to avoid false matches)
+    if (BASE_URL !== '' && stripos($raw, BASE_URL) === 0) {
+        echo json_encode(['ok' => true, 'type' => 'url', 'label' => 'ERP Page', 'url' => $raw]); exit;
+    }
+    // 5. Slitting traceability JSON QR
     $decoded = json_decode($raw, true);
     if (is_array($decoded) && ($decoded['type'] ?? '') === 'slitting-traceability') {
         echo json_encode(['ok' => true, 'type' => 'slitting',
             'label' => 'Slitting Batch: ' . ($decoded['batch_no'] ?? ''),
             'url'   => BASE_URL . '/modules/inventory/slitting/index.php']); exit;
     }
-    // 5. Plain roll number guess (short alphanumeric/slash/hyphen)
+    // 6. Plain roll number guess (short alphanumeric/slash/hyphen)
     if (preg_match('/^[A-Z0-9\/\-]+$/i', $raw) && strlen($raw) <= 30) {
         $rollNo = strtoupper(trim($raw));
         $stmt = $db->prepare("SELECT id, roll_no, paper_type, status FROM paper_stock WHERE UPPER(TRIM(roll_no)) = ? LIMIT 1");

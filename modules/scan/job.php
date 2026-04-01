@@ -27,7 +27,8 @@ if ($jn === '') {
         SELECT j.*,
                ps.paper_type, ps.company AS supplier, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,
                p.job_name AS planning_job_name, p.status AS planning_status,
-               p.priority AS planning_priority, p.machine, p.operator_name, p.scheduled_date, p.notes AS planning_notes,
+           p.priority AS planning_priority, p.machine, p.operator_name, p.scheduled_date, p.notes AS planning_notes,
+           p.department AS planning_department, p.extra_data AS planning_extra_data,
                prev.job_no AS prev_job_no, prev.status AS prev_job_status
         FROM jobs j
         LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no
@@ -47,8 +48,40 @@ if ($jn === '') {
 
 // Parse extra_data fields if job found
 $extra = [];
+$planningBoardColumns = [];
+$planningBoardValues = [];
+$planningBoardImageUrl = '';
+$planningBoardImageName = '';
 if ($job) {
     $extra = json_decode((string)($job['extra_data'] ?? '{}'), true) ?: [];
+
+  $planningExtra = json_decode((string)($job['planning_extra_data'] ?? '{}'), true);
+  if (!is_array($planningExtra)) $planningExtra = [];
+
+  $planDept = trim((string)($job['planning_department'] ?? ''));
+  if ($planDept === '') $planDept = 'label-printing';
+
+  $stCols = $db->prepare("SELECT col_key, col_label, col_type, sort_order
+    FROM planning_board_columns
+    WHERE department = ?
+    ORDER BY sort_order ASC, id ASC");
+  if ($stCols) {
+    $stCols->bind_param('s', $planDept);
+    $stCols->execute();
+    $planningBoardColumns = $stCols->get_result()->fetch_all(MYSQLI_ASSOC);
+    if (!empty($planningBoardColumns)) {
+      $planningBoardValues = sc_planning_values($job, $planningBoardColumns, $planningExtra);
+    }
+  }
+
+  $planningBoardImageName = trim((string)($planningExtra['image_name'] ?? ($planningExtra['planning_image_name'] ?? '')));
+  foreach (['image_path','planning_image_path','print_image_path','physical_image_path','upload_image_path'] as $ik) {
+    $ip = trim((string)($planningExtra[$ik] ?? ''));
+    if ($ip !== '') {
+      $planningBoardImageUrl = appUrl($ip);
+      break;
+    }
+  }
 }
 
 // Determine the management page link based on job_type & department
@@ -83,6 +116,45 @@ function statusColor(string $sts): array {
             : ['#f1f5f9', '#475569', '#64748b'])
     };
 }
+
+  function sc_planning_values(array $job, array $columns, array $planExtra): array {
+    $vals = [];
+    foreach ($columns as $c) {
+      $k = (string)($c['col_key'] ?? '');
+      if ($k === '') continue;
+
+      if ($k === 'sn') {
+        $vals[$k] = (string)($job['planning_id'] ?? '');
+        continue;
+      }
+      if ($k === 'printing_planning') {
+        $vals[$k] = (string)($job['planning_status'] ?? ($planExtra[$k] ?? 'Pending'));
+        continue;
+      }
+      if ($k === 'priority') {
+        $vals[$k] = (string)($job['planning_priority'] ?? ($planExtra[$k] ?? 'Normal'));
+        continue;
+      }
+      if ($k === 'name') {
+        $vals[$k] = (string)($job['planning_job_name'] ?? ($planExtra[$k] ?? ''));
+        continue;
+      }
+      if ($k === 'remarks') {
+        $vals[$k] = (string)($job['planning_notes'] ?? ($planExtra[$k] ?? ''));
+        continue;
+      }
+      if ($k === 'dispatch_date') {
+        $vals[$k] = (string)($planExtra['dispatch_date'] ?? ($job['scheduled_date'] ?? ''));
+        continue;
+      }
+      if (array_key_exists($k, $planExtra)) {
+        $vals[$k] = (string)$planExtra[$k];
+        continue;
+      }
+      $vals[$k] = '';
+    }
+    return $vals;
+  }
 
 $pageTitle = 'Job Card — ' . ($job ? htmlspecialchars($job['job_no']) : 'Not Found');
 
@@ -156,6 +228,12 @@ $pageTitle = 'Job Card — ' . ($job ? htmlspecialchars($job['job_no']) : 'Not F
     .sc-field .sf-val.brand { color: #8b5cf6; }
     .sc-field .sf-val.green { color: #16a34a; }
     .sc-field .sf-val.teal { color: #0ea5a4; }
+    .sc-plan-img {
+      width: 100%; max-height: 320px; object-fit: contain;
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+      display: block;
+    }
+    .sc-plan-img-cap { margin-top: 6px; font-size: .68rem; font-weight: 700; color: #64748b; }
 
     /* Colour lane grid */
     .sc-lane-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 4px; }
@@ -253,8 +331,11 @@ $pageTitle = 'Job Card — ' . ($job ? htmlspecialchars($job['job_no']) : 'Not F
 
   <!-- Quick actions -->
   <div class="sc-actions">
-    <a href="<?= htmlspecialchars($deptUrl) ?>" class="sc-btn sc-btn-primary">
-      <i class="bi bi-lightning-charge-fill"></i> Open in <?= htmlspecialchars($deptLabel) ?>
+    <a href="<?= BASE_URL ?>/modules/scan/dossier.php?jn=<?= urlencode($job['job_no']) ?>" class="sc-btn sc-btn-primary">
+      <i class="bi bi-journal-bookmark-fill"></i> Full Job Journey
+    </a>
+    <a href="<?= htmlspecialchars($deptUrl) ?>" class="sc-btn sc-btn-secondary">
+      <i class="bi bi-lightning-charge-fill"></i> <?= htmlspecialchars($deptLabel) ?>
     </a>
     <a href="<?= BASE_URL ?>/modules/dashboard/index.php" class="sc-btn sc-btn-ghost">
       <i class="bi bi-house"></i> Dashboard
@@ -353,7 +434,7 @@ $pageTitle = 'Job Card — ' . ($job ? htmlspecialchars($job['job_no']) : 'Not F
   <?php endif; ?>
 
   <!-- Planning -->
-  <?php if ($job['planning_job_name'] || $job['machine'] || $job['operator_name'] || $job['scheduled_date']): ?>
+  <?php if ($job['planning_job_name'] || $job['machine'] || $job['operator_name'] || $job['scheduled_date'] || !empty($planningBoardColumns) || $planningBoardImageUrl): ?>
   <div class="sc-card">
     <div class="sc-card-title"><i class="bi bi-clipboard2-check"></i> Planning</div>
     <div class="sc-grid">
@@ -371,6 +452,31 @@ $pageTitle = 'Job Card — ' . ($job ? htmlspecialchars($job['job_no']) : 'Not F
       <?php endif; ?>
       <div class="sc-field"><span class="sf-label">Priority</span><span class="sf-val"><?= htmlspecialchars($job['planning_priority'] ?? 'Normal') ?></span></div>
     </div>
+
+    <?php if (!empty($planningBoardColumns)): ?>
+      <div class="sc-card-title" style="margin-top:14px"><i class="bi bi-table"></i> Planning Board Details (All Columns)</div>
+      <div class="sc-grid">
+        <?php foreach ($planningBoardColumns as $pc):
+          $pKey = (string)($pc['col_key'] ?? '');
+          if ($pKey === '') continue;
+          $pLabel = (string)($pc['col_label'] ?? $pKey);
+          $pVal = trim((string)($planningBoardValues[$pKey] ?? ''));
+        ?>
+          <div class="sc-field">
+            <span class="sf-label"><?= htmlspecialchars($pLabel) ?></span>
+            <span class="sf-val"><?= htmlspecialchars($pVal !== '' ? $pVal : '—') ?></span>
+          </div>
+        <?php endforeach; ?>
+      </div>
+    <?php endif; ?>
+
+    <?php if ($planningBoardImageUrl): ?>
+      <div class="sc-card-title" style="margin-top:14px"><i class="bi bi-image"></i> Planning Board Job Image</div>
+      <img src="<?= htmlspecialchars($planningBoardImageUrl) ?>" alt="Planning board image" class="sc-plan-img">
+      <?php if ($planningBoardImageName): ?>
+        <div class="sc-plan-img-cap">File: <?= htmlspecialchars($planningBoardImageName) ?></div>
+      <?php endif; ?>
+    <?php endif; ?>
   </div>
   <?php endif; ?>
 
@@ -397,7 +503,10 @@ $pageTitle = 'Job Card — ' . ($job ? htmlspecialchars($job['job_no']) : 'Not F
 
   <!-- Bottom action row -->
   <div class="sc-actions" style="margin-top:4px">
-    <a href="<?= htmlspecialchars($deptUrl) ?>" class="sc-btn sc-btn-secondary">
+    <a href="<?= BASE_URL ?>/modules/scan/dossier.php?jn=<?= urlencode($job['job_no']) ?>" class="sc-btn sc-btn-secondary">
+      <i class="bi bi-journal-bookmark-fill"></i> Full Journey &amp; Print
+    </a>
+    <a href="<?= htmlspecialchars($deptUrl) ?>" class="sc-btn sc-btn-ghost">
       <i class="bi bi-box-arrow-up-right"></i> Open Full View
     </a>
     <button onclick="window.print()" class="sc-btn sc-btn-ghost">
