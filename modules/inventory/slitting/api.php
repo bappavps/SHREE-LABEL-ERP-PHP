@@ -215,7 +215,7 @@ try {
         $normalizedPaperType = normalizeMaterial($paperType);
 
         // Find all available rolls, then do tolerant material matching in PHP.
-        $stmt = $db->prepare("SELECT * FROM paper_stock WHERE status IN ('Stock','Main','Available') AND width_mm >= ? ORDER BY width_mm ASC, length_mtr DESC");
+        $stmt = $db->prepare("SELECT * FROM paper_stock WHERE status IN ('Stock','Main') AND width_mm >= ? ORDER BY width_mm ASC, length_mtr DESC");
         $stmt->bind_param('d', $targetWidth);
         $stmt->execute();
         $candidateRolls = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -278,14 +278,38 @@ try {
     // GET PLANNING JOBS — pending jobs that need slitting
     // ═════════════════════════════════════════════════════════
     case 'get_planning_jobs':
+        $planningIdFilter = (int)($_GET['planning_id'] ?? 0);
+        $planNoFilter = trim((string)($_GET['plan_no'] ?? ''));
+
         // Planning is the single source of truth for auto slitting queue.
-        // Only pending jobs are eligible for execution.
-        $rows = $db->query("SELECT p.*, so.material_type, so.label_width_mm, so.label_length_mm, so.quantity
-            FROM planning p
-            LEFT JOIN sales_orders so ON p.sales_order_id = so.id
-            WHERE p.status = 'Pending'
-            ORDER BY p.id ASC
-            LIMIT 100")->fetch_all(MYSQLI_ASSOC);
+        // Default mode: only pending jobs.
+        // Accept mode (planning_id/plan_no provided): force-return requested planning row.
+        if ($planningIdFilter > 0) {
+            $stmt = $db->prepare("SELECT p.*, so.material_type, so.label_width_mm, so.label_length_mm, so.quantity
+                FROM planning p
+                LEFT JOIN sales_orders so ON p.sales_order_id = so.id
+                WHERE p.id = ?
+                LIMIT 1");
+            $stmt->bind_param('i', $planningIdFilter);
+            $stmt->execute();
+            $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        } elseif ($planNoFilter !== '') {
+            $stmt = $db->prepare("SELECT p.*, so.material_type, so.label_width_mm, so.label_length_mm, so.quantity
+                FROM planning p
+                LEFT JOIN sales_orders so ON p.sales_order_id = so.id
+                WHERE p.job_no = ?
+                LIMIT 1");
+            $stmt->bind_param('s', $planNoFilter);
+            $stmt->execute();
+            $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        } else {
+            $rows = $db->query("SELECT p.*, so.material_type, so.label_width_mm, so.label_length_mm, so.quantity
+                FROM planning p
+                LEFT JOIN sales_orders so ON p.sales_order_id = so.id
+                WHERE p.status = 'Pending'
+                ORDER BY p.id ASC
+                LIMIT 100")->fetch_all(MYSQLI_ASSOC);
+        }
 
         // Merge extra_data JSON fields into each row so JS can read them directly
         foreach ($rows as &$row) {

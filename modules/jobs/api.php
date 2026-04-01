@@ -1261,6 +1261,16 @@ try {
             break;
         }
 
+        // Safety: manager apply mode can update only one selected parent group.
+        foreach ($rows as $r) {
+            if (!is_array($r)) continue;
+            $rowParent = trim((string)($r['parent_roll_no'] ?? ''));
+            if ($rowParent !== '' && strcasecmp($rowParent, $oldParentRoll) !== 0) {
+                echo json_encode(['ok' => false, 'error' => 'Selected-parent-only rule violated. Please edit only one parent roll group.']);
+                break 2;
+            }
+        }
+
         // Keep same guard rails as accept flow for downstream progression.
         $chain = jobs_get_chain_jobs($db, $jobId);
         $blocked = [];

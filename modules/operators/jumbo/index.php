@@ -38,7 +38,7 @@ $db->query("CREATE TABLE IF NOT EXISTS job_change_requests (
   INDEX idx_jcr_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-$jobsStmt = $db->prepare("\n  SELECT j.*,\n         ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,\n         ps.status AS roll_status, ps.lot_batch_no,\n         p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority,\n         COALESCE(req.pending_count, 0) AS pending_change_requests\n  FROM jobs j\n  LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no\n  LEFT JOIN planning p ON j.planning_id = p.id\n  LEFT JOIN (\n    SELECT job_id, COUNT(*) AS pending_count\n    FROM job_change_requests\n    WHERE request_type = 'jumbo_roll_update' AND status = 'Pending'\n    GROUP BY job_id\n  ) req ON req.job_id = j.id\n  WHERE j.job_type = 'Slitting'\n    AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')\n  ORDER BY j.created_at DESC, j.id DESC\n");
+$jobsStmt = $db->prepare("\n  SELECT j.*,\n         ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,\n         ps.status AS roll_status, ps.lot_batch_no,\n         p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority,\n         COALESCE(req.pending_count, 0) AS pending_change_requests,\n         lreq.latest_request_id, lreq.latest_request_status, lreq.latest_request_review_note, lreq.latest_request_reviewed_at\n  FROM jobs j\n  LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no\n  LEFT JOIN planning p ON j.planning_id = p.id\n  LEFT JOIN (\n    SELECT job_id, COUNT(*) AS pending_count\n    FROM job_change_requests\n    WHERE request_type = 'jumbo_roll_update' AND status = 'Pending'\n    GROUP BY job_id\n  ) req ON req.job_id = j.id\n  LEFT JOIN (\n    SELECT t.job_id, t.id AS latest_request_id, t.status AS latest_request_status, t.review_note AS latest_request_review_note, t.reviewed_at AS latest_request_reviewed_at\n    FROM job_change_requests t\n    INNER JOIN (\n      SELECT job_id, MAX(id) AS max_id\n      FROM job_change_requests\n      WHERE request_type = 'jumbo_roll_update'\n      GROUP BY job_id\n    ) mx ON mx.job_id = t.job_id AND mx.max_id = t.id\n    WHERE t.request_type = 'jumbo_roll_update'\n  ) lreq ON lreq.job_id = j.id\n  WHERE j.job_type = 'Slitting'\n    AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')\n  ORDER BY j.created_at DESC, j.id DESC\n");
 $jobsStmt->execute();
 $allJumboRows = $jobsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
@@ -317,6 +317,9 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-request-box{margin-top:14px;padding:12px 14px;border:1px dashed #cbd5e1;border-radius:10px;background:#f8fafc}
 .jc-request-state{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;background:#fef3c7;color:#92400e;font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
 .jc-request-chip{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;background:#fef3c7;color:#92400e;font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.jc-request-chip.pending{background:#fef3c7;color:#92400e}
+.jc-request-chip.rejected{background:#fee2e2;color:#991b1b}
+.jc-request-state.rejected{background:#fee2e2;color:#991b1b}
 .jc-roll-check{margin-top:12px;padding:12px 14px;border-radius:10px;border:1px solid #dbe3ea;background:#f8fafc}
 .jc-roll-check.ok{border-color:#bbf7d0;background:#f0fdf4}
 .jc-roll-check.bad{border-color:#fecaca;background:#fef2f2}
@@ -484,7 +487,9 @@ $historyCount = $finishedCount;
       <div class="jc-jobno"><i class="bi bi-box-seam"></i> <?= e($job['job_no']) ?></div>
       <div style="display:flex;gap:6px;align-items:center">
         <?php if ((int)($job['pending_change_requests'] ?? 0) > 0): ?>
-          <span class="jc-request-chip">Request Pending</span>
+          <span class="jc-request-chip pending">Request Pending</span>
+        <?php elseif (strtolower(trim((string)($job['latest_request_status'] ?? ''))) === 'rejected'): ?>
+          <span class="jc-request-chip rejected">Request Rejected</span>
         <?php endif; ?>
         <span class="jc-badge jc-badge-<?= $stsClass ?>"><?= e($sts) ?></span>
         <?php if ($pri !== 'Normal'): ?>
@@ -2287,6 +2292,9 @@ async function openJobDetail(id, mode) {
   const stsClass = {Pending:'pending',Running:'running',Closed:'completed',Finalized:'completed'}[sts]||'pending';
   const extra = job.extra_data_parsed || {};
   const hasPendingRequest = Number(job.pending_change_requests || 0) > 0;
+  const latestReqStatus = String(job.latest_request_status || '').trim().toLowerCase();
+  const hasRejectedRequest = (!hasPendingRequest && latestReqStatus === 'rejected');
+  const latestReviewNote = String(job.latest_request_review_note || '').trim();
   const createdAt = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
   const startedAt = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
   const completedAt = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
@@ -2566,7 +2574,7 @@ async function openJobDetail(id, mode) {
     fHtml += `<button class="jc-action-btn jc-btn-start" onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-fill"></i> Start Job</button>`;
   }
   fHtml += '</div>';
-  fHtml += `<div id="dm-footer-edit-actions" style="display:none;align-items:center;gap:8px;">${isFinishedJob ? `<span class="jc-request-state">Finished - Edit Locked</span>` : (hasPendingRequest ? `<span class="jc-request-state">Requesting Approval</span>` : `<button id="dm-request-roll-btn-footer" class="jc-action-btn jc-btn-complete" onclick="submitChangeRequest(${job.id})" disabled data-roll-valid="0" data-validation-message="Enter replacement parent roll number."><i class="bi bi-send"></i> Request Change Roll</button>`)}</div>`;
+  fHtml += `<div id="dm-footer-edit-actions" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;">${isFinishedJob ? `<span class="jc-request-state">Finished - Edit Locked</span>` : (hasPendingRequest ? `<span class="jc-request-state">Requesting Approval</span>` : (hasRejectedRequest ? `<span class="jc-request-state rejected">Request Rejected</span>${latestReviewNote ? `<span style="font-size:.72rem;color:#991b1b;font-weight:700">Reason: ${esc(latestReviewNote)}</span>` : ''}<button id="dm-request-roll-btn-footer" class="jc-action-btn jc-btn-complete" onclick="submitChangeRequest(${job.id})" disabled data-roll-valid="0" data-validation-message="Enter replacement parent roll number."><i class="bi bi-arrow-repeat"></i> Send Request Again</button>` : `<button id="dm-request-roll-btn-footer" class="jc-action-btn jc-btn-complete" onclick="submitChangeRequest(${job.id})" disabled data-roll-valid="0" data-validation-message="Enter replacement parent roll number."><i class="bi bi-send"></i> Request Change Roll</button>`))}</div>`;
   document.getElementById('dm-footer').innerHTML = fHtml;
 
   // Disable operator entry fields unless in complete mode

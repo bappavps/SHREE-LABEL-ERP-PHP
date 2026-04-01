@@ -17,6 +17,14 @@ $csrf = generateCSRF();
 // Pre-load URL params
 $preloadRoll  = trim($_GET['rollNo'] ?? '');
 $preloadRolls = trim($_GET['rolls'] ?? '');
+$sourceFlow   = trim($_GET['from'] ?? '');
+$acceptRequestId = (int)($_GET['request_id'] ?? 0);
+$acceptJobId = (int)($_GET['job_id'] ?? 0);
+$acceptOldParentRoll = trim($_GET['old_parent_roll'] ?? '');
+$acceptOldParentPrevStatus = trim($_GET['old_parent_prev_status'] ?? 'Main');
+$acceptPlanningId = (int)($_GET['planning_id'] ?? 0);
+$acceptPlanNo = trim($_GET['plan_no'] ?? '');
+$isAcceptMode = ($sourceFlow === 'jumbo_accept' || $acceptRequestId > 0 || $acceptJobId > 0);
 
 $pageTitle = 'Industrial Slitting Terminal';
 include __DIR__ . '/../../../includes/header.php';
@@ -343,7 +351,7 @@ include __DIR__ . '/../../../includes/header.php';
             </select>
           </div>
         </div>
-        <button class="btn btn-primary btn-full" id="btnExecuteBatch" disabled><i class="bi bi-play-circle"></i> Execute Batch</button>
+        <button class="btn btn-primary btn-full" id="btnExecuteBatch" disabled><i class="bi bi-play-circle"></i> <?= $isAcceptMode ? 'Update Roll' : 'Execute Batch' ?></button>
       </div>
     </div>
 
@@ -455,8 +463,16 @@ include __DIR__ . '/../../../includes/header.php';
 // ════════════════════════════════════════════════════════════════
 const SLT = (() => {
   const API  = '<?= BASE_URL ?>/modules/inventory/slitting/api.php';
+  const JOBS_API = '<?= BASE_URL ?>/modules/jobs/api.php';
   const CSRF = '<?= e($csrf) ?>';
   const CURRENT_OPERATOR = '<?= e(trim((string)($_SESSION['user_name'] ?? '')) ?: 'Operator') ?>';
+  const SOURCE_FLOW = '<?= e($sourceFlow) ?>';
+  const ACCEPT_REQUEST_ID = <?= (int)$acceptRequestId ?>;
+  const ACCEPT_JOB_ID = <?= (int)$acceptJobId ?>;
+  const ACCEPT_OLD_PARENT_ROLL = '<?= e($acceptOldParentRoll) ?>';
+  const ACCEPT_OLD_PARENT_PREV_STATUS = '<?= e($acceptOldParentPrevStatus) ?>';
+  const ACCEPT_PLANNING_ID = <?= (int)$acceptPlanningId ?>;
+  const ACCEPT_PLAN_NO = '<?= e($acceptPlanNo) ?>';
 
   // ── State ──────────────────────────────────────────────────
   let plannerJobs     = [];
@@ -475,6 +491,15 @@ const SLT = (() => {
 
   // ── Init ───────────────────────────────────────────────────
   function init() {
+    setExecuteButtonLabel();
+    if (isAcceptMode()) {
+      plannerFilter = 'all';
+      const plannerSearch = document.getElementById('plannerSearch');
+      if (plannerSearch) {
+        plannerSearch.value = '';
+        plannerSearch.disabled = true;
+      }
+    }
     bindTabs();
     bindScanInput();
     loadMachines();
@@ -895,6 +920,7 @@ const SLT = (() => {
   function renderBatchStatus() {
     const el = document.getElementById('batchStatusBody');
     const execBar = document.getElementById('executeBar');
+    setExecuteButtonLabel();
 
     if (!loadedRolls.length) {
       el.innerHTML = '<div class="slt-empty"><i class="bi bi-bar-chart"></i><p>Load rolls and configure slits to see batch status</p></div>';
@@ -1236,9 +1262,50 @@ const SLT = (() => {
     cfg.remainderAction = 'ADJUST'; // no remainder in equal divide
   }
 
+  function isAcceptMode() {
+    if (SOURCE_FLOW === 'jumbo_accept') return true;
+    if (ACCEPT_REQUEST_ID > 0) return true;
+    if (ACCEPT_JOB_ID > 0) return true;
+    return false;
+  }
+
+  function getExecuteButtonLabel() {
+    return isAcceptMode() ? 'Update Roll' : 'Execute Batch';
+  }
+
+  function setExecuteButtonLabel() {
+    const btn = document.getElementById('btnExecuteBatch');
+    if (!btn) return;
+    btn.innerHTML = '<i class="bi bi-play-circle"></i> ' + getExecuteButtonLabel();
+  }
+
+  function getAcceptScopedJobs(list) {
+    const src = Array.isArray(list) ? list : [];
+    if (!isAcceptMode()) return src;
+
+    let scoped = src;
+    if (ACCEPT_PLANNING_ID > 0) {
+      scoped = scoped.filter(j => Number(j.id || 0) === ACCEPT_PLANNING_ID);
+    }
+    if (!scoped.length && String(ACCEPT_PLAN_NO || '').trim()) {
+      const planNo = String(ACCEPT_PLAN_NO).trim().toUpperCase();
+      scoped = src.filter(j => String(j.job_no || '').trim().toUpperCase() === planNo);
+    }
+    return scoped;
+  }
+
   // ── Auto Planner ───────────────────────────────────────────
   async function loadPlannerJobs() {
-    const data = await apiGet('get_planning_jobs');
+    const planningParams = {};
+    if (isAcceptMode()) {
+      if (ACCEPT_PLANNING_ID > 0) {
+        planningParams.planning_id = ACCEPT_PLANNING_ID;
+      }
+      if (String(ACCEPT_PLAN_NO || '').trim()) {
+        planningParams.plan_no = String(ACCEPT_PLAN_NO || '').trim();
+      }
+    }
+    const data = await apiGet('get_planning_jobs', Object.keys(planningParams).length ? planningParams : null);
     if (!data.ok) {
       plannerJobs = [];
       document.getElementById('plannerJobList').innerHTML = '<div class="slt-empty"><i class="bi bi-exclamation-triangle"></i><p>Unable to load planning jobs</p></div>';
@@ -1246,14 +1313,30 @@ const SLT = (() => {
       return;
     }
     plannerJobs = data.jobs || [];
+    if (isAcceptMode()) {
+      const scoped = getAcceptScopedJobs(plannerJobs);
+      if (scoped.length) {
+        const selectedStillValid = selectedJob && scoped.some(j => Number(j.id || 0) === Number(selectedJob.id || 0));
+        if (!selectedStillValid) {
+          selectedJob = scoped[0];
+          autofillSelectedPlanNo();
+        }
+      } else {
+        selectedJob = null;
+      }
+    }
     renderPlannerTabs();
     renderPlannerJobs();
+    renderJobDetail();
+    renderConfig();
+    renderBatchStatus();
   }
 
   function renderPlannerTabs() {
     const el = document.getElementById('plannerStatusTabs');
-    const counts = { all: plannerJobs.length };
-    plannerJobs.forEach(j => {
+    const jobsForTabs = getAcceptScopedJobs(plannerJobs);
+    const counts = { all: jobsForTabs.length };
+    jobsForTabs.forEach(j => {
       const pp = (j.printing_planning || j.status || 'Pending').toLowerCase();
       counts[pp] = (counts[pp] || 0) + 1;
     });
@@ -1269,21 +1352,22 @@ const SLT = (() => {
   }
 
   function setPlannerFilter(f) {
-    plannerFilter = f;
+    plannerFilter = isAcceptMode() ? 'all' : f;
     renderPlannerTabs();
     renderPlannerJobs(document.getElementById('plannerSearch').value);
   }
 
   function renderPlannerJobs(filter) {
     const el = document.getElementById('plannerJobList');
-    let jobs = plannerJobs;
-    if (filter) {
-      const f = filter.toLowerCase();
+    let jobs = getAcceptScopedJobs(plannerJobs);
+    const effectiveFilter = isAcceptMode() ? '' : (filter || '');
+    if (effectiveFilter) {
+      const f = effectiveFilter.toLowerCase();
       jobs = jobs.filter(j => (j.job_name || '').toLowerCase().includes(f) || (j.material_type || '').toLowerCase().includes(f));
     }
 
     // Apply status tab filter
-    if (plannerFilter !== 'all') {
+    if (!isAcceptMode() && plannerFilter !== 'all') {
       jobs = jobs.filter(j => {
         const s = (j.printing_planning || j.status || '').toLowerCase();
         if (plannerFilter === 'running') return s === 'running' || s === 'in progress';
@@ -1292,7 +1376,11 @@ const SLT = (() => {
     }
 
     if (!jobs.length) {
-      el.innerHTML = '<div class="slt-empty"><i class="bi bi-inbox"></i><p>No jobs found for this filter</p></div>';
+      if (isAcceptMode()) {
+        el.innerHTML = '<div class="slt-empty"><i class="bi bi-exclamation-triangle"></i><p>No planner job found for this accepted request.</p></div>';
+      } else {
+        el.innerHTML = '<div class="slt-empty"><i class="bi bi-inbox"></i><p>No jobs found for this filter</p></div>';
+      }
       return;
     }
 
@@ -1410,6 +1498,7 @@ const SLT = (() => {
       supplierSelect.innerHTML += `<option value="${esc(s)}" style="background:#1e293b;color:#fff">${esc(s)}</option>`;
     });
     supplierSelect.value = 'all';
+    supplierSelect.disabled = false;
     supplierSelect.onchange = function() {
       selectedSupplier = this.value;
       renderStockOptions(targetWidth, reqMtrs);
@@ -1629,7 +1718,11 @@ const SLT = (() => {
 
   // ── Execute Batch ──────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('btnExecuteBatch').addEventListener('click', executeBatch);
+    const btn = document.getElementById('btnExecuteBatch');
+    if (btn) {
+      setExecuteButtonLabel();
+      btn.addEventListener('click', executeBatch);
+    }
   });
 
   async function executeBatch() {
@@ -1637,7 +1730,9 @@ const SLT = (() => {
 
     const btn = document.getElementById('btnExecuteBatch');
     btn.disabled = true;
-    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Executing…';
+    btn.innerHTML = isAcceptMode()
+      ? '<i class="bi bi-hourglass-split"></i> Updating…'
+      : '<i class="bi bi-hourglass-split"></i> Executing…';
 
     const operator = (document.getElementById('execOperator').value || CURRENT_OPERATOR).trim();
     const machine  = document.getElementById('execMachine').value;
@@ -1645,7 +1740,12 @@ const SLT = (() => {
     if (!machine) {
       showToast('Please select machine first', 'warning');
       btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-play-circle"></i> Execute Batch';
+      btn.innerHTML = '<i class="bi bi-play-circle"></i> ' + getExecuteButtonLabel();
+      return;
+    }
+
+    if (isAcceptMode()) {
+      await applyAcceptRollUpdate(btn);
       return;
     }
 
@@ -1686,6 +1786,9 @@ const SLT = (() => {
       if (selectedJob && selectedJob.id) {
         fd.append('planning_id', selectedJob.id);
       }
+      if (isAcceptMode()) {
+        fd.append('execution_scenario', 'Update Roll (Manager Accept)');
+      }
 
       try {
         const res = await fetch(API, {method: 'POST', body: fd});
@@ -1722,7 +1825,128 @@ const SLT = (() => {
     }
 
     btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-play-circle"></i> Execute Batch';
+    btn.innerHTML = '<i class="bi bi-play-circle"></i> ' + getExecuteButtonLabel();
+  }
+
+  function buildManagerRowsFromTerminal() {
+    const rows = [];
+    loadedRolls.forEach(roll => {
+      const cfg = rollConfigs[roll.roll_no];
+      if (!cfg) return;
+
+      const rollNo = String(roll.roll_no || '').trim();
+      const parentLength = parseFloat(roll.length_mtr) || 0;
+      let widthIdx = 0;
+      let lengthIdx = 0;
+      let totalUsed = 0;
+
+      cfg.runs.forEach(run => {
+        const w = parseFloat(run.width) || 0;
+        const l = parseFloat(run.length) || 0;
+        const q = Math.max(1, parseInt(run.qty) || 1);
+        if (w <= 0) return;
+
+        const mode = detectModeJS(l, parentLength);
+        for (let i = 0; i < q; i++) {
+          let suffix;
+          if (mode === 'LENGTH') {
+            suffix = String(lengthIdx + 1);
+            lengthIdx++;
+          } else {
+            suffix = String.fromCharCode(65 + (widthIdx % 26));
+            const cycle = Math.floor(widthIdx / 26);
+            if (cycle > 0) suffix += cycle;
+            widthIdx++;
+          }
+
+          const bucket = String(cfg.destination || '').toUpperCase() === 'STOCK' ? 'stock' : 'child';
+          const childLength = l > 0 ? l : parentLength;
+          rows.push({
+            parent_roll_no: ACCEPT_OLD_PARENT_ROLL,
+            roll_no: rollNo + '-' + suffix,
+            bucket: bucket,
+            width: w,
+            length: childLength,
+            wastage: 0,
+            status: bucket === 'stock' ? 'Stock' : 'Job Assign',
+            remarks: ''
+          });
+          totalUsed += w;
+        }
+      });
+
+      const parentWidth = parseFloat(roll.width_mm) || 0;
+      const remainder = parentWidth - totalUsed;
+      if (remainder > 0.5 && cfg.remainderAction === 'STOCK') {
+        let remSuffix = String.fromCharCode(65 + (widthIdx % 26));
+        const remCycle = Math.floor(widthIdx / 26);
+        if (remCycle > 0) remSuffix += remCycle;
+        rows.push({
+          parent_roll_no: ACCEPT_OLD_PARENT_ROLL,
+          roll_no: rollNo + '-' + remSuffix,
+          bucket: 'stock',
+          width: parseFloat(remainder.toFixed(2)),
+          length: parentLength,
+          wastage: 0,
+          status: 'Stock',
+          remarks: 'Remainder from manager update'
+        });
+      }
+    });
+
+    return rows;
+  }
+
+  async function applyAcceptRollUpdate(btn) {
+    if (ACCEPT_JOB_ID <= 0 || ACCEPT_REQUEST_ID <= 0) {
+      showToast('Request context missing (job_id/request_id). Please reopen from Accept button.', 'error');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-play-circle"></i> ' + getExecuteButtonLabel();
+      return;
+    }
+
+    const rows = buildManagerRowsFromTerminal();
+    if (!rows.length) {
+      showToast('No valid slit rows found for update.', 'warning');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-play-circle"></i> ' + getExecuteButtonLabel();
+      return;
+    }
+
+    const body = new URLSearchParams();
+    body.set('csrf_token', CSRF);
+    body.set('action', 'apply_jumbo_manager_roll_update');
+    body.set('job_id', String(ACCEPT_JOB_ID));
+    body.set('request_id', String(ACCEPT_REQUEST_ID));
+    body.set('old_parent_roll_no', String(ACCEPT_OLD_PARENT_ROLL || ''));
+    body.set('old_parent_prev_status', String(ACCEPT_OLD_PARENT_PREV_STATUS || 'Main'));
+    body.set('rows_json', JSON.stringify(rows));
+    body.set('review_note', 'Updated from slitting manager update flow');
+
+    try {
+      const res = await fetch(JOBS_API, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'},
+        body: body.toString(),
+        credentials: 'same-origin'
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        showToast(data.error || 'Manager update failed', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-play-circle"></i> ' + getExecuteButtonLabel();
+        return;
+      }
+
+      showToast('Roll updated successfully. Redirecting…', 'success');
+      setTimeout(() => {
+        window.location.href = '<?= BASE_URL ?>/modules/jobs/jumbo/index.php';
+      }, 700);
+    } catch (err) {
+      showToast('Network error: ' + err.message, 'error');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-play-circle"></i> ' + getExecuteButtonLabel();
+    }
   }
 
   // ── History ────────────────────────────────────────────────
@@ -1786,6 +2010,7 @@ const SLT = (() => {
     const reportIdentityValue = isDirectFlexo
       ? ((primaryPrintingCard && primaryPrintingCard.job_no) ? primaryPrintingCard.job_no : (b.batch_no || 'N/A'))
       : reportIdentity;
+    const executionScenario = isAcceptMode() ? 'Update Roll (Manager Accept)' : '';
     const parentRows = Object.values(parents).filter(Boolean);
     const totalWasteMm = entries.filter(e => parseInt(e.is_remainder || 0, 10) === 1).reduce((sum, e) => sum + parseFloat(e.slit_width_mm || 0), 0);
     const qrPayload = JSON.stringify({
@@ -1824,6 +2049,9 @@ const SLT = (() => {
     html += '<div><span>Machine ID</span><strong>' + esc(b.machine || 'MANUAL_TERMINAL') + '</strong></div>';
     html += '<div><span>Operator</span><strong>' + esc(b.operator_name || '—') + '</strong></div>';
     html += '<div><span>Status</span><strong>' + esc(b.status || 'Completed') + '</strong></div>';
+    if (executionScenario) {
+      html += '<div><span>Scenario</span><strong>' + esc(executionScenario) + '</strong></div>';
+    }
     html += '</div>';
 
     html += '<div class="slt-report-section-title">Source Material Allocation</div>';
@@ -1896,6 +2124,22 @@ const SLT = (() => {
       opt.textContent = m.name + (m.type ? ' (' + m.type + ')' : '');
       sel.appendChild(opt);
     });
+
+    // Accept mode: auto-select Jumbo machine for roll update flow.
+    if (isAcceptMode() && machines.length) {
+      const jumboMachine = machines.find(m => {
+        const blob = String((m.name || '') + ' ' + (m.type || '') + ' ' + (m.section || '')).toLowerCase();
+        return blob.includes('jumbo');
+      });
+      if (jumboMachine && jumboMachine.name) {
+        sel.value = jumboMachine.name;
+      }
+    }
+
+    if (sel.value && op) {
+      op.value = CURRENT_OPERATOR;
+    }
+
     sel.addEventListener('change', function() {
       const opField = document.getElementById('execOperator');
       if (!opField) return;

@@ -69,7 +69,7 @@ $db->query("CREATE TABLE IF NOT EXISTS job_change_requests (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
 $allJumboRows = [];
-$jobsSql = "\n  SELECT j.*,\n         ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,\n         ps.status AS roll_status, ps.lot_batch_no,\n         p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority,\n         COALESCE(req.pending_count, 0) AS pending_change_requests\n  FROM jobs j\n  LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no\n  LEFT JOIN planning p ON j.planning_id = p.id\n  LEFT JOIN (\n    SELECT job_id, COUNT(*) AS pending_count\n    FROM job_change_requests\n    WHERE request_type = 'jumbo_roll_update' AND status = 'Pending'\n    GROUP BY job_id\n  ) req ON req.job_id = j.id\n  WHERE j.job_type = 'Slitting'\n    AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')\n  ORDER BY j.created_at DESC, j.id DESC\n";
+$jobsSql = "\n  SELECT j.*,\n         ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,\n         ps.status AS roll_status, ps.lot_batch_no,\n         p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority,\n         COALESCE(req.pending_count, 0) AS pending_change_requests,\n         lreq.latest_request_id, lreq.latest_request_status, lreq.latest_request_review_note, lreq.latest_request_reviewed_at\n  FROM jobs j\n  LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no\n  LEFT JOIN planning p ON j.planning_id = p.id\n  LEFT JOIN (\n    SELECT job_id, COUNT(*) AS pending_count\n    FROM job_change_requests\n    WHERE request_type = 'jumbo_roll_update' AND status = 'Pending'\n    GROUP BY job_id\n  ) req ON req.job_id = j.id\n  LEFT JOIN (\n    SELECT t.job_id, t.id AS latest_request_id, t.status AS latest_request_status, t.review_note AS latest_request_review_note, t.reviewed_at AS latest_request_reviewed_at\n    FROM job_change_requests t\n    INNER JOIN (\n      SELECT job_id, MAX(id) AS max_id\n      FROM job_change_requests\n      WHERE request_type = 'jumbo_roll_update'\n      GROUP BY job_id\n    ) mx ON mx.job_id = t.job_id AND mx.max_id = t.id\n    WHERE t.request_type = 'jumbo_roll_update'\n  ) lreq ON lreq.job_id = j.id\n  WHERE j.job_type = 'Slitting'\n    AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')\n  ORDER BY j.created_at DESC, j.id DESC\n";
 $jobsStmt = $db->prepare($jobsSql);
 if ($jobsStmt) {
   $jobsStmt->execute();
@@ -551,6 +551,8 @@ $historyCount = $finishedCount;
         <?php endif; ?>
         <?php if ($hasPendingRequest): ?>
           <span class="jc-request-state">Request Pending</span>
+        <?php elseif (strtolower(trim((string)($job['latest_request_status'] ?? ''))) === 'rejected'): ?>
+          <span class="jc-request-state" style="background:#fee2e2;color:#991b1b">Request Rejected</span>
         <?php endif; ?>
       </div>
     </div>
@@ -1726,10 +1728,9 @@ async function loadRollChangeComparison(job) {
     html += '<div class="rc-summary-box"><h4>Suggested Slits (' + esc(newRollNo || '--') + ')</h4>' + newSummary + '</div>';
     html += '</div>';
 
-    // Update / Accept / Reject buttons
+    // Accept (open edit mode) / Reject buttons
     html += '<div class="rc-footer">';
-    html += '<button class="rc-btn-update" onclick="openManagerRollUpdateEditor(' + job.id + ',' + req.id + ',\'' + escJs(curRollNo) + '\',\'' + escJs(oldPrevStatus) + '\')"><i class="bi bi-pencil-square"></i> Update Slitting</button>';
-    html += '<button class="rc-btn-accept" onclick="acceptRollChange(' + job.id + ',' + req.id + ')"><i class="bi bi-check-circle"></i> Accept: Delete &amp; Recreate with New Roll</button>';
+    html += '<button class="rc-btn-accept" onclick="openAcceptSlittingEditor(' + job.id + ',' + req.id + ',\'' + escJs(curRollNo) + '\',\'' + escJs(oldPrevStatus) + '\',\'' + escJs(newRollNo) + '\')"><i class="bi bi-check-circle"></i> Accept &amp; Open Inventory Slitting</button>';
     html += '<button class="rc-btn-reject" onclick="rejectRollChange(' + job.id + ',' + req.id + ')"><i class="bi bi-x-circle"></i> Reject Request</button>';
     html += '</div>';
 
@@ -1798,21 +1799,39 @@ function openManagerRollUpdateEditor(jobId, requestId, oldParentRoll, oldParentP
   };
 
   let html = '<div class="rc-editor">';
-  html += '<div class="rc-editor-head"><span><i class="bi bi-sliders"></i> Manager Update Mode</span><span class="rc-badge"><i class="bi bi-stars"></i> Suggested Roll Selected</span></div>';
+  html += '<div class="rc-editor-head"><span><i class="bi bi-sliders"></i> Manager Accept Mode</span><span class="rc-badge"><i class="bi bi-stars"></i> Suggested Roll Selected</span></div>';
   html += '<div class="rc-editor-body">';
   html += '<div class="rc-editor-note">Old parent <strong>' + esc(oldParent || '--') + '</strong> will be restored to previous status <strong>' + esc(RC_EDITOR_STATE.oldParentPrevStatus) + '</strong> after update.</div>';
   html += '<div class="rc-editor-grid">';
-  html += '<div class="rc-group rc-group-old"><h5>Current Old Slitting (Read-only)</h5>' + renderUpdateRowsTable(oldRows, false, 'old') + '</div>';
-  html += '<div class="rc-group rc-group-new"><h5>Suggested Roll Slitting (Editable)</h5>' + renderUpdateRowsTable(suggestedRows, true, 'new') + '</div>';
+  html += '<div class="rc-group rc-group-old"><h5>Auto Slit (Suggested Read-only Snapshot)</h5>' + renderUpdateRowsTable(oldRows, false, 'old') + '</div>';
+  html += '<div class="rc-group rc-group-new"><h5>Manual Slit (Manager Editable)</h5>' + renderUpdateRowsTable(suggestedRows, true, 'new') + '</div>';
   html += '</div>';
   html += '<div class="rc-editor-actions">';
   html += '<button class="rc-btn-update" onclick="toggleSuggestedRollSelection()"><i class="bi bi-check2-circle"></i> Use Suggested Roll</button>';
-  html += '<button id="rc-btn-apply-update" class="rc-btn-apply" onclick="applyManagerRollUpdate()"><i class="bi bi-save2"></i> Update</button>';
+  html += '<button id="rc-btn-apply-update" class="rc-btn-apply" onclick="applyManagerRollUpdate()"><i class="bi bi-save2"></i> Accept &amp; Update</button>';
   html += '</div>';
   html += '</div>';
   html += '</div>';
 
   wrap.innerHTML = html;
+}
+
+function openAcceptSlittingEditor(jobId, requestId, oldParentRoll, oldParentPrevStatus, newParentRoll) {
+  const job = ALL_JOBS.find(j => Number(j.id || 0) === Number(jobId || 0)) || null;
+  const planningId = Number(job && job.planning_id ? job.planning_id : 0);
+  const target = new URL(BASE_URL + '/modules/inventory/slitting/index.php', window.location.origin);
+  target.searchParams.set('from', 'jumbo_accept');
+  target.searchParams.set('job_id', String(jobId || ''));
+  target.searchParams.set('request_id', String(requestId || ''));
+  target.searchParams.set('old_parent_roll', String(oldParentRoll || ''));
+  target.searchParams.set('old_parent_prev_status', String(oldParentPrevStatus || 'Main'));
+  if (planningId > 0) {
+    target.searchParams.set('planning_id', String(planningId));
+  }
+  if (String(newParentRoll || '').trim()) {
+    target.searchParams.set('rollNo', String(newParentRoll).trim());
+  }
+  window.location.href = target.toString();
 }
 
 function renderUpdateRowsTable(rows, editable, prefix) {
@@ -1880,7 +1899,7 @@ function collectManagerUpdateRows() {
 async function applyManagerRollUpdate() {
   if (!RC_EDITOR_STATE) return;
   if (!RC_EDITOR_STATE.suggestedSelected) {
-    alert('Please select suggested roll before Update.');
+    alert('Please select suggested roll before Accept & Update.');
     return;
   }
   const rows = collectManagerUpdateRows();
@@ -1912,7 +1931,7 @@ async function applyManagerRollUpdate() {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
     if (data.ok) {
-      alert('Manager update applied successfully. Job metadata kept unchanged and selected roll updated.');
+      alert('Request accepted and update applied successfully. Same job card/job number kept; selected roll group updated.');
       location.reload();
       return;
     }
@@ -1920,7 +1939,7 @@ async function applyManagerRollUpdate() {
   } catch (err) {
     alert('Network error: ' + err.message);
   }
-  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-save2"></i> Update'; }
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-save2"></i> Accept &amp; Update'; }
 }
 
 function rcRow(label, value) {

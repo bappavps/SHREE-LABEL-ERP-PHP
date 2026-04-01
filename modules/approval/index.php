@@ -90,6 +90,41 @@ include __DIR__ . '/../../includes/header.php';
           </table>
         </div>
       </div>
+
+      <div class="card" id="mManagerApplyCard" style="margin-top:12px;display:none;">
+        <div class="card-header"><span class="card-title">Manager Accept Edit (Selected Parent Roll Only)</span></div>
+        <div style="padding:10px;overflow:auto;">
+          <div class="grid" style="grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:10px;">
+            <div>
+              <div style="font-size:.75rem;color:#6b7280;margin-bottom:4px;">Old Parent Roll</div>
+              <input type="text" id="mOldParent" class="form-control" readonly>
+            </div>
+            <div>
+              <div style="font-size:.75rem;color:#6b7280;margin-bottom:4px;">New Parent Roll</div>
+              <input type="text" id="mNewParent" class="form-control" placeholder="Enter replacement parent roll">
+            </div>
+            <div>
+              <div style="font-size:.75rem;color:#6b7280;margin-bottom:4px;">Review Note</div>
+              <input type="text" id="mApplyNote" class="form-control" placeholder="Manager note (optional)">
+            </div>
+          </div>
+
+          <table class="table" style="min-width:1000px;">
+            <thead>
+              <tr>
+                <th>Bucket</th>
+                <th>Roll No</th>
+                <th>Width</th>
+                <th>Length</th>
+                <th>Wastage</th>
+                <th>Status</th>
+                <th>Remarks</th>
+              </tr>
+            </thead>
+            <tbody id="mEditRows"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
     <div class="modal-footer" style="display:flex;justify-content:space-between;gap:8px;">
       <div>
@@ -98,7 +133,8 @@ include __DIR__ . '/../../includes/header.php';
       <div style="display:flex;gap:8px;align-items:center;">
         <button type="button" class="btn" id="btnCloseModalFooter">Close</button>
         <button type="button" class="btn btn-danger" id="btnReject">Reject</button>
-        <button type="button" class="btn btn-success" id="btnApprove">Approve</button>
+        <button type="button" class="btn btn-success" id="btnApprove">Accept &amp; Edit</button>
+        <button type="button" class="btn btn-success" id="btnApplyAccept" style="display:none;">Apply Accepted Change</button>
       </div>
     </div>
   </div>
@@ -111,9 +147,11 @@ include __DIR__ . '/../../includes/header.php';
   const CAN_REVIEW = <?= $canReview ? 'true' : 'false' ?>;
   const tbody = document.getElementById('reqBody');
   const modal = document.getElementById('reqModal');
+  const managerApplyCard = document.getElementById('mManagerApplyCard');
   let allRequests = [];
   let activeFilter = 'pending';
   let activeReq = null;
+  let managerEditMode = false;
 
   function toast(msg, type) {
     if (typeof showToast === 'function') { showToast(msg, type || 'info'); return; }
@@ -175,7 +213,7 @@ include __DIR__ . '/../../includes/header.php';
         <td>${r.reviewed_by_name || '-'}</td>
         <td>
           <button class="btn btn-sm" onclick="window.apOpen(${r.id})">Open</button>
-          ${canReview ? '<button class="btn btn-sm btn-success" onclick="window.apApprove(' + r.id + ')">Approve</button>' : ''}
+          ${canReview ? '<button class="btn btn-sm btn-success" onclick="window.apApprove(' + r.id + ')">Accept</button>' : ''}
           ${canReview ? '<button class="btn btn-sm btn-danger" onclick="window.apReject(' + r.id + ')">Reject</button>' : ''}
         </td>
       </tr>`;
@@ -198,10 +236,71 @@ include __DIR__ . '/../../includes/header.php';
     modal.style.display = 'none';
     modal.setAttribute('aria-hidden', 'true');
     activeReq = null;
+    managerEditMode = false;
+    managerApplyCard.style.display = 'none';
+    document.getElementById('btnApplyAccept').style.display = 'none';
+    document.getElementById('btnApprove').style.display = '';
+  }
+
+  function pickParentMapping(req) {
+    const p = req.payload || {};
+    const changes = Array.isArray(p.roll_changes) ? p.roll_changes : [];
+    if (changes.length > 0) {
+      const first = changes[0] || {};
+      return {
+        oldParent: String(first.original_roll || '').trim(),
+        newParent: String(first.substitute_roll || '').trim()
+      };
+    }
+    const rows = Array.isArray(p.rows) ? p.rows : [];
+    const oldParentFromRows = rows.map(r => String(r.parent_roll_no || '').trim()).find(Boolean) || '';
+    return {
+      oldParent: oldParentFromRows,
+      newParent: String(p.parent_roll_no || '').trim()
+    };
+  }
+
+  function buildEditRows(rows) {
+    const body = document.getElementById('mEditRows');
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#6b7280;">No rows found in request.</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map((r, i) => {
+      const bucket = String(r.bucket || 'child').toLowerCase() === 'stock' ? 'stock' : 'child';
+      return `
+      <tr data-idx="${i}">
+        <td>
+          <select class="form-control ap-row-bucket">
+            <option value="child" ${bucket === 'child' ? 'selected' : ''}>child</option>
+            <option value="stock" ${bucket === 'stock' ? 'selected' : ''}>stock</option>
+          </select>
+        </td>
+        <td><input class="form-control ap-row-roll" value="${String(r.roll_no || '')}"></td>
+        <td><input type="number" step="0.01" class="form-control ap-row-width" value="${Number(r.width || 0)}"></td>
+        <td><input type="number" step="0.01" class="form-control ap-row-length" value="${Number(r.length || 0)}"></td>
+        <td><input type="number" step="0.01" class="form-control ap-row-wastage" value="${Number(r.wastage || 0)}"></td>
+        <td><input class="form-control ap-row-status" value="${String(r.status || '')}"></td>
+        <td><input class="form-control ap-row-remarks" value="${String(r.remarks || '')}"></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function collectEditRows() {
+    return Array.from(document.querySelectorAll('#mEditRows tr[data-idx]')).map(tr => ({
+      bucket: tr.querySelector('.ap-row-bucket')?.value || 'child',
+      roll_no: tr.querySelector('.ap-row-roll')?.value || '',
+      width: Number(tr.querySelector('.ap-row-width')?.value || 0),
+      length: Number(tr.querySelector('.ap-row-length')?.value || 0),
+      wastage: Number(tr.querySelector('.ap-row-wastage')?.value || 0),
+      status: tr.querySelector('.ap-row-status')?.value || '',
+      remarks: tr.querySelector('.ap-row-remarks')?.value || ''
+    })).filter(r => String(r.roll_no || '').trim() !== '');
   }
 
   function bindModal(req) {
     activeReq = req;
+    managerEditMode = false;
     const p = req.payload || {};
     const rows = Array.isArray(p.rows) ? p.rows : [];
     document.getElementById('reqTitle').textContent = 'Request #' + req.id + ' - ' + (req.job_no || ('JOB-' + req.job_id));
@@ -213,6 +312,16 @@ include __DIR__ . '/../../includes/header.php';
     const canReview = CAN_REVIEW && String(req.status || '').toLowerCase() === 'pending';
     document.getElementById('btnApprove').disabled = !canReview;
     document.getElementById('btnReject').disabled = !canReview;
+    document.getElementById('btnApplyAccept').disabled = !canReview;
+    document.getElementById('btnApplyAccept').style.display = 'none';
+    document.getElementById('btnApprove').style.display = '';
+    managerApplyCard.style.display = 'none';
+
+    const map = pickParentMapping(req);
+    document.getElementById('mOldParent').value = map.oldParent;
+    document.getElementById('mNewParent').value = map.newParent;
+    document.getElementById('mApplyNote').value = '';
+    buildEditRows(rows);
 
     const mRows = document.getElementById('mRows');
     if (!rows.length) {
@@ -247,6 +356,52 @@ include __DIR__ . '/../../includes/header.php';
       return;
     }
     toast('Request ' + decision.toLowerCase(), 'success');
+    closeModal();
+    loadRequests(false);
+  }
+
+  function startAcceptEdit() {
+    if (!activeReq) return;
+    const canReview = CAN_REVIEW && String(activeReq.status || '').toLowerCase() === 'pending';
+    if (!canReview) return;
+    managerEditMode = true;
+    managerApplyCard.style.display = '';
+    document.getElementById('btnApplyAccept').style.display = '';
+    document.getElementById('btnApprove').style.display = 'none';
+  }
+
+  async function applyAcceptedChange() {
+    if (!activeReq || !managerEditMode) return;
+    const oldParent = String(document.getElementById('mOldParent').value || '').trim();
+    const newParent = String(document.getElementById('mNewParent').value || '').trim();
+    const note = String(document.getElementById('mApplyNote').value || '').trim() || String(document.getElementById('reviewNote').value || '').trim();
+    const rows = collectEditRows();
+
+    if (!oldParent || !newParent) {
+      toast('Old/new parent roll is required', 'error');
+      return;
+    }
+    if (!rows.length) {
+      toast('At least one row is required', 'error');
+      return;
+    }
+
+    const payload = {
+      action: 'apply_jumbo_manager_roll_update',
+      job_id: String(activeReq.job_id),
+      request_id: String(activeReq.id),
+      old_parent_roll_no: oldParent,
+      old_parent_prev_status: 'Main',
+      rows_json: JSON.stringify(rows),
+      review_note: note
+    };
+
+    const res = await apiPost(payload);
+    if (!res || !res.ok) {
+      toast((res && res.error) || 'Apply failed', 'error');
+      return;
+    }
+    toast('Accepted and applied successfully', 'success');
     closeModal();
     loadRequests(false);
   }
@@ -286,11 +441,14 @@ include __DIR__ . '/../../includes/header.php';
   document.getElementById('btnCloseModalFooter').addEventListener('click', closeModal);
   document.getElementById('btnApprove').addEventListener('click', function() {
     if (!activeReq) return;
-    review('Approved', activeReq.id);
+    startAcceptEdit();
   });
   document.getElementById('btnReject').addEventListener('click', function() {
     if (!activeReq) return;
     review('Rejected', activeReq.id);
+  });
+  document.getElementById('btnApplyAccept').addEventListener('click', function() {
+    applyAcceptedChange();
   });
   modal.addEventListener('click', function(e){ if (e.target === modal) closeModal(); });
 

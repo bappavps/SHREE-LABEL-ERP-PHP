@@ -782,6 +782,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   // ============================================================
+  // RESET TEST DATA — planning, jumbo, flexo counters + rows
+  // ============================================================
+  if ($action === 'reset_test_data') {
+    $errors = [];
+
+    // 1. Reset only planning, jumbo_job and printing_job prefix counters
+    $idg = getPrefixSettings();
+    if (!isset($idg['modules']) || !is_array($idg['modules'])) {
+      $idg['modules'] = [];
+    }
+    foreach (['planning', 'jumbo_job', 'printing_job'] as $type) {
+      if (isset($idg['modules'][$type])) {
+        $idg['modules'][$type]['counter'] = 0;
+      }
+    }
+    $settings['id_generation'] = $idg;
+    if (!saveAppSettings($settings)) {
+      $errors[] = 'Could not reset prefix counters.';
+    }
+
+    // 2. Delete database rows — jobs (jumbo + printing job cards), planning rows,
+    //    slitting batches and entries (all test slitting output)
+    try {
+      // Disable FK checks temporarily so truncates succeed regardless of references
+      $db->query("SET FOREIGN_KEY_CHECKS=0");
+      $db->query("DELETE FROM slitting_entries");
+      $db->query("DELETE FROM slitting_batches");
+      $db->query("DELETE FROM job_change_requests");
+      $db->query("DELETE FROM jobs");
+      $db->query("DELETE FROM planning");
+      $db->query("SET FOREIGN_KEY_CHECKS=1");
+    } catch (Exception $e) {
+      $errors[] = 'DB error: ' . $e->getMessage();
+    }
+
+    if (empty($errors)) {
+      setFlash('success', 'Test data reset: planning board, jumbo job cards, flexo job cards and slitting batches cleared. Counters restarted from 0001.');
+    } else {
+      setFlash('error', 'Reset partially failed: ' . implode(' ', $errors));
+    }
+
+    redirect(BASE_URL . '/modules/master/index.php?tab=prefix');
+  }
+
+  // ============================================================
   // CSV UPLOAD HANDLER
   // ============================================================
   if ($action === 'upload_master_data') {
@@ -1928,6 +1973,14 @@ if ($activeTab === 'clients' && $editClientId > 0) {
             value="reset_prefix_counters"
             onclick="return confirm('Reset all prefix counters? Next generated IDs will start from 0001.');"
           ><i class="bi bi-arrow-counterclockwise"></i> Reset All Counters to 0001</button>
+          <button
+            class="btn btn-danger"
+            type="submit"
+            name="action"
+            value="reset_test_data"
+            onclick="return confirm('⚠️ TESTING RESET\n\nThis will permanently delete:\n• All Planning Board rows\n• All Jumbo job cards\n• All Flexo/Printing job cards\n• All Slitting batches and entries\n• All Jumbo change requests\n\nAnd reset PLN / JMB / FLX counters to 0001.\n\nThis cannot be undone. Continue only on a test environment.');"
+            style="background:#dc2626;border-color:#dc2626;color:#fff"
+          ><i class="bi bi-trash3"></i> Reset Planning / Jumbo / Flexo (Testing)</button>
         </div>
       </form>
 
