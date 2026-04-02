@@ -529,6 +529,7 @@ $historyCount = $finishedCount;
   <?php foreach ($activeJobs as $idx => $job):
     $sts = $job['status'];
     $stsClass = match($sts) { 'Pending'=>'pending', 'Running'=>'running', 'Closed','Finalized'=>'completed', default=>'pending' };
+    $timerActive = !empty($job['extra_data_parsed']['timer_active']);
     $startedTs = $job['started_at'] ? strtotime($job['started_at']) * 1000 : 0;
     $rSts = $job['roll_status'] ?? '';
     $rStsClass = strtolower(str_replace(' ', '', $rSts)) === 'slitting' ? 'slitting' : $stsClass;
@@ -575,7 +576,11 @@ $historyCount = $finishedCount;
         <?php if ($sts === 'Pending' && $isOperatorView): ?>
           <button class="jc-action-btn jc-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>)"><i class="bi bi-play-fill"></i> Start</button>
         <?php elseif ($sts === 'Running' && $isOperatorView): ?>
-          <button class="jc-action-btn jc-btn-complete" onclick="openJobDetail(<?= $job['id'] ?>,'complete')"><i class="bi bi-check-lg"></i> Complete</button>
+          <?php if ($timerActive): ?>
+            <button class="jc-action-btn jc-btn-start" onclick="endRunningJumboTimer(<?= $job['id'] ?>)"><i class="bi bi-stop-fill"></i> End Timer</button>
+          <?php else: ?>
+            <button class="jc-action-btn jc-btn-complete" onclick="openJobDetail(<?= $job['id'] ?>,'complete')"><i class="bi bi-check-lg"></i> Complete</button>
+          <?php endif; ?>
         <?php else: ?>
           <button class="jc-action-btn jc-btn-view" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-folder2-open"></i> Open</button>
         <?php endif; ?>
@@ -1216,6 +1221,42 @@ let _timerInterval = null;
 let _timerStart = 0;
 let _timerJobId = null;
 
+function isJumboTimerActive(job) {
+  return !!(job && job.extra_data_parsed && job.extra_data_parsed.timer_active);
+}
+
+async function markJumboTimerEnded(jobId) {
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'end_timer_session');
+  fd.append('job_id', jobId);
+
+  const res = await fetch(API_BASE, { method: 'POST', body: fd });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'Unable to end timer');
+
+  const job = ALL_JOBS.find(j => j.id == jobId);
+  if (job) {
+    job.extra_data_parsed = job.extra_data_parsed || {};
+    job.extra_data_parsed.timer_active = false;
+    job.extra_data_parsed.timer_state = data.timer_state || 'ended';
+    job.extra_data_parsed.timer_ended_at = data.timer_ended_at || '';
+  }
+}
+
+async function endRunningJumboTimer(jobId) {
+  try {
+    await markJumboTimerEnded(jobId);
+  } catch (err) {
+    alert('Timer end failed: ' + err.message);
+    return;
+  }
+
+  const ov = document.getElementById('jcTimerOverlay');
+  if (ov) ov.remove();
+  openJobDetail(jobId, 'complete');
+}
+
 async function startJobWithTimer(id) {
   if (!confirm('Start this job?')) return;
   const fd = new FormData();
@@ -1235,6 +1276,11 @@ async function startJobWithTimer(id) {
   const job = ALL_JOBS.find(j => j.id == id) || {};
   job.status = 'Running';
   job.started_at = new Date().toISOString();
+  job.extra_data_parsed = job.extra_data_parsed || {};
+  job.extra_data_parsed.timer_active = true;
+  job.extra_data_parsed.timer_state = 'running';
+  job.extra_data_parsed.timer_started_at = new Date().toISOString();
+  job.extra_data_parsed.timer_ended_at = '';
   const jobLabel = resolveJobDisplayName(job) || ('Job #' + id);
   const jobNo = job.job_no || '';
   const rollNo = job.roll_no || '';
@@ -1287,11 +1333,9 @@ function cancelTimer() {
 function endTimer() {
   if (_timerInterval) clearInterval(_timerInterval);
   _timerInterval = null;
-  const ov = document.getElementById('jcTimerOverlay');
-  if (ov) ov.remove();
   const jobId = _timerJobId;
   _timerJobId = null;
-  openJobDetail(jobId, 'complete');
+  endRunningJumboTimer(jobId);
 }
 
 // ─── Upload photo for jumbo job ─────────────────────────────
@@ -1328,19 +1372,28 @@ async function uploadJumboPhoto(jobId) {
   }
 }
 
-// ─── Submit operator extra data + close ─────────────────────
-async function submitAndClose(id) {
-  // Gather form values
-  const form = document.getElementById('dm-operator-form');
-  if (!form) return updateJobStatus(id, 'Closed');
-
-  const extraData = {
+function buildJumboExtraDataFromForm(form) {
+  if (!form) return null;
+  return {
     actual_output_weight: form.querySelector('[name=actual_output_weight]')?.value || '',
     wastage_kg: form.querySelector('[name=wastage_kg]')?.value || '',
     roll_condition: form.querySelector('[name=roll_condition]')?.value || 'Good',
     operator_notes: form.querySelector('[name=operator_notes]')?.value || '',
     defects: Array.from(form.querySelectorAll('[name=defects]:checked')).map(c=>c.value)
   };
+}
+
+// ─── Submit operator extra data + close ─────────────────────
+async function submitAndClose(id) {
+  const job = ALL_JOBS.find(j => j.id == id) || {};
+  if (isJumboTimerActive(job)) {
+    alert('Timer is still running. Please End the timer before finishing this job.');
+    return;
+  }
+  const form = document.getElementById('dm-operator-form');
+  if (!form) return updateJobStatus(id, 'Closed');
+  const extraData = buildJumboExtraDataFromForm(form);
+  if (!extraData) return updateJobStatus(id, 'Closed');
 
   // Save extra data
   const fd1 = new FormData();
@@ -1365,6 +1418,7 @@ async function openJobDetail(id, mode) {
 
   const sts = job.status;
   const stsClass = {Pending:'pending',Running:'running',Closed:'completed',Finalized:'completed'}[sts]||'pending';
+  const timerActive = isJumboTimerActive(job);
   const extra = job.extra_data_parsed || {};
   const createdAt = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
   const startedAt = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
@@ -1604,14 +1658,19 @@ async function openJobDetail(id, mode) {
   fHtml += `<button class="jc-action-btn jc-btn-view" onclick="printLabelsForJob(${job.id})"><i class="bi bi-upc-scan"></i> Label Print</button>`;
   fHtml += '</div><div style="display:flex;gap:8px">';
   if (IS_OPERATOR_VIEW) {
-    if (mode === 'complete' && sts === 'Running') {
+    if (mode === 'complete' && sts === 'Running' && !timerActive) {
       fHtml += `<button class="jc-action-btn jc-btn-complete" onclick="submitAndClose(${job.id})" style="background:#16a34a;color:#fff;border-color:#16a34a"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
     } else if (sts === 'Pending') {
       fHtml += `<button class="jc-action-btn jc-btn-start" onclick="startJobWithTimer(${job.id})" style="background:var(--jc-brand);color:#fff;border-color:var(--jc-brand)"><i class="bi bi-play-fill"></i> Start Job</button>`;
+    } else if (sts === 'Running' && timerActive) {
+      fHtml += `<button class="jc-action-btn jc-btn-start" onclick="endRunningJumboTimer(${job.id})" style="background:#dc2626;color:#fff;border-color:#dc2626"><i class="bi bi-stop-fill"></i> End Timer</button>`;
+    } else if (sts === 'Running') {
+      fHtml += `<button class="jc-action-btn jc-btn-complete" onclick="openJobDetail(${job.id},'complete')" style="background:#16a34a;color:#fff;border-color:#16a34a"><i class="bi bi-check-lg"></i> Complete</button>`;
     }
     // No End/Complete in modal for Running unless in complete mode
   }
   if (IS_ADMIN) {
+    fHtml += `<button class="jc-action-btn jc-btn-start" onclick="regenerateJobCard(${job.id})" title="Regenerate with reason"><i class="bi bi-arrow-repeat"></i> Regenerate</button>`;
     fHtml += `<button class="jc-action-btn jc-btn-delete" onclick="deleteJob(${job.id})" title="Admin: Delete"><i class="bi bi-trash"></i></button>`;
   }
   fHtml += '</div>';
@@ -2034,6 +2093,57 @@ async function deleteJob(id) {
     }
     else alert('Error: ' + (data.error || 'Unknown'));
   } catch (err) { alert('Network error: ' + err.message); }
+}
+
+// ─── Regenerate same job card (admin) ──────────────────────
+async function regenerateJobCard(id) {
+  if (!IS_ADMIN) { alert('Access denied. Only system admin can regenerate job cards.'); return; }
+  const job = ALL_JOBS.find(j => j.id == id);
+  if (!job) { alert('Job not found.'); return; }
+
+  const reason = prompt('Reason for regeneration (required):', 'Roll correction / planning update');
+  if (reason === null) return;
+  const reasonText = String(reason || '').trim();
+  if (!reasonText) { alert('Reason is required.'); return; }
+
+  const notesAppend = prompt('Describe what changed (optional):', '');
+  if (notesAppend === null) return;
+
+  const currentRoll = String(job.roll_no || '').trim();
+  const newRollPrompt = prompt('Parent Roll No change (optional). Keep blank to retain current roll:', currentRoll);
+  if (newRollPrompt === null) return;
+  const newRoll = String(newRollPrompt || '').trim();
+
+  let changes = {};
+  const form = document.getElementById('dm-operator-form');
+  if (form) {
+    const payload = buildJumboExtraDataFromForm(form);
+    if (payload) changes = payload;
+  }
+
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'regenerate_job_card');
+  fd.append('job_id', String(id));
+  fd.append('reason', reasonText);
+  fd.append('notes_append', String(notesAppend || '').trim());
+  if (newRoll !== '' && newRoll !== currentRoll) {
+    fd.append('roll_no', newRoll);
+  }
+  fd.append('changes_json', JSON.stringify(changes));
+
+  try {
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) {
+      alert('Regenerate failed: ' + (data.error || 'Unknown error'));
+      return;
+    }
+    alert('Job card regenerated successfully. Same job number kept and status reset to Pending.');
+    location.reload();
+  } catch (err) {
+    alert('Network error: ' + err.message);
+  }
 }
 
 // ─── Print Mode Chooser & B&W Transform ────────────────────

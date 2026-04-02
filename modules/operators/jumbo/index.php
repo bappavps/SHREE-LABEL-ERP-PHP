@@ -406,6 +406,8 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-timer-actions button{padding:14px 32px;font-size:1rem;font-weight:800;border:none;border-radius:12px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;text-transform:uppercase}
 .jc-timer-btn-cancel{background:#ef4444;color:#fff}
 .jc-timer-btn-cancel:hover{background:#dc2626}
+.jc-timer-btn-pause{background:#f59e0b;color:#fff}
+.jc-timer-btn-pause:hover{background:#d97706}
 .jc-timer-btn-end{background:#16a34a;color:#fff}
 .jc-timer-btn-end:hover{background:#15803d}
 @media(max-width:600px){.jc-grid{grid-template-columns:1fr}.jc-stats{grid-template-columns:repeat(2,1fr)}.jc-detail-grid{grid-template-columns:1fr}.jc-form-row{grid-template-columns:1fr}.jc-summary-grid,.jc-timing-grid,.jc-action-bar,.jc-roll-check-grid,.jc-picker-filters{grid-template-columns:1fr}.jc-child-shell{margin-left:0}.jc-roll-pick-row{flex-wrap:wrap}.jc-roll-pick-row input{min-width:0;width:100%}.dm-change-section .jc-roll-pick-row{flex-direction:column;align-items:stretch}.dm-change-section .jc-roll-pick-row input{width:100%}.dm-change-section .jc-roll-pick-row button{width:100%;justify-content:center}.dm-change-section h3{font-size:.85rem}.dm-subst-detail-grid{grid-template-columns:1fr 1fr !important}#dm-edit-parent-table{font-size:.72rem}#dm-edit-parent-table th,#dm-edit-parent-table td{padding:6px 4px}.dm-change-roll-detail .jc-roll-check-grid{grid-template-columns:1fr 1fr}#dm-roll-change-sections{margin:0 -4px}}
@@ -475,6 +477,8 @@ $historyCount = $finishedCount;
   <?php foreach ($activeJobs as $idx => $job):
     $sts = $job['status'];
     $stsClass = match($sts) { 'Pending'=>'pending', 'Running'=>'running', 'Closed','Finalized'=>'completed', default=>'pending' };
+    $timerActive = !empty($job['extra_data_parsed']['timer_active']);
+    $timerState = strtolower(trim((string)($job['extra_data_parsed']['timer_state'] ?? '')));
     $rSts = $job['roll_status'] ?? '';
     $rStsClass = strtolower(str_replace(' ', '', $rSts)) === 'slitting' ? 'slitting' : $stsClass;
     $pri = $job['planning_priority'] ?? 'Normal';
@@ -503,7 +507,7 @@ $historyCount = $finishedCount;
       <div class="jc-card-row"><span class="jc-label">Priority</span><span class="jc-value"><?= e($job['planning_priority'] ?? 'Normal') ?></span></div>
     </div>
     <?php $startedTs = $job['started_at'] ? strtotime($job['started_at']) * 1000 : 0; ?>
-    <?php if ($sts === 'Running' && $startedTs): ?>
+    <?php if ($sts === 'Running' && $startedTs && $timerState !== 'paused'): ?>
     <div class="jc-card-row"><span class="jc-label">Elapsed</span><span class="jc-timer" data-started="<?= $startedTs ?>" style="color:var(--jc-blue);font-weight:700">00:00:00</span></div>
     <?php endif; ?>
     <div class="jc-card-foot">
@@ -512,7 +516,13 @@ $historyCount = $finishedCount;
         <?php if ($sts === 'Pending'): ?>
           <button class="jc-action-btn jc-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>)"><i class="bi bi-play-fill"></i> Start</button>
         <?php elseif ($sts === 'Running'): ?>
-          <button class="jc-action-btn jc-btn-complete" onclick="openJobDetail(<?= $job['id'] ?>,'complete')"><i class="bi bi-check-lg"></i> Complete</button>
+          <?php if ($timerState === 'paused'): ?>
+            <button class="jc-action-btn jc-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>)"><i class="bi bi-play-circle"></i> Again Start</button>
+          <?php elseif ($timerActive): ?>
+            <button class="jc-action-btn jc-btn-start" onclick="resumeRunningJumboTimer(<?= $job['id'] ?>)"><i class="bi bi-play-circle"></i> Open Timer</button>
+          <?php else: ?>
+            <button class="jc-action-btn jc-btn-complete" onclick="openJobDetail(<?= $job['id'] ?>,'complete')"><i class="bi bi-check-lg"></i> Complete</button>
+          <?php endif; ?>
         <?php else: ?>
           <button class="jc-action-btn jc-btn-view" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-folder2-open"></i> Open</button>
         <?php endif; ?>
@@ -800,6 +810,152 @@ const DM_AUTO_REFRESH_MS = 45000;
 let _timerInterval = null;
 let _timerStart = null;
 let _timerJobId = null;
+let _timerBaseSeconds = 0;
+
+function isJumboTimerActive(job) {
+  return !!(job && job.extra_data_parsed && job.extra_data_parsed.timer_active);
+}
+
+function jumboTimerStartMs(job) {
+  if (!job) return Date.now();
+  const startedRaw = (job.extra_data_parsed && job.extra_data_parsed.timer_started_at) || job.started_at || '';
+  const parsed = startedRaw ? Date.parse(String(startedRaw).replace(' ', 'T')) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : Date.now();
+}
+
+function jumboTimerTotalSeconds(job) {
+  if (!job) return 0;
+  const extra = job.extra_data_parsed || {};
+  const base = Math.max(0, Number(extra.timer_accumulated_seconds || 0));
+  if (!extra.timer_active) return Math.floor(base);
+  const resumedRaw = extra.timer_last_resumed_at || extra.timer_started_at || job.started_at || '';
+  const resumedAt = resumedRaw ? Date.parse(String(resumedRaw).replace(' ', 'T')) : NaN;
+  if (!Number.isFinite(resumedAt) || resumedAt <= 0) return Math.floor(base);
+  return Math.floor(base + ((Date.now() - resumedAt) / 1000));
+}
+
+function showJumboTimerOverlay(job) {
+  if (!job) return;
+  const existing = document.getElementById('jcTimerOverlay');
+  if (existing) existing.remove();
+
+  _timerJobId = Number(job.id || 0);
+  _timerStart = jumboTimerStartMs(job);
+  _timerBaseSeconds = jumboTimerTotalSeconds(job);
+
+  const jobNo = job.job_no || '';
+  const jobLabel = job.planning_job_name || ('Job #' + _timerJobId);
+  const rollNo = job.roll_no || '';
+  const paperType = job.paper_type || '';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'jc-timer-overlay';
+  overlay.id = 'jcTimerOverlay';
+  overlay.innerHTML = `
+    <div class="jc-timer-jobinfo">
+      <div style="font-size:1.3rem;font-weight:900;letter-spacing:.03em">${esc(jobNo)}</div>
+      <div style="margin-top:4px">${esc(jobLabel)}</div>
+      ${rollNo || paperType ? `<div style="margin-top:4px;font-size:.85rem;opacity:.8">${esc(rollNo)}${rollNo && paperType ? ' — ' : ''}${esc(paperType)}</div>` : ''}
+    </div>
+    <div class="jc-timer-display" id="jcTimerCounter">00:00:00</div>
+    <div class="jc-timer-actions">
+      <button class="jc-timer-btn-cancel" onclick="cancelTimer()"><i class="bi bi-x-lg"></i> Cancel</button>
+      <button class="jc-timer-btn-pause" onclick="pauseTimer()"><i class="bi bi-pause-fill"></i> Pause</button>
+      <button class="jc-timer-btn-end" onclick="endTimer()"><i class="bi bi-stop-fill"></i> End</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  if (_timerInterval) clearInterval(_timerInterval);
+  _timerInterval = setInterval(() => {
+    const diff = Math.max(0, jumboTimerTotalSeconds(job));
+    const h = String(Math.floor(diff / 3600)).padStart(2, '0');
+    const m = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
+    const s = String(diff % 60).padStart(2, '0');
+    const el = document.getElementById('jcTimerCounter');
+    if (el) el.textContent = h + ':' + m + ':' + s;
+  }, 1000);
+}
+
+function resumeRunningJumboTimer(jobId) {
+  const job = getJobById(jobId);
+  if (!job || String(job.status || '') !== 'Running') {
+    alert('Timer is not active for this job.');
+    return;
+  }
+  if (!isJumboTimerActive(job)) {
+    alert('Timer is paused. Click Again Start.');
+    return;
+  }
+  showJumboTimerOverlay(job);
+}
+
+async function pauseJumboTimer(jobId) {
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'pause_timer_session');
+  fd.append('job_id', jobId);
+
+  const res = await fetch(API_BASE, { method: 'POST', body: fd });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'Unable to pause timer');
+
+  const job = getJobById(jobId);
+  if (job) {
+    job.extra_data_parsed = job.extra_data_parsed || {};
+    job.extra_data_parsed.timer_active = false;
+    job.extra_data_parsed.timer_state = data.timer_state || 'paused';
+    job.extra_data_parsed.timer_paused_at = data.timer_paused_at || '';
+    job.extra_data_parsed.timer_last_resumed_at = '';
+    job.extra_data_parsed.timer_accumulated_seconds = Number(data.timer_accumulated_seconds || 0);
+  }
+}
+
+async function resetJumboTimer(jobId) {
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'reset_timer_session');
+  fd.append('job_id', jobId);
+
+  const res = await fetch(API_BASE, { method: 'POST', body: fd });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'Unable to reset timer');
+
+  const job = getJobById(jobId);
+  if (job) {
+    job.status = 'Pending';
+    job.started_at = null;
+    job.completed_at = null;
+    job.duration_minutes = null;
+    job.extra_data_parsed = job.extra_data_parsed || {};
+    job.extra_data_parsed.timer_active = false;
+    job.extra_data_parsed.timer_state = 'pending';
+    job.extra_data_parsed.timer_started_at = '';
+    job.extra_data_parsed.timer_last_resumed_at = '';
+    job.extra_data_parsed.timer_paused_at = '';
+    job.extra_data_parsed.timer_ended_at = '';
+    job.extra_data_parsed.timer_accumulated_seconds = 0;
+  }
+}
+
+async function markJumboTimerEnded(jobId) {
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'end_timer_session');
+  fd.append('job_id', jobId);
+
+  const res = await fetch(API_BASE, { method: 'POST', body: fd });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'Unable to end timer');
+
+  const job = getJobById(jobId);
+  if (job) {
+    job.extra_data_parsed = job.extra_data_parsed || {};
+    job.extra_data_parsed.timer_active = false;
+    job.extra_data_parsed.timer_state = data.timer_state || 'ended';
+    job.extra_data_parsed.timer_ended_at = data.timer_ended_at || '';
+  }
+}
 
 function switchJumboTab(tab) {
   const activePanel = document.getElementById('jcPanelActive');
@@ -1341,63 +1497,64 @@ async function startJobWithTimer(id) {
   const job = getJobById(id) || {};
   job.status = 'Running';
   job.started_at = new Date().toISOString();
-  const jobNo = job.job_no || '';
-  const jobLabel = job.planning_job_name || ('Job #' + id);
-  const rollNo = job.roll_no || '';
-  const paperType = job.paper_type || '';
+  job.extra_data_parsed = job.extra_data_parsed || {};
+  job.extra_data_parsed.timer_active = true;
+  job.extra_data_parsed.timer_state = 'running';
+  job.extra_data_parsed.timer_started_at = new Date().toISOString();
+  job.extra_data_parsed.timer_ended_at = '';
 
-  const overlay = document.createElement('div');
-  overlay.className = 'jc-timer-overlay';
-  overlay.id = 'jcTimerOverlay';
-  overlay.innerHTML = `
-    <div class="jc-timer-jobinfo">
-      <div style="font-size:1.3rem;font-weight:900;letter-spacing:.03em">${esc(jobNo)}</div>
-      <div style="margin-top:4px">${esc(jobLabel)}</div>
-      ${rollNo || paperType ? `<div style="margin-top:4px;font-size:.85rem;opacity:.8">${esc(rollNo)}${rollNo && paperType ? ' — ' : ''}${esc(paperType)}</div>` : ''}
-    </div>
-    <div class="jc-timer-display" id="jcTimerCounter">00:00:00</div>
-    <div class="jc-timer-actions">
-      <button class="jc-timer-btn-cancel" onclick="cancelTimer()"><i class="bi bi-x-lg"></i> Cancel</button>
-      <button class="jc-timer-btn-end" onclick="endTimer()"><i class="bi bi-stop-fill"></i> End</button>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-
-  _timerInterval = setInterval(() => {
-    const diff = Math.floor((Date.now() - _timerStart) / 1000);
-    const h = String(Math.floor(diff/3600)).padStart(2,'0');
-    const m = String(Math.floor((diff%3600)/60)).padStart(2,'0');
-    const s = String(diff%60).padStart(2,'0');
-    const el = document.getElementById('jcTimerCounter');
-    if (el) el.textContent = h + ':' + m + ':' + s;
-  }, 1000);
+  showJumboTimerOverlay(job);
 }
 
-function cancelTimer() {
+async function cancelTimer() {
+  if (!_timerJobId) return;
+  if (!confirm('Cancel will reset this job timer and return it to Pending. Continue?')) return;
+  try {
+    await resetJumboTimer(_timerJobId);
+  } catch (err) {
+    alert('Timer reset failed: ' + err.message);
+    return;
+  }
   if (_timerInterval) clearInterval(_timerInterval);
   _timerInterval = null;
   const ov = document.getElementById('jcTimerOverlay');
   if (ov) ov.remove();
-  (async () => {
-    const fd = new FormData();
-    fd.append('csrf_token', CSRF);
-    fd.append('action', 'update_status');
-    fd.append('job_id', _timerJobId);
-    fd.append('status', 'Pending');
-    try { await fetch(API_BASE, { method: 'POST', body: fd }); } catch(e) {}
-    const j = getJobById(_timerJobId);
-    if (j) j.status = 'Pending';
-    _timerJobId = null;
-    location.reload();
-  })();
+  _timerJobId = null;
+  location.reload();
 }
 
-function endTimer() {
-  if (_timerInterval) clearInterval(_timerInterval);
-  _timerInterval = null;
-  const ov = document.getElementById('jcTimerOverlay');
-  if (ov) ov.remove();
+async function pauseTimer() {
   const jobId = _timerJobId;
+  if (!jobId) return;
+  try {
+    await pauseJumboTimer(jobId);
+  } catch (err) {
+    alert('Timer pause failed: ' + err.message);
+    return;
+  }
+  if (_timerInterval) clearInterval(_timerInterval);
+  _timerInterval = null;
+  const ov = document.getElementById('jcTimerOverlay');
+  if (ov) ov.remove();
+  _timerJobId = null;
+  location.reload();
+}
+
+async function endTimer() {
+  const jobId = _timerJobId;
+  if (!jobId) return;
+
+  try {
+    await markJumboTimerEnded(jobId);
+  } catch (err) {
+    alert('Timer end failed: ' + err.message);
+    return;
+  }
+
+  if (_timerInterval) clearInterval(_timerInterval);
+  _timerInterval = null;
+  const ov = document.getElementById('jcTimerOverlay');
+  if (ov) ov.remove();
   _timerJobId = null;
   openJobDetail(jobId, 'complete');
 }
@@ -2288,6 +2445,8 @@ async function openJobDetail(id, mode) {
   DM_MODAL_LOCKED = String(job.status || '') === 'Running';
 
   const sts = job.status;
+  const timerActive = isJumboTimerActive(job);
+  const timerState = String((job.extra_data_parsed && job.extra_data_parsed.timer_state) || '').toLowerCase();
   const isFinishedJob = ['closed', 'finalized', 'completed', 'finished', 'qc passed', 'qc failed'].includes(String(sts || '').toLowerCase());
   const stsClass = {Pending:'pending',Running:'running',Closed:'completed',Finalized:'completed'}[sts]||'pending';
   const extra = job.extra_data_parsed || {};
@@ -2330,7 +2489,7 @@ async function openJobDetail(id, mode) {
       <div class="jc-timing-box"><div class="jc-timing-label">Start Time</div><div class="jc-timing-value">${startedAt}</div></div>
       <div class="jc-timing-box"><div class="jc-timing-label">End Time</div><div class="jc-timing-value">${completedAt}</div></div>
       <div class="jc-timing-box"><div class="jc-timing-label">Current Status</div><div class="jc-timing-value">${esc(sts || 'Pending')}</div></div>
-      <div class="jc-timing-box jc-counter-box"><div class="jc-timing-label">Counter</div><div class="jc-timing-value">${(sts === 'Running' && startedTs) ? `<span class="jc-timer" data-started="${startedTs}">00:00:00</span>` : (dur !== null && dur !== undefined ? `${Math.floor(dur/60)}h ${dur%60}m` : (sts === 'Pending' ? '<span style="font-size:.9rem;color:#94a3b8">Not Started</span>' : '--:--:--'))}</div></div>
+      <div class="jc-timing-box jc-counter-box"><div class="jc-timing-label">Counter</div><div class="jc-timing-value">${(sts === 'Running' && timerState === 'paused') ? `${Math.floor((Number(extra.timer_accumulated_seconds || 0))/3600).toString().padStart(2,'0')}:${Math.floor((Number(extra.timer_accumulated_seconds || 0)%3600)/60).toString().padStart(2,'0')}:${Math.floor(Number(extra.timer_accumulated_seconds || 0)%60).toString().padStart(2,'0')}` : ((sts === 'Running' && startedTs) ? `<span class="jc-timer" data-started="${startedTs}">00:00:00</span>` : (dur !== null && dur !== undefined ? `${Math.floor(dur/60)}h ${dur%60}m` : (sts === 'Pending' ? '<span style="font-size:.9rem;color:#94a3b8">Not Started</span>' : '--:--:--')))}</div></div>
     </div>
   </div>`;
 
@@ -2568,10 +2727,16 @@ async function openJobDetail(id, mode) {
   // Footer actions (Flexo-style logic)
   let fHtml = '<div style="display:flex;gap:8px">' + (isFinishedJob ? '' : '<button class="jc-action-btn jc-btn-view" onclick="switchDetailTab(\'edit\')"><i class="bi bi-pencil-square"></i> Edit Job</button>') + '</div>';
   fHtml += '<div id="dm-footer-execution-actions" style="display:flex;gap:8px">';
-  if (mode === 'complete' && sts === 'Running') {
+  if (mode === 'complete' && sts === 'Running' && !timerActive && timerState !== 'paused') {
     fHtml += `<button class="jc-action-btn jc-btn-complete" onclick="submitAndClose(${job.id})"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
   } else if (sts === 'Pending') {
     fHtml += `<button class="jc-action-btn jc-btn-start" onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-fill"></i> Start Job</button>`;
+  } else if (sts === 'Running' && timerState === 'paused') {
+    fHtml += `<button class="jc-action-btn jc-btn-start" onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-circle"></i> Again Start</button>`;
+  } else if (sts === 'Running' && timerActive) {
+    fHtml += `<button class="jc-action-btn jc-btn-start" onclick="resumeRunningJumboTimer(${job.id})"><i class="bi bi-play-circle"></i> Open Timer</button>`;
+  } else if (sts === 'Running') {
+    fHtml += `<button class="jc-action-btn jc-btn-complete" onclick="openJobDetail(${job.id},'complete')"><i class="bi bi-check-lg"></i> Complete</button>`;
   }
   fHtml += '</div>';
   fHtml += `<div id="dm-footer-edit-actions" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;">${isFinishedJob ? `<span class="jc-request-state">Finished - Edit Locked</span>` : (hasPendingRequest ? `<span class="jc-request-state">Requesting Approval</span>` : (hasRejectedRequest ? `<span class="jc-request-state rejected">Request Rejected</span>${latestReviewNote ? `<span style="font-size:.72rem;color:#991b1b;font-weight:700">Reason: ${esc(latestReviewNote)}</span>` : ''}<button id="dm-request-roll-btn-footer" class="jc-action-btn jc-btn-complete" onclick="submitChangeRequest(${job.id})" disabled data-roll-valid="0" data-validation-message="Enter replacement parent roll number."><i class="bi bi-arrow-repeat"></i> Send Request Again</button>` : `<button id="dm-request-roll-btn-footer" class="jc-action-btn jc-btn-complete" onclick="submitChangeRequest(${job.id})" disabled data-roll-valid="0" data-validation-message="Enter replacement parent roll number."><i class="bi bi-send"></i> Request Change Roll</button>`))}</div>`;

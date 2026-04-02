@@ -189,6 +189,38 @@ function jobs_display_job_name(array $job): string {
     return '—';
 }
 
+function jobs_array_merge_deep(array $base, array $patch): array {
+    foreach ($patch as $k => $v) {
+        if (is_array($v) && isset($base[$k]) && is_array($base[$k])) {
+            $base[$k] = jobs_array_merge_deep($base[$k], $v);
+        } else {
+            $base[$k] = $v;
+        }
+    }
+    return $base;
+}
+
+function jobs_decode_extra_data($raw): array {
+    if (is_array($raw)) return $raw;
+    $decoded = json_decode((string)$raw, true);
+    return is_array($decoded) ? $decoded : [];
+}
+
+function jobs_timer_now(): string {
+    return date('Y-m-d H:i:s');
+}
+
+function jobs_timer_seconds_between(string $from, string $to): int {
+    $fromTs = strtotime($from);
+    $toTs = strtotime($to);
+    if (!$fromTs || !$toTs || $toTs <= $fromTs) return 0;
+    return (int)($toTs - $fromTs);
+}
+
+function jobs_timer_accumulated_seconds(array $extra): int {
+    return max(0, (int)round((float)($extra['timer_accumulated_seconds'] ?? 0)));
+}
+
 function jobs_collect_roll_nos(array $extra, array $job): array {
     $rollNos = [];
     $jobRoll = trim((string)($job['roll_no'] ?? ''));
@@ -376,16 +408,57 @@ try {
             break;
         }
 
+        $jobExtra = jobs_decode_extra_data($job['extra_data'] ?? '{}');
+        $isFinishStatus = in_array($newStatus, ['Closed', 'Finalized', 'Completed', 'QC Passed', 'QC Failed'], true);
+        $timerIsActive = !empty($jobExtra['timer_active']);
+
+        if ($isFinishStatus && $timerIsActive) {
+            echo json_encode(['ok' => false, 'error' => 'Timer is still running. Please End the timer before finishing this job.']);
+            break;
+        }
+
         $db->begin_transaction();
 
         // Update job status + timestamps
         if ($newStatus === 'Running') {
-            $upd = $db->prepare("UPDATE jobs SET status = ?, started_at = NOW() WHERE id = ?");
-            $upd->bind_param('si', $newStatus, $jobId);
-        } elseif (in_array($newStatus, ['Closed', 'Finalized', 'Completed', 'QC Passed', 'QC Failed'], true)) {
-            $durSql = "UPDATE jobs SET status = ?, completed_at = NOW(), duration_minutes = TIMESTAMPDIFF(MINUTE, started_at, NOW()) WHERE id = ?";
+            $now = jobs_timer_now();
+            $jobExtra['timer_accumulated_seconds'] = jobs_timer_accumulated_seconds($jobExtra);
+            $jobExtra['timer_active'] = true;
+            $jobExtra['timer_state'] = 'running';
+            if (empty($jobExtra['timer_started_at'])) {
+                $jobExtra['timer_started_at'] = $now;
+            }
+            $jobExtra['timer_last_resumed_at'] = $now;
+            $jobExtra['timer_paused_at'] = '';
+            $jobExtra['timer_ended_at'] = '';
+            $safeExtraJson = json_encode($jobExtra, JSON_UNESCAPED_UNICODE);
+            $upd = $db->prepare("UPDATE jobs SET status = ?, started_at = COALESCE(started_at, NOW()), extra_data = ? WHERE id = ?");
+            $upd->bind_param('ssi', $newStatus, $safeExtraJson, $jobId);
+        } elseif ($isFinishStatus) {
+            $now = jobs_timer_now();
+            $acc = jobs_timer_accumulated_seconds($jobExtra);
+            if (!empty($jobExtra['timer_active']) && !empty($jobExtra['timer_last_resumed_at'])) {
+                $acc += jobs_timer_seconds_between((string)$jobExtra['timer_last_resumed_at'], $now);
+            }
+            $jobExtra['timer_accumulated_seconds'] = max(0, $acc);
+            $jobExtra['timer_active'] = false;
+            $jobExtra['timer_state'] = 'completed';
+            $jobExtra['timer_last_resumed_at'] = '';
+            $jobExtra['timer_paused_at'] = '';
+            $jobExtra['timer_ended_at'] = $now;
+            $safeExtraJson = json_encode($jobExtra, JSON_UNESCAPED_UNICODE);
+            $durationMinutes = (int)floor($acc / 60);
+            $durSql = "UPDATE jobs SET status = ?, completed_at = NOW(), duration_minutes = ?, extra_data = ? WHERE id = ?";
             $upd = $db->prepare($durSql);
-            $upd->bind_param('si', $newStatus, $jobId);
+            $upd->bind_param('sisi', $newStatus, $durationMinutes, $safeExtraJson, $jobId);
+        } elseif ($newStatus === 'Pending') {
+            $jobExtra['timer_active'] = false;
+            $jobExtra['timer_state'] = 'pending';
+            $jobExtra['timer_last_resumed_at'] = '';
+            $jobExtra['timer_paused_at'] = '';
+            $safeExtraJson = json_encode($jobExtra, JSON_UNESCAPED_UNICODE);
+            $upd = $db->prepare("UPDATE jobs SET status = ?, extra_data = ? WHERE id = ?");
+            $upd->bind_param('ssi', $newStatus, $safeExtraJson, $jobId);
         } else {
             $upd = $db->prepare("UPDATE jobs SET status = ? WHERE id = ?");
             $upd->bind_param('si', $newStatus, $jobId);
@@ -466,6 +539,8 @@ try {
         }
 
         // Sequential gating: when a job completes, move next queued jobs to Pending
+        $planningExtraForNotifications = [];
+
         if (in_array($newStatus, ['Closed', 'Finalized', 'Completed'], true)) {
             $nextStmt = $db->prepare("UPDATE jobs SET status = 'Pending' WHERE previous_job_id = ? AND status = 'Queued' AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')");
             $nextStmt->bind_param('i', $jobId);
@@ -495,6 +570,7 @@ try {
                         $planRow = $planExtraStmt->get_result()->fetch_assoc();
                         if ($planRow) {
                             $pExtra = json_decode((string)($planRow['extra_data'] ?? '{}'), true) ?: [];
+                            $planningExtraForNotifications = $pExtra;
                             $pExtra['printing_planning'] = 'Printing Done';
                             $pExtraJson = json_encode($pExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                             $upPlanExtra = $db->prepare("UPDATE planning SET extra_data = ? WHERE id = ?");
@@ -544,9 +620,177 @@ try {
         $nIns2->bind_param('iss', $jobId, $notifDept, $notifMsg);
         $nIns2->execute();
 
+        if (in_array($newStatus, ['Closed', 'Finalized', 'Completed'], true)) {
+            $advanceTargets = jobsAdvanceNotificationTargets((string)($job['department'] ?? ''), $planningExtraForNotifications);
+            if (!empty($advanceTargets)) {
+                $advanceMsg = $job['job_no'] . ' completed in ' . jobs_department_label((string)($job['department'] ?? '')) . ' — next stage updated';
+                createDepartmentNotifications($db, $advanceTargets, $jobId, $advanceMsg, 'success');
+            }
+        }
+
         $db->commit();
 
         echo json_encode(['ok' => true, 'job_id' => $jobId, 'status' => $newStatus]);
+        break;
+
+    // ─── End timer before completion ───────────────────────
+    case 'end_timer_session':
+        if ($method !== 'POST') {
+            echo json_encode(['ok' => false, 'error' => 'POST required']);
+            break;
+        }
+
+        $jobId = (int)($_POST['job_id'] ?? 0);
+        if ($jobId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Missing job_id']);
+            break;
+        }
+
+        $stmt = $db->prepare("SELECT id, status, extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $stmt->bind_param('i', $jobId);
+        $stmt->execute();
+        $job = $stmt->get_result()->fetch_assoc();
+
+        if (!$job) {
+            echo json_encode(['ok' => false, 'error' => 'Job not found']);
+            break;
+        }
+        if (strcasecmp((string)($job['status'] ?? ''), 'Running') !== 0) {
+            echo json_encode(['ok' => false, 'error' => 'Only running jobs can end the timer.']);
+            break;
+        }
+
+        $jobExtra = jobs_decode_extra_data($job['extra_data'] ?? '{}');
+        $now = jobs_timer_now();
+        $acc = jobs_timer_accumulated_seconds($jobExtra);
+        if (!empty($jobExtra['timer_active']) && !empty($jobExtra['timer_last_resumed_at'])) {
+            $acc += jobs_timer_seconds_between((string)$jobExtra['timer_last_resumed_at'], $now);
+        }
+        $jobExtra['timer_accumulated_seconds'] = max(0, $acc);
+        $jobExtra['timer_active'] = false;
+        $jobExtra['timer_state'] = 'ended';
+        $jobExtra['timer_last_resumed_at'] = '';
+        $jobExtra['timer_paused_at'] = '';
+        $jobExtra['timer_ended_at'] = $now;
+        $safeExtraJson = json_encode($jobExtra, JSON_UNESCAPED_UNICODE);
+
+        $upd = $db->prepare("UPDATE jobs SET extra_data = ? WHERE id = ?");
+        $upd->bind_param('si', $safeExtraJson, $jobId);
+        $upd->execute();
+
+        echo json_encode([
+            'ok' => true,
+            'job_id' => $jobId,
+            'timer_active' => false,
+            'timer_state' => 'ended',
+            'timer_ended_at' => $jobExtra['timer_ended_at'],
+            'timer_accumulated_seconds' => (int)$jobExtra['timer_accumulated_seconds'],
+        ]);
+        break;
+
+    // ─── Pause timer (keeps running status) ────────────────
+    case 'pause_timer_session':
+        if ($method !== 'POST') {
+            echo json_encode(['ok' => false, 'error' => 'POST required']);
+            break;
+        }
+
+        $jobId = (int)($_POST['job_id'] ?? 0);
+        if ($jobId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Missing job_id']);
+            break;
+        }
+
+        $stmt = $db->prepare("SELECT id, status, extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $stmt->bind_param('i', $jobId);
+        $stmt->execute();
+        $job = $stmt->get_result()->fetch_assoc();
+
+        if (!$job) {
+            echo json_encode(['ok' => false, 'error' => 'Job not found']);
+            break;
+        }
+        if (strcasecmp((string)($job['status'] ?? ''), 'Running') !== 0) {
+            echo json_encode(['ok' => false, 'error' => 'Only running jobs can pause timer.']);
+            break;
+        }
+
+        $jobExtra = jobs_decode_extra_data($job['extra_data'] ?? '{}');
+        if (empty($jobExtra['timer_active'])) {
+            echo json_encode(['ok' => false, 'error' => 'Timer is not active.']);
+            break;
+        }
+
+        $now = jobs_timer_now();
+        $acc = jobs_timer_accumulated_seconds($jobExtra);
+        if (!empty($jobExtra['timer_last_resumed_at'])) {
+            $acc += jobs_timer_seconds_between((string)$jobExtra['timer_last_resumed_at'], $now);
+        }
+        $jobExtra['timer_accumulated_seconds'] = max(0, $acc);
+        $jobExtra['timer_active'] = false;
+        $jobExtra['timer_state'] = 'paused';
+        $jobExtra['timer_last_resumed_at'] = '';
+        $jobExtra['timer_paused_at'] = $now;
+        $safeExtraJson = json_encode($jobExtra, JSON_UNESCAPED_UNICODE);
+
+        $upd = $db->prepare("UPDATE jobs SET extra_data = ? WHERE id = ?");
+        $upd->bind_param('si', $safeExtraJson, $jobId);
+        $upd->execute();
+
+        echo json_encode([
+            'ok' => true,
+            'job_id' => $jobId,
+            'timer_active' => false,
+            'timer_state' => 'paused',
+            'timer_paused_at' => $jobExtra['timer_paused_at'],
+            'timer_accumulated_seconds' => (int)$jobExtra['timer_accumulated_seconds'],
+        ]);
+        break;
+
+    // ─── Cancel timer and reset job to fresh pending ───────
+    case 'reset_timer_session':
+        if ($method !== 'POST') {
+            echo json_encode(['ok' => false, 'error' => 'POST required']);
+            break;
+        }
+
+        $jobId = (int)($_POST['job_id'] ?? 0);
+        if ($jobId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Missing job_id']);
+            break;
+        }
+
+        $stmt = $db->prepare("SELECT id, extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $stmt->bind_param('i', $jobId);
+        $stmt->execute();
+        $job = $stmt->get_result()->fetch_assoc();
+        if (!$job) {
+            echo json_encode(['ok' => false, 'error' => 'Job not found']);
+            break;
+        }
+
+        $jobExtra = jobs_decode_extra_data($job['extra_data'] ?? '{}');
+        $jobExtra['timer_active'] = false;
+        $jobExtra['timer_state'] = 'pending';
+        $jobExtra['timer_started_at'] = '';
+        $jobExtra['timer_last_resumed_at'] = '';
+        $jobExtra['timer_paused_at'] = '';
+        $jobExtra['timer_ended_at'] = '';
+        $jobExtra['timer_accumulated_seconds'] = 0;
+        $safeExtraJson = json_encode($jobExtra, JSON_UNESCAPED_UNICODE);
+
+        $upd = $db->prepare("UPDATE jobs SET status = 'Pending', started_at = NULL, completed_at = NULL, duration_minutes = NULL, extra_data = ? WHERE id = ?");
+        $upd->bind_param('si', $safeExtraJson, $jobId);
+        $upd->execute();
+
+        echo json_encode([
+            'ok' => true,
+            'job_id' => $jobId,
+            'status' => 'Pending',
+            'timer_state' => 'pending',
+            'timer_active' => false,
+            'timer_accumulated_seconds' => 0,
+        ]);
         break;
 
     // ─── Submit operator extra data ─────────────────────────
@@ -569,6 +813,13 @@ try {
             echo json_encode(['ok' => false, 'error' => 'Invalid extra_data JSON']);
             break;
         }
+
+        $curStmt = $db->prepare("SELECT extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $curStmt->bind_param('i', $jobId);
+        $curStmt->execute();
+        $curJob = $curStmt->get_result()->fetch_assoc();
+        $currentExtra = jobs_decode_extra_data($curJob['extra_data'] ?? '{}');
+        $extraArr = jobs_array_merge_deep($currentExtra, $extraArr);
 
         // Sanitize values
         array_walk_recursive($extraArr, function(&$val) {
@@ -1809,6 +2060,92 @@ try {
         $upd->bind_param('si', $notes, $jobId);
         $upd->execute();
         echo json_encode(['ok' => true, 'job_id' => $jobId]);
+        break;
+
+    // ─── Regenerate same job card with reason (admin) ──────
+    case 'regenerate_job_card':
+        if ($method !== 'POST') { echo json_encode(['ok' => false, 'error' => 'POST required']); break; }
+        if (!isAdmin()) { echo json_encode(['ok' => false, 'error' => 'Access denied. Only system admin can regenerate job cards.']); break; }
+
+        $jobId = (int)($_POST['job_id'] ?? 0);
+        $reason = trim((string)($_POST['reason'] ?? ''));
+        $notesAppend = trim((string)($_POST['notes_append'] ?? ''));
+        $newRollNo = strtoupper(trim((string)($_POST['roll_no'] ?? '')));
+        $changesJson = trim((string)($_POST['changes_json'] ?? '{}'));
+
+        if ($jobId <= 0) { echo json_encode(['ok' => false, 'error' => 'Missing job_id']); break; }
+        if ($reason === '') { echo json_encode(['ok' => false, 'error' => 'Reason is required']); break; }
+
+        $jobStmt = $db->prepare("SELECT * FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $jobStmt->bind_param('i', $jobId);
+        $jobStmt->execute();
+        $job = $jobStmt->get_result()->fetch_assoc();
+        if (!$job) { echo json_encode(['ok' => false, 'error' => 'Job not found']); break; }
+
+        $patch = json_decode($changesJson, true);
+        if (!is_array($patch)) {
+            echo json_encode(['ok' => false, 'error' => 'Invalid changes_json']);
+            break;
+        }
+
+        $baseExtra = json_decode((string)($job['extra_data'] ?? '{}'), true);
+        if (!is_array($baseExtra)) $baseExtra = [];
+        $nextExtra = jobs_array_merge_deep($baseExtra, $patch);
+        $nextExtraJson = json_encode($nextExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        if ($newRollNo !== '') {
+            $chkRoll = $db->prepare("SELECT id FROM paper_stock WHERE UPPER(TRIM(roll_no)) = ? LIMIT 1");
+            $chkRoll->bind_param('s', $newRollNo);
+            $chkRoll->execute();
+            if (!$chkRoll->get_result()->fetch_assoc()) {
+                echo json_encode(['ok' => false, 'error' => 'Roll not found: ' . $newRollNo]);
+                break;
+            }
+        }
+
+        $existingNotes = trim((string)($job['notes'] ?? ''));
+        $regenNote = '[REGENERATED ' . date('Y-m-d H:i') . '] Reason: ' . $reason;
+        if ($notesAppend !== '') {
+            $regenNote .= ' | Changes: ' . $notesAppend;
+        }
+        $nextNotes = trim($existingNotes . "\n" . $regenNote);
+        $finalRollNo = $newRollNo !== '' ? $newRollNo : (string)($job['roll_no'] ?? '');
+
+        jobs_ensure_change_request_table($db);
+        $db->begin_transaction();
+        try {
+            $upd = $db->prepare("UPDATE jobs SET roll_no = ?, extra_data = ?, notes = ?, status = 'Pending', started_at = NULL, completed_at = NULL, updated_at = NOW() WHERE id = ?");
+            $upd->bind_param('sssi', $finalRollNo, $nextExtraJson, $nextNotes, $jobId);
+            $upd->execute();
+
+            $rb = (int)($_SESSION['user_id'] ?? 0);
+            $rbName = trim((string)($_SESSION['user_name'] ?? 'Admin'));
+            $payloadJson = json_encode([
+                'reason' => $reason,
+                'notes_append' => $notesAppend,
+                'changed_roll_no' => $newRollNo !== '' ? $newRollNo : null,
+                'changes_patch' => $patch,
+                'regenerated_by' => $rb,
+                'regenerated_by_name' => $rbName,
+                'regenerated_at' => date('c'),
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            $insReq = $db->prepare("INSERT INTO job_change_requests (job_id, request_type, payload_json, status, requested_by, requested_by_name, reviewed_by, reviewed_by_name, reviewed_at, review_note) VALUES (?, 'production_regenerate', ?, 'Approved', ?, ?, ?, ?, NOW(), ?)");
+            $insReq->bind_param('isissss', $jobId, $payloadJson, $rb, $rbName, $rb, $rbName, $reason);
+            $insReq->execute();
+
+            $dept = trim((string)($job['department'] ?? ''));
+            $msg = (string)($job['job_no'] ?? ('JOB-' . $jobId)) . ' regenerated by ' . $rbName . ': ' . $reason;
+            $nIns = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, 'warning')");
+            $nIns->bind_param('iss', $jobId, $dept, $msg);
+            $nIns->execute();
+
+            $db->commit();
+            echo json_encode(['ok' => true, 'job_id' => $jobId, 'job_no' => (string)($job['job_no'] ?? ''), 'status' => 'Pending']);
+        } catch (Throwable $e) {
+            $db->rollback();
+            echo json_encode(['ok' => false, 'error' => 'Regeneration failed: ' . $e->getMessage()]);
+        }
         break;
 
     // ─── Delete job with reset (admin only) ─────────────────

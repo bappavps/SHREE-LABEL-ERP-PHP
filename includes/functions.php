@@ -77,6 +77,90 @@ function appUrl($path = '') {
     return $baseUrl . $normalizedPath;
 }
 
+function planningNotificationTargets($planningDepartment = '') {
+    $department = strtolower(trim((string)$planningDepartment));
+    $targets = ['planning'];
+
+    if (in_array($department, ['printing', 'flexo_printing', 'flexo-printing'], true)) {
+        $targets[] = 'flexo_printing';
+    } elseif (in_array($department, ['slitting', 'jumbo_slitting', 'jumbo-slitting'], true)) {
+        $targets[] = 'jumbo_slitting';
+    } elseif (!in_array($department, ['packing', 'dispatch'], true)) {
+        $targets[] = 'flexo_printing';
+        $targets[] = 'jumbo_slitting';
+    }
+
+    return array_values(array_unique(array_filter($targets)));
+}
+
+function createDepartmentNotifications(mysqli $db, array $departments, $jobId, $message, $type = 'info') {
+    $jobId = (int)$jobId;
+    $message = trim((string)$message);
+    $type = trim((string)$type);
+    if ($message === '') return;
+    if (!in_array($type, ['info', 'warning', 'success', 'error'], true)) {
+        $type = 'info';
+    }
+
+    $departments = array_values(array_unique(array_filter(array_map(static function ($dept) {
+        return trim((string)$dept);
+    }, $departments))));
+    if (empty($departments)) return;
+
+    $stmt = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, ?)");
+    if (!$stmt) return;
+
+    foreach ($departments as $department) {
+        $stmt->bind_param('isss', $jobId, $department, $message, $type);
+        $stmt->execute();
+    }
+}
+
+function planningFabricationDepartmentFromDie($dieRaw = '') {
+    $die = strtolower(trim((string)$dieRaw));
+    if ($die === '') return 'flatbed';
+    if (strpos($die, 'rotary') !== false || strpos($die, 'rotery') !== false) return 'rotery';
+    if (strpos($die, 'label') !== false && strpos($die, 'slit') !== false) return 'label_slitting';
+    if (strpos($die, 'flat') !== false) return 'flatbed';
+    return 'flatbed';
+}
+
+function jobsAdvanceNotificationTargets($jobDepartment = '', array $planningExtra = []) {
+    $department = strtolower(trim((string)$jobDepartment));
+    switch ($department) {
+        case 'jumbo_slitting':
+            return ['planning'];
+        case 'flexo_printing':
+            return ['planning', planningFabricationDepartmentFromDie((string)($planningExtra['die'] ?? ''))];
+        case 'flatbed':
+        case 'rotery':
+        case 'label_slitting':
+            return ['planning', 'packing'];
+        case 'packing':
+            return ['planning', 'dispatch'];
+        default:
+            return [];
+    }
+}
+
+function planningCreateNotifications(mysqli $db, $jobNo, $jobName, $planningDepartment = '', $eventLabel = 'added') {
+    $jobNo = trim((string)$jobNo);
+    $jobName = trim((string)$jobName);
+    $eventLabel = trim((string)$eventLabel);
+    if ($eventLabel === '') $eventLabel = 'updated';
+    if ($jobNo === '' && $jobName === '') return;
+
+    if ($jobNo !== '' && $jobName !== '') {
+        $message = $jobNo . ' - ' . $jobName . ' ' . $eventLabel . ' to planning';
+    } elseif ($jobNo !== '') {
+        $message = $jobNo . ' ' . $eventLabel . ' to planning';
+    } else {
+        $message = $jobName . ' ' . $eventLabel . ' to planning';
+    }
+
+    createDepartmentNotifications($db, planningNotificationTargets($planningDepartment), 0, $message, 'info');
+}
+
 /**
  * Store a flash message in session.
  */

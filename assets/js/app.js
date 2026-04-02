@@ -145,6 +145,7 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
 
         var apiBase = notifBtn.getAttribute('data-notif-api') || '';
         if (!apiBase) return;
+        var fallbackHref = notifBtn.getAttribute('data-href') || '';
 
         var departments = (notifBtn.getAttribute('data-notif-departments') || '').trim();
         var csrfMeta = document.querySelector('meta[name="csrf-token"]');
@@ -174,11 +175,28 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             return day + ' day ago';
         }
 
+        function appBasePrefix() {
+            var source = apiBase || fallbackHref || window.location.pathname || '';
+            var match = source.match(/^(.*?)(?:\/modules\/|$)/i);
+            if (!match) return '';
+            return match[1] || '';
+        }
+
+        function withAppBase(path) {
+            var cleanPath = String(path || '').replace(/^\/+/, '');
+            var base = appBasePrefix().replace(/\/+$/, '');
+            return (base ? base : '') + '/' + cleanPath;
+        }
+
         function buildDeptUrl(dept) {
-            if (dept === 'jumbo_slitting') return '/modules/operators/jumbo/index.php';
-            if (dept === 'flexo_printing') return '/modules/operators/printing/index.php';
-            if (dept === 'planning') return '/modules/planning/label/index.php';
-            return '/modules/approval/index.php';
+            if (dept === 'jumbo_slitting') return withAppBase('modules/operators/jumbo/index.php');
+            if (dept === 'flexo_printing') return withAppBase('modules/operators/printing/index.php');
+            if (dept === 'flatbed') return withAppBase('modules/operators/flatbed/index.php');
+            if (dept === 'rotery') return withAppBase('modules/operators/rotery/index.php');
+            if (dept === 'label_slitting') return withAppBase('modules/operators/label-slitting/index.php');
+            if (dept === 'packing') return withAppBase('modules/operators/packing/index.php');
+            if (dept === 'planning') return withAppBase('modules/planning/index.php');
+            return withAppBase('modules/approval/index.php');
         }
 
         function fetchNotifications(unreadOnly, done) {

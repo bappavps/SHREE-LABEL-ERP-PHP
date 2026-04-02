@@ -87,7 +87,7 @@
             },
             "planning": {
                 "prefix": "PLN",
-                "counter": 2
+                "counter": 8
             },
             "jumbo_job": {
                 "prefix": "JMB",

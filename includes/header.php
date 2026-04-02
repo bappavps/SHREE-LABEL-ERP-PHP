@@ -37,6 +37,18 @@ if (strpos($currentPath, '/modules/operators/jumbo/') === 0 || strpos($currentPa
 if (strpos($currentPath, '/modules/operators/printing/') === 0 || strpos($currentPath, '/modules/jobs/printing/') === 0) {
   $notificationDepartments[] = 'flexo_printing';
 }
+if (strpos($currentPath, '/modules/operators/flatbed/') === 0 || strpos($currentPath, '/modules/jobs/flatbed/') === 0) {
+  $notificationDepartments[] = 'flatbed';
+}
+if (strpos($currentPath, '/modules/operators/rotery/') === 0 || strpos($currentPath, '/modules/jobs/rotery/') === 0) {
+  $notificationDepartments[] = 'rotery';
+}
+if (strpos($currentPath, '/modules/operators/label-slitting/') === 0 || strpos($currentPath, '/modules/jobs/label-slitting/') === 0) {
+  $notificationDepartments[] = 'label_slitting';
+}
+if (strpos($currentPath, '/modules/operators/packing/') === 0 || strpos($currentPath, '/modules/jobs/packing/') === 0) {
+  $notificationDepartments[] = 'packing';
+}
 if (strpos($currentPath, '/modules/planning/') === 0) {
   $notificationDepartments[] = 'planning';
 }
@@ -64,6 +76,84 @@ $notificationDeptCsv = implode(',', $notificationDepartments);
   --nav-hover: <?= e($sidebarHoverColor) ?>;
   --nav-active-bg: <?= e($sidebarActiveBg) ?>;
   --nav-active-txt: <?= e($sidebarActiveTxt) ?>;
+}
+
+/* Fallback: keep bell dropdown usable even when cached/older style.css is served */
+.topbar-right { position: relative; }
+#topbarNotificationPanel {
+  position: absolute;
+  top: 34px;
+  right: 54px;
+  width: 340px;
+  max-height: 420px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, .18);
+  z-index: 1200;
+  overflow: hidden;
+}
+#topbarNotificationPanel .np-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid #eef2f7;
+  background: #f8fafc;
+}
+#topbarNotificationPanel .np-head strong {
+  font-size: .78rem;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  color: #334155;
+}
+#topbarNotificationPanel .np-markall {
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font-size: .72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+#topbarNotificationPanel .np-list { max-height: 360px; overflow-y: auto; }
+#topbarNotificationPanel .np-item {
+  border-bottom: 1px solid #f1f5f9;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+#topbarNotificationPanel .np-item:hover { background: #f8fafc; }
+#topbarNotificationPanel .np-item-title {
+  font-size: .76rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 4px;
+}
+#topbarNotificationPanel .np-item-msg {
+  font-size: .74rem;
+  color: #475569;
+  line-height: 1.35;
+}
+#topbarNotificationPanel .np-item-time {
+  margin-top: 6px;
+  font-size: .66rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+#topbarNotificationPanel .np-empty {
+  padding: 18px 12px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: .74rem;
+  font-weight: 600;
+}
+@media (max-width: 900px) {
+  #topbarNotificationPanel {
+    right: 8px;
+    left: 8px;
+    width: auto;
+    top: 40px;
+  }
 }
 </style>
 </head>

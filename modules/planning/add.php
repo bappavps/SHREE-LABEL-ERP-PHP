@@ -58,6 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['user_id']
             );
             if ($stmt->execute()) {
+              planningCreateNotifications($db, $planJobNo, $jobName, 'general', 'added');
               setFlash('success',"Job '{$planJobNo} - {$jobName}' added to planning.");
                 redirect(BASE_URL.'/modules/planning/index.php');
             } else {

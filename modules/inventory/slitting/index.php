@@ -484,6 +484,7 @@ const SLT = (() => {
   let machines        = [];
   let plannerFilter   = 'pending'; // status tab filter
   let allStockOptions = [];    // raw options from API (unfiltered)
+  let allStockGroups  = [];    // grouped options across all suppliers
   let selectedSupplier = 'all';
   let selectionMap    = {};    // key -> qty selected
   let wastagePrefs    = {};    // key -> 'STOCK' | 'ADJUST'
@@ -1533,6 +1534,7 @@ const SLT = (() => {
     }
 
     allStockOptions = data.options;
+    allStockGroups = [];
     selectionMap = {};
     wastagePrefs = {};
     selectedSupplier = 'all';
@@ -1563,8 +1565,35 @@ const SLT = (() => {
     renderStockOptions(targetWidth, reqMtrs);
   }
 
+  function buildStockGroups(options) {
+    const grouped = {};
+    (options || []).forEach(opt => {
+      const r = opt.roll || {};
+      const key = r.width_mm + 'x' + r.length_mtr + '-' + (r.company || '');
+      if (!grouped[key]) {
+        grouped[key] = {
+          roll: r,
+          splits: opt.splits,
+          waste_mm: opt.waste_mm,
+          efficiency: opt.efficiency,
+          possible_ways: opt.possible_ways || [],
+          rolls: [],
+          key
+        };
+        if (selectionMap[key] === undefined) selectionMap[key] = 0;
+        if (!wastagePrefs[key]) wastagePrefs[key] = 'STOCK';
+      }
+      grouped[key].rolls.push(r);
+    });
+
+    const groups = Object.values(grouped);
+    groups.sort((a, b) => parseFloat(a.roll.width_mm) - parseFloat(b.roll.width_mm) || a.waste_mm - b.waste_mm);
+    return groups;
+  }
+
   function renderStockOptions(targetWidth, reqMtrs) {
     const contentEl = document.getElementById('stockAnalysisContent');
+    allStockGroups = buildStockGroups(allStockOptions);
 
     // Filter by supplier
     let filtered = allStockOptions;
@@ -1579,22 +1608,7 @@ const SLT = (() => {
       return;
     }
 
-    // Group by dimension key
-    const grouped = {};
-    filtered.forEach(opt => {
-      const r = opt.roll;
-      const key = r.width_mm + 'x' + r.length_mtr + '-' + (r.company || '');
-      if (!grouped[key]) {
-        grouped[key] = { roll: r, splits: opt.splits, waste_mm: opt.waste_mm, efficiency: opt.efficiency, possible_ways: opt.possible_ways || [], rolls: [], key };
-        if (selectionMap[key] === undefined) selectionMap[key] = 0;
-        if (!wastagePrefs[key]) wastagePrefs[key] = 'STOCK';
-      }
-      grouped[key].rolls.push(r);
-    });
-
-    const groups = Object.values(grouped);
-    // Sort by width ascending (smallest roll first), then by waste ascending
-    groups.sort((a, b) => parseFloat(a.roll.width_mm) - parseFloat(b.roll.width_mm) || a.waste_mm - b.waste_mm);
+    const groups = buildStockGroups(filtered);
 
     document.getElementById('stockModalCount').textContent = 'Showing: ' + filtered.length + ' of ' + allStockOptions.length + ' rolls';
 
@@ -1698,7 +1712,7 @@ const SLT = (() => {
 
   function updateProductionSummary() {
     const contentEl = document.getElementById('stockAnalysisContent');
-    const groups = contentEl._groups || [];
+    const groups = allStockGroups || [];
     const reqMtrs = contentEl._reqMtrs || 0;
 
     let totalProduced = 0;
@@ -1711,13 +1725,17 @@ const SLT = (() => {
     const summaryEl = document.getElementById('stockModalSummary');
     const pct = reqMtrs > 0 ? Math.min(100, Math.round(totalProduced / reqMtrs * 100)) : 0;
     const achieved = totalProduced >= reqMtrs && reqMtrs > 0;
+    const exceeded = totalProduced > reqMtrs && reqMtrs > 0;
+    const balance = Math.max(0, reqMtrs - totalProduced);
+    const overBy = Math.max(0, totalProduced - reqMtrs);
     const hasSelection = Object.values(selectionMap).some(v => v > 0);
 
     summaryEl.innerHTML = hasSelection
       ? `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <span style="font-weight:800">${totalProduced.toLocaleString()} M of ${(reqMtrs || 0).toLocaleString()} M required</span>
-          <div style="width:120px;height:8px;background:var(--bg-secondary);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${achieved ? '#22c55e' : '#3b82f6'};border-radius:4px"></div></div>
-          <span style="font-size:.55rem;font-weight:800;background:${achieved ? '#22c55e' : '#f59e0b'};color:#fff;padding:3px 8px;border-radius:10px">${achieved ? 'Target Achieved' : 'In Progress'}</span>
+          <div style="width:120px;height:8px;background:var(--bg-secondary);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${exceeded ? '#dc2626' : (achieved ? '#22c55e' : '#3b82f6')};border-radius:4px"></div></div>
+          <span style="font-size:.55rem;font-weight:800;background:${exceeded ? '#dc2626' : (achieved ? '#22c55e' : '#f59e0b')};color:#fff;padding:3px 8px;border-radius:10px">${exceeded ? 'Exceed' : (achieved ? 'Target Achieved' : 'In Progress')}</span>
+          <span style="font-size:.7rem;font-weight:700;color:${exceeded ? '#dc2626' : '#64748b'}">${exceeded ? ('Over by ' + overBy.toLocaleString() + ' M') : ('Remaining ' + balance.toLocaleString() + ' M')}</span>
         </div>`
       : 'Select rolls and set qty to deploy';
 
@@ -1727,7 +1745,7 @@ const SLT = (() => {
 
   function deployToTerminal() {
     const contentEl = document.getElementById('stockAnalysisContent');
-    const groups = contentEl._groups || [];
+    const groups = allStockGroups || [];
     const targetWidth = contentEl._targetWidth || 0;
     const j = selectedJob;
 

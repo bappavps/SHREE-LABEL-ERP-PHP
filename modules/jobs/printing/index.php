@@ -324,6 +324,8 @@ include __DIR__ . '/../../../includes/header.php';
 .fp-timer-actions button{padding:12px 32px;font-size:.95rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;border:none;border-radius:999px;cursor:pointer;transition:all .15s}
 .fp-timer-btn-cancel{background:#64748b;color:#fff}
 .fp-timer-btn-cancel:hover{background:#475569}
+.fp-timer-btn-pause{background:#f59e0b;color:#fff}
+.fp-timer-btn-pause:hover{background:#d97706}
 .fp-timer-btn-end{background:#16a34a;color:#fff}
 .fp-timer-btn-end:hover{background:#15803d}
 </style>
@@ -400,6 +402,8 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
   <?php foreach ($jobs as $idx => $job):
     $sts = $job['status'];
     $stsClass = match($sts) { 'Queued'=>'queued', 'Pending'=>'pending', 'Running'=>'running', 'Completed','QC Passed'=>'completed', default=>'pending' };
+    $timerActive = !empty($job['extra_data_parsed']['timer_active']);
+    $timerState = strtolower(trim((string)($job['extra_data_parsed']['timer_state'] ?? '')));
     $pri = $job['planning_priority'] ?? 'Normal';
     $priClass = match(strtolower($pri)) { 'urgent'=>'urgent', 'high'=>'high', default=>'normal' };
     $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : '—';
@@ -448,7 +452,7 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
         <span class="fp-gate-info"><i class="bi bi-lock-fill"></i> Waiting for slitting: <?= e($job['prev_job_no'] ?? '—') ?> (<?= e($job['prev_job_status'] ?? '—') ?>)</span>
       </div>
       <?php endif; ?>
-      <?php if ($sts === 'Running' && $startedTs): ?>
+      <?php if ($sts === 'Running' && $startedTs && $timerState !== 'paused'): ?>
       <div class="fp-card-row"><span class="fp-label">Elapsed</span><span class="fp-timer" data-started="<?= $startedTs ?>">00:00:00</span></div>
       <?php elseif ($dur !== null): ?>
       <div class="fp-card-row"><span class="fp-label">Duration</span><span class="fp-value"><?= floor($dur/60) ?>h <?= $dur%60 ?>m</span></div>
@@ -468,7 +472,13 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
           <button class="fp-action-btn fp-btn-start" disabled title="Slitting job must complete first"><i class="bi bi-lock-fill"></i> Locked</button>
         <?php elseif ($sts === 'Running'): ?>
           <?php if ($isOperatorView): ?>
-            <button class="fp-action-btn fp-btn-complete" onclick="openPrintDetail(<?= $job['id'] ?>,'complete')"><i class="bi bi-check-lg"></i> Complete</button>
+            <?php if ($timerState === 'paused'): ?>
+              <button class="fp-action-btn fp-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>);event.stopPropagation()"><i class="bi bi-play-circle"></i> Again Start</button>
+            <?php elseif ($timerActive): ?>
+              <button class="fp-action-btn fp-btn-start" onclick="resumeRunningPrintTimer(<?= $job['id'] ?>);event.stopPropagation()"><i class="bi bi-play-circle"></i> Open Timer</button>
+            <?php else: ?>
+              <button class="fp-action-btn fp-btn-complete" onclick="openPrintDetail(<?= $job['id'] ?>,'complete');event.stopPropagation()"><i class="bi bi-check-lg"></i> Complete</button>
+            <?php endif; ?>
           <?php else: ?>
             <button class="fp-action-btn fp-btn-view" onclick="openPrintDetail(<?= $job['id'] ?>);event.stopPropagation()"><i class="bi bi-eye"></i> Open</button>
           <?php endif; ?>
@@ -1261,86 +1271,101 @@ let _timerInterval = null;
 let _timerStart = 0;
 let _timerJobId = null;
 
-async function startJobWithTimer(id) {
-  if (!confirm('Start this job?')) return;
+function isPrintTimerActive(job) {
+  return !!(job && job.extra_data_parsed && job.extra_data_parsed.timer_active);
+}
+
+async function markPrintTimerEnded(jobId) {
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
-  fd.append('action', 'update_status');
-  fd.append('job_id', id);
-  fd.append('status', 'Running');
+  fd.append('action', 'end_timer_session');
+  fd.append('job_id', jobId);
+
+  const res = await fetch(API_BASE, { method: 'POST', body: fd });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'Unable to end timer');
+
+  const job = ALL_JOBS.find(j => j.id == jobId);
+  if (job) {
+    job.extra_data_parsed = job.extra_data_parsed || {};
+    job.extra_data_parsed.timer_active = false;
+    job.extra_data_parsed.timer_state = data.timer_state || 'ended';
+    job.extra_data_parsed.timer_ended_at = data.timer_ended_at || '';
+  }
+}
+
+async function pausePrintTimer(jobId) {
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'pause_timer_session');
+  fd.append('job_id', jobId);
+
+  const res = await fetch(API_BASE, { method: 'POST', body: fd });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'Unable to pause timer');
+
+  const job = ALL_JOBS.find(j => j.id == jobId);
+  if (job) {
+    job.extra_data_parsed = job.extra_data_parsed || {};
+    job.extra_data_parsed.timer_active = false;
+    job.extra_data_parsed.timer_state = data.timer_state || 'paused';
+    job.extra_data_parsed.timer_paused_at = data.timer_paused_at || '';
+    job.extra_data_parsed.timer_last_resumed_at = '';
+    job.extra_data_parsed.timer_accumulated_seconds = Number(data.timer_accumulated_seconds || 0);
+  }
+}
+
+async function resetPrintTimer(jobId) {
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'reset_timer_session');
+  fd.append('job_id', jobId);
+
+  const res = await fetch(API_BASE, { method: 'POST', body: fd });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'Unable to reset timer');
+
+  const job = ALL_JOBS.find(j => j.id == jobId);
+  if (job) {
+    job.status = 'Pending';
+    job.started_at = null;
+    job.completed_at = null;
+    job.duration_minutes = null;
+    job.extra_data_parsed = job.extra_data_parsed || {};
+    job.extra_data_parsed.timer_active = false;
+    job.extra_data_parsed.timer_state = 'pending';
+    job.extra_data_parsed.timer_started_at = '';
+    job.extra_data_parsed.timer_last_resumed_at = '';
+    job.extra_data_parsed.timer_paused_at = '';
+    job.extra_data_parsed.timer_ended_at = '';
+    job.extra_data_parsed.timer_accumulated_seconds = 0;
+  }
+}
+
+function printTimerTotalSeconds(job) {
+  if (!job) return 0;
+  const extra = job.extra_data_parsed || {};
+  const base = Math.max(0, Number(extra.timer_accumulated_seconds || 0));
+  if (!extra.timer_active) return Math.floor(base);
+  const resumedRaw = extra.timer_last_resumed_at || extra.timer_started_at || job.started_at || '';
+  const resumedAt = resumedRaw ? Date.parse(String(resumedRaw).replace(' ', 'T')) : NaN;
+  if (!Number.isFinite(resumedAt) || resumedAt <= 0) return Math.floor(base);
+  return Math.floor(base + ((Date.now() - resumedAt) / 1000));
+}
+
+async function finalizePrintTimer(jobId) {
+  if (!jobId) return;
   try {
-    const res = await fetch(API_BASE, { method: 'POST', body: fd });
-    const data = await res.json();
-    if (!data.ok) { alert('Error: ' + (data.error || 'Unknown')); return; }
-  } catch (err) { alert('Network error: ' + err.message); return; }
+    await markPrintTimerEnded(jobId);
+  } catch (err) {
+    alert('Timer end failed: ' + err.message);
+    return;
+  }
 
-  _timerJobId = id;
-  _timerStart = Date.now();
-  const job = ALL_JOBS.find(j => j.id == id) || {};
-  // Update ALL_JOBS so openPrintDetail sees Running status
-  job.status = 'Running';
-  job.started_at = new Date().toISOString();
-  const jobLabel = resolvePrintDisplayName(job) || ('Job #' + id);
-  const jobNo = job.job_no || '';
-  const paperCo = job.company || '';
-  const paperType = job.paper_type || '';
-
-  const overlay = document.createElement('div');
-  overlay.className = 'fp-timer-overlay';
-  overlay.id = 'fpTimerOverlay';
-  overlay.innerHTML = `
-    <div class="fp-timer-jobinfo">
-      <div style="font-size:1.3rem;font-weight:900;letter-spacing:.03em">${esc(jobNo)}</div>
-      <div style="margin-top:4px">${esc(jobLabel)}</div>
-      ${paperCo || paperType ? `<div style="margin-top:4px;font-size:.85rem;opacity:.8">${esc(paperCo)}${paperCo && paperType ? ' — ' : ''}${esc(paperType)}</div>` : ''}
-    </div>
-    <div class="fp-timer-display" id="fpTimerCounter">00:00:00</div>
-    <div class="fp-timer-actions">
-      <button class="fp-timer-btn-cancel" onclick="cancelTimer()"><i class="bi bi-x-lg"></i> Cancel</button>
-      <button class="fp-timer-btn-end" onclick="endTimer()"><i class="bi bi-stop-fill"></i> End</button>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-
-  _timerInterval = setInterval(() => {
-    const diff = Math.floor((Date.now() - _timerStart) / 1000);
-    const h = String(Math.floor(diff/3600)).padStart(2,'0');
-    const m = String(Math.floor((diff%3600)/60)).padStart(2,'0');
-    const s = String(diff%60).padStart(2,'0');
-    const el = document.getElementById('fpTimerCounter');
-    if (el) el.textContent = h + ':' + m + ':' + s;
-  }, 1000);
-}
-
-function cancelTimer() {
-  if (_timerInterval) clearInterval(_timerInterval);
-  _timerInterval = null;
   const ov = document.getElementById('fpTimerOverlay');
   if (ov) ov.remove();
-  // Revert status back to Pending
-  (async () => {
-    const fd = new FormData();
-    fd.append('csrf_token', CSRF);
-    fd.append('action', 'update_status');
-    fd.append('job_id', _timerJobId);
-    fd.append('status', 'Pending');
-    try { await fetch(API_BASE, { method: 'POST', body: fd }); } catch(e) {}
-    _timerJobId = null;
-    location.reload();
-  })();
-}
 
-let _uploadedPhotoUrl = '';
-
-function endTimer() {
-  if (_timerInterval) clearInterval(_timerInterval);
-  _timerInterval = null;
-  const ov = document.getElementById('fpTimerOverlay');
-  if (ov) ov.remove();
-  const jobId = _timerJobId;
-  _timerJobId = null;
   _uploadedPhotoUrl = '';
-  // Auto-open camera for physical photo, then open detail form
   const camInput = document.createElement('input');
   camInput.type = 'file';
   camInput.accept = 'image/*';
@@ -1360,7 +1385,6 @@ function endTimer() {
         const data = await res.json();
         if (data.ok) {
           _uploadedPhotoUrl = data.photo_url || '';
-          // Update ALL_JOBS so openPrintDetail sees the photo
           const j = ALL_JOBS.find(x => x.id == jobId);
           if (j) {
             if (!j.extra_data_parsed) j.extra_data_parsed = {};
@@ -1370,12 +1394,13 @@ function endTimer() {
         } else {
           alert('Photo upload failed: ' + (data.error || 'Unknown'));
         }
-      } catch (err) { alert('Photo upload error: ' + err.message); }
+      } catch (err) {
+        alert('Photo upload error: ' + err.message);
+      }
     }
     camInput.remove();
     openPrintDetail(jobId, 'complete');
   });
-  // If user cancels camera, still open the form
   camInput.addEventListener('cancel', function() {
     camInput.remove();
     openPrintDetail(jobId, 'complete');
@@ -1383,12 +1408,145 @@ function endTimer() {
   camInput.click();
 }
 
-// ─── Submit operator extra data + complete ──────────────────
-async function submitAndComplete(id) {
-  const job = ALL_JOBS.find(j => j.id == id) || {};
-  const form = document.getElementById('dm-operator-form');
-  if (!form) return updateFPStatus(id, 'Completed');
+async function endRunningPrintTimer(jobId) {
+  await finalizePrintTimer(jobId);
+}
 
+function printTimerStartMs(job) {
+  if (!job) return Date.now();
+  const startedRaw = (job.extra_data_parsed && job.extra_data_parsed.timer_started_at) || job.started_at || '';
+  const parsed = startedRaw ? Date.parse(String(startedRaw).replace(' ', 'T')) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : Date.now();
+}
+
+function showPrintTimerOverlay(job) {
+  if (!job) return;
+  const existing = document.getElementById('fpTimerOverlay');
+  if (existing) existing.remove();
+
+  _timerJobId = Number(job.id || 0);
+  _timerStart = printTimerStartMs(job);
+
+  const jobLabel = resolvePrintDisplayName(job) || ('Job #' + _timerJobId);
+  const jobNo = job.job_no || '';
+  const paperCo = job.company || '';
+  const paperType = job.paper_type || '';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'fp-timer-overlay';
+  overlay.id = 'fpTimerOverlay';
+  overlay.innerHTML = `
+    <div class="fp-timer-jobinfo">
+      <div style="font-size:1.3rem;font-weight:900;letter-spacing:.03em">${esc(jobNo)}</div>
+      <div style="margin-top:4px">${esc(jobLabel)}</div>
+      ${paperCo || paperType ? `<div style="margin-top:4px;font-size:.85rem;opacity:.8">${esc(paperCo)}${paperCo && paperType ? ' — ' : ''}${esc(paperType)}</div>` : ''}
+    </div>
+    <div class="fp-timer-display" id="fpTimerCounter">00:00:00</div>
+    <div class="fp-timer-actions">
+      <button class="fp-timer-btn-cancel" onclick="cancelTimer()"><i class="bi bi-x-lg"></i> Cancel</button>
+      <button class="fp-timer-btn-pause" onclick="pauseTimer()"><i class="bi bi-pause-fill"></i> Pause</button>
+      <button class="fp-timer-btn-end" onclick="endTimer()"><i class="bi bi-stop-fill"></i> End</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  if (_timerInterval) clearInterval(_timerInterval);
+  _timerInterval = setInterval(() => {
+    const diff = Math.max(0, printTimerTotalSeconds(job));
+    const h = String(Math.floor(diff / 3600)).padStart(2, '0');
+    const m = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
+    const s = String(diff % 60).padStart(2, '0');
+    const el = document.getElementById('fpTimerCounter');
+    if (el) el.textContent = h + ':' + m + ':' + s;
+  }, 1000);
+}
+
+function resumeRunningPrintTimer(jobId) {
+  const job = ALL_JOBS.find(j => j.id == jobId);
+  if (!job || String(job.status || '') !== 'Running') {
+    alert('Timer is not active for this job.');
+    return;
+  }
+  if (!isPrintTimerActive(job)) {
+    alert('Timer is paused. Click Again Start.');
+    return;
+  }
+  showPrintTimerOverlay(job);
+}
+
+async function startJobWithTimer(id) {
+  if (!confirm('Start this job?')) return;
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'update_status');
+  fd.append('job_id', id);
+  fd.append('status', 'Running');
+  try {
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) { alert('Error: ' + (data.error || 'Unknown')); return; }
+  } catch (err) { alert('Network error: ' + err.message); return; }
+
+  _timerJobId = id;
+  _timerStart = Date.now();
+  const job = ALL_JOBS.find(j => j.id == id) || {};
+  // Update ALL_JOBS so openPrintDetail sees Running status
+  job.status = 'Running';
+  job.started_at = new Date().toISOString();
+  job.extra_data_parsed = job.extra_data_parsed || {};
+  job.extra_data_parsed.timer_active = true;
+  job.extra_data_parsed.timer_state = 'running';
+  job.extra_data_parsed.timer_started_at = new Date().toISOString();
+  job.extra_data_parsed.timer_ended_at = '';
+  showPrintTimerOverlay(job);
+}
+
+async function cancelTimer() {
+  if (!_timerJobId) return;
+  if (!confirm('Cancel will reset this job timer and return it to Pending. Continue?')) return;
+  try {
+    await resetPrintTimer(_timerJobId);
+  } catch (err) {
+    alert('Timer reset failed: ' + err.message);
+    return;
+  }
+  if (_timerInterval) clearInterval(_timerInterval);
+  _timerInterval = null;
+  const ov = document.getElementById('fpTimerOverlay');
+  if (ov) ov.remove();
+  _timerJobId = null;
+  location.reload();
+}
+
+async function pauseTimer() {
+  const jobId = _timerJobId;
+  if (!jobId) return;
+  try {
+    await pausePrintTimer(jobId);
+  } catch (err) {
+    alert('Timer pause failed: ' + err.message);
+    return;
+  }
+  if (_timerInterval) clearInterval(_timerInterval);
+  _timerInterval = null;
+  const ov = document.getElementById('fpTimerOverlay');
+  if (ov) ov.remove();
+  _timerJobId = null;
+  location.reload();
+}
+
+let _uploadedPhotoUrl = '';
+
+function endTimer() {
+  if (_timerInterval) clearInterval(_timerInterval);
+  _timerInterval = null;
+  const jobId = _timerJobId;
+  _timerJobId = null;
+  finalizePrintTimer(jobId);
+}
+
+function buildPrintingExtraDataFromForm(job, form) {
+  if (!form) return null;
   const rollRows = Array.from(form.querySelectorAll('[data-roll-row]')).map((row, idx) => ({
     idx: idx + 1,
     roll_no: String(row.dataset.rollNo || '').trim(),
@@ -1459,6 +1617,21 @@ async function submitAndComplete(id) {
     physical_print_photo_path: getFieldVal(form, 'physical_print_photo_path')
   });
 
+  return extraData;
+}
+
+// ─── Submit operator extra data + complete ──────────────────
+async function submitAndComplete(id) {
+  const job = ALL_JOBS.find(j => j.id == id) || {};
+  if (isPrintTimerActive(job)) {
+    alert('Timer is still running. Please End the timer before finishing this job.');
+    return;
+  }
+  const form = document.getElementById('dm-operator-form');
+  if (!form) return updateFPStatus(id, 'Completed');
+  const extraData = buildPrintingExtraDataFromForm(job, form);
+  if (!extraData) return updateFPStatus(id, 'Completed');
+
   const fd1 = new FormData();
   fd1.append('csrf_token', CSRF);
   fd1.append('action', 'submit_extra_data');
@@ -1471,6 +1644,57 @@ async function submitAndComplete(id) {
   } catch(e) { alert('Network error'); return; }
 
   await updateFPStatus(id, 'Completed');
+}
+
+// ─── Regenerate job card with reason (admin) ───────────────
+async function regenerateJobCard(id) {
+  if (!IS_ADMIN) { alert('Access denied. Only system admin can regenerate job cards.'); return; }
+  const job = ALL_JOBS.find(j => j.id == id);
+  if (!job) { alert('Job not found.'); return; }
+
+  const reason = prompt('Reason for regeneration (required):', 'Planning update / roll correction');
+  if (reason === null) return;
+  const reasonText = String(reason || '').trim();
+  if (!reasonText) { alert('Reason is required.'); return; }
+
+  const notesAppend = prompt('Describe what changed (optional):', '');
+  if (notesAppend === null) return;
+
+  const currentRoll = String(job.roll_no || '').trim();
+  const newRollPrompt = prompt('Roll No change (optional). Keep blank to retain current roll:', currentRoll);
+  if (newRollPrompt === null) return;
+  const newRoll = String(newRollPrompt || '').trim();
+
+  let changes = {};
+  const form = document.getElementById('dm-operator-form');
+  if (form) {
+    const payload = buildPrintingExtraDataFromForm(job, form);
+    if (payload) changes = payload;
+  }
+
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'regenerate_job_card');
+  fd.append('job_id', String(id));
+  fd.append('reason', reasonText);
+  fd.append('notes_append', String(notesAppend || '').trim());
+  if (newRoll !== '' && newRoll !== currentRoll) {
+    fd.append('roll_no', newRoll);
+  }
+  fd.append('changes_json', JSON.stringify(changes));
+
+  try {
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) {
+      alert('Regenerate failed: ' + (data.error || 'Unknown error'));
+      return;
+    }
+    alert('Job card regenerated successfully. Same job number kept and status reset to Pending.');
+    location.reload();
+  } catch (err) {
+    alert('Network error: ' + err.message);
+  }
 }
 
 function renderLaneSelectOptions(selected) {
@@ -1569,6 +1793,8 @@ async function openPrintDetail(id, mode) {
   const startedTs = job.started_at ? new Date(job.started_at).getTime() : 0;
   const prevDone = !job.previous_job_id || !job.prev_job_status || ['Completed','QC Passed','Closed','Finalized'].includes(job.prev_job_status);
   const elapsedSec = startedTs ? Math.floor((Date.now() - startedTs) / 1000) : 0;
+  const timerActive = isPrintTimerActive(job);
+  const timerState = String((job.extra_data_parsed && job.extra_data_parsed.timer_state) || '').toLowerCase();
 
   const rollRows = (Array.isArray(card.roll_wastage_rows) && card.roll_wastage_rows.length ? card.roll_wastage_rows : card.material_rows).map((row, idx) => ({
     idx,
@@ -1773,16 +1999,23 @@ async function openPrintDetail(id, mode) {
   let fHtml = '<div style="display:flex;gap:8px">';
   fHtml += `<button class="fp-action-btn fp-btn-print" onclick="printJobCard(${job.id})"><i class="bi bi-printer"></i> Print</button>`;
   fHtml += '</div><div style="display:flex;gap:8px">';
-  if (mode === 'complete' && IS_OPERATOR_VIEW) {
+  if (mode === 'complete' && IS_OPERATOR_VIEW && !timerActive && timerState !== 'paused') {
     fHtml += `<button class="fp-action-btn fp-btn-complete" onclick="submitAndComplete(${job.id})"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
   } else if (sts === 'Pending' && prevDone && IS_OPERATOR_VIEW) {
     fHtml += `<button class="fp-action-btn fp-btn-start" onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-fill"></i> Start Job</button>`;
   } else if (sts === 'Pending' && !prevDone) {
     fHtml += `<button class="fp-action-btn fp-btn-start" disabled><i class="bi bi-lock-fill"></i> Waiting for Slitting</button>`;
   } else if (sts === 'Running' && IS_OPERATOR_VIEW) {
-    fHtml += `<button class="fp-action-btn fp-btn-complete" onclick="submitAndComplete(${job.id})"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
+    if (timerState === 'paused') {
+      fHtml += `<button class="fp-action-btn fp-btn-start" onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-circle"></i> Again Start</button>`;
+    } else if (timerActive) {
+      fHtml += `<button class="fp-action-btn fp-btn-start" onclick="resumeRunningPrintTimer(${job.id})"><i class="bi bi-play-circle"></i> Open Timer</button>`;
+    } else {
+      fHtml += `<button class="fp-action-btn fp-btn-complete" onclick="openPrintDetail(${job.id},'complete')"><i class="bi bi-check-lg"></i> Complete</button>`;
+    }
   }
   if (IS_ADMIN) {
+    fHtml += `<button class="fp-action-btn fp-btn-start" onclick="regenerateJobCard(${job.id})" title="Regenerate with reason"><i class="bi bi-arrow-repeat"></i> Regenerate</button>`;
     fHtml += `<button class="fp-action-btn fp-btn-delete" onclick="deleteJob(${job.id})" title="Admin: Delete"><i class="bi bi-trash"></i></button>`;
   }
   fHtml += '</div>';

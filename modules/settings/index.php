@@ -618,6 +618,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       setFlash('error', 'Invalid update package: manifest.json not found.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=update');
     }
+    // Be tolerant of UTF-8 BOM in manifests produced by some zip/build tools.
+    $manifestJson = preg_replace('/^\xEF\xBB\xBF/', '', (string)$manifestJson);
     $manifest = json_decode($manifestJson, true);
     if (!is_array($manifest) || empty($manifest['version']) || empty($manifest['files'])) {
       $zip->close();

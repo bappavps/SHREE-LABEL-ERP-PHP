@@ -56,6 +56,16 @@ $allowedTypes = ['Text', 'Number', 'Date', 'Status', 'Priority'];
 $statusList = ['Pending', 'Preparing Slitting', 'Slitting Completed', 'Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval'];
 $priorityList = ['Low', 'Normal', 'High', 'Urgent'];
 
+function planning_department_options() {
+  return ['label-printing', 'printing', 'slitting', 'packing', 'dispatch', 'general'];
+}
+
+function planning_department_label($department) {
+  $department = trim((string)$department);
+  if ($department === '') return 'General';
+  return ucwords(str_replace('-', ' ', $department));
+}
+
 function planning_json_response($payload, $status = 200) {
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
@@ -148,6 +158,7 @@ function planning_get_rows(mysqli $db, $department) {
         FROM planning p
         LEFT JOIN sales_orders so ON so.id = p.sales_order_id
         WHERE p.department = ?
+          AND LOWER(TRIM(COALESCE(p.status, ''))) <> 'finished'
         ORDER BY
           CASE WHEN p.sequence_order > 0 THEN 0 ELSE 1 END ASC,
           p.sequence_order ASC,
@@ -449,7 +460,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
       $scheduled = $rowValues['dispatch_date'];
 
       // Preserve uploaded image metadata stored in extra_data when saving row fields.
-      $selExtra = $db->prepare("SELECT extra_data FROM planning WHERE id = ? AND department = ? LIMIT 1");
+      $selExtra = $db->prepare("SELECT job_no, job_name, extra_data FROM planning WHERE id = ? AND department = ? LIMIT 1");
       $selExtra->bind_param('is', $id, $department);
       $selExtra->execute();
       $existingRow = $selExtra->get_result()->fetch_assoc();
@@ -465,6 +476,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
       $up = $db->prepare("UPDATE planning SET job_name=?, machine=?, operator_name=?, scheduled_date=NULLIF(?, ''), status=?, priority=?, notes=?, extra_data=? WHERE id=? AND department=?");
       $up->bind_param('ssssssssis', $jobName, $machine, $operator, $scheduled, $status, $priority, $notes, $extraJson, $id, $department);
         $ok = $up->execute();
+        if ($ok) {
+          planningCreateNotifications(
+            $db,
+            (string)($existingRow['job_no'] ?? ''),
+            $jobName !== '' ? $jobName : (string)($existingRow['job_name'] ?? ''),
+            $department,
+            'updated'
+          );
+        }
         planning_json_response(['ok' => (bool)$ok, 'message' => $ok ? 'Row updated.' : 'Update failed.']);
     }
 
@@ -472,7 +492,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $id = (int)($_POST['id'] ?? 0);
         if ($id <= 0) planning_json_response(['ok' => false, 'message' => 'Invalid row id.'], 400);
 
-      $sel = $db->prepare("SELECT extra_data FROM planning WHERE id = ? AND department = ? LIMIT 1");
+      $sel = $db->prepare("SELECT job_no, job_name, extra_data FROM planning WHERE id = ? AND department = ? LIMIT 1");
       $sel->bind_param('is', $id, $department);
       $sel->execute();
       $row = $sel->get_result()->fetch_assoc();
@@ -486,6 +506,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $del = $db->prepare("DELETE FROM planning WHERE id = ? AND department = ?");
         $del->bind_param('is', $id, $department);
         $ok = $del->execute();
+        if ($ok && $row) {
+          planningCreateNotifications($db, (string)($row['job_no'] ?? ''), (string)($row['job_name'] ?? ''), $department, 'deleted');
+        }
         planning_json_response(['ok' => (bool)$ok, 'message' => $ok ? 'Row deleted.' : 'Delete failed.']);
     }
 
@@ -599,6 +622,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $uid = (int)($_SESSION['user_id'] ?? 0);
       $ins->bind_param('ssssssssssi', $planJobNo, $jobName, $machine, $operator, $scheduled, $status, $priority, $notes, $department, $extraJson, $uid);
         $ok = $ins->execute();
+        if ($ok) planningCreateNotifications($db, $planJobNo, $jobName, $department, 'added');
         planning_json_response(['ok' => (bool)$ok, 'id' => $ok ? $db->insert_id : 0, 'job_no' => $planJobNo, 'message' => $ok ? 'Row created.' : 'Create failed.']);
     }
 
@@ -715,7 +739,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if (!$planJobNo) $planJobNo = 'PLN-' . date('Ymd') . '-' . rand(1000,9999);
 
             $ins->bind_param('ssssssssssi', $planJobNo, $jobName, $machine, $operator, $scheduled, $status, $priority, $notes, $department, $extraJson, $uid);
-            if ($ins->execute()) $count++;
+            if ($ins->execute()) {
+              planningCreateNotifications($db, $planJobNo, $jobName, $department, 'imported');
+              $count++;
+            }
         }
 
         if ($count === 0) {
@@ -735,6 +762,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $up->bind_param('iis', $seq, $rid, $department);
             $up->execute();
         }
+        planningCreateNotifications($db, '', 'Planning board', $department, 'sequence updated');
         planning_json_response(['ok' => true, 'message' => 'Sequence updated.']);
     }
 
@@ -743,7 +771,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         if ($id <= 0) planning_json_response(['ok' => false, 'message' => 'Invalid row id.'], 400);
         $newPriority = (string)($_POST['priority'] ?? 'Normal');
         if (!in_array($newPriority, $priorityList, true)) $newPriority = 'Normal';
-        $sel = $db->prepare("SELECT extra_data FROM planning WHERE id = ? AND department = ? LIMIT 1");
+        $sel = $db->prepare("SELECT job_no, job_name, extra_data FROM planning WHERE id = ? AND department = ? LIMIT 1");
         $sel->bind_param('is', $id, $department);
         $sel->execute();
         $existRow = $sel->get_result()->fetch_assoc();
@@ -755,6 +783,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $up = $db->prepare("UPDATE planning SET priority = ?, extra_data = ? WHERE id = ? AND department = ?");
             $up->bind_param('ssis', $newPriority, $exJson, $id, $department);
             $ok = $up->execute();
+            if ($ok) {
+              planningCreateNotifications($db, (string)($existRow['job_no'] ?? ''), (string)($existRow['job_name'] ?? ''), $department, 'priority updated');
+            }
         } else {
             $ok = false;
         }
@@ -767,6 +798,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 $columns = planning_get_columns($db, $department, $defaultColumns);
 $rows = planning_get_rows($db, $department);
 $planningJobPreview = previewNextId('planning') ?: 'Auto-generated on save';
+$deptOptions = planning_department_options();
+$boardUrl = appUrl('modules/planning/index.php?department=' . rawurlencode($department));
+$historyUrl = appUrl('modules/planning/history.php?department=' . rawurlencode($department));
 
 // Granular permissions: admin always gets full access
 $canAdd    = currentPageAction('add');
@@ -780,6 +814,11 @@ include __DIR__ . '/../../includes/header.php';
 <div class="breadcrumb">
   <a href="<?= BASE_URL ?>/modules/dashboard/index.php">Dashboard</a><span class="breadcrumb-sep">›</span>
   <span>Planning</span>
+</div>
+
+<div class="planning-view-switch">
+  <a href="<?= e($boardUrl) ?>" class="planning-view-link is-active"><i class="bi bi-grid-1x2"></i> Board</a>
+  <a href="<?= e($historyUrl) ?>" class="planning-view-link"><i class="bi bi-clock-history"></i> History</a>
 </div>
 
 <div class="page-header">
@@ -808,9 +847,8 @@ include __DIR__ . '/../../includes/header.php';
     </span>
     <div class="d-flex gap-8">
       <select id="dept-switch" class="form-control" style="min-width:210px">
-        <?php $deptOptions = ['label-printing', 'printing', 'slitting', 'packing', 'dispatch', 'general']; ?>
         <?php foreach ($deptOptions as $d): ?>
-          <option value="<?= e($d) ?>" <?= $d === $department ? 'selected' : '' ?>><?= e(ucwords(str_replace('-', ' ', $d))) ?></option>
+          <option value="<?= e($d) ?>" <?= $d === $department ? 'selected' : '' ?>><?= e(planning_department_label($d)) ?></option>
         <?php endforeach; ?>
       </select>
     </div>
@@ -1046,7 +1084,7 @@ include __DIR__ . '/../../includes/header.php';
   <input type="hidden" name="department" value="<?= e($department) ?>">
 </form>
 
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
 (function(){
   'use strict';
@@ -1134,14 +1172,304 @@ include __DIR__ . '/../../includes/header.php';
       return;
     }
 
-    var data = [boardHeaders()].concat(rows);
-    var ws = XLSX.utils.aoa_to_sheet(data);
+    function departmentLabel(value) {
+      return String(value || 'general').replace(/-/g, ' ').replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
+    }
+
+    function buildCounts(colType) {
+      var index = -1;
+      for (var i = 0; i < columns.length; i += 1) {
+        if (columns[i].type === colType) {
+          index = i + 2;
+          break;
+        }
+      }
+      var counts = {};
+      if (index === -1) return counts;
+      rows.forEach(function (row) {
+        var key = String(row[index] || '').trim() || 'Unspecified';
+        counts[key] = (counts[key] || 0) + 1;
+      });
+      return counts;
+    }
+
+    function countsToMatrix(title, counts) {
+      var keys = Object.keys(counts);
+      var matrix = [[title], ['Value', 'Count']];
+      if (!keys.length) {
+        matrix.push(['No data', 0]);
+        return matrix;
+      }
+      keys.sort(function (a, b) { return a.localeCompare(b); }).forEach(function (key) {
+        matrix.push([key, counts[key]]);
+      });
+      return matrix;
+    }
+
+    function computeWidths(matrix) {
+      var widths = [];
+      matrix.forEach(function (row) {
+        row.forEach(function (cell, idx) {
+          var len = String(cell == null ? '' : cell).length;
+          widths[idx] = Math.max(widths[idx] || 0, Math.min(Math.max(len + 2, 10), 42));
+        });
+      });
+      return widths.map(function (wch) { return { wch: wch }; });
+    }
+
+    function encode(row, col) {
+      return XLSX.utils.encode_cell({ r: row, c: col });
+    }
+
+    function ensureCell(wsRef, row, col) {
+      var ref = encode(row, col);
+      if (!wsRef[ref]) wsRef[ref] = { t: 's', v: '' };
+      return wsRef[ref];
+    }
+
+    function mergeStyle(base, extra) {
+      var out = {};
+      Object.keys(base || {}).forEach(function (key) { out[key] = base[key]; });
+      Object.keys(extra || {}).forEach(function (key) { out[key] = extra[key]; });
+      return out;
+    }
+
+    var palette = {
+      navy: '173A63',
+      blue: '2563EB',
+      sky: 'DBEAFE',
+      teal: '0F766E',
+      mint: 'DCFCE7',
+      green: '16A34A',
+      amber: 'F59E0B',
+      amberSoft: 'FEF3C7',
+      red: 'DC2626',
+      redSoft: 'FEE2E2',
+      slate: '475569',
+      slateSoft: 'E2E8F0',
+      white: 'FFFFFF',
+      panel: 'F8FAFC',
+      lavender: 'EEF2FF',
+      border: 'CBD5E1'
+    };
+
+    var borderAll = {
+      top: { style: 'thin', color: { rgb: palette.border } },
+      bottom: { style: 'thin', color: { rgb: palette.border } },
+      left: { style: 'thin', color: { rgb: palette.border } },
+      right: { style: 'thin', color: { rgb: palette.border } }
+    };
+
+    var styles = {
+      title: {
+        font: { bold: true, sz: 18, color: { rgb: palette.white } },
+        fill: { fgColor: { rgb: palette.navy } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: borderAll
+      },
+      metaLabel: {
+        font: { bold: true, color: { rgb: palette.navy } },
+        fill: { fgColor: { rgb: palette.sky } },
+        alignment: { horizontal: 'left', vertical: 'center' },
+        border: borderAll
+      },
+      metaValue: {
+        font: { bold: true, color: { rgb: '0F172A' } },
+        fill: { fgColor: { rgb: palette.white } },
+        alignment: { horizontal: 'left', vertical: 'center' },
+        border: borderAll
+      },
+      section: {
+        font: { bold: true, sz: 13, color: { rgb: palette.white } },
+        fill: { fgColor: { rgb: palette.teal } },
+        alignment: { horizontal: 'left', vertical: 'center' },
+        border: borderAll
+      },
+      tableHead: {
+        font: { bold: true, color: { rgb: palette.white } },
+        fill: { fgColor: { rgb: palette.blue } },
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+        border: borderAll
+      },
+      cell: {
+        font: { color: { rgb: '0F172A' } },
+        fill: { fgColor: { rgb: palette.white } },
+        alignment: { horizontal: 'left', vertical: 'center', wrapText: true },
+        border: borderAll
+      },
+      altCell: {
+        font: { color: { rgb: '0F172A' } },
+        fill: { fgColor: { rgb: palette.panel } },
+        alignment: { horizontal: 'left', vertical: 'center', wrapText: true },
+        border: borderAll
+      },
+      countHead: {
+        font: { bold: true, color: { rgb: palette.navy } },
+        fill: { fgColor: { rgb: palette.slateSoft } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: borderAll
+      },
+      countValue: {
+        font: { bold: true, color: { rgb: '0F172A' } },
+        fill: { fgColor: { rgb: palette.white } },
+        alignment: { horizontal: 'left', vertical: 'center' },
+        border: borderAll
+      },
+      countNumber: {
+        font: { bold: true, color: { rgb: palette.navy } },
+        fill: { fgColor: { rgb: palette.lavender } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: borderAll
+      }
+    };
+
+    function statusFill(value) {
+      var v = String(value || '').trim().toLowerCase();
+      if (v === 'running') return { fg: 'DBEAFE', font: '1D4ED8' };
+      if (v === 'completed' || v === 'printing done' || v === 'slitting completed' || v === 'finished') return { fg: 'DCFCE7', font: '166534' };
+      if (v.indexOf('hold') === 0) return { fg: 'FEE2E2', font: 'B91C1C' };
+      if (v.indexOf('slitting') !== -1) return { fg: 'FFEDD5', font: 'C2410C' };
+      return { fg: 'E2E8F0', font: '334155' };
+    }
+
+    function priorityFill(value) {
+      var v = String(value || '').trim().toLowerCase();
+      if (v === 'urgent') return { fg: 'FEE2E2', font: 'B91C1C' };
+      if (v === 'high') return { fg: 'FEF3C7', font: 'B45309' };
+      if (v === 'normal') return { fg: 'DBEAFE', font: '1D4ED8' };
+      return { fg: 'E2E8F0', font: '334155' };
+    }
+
+    function applyRowStyle(wsRef, row, colCount, style, startCol) {
+      var begin = typeof startCol === 'number' ? startCol : 0;
+      for (var col = begin; col < colCount; col += 1) {
+        ensureCell(wsRef, row, col).s = style;
+      }
+    }
+
+    function styleCountTable(wsRef, startRow, counts, colorResolver) {
+      var keys = Object.keys(counts);
+      ensureCell(wsRef, startRow, 0).s = styles.section;
+      ensureCell(wsRef, startRow + 1, 0).s = styles.countHead;
+      ensureCell(wsRef, startRow + 1, 1).s = styles.countHead;
+      var rowsLocal = keys.length ? keys : ['No data'];
+      rowsLocal.forEach(function (key, idx) {
+        var rowIdx = startRow + 2 + idx;
+        var isEmpty = !keys.length;
+        var tone = colorResolver(isEmpty ? '' : key);
+        ensureCell(wsRef, rowIdx, 0).s = mergeStyle(styles.countValue, {
+          fill: { fgColor: { rgb: tone.fg || palette.white } },
+          font: { bold: true, color: { rgb: tone.font || '0F172A' } }
+        });
+        ensureCell(wsRef, rowIdx, 1).s = styles.countNumber;
+      });
+      return startRow + 2 + rowsLocal.length;
+    }
+
+    var headers = boardHeaders();
+    var reportTitle = 'Planning Board Export';
+    var deptLabel = departmentLabel(currentDepartment);
+    var printedAt = new Date();
+    var statusCounts = buildCounts('Status');
+    var priorityCounts = buildCounts('Priority');
+    var detailData = [
+      [reportTitle],
+      ['Department', deptLabel, 'Exported At', printedAt.toLocaleString()],
+      ['Total Rows', rows.length, 'View', 'Active Planning Board'],
+      [],
+      headers
+    ].concat(rows);
+    var ws = XLSX.utils.aoa_to_sheet(detailData);
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: Math.max(headers.length - 1, 0) } }];
+    ws['!cols'] = computeWidths(detailData);
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 4, c: 0 }, e: { r: 4 + rows.length, c: headers.length - 1 } }) };
+    ws['!rows'] = [{ hpt: 26 }, { hpt: 22 }, { hpt: 22 }, { hpt: 8 }, { hpt: 24 }];
+
+    applyRowStyle(ws, 0, headers.length, styles.title);
+    ensureCell(ws, 1, 0).s = styles.metaLabel;
+    ensureCell(ws, 1, 1).s = styles.metaValue;
+    ensureCell(ws, 1, 2).s = styles.metaLabel;
+    ensureCell(ws, 1, 3).s = styles.metaValue;
+    ensureCell(ws, 2, 0).s = styles.metaLabel;
+    ensureCell(ws, 2, 1).s = styles.metaValue;
+    ensureCell(ws, 2, 2).s = styles.metaLabel;
+    ensureCell(ws, 2, 3).s = styles.metaValue;
+    applyRowStyle(ws, 4, headers.length, styles.tableHead);
+
+    var statusIndex = -1;
+    var priorityIndex = -1;
+    columns.forEach(function (col, idx) {
+      var absoluteIndex = idx + 2;
+      if (col.type === 'Status' && statusIndex === -1) statusIndex = absoluteIndex;
+      if (col.type === 'Priority' && priorityIndex === -1) priorityIndex = absoluteIndex;
+    });
+
+    rows.forEach(function (row, idx) {
+      var rowNumber = 5 + idx;
+      var baseStyle = idx % 2 === 0 ? styles.cell : styles.altCell;
+      applyRowStyle(ws, rowNumber, headers.length, baseStyle);
+      ensureCell(ws, rowNumber, 0).s = mergeStyle(baseStyle, { alignment: { horizontal: 'center', vertical: 'center' } });
+      if (statusIndex >= 0) {
+        var statusTone = statusFill(row[statusIndex]);
+        ensureCell(ws, rowNumber, statusIndex).s = mergeStyle(baseStyle, {
+          fill: { fgColor: { rgb: statusTone.fg } },
+          font: { bold: true, color: { rgb: statusTone.font } },
+          alignment: { horizontal: 'center', vertical: 'center' }
+        });
+      }
+      if (priorityIndex >= 0) {
+        var priorityTone = priorityFill(row[priorityIndex]);
+        ensureCell(ws, rowNumber, priorityIndex).s = mergeStyle(baseStyle, {
+          fill: { fgColor: { rgb: priorityTone.fg } },
+          font: { bold: true, color: { rgb: priorityTone.font } },
+          alignment: { horizontal: 'center', vertical: 'center' }
+        });
+      }
+    });
+
+    var overviewData = [
+      ['Planning Export Overview'],
+      ['Department', deptLabel],
+      ['Exported At', printedAt.toLocaleString()],
+      ['Total Rows', rows.length],
+      []
+    ].concat(countsToMatrix('Status Summary', statusCounts))
+      .concat([[]])
+      .concat(countsToMatrix('Priority Summary', priorityCounts));
+    var overviewWs = XLSX.utils.aoa_to_sheet(overviewData);
+    var statusBlock = countsToMatrix('Status Summary', statusCounts);
+    var priorityBlock = countsToMatrix('Priority Summary', priorityCounts);
+    var priorityTitleRow = 5 + statusBlock.length + 1;
+    overviewWs['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 1 } },
+      { s: { r: 5, c: 0 }, e: { r: 5, c: 1 } },
+      { s: { r: priorityTitleRow, c: 0 }, e: { r: priorityTitleRow, c: 1 } }
+    ];
+    overviewWs['!cols'] = computeWidths(overviewData);
+    overviewWs['!rows'] = [{ hpt: 26 }];
+    ensureCell(overviewWs, 0, 0).s = styles.title;
+    ensureCell(overviewWs, 1, 0).s = styles.metaLabel;
+    ensureCell(overviewWs, 1, 1).s = styles.metaValue;
+    ensureCell(overviewWs, 2, 0).s = styles.metaLabel;
+    ensureCell(overviewWs, 2, 1).s = styles.metaValue;
+    ensureCell(overviewWs, 3, 0).s = styles.metaLabel;
+    ensureCell(overviewWs, 3, 1).s = styles.metaValue;
+    styleCountTable(overviewWs, 5, statusCounts, statusFill);
+    styleCountTable(overviewWs, priorityTitleRow, priorityCounts, priorityFill);
+
     var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Planning');
+    wb.Props = {
+      Title: reportTitle,
+      Subject: 'Planning board export',
+      Author: 'Calipot ERP',
+      CreatedDate: printedAt
+    };
+    XLSX.utils.book_append_sheet(wb, overviewWs, 'Overview');
+    XLSX.utils.book_append_sheet(wb, ws, 'Planning Board');
 
     var fileDept = String(currentDepartment || 'planning').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'planning';
     var stamp = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(wb, 'planning-' + fileDept + '-' + stamp + '.xlsx');
+    XLSX.writeFile(wb, 'planning-' + fileDept + '-' + stamp + '.xlsx', { cellStyles: true });
   }
 
   function printPlanningBoard() {
@@ -2118,6 +2446,34 @@ include __DIR__ . '/../../includes/header.php';
 </script>
 
 <style>
+.planning-view-switch {
+  display: inline-flex;
+  gap: 8px;
+  margin: 0 0 14px;
+  flex-wrap: wrap;
+}
+.planning-view-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 1px solid #dbe5f0;
+  background: #fff;
+  color: #334155;
+  font-size: .82rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+.planning-view-link:hover {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+.planning-view-link.is-active {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
 .planning-board-wrap { max-height: 74vh; overflow: auto; }
 .planning-board-table { min-width: 1700px; }
 .planning-board-table th,
