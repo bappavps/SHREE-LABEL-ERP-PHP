@@ -402,15 +402,24 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-timer-overlay{position:fixed;inset:0;z-index:20000;background:rgba(15,23,42,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;backdrop-filter:blur(4px)}
 .jc-timer-jobinfo{text-align:center;color:#fff;font-size:1rem;font-weight:700}
 .jc-timer-display{font-size:4rem;font-weight:900;color:#fff;font-family:'Courier New',monospace;letter-spacing:.06em;text-shadow:0 4px 24px rgba(0,0,0,.4)}
-.jc-timer-actions{display:flex;gap:16px}
-.jc-timer-actions button{padding:14px 32px;font-size:1rem;font-weight:800;border:none;border-radius:12px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;text-transform:uppercase}
+.jc-timer-actions{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;max-width:min(92vw,760px)}
+.jc-timer-actions button{padding:14px 32px;font-size:1rem;font-weight:800;border:none;border-radius:12px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;text-transform:uppercase;justify-content:center;flex:1 1 180px}
 .jc-timer-btn-cancel{background:#ef4444;color:#fff}
 .jc-timer-btn-cancel:hover{background:#dc2626}
 .jc-timer-btn-pause{background:#f59e0b;color:#fff}
 .jc-timer-btn-pause:hover{background:#d97706}
 .jc-timer-btn-end{background:#16a34a;color:#fff}
 .jc-timer-btn-end:hover{background:#15803d}
-@media(max-width:600px){.jc-grid{grid-template-columns:1fr}.jc-stats{grid-template-columns:repeat(2,1fr)}.jc-detail-grid{grid-template-columns:1fr}.jc-form-row{grid-template-columns:1fr}.jc-summary-grid,.jc-timing-grid,.jc-action-bar,.jc-roll-check-grid,.jc-picker-filters{grid-template-columns:1fr}.jc-child-shell{margin-left:0}.jc-roll-pick-row{flex-wrap:wrap}.jc-roll-pick-row input{min-width:0;width:100%}.dm-change-section .jc-roll-pick-row{flex-direction:column;align-items:stretch}.dm-change-section .jc-roll-pick-row input{width:100%}.dm-change-section .jc-roll-pick-row button{width:100%;justify-content:center}.dm-change-section h3{font-size:.85rem}.dm-subst-detail-grid{grid-template-columns:1fr 1fr !important}#dm-edit-parent-table{font-size:.72rem}#dm-edit-parent-table th,#dm-edit-parent-table td{padding:6px 4px}.dm-change-roll-detail .jc-roll-check-grid{grid-template-columns:1fr 1fr}#dm-roll-change-sections{margin:0 -4px}}
+.jc-timer-history{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}
+.jc-timer-history-card{border:1px solid #e2e8f0;border-radius:12px;background:#fff;padding:12px}
+.jc-timer-history-card h4{margin:0 0 8px;font-size:.74rem;font-weight:900;letter-spacing:.04em;text-transform:uppercase;color:#475569}
+.jc-timer-history-list{display:grid;gap:8px}
+.jc-timer-history-row{display:grid;grid-template-columns:96px 1fr;gap:10px;padding:8px 10px;border-radius:10px;background:#f8fafc;align-items:start}
+.jc-timer-history-row.work{background:#f0fdf4}.jc-timer-history-row.pause{background:#fff7ed}
+.jc-timer-history-row .k{font-size:.68rem;font-weight:900;letter-spacing:.03em;text-transform:uppercase;color:#64748b}
+.jc-timer-history-row .v{font-size:.82rem;font-weight:700;color:#0f172a;line-height:1.45}
+.jc-timer-history-empty{font-size:.78rem;color:#94a3b8;font-weight:700}
+@media(max-width:600px){.jc-grid{grid-template-columns:1fr}.jc-stats{grid-template-columns:repeat(2,1fr)}.jc-detail-grid{grid-template-columns:1fr}.jc-form-row{grid-template-columns:1fr}.jc-summary-grid,.jc-timing-grid,.jc-action-bar,.jc-roll-check-grid,.jc-picker-filters,.jc-timer-history{grid-template-columns:1fr}.jc-child-shell{margin-left:0}.jc-roll-pick-row{flex-wrap:wrap}.jc-roll-pick-row input{min-width:0;width:100%}.dm-change-section .jc-roll-pick-row{flex-direction:column;align-items:stretch}.dm-change-section .jc-roll-pick-row input{width:100%}.dm-change-section .jc-roll-pick-row button{width:100%;justify-content:center}.dm-change-section h3{font-size:.85rem}.dm-subst-detail-grid{grid-template-columns:1fr 1fr !important}#dm-edit-parent-table{font-size:.72rem}#dm-edit-parent-table th,#dm-edit-parent-table td{padding:6px 4px}.dm-change-roll-detail .jc-roll-check-grid{grid-template-columns:1fr 1fr}#dm-roll-change-sections{margin:0 -4px}.jc-timer-overlay{padding:18px 14px;gap:18px}.jc-timer-jobinfo{font-size:.92rem;padding:0 8px}.jc-timer-display{font-size:2.4rem;line-height:1.1;text-align:center}.jc-timer-actions{width:100%;gap:10px}.jc-timer-actions button{width:100%;flex:1 1 100%;padding:13px 16px;font-size:.95rem}.jc-timer-history-row{grid-template-columns:1fr}}
 </style>
 
 <div class="jc-header no-print">
@@ -507,8 +516,10 @@ $historyCount = $finishedCount;
       <div class="jc-card-row"><span class="jc-label">Priority</span><span class="jc-value"><?= e($job['planning_priority'] ?? 'Normal') ?></span></div>
     </div>
     <?php $startedTs = $job['started_at'] ? strtotime($job['started_at']) * 1000 : 0; ?>
-    <?php if ($sts === 'Running' && $startedTs && $timerState !== 'paused'): ?>
-    <div class="jc-card-row"><span class="jc-label">Elapsed</span><span class="jc-timer" data-started="<?= $startedTs ?>" style="color:var(--jc-blue);font-weight:700">00:00:00</span></div>
+    <?php $resumedTs = !empty($job['extra_data_parsed']['timer_last_resumed_at']) ? (strtotime($job['extra_data_parsed']['timer_last_resumed_at']) * 1000) : $startedTs; ?>
+    <?php $baseSeconds = (int)round((float)($job['extra_data_parsed']['timer_accumulated_seconds'] ?? 0)); ?>
+    <?php if ($sts === 'Running' && $resumedTs && $timerState !== 'paused'): ?>
+    <div class="jc-card-row"><span class="jc-label">Elapsed</span><span class="jc-timer" data-base-seconds="<?= $baseSeconds ?>" data-resumed-at="<?= $resumedTs ?>" style="color:var(--jc-blue);font-weight:700">00:00:00</span></div>
     <?php endif; ?>
     <div class="jc-card-foot">
       <div class="jc-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
@@ -834,6 +845,132 @@ function jumboTimerTotalSeconds(job) {
   return Math.floor(base + ((Date.now() - resumedAt) / 1000));
 }
 
+function jumboSecondsToHms(seconds) {
+  const sec = Math.max(0, Math.floor(Number(seconds) || 0));
+  const h = String(Math.floor(sec / 3600)).padStart(2, '0');
+  const m = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
+  const s = String(sec % 60).padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
+function jumboFormatDuration(seconds) {
+  const sec = Math.max(0, Math.floor(Number(seconds) || 0));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  return `${s}s`;
+}
+
+function jumboFormatDateTime(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '—';
+  const parsed = new Date(raw.replace(' ', 'T'));
+  return Number.isFinite(parsed.getTime()) ? parsed.toLocaleString() : '—';
+}
+
+function jumboDurationSeconds(job) {
+  if (!job) return 0;
+  const extra = job.extra_data_parsed || {};
+  const acc = Math.max(0, Math.floor(Number(extra.timer_accumulated_seconds || 0)));
+  if (acc > 0) return acc;
+  const mins = Number(job.duration_minutes || 0);
+  return Number.isFinite(mins) && mins > 0 ? Math.floor(mins * 60) : 0;
+}
+
+function jumboPauseTotalSeconds(extra) {
+  const segments = Array.isArray(extra?.timer_pause_segments) ? extra.timer_pause_segments : [];
+  let total = segments.reduce((sum, row) => sum + Math.max(0, Number(row?.seconds || 0)), 0);
+  const pausedAt = String(extra?.timer_pause_started_at || extra?.timer_paused_at || '').trim();
+  const isPaused = String(extra?.timer_state || '').toLowerCase() === 'paused';
+  if (isPaused && pausedAt) {
+    const fromTs = Date.parse(pausedAt.replace(' ', 'T'));
+    if (Number.isFinite(fromTs) && fromTs > 0) total += Math.max(0, Math.floor((Date.now() - fromTs) / 1000));
+  }
+  return total;
+}
+
+function jumboPushTimerEventLocal(extra, type, at) {
+  extra.timer_events = Array.isArray(extra.timer_events) ? extra.timer_events : [];
+  const last = extra.timer_events.length ? extra.timer_events[extra.timer_events.length - 1] : null;
+  if (!last || String(last.type || '') !== type || String(last.at || '') !== at) {
+    extra.timer_events.push({ type, at });
+  }
+}
+
+function jumboPushTimerSegmentLocal(extra, key, from, to) {
+  const fromTs = Date.parse(String(from || '').replace(' ', 'T'));
+  const toTs = Date.parse(String(to || '').replace(' ', 'T'));
+  if (!Number.isFinite(fromTs) || !Number.isFinite(toTs) || toTs <= fromTs) return;
+  extra[key] = Array.isArray(extra[key]) ? extra[key] : [];
+  extra[key].push({ from, to, seconds: Math.floor((toTs - fromTs) / 1000) });
+}
+
+function jumboLiveTimerAttrs(job) {
+  const extra = job?.extra_data_parsed || {};
+  const resumedRaw = extra.timer_last_resumed_at || extra.timer_started_at || job?.started_at || '';
+  const resumedAt = resumedRaw ? Date.parse(String(resumedRaw).replace(' ', 'T')) : NaN;
+  const baseSeconds = Math.max(0, Number(extra.timer_accumulated_seconds || 0));
+  const resumedAttr = Number.isFinite(resumedAt) && resumedAt > 0 ? resumedAt : 0;
+  return `data-base-seconds="${Math.floor(baseSeconds)}" data-resumed-at="${resumedAttr}"`;
+}
+
+function jumboBuildTimerHistoryHtml(job) {
+  const extra = job?.extra_data_parsed || {};
+  const events = Array.isArray(extra.timer_events) ? extra.timer_events.filter(row => row && row.at) : [];
+  const fallbackEvents = [];
+  if (!events.length) {
+    if (extra.timer_started_at || job?.started_at) fallbackEvents.push({ type: 'start', at: extra.timer_started_at || job.started_at });
+    if (extra.timer_paused_at) fallbackEvents.push({ type: 'pause', at: extra.timer_paused_at });
+    if (extra.timer_ended_at || job?.completed_at) fallbackEvents.push({ type: 'end', at: extra.timer_ended_at || job.completed_at });
+  }
+  const eventRows = (events.length ? events : fallbackEvents).sort((a, b) => Date.parse(String(a.at).replace(' ', 'T')) - Date.parse(String(b.at).replace(' ', 'T')));
+
+  const segments = [];
+  (Array.isArray(extra.timer_work_segments) ? extra.timer_work_segments : []).forEach(row => {
+    if (row && row.from && row.to) segments.push({ kind: 'work', from: row.from, to: row.to, seconds: Number(row.seconds || 0) });
+  });
+  (Array.isArray(extra.timer_pause_segments) ? extra.timer_pause_segments : []).forEach(row => {
+    if (row && row.from && row.to) segments.push({ kind: 'pause', from: row.from, to: row.to, seconds: Number(row.seconds || 0) });
+  });
+  if (!segments.length && (extra.timer_started_at || job?.started_at) && (extra.timer_ended_at || job?.completed_at)) {
+    const from = extra.timer_started_at || job.started_at;
+    const to = extra.timer_ended_at || job.completed_at;
+    const fromTs = Date.parse(String(from).replace(' ', 'T'));
+    const toTs = Date.parse(String(to).replace(' ', 'T'));
+    if (Number.isFinite(fromTs) && Number.isFinite(toTs) && toTs > fromTs) {
+      segments.push({ kind: 'work', from, to, seconds: Math.floor((toTs - fromTs) / 1000) });
+    }
+  }
+  segments.sort((a, b) => Date.parse(String(a.from).replace(' ', 'T')) - Date.parse(String(b.from).replace(' ', 'T')));
+
+  const timeOnly = (val) => {
+    const d = new Date(String(val || '').replace(' ', 'T'));
+    if (!Number.isFinite(d.getTime())) return '—';
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  };
+
+  const summaryBits = segments.map(row => `${timeOnly(row.from)}-${timeOnly(row.to)} ${row.kind === 'pause' ? 'paused' : 'worked'}`);
+  const pauseTotalSeconds = segments
+    .filter(row => row.kind === 'pause')
+    .reduce((sum, row) => sum + Math.max(0, Number(row.seconds || 0)), 0);
+  const summaryText = summaryBits.length ? summaryBits.join(', ') : 'No time ranges yet';
+
+  const eventMap = { start: 'Start', resume: 'Again Start', pause: 'Pause', end: 'End' };
+  const eventsHtml = eventRows.length
+    ? eventRows.map(row => `<div class="jc-timer-history-row"><div class="k">${esc(eventMap[String(row.type || '').toLowerCase()] || 'Event')}</div><div class="v">${esc(jumboFormatDateTime(row.at))}</div></div>`).join('')
+    : '<div class="jc-timer-history-empty">No timer event history yet.</div>';
+  const segmentsHtml = segments.length
+    ? segments.map(row => `<div class="jc-timer-history-row ${row.kind}"><div class="k">${row.kind === 'pause' ? 'Paused' : 'Worked'}</div><div class="v">${esc(jumboFormatDateTime(row.from))} - ${esc(jumboFormatDateTime(row.to))}<br><span style="color:#64748b;font-weight:800">${esc(jumboFormatDuration(row.seconds))}</span></div></div>`).join('')
+    : '<div class="jc-timer-history-empty">No work/pause ranges recorded yet.</div>';
+
+  return `<div class="jc-timer-history">
+    <div class="jc-timer-history-card"><h4>Event Log</h4><div class="jc-timer-history-list">${eventsHtml}</div></div>
+    <div class="jc-timer-history-card"><h4>Work / Pause Range</h4><div style="font-size:.82rem;font-weight:800;color:#0f172a;line-height:1.55;margin-bottom:8px">${esc(summaryText)}</div><div style="font-size:.78rem;font-weight:900;color:#b45309;margin-bottom:10px">Total Pause: ${esc(jumboFormatDuration(pauseTotalSeconds))}</div><div class="jc-timer-history-list">${segmentsHtml}</div></div>
+  </div>`;
+}
+
 function showJumboTimerOverlay(job) {
   if (!job) return;
   const existing = document.getElementById('jcTimerOverlay');
@@ -903,11 +1040,17 @@ async function pauseJumboTimer(jobId) {
   const job = getJobById(jobId);
   if (job) {
     job.extra_data_parsed = job.extra_data_parsed || {};
+    const nowIso = new Date().toISOString();
+    if (job.extra_data_parsed.timer_last_resumed_at) {
+      jumboPushTimerSegmentLocal(job.extra_data_parsed, 'timer_work_segments', job.extra_data_parsed.timer_last_resumed_at, nowIso);
+    }
     job.extra_data_parsed.timer_active = false;
     job.extra_data_parsed.timer_state = data.timer_state || 'paused';
     job.extra_data_parsed.timer_paused_at = data.timer_paused_at || '';
+    job.extra_data_parsed.timer_pause_started_at = data.timer_paused_at || nowIso;
     job.extra_data_parsed.timer_last_resumed_at = '';
     job.extra_data_parsed.timer_accumulated_seconds = Number(data.timer_accumulated_seconds || 0);
+    jumboPushTimerEventLocal(job.extra_data_parsed, 'pause', job.extra_data_parsed.timer_paused_at || nowIso);
   }
 }
 
@@ -933,8 +1076,12 @@ async function resetJumboTimer(jobId) {
     job.extra_data_parsed.timer_started_at = '';
     job.extra_data_parsed.timer_last_resumed_at = '';
     job.extra_data_parsed.timer_paused_at = '';
+    job.extra_data_parsed.timer_pause_started_at = '';
     job.extra_data_parsed.timer_ended_at = '';
     job.extra_data_parsed.timer_accumulated_seconds = 0;
+    job.extra_data_parsed.timer_events = [];
+    job.extra_data_parsed.timer_work_segments = [];
+    job.extra_data_parsed.timer_pause_segments = [];
   }
 }
 
@@ -951,9 +1098,18 @@ async function markJumboTimerEnded(jobId) {
   const job = getJobById(jobId);
   if (job) {
     job.extra_data_parsed = job.extra_data_parsed || {};
+    const nowIso = data.timer_ended_at || new Date().toISOString();
+    if (job.extra_data_parsed.timer_last_resumed_at) {
+      jumboPushTimerSegmentLocal(job.extra_data_parsed, 'timer_work_segments', job.extra_data_parsed.timer_last_resumed_at, nowIso);
+    }
     job.extra_data_parsed.timer_active = false;
     job.extra_data_parsed.timer_state = data.timer_state || 'ended';
-    job.extra_data_parsed.timer_ended_at = data.timer_ended_at || '';
+    job.extra_data_parsed.timer_ended_at = nowIso;
+    job.extra_data_parsed.timer_last_resumed_at = '';
+    job.extra_data_parsed.timer_paused_at = '';
+    job.extra_data_parsed.timer_pause_started_at = '';
+    job.extra_data_parsed.timer_accumulated_seconds = Number(data.timer_accumulated_seconds || job.extra_data_parsed.timer_accumulated_seconds || 0);
+    jumboPushTimerEventLocal(job.extra_data_parsed, 'end', nowIso);
   }
 }
 
@@ -1252,14 +1408,11 @@ document.getElementById('jcSearch').addEventListener('input', function() {
 
 // ─── Live timers for running jobs ────────────────────────────
 function updateTimers() {
-  document.querySelectorAll('.jc-timer[data-started]').forEach(el => {
-    const started = parseInt(el.dataset.started);
-    if (!started) return;
-    const diff = Math.floor((Date.now() - started) / 1000);
-    const h = String(Math.floor(diff/3600)).padStart(2,'0');
-    const m = String(Math.floor((diff%3600)/60)).padStart(2,'0');
-    const s = String(diff%60).padStart(2,'0');
-    el.textContent = h + ':' + m + ':' + s;
+  document.querySelectorAll('.jc-timer').forEach(el => {
+    const base = Math.max(0, parseInt(el.dataset.baseSeconds || '0', 10) || 0);
+    const resumedAt = parseInt(el.dataset.resumedAt || '0', 10) || 0;
+    const diff = resumedAt > 0 ? Math.floor(base + ((Date.now() - resumedAt) / 1000)) : base;
+    el.textContent = jumboSecondsToHms(diff);
   });
 }
 setInterval(updateTimers, 1000);
@@ -1526,6 +1679,8 @@ async function cancelTimer() {
 async function pauseTimer() {
   const jobId = _timerJobId;
   if (!jobId) return;
+  const job = getJobById(jobId);
+  if (!job) return;
   try {
     await pauseJumboTimer(jobId);
   } catch (err) {
@@ -2454,12 +2609,15 @@ async function openJobDetail(id, mode) {
   const latestReqStatus = String(job.latest_request_status || '').trim().toLowerCase();
   const hasRejectedRequest = (!hasPendingRequest && latestReqStatus === 'rejected');
   const latestReviewNote = String(job.latest_request_review_note || '').trim();
-  const createdAt = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
-  const startedAt = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
-  const completedAt = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
-  const dur = job.duration_minutes;
-  const parsedStart = job.started_at ? new Date(job.started_at).getTime() : 0;
-  const startedTs = Number.isFinite(parsedStart) && parsedStart > 0 ? parsedStart : (sts === 'Running' ? Date.now() : 0);
+  const createdAt = jumboFormatDateTime(job.created_at);
+  const startedAt = jumboFormatDateTime(extra.timer_started_at || job.started_at);
+  const completedAt = jumboFormatDateTime(extra.timer_ended_at || job.completed_at);
+  const activeSeconds = timerActive ? jumboTimerTotalSeconds(job) : jumboDurationSeconds(job);
+  const pauseSeconds = jumboPauseTotalSeconds(extra);
+  const startedTs = Number.parseInt((job?.extra_data_parsed?.timer_last_resumed_at ? Date.parse(String(job.extra_data_parsed.timer_last_resumed_at).replace(' ', 'T')) : 0) || 0, 10);
+  const counterHtml = timerActive
+    ? `<span class="jc-timer" ${jumboLiveTimerAttrs(job)}>00:00:00</span>`
+    : (activeSeconds > 0 ? jumboSecondsToHms(activeSeconds) : (sts === 'Pending' ? '<span style="font-size:.9rem;color:#94a3b8">Not Started</span>' : '--:--:--'));
   const originalParentRoll = String((extra.parent_details && extra.parent_details.roll_no) || extra.parent_roll || job.roll_no || '').trim();
 
   document.getElementById('dm-jobno').textContent = job.job_no;
@@ -2486,11 +2644,14 @@ async function openJobDetail(id, mode) {
 
   const timingHtml = `<div class="jc-detail-section"><h3><i class="bi bi-stopwatch"></i> Start / End Timing</h3>
     <div class="jc-timing-grid">
+      <div class="jc-timing-box"><div class="jc-timing-label">Created</div><div class="jc-timing-value">${createdAt}</div></div>
       <div class="jc-timing-box"><div class="jc-timing-label">Start Time</div><div class="jc-timing-value">${startedAt}</div></div>
       <div class="jc-timing-box"><div class="jc-timing-label">End Time</div><div class="jc-timing-value">${completedAt}</div></div>
       <div class="jc-timing-box"><div class="jc-timing-label">Current Status</div><div class="jc-timing-value">${esc(sts || 'Pending')}</div></div>
-      <div class="jc-timing-box jc-counter-box"><div class="jc-timing-label">Counter</div><div class="jc-timing-value">${(sts === 'Running' && timerState === 'paused') ? `${Math.floor((Number(extra.timer_accumulated_seconds || 0))/3600).toString().padStart(2,'0')}:${Math.floor((Number(extra.timer_accumulated_seconds || 0)%3600)/60).toString().padStart(2,'0')}:${Math.floor(Number(extra.timer_accumulated_seconds || 0)%60).toString().padStart(2,'0')}` : ((sts === 'Running' && startedTs) ? `<span class="jc-timer" data-started="${startedTs}">00:00:00</span>` : (dur !== null && dur !== undefined ? `${Math.floor(dur/60)}h ${dur%60}m` : (sts === 'Pending' ? '<span style="font-size:.9rem;color:#94a3b8">Not Started</span>' : '--:--:--')))}</div></div>
-    </div>
+      <div class="jc-timing-box"><div class="jc-timing-label">Active Time</div><div class="jc-timing-value">${activeSeconds > 0 ? esc(jumboFormatDuration(activeSeconds)) : '—'}</div></div>
+      <div class="jc-timing-box"><div class="jc-timing-label">Pause Time</div><div class="jc-timing-value">${pauseSeconds > 0 ? esc(jumboFormatDuration(pauseSeconds)) : '—'}</div></div>
+      <div class="jc-timing-box jc-counter-box"><div class="jc-timing-label">Counter</div><div class="jc-timing-value">${counterHtml}</div></div>
+    </div>${jumboBuildTimerHistoryHtml(job)}
   </div>`;
 
   const shouldDisableForm = !(mode === 'complete' && sts === 'Running') || isFinishedJob;

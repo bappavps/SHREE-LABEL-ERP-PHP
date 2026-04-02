@@ -221,6 +221,44 @@ function jobs_timer_accumulated_seconds(array $extra): int {
     return max(0, (int)round((float)($extra['timer_accumulated_seconds'] ?? 0)));
 }
 
+function jobs_timer_array(array $extra, string $key): array {
+    $rows = $extra[$key] ?? [];
+    if (!is_array($rows)) return [];
+    return array_values(array_filter($rows, 'is_array'));
+}
+
+function jobs_timer_push_event(array $extra, string $type, string $at): array {
+    if ($type === '' || $at === '') return $extra;
+    $events = jobs_timer_array($extra, 'timer_events');
+    $last = !empty($events) ? end($events) : null;
+    if (!is_array($last) || (string)($last['type'] ?? '') !== $type || (string)($last['at'] ?? '') !== $at) {
+        $events[] = ['type' => $type, 'at' => $at];
+    }
+    $extra['timer_events'] = array_values($events);
+    return $extra;
+}
+
+function jobs_timer_push_segment(array $extra, string $key, string $from, string $to): array {
+    $seconds = jobs_timer_seconds_between($from, $to);
+    if ($seconds <= 0) return $extra;
+    $segments = jobs_timer_array($extra, $key);
+    $segments[] = ['from' => $from, 'to' => $to, 'seconds' => $seconds];
+    $extra[$key] = array_values($segments);
+    return $extra;
+}
+
+function jobs_timer_close_work_segment(array $extra, string $to): array {
+    $from = trim((string)($extra['timer_last_resumed_at'] ?? ''));
+    if ($from === '') return $extra;
+    return jobs_timer_push_segment($extra, 'timer_work_segments', $from, $to);
+}
+
+function jobs_timer_close_pause_segment(array $extra, string $to): array {
+    $from = trim((string)($extra['timer_pause_started_at'] ?? ($extra['timer_paused_at'] ?? '')));
+    if ($from === '') return $extra;
+    return jobs_timer_push_segment($extra, 'timer_pause_segments', $from, $to);
+}
+
 function jobs_collect_roll_nos(array $extra, array $job): array {
     $rollNos = [];
     $jobRoll = trim((string)($job['roll_no'] ?? ''));
@@ -422,14 +460,20 @@ try {
         // Update job status + timestamps
         if ($newStatus === 'Running') {
             $now = jobs_timer_now();
+            $wasPaused = strtolower(trim((string)($jobExtra['timer_state'] ?? ''))) === 'paused';
             $jobExtra['timer_accumulated_seconds'] = jobs_timer_accumulated_seconds($jobExtra);
             $jobExtra['timer_active'] = true;
             $jobExtra['timer_state'] = 'running';
             if (empty($jobExtra['timer_started_at'])) {
                 $jobExtra['timer_started_at'] = $now;
+                $jobExtra = jobs_timer_push_event($jobExtra, 'start', $now);
+            } elseif ($wasPaused) {
+                $jobExtra = jobs_timer_close_pause_segment($jobExtra, $now);
+                $jobExtra = jobs_timer_push_event($jobExtra, 'resume', $now);
             }
             $jobExtra['timer_last_resumed_at'] = $now;
             $jobExtra['timer_paused_at'] = '';
+            $jobExtra['timer_pause_started_at'] = '';
             $jobExtra['timer_ended_at'] = '';
             $safeExtraJson = json_encode($jobExtra, JSON_UNESCAPED_UNICODE);
             $upd = $db->prepare("UPDATE jobs SET status = ?, started_at = COALESCE(started_at, NOW()), extra_data = ? WHERE id = ?");
@@ -445,6 +489,7 @@ try {
             $jobExtra['timer_state'] = 'completed';
             $jobExtra['timer_last_resumed_at'] = '';
             $jobExtra['timer_paused_at'] = '';
+            $jobExtra['timer_pause_started_at'] = '';
             $jobExtra['timer_ended_at'] = $now;
             $safeExtraJson = json_encode($jobExtra, JSON_UNESCAPED_UNICODE);
             $durationMinutes = (int)floor($acc / 60);
@@ -456,6 +501,7 @@ try {
             $jobExtra['timer_state'] = 'pending';
             $jobExtra['timer_last_resumed_at'] = '';
             $jobExtra['timer_paused_at'] = '';
+            $jobExtra['timer_pause_started_at'] = '';
             $safeExtraJson = json_encode($jobExtra, JSON_UNESCAPED_UNICODE);
             $upd = $db->prepare("UPDATE jobs SET status = ?, extra_data = ? WHERE id = ?");
             $upd->bind_param('ssi', $newStatus, $safeExtraJson, $jobId);
@@ -665,13 +711,16 @@ try {
         $acc = jobs_timer_accumulated_seconds($jobExtra);
         if (!empty($jobExtra['timer_active']) && !empty($jobExtra['timer_last_resumed_at'])) {
             $acc += jobs_timer_seconds_between((string)$jobExtra['timer_last_resumed_at'], $now);
+            $jobExtra = jobs_timer_close_work_segment($jobExtra, $now);
         }
         $jobExtra['timer_accumulated_seconds'] = max(0, $acc);
         $jobExtra['timer_active'] = false;
         $jobExtra['timer_state'] = 'ended';
         $jobExtra['timer_last_resumed_at'] = '';
         $jobExtra['timer_paused_at'] = '';
+        $jobExtra['timer_pause_started_at'] = '';
         $jobExtra['timer_ended_at'] = $now;
+        $jobExtra = jobs_timer_push_event($jobExtra, 'end', $now);
         $safeExtraJson = json_encode($jobExtra, JSON_UNESCAPED_UNICODE);
 
         $upd = $db->prepare("UPDATE jobs SET extra_data = ? WHERE id = ?");
@@ -725,12 +774,15 @@ try {
         $acc = jobs_timer_accumulated_seconds($jobExtra);
         if (!empty($jobExtra['timer_last_resumed_at'])) {
             $acc += jobs_timer_seconds_between((string)$jobExtra['timer_last_resumed_at'], $now);
+            $jobExtra = jobs_timer_close_work_segment($jobExtra, $now);
         }
         $jobExtra['timer_accumulated_seconds'] = max(0, $acc);
         $jobExtra['timer_active'] = false;
         $jobExtra['timer_state'] = 'paused';
         $jobExtra['timer_last_resumed_at'] = '';
         $jobExtra['timer_paused_at'] = $now;
+        $jobExtra['timer_pause_started_at'] = $now;
+        $jobExtra = jobs_timer_push_event($jobExtra, 'pause', $now);
         $safeExtraJson = json_encode($jobExtra, JSON_UNESCAPED_UNICODE);
 
         $upd = $db->prepare("UPDATE jobs SET extra_data = ? WHERE id = ?");
@@ -775,8 +827,12 @@ try {
         $jobExtra['timer_started_at'] = '';
         $jobExtra['timer_last_resumed_at'] = '';
         $jobExtra['timer_paused_at'] = '';
+        $jobExtra['timer_pause_started_at'] = '';
         $jobExtra['timer_ended_at'] = '';
         $jobExtra['timer_accumulated_seconds'] = 0;
+        $jobExtra['timer_events'] = [];
+        $jobExtra['timer_work_segments'] = [];
+        $jobExtra['timer_pause_segments'] = [];
         $safeExtraJson = json_encode($jobExtra, JSON_UNESCAPED_UNICODE);
 
         $upd = $db->prepare("UPDATE jobs SET status = 'Pending', started_at = NULL, completed_at = NULL, duration_minutes = NULL, extra_data = ? WHERE id = ?");

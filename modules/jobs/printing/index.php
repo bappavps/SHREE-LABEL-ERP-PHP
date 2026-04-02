@@ -320,14 +320,25 @@ include __DIR__ . '/../../../includes/header.php';
 .fp-timer-overlay{position:fixed;inset:0;z-index:20000;background:rgba(15,23,42,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;backdrop-filter:blur(4px)}
 .fp-timer-display{font-size:4rem;font-weight:900;font-variant-numeric:tabular-nums;color:#fff;letter-spacing:.04em;text-shadow:0 2px 12px rgba(0,0,0,.3)}
 .fp-timer-jobinfo{color:rgba(255,255,255,.7);font-size:1rem;text-align:center;font-weight:600}
-.fp-timer-actions{display:flex;gap:16px}
-.fp-timer-actions button{padding:12px 32px;font-size:.95rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;border:none;border-radius:999px;cursor:pointer;transition:all .15s}
+.fp-timer-actions{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;max-width:min(92vw,760px)}
+.fp-timer-actions button{padding:12px 32px;font-size:.95rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;border:none;border-radius:999px;cursor:pointer;transition:all .15s;justify-content:center;flex:1 1 180px}
 .fp-timer-btn-cancel{background:#64748b;color:#fff}
 .fp-timer-btn-cancel:hover{background:#475569}
 .fp-timer-btn-pause{background:#f59e0b;color:#fff}
 .fp-timer-btn-pause:hover{background:#d97706}
 .fp-timer-btn-end{background:#16a34a;color:#fff}
 .fp-timer-btn-end:hover{background:#15803d}
+.fp-timer-history{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}
+.fp-timer-history-card{border:1px solid #e2e8f0;border-radius:12px;background:#fff;padding:12px}
+.fp-timer-history-card h4{margin:0 0 8px;font-size:.74rem;font-weight:900;letter-spacing:.04em;text-transform:uppercase;color:#475569}
+.fp-timer-history-list{display:grid;gap:8px}
+.fp-timer-history-row{display:grid;grid-template-columns:96px 1fr;gap:10px;padding:8px 10px;border-radius:10px;background:#f8fafc;align-items:start}
+.fp-timer-history-row.work{background:#f0fdf4}
+.fp-timer-history-row.pause{background:#fff7ed}
+.fp-timer-history-row .k{font-size:.68rem;font-weight:900;letter-spacing:.03em;text-transform:uppercase;color:#64748b}
+.fp-timer-history-row .v{font-size:.82rem;font-weight:700;color:#0f172a;line-height:1.45}
+.fp-timer-history-empty{font-size:.78rem;color:#94a3b8;font-weight:700}
+@media(max-width:600px){.fp-timer-overlay{padding:18px 14px;gap:18px}.fp-timer-jobinfo{font-size:.92rem;padding:0 8px}.fp-timer-display{font-size:2.4rem;line-height:1.1;text-align:center}.fp-timer-actions{width:100%;gap:10px}.fp-timer-actions button{width:100%;flex:1 1 100%;padding:13px 16px}.fp-timer-history{grid-template-columns:1fr}.fp-timer-history-row{grid-template-columns:1fr}}
 </style>
 
 <div class="fp-header no-print">
@@ -408,6 +419,8 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
     $priClass = match(strtolower($pri)) { 'urgent'=>'urgent', 'high'=>'high', default=>'normal' };
     $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : '—';
     $startedTs = $job['started_at'] ? strtotime($job['started_at']) * 1000 : 0;
+    $resumedTs = !empty($job['extra_data_parsed']['timer_last_resumed_at']) ? (strtotime($job['extra_data_parsed']['timer_last_resumed_at']) * 1000) : $startedTs;
+    $baseSeconds = (int)round((float)($job['extra_data_parsed']['timer_accumulated_seconds'] ?? 0));
     $dur = $job['duration_minutes'] ?? null;
     $searchText = strtolower($job['job_no'] . ' ' . ($job['roll_no'] ?? '') . ' ' . ($job['company'] ?? '') . ' ' . ($job['planning_job_name'] ?? ''));
     // Sequencing gate: can only start if previous slitting job is finished
@@ -452,8 +465,8 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
         <span class="fp-gate-info"><i class="bi bi-lock-fill"></i> Waiting for slitting: <?= e($job['prev_job_no'] ?? '—') ?> (<?= e($job['prev_job_status'] ?? '—') ?>)</span>
       </div>
       <?php endif; ?>
-      <?php if ($sts === 'Running' && $startedTs && $timerState !== 'paused'): ?>
-      <div class="fp-card-row"><span class="fp-label">Elapsed</span><span class="fp-timer" data-started="<?= $startedTs ?>">00:00:00</span></div>
+      <?php if ($sts === 'Running' && $resumedTs && $timerState !== 'paused'): ?>
+      <div class="fp-card-row"><span class="fp-label">Elapsed</span><span class="fp-timer" data-base-seconds="<?= $baseSeconds ?>" data-resumed-at="<?= $resumedTs ?>">00:00:00</span></div>
       <?php elseif ($dur !== null): ?>
       <div class="fp-card-row"><span class="fp-label">Duration</span><span class="fp-value"><?= floor($dur/60) ?>h <?= $dur%60 ?>m</span></div>
       <?php endif; ?>
@@ -850,6 +863,123 @@ function secondsToHms(seconds) {
   return `${h}:${m}:${s}`;
 }
 
+function formatDurationText(seconds) {
+  const sec = Math.max(0, Math.floor(Number(seconds) || 0));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  return `${s}s`;
+}
+
+function formatDateTimeText(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '—';
+  const dt = new Date(raw.replace(' ', 'T'));
+  return Number.isFinite(dt.getTime()) ? dt.toLocaleString() : '—';
+}
+
+function printDurationSeconds(job) {
+  if (!job) return 0;
+  const extra = job.extra_data_parsed || {};
+  const acc = Math.max(0, Math.floor(Number(extra.timer_accumulated_seconds || 0)));
+  if (acc > 0) return acc;
+  const mins = Number(job.duration_minutes || 0);
+  return Number.isFinite(mins) && mins > 0 ? Math.floor(mins * 60) : 0;
+}
+
+function printPauseTotalSeconds(extra) {
+  const segments = Array.isArray(extra?.timer_pause_segments) ? extra.timer_pause_segments : [];
+  let total = segments.reduce((sum, row) => sum + Math.max(0, Number(row?.seconds || 0)), 0);
+  const pausedAt = String(extra?.timer_pause_started_at || extra?.timer_paused_at || '').trim();
+  const isPaused = String(extra?.timer_state || '').toLowerCase() === 'paused';
+  if (isPaused && pausedAt) {
+    const fromTs = Date.parse(pausedAt.replace(' ', 'T'));
+    if (Number.isFinite(fromTs) && fromTs > 0) total += Math.max(0, Math.floor((Date.now() - fromTs) / 1000));
+  }
+  return total;
+}
+
+function pushPrintTimerEventLocal(extra, type, at) {
+  extra.timer_events = Array.isArray(extra.timer_events) ? extra.timer_events : [];
+  const last = extra.timer_events.length ? extra.timer_events[extra.timer_events.length - 1] : null;
+  if (!last || String(last.type || '') !== type || String(last.at || '') !== at) {
+    extra.timer_events.push({ type, at });
+  }
+}
+
+function pushPrintTimerSegmentLocal(extra, key, from, to) {
+  const fromTs = Date.parse(String(from || '').replace(' ', 'T'));
+  const toTs = Date.parse(String(to || '').replace(' ', 'T'));
+  if (!Number.isFinite(fromTs) || !Number.isFinite(toTs) || toTs <= fromTs) return;
+  extra[key] = Array.isArray(extra[key]) ? extra[key] : [];
+  extra[key].push({ from, to, seconds: Math.floor((toTs - fromTs) / 1000) });
+}
+
+function printLiveTimerAttrs(job) {
+  const extra = job?.extra_data_parsed || {};
+  const resumedRaw = extra.timer_last_resumed_at || extra.timer_started_at || job?.started_at || '';
+  const resumedAt = resumedRaw ? Date.parse(String(resumedRaw).replace(' ', 'T')) : NaN;
+  const baseSeconds = Math.max(0, Number(extra.timer_accumulated_seconds || 0));
+  const resumedAttr = Number.isFinite(resumedAt) && resumedAt > 0 ? resumedAt : 0;
+  return `data-base-seconds="${Math.floor(baseSeconds)}" data-resumed-at="${resumedAttr}"`;
+}
+
+function buildPrintTimerHistoryHtml(job) {
+  const extra = job?.extra_data_parsed || {};
+  const events = Array.isArray(extra.timer_events) ? extra.timer_events.filter(row => row && row.at) : [];
+  const fallbackEvents = [];
+  if (!events.length) {
+    if (extra.timer_started_at || job?.started_at) fallbackEvents.push({ type: 'start', at: extra.timer_started_at || job.started_at });
+    if (extra.timer_paused_at) fallbackEvents.push({ type: 'pause', at: extra.timer_paused_at });
+    if (extra.timer_ended_at || job?.completed_at) fallbackEvents.push({ type: 'end', at: extra.timer_ended_at || job.completed_at });
+  }
+  const eventRows = (events.length ? events : fallbackEvents).sort((a, b) => Date.parse(String(a.at).replace(' ', 'T')) - Date.parse(String(b.at).replace(' ', 'T')));
+
+  const segments = [];
+  (Array.isArray(extra.timer_work_segments) ? extra.timer_work_segments : []).forEach(row => {
+    if (row && row.from && row.to) segments.push({ kind: 'work', from: row.from, to: row.to, seconds: Number(row.seconds || 0) });
+  });
+  (Array.isArray(extra.timer_pause_segments) ? extra.timer_pause_segments : []).forEach(row => {
+    if (row && row.from && row.to) segments.push({ kind: 'pause', from: row.from, to: row.to, seconds: Number(row.seconds || 0) });
+  });
+  if (!segments.length && (extra.timer_started_at || job?.started_at) && (extra.timer_ended_at || job?.completed_at)) {
+    const from = extra.timer_started_at || job.started_at;
+    const to = extra.timer_ended_at || job.completed_at;
+    const fromTs = Date.parse(String(from).replace(' ', 'T'));
+    const toTs = Date.parse(String(to).replace(' ', 'T'));
+    if (Number.isFinite(fromTs) && Number.isFinite(toTs) && toTs > fromTs) {
+      segments.push({ kind: 'work', from, to, seconds: Math.floor((toTs - fromTs) / 1000) });
+    }
+  }
+  segments.sort((a, b) => Date.parse(String(a.from).replace(' ', 'T')) - Date.parse(String(b.from).replace(' ', 'T')));
+
+  const timeOnly = (val) => {
+    const d = new Date(String(val || '').replace(' ', 'T'));
+    if (!Number.isFinite(d.getTime())) return '—';
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  };
+
+  const summaryBits = segments.map(row => `${timeOnly(row.from)}-${timeOnly(row.to)} ${row.kind === 'pause' ? 'paused' : 'worked'}`);
+  const pauseTotalSeconds = segments
+    .filter(row => row.kind === 'pause')
+    .reduce((sum, row) => sum + Math.max(0, Number(row.seconds || 0)), 0);
+  const summaryText = summaryBits.length ? summaryBits.join(', ') : 'No time ranges yet';
+
+  const eventMap = { start: 'Start', resume: 'Again Start', pause: 'Pause', end: 'End' };
+  const eventsHtml = eventRows.length
+    ? eventRows.map(row => `<div class="fp-timer-history-row"><div class="k">${esc(eventMap[String(row.type || '').toLowerCase()] || 'Event')}</div><div class="v">${esc(formatDateTimeText(row.at))}</div></div>`).join('')
+    : '<div class="fp-timer-history-empty">No timer event history yet.</div>';
+  const segmentsHtml = segments.length
+    ? segments.map(row => `<div class="fp-timer-history-row ${row.kind}"><div class="k">${row.kind === 'pause' ? 'Paused' : 'Worked'}</div><div class="v">${esc(formatDateTimeText(row.from))} - ${esc(formatDateTimeText(row.to))}<br><span style="color:#64748b;font-weight:800">${esc(formatDurationText(row.seconds))}</span></div></div>`).join('')
+    : '<div class="fp-timer-history-empty">No work/pause ranges recorded yet.</div>';
+  return `<div class="fp-timer-history">
+    <div class="fp-timer-history-card"><h4>Event Log</h4><div class="fp-timer-history-list">${eventsHtml}</div></div>
+    <div class="fp-timer-history-card"><h4>Work / Pause Range</h4><div style="font-size:.82rem;font-weight:800;color:#0f172a;line-height:1.55;margin-bottom:8px">${esc(summaryText)}</div><div style="font-size:.78rem;font-weight:900;color:#b45309;margin-bottom:10px">Total Pause: ${esc(formatDurationText(pauseTotalSeconds))}</div><div class="fp-timer-history-list">${segmentsHtml}</div></div>
+  </div>`;
+}
+
 function bindFlexoFormBehavior(container) {
   if (!container) return;
   const totalField = container.querySelector('[name=total_wastage_meters]');
@@ -1237,14 +1367,11 @@ async function printSelectedJobs() {
 
 // ─── Live timers ────────────────────────────────────────────
 function updateTimers() {
-  document.querySelectorAll('.fp-timer[data-started]').forEach(el => {
-    const started = parseInt(el.dataset.started);
-    if (!started) return;
-    const diff = Math.floor((Date.now() - started) / 1000);
-    const h = String(Math.floor(diff/3600)).padStart(2,'0');
-    const m = String(Math.floor((diff%3600)/60)).padStart(2,'0');
-    const s = String(diff%60).padStart(2,'0');
-    el.textContent = h + ':' + m + ':' + s;
+  document.querySelectorAll('.fp-timer').forEach(el => {
+    const base = Math.max(0, parseInt(el.dataset.baseSeconds || '0', 10) || 0);
+    const resumedAt = parseInt(el.dataset.resumedAt || '0', 10) || 0;
+    const diff = resumedAt > 0 ? Math.floor(base + ((Date.now() - resumedAt) / 1000)) : base;
+    el.textContent = secondsToHms(diff);
   });
 }
 setInterval(updateTimers, 1000);
@@ -1288,9 +1415,18 @@ async function markPrintTimerEnded(jobId) {
   const job = ALL_JOBS.find(j => j.id == jobId);
   if (job) {
     job.extra_data_parsed = job.extra_data_parsed || {};
+    const nowIso = data.timer_ended_at || new Date().toISOString();
+    if (job.extra_data_parsed.timer_last_resumed_at) {
+      pushPrintTimerSegmentLocal(job.extra_data_parsed, 'timer_work_segments', job.extra_data_parsed.timer_last_resumed_at, nowIso);
+    }
     job.extra_data_parsed.timer_active = false;
     job.extra_data_parsed.timer_state = data.timer_state || 'ended';
-    job.extra_data_parsed.timer_ended_at = data.timer_ended_at || '';
+    job.extra_data_parsed.timer_ended_at = nowIso;
+    job.extra_data_parsed.timer_last_resumed_at = '';
+    job.extra_data_parsed.timer_paused_at = '';
+    job.extra_data_parsed.timer_pause_started_at = '';
+    job.extra_data_parsed.timer_accumulated_seconds = Number(data.timer_accumulated_seconds || job.extra_data_parsed.timer_accumulated_seconds || 0);
+    pushPrintTimerEventLocal(job.extra_data_parsed, 'end', nowIso);
   }
 }
 
@@ -1307,11 +1443,17 @@ async function pausePrintTimer(jobId) {
   const job = ALL_JOBS.find(j => j.id == jobId);
   if (job) {
     job.extra_data_parsed = job.extra_data_parsed || {};
+    const nowIso = new Date().toISOString();
+    if (job.extra_data_parsed.timer_last_resumed_at) {
+      pushPrintTimerSegmentLocal(job.extra_data_parsed, 'timer_work_segments', job.extra_data_parsed.timer_last_resumed_at, nowIso);
+    }
     job.extra_data_parsed.timer_active = false;
     job.extra_data_parsed.timer_state = data.timer_state || 'paused';
     job.extra_data_parsed.timer_paused_at = data.timer_paused_at || '';
+    job.extra_data_parsed.timer_pause_started_at = data.timer_paused_at || nowIso;
     job.extra_data_parsed.timer_last_resumed_at = '';
     job.extra_data_parsed.timer_accumulated_seconds = Number(data.timer_accumulated_seconds || 0);
+    pushPrintTimerEventLocal(job.extra_data_parsed, 'pause', job.extra_data_parsed.timer_paused_at || nowIso);
   }
 }
 
@@ -1337,8 +1479,12 @@ async function resetPrintTimer(jobId) {
     job.extra_data_parsed.timer_started_at = '';
     job.extra_data_parsed.timer_last_resumed_at = '';
     job.extra_data_parsed.timer_paused_at = '';
+    job.extra_data_parsed.timer_pause_started_at = '';
     job.extra_data_parsed.timer_ended_at = '';
     job.extra_data_parsed.timer_accumulated_seconds = 0;
+    job.extra_data_parsed.timer_events = [];
+    job.extra_data_parsed.timer_work_segments = [];
+    job.extra_data_parsed.timer_pause_segments = [];
   }
 }
 
@@ -1490,13 +1636,26 @@ async function startJobWithTimer(id) {
   _timerJobId = id;
   _timerStart = Date.now();
   const job = ALL_JOBS.find(j => j.id == id) || {};
+  const nowIso = new Date().toISOString();
   // Update ALL_JOBS so openPrintDetail sees Running status
   job.status = 'Running';
-  job.started_at = new Date().toISOString();
+  if (!job.started_at) job.started_at = nowIso;
   job.extra_data_parsed = job.extra_data_parsed || {};
+  if (!job.extra_data_parsed.timer_started_at) {
+    job.extra_data_parsed.timer_started_at = nowIso;
+    pushPrintTimerEventLocal(job.extra_data_parsed, 'start', nowIso);
+  } else if (String(job.extra_data_parsed.timer_state || '').toLowerCase() === 'paused') {
+    const pausedAt = job.extra_data_parsed.timer_pause_started_at || job.extra_data_parsed.timer_paused_at || '';
+    if (pausedAt) {
+      pushPrintTimerSegmentLocal(job.extra_data_parsed, 'timer_pause_segments', pausedAt, nowIso);
+    }
+    pushPrintTimerEventLocal(job.extra_data_parsed, 'resume', nowIso);
+  }
   job.extra_data_parsed.timer_active = true;
   job.extra_data_parsed.timer_state = 'running';
-  job.extra_data_parsed.timer_started_at = new Date().toISOString();
+  job.extra_data_parsed.timer_last_resumed_at = nowIso;
+  job.extra_data_parsed.timer_paused_at = '';
+  job.extra_data_parsed.timer_pause_started_at = '';
   job.extra_data_parsed.timer_ended_at = '';
   showPrintTimerOverlay(job);
 }
@@ -1786,15 +1945,20 @@ async function openPrintDetail(id, mode) {
   const stsClass = {Queued:'queued',Pending:'pending',Running:'running',Completed:'completed','QC Passed':'completed'}[sts]||'pending';
   const extra = job.extra_data_parsed || {};
   const card = normalizeCardData(job, extra);
-  const createdAt = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
-  const startedAt = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
-  const completedAt = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
-  const dur = job.duration_minutes;
-  const startedTs = job.started_at ? new Date(job.started_at).getTime() : 0;
-  const prevDone = !job.previous_job_id || !job.prev_job_status || ['Completed','QC Passed','Closed','Finalized'].includes(job.prev_job_status);
-  const elapsedSec = startedTs ? Math.floor((Date.now() - startedTs) / 1000) : 0;
   const timerActive = isPrintTimerActive(job);
   const timerState = String((job.extra_data_parsed && job.extra_data_parsed.timer_state) || '').toLowerCase();
+  const createdAt = formatDateTimeText(job.created_at);
+  const startedAt = formatDateTimeText(extra.timer_started_at || job.started_at);
+  const completedAt = formatDateTimeText(extra.timer_ended_at || job.completed_at);
+  const activeSeconds = timerActive ? printTimerTotalSeconds(job) : printDurationSeconds(job);
+  const pauseSeconds = printPauseTotalSeconds(extra);
+  const startedTs = (() => {
+    const resumedRaw = extra.timer_last_resumed_at || extra.timer_started_at || job.started_at || '';
+    const parsed = resumedRaw ? Date.parse(String(resumedRaw).replace(' ', 'T')) : NaN;
+    return Number.isFinite(parsed) ? parsed : 0;
+  })();
+  const prevDone = !job.previous_job_id || !job.prev_job_status || ['Completed','QC Passed','Closed','Finalized'].includes(job.prev_job_status);
+  const elapsedSec = timerActive ? printTimerTotalSeconds(job) : activeSeconds;
 
   const rollRows = (Array.isArray(card.roll_wastage_rows) && card.roll_wastage_rows.length ? card.roll_wastage_rows : card.material_rows).map((row, idx) => ({
     idx,
@@ -1880,12 +2044,15 @@ async function openPrintDetail(id, mode) {
     </div>`;
   }
 
-  html += `<div class="fp-op-topstrip" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  html += `<div class="fp-op-topstrip" style="grid-template-columns:repeat(5,minmax(0,1fr))">
     <div class="fp-op-topitem"><div class="k">Created</div><div class="v">${esc(createdAt)}</div></div>
     <div class="fp-op-topitem"><div class="k">Started</div><div class="v">${esc(startedAt)}</div></div>
     <div class="fp-op-topitem"><div class="k">Completed</div><div class="v">${esc(completedAt)}</div></div>
-    <div class="fp-op-topitem"><div class="k">Elapsed</div><div class="v">${startedTs ? secondsToHms(elapsedSec) : '—'}</div></div>
+    <div class="fp-op-topitem"><div class="k">Active Time</div><div class="v">${activeSeconds > 0 ? esc(formatDurationText(activeSeconds)) : '—'}</div></div>
+    <div class="fp-op-topitem"><div class="k">Pause Time</div><div class="v">${pauseSeconds > 0 ? esc(formatDurationText(pauseSeconds)) : '—'}</div></div>
   </div>`;
+
+  html += `<div class="fp-detail-section">${buildPrintTimerHistoryHtml(job)}</div>`;
 
   html += `<div class="fp-detail-section fp-op-shell"><div class="fp-op-form">
     <div class="fp-op-section"><div class="fp-op-h">Job Information</div><div class="fp-op-b fp-op-grid-4">
