@@ -5,13 +5,19 @@
 // ============================================================
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';
-require_once __DIR__ . '/../../includes/auth_check.php';
 
 // ── QR Resolve API (?action=resolve) ────────────────────────
 // Called via fetch from the dashboard scanner widget.
-// POST qr=<raw scanned text> → JSON {ok, type, label, url}
+// Only requires login — NOT full scan-page RBAC permission.
+// Dashboard-only users (e.g. Jumbo group) can use this API
+// without having access to the Scan Terminal page itself.
 if (($_GET['action'] ?? '') === 'resolve') {
+    if (session_status() === PHP_SESSION_NONE) session_start();
     header('Content-Type: application/json');
+    if (!isset($_SESSION['user_id'])) {
+        echo json_encode(['ok' => false, 'error' => 'Not authenticated']);
+        exit;
+    }
     $db  = getDB();
     $raw = trim((string)($_POST['qr'] ?? $_GET['qr'] ?? ''));
     if ($raw === '') { echo json_encode(['ok' => false, 'error' => 'Empty QR']); exit; }
@@ -82,6 +88,9 @@ if (($_GET['action'] ?? '') === 'resolve') {
         'error' => 'QR not recognised. Scanned: ' . htmlspecialchars(mb_substr($raw, 0, 80), ENT_QUOTES)]);
     exit;
 }
+
+// Full Scan Terminal page — RBAC check required from here
+require_once __DIR__ . '/../../includes/auth_check.php';
 
 require_once __DIR__ . '/../audit/setup_tables.php';
 ensureAuditTables();

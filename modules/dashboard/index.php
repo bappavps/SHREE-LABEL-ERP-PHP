@@ -143,7 +143,7 @@ $r = $db->query("SELECT COUNT(*) AS c FROM paper_stock WHERE status = 'Available
 if ($r) $lowStockCount = (int)$r->fetch_assoc()['c'];
 
 $canUseQrScanner = function_exists('canAccessPath')
-  ? canAccessPath('/modules/scan/index.php')
+  ? canAccessPath('/modules/dashboard/index.php')
   : false;
 
 $pageTitle = 'Dashboard';

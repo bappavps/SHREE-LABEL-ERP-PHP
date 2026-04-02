@@ -851,6 +851,56 @@ function buildFormattedId($prefix, $yearToken, $sequence, $separator, $padding) 
 }
 
 /**
+ * Get the max used numeric sequence from DB for a given module type.
+ * Currently needed for roll IDs to recover from stale/reset JSON counters.
+ */
+function getExistingMaxSequenceForType($type, array $idg) {
+    $type = trim((string)$type);
+    if ($type !== 'roll') {
+        return 0;
+    }
+
+    if (!isset($idg['modules'][$type])) {
+        return 0;
+    }
+
+    $prefix = strtoupper(trim((string)($idg['modules'][$type]['prefix'] ?? '')));
+    if ($prefix === '') {
+        return 0;
+    }
+
+    $separator = (string)($idg['separator'] ?? '/');
+    $yearToken = buildIdYearToken((string)($idg['year_format'] ?? 'YY'));
+    $prefixExpr = $prefix . $separator . $yearToken . $separator;
+    $likeExpr = $prefixExpr . '%';
+
+    $db = getDB();
+    $stmt = $db->prepare('SELECT roll_no FROM paper_stock WHERE UPPER(roll_no) LIKE ?');
+    if (!$stmt) {
+        return 0;
+    }
+    $stmt->bind_param('s', $likeExpr);
+    if (!$stmt->execute()) {
+        return 0;
+    }
+
+    $res = $stmt->get_result();
+    $maxSeq = 0;
+    while ($res && ($row = $res->fetch_assoc())) {
+        $rollNo = (string)($row['roll_no'] ?? '');
+        if (stripos($rollNo, $prefixExpr) !== 0) {
+            continue;
+        }
+        $seqPart = substr($rollNo, strlen($prefixExpr));
+        if ($seqPart !== '' && ctype_digit($seqPart)) {
+            $maxSeq = max($maxSeq, (int)$seqPart);
+        }
+    }
+
+    return $maxSeq;
+}
+
+/**
  * Preview current ID format for a module without incrementing counter.
  */
 function getIdPreview($type) {
@@ -863,7 +913,9 @@ function getIdPreview($type) {
     }
 
     $module = $idg['modules'][$type];
-    $next = max(0, (int)$module['counter']) + 1;
+    $storedCounter = max(0, (int)$module['counter']);
+    $dbCounter = getExistingMaxSequenceForType($type, $idg);
+    $next = max($storedCounter, $dbCounter) + 1;
     return buildFormattedId(
         $module['prefix'],
         buildIdYearToken($idg['year_format']),
@@ -887,7 +939,9 @@ function getNextId($type) {
     }
 
     $module = $idg['modules'][$type];
-    $next = max(0, (int)$module['counter']) + 1;
+    $storedCounter = max(0, (int)$module['counter']);
+    $dbCounter = getExistingMaxSequenceForType($type, $idg);
+    $next = max($storedCounter, $dbCounter) + 1;
     $newId = buildFormattedId(
         $module['prefix'],
         buildIdYearToken($idg['year_format']),
@@ -915,7 +969,9 @@ function previewNextId($type) {
     }
 
     $module = $idg['modules'][$type];
-    $next = max(0, (int)($module['counter'] ?? 0)) + 1;
+    $storedCounter = max(0, (int)($module['counter'] ?? 0));
+    $dbCounter = getExistingMaxSequenceForType($type, $idg);
+    $next = max($storedCounter, $dbCounter) + 1;
 
     return buildFormattedId(
         $module['prefix'],
