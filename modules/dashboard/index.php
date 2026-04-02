@@ -407,8 +407,11 @@ $barPalette = ['#16a34a','#0ea5e9','#f59e0b','#8b5cf6','#ef4444','#14b8a6','#647
     .db-qr-go{display:block;width:100%;padding:10px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-size:.82rem;font-weight:800;cursor:pointer;text-align:center;text-decoration:none;box-sizing:border-box}
     .db-qr-go:hover{background:#6d28d9;color:#fff}
     #db-qr-toggle{background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:.75rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px}
-    #db-qr-viewport{display:none;background:#000;overflow:hidden;border-radius:0 0 0 0;max-height:300px}
+    #db-qr-viewport{display:none;background:#000;overflow:hidden}
     #db-qr-viewport.open{display:block}
+    #db-qr-reader{background:#000;padding:0}
+    #db-qr-reader video{display:block;width:100% !important;height:auto !important;max-height:none !important;object-fit:cover;background:#000}
+    #db-qr-reader #qr-shaded-region{margin:0 auto !important}
     </style>
     <div class="card mb-20">
       <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
@@ -477,8 +480,11 @@ $barPalette = ['#16a34a','#0ea5e9','#f59e0b','#8b5cf6','#ef4444','#14b8a6','#647
     document.getElementById('db-qr-toggle').style.background = '#ef4444';
     active = true;
 
-    scanner = new Html5QrcodeScanner('db-qr-reader',
-      {fps: 15, qrbox: {width: 240, height: 240}}, false);
+    scanner = new Html5QrcodeScanner('db-qr-reader', {
+      fps: 15,
+      qrbox: {width: 240, height: 240},
+      rememberLastUsedCamera: false
+    }, false);
     scanner.render(function(text){
       if (cooldown) return;
       cooldown = true;

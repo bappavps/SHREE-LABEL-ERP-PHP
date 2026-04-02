@@ -1925,7 +1925,7 @@ function openQrScannerFor(origRoll) {
       DM_QR_SCANNER = new Html5QrcodeScanner('dm-qr-reader', {
         fps: 10,
         qrbox: { width: 250, height: 250 },
-        rememberLastUsedCamera: true,
+        rememberLastUsedCamera: false,
         formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.EAN_13]
       }, false);
       DM_QR_SCANNER.render(function(decodedText) {

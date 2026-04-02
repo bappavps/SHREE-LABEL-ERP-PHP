@@ -57,8 +57,8 @@ include __DIR__ . '/../../includes/header.php';
 .ah-camera-wrap{display:none;margin-bottom:20px;background:#000;border-radius:12px;overflow:hidden;max-width:420px}
 .ah-camera-wrap.open{display:block}
 .ah-camera-wrap #ah-camera-reader{text-align:center}
-.ah-camera-wrap #ah-camera-reader video{margin:0 auto}
-.ah-camera-wrap #ah-camera-reader #qr-shaded-region{margin:0 auto}
+.ah-camera-wrap #ah-camera-reader video{display:block;margin:0 auto;width:100% !important;height:auto !important;max-height:none !important;object-fit:cover;background:#000}
+.ah-camera-wrap #ah-camera-reader #qr-shaded-region{margin:0 auto !important}
 
 /* Duplicate popup */
 .ah-dup-popup{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.8);z-index:9999;background:#fff;border:3px solid #dc2626;border-radius:16px;padding:28px 36px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3);opacity:0;transition:all .2s ease}
@@ -688,7 +688,11 @@ function startCamera(){
   cameraActive = true;
 
   setTimeout(function(){
-    html5Scanner = new Html5QrcodeScanner('ah-camera-reader', {fps:15, qrbox:{width:250,height:250}}, false);
+    html5Scanner = new Html5QrcodeScanner('ah-camera-reader', {
+      fps: 15,
+      qrbox: {width: 250, height: 250},
+      rememberLastUsedCamera: false
+    }, false);
     html5Scanner.render(function(text){
       if(scanCooldown && text === lastScannedCode) return;
       lastScannedCode = text;

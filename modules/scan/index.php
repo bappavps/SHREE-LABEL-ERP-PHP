@@ -130,11 +130,11 @@ include __DIR__ . '/../../includes/header.php';
 .st-cam-btn.active{border-color:#7c3aed;color:#7c3aed;background:#faf5ff}
 
 /* Camera viewport */
-.st-camera{display:none;background:#000;border-radius:12px;overflow:hidden;margin-bottom:20px;max-height:350px}
+.st-camera{display:none;background:#000;border-radius:12px;overflow:hidden;margin-bottom:20px}
 .st-camera.open{display:block}
 .st-camera #st-camera-reader{text-align:center}
-.st-camera #st-camera-reader video{margin:0 auto}
-.st-camera #st-camera-reader #qr-shaded-region{margin:0 auto}
+.st-camera #st-camera-reader video{display:block;margin:0 auto;width:100% !important;height:auto !important;max-height:none !important;object-fit:cover;background:#000}
+.st-camera #st-camera-reader #qr-shaded-region{margin:0 auto !important}
 
 /* Duplicate popup */
 .st-dup-popup{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.8);z-index:9999;background:#fff;border:3px solid #dc2626;border-radius:16px;padding:28px 36px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3);opacity:0;transition:all .2s ease}
@@ -560,7 +560,11 @@ function stStartCamera(){
   cameraActive = true;
 
   setTimeout(function(){
-    html5Scanner = new Html5QrcodeScanner('st-camera-reader', {fps:15, qrbox:{width:250,height:250}}, false);
+    html5Scanner = new Html5QrcodeScanner('st-camera-reader', {
+      fps: 15,
+      qrbox: {width: 250, height: 250},
+      rememberLastUsedCamera: false
+    }, false);
     html5Scanner.render(function(text){
       if(scanCooldown && text === lastScannedCode) return;
       lastScannedCode = text;

@@ -74,6 +74,8 @@ function erp_detect_base_url($configured = '') {
 $profiles = [
     'local' => [
         'DB_HOST' => erp_env_value(['ERP_DB_HOST_LOCAL', 'ERP_DB_HOST', 'DB_HOST'], 'localhost'),
+        'DB_PORT' => (int)erp_env_value(['ERP_DB_PORT_LOCAL', 'ERP_DB_PORT', 'DB_PORT'], '3306'),
+        'DB_SOCKET' => erp_env_value(['ERP_DB_SOCKET_LOCAL', 'ERP_DB_SOCKET', 'DB_SOCKET'], ''),
         'DB_USER' => erp_env_value(['ERP_DB_USER_LOCAL', 'ERP_DB_USER', 'DB_USER'], 'root'),
         'DB_PASS' => erp_env_value(['ERP_DB_PASS_LOCAL', 'ERP_DB_PASS', 'DB_PASS'], ''),
         'DB_NAME' => erp_env_value(['ERP_DB_NAME_LOCAL', 'ERP_DB_NAME', 'DB_NAME'], 'shree_label_erp'),
@@ -83,6 +85,8 @@ $profiles = [
     ],
     'live' => [
         'DB_HOST' => erp_env_value(['ERP_DB_HOST_LIVE', 'ERP_DB_HOST', 'DB_HOST'], 'localhost'),
+        'DB_PORT' => (int)erp_env_value(['ERP_DB_PORT_LIVE', 'ERP_DB_PORT', 'DB_PORT'], '3306'),
+        'DB_SOCKET' => erp_env_value(['ERP_DB_SOCKET_LIVE', 'ERP_DB_SOCKET', 'DB_SOCKET'], ''),
         'DB_USER' => erp_env_value(['ERP_DB_USER_LIVE', 'ERP_DB_USER', 'DB_USER'], ''),
         'DB_PASS' => erp_env_value(['ERP_DB_PASS_LIVE', 'ERP_DB_PASS', 'DB_PASS'], ''),
         'DB_NAME' => erp_env_value(['ERP_DB_NAME_LIVE', 'ERP_DB_NAME', 'DB_NAME'], ''),
@@ -117,6 +121,8 @@ $active = $profiles[$env];
 $resolvedBaseUrl = erp_detect_base_url($active['BASE_URL'] ?? '');
 
 define('DB_HOST', $active['DB_HOST']);
+define('DB_PORT', (int)($active['DB_PORT'] ?? 3306));
+define('DB_SOCKET', (string)($active['DB_SOCKET'] ?? ''));
 define('DB_USER', $active['DB_USER']);
 define('DB_PASS', $active['DB_PASS']);
 define('DB_NAME', $active['DB_NAME']);
@@ -132,12 +138,46 @@ function getDB() {
                 . '<br>Environment: ' . htmlspecialchars((string) (getenv('ERP_ENV') ?: 'auto'))
                 . '<br>Please update config/db.runtime.php or provide ERP_DB_HOST, ERP_DB_USER, ERP_DB_PASS, ERP_DB_NAME environment variables.</p>');
         }
-        $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
-        if ($conn->connect_error) {
+        $hostsToTry = [trim((string)DB_HOST)];
+        if (erp_is_local_request()) {
+            if (in_array(strtolower(trim((string)DB_HOST)), ['localhost', '127.0.0.1'], true)) {
+                $hostsToTry = ['127.0.0.1', 'localhost'];
+            }
+        }
+
+        $portsToTry = [DB_PORT > 0 ? DB_PORT : 3306];
+        if (erp_is_local_request()) {
+            // Common XAMPP mismatch: MySQL runs on 3307 while app expects 3306.
+            foreach ([3306, 3307] as $candidatePort) {
+                if (!in_array($candidatePort, $portsToTry, true)) {
+                    $portsToTry[] = $candidatePort;
+                }
+            }
+        }
+
+        $lastError = 'Unknown connection error';
+        foreach ($hostsToTry as $host) {
+            foreach ($portsToTry as $port) {
+                try {
+                    $candidate = new mysqli($host, DB_USER, DB_PASS, DB_NAME, $port, DB_SOCKET !== '' ? DB_SOCKET : null);
+                    if (!$candidate->connect_error) {
+                        $conn = $candidate;
+                        break 2;
+                    }
+                    $lastError = (string)$candidate->connect_error;
+                } catch (Throwable $e) {
+                    $lastError = (string)$e->getMessage();
+                }
+            }
+        }
+
+        if (!$conn) {
             die('<p style="font-family:sans-serif;color:red;padding:20px">Database connection failed: '
-                . htmlspecialchars($conn->connect_error)
+                . htmlspecialchars($lastError)
                 . '<br>Environment: ' . htmlspecialchars((string) (getenv('ERP_ENV') ?: 'auto'))
-                . '<br>Please check config/db.runtime.php or your ERP_DB_* environment variables.</p>');
+                . '<br>Tried host(s): ' . htmlspecialchars(implode(', ', $hostsToTry))
+                . '<br>Tried port(s): ' . htmlspecialchars(implode(', ', array_map('strval', $portsToTry)))
+                . '<br>Set ERP_DB_HOST / ERP_DB_PORT (or create config/db.runtime.php) and ensure MySQL is running in XAMPP.</p>');
         }
         $conn->set_charset('utf8mb4');
     }
