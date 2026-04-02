@@ -30,11 +30,34 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
     var sidebar   = document.querySelector('.sidebar');
     var appShell  = document.querySelector('.app-shell');
     if (toggleBtn && sidebar && appShell) {
+        var collapseTimer = null;
+
+        function collapseSidebarNow() {
+            if (window.innerWidth <= 900) {
+                sidebar.classList.remove('is-open');
+            } else {
+                appShell.classList.add('sidebar-collapsed');
+                localStorage.setItem('erp_sidebar_collapsed', '1');
+            }
+        }
+
+        // Desktop default: collapsed sidebar for wider workspace after login.
+        // Persist user preference across page loads.
+        var sidebarPref = localStorage.getItem('erp_sidebar_collapsed');
+        if (window.innerWidth > 900) {
+            if (sidebarPref === null || sidebarPref === '1') {
+                appShell.classList.add('sidebar-collapsed');
+            } else {
+                appShell.classList.remove('sidebar-collapsed');
+            }
+        }
+
         toggleBtn.addEventListener('click', function () {
             if (window.innerWidth <= 900) {
                 sidebar.classList.toggle('is-open');
             } else {
                 appShell.classList.toggle('sidebar-collapsed');
+                localStorage.setItem('erp_sidebar_collapsed', appShell.classList.contains('sidebar-collapsed') ? '1' : '0');
             }
         });
         document.addEventListener('click', function (e) {
@@ -48,7 +71,41 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
         window.addEventListener('resize', function () {
             if (window.innerWidth > 900) {
                 sidebar.classList.remove('is-open');
+                var pref = localStorage.getItem('erp_sidebar_collapsed');
+                if (pref === null || pref === '1') {
+                    appShell.classList.add('sidebar-collapsed');
+                } else {
+                    appShell.classList.remove('sidebar-collapsed');
+                }
             }
+        });
+
+        // If previous page click requested delayed collapse, apply it after load.
+        if (sessionStorage.getItem('erp_collapse_after_nav') === '1') {
+            sessionStorage.removeItem('erp_collapse_after_nav');
+            collapseTimer = setTimeout(function () {
+                collapseSidebarNow();
+                collapseTimer = null;
+            }, 2000);
+        }
+
+        // Auto-collapse on real sidebar page navigation.
+        // Ignore accordion toggles that use # links.
+        sidebar.addEventListener('click', function (e) {
+            var link = e.target.closest('a[href]');
+            if (!link) return;
+
+            var href = (link.getAttribute('href') || '').trim();
+            if (!href || href === '#') return;
+            if (link.classList.contains('nav-group-toggle') || link.classList.contains('nav-sub-parent-toggle')) return;
+
+            if (collapseTimer) {
+                clearTimeout(collapseTimer);
+                collapseTimer = null;
+            }
+
+            // Delay collapse until next page load so navigation remains smooth.
+            sessionStorage.setItem('erp_collapse_after_nav', '1');
         });
     }
 
@@ -76,7 +133,147 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
     }
     redirectFromButton('topbarProfileBtn');
     redirectFromButton('topbarPowerBtn');
-    redirectFromButton('topbarNotificationBtn');
+
+    // Topbar notifications (department-wise)
+    (function () {
+        var notifBtn = document.getElementById('topbarNotificationBtn');
+        var notifDot = document.getElementById('topbarNotificationDot');
+        var notifPanel = document.getElementById('topbarNotificationPanel');
+        var notifList = document.getElementById('topbarNotificationList');
+        var markAllBtn = document.getElementById('topbarNotifMarkAll');
+        if (!notifBtn || !notifDot || !notifPanel || !notifList || !markAllBtn) return;
+
+        var apiBase = notifBtn.getAttribute('data-notif-api') || '';
+        if (!apiBase) return;
+
+        var departments = (notifBtn.getAttribute('data-notif-departments') || '').trim();
+        var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        var csrfToken = csrfMeta ? (csrfMeta.getAttribute('content') || '') : '';
+        var pollingTimer = null;
+
+        function escHtml(v) {
+            return String(v || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function timeAgo(ts) {
+            if (!ts) return '';
+            var d = new Date(ts.replace(' ', 'T'));
+            if (isNaN(d.getTime())) return '';
+            var sec = Math.max(1, Math.floor((Date.now() - d.getTime()) / 1000));
+            if (sec < 60) return sec + ' sec ago';
+            var min = Math.floor(sec / 60);
+            if (min < 60) return min + ' min ago';
+            var hr = Math.floor(min / 60);
+            if (hr < 24) return hr + ' hr ago';
+            var day = Math.floor(hr / 24);
+            return day + ' day ago';
+        }
+
+        function buildDeptUrl(dept) {
+            if (dept === 'jumbo_slitting') return '/modules/operators/jumbo/index.php';
+            if (dept === 'flexo_printing') return '/modules/operators/printing/index.php';
+            if (dept === 'planning') return '/modules/planning/label/index.php';
+            return '/modules/approval/index.php';
+        }
+
+        function fetchNotifications(unreadOnly, done) {
+            var url = apiBase + '?action=get_notifications&limit=25';
+            if (unreadOnly) url += '&unread=1';
+            if (departments) url += '&departments=' + encodeURIComponent(departments);
+
+            fetch(url, { credentials: 'same-origin' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (res) {
+                    if (!res || !res.ok) return;
+                    var unread = parseInt(res.unread_count || 0, 10) || 0;
+                    notifDot.style.display = unread > 0 ? 'inline-block' : 'none';
+                    if (typeof done === 'function') done(res.notifications || []);
+                })
+                .catch(function () {
+                    // Ignore silently when jobs API is not accessible for this role.
+                });
+        }
+
+        function renderList(items) {
+            if (!items || !items.length) {
+                notifList.innerHTML = '<div class="np-empty">No notifications</div>';
+                return;
+            }
+            notifList.innerHTML = items.map(function (n) {
+                var title = (n.job_no || n.department || 'Notification');
+                return '' +
+                    '<div class="np-item" data-nid="' + escHtml(n.id) + '" data-dept="' + escHtml(n.department || '') + '">' +
+                    '<div class="np-item-title">' + escHtml(title) + '</div>' +
+                    '<div class="np-item-msg">' + escHtml(n.message || '') + '</div>' +
+                    '<div class="np-item-time">' + escHtml(timeAgo(n.created_at)) + '</div>' +
+                    '</div>';
+            }).join('');
+        }
+
+        function markRead(notificationId, cb) {
+            if (!csrfToken) {
+                if (typeof cb === 'function') cb();
+                return;
+            }
+            var body = new URLSearchParams();
+            body.set('csrf_token', csrfToken);
+            if (notificationId) {
+                body.set('notification_id', String(notificationId));
+            } else if (departments) {
+                body.set('departments', departments);
+            }
+            fetch(apiBase + '?action=mark_notification_read', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+                body: body.toString()
+            }).finally(function () {
+                if (typeof cb === 'function') cb();
+            });
+        }
+
+        notifBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            var open = notifPanel.style.display === 'block';
+            notifPanel.style.display = open ? 'none' : 'block';
+            if (!open) {
+                fetchNotifications(false, function (rows) { renderList(rows); });
+            }
+        });
+
+        markAllBtn.addEventListener('click', function () {
+            markRead(0, function () {
+                fetchNotifications(false, function (rows) { renderList(rows); });
+            });
+        });
+
+        notifList.addEventListener('click', function (e) {
+            var item = e.target.closest('.np-item');
+            if (!item) return;
+            var nid = parseInt(item.getAttribute('data-nid') || '0', 10) || 0;
+            var dept = (item.getAttribute('data-dept') || '').trim();
+            markRead(nid, function () {
+                window.location.href = buildDeptUrl(dept);
+            });
+        });
+
+        document.addEventListener('click', function (e) {
+            if (!notifPanel.contains(e.target) && !notifBtn.contains(e.target)) {
+                notifPanel.style.display = 'none';
+            }
+        });
+
+        fetchNotifications(true);
+        pollingTimer = setInterval(function () { fetchNotifications(true); }, 20000);
+        window.addEventListener('beforeunload', function () {
+            if (pollingTimer) clearInterval(pollingTimer);
+        });
+    })();
 
     // Live topbar date and time
     var dateTimeNode = document.getElementById('topbarDateTime');

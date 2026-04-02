@@ -28,6 +28,20 @@ if ($animatedFlagUrl !== '' && filter_var($animatedFlagUrl, FILTER_VALIDATE_URL)
 }
 $companyLogoUrl = $logoPath !== '' ? appUrl($logoPath) : appUrl('assets/img/logo.svg');
 $themeColor = (string)($appSettings['sidebar_button_color'] ?? '#22c55e');
+$csrfToken = function_exists('generateCSRF') ? generateCSRF() : '';
+$currentPath = function_exists('rbacCurrentPath') ? rbacCurrentPath() : (string)($_SERVER['PHP_SELF'] ?? '');
+$notificationDepartments = [];
+if (strpos($currentPath, '/modules/operators/jumbo/') === 0 || strpos($currentPath, '/modules/jobs/jumbo/') === 0) {
+  $notificationDepartments[] = 'jumbo_slitting';
+}
+if (strpos($currentPath, '/modules/operators/printing/') === 0 || strpos($currentPath, '/modules/jobs/printing/') === 0) {
+  $notificationDepartments[] = 'flexo_printing';
+}
+if (strpos($currentPath, '/modules/planning/') === 0) {
+  $notificationDepartments[] = 'planning';
+}
+$notificationDepartments = array_values(array_unique($notificationDepartments));
+$notificationDeptCsv = implode(',', $notificationDepartments);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -35,6 +49,7 @@ $themeColor = (string)($appSettings['sidebar_button_color'] ?? '#22c55e');
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title><?= e($pageTitle) ?> — <?= APP_NAME ?></title>
+<meta name="csrf-token" content="<?= e($csrfToken) ?>">
 <link rel="icon" href="<?= e($companyLogoUrl) ?>">
 <link rel="apple-touch-icon" href="<?= e($companyLogoUrl) ?>">
 <link rel="manifest" href="<?= e(appUrl('manifest.php')) ?>">
@@ -88,9 +103,18 @@ $themeColor = (string)($appSettings['sidebar_button_color'] ?? '#22c55e');
           <span class="topbar-flag"><?= e($flagEmoji) ?></span>
         <?php endif; ?>
       </span>
-      <button type="button" id="topbarNotificationBtn" class="topbar-icon-btn topbar-notification-btn" data-href="<?= BASE_URL ?>/modules/approval/index.php" aria-label="Notifications">
-        <i class="bi bi-bell"></i><span class="topbar-notification-dot"></span>
+      <button type="button" id="topbarNotificationBtn" class="topbar-icon-btn topbar-notification-btn" data-href="<?= BASE_URL ?>/modules/approval/index.php" data-notif-api="<?= BASE_URL ?>/modules/jobs/api.php" data-notif-departments="<?= e($notificationDeptCsv) ?>" aria-label="Notifications">
+        <i class="bi bi-bell"></i><span id="topbarNotificationDot" class="topbar-notification-dot" style="display:none"></span>
       </button>
+      <div id="topbarNotificationPanel" class="topbar-notification-panel" style="display:none">
+        <div class="np-head">
+          <strong>Notifications</strong>
+          <button type="button" id="topbarNotifMarkAll" class="np-markall">Mark all read</button>
+        </div>
+        <div id="topbarNotificationList" class="np-list">
+          <div class="np-empty">No notifications</div>
+        </div>
+      </div>
       <button type="button" id="topbarFullscreenBtn" class="topbar-icon-btn" aria-label="Expand"><i class="bi bi-arrows-angle-expand"></i></button>
       <button type="button" id="topbarProfileBtn" class="topbar-icon-btn" data-href="<?= BASE_URL ?>/modules/users/index.php" aria-label="Profile"><i class="bi bi-person"></i></button>
       <button type="button" id="topbarPowerBtn" class="topbar-icon-btn" data-href="<?= BASE_URL ?>/auth/logout.php" aria-label="Power"><i class="bi bi-power"></i></button>

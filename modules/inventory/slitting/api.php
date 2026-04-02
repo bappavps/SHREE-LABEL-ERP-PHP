@@ -881,6 +881,12 @@ try {
                                 $jumboJobId = $db->insert_id;
                                 $jumboRefNo = $jcNoJumbo;
                                 $createdJobCards[] = ['job_no' => $jcNoJumbo, 'type' => 'Slitting', 'roll' => $parentRollNo, 'id' => $jumboJobId];
+                                $nMsg = 'New Jumbo job card generated: ' . $jcNoJumbo . ' | Roll: ' . $parentRollNo;
+                                $nIns = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, 'jumbo_slitting', ?, 'success')");
+                                if ($nIns) {
+                                    $nIns->bind_param('is', $jumboJobId, $nMsg);
+                                    $nIns->execute();
+                                }
                                 $insertedJumbo = true;
                                 break;
                             }
@@ -934,7 +940,14 @@ try {
                                 }
                             }
                             if ($okFlex) {
-                                $createdJobCards[] = ['job_no' => $jcNoFlex, 'type' => 'Printing', 'roll' => $parentRollNo, 'id' => $db->insert_id];
+                                $newFlexJobId = (int)$db->insert_id;
+                                $createdJobCards[] = ['job_no' => $jcNoFlex, 'type' => 'Printing', 'roll' => $parentRollNo, 'id' => $newFlexJobId];
+                                $nMsgF = 'New Flexo job card queued: ' . $jcNoFlex . ' | From: ' . ($jumboRefNo !== '' ? $jumboRefNo : $parentRollNo);
+                                $nInsF = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, 'flexo_printing', ?, 'info')");
+                                if ($nInsF) {
+                                    $nInsF->bind_param('is', $newFlexJobId, $nMsgF);
+                                    $nInsF->execute();
+                                }
                                 break;
                             }
                             if ((int)$jcStmtF->errno === 1062) {

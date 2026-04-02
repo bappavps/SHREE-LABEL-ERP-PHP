@@ -1705,6 +1705,7 @@ try {
     // ─── Get notifications ──────────────────────────────────
     case 'get_notifications':
         $dept = trim($_GET['department'] ?? '');
+        $departmentsRaw = trim((string)($_GET['departments'] ?? ''));
         $unreadOnly = !empty($_GET['unread']);
         $limit = min(100, max(1, (int)($_GET['limit'] ?? 50)));
 
@@ -1712,7 +1713,27 @@ try {
         $params = [];
         $types = '';
 
-        if ($dept) { $where[] = "(n.department = ? OR n.department IS NULL)"; $params[] = $dept; $types .= 's'; }
+        $departments = [];
+        if ($departmentsRaw !== '') {
+            foreach (explode(',', $departmentsRaw) as $d) {
+                $d = trim((string)$d);
+                if ($d !== '') $departments[] = $d;
+            }
+            $departments = array_values(array_unique($departments));
+        }
+
+        if (empty($departments) && $dept !== '') {
+            $departments = [$dept];
+        }
+
+        if (!empty($departments)) {
+            $inTokens = implode(',', array_fill(0, count($departments), '?'));
+            $where[] = "(n.department IN ({$inTokens}) OR n.department IS NULL)";
+            foreach ($departments as $d) {
+                $params[] = $d;
+                $types .= 's';
+            }
+        }
         if ($unreadOnly) { $where[] = "n.is_read = 0"; }
 
         $sql = "SELECT n.*, j.job_no FROM job_notifications n LEFT JOIN jobs j ON n.job_id = j.id";
@@ -1726,16 +1747,51 @@ try {
         $stmt->execute();
         $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-        echo json_encode(['ok' => true, 'notifications' => $rows]);
+        $countSql = "SELECT COUNT(*) AS c FROM job_notifications n";
+        $countWhere = [];
+        $countParams = [];
+        $countTypes = '';
+        if (!empty($departments)) {
+            $inTokens = implode(',', array_fill(0, count($departments), '?'));
+            $countWhere[] = "(n.department IN ({$inTokens}) OR n.department IS NULL)";
+            foreach ($departments as $d) {
+                $countParams[] = $d;
+                $countTypes .= 's';
+            }
+        }
+        $countWhere[] = "n.is_read = 0";
+        if ($countWhere) $countSql .= " WHERE " . implode(' AND ', $countWhere);
+        $countStmt = $db->prepare($countSql);
+        if ($countTypes) $countStmt->bind_param($countTypes, ...$countParams);
+        $countStmt->execute();
+        $unreadCount = (int)($countStmt->get_result()->fetch_assoc()['c'] ?? 0);
+
+        echo json_encode(['ok' => true, 'notifications' => $rows, 'unread_count' => $unreadCount]);
         break;
 
     // ─── Mark notification read ─────────────────────────────
     case 'mark_notification_read':
         if ($method !== 'POST') { echo json_encode(['ok' => false, 'error' => 'POST required']); break; }
         $nid = (int)($_POST['notification_id'] ?? 0);
+        $departmentsRaw = trim((string)($_POST['departments'] ?? ''));
+        $departments = [];
+        if ($departmentsRaw !== '') {
+            foreach (explode(',', $departmentsRaw) as $d) {
+                $d = trim((string)$d);
+                if ($d !== '') $departments[] = $d;
+            }
+            $departments = array_values(array_unique($departments));
+        }
         if ($nid) {
             $s = $db->prepare("UPDATE job_notifications SET is_read = 1 WHERE id = ?");
             $s->bind_param('i', $nid);
+            $s->execute();
+        } elseif (!empty($departments)) {
+            $inTokens = implode(',', array_fill(0, count($departments), '?'));
+            $sql = "UPDATE job_notifications SET is_read = 1 WHERE is_read = 0 AND (department IN ({$inTokens}) OR department IS NULL)";
+            $s = $db->prepare($sql);
+            $types = str_repeat('s', count($departments));
+            $s->bind_param($types, ...$departments);
             $s->execute();
         } else {
             $db->query("UPDATE job_notifications SET is_read = 1");

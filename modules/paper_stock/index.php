@@ -967,37 +967,26 @@ include __DIR__ . '/../../includes/header.php';
 
   // Quick-filter input — filter rows immediately, NO page redirect (no jerk)
   var qfDebounceTimer = null;
-  var searchDebounceTimer = null;
 
-  // Global search triggers server-side reload (searches full database)
+  function runServerSearch(){
+    var term = (qf.search && qf.search.value ? qf.search.value : '').trim();
+    var u = new URL(window.location.href);
+    if (term) {
+      u.searchParams.set('search', term);
+    } else {
+      u.searchParams.delete('search');
+    }
+    u.searchParams.set('page', '1');
+    window.location.href = u.toString();
+  }
+
+  // Global search triggers server-side reload on Enter only.
+  // Avoid auto-reload on every keystroke to prevent layout/sidebar blink.
   if (qf.search) {
-    qf.search.addEventListener('input', function(){
-      if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-      searchDebounceTimer = setTimeout(function(){
-        var term = (qf.search.value || '').trim();
-        var u = new URL(window.location.href);
-        if (term) {
-          u.searchParams.set('search', term);
-        } else {
-          u.searchParams.delete('search');
-        }
-        u.searchParams.set('page', '1');
-        window.location.href = u.toString();
-      }, 600);
-    });
     qf.search.addEventListener('keydown', function(e){
       if (e.key === 'Enter') {
         e.preventDefault();
-        if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-        var term = (qf.search.value || '').trim();
-        var u = new URL(window.location.href);
-        if (term) {
-          u.searchParams.set('search', term);
-        } else {
-          u.searchParams.delete('search');
-        }
-        u.searchParams.set('page', '1');
-        window.location.href = u.toString();
+        runServerSearch();
       }
     });
   }
@@ -1600,10 +1589,10 @@ include __DIR__ . '/../../includes/header.php';
     }
   };
 
-  // Restore summary state (default: expanded)
+  // Restore summary state (default: collapsed)
   (function(){
     var saved = localStorage.getItem('ps_summary_collapsed');
-    if (saved === '1') {
+    if (saved === null || saved === '1') {
       document.getElementById('ps-summary-body').classList.add('collapsed');
       document.getElementById('ps-summary-toggle').classList.add('collapsed');
     }
