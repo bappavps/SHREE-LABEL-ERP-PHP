@@ -307,22 +307,37 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
         setInterval(updateDateTime, 1000);
     }
 
-    // Sidebar accordion behavior
+    // Sidebar accordion behavior (multi-open with persisted state)
     var groups = Array.prototype.slice.call(document.querySelectorAll('.nav-group'));
     var accordion = groups.map(function (group) {
+        var labelNode = group.querySelector('.nav-group-toggle .nav-item-main span:last-child');
+        var key = labelNode ? (labelNode.textContent || '').trim() : '';
         return {
             group: group,
             toggle: group.querySelector('.nav-group-toggle'),
-            sub: group.querySelector('.nav-sub')
+            sub: group.querySelector('.nav-sub'),
+            key: key
         };
     }).filter(function (x) { return x.toggle && x.sub; });
 
-    function closeAllAccordion() {
-        accordion.forEach(function (item) {
-            item.group.classList.remove('is-open');
-            item.toggle.setAttribute('aria-expanded', 'false');
-        });
+    var sidebarGroupsStorageKey = 'erp_sidebar_open_groups_v1';
+    var sidebarNestedStorageKey = 'erp_sidebar_open_nested_v1';
+    function loadOpenSet(storageKey) {
+        try {
+            var raw = localStorage.getItem(storageKey);
+            var arr = raw ? JSON.parse(raw) : [];
+            if (!Array.isArray(arr)) return new Set();
+            return new Set(arr.map(function (x) { return String(x); }));
+        } catch (e) {
+            return new Set();
+        }
     }
+    function saveOpenSet(storageKey, setObj) {
+        try {
+            localStorage.setItem(storageKey, JSON.stringify(Array.from(setObj)));
+        } catch (e) {}
+    }
+    var openGroupsSet = loadOpenSet(sidebarGroupsStorageKey);
 
     // Open the current section if one of its submenu links is active
     var currentPath = window.location.pathname.replace(/\/$/, '');
@@ -333,7 +348,8 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             return href && currentPath.indexOf(href) !== -1;
         });
 
-        if (hasActiveClass || hasPathMatch) {
+        var shouldOpen = (item.key && openGroupsSet.has(item.key)) || hasActiveClass || hasPathMatch;
+        if (shouldOpen) {
             item.group.classList.add('is-open');
             item.toggle.setAttribute('aria-expanded', 'true');
         } else {
@@ -343,20 +359,27 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
         item.toggle.addEventListener('click', function (e) {
             e.preventDefault();
             var wasOpen = item.group.classList.contains('is-open');
-            closeAllAccordion();
-            if (!wasOpen) {
+            if (wasOpen) {
+                item.group.classList.remove('is-open');
+                item.toggle.setAttribute('aria-expanded', 'false');
+                if (item.key) openGroupsSet.delete(item.key);
+            } else {
                 item.group.classList.add('is-open');
                 item.toggle.setAttribute('aria-expanded', 'true');
+                if (item.key) openGroupsSet.add(item.key);
             }
+            saveOpenSet(sidebarGroupsStorageKey, openGroupsSet);
         });
     });
 
     // Nested accordion under Physical Stock Check
+    var openNestedSet = loadOpenSet(sidebarNestedStorageKey);
     var nested = Array.prototype.slice.call(document.querySelectorAll('.nav-sub-nest'));
     nested.forEach(function (node) {
         var toggle = node.querySelector('.nav-sub-parent-toggle');
         var children = node.querySelector('.nav-sub-children');
         if (!toggle || !children) return;
+        var nestedKey = (toggle.textContent || '').trim().replace(/\s+/g, ' ');
 
         var hasActiveChild = node.querySelector('.nav-sub-item.active') ||
             Array.prototype.some.call(node.querySelectorAll('.nav-sub-item[href]'), function (link) {
@@ -364,7 +387,7 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                 return href && currentPath.indexOf(href) !== -1;
             });
 
-        if (hasActiveChild) {
+        if (openNestedSet.has(nestedKey) || hasActiveChild) {
             node.classList.add('is-open');
             toggle.setAttribute('aria-expanded', 'true');
         } else {
@@ -375,6 +398,12 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             e.preventDefault();
             var isOpen = node.classList.toggle('is-open');
             toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            if (isOpen) {
+                openNestedSet.add(nestedKey);
+            } else {
+                openNestedSet.delete(nestedKey);
+            }
+            saveOpenSet(sidebarNestedStorageKey, openNestedSet);
         });
     });
 

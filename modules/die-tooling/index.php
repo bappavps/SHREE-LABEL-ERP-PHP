@@ -2,6 +2,13 @@
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';
 require_once __DIR__ . '/../../includes/auth_check.php';
+// Allow wrapper pages to override the redirect URL — must be defined BEFORE _common.php
+if (isset($dieToolingRedirectUrlOverride) && trim((string)$dieToolingRedirectUrlOverride) !== '') {
+  function dieToolingRedirectUrl($mode = 'master') {
+    global $dieToolingRedirectUrlOverride;
+    return trim((string)$dieToolingRedirectUrlOverride);
+  }
+}
 require_once __DIR__ . '/_common.php';
 
 $db = getDB();
@@ -9,8 +16,16 @@ ensureDieToolingSchema($db);
 
 $mode = (($_GET['mode'] ?? 'master') === 'design') ? 'design' : 'master';
 $isDesignMode = $mode === 'design';
-$pageTitle = $isDesignMode ? 'Design Barcode Die' : 'Master Barcode Die';
-
+$entityLabel = isset($dieToolingEntityLabelOverride) && trim((string)$dieToolingEntityLabelOverride) !== ''
+  ? trim((string)$dieToolingEntityLabelOverride)
+  : 'Barcode Die';
+$pageTitle = isset($dieToolingPageTitleOverride) && trim((string)$dieToolingPageTitleOverride) !== ''
+  ? trim((string)$dieToolingPageTitleOverride)
+  : ($isDesignMode ? 'Design ' . $entityLabel : 'Master ' . $entityLabel);
+$dieTypeScope = isset($dieToolingDieTypeScope) ? mb_strtolower(trim((string)$dieToolingDieTypeScope), 'UTF-8') : '';
+$dieTypeScopeLabel = isset($dieToolingDieTypeScopeLabel) && trim((string)$dieToolingDieTypeScopeLabel) !== ''
+  ? trim((string)$dieToolingDieTypeScopeLabel)
+  : '';
 $columns = dieToolingColumns();
 $importColumns = dieToolingImportColumns();
 $csrf = generateCSRF();
@@ -72,6 +87,22 @@ function dieToolingAutoMapHeaders(array $headers) {
   return $mapping;
 }
 
+function dieToolingRowMatchesScope($dieTypeValue, $scope) {
+  $scope = mb_strtolower(trim((string)$scope), 'UTF-8');
+  if ($scope === '') {
+    return true;
+  }
+
+  $value = mb_strtolower(trim((string)$dieTypeValue), 'UTF-8');
+  if ($scope === 'flatbed') {
+    return strpos($value, 'flat') !== false;
+  }
+  if ($scope === 'rotary') {
+    return strpos($value, 'rotary') !== false;
+  }
+  return strpos($value, $scope) !== false;
+}
+
 if (isset($_GET['clear_import']) && !$isDesignMode) {
   unset($_SESSION['die_tooling_import_preview']);
   redirect(dieToolingRedirectUrl($mode));
@@ -92,6 +123,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $data = dieToolingNormalizePayload($_POST);
+    if ($dieTypeScope !== '') {
+      $data['die_type'] = $dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope);
+    }
     $stmt = $db->prepare('INSERT INTO master_die_tooling (barcode_size, ups_in_roll, up_in_die, label_gap, paper_size, cylender, repeat_size, used_for, die_type, core, pices_per_roll) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     if ($stmt) {
       $stmt->bind_param(
@@ -129,6 +163,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $data = dieToolingNormalizePayload($_POST);
+    if ($dieTypeScope !== '') {
+      $data['die_type'] = $dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope);
+    }
     $stmt = $db->prepare('UPDATE master_die_tooling SET barcode_size=?, ups_in_roll=?, up_in_die=?, label_gap=?, paper_size=?, cylender=?, repeat_size=?, used_for=?, die_type=?, core=?, pices_per_roll=? WHERE id=?');
     if ($stmt) {
       $stmt->bind_param(
@@ -296,7 +333,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $clearExisting = !empty($_POST['clear_existing']);
 
     if ($clearExisting) {
-      $db->query('DELETE FROM master_die_tooling');
+      if ($dieTypeScopeLabel !== '') {
+        $safeLabel = $db->real_escape_string(mb_strtolower(trim($dieTypeScopeLabel), 'UTF-8'));
+        $db->query("DELETE FROM master_die_tooling WHERE LOWER(COALESCE(die_type, '')) = '{$safeLabel}'");
+      } elseif ($dieTypeScope !== '') {
+        $safeScope = $db->real_escape_string($dieTypeScope);
+        $db->query("DELETE FROM master_die_tooling WHERE LOWER(COALESCE(die_type, '')) LIKE '%{$safeScope}%'");
+      } else {
+        $db->query('DELETE FROM master_die_tooling');
+      }
     }
 
     $inserted = 0;
@@ -334,6 +379,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $value = 'NA';
         }
         $payload[$key] = dieToolingCleanText($value, 190);
+      }
+
+      if ($dieTypeScope !== '') {
+        $payload['die_type'] = $dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope);
       }
 
       $stmt->bind_param(
@@ -379,11 +428,23 @@ if ($editingId > 0) {
     $stmt->execute();
     $editingRow = $stmt->get_result()->fetch_assoc() ?: null;
     $stmt->close();
+    if ($editingRow && !dieToolingRowMatchesScope($editingRow['die_type'] ?? '', $dieTypeScope)) {
+      $editingRow = null;
+    }
   }
 }
 
+$scopeWhere = '';
+if ($dieTypeScopeLabel !== '') {
+  $safeLabel = $db->real_escape_string(mb_strtolower(trim($dieTypeScopeLabel), 'UTF-8'));
+  $scopeWhere = " WHERE LOWER(COALESCE(die_type, '')) = '{$safeLabel}'";
+} elseif ($dieTypeScope !== '') {
+  $safeScope = $db->real_escape_string($dieTypeScope);
+  $scopeWhere = " WHERE LOWER(COALESCE(die_type, '')) LIKE '%{$safeScope}%'";
+}
+
 $rows = [];
-$res = $db->query("SELECT * FROM master_die_tooling ORDER BY CASE WHEN TRIM(COALESCE(sl_no, '')) REGEXP '^[0-9]+$' THEN CAST(TRIM(sl_no) AS UNSIGNED) ELSE 2147483647 END ASC, id ASC");
+$res = $db->query("SELECT * FROM master_die_tooling{$scopeWhere} ORDER BY CASE WHEN TRIM(COALESCE(sl_no, '')) REGEXP '^[0-9]+$' THEN CAST(TRIM(sl_no) AS UNSIGNED) ELSE 2147483647 END ASC, id ASC");
 if ($res) {
   $rows = $res->fetch_all(MYSQLI_ASSOC);
 }
@@ -470,9 +531,18 @@ include __DIR__ . '/../../includes/header.php';
 .barcode-die-table tbody td { border-color:#e2e8f0; }
 @media (max-width:980px) { .ps-quick-filter{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));} }
 
-.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:2000; }
-.modal-card { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:960px; max-height:90vh; overflow:auto; background:#fff; border-radius:10px; box-shadow:0 20px 40px rgba(0,0,0,.2); }
-.modal-head { display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--border); }
+.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:2000; align-items:center; justify-content:center; }
+.modal-card { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:960px; max-height:92vh; overflow:auto; background:#fff; border-radius:14px; box-shadow:0 24px 60px rgba(0,0,0,.25); }
+.modal-head { display:flex; justify-content:space-between; align-items:center; padding:15px 20px; background:#0f172a; color:#fff; border-radius:14px 14px 0 0; }
+.modal-head strong { font-size:.92rem; font-weight:700; letter-spacing:.02em; display:flex;align-items:center;gap:8px; }
+.modal-head .btn-ghost { color:#94a3b8 !important; border:none; padding:4px 8px; }
+.modal-head .btn-ghost:hover { color:#fff !important; background:rgba(255,255,255,.1) !important; }
+.modal-body-pad { padding:20px 22px; }
+.modal-form-section { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px 16px; }
+.modal-form-label { font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:#64748b; display:block; margin-bottom:4px; }
+.modal-form-input { width:100%; height:40px; border:1px solid #cbd5e1; border-radius:10px; padding:0 12px; font-size:.85rem; background:#fff; color:#0f172a; transition:border-color .15s,box-shadow .15s; }
+.modal-form-input:focus { outline:none; border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,.15); }
+.modal-form-input[readonly] { background:#f8fafc; color:#94a3b8; cursor:not-allowed; }
 </style>
 
 <div class="card">
@@ -484,11 +554,11 @@ include __DIR__ . '/../../includes/header.php';
       <?php endif; ?>
       <?php if (!$isDesignMode): ?>
         <button type="button" class="barcode-btn red" id="bulkDeleteTrigger" disabled><i class="bi bi-trash3"></i> Bulk Delete</button>
-        <a class="barcode-btn blue" href="<?= BASE_URL ?>/modules/die-tooling/export.php?mode=<?= e($mode) ?>&format=excel"><i class="bi bi-file-earmark-excel"></i> Export Excel</a>
-        <a class="barcode-btn orange" target="_blank" href="<?= BASE_URL ?>/modules/die-tooling/export.php?mode=<?= e($mode) ?>&format=pdf"><i class="bi bi-printer"></i> Print / PDF</a>
+        <a class="barcode-btn blue" href="<?= BASE_URL ?>/modules/die-tooling/export.php?mode=<?= e($mode) ?>&format=excel<?= $dieTypeScope !== '' ? '&scope=' . urlencode($dieTypeScope) . '&scope_label=' . urlencode($dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope)) : '' ?>"><i class="bi bi-file-earmark-excel"></i> Export Excel</a>
+        <a class="barcode-btn orange" target="_blank" href="<?= BASE_URL ?>/modules/die-tooling/export.php?mode=<?= e($mode) ?>&format=pdf<?= $dieTypeScope !== '' ? '&scope=' . urlencode($dieTypeScope) . '&scope_label=' . urlencode($dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope)) : '' ?>"><i class="bi bi-printer"></i> Print / PDF</a>
       <?php else: ?>
-        <a class="barcode-btn blue" href="<?= BASE_URL ?>/modules/die-tooling/export.php?mode=<?= e($mode) ?>&format=excel"><i class="bi bi-file-earmark-excel"></i> Export Excel</a>
-        <a class="barcode-btn orange" target="_blank" href="<?= BASE_URL ?>/modules/die-tooling/export.php?mode=<?= e($mode) ?>&format=pdf"><i class="bi bi-printer"></i> Print / PDF</a>
+        <a class="barcode-btn blue" href="<?= BASE_URL ?>/modules/die-tooling/export.php?mode=<?= e($mode) ?>&format=excel<?= $dieTypeScope !== '' ? '&scope=' . urlencode($dieTypeScope) . '&scope_label=' . urlencode($dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope)) : '' ?>"><i class="bi bi-file-earmark-excel"></i> Export Excel</a>
+        <a class="barcode-btn orange" target="_blank" href="<?= BASE_URL ?>/modules/die-tooling/export.php?mode=<?= e($mode) ?>&format=pdf<?= $dieTypeScope !== '' ? '&scope=' . urlencode($dieTypeScope) . '&scope_label=' . urlencode($dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope)) : '' ?>"><i class="bi bi-printer"></i> Print / PDF</a>
       <?php endif; ?>
     </div>
   </div>
@@ -532,7 +602,7 @@ foreach ($rows as $rowItem) {
 
 <div class="card">
   <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-    <span class="card-title">Barcode Die Table</span>
+    <span class="card-title"><?= e($entityLabel) ?> Table</span>
     <span style="font-size:.82rem;color:var(--text-muted);">Total Rows: <?= count($rows) ?></span>
   </div>
 
@@ -604,7 +674,7 @@ foreach ($rows as $rowItem) {
       </thead>
       <tbody>
       <?php if (!$rows): ?>
-        <tr><td colspan="<?= $isDesignMode ? 13 : 14 ?>" style="text-align:center;color:var(--text-muted);padding:24px;">No barcode die records found.</td></tr>
+        <tr><td colspan="<?= $isDesignMode ? 13 : 14 ?>" style="text-align:center;color:var(--text-muted);padding:24px;">No <?= e(strtolower($entityLabel)) ?> records found.</td></tr>
       <?php else: ?>
         <?php foreach ($rows as $idx => $row): ?>
           <?php
@@ -612,13 +682,14 @@ foreach ($rows as $rowItem) {
             $repeatRaw = trim((string)($row['repeat_size'] ?? ''));
             $hasRepeat = ($repeatRaw !== '' && strtoupper($repeatRaw) !== 'NA');
             $barcodeBg = ($barcodeKey !== '' && $hasRepeat) ? ($barcodeColorMap[$barcodeKey] ?? '#ffffff') : '#ffffff';
-            $displaySlNo = trim((string)($row['sl_no'] ?? ''));
+            $displaySlNo = $dieTypeScope !== '' ? (string)($idx + 1) : trim((string)($row['sl_no'] ?? ''));
+            if ($displaySlNo === '') $displaySlNo = (string)($idx + 1);
           ?>
           <tr>
             <?php if (!$isDesignMode): ?>
               <td class="bulk-check-col no-print"><input type="checkbox" class="barcode-row-check" value="<?= (int)$row['id'] ?>"></td>
             <?php endif; ?>
-            <td><?= e($displaySlNo !== '' ? $displaySlNo : (string)($idx + 1)) ?></td>
+            <td><?= e($displaySlNo) ?></td>
             <td style="background:<?= e($barcodeBg) ?>;font-weight:600;"><?= e((string)$row['barcode_size']) ?></td>
             <td><?= e((string)$row['ups_in_roll']) ?></td>
             <td><?= e((string)$row['up_in_die']) ?></td>
@@ -653,22 +724,25 @@ foreach ($rows as $rowItem) {
 <div class="modal-overlay" id="addDieModal">
   <div class="modal-card">
     <div class="modal-head">
-      <strong>Add Barcode Die</strong>
+      <strong><i class="bi bi-plus-circle"></i> Add <?= e($entityLabel) ?></strong>
       <button class="btn btn-sm btn-ghost" type="button" onclick="closeAddModal()"><i class="bi bi-x-lg"></i></button>
     </div>
-    <div style="padding:14px;">
-      <form method="POST" class="form-grid-2">
+    <div class="modal-body-pad">
+      <form method="POST">
         <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
         <input type="hidden" name="action" value="add_die_tool">
+        <div class="modal-form-section">
         <?php foreach ($columns as $key => $label): ?>
-          <div class="form-group">
-            <label><?= e($label) ?></label>
-            <input type="text" name="<?= e($key) ?>" value="" list="barcode-die-suggestions-<?= e($key) ?>" autocomplete="off">
+          <?php $isScopedDieType = ($key === 'die_type' && $dieTypeScope !== ''); ?>
+          <div>
+            <label class="modal-form-label"><?= e($label) ?></label>
+            <input type="text" name="<?= e($key) ?>" class="modal-form-input" value="<?= e($isScopedDieType ? ($dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope)) : '') ?>" list="barcode-die-suggestions-<?= e($key) ?>" autocomplete="off" <?= $isScopedDieType ? 'readonly' : '' ?>>
           </div>
         <?php endforeach; ?>
-        <div class="form-actions col-span-2" style="display:flex;justify-content:flex-end;gap:8px;">
-          <button type="button" class="btn btn-secondary" onclick="closeAddModal()">Cancel</button>
-          <button type="submit" class="btn btn-success">Save</button>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;">
+          <button type="button" class="btn btn-secondary" onclick="closeAddModal()"><i class="bi bi-x"></i> Cancel</button>
+          <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> Save</button>
         </div>
       </form>
     </div>
@@ -680,23 +754,26 @@ foreach ($rows as $rowItem) {
 <div class="modal-overlay" id="editDieModal" style="display:block;">
   <div class="modal-card">
     <div class="modal-head">
-      <strong>Edit Barcode Die</strong>
+      <strong><i class="bi bi-pencil-square"></i> Edit <?= e($entityLabel) ?></strong>
       <a class="btn btn-sm btn-ghost" href="<?= dieToolingRedirectUrl($mode) ?>"><i class="bi bi-x-lg"></i></a>
     </div>
-    <div style="padding:14px;">
-      <form method="POST" class="form-grid-2">
+    <div class="modal-body-pad">
+      <form method="POST">
         <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
         <input type="hidden" name="action" value="update_die_tool">
         <input type="hidden" name="id" value="<?= (int)$editingRow['id'] ?>">
+        <div class="modal-form-section">
         <?php foreach ($columns as $key => $label): ?>
-          <div class="form-group">
-            <label><?= e($label) ?></label>
-            <input type="text" name="<?= e($key) ?>" value="<?= e((string)($editingRow[$key] ?? '')) ?>" list="barcode-die-suggestions-<?= e($key) ?>" autocomplete="off">
+          <?php $isScopedDieType = ($key === 'die_type' && $dieTypeScope !== ''); ?>
+          <div>
+            <label class="modal-form-label"><?= e($label) ?></label>
+            <input type="text" name="<?= e($key) ?>" class="modal-form-input" value="<?= e($isScopedDieType ? ($dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope)) : (string)($editingRow[$key] ?? '')) ?>" list="barcode-die-suggestions-<?= e($key) ?>" autocomplete="off" <?= $isScopedDieType ? 'readonly' : '' ?>>
           </div>
         <?php endforeach; ?>
-        <div class="form-actions col-span-2" style="display:flex;justify-content:flex-end;gap:8px;">
-          <a class="btn btn-secondary" href="<?= dieToolingRedirectUrl($mode) ?>">Cancel</a>
-          <button type="submit" class="btn btn-success">Update</button>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;">
+          <a class="btn btn-secondary" href="<?= dieToolingRedirectUrl($mode) ?>"><i class="bi bi-x"></i> Cancel</a>
+          <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> Update</button>
         </div>
       </form>
     </div>
@@ -716,7 +793,7 @@ foreach ($rows as $rowItem) {
 <div id="importMapModal" class="modal-overlay">
   <div class="modal-card">
     <div class="modal-head">
-      <strong>Import Mapping - Barcode Die</strong>
+      <strong>Import Mapping - <?= e($entityLabel) ?></strong>
       <button class="btn btn-sm btn-ghost" type="button" onclick="closeImportMapModal()"><i class="bi bi-x-lg"></i></button>
     </div>
     <div style="padding:14px;">

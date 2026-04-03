@@ -76,7 +76,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
       </a>
       <div class="nav-sub">
         <?= navSubItem('/modules/artwork/index.php',  'Artwork Gallery', $currentFile, [], '', 'palette2') ?>
-        <?= navSubItem('/modules/design/barcode-die.php',  'Barcode Die', $currentFile, ['/modules/design/barcode-die.php'], '', 'tools') ?>
+        <?= navSubItem('/modules/design/cylinder-data.php',  'Cylinder Data', $currentFile, ['/modules/design/cylinder-data.php'], '', 'circle-square') ?>
         <div class="nav-sub-nest">
           <a href="#" class="nav-sub-parent-toggle" aria-expanded="false">
             <span>Job Planning</span>
@@ -94,6 +94,75 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
             <?= navSubItem('/modules/planning/dispatch/index.php',       'Dispatch',        $currentFile, [], 'nav-sub-item-nested', 'truck') ?>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <a href="#" class="nav-item nav-group-toggle" aria-expanded="false">
+        <span class="nav-item-main"><i class="bi bi-grid-3x3-gap"></i><span>Plate Data &amp; Tools</span></span>
+        <i class="bi bi-chevron-down"></i>
+      </a>
+      <div class="nav-sub">
+        <?= navSubItem('/modules/plate-tools/plate-management/index.php', 'Plate Management', $currentFile, ['/modules/plate-tools/plate-management/index.php'], '', 'grid') ?>
+
+        <div class="nav-sub-nest">
+          <a href="#" class="nav-sub-parent-toggle" aria-expanded="false">
+            <span>Die Management</span>
+            <i class="bi bi-chevron-down"></i>
+          </a>
+          <div class="nav-sub-children">
+            <div class="nav-sub-nest">
+              <a href="#" class="nav-sub-parent-toggle" aria-expanded="false">
+                <span>Printing Die Section</span>
+                <i class="bi bi-chevron-down"></i>
+              </a>
+              <div class="nav-sub-children">
+                <?= navSubItem('/modules/plate-tools/die-management/printing/flatbed-printing-die.php', 'Flatbed Printing Die', $currentFile, [], 'nav-sub-item-nested', 'layout-wtf') ?>
+                <?= navSubItem('/modules/plate-tools/die-management/printing/rotary-printing-die.php', 'Rotary Printing Die', $currentFile, [], 'nav-sub-item-nested', 'gear-wide-connected') ?>
+              </div>
+            </div>
+            <div class="nav-sub-nest">
+              <a href="#" class="nav-sub-parent-toggle" aria-expanded="false">
+                <span>Barcode Die Section</span>
+                <i class="bi bi-chevron-down"></i>
+              </a>
+              <div class="nav-sub-children">
+                <?= navSubItem('/modules/plate-tools/die-management/barcode/flatbed-barcode-die.php', 'Flatbed Barcode Die', $currentFile, [], 'nav-sub-item-nested', 'upc-scan') ?>
+                <?= navSubItem('/modules/plate-tools/die-management/barcode/rotary-barcode-die.php', 'Rotary Barcode Die', $currentFile, [], 'nav-sub-item-nested', 'qr-code-scan') ?>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="nav-sub-nest">
+          <a href="#" class="nav-sub-parent-toggle" aria-expanded="false">
+            <span>Cylinder Management</span>
+            <i class="bi bi-chevron-down"></i>
+          </a>
+          <div class="nav-sub-children">
+            <div class="nav-sub-nest">
+              <a href="#" class="nav-sub-parent-toggle" aria-expanded="false">
+                <span>Printing Cylinder Section</span>
+                <i class="bi bi-chevron-down"></i>
+              </a>
+              <div class="nav-sub-children">
+                <?= navSubItem('/modules/plate-tools/cylinder-management/printing/magnetic-printing-cylinder.php', 'Magnetic Printing Cylinder', $currentFile, [], 'nav-sub-item-nested', 'disc') ?>
+                <?= navSubItem('/modules/plate-tools/cylinder-management/printing/sheeter-printing-cylinder.php', 'Sheeter Printing Cylinder', $currentFile, [], 'nav-sub-item-nested', 'layers-half') ?>
+              </div>
+            </div>
+            <div class="nav-sub-nest">
+              <a href="#" class="nav-sub-parent-toggle" aria-expanded="false">
+                <span>Barcode Cylinder Section</span>
+                <i class="bi bi-chevron-down"></i>
+              </a>
+              <div class="nav-sub-children">
+                <?= navSubItem('/modules/plate-tools/cylinder-management/barcode/magnetic-barcode-cylinder.php', 'Magnetic Barcode Cylinder', $currentFile, [], 'nav-sub-item-nested', 'circle-square') ?>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <?= navSubItem('/modules/plate-tools/anilox-management/index.php', 'Anilox Management', $currentFile, [], '', 'droplet-half') ?>
       </div>
     </div>
 

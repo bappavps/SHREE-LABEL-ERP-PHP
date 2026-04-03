@@ -1,53 +1,157 @@
 <?php
 
+function dieToolingModuleSlug() {
+  return 'plate-data';
+}
+
+function dieToolingModuleLabel() {
+  return 'Plate Data';
+}
+
+function dieToolingTableName() {
+  return 'master_plate_data';
+}
+
 function dieToolingImportColumns() {
   return ['sl_no' => 'SL No.'] + dieToolingColumns();
 }
 
 function dieToolingColumns() {
   return [
-    'barcode_size' => 'BarCode Size',
-    'ups_in_roll' => 'Ups in Roll',
-    'up_in_die' => 'UPS in Die',
-    'label_gap' => 'Label Gap',
+    'date_received' => 'Date of Recv.',
+    'name' => 'Name',
+    'image_path' => 'Image',
+    'ups' => 'UPS',
+    'plate' => 'Plate',
+    'size' => 'Size',
+    'gap_h' => 'Gap (H)',
+    'gap_v' => 'Gap (V)',
     'paper_size' => 'Paper Size',
-    'cylender' => 'Cylender',
-    'repeat_size' => 'Repeat',
-    'used_for' => 'Used IN',
-    'die_type' => 'Die Type',
+    'paper_type' => 'Paper Type',
+    'cylinder' => 'Cylinder',
+    'make_by' => 'Make By',
+    'die' => 'Die',
+    'repeat_value' => 'Repeat',
     'core' => 'Core',
-    'pices_per_roll' => 'Pices per Roll',
+    'qty_roll' => 'Qty. Roll',
+    'rewinding' => 'Rewinding',
+    'c' => 'C',
+    'm' => 'M',
+    'y' => 'Y',
+    'k' => 'K',
+    'special_1' => 'Color 5',
+    'special_2' => 'Color 6',
+    'special_3' => 'Color 7',
+    'special_4' => 'Color 8',
+    'special_5' => 'Color 9',
+  ];
+}
+
+function dieToolingColumnSqlTypes() {
+  return [
+    'sl_no' => 'VARCHAR(50) DEFAULT NULL',
+    'date_received' => 'VARCHAR(40) DEFAULT NULL',
+    'name' => 'VARCHAR(160) DEFAULT NULL',
+    'image_path' => 'VARCHAR(255) DEFAULT NULL',
+    'ups' => 'VARCHAR(80) DEFAULT NULL',
+    'plate' => 'VARCHAR(120) DEFAULT NULL',
+    'size' => 'VARCHAR(120) DEFAULT NULL',
+    'gap_h' => 'VARCHAR(80) DEFAULT NULL',
+    'gap_v' => 'VARCHAR(80) DEFAULT NULL',
+    'paper_size' => 'VARCHAR(120) DEFAULT NULL',
+    'paper_type' => 'VARCHAR(120) DEFAULT NULL',
+    'cylinder' => 'VARCHAR(120) DEFAULT NULL',
+    'make_by' => 'VARCHAR(120) DEFAULT NULL',
+    'die' => 'VARCHAR(120) DEFAULT NULL',
+    'repeat_value' => 'VARCHAR(120) DEFAULT NULL',
+    'core' => 'VARCHAR(80) DEFAULT NULL',
+    'qty_roll' => 'VARCHAR(80) DEFAULT NULL',
+    'rewinding' => 'VARCHAR(120) DEFAULT NULL',
+    'c' => 'VARCHAR(40) DEFAULT NULL',
+    'm' => 'VARCHAR(40) DEFAULT NULL',
+    'y' => 'VARCHAR(40) DEFAULT NULL',
+    'k' => 'VARCHAR(40) DEFAULT NULL',
+    'special_1' => 'VARCHAR(120) DEFAULT NULL',
+    'special_2' => 'VARCHAR(120) DEFAULT NULL',
+    'special_3' => 'VARCHAR(120) DEFAULT NULL',
+    'special_4' => 'VARCHAR(120) DEFAULT NULL',
+    'special_5' => 'VARCHAR(120) DEFAULT NULL',
+  ];
+}
+
+function dieToolingColumnSynonyms() {
+  return [
+    'sl_no' => ['sl no', 'sl. no', 'serial no', 'serial number'],
+    'date_received' => ['date of recv', 'date recv', 'date of received', 'date'],
+    'name' => ['name'],
+    'image_path' => ['image', 'thumbnail', 'thumb', 'photo', 'image path'],
+    'ups' => ['ups', 'up'],
+    'plate' => ['plate'],
+    'size' => ['size'],
+    'gap_h' => ['gap h', 'gap horizontal', 'horizontal gap'],
+    'gap_v' => ['gap v', 'gap vertical', 'vertical gap'],
+    'paper_size' => ['paper size'],
+    'paper_type' => ['paper type'],
+    'cylinder' => ['cylinder', 'cylender'],
+    'make_by' => ['make by', 'made by', 'maker'],
+    'die' => ['die'],
+    'repeat_value' => ['repeat', 'repet'],
+    'core' => ['core'],
+    'qty_roll' => ['qty roll', 'qty. roll', 'quantity roll'],
+    'rewinding' => ['rewinding'],
+    'c' => ['c'],
+    'm' => ['m'],
+    'y' => ['y'],
+    'k' => ['k'],
+    'special_1' => ['special 1', 'color 5', 'colour 5'],
+    'special_2' => ['special 2', 'color 6', 'colour 6'],
+    'special_3' => ['special 3', 'color 7', 'colour 7'],
+    'special_4' => ['special 4', 'color 8', 'colour 8'],
+    'special_5' => ['special 5', 'color 9', 'colour 9'],
+  ];
+}
+
+function dieToolingQuickFilters() {
+  return [
+    ['type' => 'text', 'key' => 'name', 'label' => 'Name', 'placeholder' => 'Search name...'],
+    ['type' => 'pick', 'key' => 'paper_type', 'label' => 'Paper Type', 'allLabel' => 'All Paper Type'],
+    ['type' => 'pick', 'key' => 'cylinder', 'label' => 'Cylinder', 'allLabel' => 'All Cylinder'],
+    ['type' => 'pick', 'key' => 'make_by', 'label' => 'Make By', 'allLabel' => 'All Make By'],
+    ['type' => 'pick', 'key' => 'core', 'label' => 'Core', 'allLabel' => 'All Core'],
+    ['type' => 'number_range', 'key' => 'repeat_value', 'label' => 'Repeat', 'minPlaceholder' => 'Repeat min', 'maxPlaceholder' => 'Repeat max'],
   ];
 }
 
 function ensureDieToolingSchema(mysqli $db) {
+  $table = dieToolingTableName();
+  $columnSql = [];
+  foreach (dieToolingColumnSqlTypes() as $key => $sqlType) {
+    $columnSql[] = "`{$key}` {$sqlType}";
+  }
+
   $sql = "
-    CREATE TABLE IF NOT EXISTS master_die_tooling (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      sl_no VARCHAR(50) DEFAULT NULL,
-      barcode_size VARCHAR(120) DEFAULT NULL,
-      ups_in_roll VARCHAR(80) DEFAULT NULL,
-      up_in_die VARCHAR(80) DEFAULT NULL,
-      label_gap VARCHAR(80) DEFAULT NULL,
-      paper_size VARCHAR(120) DEFAULT NULL,
-      cylender VARCHAR(120) DEFAULT NULL,
-      repeat_size VARCHAR(120) DEFAULT NULL,
-      used_for VARCHAR(140) DEFAULT NULL,
-      die_type VARCHAR(120) DEFAULT NULL,
-      core VARCHAR(80) DEFAULT NULL,
-      pices_per_roll VARCHAR(80) DEFAULT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    CREATE TABLE IF NOT EXISTS `{$table}` (
+      `id` INT AUTO_INCREMENT PRIMARY KEY,
+      " . implode(",\n      ", $columnSql) . ",
+      `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   ";
   $db->query($sql);
 
-  $hasSlNo = $db->query("SHOW COLUMNS FROM master_die_tooling LIKE 'sl_no'");
-  if ($hasSlNo instanceof mysqli_result && $hasSlNo->num_rows === 0) {
-    $db->query("ALTER TABLE master_die_tooling ADD COLUMN sl_no VARCHAR(50) DEFAULT NULL AFTER id");
+  $existingColumns = [];
+  $result = $db->query("SHOW COLUMNS FROM `{$table}`");
+  if ($result instanceof mysqli_result) {
+    while ($row = $result->fetch_assoc()) {
+      $existingColumns[] = (string)($row['Field'] ?? '');
+    }
+    $result->close();
   }
-  if ($hasSlNo instanceof mysqli_result) {
-    $hasSlNo->close();
+
+  foreach (dieToolingColumnSqlTypes() as $key => $sqlType) {
+    if (!in_array($key, $existingColumns, true)) {
+      $db->query("ALTER TABLE `{$table}` ADD COLUMN `{$key}` {$sqlType} AFTER `id`");
+    }
   }
 }
 
@@ -77,14 +181,12 @@ function dieToolingFormatDisplayNumber($value) {
   return $normalized === '' ? '0' : $normalized;
 }
 
-if (!function_exists('dieToolingRedirectUrl')) {
-  function dieToolingRedirectUrl($mode = 'master') {
-    $mode = ($mode === 'design') ? 'design' : 'master';
-    if ($mode === 'design') {
-      return BASE_URL . '/modules/design/barcode-die.php';
-    }
-    return BASE_URL . '/modules/master/barcode-die.php';
+function dieToolingRedirectUrl($mode = 'master') {
+  $mode = ($mode === 'design') ? 'design' : 'master';
+  if ($mode === 'design') {
+    return BASE_URL . '/modules/design/plate-data.php';
   }
+  return BASE_URL . '/modules/master/plate-data.php';
 }
 
 function dieToolingParseCsv($filePath) {

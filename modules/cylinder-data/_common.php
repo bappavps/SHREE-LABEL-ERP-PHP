@@ -1,53 +1,89 @@
 <?php
 
+function dieToolingModuleSlug() {
+  return 'cylinder-data';
+}
+
+function dieToolingModuleLabel() {
+  return 'Cylinder Data';
+}
+
+function dieToolingTableName() {
+  return 'master_cylinder_data';
+}
+
 function dieToolingImportColumns() {
   return ['sl_no' => 'SL No.'] + dieToolingColumns();
 }
 
 function dieToolingColumns() {
   return [
-    'barcode_size' => 'BarCode Size',
-    'ups_in_roll' => 'Ups in Roll',
-    'up_in_die' => 'UPS in Die',
-    'label_gap' => 'Label Gap',
-    'paper_size' => 'Paper Size',
-    'cylender' => 'Cylender',
-    'repeat_size' => 'Repeat',
-    'used_for' => 'Used IN',
-    'die_type' => 'Die Type',
-    'core' => 'Core',
-    'pices_per_roll' => 'Pices per Roll',
+    'cylinder_type' => 'Cylinder Type',
+    'cylinder_size_inch' => 'Sylinder Size (inc)',
+    'cylinder_teeth' => 'Cylinder Teeth',
+    'stock_qty' => 'Stock (QNTY)',
+  ];
+}
+
+function dieToolingColumnSqlTypes() {
+  return [
+    'sl_no' => 'VARCHAR(50) DEFAULT NULL',
+    'cylinder_type' => 'VARCHAR(80) DEFAULT NULL',
+    'cylinder_size_inch' => 'VARCHAR(80) DEFAULT NULL',
+    'cylinder_teeth' => 'VARCHAR(80) DEFAULT NULL',
+    'stock_qty' => 'VARCHAR(80) DEFAULT NULL',
+  ];
+}
+
+function dieToolingColumnSynonyms() {
+  return [
+    'sl_no' => ['sl no', 'sl. no', 'serial no', 'serial number'],
+    'cylinder_type' => ['cylinder type', 'type', 'cylinder category'],
+    'cylinder_size_inch' => ['sylinder size inc', 'cylinder size inc', 'cylinder size inch', 'size inc', 'size'],
+    'cylinder_teeth' => ['sylinder tit', 'cylinder tit', 'sylinder teeth', 'cylinder teeth', 'tit', 'teeth'],
+    'stock_qty' => ['stock qnty', 'stock qty', 'stock quantity', 'stock'],
+  ];
+}
+
+function dieToolingQuickFilters() {
+  return [
+    ['type' => 'pick', 'key' => 'cylinder_type', 'label' => 'Cylinder Type', 'allLabel' => 'All types'],
+    ['type' => 'text', 'key' => 'cylinder_size_inch', 'label' => 'Size', 'placeholder' => 'Search size...'],
+    ['type' => 'text', 'key' => 'cylinder_teeth', 'label' => 'Cylinder Teeth', 'placeholder' => 'Search teeth...'],
+    ['type' => 'number_range', 'key' => 'stock_qty', 'label' => 'Stock', 'minPlaceholder' => 'Stock min', 'maxPlaceholder' => 'Stock max'],
   ];
 }
 
 function ensureDieToolingSchema(mysqli $db) {
+  $table = dieToolingTableName();
+  $columnSql = [];
+  foreach (dieToolingColumnSqlTypes() as $key => $sqlType) {
+    $columnSql[] = "`{$key}` {$sqlType}";
+  }
+
   $sql = "
-    CREATE TABLE IF NOT EXISTS master_die_tooling (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      sl_no VARCHAR(50) DEFAULT NULL,
-      barcode_size VARCHAR(120) DEFAULT NULL,
-      ups_in_roll VARCHAR(80) DEFAULT NULL,
-      up_in_die VARCHAR(80) DEFAULT NULL,
-      label_gap VARCHAR(80) DEFAULT NULL,
-      paper_size VARCHAR(120) DEFAULT NULL,
-      cylender VARCHAR(120) DEFAULT NULL,
-      repeat_size VARCHAR(120) DEFAULT NULL,
-      used_for VARCHAR(140) DEFAULT NULL,
-      die_type VARCHAR(120) DEFAULT NULL,
-      core VARCHAR(80) DEFAULT NULL,
-      pices_per_roll VARCHAR(80) DEFAULT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    CREATE TABLE IF NOT EXISTS `{$table}` (
+      `id` INT AUTO_INCREMENT PRIMARY KEY,
+      " . implode(",\n      ", $columnSql) . ",
+      `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   ";
   $db->query($sql);
 
-  $hasSlNo = $db->query("SHOW COLUMNS FROM master_die_tooling LIKE 'sl_no'");
-  if ($hasSlNo instanceof mysqli_result && $hasSlNo->num_rows === 0) {
-    $db->query("ALTER TABLE master_die_tooling ADD COLUMN sl_no VARCHAR(50) DEFAULT NULL AFTER id");
+  $existingColumns = [];
+  $result = $db->query("SHOW COLUMNS FROM `{$table}`");
+  if ($result instanceof mysqli_result) {
+    while ($row = $result->fetch_assoc()) {
+      $existingColumns[] = (string)($row['Field'] ?? '');
+    }
+    $result->close();
   }
-  if ($hasSlNo instanceof mysqli_result) {
-    $hasSlNo->close();
+
+  foreach (dieToolingColumnSqlTypes() as $key => $sqlType) {
+    if (!in_array($key, $existingColumns, true)) {
+      $db->query("ALTER TABLE `{$table}` ADD COLUMN `{$key}` {$sqlType} AFTER `id`");
+    }
   }
 }
 
@@ -81,9 +117,9 @@ if (!function_exists('dieToolingRedirectUrl')) {
   function dieToolingRedirectUrl($mode = 'master') {
     $mode = ($mode === 'design') ? 'design' : 'master';
     if ($mode === 'design') {
-      return BASE_URL . '/modules/design/barcode-die.php';
+      return BASE_URL . '/modules/design/cylinder-data.php';
     }
-    return BASE_URL . '/modules/master/barcode-die.php';
+    return BASE_URL . '/modules/master/cylinder-data.php';
   }
 }
 

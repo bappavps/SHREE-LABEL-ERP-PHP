@@ -9,17 +9,29 @@ ensureDieToolingSchema($db);
 
 $mode = (($_GET['mode'] ?? 'master') === 'design') ? 'design' : 'master';
 $format = strtolower(trim((string)($_GET['format'] ?? 'excel')));
+$scope = mb_strtolower(trim((string)($_GET['scope'] ?? '')), 'UTF-8');
+$scopeLabel = trim((string)($_GET['scope_label'] ?? ''));
 if (!in_array($format, ['excel', 'pdf'], true)) {
   $format = 'excel';
 }
 
+$scopeWhere = '';
+if ($scopeLabel !== '') {
+  $safeLabel = $db->real_escape_string(mb_strtolower(trim($scopeLabel), 'UTF-8'));
+  $scopeWhere = " WHERE LOWER(COALESCE(die_type, '')) = '{$safeLabel}'";
+} elseif ($scope !== '') {
+  $safeScope = $db->real_escape_string($scope);
+  $scopeWhere = " WHERE LOWER(COALESCE(die_type, '')) LIKE '%{$safeScope}%'";
+}
+
 $rows = [];
-$res = $db->query("SELECT * FROM master_die_tooling ORDER BY CASE WHEN TRIM(COALESCE(sl_no, '')) REGEXP '^[0-9]+$' THEN CAST(TRIM(sl_no) AS UNSIGNED) ELSE 2147483647 END ASC, id ASC");
+$res = $db->query("SELECT * FROM master_die_tooling{$scopeWhere} ORDER BY CASE WHEN TRIM(COALESCE(sl_no, '')) REGEXP '^[0-9]+$' THEN CAST(TRIM(sl_no) AS UNSIGNED) ELSE 2147483647 END ASC, id ASC");
 if ($res) {
   $rows = $res->fetch_all(MYSQLI_ASSOC);
 }
 
-$title = $mode === 'design' ? 'Design Barcode Die' : 'Master Barcode Die';
+$entityLabel = $scopeLabel !== '' ? ($scopeLabel . ' Barcode Die') : 'Barcode Die';
+$title = $mode === 'design' ? ('Design ' . $entityLabel) : ('Master ' . $entityLabel);
 $dateNow = date('d M Y h:i A');
 $appSettings = getAppSettings();
 $companyName = trim((string)($appSettings['company_name'] ?? APP_NAME)) ?: APP_NAME;
@@ -31,81 +43,279 @@ $logoPath = trim((string)($appSettings['logo_path'] ?? ''));
 $logoUrl = $logoPath !== '' ? appUrl($logoPath) : '';
 
 if ($format === 'excel') {
-  $fileName = 'barcode-die-' . $mode . '-' . date('Ymd_His') . '.xls';
-  header('Content-Type: application/vnd.ms-excel; charset=UTF-8');
+  $fileName = 'barcode-die-' . ($scopeLabel !== '' ? strtolower(str_replace(' ', '-', $scopeLabel)) . '-' : '') . $mode . '-' . date('Ymd_His') . '.xls';
+  header('Content-Type: application/vnd.ms-excel');
   header('Content-Disposition: attachment; filename="' . $fileName . '"');
-  echo "\xEF\xBB\xBF";
-  ?>
-  <html>
-  <head>
-    <meta charset="UTF-8">
-    <style>
-      body { font-family: Calibri, Arial, sans-serif; }
-      .title { font-size: 18px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
-      .meta { font-size: 11px; color: #475569; margin-bottom: 10px; }
-      table { border-collapse: collapse; width: 100%; }
-      th {
-        background: #dbeafe;
-        color: #1e3a8a;
-        border: 1px solid #93c5fd;
-        text-align: center;
-        padding: 7px;
-        font-size: 11px;
-      }
-      td {
-        border: 1px solid #cbd5e1;
-        padding: 6px;
-        font-size: 10.5px;
-      }
-      tr:nth-child(even) td { background: #f8fafc; }
-    </style>
-  </head>
-  <body>
-    <div class="title"><?= e($title) ?> Export</div>
-    <div class="meta">Generated: <?= e($dateNow) ?></div>
-    <table>
-      <thead>
-        <tr>
-          <th>Sl. No.</th>
-          <th>BarCode Size</th>
-          <th>Ups in Roll</th>
-          <th>UPS in Die</th>
-          <th>Label Gap</th>
-          <th>Paper Size</th>
-          <th>Cylender</th>
-          <th>Repeat</th>
-          <th>Used IN</th>
-          <th>Die Type</th>
-          <th>Core</th>
-          <th>Pices per Roll</th>
-        </tr>
-      </thead>
-      <tbody>
-      <?php if (!$rows): ?>
-        <tr><td colspan="12" style="text-align:center;color:#64748b;">No data available.</td></tr>
-      <?php else: ?>
-        <?php foreach ($rows as $idx => $row): ?>
-          <tr>
-            <td><?= e(trim((string)($row['sl_no'] ?? '')) !== '' ? (string)$row['sl_no'] : (string)($idx + 1)) ?></td>
-            <td><?= e((string)$row['barcode_size']) ?></td>
-            <td><?= e((string)$row['ups_in_roll']) ?></td>
-            <td><?= e((string)$row['up_in_die']) ?></td>
-            <td><?= e((string)$row['label_gap']) ?></td>
-            <td><?= e((string)$row['paper_size']) ?></td>
-            <td><?= e((string)$row['cylender']) ?></td>
-            <td><?= e(dieToolingFormatDisplayNumber($row['repeat_size'])) ?></td>
-            <td><?= e((string)$row['used_for']) ?></td>
-            <td><?= e((string)$row['die_type']) ?></td>
-            <td><?= e((string)$row['core']) ?></td>
-            <td><?= e((string)$row['pices_per_roll']) ?></td>
-          </tr>
-        <?php endforeach; ?>
-      <?php endif; ?>
-      </tbody>
-    </table>
-  </body>
-  </html>
-  <?php
+  header('Pragma: no-cache');
+  header('Cache-Control: no-cache, must-revalidate');
+
+  $numericCols = ['ups_in_roll','up_in_die','label_gap','repeat_size','pices_per_roll'];
+  $colCount = 13; // SL + 12 data columns
+  $mergeCount = $colCount - 1;
+
+  // Helper functions for XML Excel
+  function dtXmlEsc($s) {
+    return htmlspecialchars((string)$s, ENT_QUOTES | ENT_XML1, 'UTF-8');
+  }
+  function dtXlCell($val, $styleId = 's_body') {
+    $escaped = dtXmlEsc($val);
+    return "<Cell ss:StyleID=\"{$styleId}\"><Data ss:Type=\"String\">{$escaped}</Data></Cell>";
+  }
+  function dtXlNumCell($val, $styleId = 's_num') {
+    $n = is_numeric($val) ? $val : 0;
+    return "<Cell ss:StyleID=\"{$styleId}\"><Data ss:Type=\"Number\">{$n}</Data></Cell>";
+  }
+  function dtXlMergeCell($val, $mergeAcross, $styleId = 's_body') {
+    $escaped = dtXmlEsc($val);
+    return "<Cell ss:StyleID=\"{$styleId}\" ss:MergeAcross=\"{$mergeAcross}\"><Data ss:Type=\"String\">{$escaped}</Data></Cell>";
+  }
+
+  $colWidths = [40, 110, 90, 80, 80, 75, 100, 90, 80, 90, 80, 75, 80];
+
+  echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+  echo '<?mso-application progid="Excel.Sheet"?>' . "\n";
+?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+<Styles>
+  <Style ss:ID="s_company">
+    <Font ss:FontName="Calibri" ss:Size="16" ss:Bold="1" ss:Color="#0F172A"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="s_tagline">
+    <Font ss:FontName="Calibri" ss:Size="10" ss:Italic="1" ss:Color="#64748B"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="s_detail">
+    <Font ss:FontName="Calibri" ss:Size="9" ss:Color="#475569"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="s_title">
+    <Font ss:FontName="Calibri" ss:Size="12" ss:Bold="1" ss:Color="#FFFFFF"/>
+    <Interior ss:Color="#0F172A" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="s_header">
+    <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/>
+    <Interior ss:Color="#1E40AF" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1E3A8A"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#2563EB"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#2563EB"/>
+      <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1E3A8A"/>
+    </Borders>
+  </Style>
+  <Style ss:ID="s_header_r">
+    <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/>
+    <Interior ss:Color="#1E40AF" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Right" ss:Vertical="Center" ss:WrapText="1"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1E3A8A"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#2563EB"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#2563EB"/>
+      <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1E3A8A"/>
+    </Borders>
+  </Style>
+  <Style ss:ID="s_body">
+    <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#1E293B"/>
+    <Alignment ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    </Borders>
+  </Style>
+  <Style ss:ID="s_body_alt">
+    <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#1E293B"/>
+    <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+    <Alignment ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    </Borders>
+  </Style>
+  <Style ss:ID="s_num">
+    <Font ss:FontName="Consolas" ss:Size="10" ss:Color="#1E293B"/>
+    <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    </Borders>
+  </Style>
+  <Style ss:ID="s_num_alt">
+    <Font ss:FontName="Consolas" ss:Size="10" ss:Color="#1E293B"/>
+    <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    </Borders>
+  </Style>
+  <Style ss:ID="s_sl">
+    <Font ss:FontName="Calibri" ss:Size="9" ss:Color="#94A3B8"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    </Borders>
+  </Style>
+  <Style ss:ID="s_sl_alt">
+    <Font ss:FontName="Calibri" ss:Size="9" ss:Color="#94A3B8"/>
+    <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    </Borders>
+  </Style>
+  <Style ss:ID="s_sum_label">
+    <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#0F172A"/>
+    <Interior ss:Color="#EFF6FF" ss:Pattern="Solid"/>
+    <Alignment ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
+      <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
+    </Borders>
+  </Style>
+  <Style ss:ID="s_sum_val">
+    <Font ss:FontName="Consolas" ss:Size="11" ss:Bold="1" ss:Color="#1D4ED8"/>
+    <Interior ss:Color="#EFF6FF" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
+      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
+      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
+      <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
+    </Borders>
+  </Style>
+  <Style ss:ID="s_sum_title">
+    <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/>
+    <Interior ss:Color="#1E40AF" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="s_footer">
+    <Font ss:FontName="Calibri" ss:Size="9" ss:Italic="1" ss:Color="#94A3B8"/>
+    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+    <Borders>
+      <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0F172A"/>
+    </Borders>
+  </Style>
+  <Style ss:ID="s_blank"><Alignment ss:Vertical="Center"/></Style>
+</Styles>
+
+<Worksheet ss:Name="<?= dtXmlEsc($entityLabel) ?>">
+<Table>
+<?php foreach ($colWidths as $w): ?>
+  <Column ss:AutoFitWidth="0" ss:Width="<?= $w ?>"/>
+<?php endforeach; ?>
+
+  <Row ss:Height="28">
+    <?= dtXlMergeCell($companyName, $mergeCount, 's_company') ?>
+  </Row>
+<?php if ($companyTagline !== ''): ?>
+  <Row ss:Height="18">
+    <?= dtXlMergeCell($companyTagline, $mergeCount, 's_tagline') ?>
+  </Row>
+<?php endif; ?>
+<?php if ($companyAddress !== ''): ?>
+  <Row ss:Height="16">
+    <?= dtXlMergeCell($companyAddress, $mergeCount, 's_detail') ?>
+  </Row>
+<?php endif; ?>
+<?php
+  $contactParts = [];
+  if ($companyPhone !== '') $contactParts[] = 'Ph: ' . $companyPhone;
+  if ($companyEmail !== '') $contactParts[] = $companyEmail;
+  if ($contactParts):
+?>
+  <Row ss:Height="16">
+    <?= dtXlMergeCell(implode('  |  ', $contactParts), $mergeCount, 's_detail') ?>
+  </Row>
+<?php endif; ?>
+
+  <Row ss:Height="8"><Cell ss:StyleID="s_blank"/></Row>
+
+  <Row ss:Height="26">
+    <?= dtXlMergeCell(strtoupper($entityLabel) . ' REPORT — ' . date('d M Y, h:i A') . '  |  Total: ' . count($rows) . ' records', $mergeCount, 's_title') ?>
+  </Row>
+
+  <Row ss:Height="6"><Cell ss:StyleID="s_blank"/></Row>
+
+  <Row ss:Height="24">
+    <Cell ss:StyleID="s_header"><Data ss:Type="String">SL No.</Data></Cell>
+    <Cell ss:StyleID="s_header"><Data ss:Type="String">Barcode Size</Data></Cell>
+    <Cell ss:StyleID="s_header_r"><Data ss:Type="String">Ups in Roll</Data></Cell>
+    <Cell ss:StyleID="s_header_r"><Data ss:Type="String">UPS in Die</Data></Cell>
+    <Cell ss:StyleID="s_header_r"><Data ss:Type="String">Label Gap</Data></Cell>
+    <Cell ss:StyleID="s_header"><Data ss:Type="String">Paper Size</Data></Cell>
+    <Cell ss:StyleID="s_header"><Data ss:Type="String">Cylinder</Data></Cell>
+    <Cell ss:StyleID="s_header_r"><Data ss:Type="String">Repeat</Data></Cell>
+    <Cell ss:StyleID="s_header"><Data ss:Type="String">Used IN</Data></Cell>
+    <Cell ss:StyleID="s_header"><Data ss:Type="String">Die Type</Data></Cell>
+    <Cell ss:StyleID="s_header"><Data ss:Type="String">Core</Data></Cell>
+    <Cell ss:StyleID="s_header_r"><Data ss:Type="String">Pcs/Roll</Data></Cell>
+  </Row>
+
+<?php foreach ($rows as $idx => $row):
+  $alt = ($idx % 2 === 1);
+  $slStyle = $alt ? 's_sl_alt' : 's_sl';
+  $bStyle  = $alt ? 's_body_alt' : 's_body';
+  $nStyle  = $alt ? 's_num_alt' : 's_num';
+?>
+  <Row ss:Height="20">
+    <?= dtXlNumCell($idx + 1, $slStyle) ?>
+    <?= dtXlCell((string)$row['barcode_size'], $bStyle) ?>
+    <?= dtXlCell((string)$row['ups_in_roll'], $nStyle) ?>
+    <?= dtXlCell((string)$row['up_in_die'], $nStyle) ?>
+    <?= dtXlCell((string)$row['label_gap'], $nStyle) ?>
+    <?= dtXlCell((string)$row['paper_size'], $bStyle) ?>
+    <?= dtXlCell((string)$row['cylender'], $bStyle) ?>
+    <?= dtXlCell(dieToolingFormatDisplayNumber($row['repeat_size']), $nStyle) ?>
+    <?= dtXlCell((string)$row['used_for'], $bStyle) ?>
+    <?= dtXlCell((string)$row['die_type'], $bStyle) ?>
+    <?= dtXlCell((string)$row['core'], $bStyle) ?>
+    <?= dtXlCell((string)$row['pices_per_roll'], $nStyle) ?>
+  </Row>
+<?php endforeach; ?>
+
+  <Row ss:Height="10"><Cell ss:StyleID="s_blank"/></Row>
+
+  <Row ss:Height="24">
+    <?= dtXlMergeCell('SUMMARY', $mergeCount, 's_sum_title') ?>
+  </Row>
+  <Row ss:Height="22">
+    <?= dtXlCell('Total Records', 's_sum_label') ?>
+    <?= dtXlNumCell(count($rows), 's_sum_val') ?>
+  </Row>
+  <Row ss:Height="22">
+    <?= dtXlCell('Report Type', 's_sum_label') ?>
+    <?= dtXlCell($entityLabel, 's_sum_val') ?>
+  </Row>
+  <Row ss:Height="22">
+    <?= dtXlCell('Mode', 's_sum_label') ?>
+    <?= dtXlCell($mode === 'design' ? 'Design' : 'Master', 's_sum_val') ?>
+  </Row>
+
+  <Row ss:Height="8"><Cell ss:StyleID="s_blank"/></Row>
+
+  <Row ss:Height="18">
+    <?= dtXlMergeCell($companyName . ' — ' . $entityLabel . ' Report  |  Generated: ' . date('d M Y, h:i A') . '  |  ' . count($rows) . ' records', $mergeCount, 's_footer') ?>
+  </Row>
+
+</Table>
+</Worksheet>
+</Workbook>
+<?php
   exit;
 }
 ?>
@@ -290,7 +500,7 @@ tfoot td {
       <?php else: ?>
         <?php foreach ($rows as $idx => $row): ?>
           <tr>
-            <td class="sl"><?= e(trim((string)($row['sl_no'] ?? '')) !== '' ? (string)$row['sl_no'] : (string)($idx + 1)) ?></td>
+            <td class="sl"><?= e($scope !== '' ? (string)($idx + 1) : (trim((string)($row['sl_no'] ?? '')) !== '' ? (string)$row['sl_no'] : (string)($idx + 1))) ?></td>
             <td><?= e((string)$row['barcode_size']) ?></td>
             <td class="num"><?= e((string)$row['ups_in_roll']) ?></td>
             <td class="num"><?= e((string)$row['up_in_die']) ?></td>
