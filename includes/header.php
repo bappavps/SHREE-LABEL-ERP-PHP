@@ -20,6 +20,7 @@ $sidebarButtonColor = (string)($appSettings['sidebar_button_color'] ?? '#22c55e'
 $sidebarHoverColor = (string)($appSettings['sidebar_hover_color'] ?? 'rgba(255,255,255,.09)');
 $sidebarActiveBg = (string)($appSettings['sidebar_active_bg'] ?? 'rgba(34,197,94,.12)');
 $sidebarActiveTxt = (string)($appSettings['sidebar_active_text'] ?? '#bbf7d0');
+$sidebarCollapseDelayMs = (int)($appSettings['sidebar_collapse_delay_ms'] ?? 1000);
 $animatedFlagSrc = '';
 if ($animatedFlagUrl !== '' && filter_var($animatedFlagUrl, FILTER_VALIDATE_URL)) {
   $animatedFlagSrc = $animatedFlagUrl;
@@ -158,7 +159,7 @@ $notificationDeptCsv = implode(',', $notificationDepartments);
 </style>
 </head>
 <body class="theme-<?= e($themeMode) ?>">
-<div class="app-shell">
+<div class="app-shell" data-sidebar-collapse-delay-ms="<?= $sidebarCollapseDelayMs ?>">
 <?php include __DIR__ . '/sidebar.php'; ?>
 <div class="main-wrapper">
   <div class="app-top-strip" aria-hidden="true"><span class="app-top-dot"></span></div>

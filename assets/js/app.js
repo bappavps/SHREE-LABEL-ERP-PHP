@@ -30,21 +30,36 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
     var sidebar   = document.querySelector('.sidebar');
     var appShell  = document.querySelector('.app-shell');
     if (toggleBtn && sidebar && appShell) {
-        var collapseTimer = null;
+        var hoverCollapseTimer = null;
 
-        function collapseSidebarNow() {
-            if (window.innerWidth <= 900) {
-                sidebar.classList.remove('is-open');
-            } else {
-                appShell.classList.add('sidebar-collapsed');
-                localStorage.setItem('erp_sidebar_collapsed', '1');
+        function isDesktopSidebar() {
+            return window.innerWidth > 900;
+        }
+
+        function cancelDesktopAutoCollapse() {
+            if (hoverCollapseTimer) {
+                clearTimeout(hoverCollapseTimer);
+                hoverCollapseTimer = null;
             }
         }
 
-        // Desktop default: collapsed sidebar for wider workspace after login.
-        // Persist user preference across page loads.
-        var sidebarPref = localStorage.getItem('erp_sidebar_collapsed');
-        if (window.innerWidth > 900) {
+        function scheduleDesktopAutoCollapse() {
+            if (!isDesktopSidebar()) return;
+            if (appShell.classList.contains('sidebar-collapsed')) return;
+
+            cancelDesktopAutoCollapse();
+            var delayMs = parseInt(appShell.getAttribute('data-sidebar-collapse-delay-ms') || '1000', 10);
+            hoverCollapseTimer = setTimeout(function () {
+                appShell.classList.add('sidebar-collapsed');
+                localStorage.setItem('erp_sidebar_collapsed', '1');
+                hoverCollapseTimer = null;
+            }, delayMs);
+        }
+
+        // Desktop: restore saved preference from localStorage.
+        // Default to collapsed only if no preference has been set yet.
+        if (isDesktopSidebar()) {
+            var sidebarPref = localStorage.getItem('erp_sidebar_collapsed');
             if (sidebarPref === null || sidebarPref === '1') {
                 appShell.classList.add('sidebar-collapsed');
             } else {
@@ -53,13 +68,23 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
         }
 
         toggleBtn.addEventListener('click', function () {
-            if (window.innerWidth <= 900) {
+            if (!isDesktopSidebar()) {
                 sidebar.classList.toggle('is-open');
             } else {
+                cancelDesktopAutoCollapse();
                 appShell.classList.toggle('sidebar-collapsed');
                 localStorage.setItem('erp_sidebar_collapsed', appShell.classList.contains('sidebar-collapsed') ? '1' : '0');
             }
         });
+
+        sidebar.addEventListener('mouseenter', function () {
+            cancelDesktopAutoCollapse();
+        });
+
+        sidebar.addEventListener('mouseleave', function () {
+            scheduleDesktopAutoCollapse();
+        });
+
         document.addEventListener('click', function (e) {
             if (window.innerWidth <= 900
                 && sidebar.classList.contains('is-open')
@@ -69,43 +94,12 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             }
         });
         window.addEventListener('resize', function () {
-            if (window.innerWidth > 900) {
+            cancelDesktopAutoCollapse();
+            if (isDesktopSidebar()) {
                 sidebar.classList.remove('is-open');
-                var pref = localStorage.getItem('erp_sidebar_collapsed');
-                if (pref === null || pref === '1') {
-                    appShell.classList.add('sidebar-collapsed');
-                } else {
-                    appShell.classList.remove('sidebar-collapsed');
-                }
+                appShell.classList.add('sidebar-collapsed');
+                localStorage.setItem('erp_sidebar_collapsed', '1');
             }
-        });
-
-        // If previous page click requested delayed collapse, apply it after load.
-        if (sessionStorage.getItem('erp_collapse_after_nav') === '1') {
-            sessionStorage.removeItem('erp_collapse_after_nav');
-            collapseTimer = setTimeout(function () {
-                collapseSidebarNow();
-                collapseTimer = null;
-            }, 2000);
-        }
-
-        // Auto-collapse on real sidebar page navigation.
-        // Ignore accordion toggles that use # links.
-        sidebar.addEventListener('click', function (e) {
-            var link = e.target.closest('a[href]');
-            if (!link) return;
-
-            var href = (link.getAttribute('href') || '').trim();
-            if (!href || href === '#') return;
-            if (link.classList.contains('nav-group-toggle') || link.classList.contains('nav-sub-parent-toggle')) return;
-
-            if (collapseTimer) {
-                clearTimeout(collapseTimer);
-                collapseTimer = null;
-            }
-
-            // Delay collapse until next page load so navigation remains smooth.
-            sessionStorage.setItem('erp_collapse_after_nav', '1');
         });
     }
 

@@ -416,6 +416,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $settings['sidebar_hover_color'] = normalizeHexColor($_POST['sidebar_hover_color'] ?? '', '#263445');
     $settings['sidebar_active_bg'] = normalizeHexColor($_POST['sidebar_active_bg'] ?? '', '#214036');
     $settings['sidebar_active_text'] = normalizeHexColor($_POST['sidebar_active_text'] ?? '', '#BBF7D0');
+    $settings['sidebar_collapse_delay_ms'] = max(300, (int)($_POST['sidebar_collapse_delay_ms'] ?? 1000));
     $settings['login_background_image'] = trim((string)($_POST['login_background_image'] ?? ''));
 
     $validLibraryPaths = [];
@@ -1122,6 +1123,12 @@ include __DIR__ . '/../../includes/header.php';
         <div class="form-group">
           <label>Sidebar Active Text</label>
           <input type="color" name="sidebar_active_text" value="<?= e(normalizeHexColor($settings['sidebar_active_text'] ?? '#BBF7D0', '#BBF7D0')) ?>">
+        </div>
+
+        <div class="form-group">
+          <label>Sidebar Collapse Delay (ms)</label>
+          <input type="number" name="sidebar_collapse_delay_ms" min="300" max="5000" step="100" value="<?= (int)($settings['sidebar_collapse_delay_ms'] ?? 1000) ?>">
+          <small>Time in milliseconds after mouse leaves sidebar before it collapses (300-5000)</small>
         </div>
 
         <div class="form-actions col-span-2">
