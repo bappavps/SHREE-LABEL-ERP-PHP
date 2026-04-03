@@ -341,14 +341,40 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
 
     // Open the current section if one of its submenu links is active
     var currentPath = window.location.pathname.replace(/\/$/, '');
+    var isAdminPlateToolsRoute = currentPath === '/modules/master/plate-data-tools-master.php';
+    var isUserPlateToolsRoute = currentPath.indexOf('/modules/plate-tools/') === 0;
+    function pathMatches(current, href) {
+        if (!href) return false;
+        if (current === href) return true;
+        return current.indexOf(href + '/') === 0;
+    }
     accordion.forEach(function (item) {
+        var scope = (item.group.getAttribute('data-nav-scope') || '').trim();
         var hasActiveClass = item.group.querySelector('.nav-sub-item.active');
         var hasPathMatch = Array.prototype.some.call(item.group.querySelectorAll('.nav-sub-item[href]'), function (link) {
             var href = (link.getAttribute('href') || '').replace(/\/$/, '');
-            return href && currentPath.indexOf(href) !== -1;
+            return pathMatches(currentPath, href);
         });
 
+        if (scope === 'plate-tools-user' && isAdminPlateToolsRoute) {
+            hasActiveClass = false;
+            hasPathMatch = false;
+        }
+        if (scope === 'plate-tools-admin' && isUserPlateToolsRoute) {
+            hasActiveClass = false;
+            hasPathMatch = false;
+        }
+
         var shouldOpen = (item.key && openGroupsSet.has(item.key)) || hasActiveClass || hasPathMatch;
+        if (scope === 'plate-tools-user' && isAdminPlateToolsRoute) {
+            shouldOpen = false;
+            if (item.key) openGroupsSet.delete(item.key);
+        }
+        if (scope === 'plate-tools-admin' && isUserPlateToolsRoute) {
+            shouldOpen = false;
+            if (item.key) openGroupsSet.delete(item.key);
+        }
+
         if (shouldOpen) {
             item.group.classList.add('is-open');
             item.toggle.setAttribute('aria-expanded', 'true');
@@ -375,16 +401,48 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
     // Nested accordion under Physical Stock Check
     var openNestedSet = loadOpenSet(sidebarNestedStorageKey);
     var nested = Array.prototype.slice.call(document.querySelectorAll('.nav-sub-nest'));
+
+    function directChildByClass(parent, className) {
+        if (!parent) return null;
+        for (var i = 0; i < parent.children.length; i++) {
+            var child = parent.children[i];
+            if (child.classList && child.classList.contains(className)) {
+                return child;
+            }
+        }
+        return null;
+    }
+
+    function nestedNodeKey(node) {
+        if (!node) return '';
+        var raw = (node.getAttribute('data-nested-key') || '').trim();
+        if (raw) return raw;
+        var t = directChildByClass(node, 'nav-sub-parent-toggle');
+        return t ? (t.textContent || '').trim().replace(/\s+/g, ' ') : '';
+    }
+
+    function collapseNestedDescendants(rootNode) {
+        if (!rootNode) return;
+        var descendants = rootNode.querySelectorAll('.nav-sub-nest.is-open');
+        descendants.forEach(function (descNode) {
+            descNode.classList.remove('is-open');
+            var descToggle = directChildByClass(descNode, 'nav-sub-parent-toggle');
+            if (descToggle) descToggle.setAttribute('aria-expanded', 'false');
+            var descKey = nestedNodeKey(descNode);
+            if (descKey) openNestedSet.delete(descKey);
+        });
+    }
+
     nested.forEach(function (node) {
-        var toggle = node.querySelector('.nav-sub-parent-toggle');
-        var children = node.querySelector('.nav-sub-children');
+        var toggle = directChildByClass(node, 'nav-sub-parent-toggle');
+        var children = directChildByClass(node, 'nav-sub-children');
         if (!toggle || !children) return;
-        var nestedKey = (toggle.textContent || '').trim().replace(/\s+/g, ' ');
+        var nestedKey = nestedNodeKey(node);
 
         var hasActiveChild = node.querySelector('.nav-sub-item.active') ||
             Array.prototype.some.call(node.querySelectorAll('.nav-sub-item[href]'), function (link) {
                 var href = (link.getAttribute('href') || '').replace(/\/$/, '');
-                return href && currentPath.indexOf(href) !== -1;
+                return pathMatches(currentPath, href);
             });
 
         if (openNestedSet.has(nestedKey) || hasActiveChild) {
@@ -400,7 +458,9 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
             if (isOpen) {
                 openNestedSet.add(nestedKey);
+                collapseNestedDescendants(node);
             } else {
+                collapseNestedDescendants(node);
                 openNestedSet.delete(nestedKey);
             }
             saveOpenSet(sidebarNestedStorageKey, openNestedSet);
@@ -487,5 +547,29 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             });
         });
     }
+
+    // Plate Data & Tools Master: nested parent/child toggle
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-ptm-toggle]');
+        if (!btn) return;
+
+        var node = btn.nextElementSibling;
+        if (!node || !node.classList || !node.classList.contains('ptm-tree-node')) return;
+
+        e.preventDefault();
+        var isOpen = node.classList.toggle('open');
+        btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+
+        if (isOpen) {
+            var openDescendants = node.querySelectorAll('.ptm-tree-node.open');
+            openDescendants.forEach(function (childNode) {
+                childNode.classList.remove('open');
+                var childToggle = childNode.previousElementSibling;
+                if (childToggle && childToggle.hasAttribute('data-ptm-toggle')) {
+                    childToggle.setAttribute('aria-expanded', 'false');
+                }
+            });
+        }
+    });
 
 }());

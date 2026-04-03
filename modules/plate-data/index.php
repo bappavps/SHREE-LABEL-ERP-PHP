@@ -15,6 +15,7 @@ $moduleLabel = isset($dieToolingModuleLabelOverride) && trim((string)$dieTooling
 $pageTitle = isset($dieToolingPageTitleOverride) && trim((string)$dieToolingPageTitleOverride) !== ''
   ? trim((string)$dieToolingPageTitleOverride)
   : (($isDesignMode ? 'Design ' : 'Master ') . $moduleLabel);
+$isEmbedded = !empty($dieToolingEmbedded);
 $moduleSlug = dieToolingModuleSlug();
 $tableName = dieToolingTableName();
 $sessionKey = 'import_preview_' . str_replace('-', '_', $moduleSlug);
@@ -587,7 +588,9 @@ foreach ($columns as $key => $label) {
   }
 }
 
-include __DIR__ . '/../../includes/header.php';
+if (!$isEmbedded) {
+  include __DIR__ . '/../../includes/header.php';
+}
 ?>
 
 <style>
@@ -679,29 +682,31 @@ include __DIR__ . '/../../includes/header.php';
     </form>
   <?php endif; ?>
 
-  <div class="plate-calc-box no-print" id="plateCalcBox">
-    <div class="plate-calc-title">Plate Meter Calculation</div>
-    <div class="plate-calc-grid">
-      <div>
-        <label style="font-size:.72rem;font-weight:700;color:#1e3a8a;display:block;margin-bottom:4px;">Select Plate</label>
-        <select id="plateCalcSelect">
-          <option value="">-- Select Plate --</option>
-          <?php foreach ($calculatorPlates as $calcPlate): ?>
-            <option value="<?= (int)$calcPlate['id'] ?>" data-qty-roll="<?= e((string)$calcPlate['qty_roll']) ?>" data-ups="<?= e((string)$calcPlate['ups']) ?>" data-repeat="<?= e((string)$calcPlate['repeat_value']) ?>"><?= e((string)$calcPlate['label']) ?></option>
-          <?php endforeach; ?>
-        </select>
+  <?php if ($isDesignMode): ?>
+    <div class="plate-calc-box no-print" id="plateCalcBox">
+      <div class="plate-calc-title">Plate Meter Calculation</div>
+      <div class="plate-calc-grid">
+        <div>
+          <label style="font-size:.72rem;font-weight:700;color:#1e3a8a;display:block;margin-bottom:4px;">Select Plate</label>
+          <select id="plateCalcSelect">
+            <option value="">-- Select Plate --</option>
+            <?php foreach ($calculatorPlates as $calcPlate): ?>
+              <option value="<?= (int)$calcPlate['id'] ?>" data-qty-roll="<?= e((string)$calcPlate['qty_roll']) ?>" data-ups="<?= e((string)$calcPlate['ups']) ?>" data-repeat="<?= e((string)$calcPlate['repeat_value']) ?>"><?= e((string)$calcPlate['label']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:.72rem;font-weight:700;color:#1e3a8a;display:block;margin-bottom:4px;">Quantity</label>
+          <input type="number" id="plateCalcQty" min="0" step="1" placeholder="Enter qty">
+        </div>
+        <div>
+          <label style="font-size:.72rem;font-weight:700;color:#1e3a8a;display:block;margin-bottom:4px;">Meter</label>
+          <input type="number" id="plateCalcMeter" min="0" step="0.01" placeholder="Enter meter">
+        </div>
       </div>
-      <div>
-        <label style="font-size:.72rem;font-weight:700;color:#1e3a8a;display:block;margin-bottom:4px;">Quantity</label>
-        <input type="number" id="plateCalcQty" min="0" step="1" placeholder="Enter qty">
-      </div>
-      <div>
-        <label style="font-size:.72rem;font-weight:700;color:#1e3a8a;display:block;margin-bottom:4px;">Meter</label>
-        <input type="text" id="plateCalcMeter" value="0" readonly>
-      </div>
+      <div style="font-size:.74rem;color:#9a3412;margin-top:8px;">Enter Quantity to get Meter, or enter Meter to get Quantity. Formula: If Qty.Roll available → Meter = Qty / Qty.Roll; else → Meter = (Qty / UPS) × (Repeat / 1000)</div>
     </div>
-    <div style="font-size:.74rem;color:#9a3412;margin-top:8px;">Formula: Qty.Roll থাকলে Meter = Quantity / Qty.Roll, না থাকলে Meter = (Quantity / UPS) x (Repeat / 1000)</div>
-  </div>
+  <?php endif; ?>
 
   <div class="qf no-print" id="moduleQuickFilter">
     <div class="qf-item"><label>Global Search</label><input type="text" id="qf-search" placeholder="Search everything..."></div>
@@ -976,26 +981,44 @@ include __DIR__ . '/../../includes/header.php';
       var n = parseFloat(cleaned);
       return isNaN(n) ? 0 : n;
     }
-    function recalcPlateMeter() {
+    function getPlateParams() {
       var option = calcSelect.options[calcSelect.selectedIndex] || null;
-      var qtyRoll = parseNum(option ? option.getAttribute('data-qty-roll') : 0);
-      var ups = parseNum(option ? option.getAttribute('data-ups') : 0);
-      var repeatValue = parseNum(option ? option.getAttribute('data-repeat') : 0);
-      var qty = parseNum(calcQty.value || 0);
-      if (qty <= 0) {
-        calcMeter.value = '0';
-        return;
-      }
-      var meter = 0;
-      if (qtyRoll > 0) {
-        meter = qty / qtyRoll;
-      } else if (ups > 0 && repeatValue > 0) {
-        meter = (qty / ups) * (repeatValue / 1000);
-      }
-      calcMeter.value = meter.toFixed(2);
+      return {
+        qtyRoll: parseNum(option ? option.getAttribute('data-qty-roll') : 0),
+        ups: parseNum(option ? option.getAttribute('data-ups') : 0),
+        repeatValue: parseNum(option ? option.getAttribute('data-repeat') : 0)
+      };
     }
-    calcSelect.addEventListener('change', recalcPlateMeter);
-    calcQty.addEventListener('input', recalcPlateMeter);
+    function recalcFromQty() {
+      var p = getPlateParams();
+      var qty = parseNum(calcQty.value || 0);
+      if (qty <= 0) { calcMeter.value = ''; return; }
+      var meter = 0;
+      if (p.qtyRoll > 0) {
+        meter = qty / p.qtyRoll;
+      } else if (p.ups > 0 && p.repeatValue > 0) {
+        meter = (qty / p.ups) * (p.repeatValue / 1000);
+      }
+      calcMeter.value = meter > 0 ? meter.toFixed(2) : '';
+    }
+    function recalcFromMeter() {
+      var p = getPlateParams();
+      var meter = parseNum(calcMeter.value || 0);
+      if (meter <= 0) { calcQty.value = ''; return; }
+      var qty = 0;
+      if (p.qtyRoll > 0) {
+        qty = meter * p.qtyRoll;
+      } else if (p.ups > 0 && p.repeatValue > 0) {
+        qty = (meter / (p.repeatValue / 1000)) * p.ups;
+      }
+      calcQty.value = qty > 0 ? Math.round(qty) : '';
+    }
+    calcQty.addEventListener('input', function () { recalcFromQty(); });
+    calcMeter.addEventListener('input', function () { recalcFromMeter(); });
+    calcSelect.addEventListener('change', function () {
+      if (parseNum(calcQty.value) > 0) recalcFromQty();
+      else if (parseNum(calcMeter.value) > 0) recalcFromMeter();
+    });
   }
 
   var detailLabels = <?= json_encode($columns, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?> || {};
@@ -1525,4 +1548,4 @@ include __DIR__ . '/../../includes/header.php';
 })();
 </script>
 
-<?php include __DIR__ . '/../../includes/footer.php'; ?>
+<?php if (!$isEmbedded) { include __DIR__ . '/../../includes/footer.php'; } ?>

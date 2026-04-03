@@ -97,7 +97,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
       </div>
     </div>
 
-    <div class="nav-group">
+    <div class="nav-group" data-nav-scope="plate-tools-user">
       <a href="#" class="nav-item nav-group-toggle" aria-expanded="false">
         <span class="nav-item-main"><i class="bi bi-grid-3x3-gap"></i><span>Plate Data &amp; Tools</span></span>
         <i class="bi bi-chevron-down"></i>
@@ -105,13 +105,13 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
       <div class="nav-sub">
         <?= navSubItem('/modules/plate-tools/plate-management/index.php', 'Plate Management', $currentFile, ['/modules/plate-tools/plate-management/index.php'], '', 'grid') ?>
 
-        <div class="nav-sub-nest">
+        <div class="nav-sub-nest" data-nested-key="plate-tools-die-management">
           <a href="#" class="nav-sub-parent-toggle" aria-expanded="false">
             <span>Die Management</span>
             <i class="bi bi-chevron-down"></i>
           </a>
           <div class="nav-sub-children">
-            <div class="nav-sub-nest">
+            <div class="nav-sub-nest" data-nested-key="plate-tools-printing-die-section">
               <a href="#" class="nav-sub-parent-toggle" aria-expanded="false">
                 <span>Printing Die Section</span>
                 <i class="bi bi-chevron-down"></i>
@@ -268,13 +268,22 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
 
     <?= navItem('/modules/approval/index.php', 'check2-square', 'Job Approval', $currentFile) ?>
 
-    <div class="nav-group">
+    <div class="nav-group" data-nav-scope="plate-tools-admin">
       <a href="#" class="nav-item nav-group-toggle" aria-expanded="false">
         <span class="nav-item-main"><i class="bi bi-gear"></i><span>Administration</span></span>
         <i class="bi bi-chevron-down"></i>
       </a>
       <div class="nav-sub">
-        <?= navSubItem('/modules/master/index.php',       'Master Data',              $currentFile, [], '', 'database') ?>
+        <div class="nav-sub-nest">
+          <a href="#" class="nav-sub-parent-toggle" aria-expanded="false">
+            <span>Master Data</span>
+            <i class="bi bi-chevron-down"></i>
+          </a>
+          <div class="nav-sub-children">
+            <?= navSubItem('/modules/master/index.php',                        'Master Data Hub',           $currentFile, [], 'nav-sub-item-nested', 'database') ?>
+            <?= navSubItem('/modules/master/plate-data-tools-master.php',      'Admin Plate Data & Tools Master', $currentFile, [], 'nav-sub-item-nested', 'layers') ?>
+          </div>
+        </div>
         <?= navSubItem('/modules/stock-import/index.php', 'Stock Import and Export',  $currentFile, [], '', 'arrow-left-right') ?>
         <?= navSubItem('/modules/users/index.php',        'User Management',          $currentFile, [], '', 'people') ?>
         <?= navSubItem('/modules/users/groups.php',       'Groups & Permissions',     $currentFile, [], '', 'shield-check') ?>

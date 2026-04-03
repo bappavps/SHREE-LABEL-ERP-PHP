@@ -6,7 +6,9 @@ require_once __DIR__ . '/../../includes/auth_check.php';
 if (isset($dieToolingRedirectUrlOverride) && trim((string)$dieToolingRedirectUrlOverride) !== '') {
   function dieToolingRedirectUrl($mode = 'master') {
     global $dieToolingRedirectUrlOverride;
-    return trim((string)$dieToolingRedirectUrlOverride);
+    $url = trim((string)$dieToolingRedirectUrlOverride);
+    if (BASE_URL !== '' && strpos($url, BASE_URL) === 0) return $url;
+    return BASE_URL . $url;
   }
 }
 require_once __DIR__ . '/_common.php';
@@ -22,6 +24,7 @@ $entityLabel = isset($dieToolingEntityLabelOverride) && trim((string)$dieTooling
 $pageTitle = isset($dieToolingPageTitleOverride) && trim((string)$dieToolingPageTitleOverride) !== ''
   ? trim((string)$dieToolingPageTitleOverride)
   : ($isDesignMode ? 'Design ' . $entityLabel : 'Master ' . $entityLabel);
+$isEmbedded = !empty($dieToolingEmbedded);
 $dieTypeScope = isset($dieToolingDieTypeScope) ? mb_strtolower(trim((string)$dieToolingDieTypeScope), 'UTF-8') : '';
 $dieTypeScopeLabel = isset($dieToolingDieTypeScopeLabel) && trim((string)$dieToolingDieTypeScopeLabel) !== ''
   ? trim((string)$dieToolingDieTypeScopeLabel)
@@ -449,6 +452,26 @@ if ($res) {
   $rows = $res->fetch_all(MYSQLI_ASSOC);
 }
 
+$calculatorDies = [];
+foreach ($rows as $calcRow) {
+  $calcSlNo = trim((string)($calcRow['sl_no'] ?? ''));
+  $calcBarcode = trim((string)($calcRow['barcode_size'] ?? ''));
+  $calcUsedFor = trim((string)($calcRow['used_for'] ?? ''));
+  $calcLabelParts = [];
+  if ($calcSlNo !== '') $calcLabelParts[] = $calcSlNo;
+  if ($calcBarcode !== '') $calcLabelParts[] = $calcBarcode;
+  if ($calcUsedFor !== '') $calcLabelParts[] = $calcUsedFor;
+  $calcLabel = trim(implode(' | ', $calcLabelParts));
+  if ($calcLabel === '') $calcLabel = 'Die #' . (int)($calcRow['id'] ?? 0);
+  $calculatorDies[] = [
+    'id' => (int)($calcRow['id'] ?? 0),
+    'label' => $calcLabel,
+    'pices_per_roll' => trim((string)($calcRow['pices_per_roll'] ?? '')),
+    'up_in_die' => trim((string)($calcRow['up_in_die'] ?? '')),
+    'repeat_size' => trim((string)($calcRow['repeat_size'] ?? '')),
+  ];
+}
+
 $fieldSuggestions = [];
 foreach (array_keys($columns) as $columnKey) {
   $fieldSuggestions[$columnKey] = [];
@@ -475,7 +498,9 @@ foreach (array_keys($columns) as $columnKey) {
 
 $flash = getFlash();
 
-include __DIR__ . '/../../includes/header.php';
+if (!$isEmbedded) {
+  include __DIR__ . '/../../includes/header.php';
+}
 ?>
 
 <style>
@@ -529,7 +554,11 @@ include __DIR__ . '/../../includes/header.php';
 
 .barcode-die-table thead th { background:#dbeafe; color:#1e3a8a; border-color:#bfdbfe; font-weight:700; white-space:nowrap; }
 .barcode-die-table tbody td { border-color:#e2e8f0; }
-@media (max-width:980px) { .ps-quick-filter{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));} }
+.die-calc-box{margin-top:10px;border:1px solid #fdba74;border-radius:12px;background:#fff7ed;padding:12px}
+.die-calc-title{font-size:.8rem;font-weight:800;color:#9a3412;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.die-calc-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px}
+.die-calc-grid select,.die-calc-grid input{height:38px;border:1px solid #fdba74;border-radius:8px;padding:0 10px;background:#fff;font-size:.85rem}
+@media (max-width:980px) { .ps-quick-filter{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));} .die-calc-grid{grid-template-columns:1fr;} }
 
 .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:2000; align-items:center; justify-content:center; }
 .modal-card { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:960px; max-height:92vh; overflow:auto; background:#fff; border-radius:14px; box-shadow:0 24px 60px rgba(0,0,0,.25); }
@@ -616,6 +645,32 @@ foreach ($rows as $rowItem) {
       <input type="hidden" name="action" value="bulk_delete_die_tools">
       <div id="bulkDeleteIds"></div>
     </form>
+  <?php endif; ?>
+
+  <?php if ($isDesignMode): ?>
+    <div class="die-calc-box no-print" id="dieCalcBox">
+      <div class="die-calc-title"><?= e($entityLabel) ?> Meter Calculation</div>
+      <div class="die-calc-grid">
+        <div>
+          <label style="font-size:.72rem;font-weight:700;color:#1e3a8a;display:block;margin-bottom:4px;">Select <?= e($entityLabel) ?></label>
+          <select id="dieCalcSelect">
+            <option value="">-- Select <?= e($entityLabel) ?> --</option>
+            <?php foreach ($calculatorDies as $calcDie): ?>
+              <option value="<?= (int)$calcDie['id'] ?>" data-pices-per-roll="<?= e((string)$calcDie['pices_per_roll']) ?>" data-ups="<?= e((string)$calcDie['up_in_die']) ?>" data-repeat="<?= e((string)$calcDie['repeat_size']) ?>"><?= e((string)$calcDie['label']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:.72rem;font-weight:700;color:#1e3a8a;display:block;margin-bottom:4px;">Quantity</label>
+          <input type="number" id="dieCalcQty" min="0" step="1" placeholder="Enter qty">
+        </div>
+        <div>
+          <label style="font-size:.72rem;font-weight:700;color:#1e3a8a;display:block;margin-bottom:4px;">Meter</label>
+          <input type="number" id="dieCalcMeter" min="0" step="0.01" placeholder="Enter meter">
+        </div>
+      </div>
+      <div style="font-size:.74rem;color:#9a3412;margin-top:8px;">Enter Quantity to get Meter, or enter Meter to get Quantity. Formula: If Pcs/Roll available → Meter = Qty / Pcs/Roll; else → Meter = (Qty / UPS) × (Repeat / 1000)</div>
+    </div>
   <?php endif; ?>
 
   <div class="ps-quick-filter no-print" id="ps-quick-filter">
@@ -864,6 +919,59 @@ foreach ($rows as $rowItem) {
   </div>
 </div>
 <?php endif; ?>
+
+<script>
+(function () {
+  var dieCalcSelect = document.getElementById('dieCalcSelect');
+  var dieCalcQty = document.getElementById('dieCalcQty');
+  var dieCalcMeter = document.getElementById('dieCalcMeter');
+  if (dieCalcSelect && dieCalcQty && dieCalcMeter) {
+    function parseNum(raw) {
+      var cleaned = String(raw || '').trim().replace(/,/g, '').replace(/[^0-9.\-]/g, '');
+      var n = parseFloat(cleaned);
+      return isNaN(n) ? 0 : n;
+    }
+    function getDieParams() {
+      var option = dieCalcSelect.options[dieCalcSelect.selectedIndex] || null;
+      return {
+        picesPerRoll: parseNum(option ? option.getAttribute('data-pices-per-roll') : 0),
+        ups: parseNum(option ? option.getAttribute('data-ups') : 0),
+        repeatValue: parseNum(option ? option.getAttribute('data-repeat') : 0)
+      };
+    }
+    function recalcFromQty() {
+      var p = getDieParams();
+      var qty = parseNum(dieCalcQty.value || 0);
+      if (qty <= 0) { dieCalcMeter.value = ''; return; }
+      var meter = 0;
+      if (p.picesPerRoll > 0) {
+        meter = qty / p.picesPerRoll;
+      } else if (p.ups > 0 && p.repeatValue > 0) {
+        meter = (qty / p.ups) * (p.repeatValue / 1000);
+      }
+      dieCalcMeter.value = meter > 0 ? meter.toFixed(2) : '';
+    }
+    function recalcFromMeter() {
+      var p = getDieParams();
+      var meter = parseNum(dieCalcMeter.value || 0);
+      if (meter <= 0) { dieCalcQty.value = ''; return; }
+      var qty = 0;
+      if (p.picesPerRoll > 0) {
+        qty = meter * p.picesPerRoll;
+      } else if (p.ups > 0 && p.repeatValue > 0) {
+        qty = (meter / (p.repeatValue / 1000)) * p.ups;
+      }
+      dieCalcQty.value = qty > 0 ? Math.round(qty) : '';
+    }
+    dieCalcQty.addEventListener('input', function () { recalcFromQty(); });
+    dieCalcMeter.addEventListener('input', function () { recalcFromMeter(); });
+    dieCalcSelect.addEventListener('change', function () {
+      if (parseNum(dieCalcQty.value) > 0) recalcFromQty();
+      else if (parseNum(dieCalcMeter.value) > 0) recalcFromMeter();
+    });
+  }
+})();
+</script>
 
 <script>
 (function () {
@@ -1308,4 +1416,4 @@ foreach ($rows as $rowItem) {
 })();
 </script>
 
-<?php include __DIR__ . '/../../includes/footer.php'; ?>
+<?php if (!$isEmbedded) { include __DIR__ . '/../../includes/footer.php'; } ?>

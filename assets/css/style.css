@@ -257,12 +257,12 @@ img    { max-width: 100%; display: block; }
     transition: transform .26s ease-in-out;
 }
 
-.nav-sub-nest.is-open .nav-sub-parent-toggle {
+.nav-sub-nest.is-open > .nav-sub-parent-toggle {
     color: #bbf7d0;
     background: rgba(34,197,94,.12);
 }
 
-.nav-sub-nest.is-open .nav-sub-parent-toggle i {
+.nav-sub-nest.is-open > .nav-sub-parent-toggle i {
     transform: rotate(180deg);
 }
 
@@ -276,7 +276,7 @@ img    { max-width: 100%; display: block; }
     transition: max-height .28s ease-in-out, opacity .24s ease-in-out;
 }
 
-.nav-sub-nest.is-open .nav-sub-children {
+.nav-sub-nest.is-open > .nav-sub-children {
     max-height: 420px;
     opacity: 1;
 }

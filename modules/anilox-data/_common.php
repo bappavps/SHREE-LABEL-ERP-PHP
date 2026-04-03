@@ -1,15 +1,15 @@
 <?php
 
 function dieToolingModuleSlug() {
-  return 'plate-data';
+  return 'anilox-data';
 }
 
 function dieToolingModuleLabel() {
-  return 'Plate Data';
+  return 'Anilox Stock';
 }
 
 function dieToolingTableName() {
-  return 'master_plate_data';
+  return 'master_anilox_data';
 }
 
 function dieToolingImportColumns() {
@@ -18,107 +18,35 @@ function dieToolingImportColumns() {
 
 function dieToolingColumns() {
   return [
-    'date_received' => 'Date of Recv.',
-    'name' => 'Name',
-    'image_path' => 'Image',
-    'ups' => 'UPS',
-    'plate' => 'Plate',
-    'size' => 'Size',
-    'gap_h' => 'Gap (H)',
-    'gap_v' => 'Gap (V)',
-    'paper_size' => 'Paper Size',
-    'paper_type' => 'Paper Type',
-    'cylinder' => 'Cylinder',
-    'make_by' => 'Make By',
-    'die' => 'Die',
-    'repeat_value' => 'Repeat',
-    'core' => 'Core',
-    'qty_roll' => 'Qty. Roll',
-    'rewinding' => 'Rewinding',
-    'c' => 'C',
-    'm' => 'M',
-    'y' => 'Y',
-    'k' => 'K',
-    'special_1' => 'Color 5',
-    'special_2' => 'Color 6',
-    'special_3' => 'Color 7',
-    'special_4' => 'Color 8',
-    'special_5' => 'Color 9',
+    'anilox_lpi' => 'Anilox LPI',
+    'anilox_bmc' => 'Anilox BMC',
+    'stock_qty' => 'Stock (QNTY)',
   ];
 }
 
 function dieToolingColumnSqlTypes() {
   return [
     'sl_no' => 'VARCHAR(50) DEFAULT NULL',
-    'date_received' => 'VARCHAR(40) DEFAULT NULL',
-    'name' => 'VARCHAR(160) DEFAULT NULL',
-    'image_path' => 'VARCHAR(255) DEFAULT NULL',
-    'ups' => 'VARCHAR(80) DEFAULT NULL',
-    'plate' => 'VARCHAR(120) DEFAULT NULL',
-    'size' => 'VARCHAR(120) DEFAULT NULL',
-    'gap_h' => 'VARCHAR(80) DEFAULT NULL',
-    'gap_v' => 'VARCHAR(80) DEFAULT NULL',
-    'paper_size' => 'VARCHAR(120) DEFAULT NULL',
-    'paper_type' => 'VARCHAR(120) DEFAULT NULL',
-    'cylinder' => 'VARCHAR(120) DEFAULT NULL',
-    'make_by' => 'VARCHAR(120) DEFAULT NULL',
-    'die' => 'VARCHAR(120) DEFAULT NULL',
-    'repeat_value' => 'VARCHAR(120) DEFAULT NULL',
-    'core' => 'VARCHAR(80) DEFAULT NULL',
-    'qty_roll' => 'VARCHAR(80) DEFAULT NULL',
-    'rewinding' => 'VARCHAR(120) DEFAULT NULL',
-    'c' => 'VARCHAR(40) DEFAULT NULL',
-    'm' => 'VARCHAR(40) DEFAULT NULL',
-    'y' => 'VARCHAR(40) DEFAULT NULL',
-    'k' => 'VARCHAR(40) DEFAULT NULL',
-    'special_1' => 'VARCHAR(120) DEFAULT NULL',
-    'special_2' => 'VARCHAR(120) DEFAULT NULL',
-    'special_3' => 'VARCHAR(120) DEFAULT NULL',
-    'special_4' => 'VARCHAR(120) DEFAULT NULL',
-    'special_5' => 'VARCHAR(120) DEFAULT NULL',
+    'anilox_lpi' => 'VARCHAR(80) DEFAULT NULL',
+    'anilox_bmc' => 'VARCHAR(80) DEFAULT NULL',
+    'stock_qty' => 'VARCHAR(80) DEFAULT NULL',
   ];
 }
 
 function dieToolingColumnSynonyms() {
   return [
     'sl_no' => ['sl no', 'sl. no', 'serial no', 'serial number'],
-    'date_received' => ['date of recv', 'date recv', 'date of received', 'date'],
-    'name' => ['name'],
-    'image_path' => ['image', 'thumbnail', 'thumb', 'photo', 'image path'],
-    'ups' => ['ups', 'up'],
-    'plate' => ['plate'],
-    'size' => ['size'],
-    'gap_h' => ['gap h', 'gap horizontal', 'horizontal gap'],
-    'gap_v' => ['gap v', 'gap vertical', 'vertical gap'],
-    'paper_size' => ['paper size'],
-    'paper_type' => ['paper type'],
-    'cylinder' => ['cylinder', 'cylender'],
-    'make_by' => ['make by', 'made by', 'maker'],
-    'die' => ['die'],
-    'repeat_value' => ['repeat', 'repet'],
-    'core' => ['core'],
-    'qty_roll' => ['qty roll', 'qty. roll', 'quantity roll'],
-    'rewinding' => ['rewinding'],
-    'c' => ['c'],
-    'm' => ['m'],
-    'y' => ['y'],
-    'k' => ['k'],
-    'special_1' => ['special 1', 'color 5', 'colour 5'],
-    'special_2' => ['special 2', 'color 6', 'colour 6'],
-    'special_3' => ['special 3', 'color 7', 'colour 7'],
-    'special_4' => ['special 4', 'color 8', 'colour 8'],
-    'special_5' => ['special 5', 'color 9', 'colour 9'],
+    'anilox_lpi' => ['anilox lpi', 'lpi', 'line per inch'],
+    'anilox_bmc' => ['anilox bmc', 'bmc', 'bcm'],
+    'stock_qty' => ['stock qnty', 'stock qty', 'stock quantity', 'stock'],
   ];
 }
 
 function dieToolingQuickFilters() {
   return [
-    ['type' => 'text', 'key' => 'name', 'label' => 'Name', 'placeholder' => 'Search name...'],
-    ['type' => 'pick', 'key' => 'paper_type', 'label' => 'Paper Type', 'allLabel' => 'All Paper Type'],
-    ['type' => 'pick', 'key' => 'cylinder', 'label' => 'Cylinder', 'allLabel' => 'All Cylinder'],
-    ['type' => 'pick', 'key' => 'make_by', 'label' => 'Make By', 'allLabel' => 'All Make By'],
-    ['type' => 'pick', 'key' => 'core', 'label' => 'Core', 'allLabel' => 'All Core'],
-    ['type' => 'number_range', 'key' => 'repeat_value', 'label' => 'Repeat', 'minPlaceholder' => 'Repeat min', 'maxPlaceholder' => 'Repeat max'],
+    ['type' => 'text', 'key' => 'anilox_lpi', 'label' => 'Anilox LPI', 'placeholder' => 'Search LPI...'],
+    ['type' => 'text', 'key' => 'anilox_bmc', 'label' => 'Anilox BMC', 'placeholder' => 'Search BMC...'],
+    ['type' => 'number_range', 'key' => 'stock_qty', 'label' => 'Stock', 'minPlaceholder' => 'Stock min', 'maxPlaceholder' => 'Stock max'],
   ];
 }
 
@@ -181,17 +109,10 @@ function dieToolingFormatDisplayNumber($value) {
   return $normalized === '' ? '0' : $normalized;
 }
 
-function dieToolingRedirectUrl($mode = 'master') {
-  global $dieToolingRedirectUrlOverride;
-  if (isset($dieToolingRedirectUrlOverride) && trim((string)$dieToolingRedirectUrlOverride) !== '') {
-    return (string)$dieToolingRedirectUrlOverride;
+if (!function_exists('dieToolingRedirectUrl')) {
+  function dieToolingRedirectUrl($mode = 'master') {
+    return BASE_URL . '/modules/anilox-data/index.php?mode=' . ($mode === 'design' ? 'design' : 'master');
   }
-
-  $mode = ($mode === 'design') ? 'design' : 'master';
-  if ($mode === 'design') {
-    return BASE_URL . '/modules/design/plate-data.php';
-  }
-  return BASE_URL . '/modules/master/plate-data.php';
 }
 
 function dieToolingParseCsv($filePath) {

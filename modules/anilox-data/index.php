@@ -18,16 +18,13 @@ ensureDieToolingSchema($db);
 
 $mode = (($_GET['mode'] ?? 'master') === 'design') ? 'design' : 'master';
 $isDesignMode = $mode === 'design';
-$moduleLabel = isset($cylDataLabelOverride) && trim((string)$cylDataLabelOverride) !== ''
-  ? trim((string)$cylDataLabelOverride)
+$moduleLabel = isset($aniloxDataLabelOverride) && trim((string)$aniloxDataLabelOverride) !== ''
+  ? trim((string)$aniloxDataLabelOverride)
   : dieToolingModuleLabel();
-$pageTitle = isset($cylDataPageTitleOverride) && trim((string)$cylDataPageTitleOverride) !== ''
-  ? trim((string)$cylDataPageTitleOverride)
-  : ($isDesignMode ? 'Design ' : 'Master ') . $moduleLabel;
-$cylinderTypeScope = isset($cylDataTypeScope) ? mb_strtolower(trim((string)$cylDataTypeScope), 'UTF-8') : '';
-$cylinderTypeScopeLabel = isset($cylDataTypeScopeLabel) && trim((string)$cylDataTypeScopeLabel) !== ''
-  ? trim((string)$cylDataTypeScopeLabel)
-  : '';
+$pageTitle = isset($aniloxDataPageTitleOverride) && trim((string)$aniloxDataPageTitleOverride) !== ''
+  ? trim((string)$aniloxDataPageTitleOverride)
+  : ($isDesignMode ? 'Design ' . $moduleLabel : 'Master ' . $moduleLabel);
+$isEmbedded = !empty($aniloxDataEmbedded);
 $moduleSlug = dieToolingModuleSlug();
 $tableName = dieToolingTableName();
 $sessionKey = 'import_preview_' . str_replace('-', '_', $moduleSlug);
@@ -110,11 +107,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $data = dieToolingNormalizePayload($_POST);
-    if ($cylinderTypeScopeLabel !== '') {
-      $data['cylinder_type'] = $cylinderTypeScopeLabel;
-    } elseif ($cylinderTypeScope !== '') {
-      $data['cylinder_type'] = $cylinderTypeScope;
-    }
     $stmt = dieToolingPrepareInsert($db, $tableName, $columnKeys);
     if ($stmt) {
       $values = [];
@@ -143,11 +135,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $data = dieToolingNormalizePayload($_POST);
-    if ($cylinderTypeScopeLabel !== '') {
-      $data['cylinder_type'] = $cylinderTypeScopeLabel;
-    } elseif ($cylinderTypeScope !== '') {
-      $data['cylinder_type'] = $cylinderTypeScope;
-    }
     $stmt = dieToolingPrepareUpdate($db, $tableName, $columnKeys);
     if ($stmt) {
       $values = [];
@@ -305,15 +292,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $clearExisting = !empty($_POST['clear_existing']);
 
     if ($clearExisting) {
-      $scopeDeleteWhere = '';
-      if ($cylinderTypeScopeLabel !== '') {
-        $safeLabel = $db->real_escape_string(mb_strtolower(trim($cylinderTypeScopeLabel), 'UTF-8'));
-        $scopeDeleteWhere = " WHERE LOWER(COALESCE(cylinder_type, '')) = '{$safeLabel}'";
-      } elseif ($cylinderTypeScope !== '') {
-        $safeScope = $db->real_escape_string($cylinderTypeScope);
-        $scopeDeleteWhere = " WHERE LOWER(COALESCE(cylinder_type, '')) LIKE '%{$safeScope}%'";
-      }
-      $db->query("DELETE FROM {$tableName}{$scopeDeleteWhere}");
+      $db->query("DELETE FROM {$tableName}");
     }
 
     $stmt = dieToolingPrepareInsert($db, $tableName, $importColumnKeys);
@@ -339,11 +318,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $value = 'NA';
         }
         $payload[$key] = dieToolingCleanText($value, 190);
-      }
-      if ($cylinderTypeScopeLabel !== '') {
-        $payload['cylinder_type'] = dieToolingCleanText($cylinderTypeScopeLabel, 190);
-      } elseif ($cylinderTypeScope !== '') {
-        $payload['cylinder_type'] = dieToolingCleanText($cylinderTypeScope, 190);
       }
 
       $values = [];
@@ -372,15 +346,7 @@ if (is_array($importPreview) && !empty($importPreview['headers'])) {
 $editingId = (int)($_GET['edit_id'] ?? 0);
 $editingRow = null;
 if ($editingId > 0) {
-  $scopeEditWhere = '';
-  if ($cylinderTypeScopeLabel !== '') {
-    $safeLabel = $db->real_escape_string(mb_strtolower(trim($cylinderTypeScopeLabel), 'UTF-8'));
-    $scopeEditWhere = " AND LOWER(COALESCE(cylinder_type, '')) = '{$safeLabel}'";
-  } elseif ($cylinderTypeScope !== '') {
-    $safeScope = $db->real_escape_string($cylinderTypeScope);
-    $scopeEditWhere = " AND LOWER(COALESCE(cylinder_type, '')) LIKE '%{$safeScope}%'";
-  }
-  $stmt = $db->prepare("SELECT * FROM {$tableName} WHERE id=?{$scopeEditWhere} LIMIT 1");
+  $stmt = $db->prepare("SELECT * FROM {$tableName} WHERE id=? LIMIT 1");
   if ($stmt) {
     $stmt->bind_param('i', $editingId);
     $stmt->execute();
@@ -390,15 +356,7 @@ if ($editingId > 0) {
 }
 
 $rows = [];
-$scopeWhere = '';
-if ($cylinderTypeScopeLabel !== '') {
-  $safeLabel = $db->real_escape_string(mb_strtolower(trim($cylinderTypeScopeLabel), 'UTF-8'));
-  $scopeWhere = " WHERE LOWER(COALESCE(cylinder_type, '')) = '{$safeLabel}'";
-} elseif ($cylinderTypeScope !== '') {
-  $safeScope = $db->real_escape_string($cylinderTypeScope);
-  $scopeWhere = " WHERE LOWER(COALESCE(cylinder_type, '')) LIKE '%{$safeScope}%'";
-}
-$res = $db->query("SELECT * FROM {$tableName}{$scopeWhere} ORDER BY CASE WHEN TRIM(COALESCE(sl_no, '')) REGEXP '^[0-9]+$' THEN CAST(TRIM(sl_no) AS UNSIGNED) ELSE 2147483647 END ASC, id ASC");
+$res = $db->query("SELECT * FROM {$tableName} ORDER BY CASE WHEN TRIM(COALESCE(sl_no, '')) REGEXP '^[0-9]+$' THEN CAST(TRIM(sl_no) AS UNSIGNED) ELSE 2147483647 END ASC, id ASC");
 if ($res) {
   $rows = $res->fetch_all(MYSQLI_ASSOC);
 }
@@ -426,15 +384,20 @@ foreach (array_keys($columns) as $columnKey) {
   });
 }
 
+// Compute total stock
+$totalStock = 0;
+foreach ($rows as $r) {
+  $totalStock += (int)($r['stock_qty'] ?? 0);
+}
+
 $flash = getFlash();
 $exportBase = BASE_URL . '/modules/' . $moduleSlug . '/export.php';
-$exportScopeQs = $cylinderTypeScope !== ''
-  ? '&scope=' . urlencode($cylinderTypeScope) . '&scope_label=' . urlencode($cylinderTypeScopeLabel !== '' ? $cylinderTypeScopeLabel : ucfirst($cylinderTypeScope))
-  : '';
 $columnCount = count($columns) + ($isDesignMode ? 2 : 3);
 $quickFiltersJson = json_encode(array_values($quickFilters), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-include __DIR__ . '/../../includes/header.php';
+if (!$isEmbedded) {
+  include __DIR__ . '/../../includes/header.php';
+}
 ?>
 
 <style>
@@ -445,10 +408,19 @@ include __DIR__ . '/../../includes/header.php';
 .qf{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;padding:10px;border:1px solid #dbeafe;background:#f8fbff;border-radius:10px;margin:10px 0 12px}.qf-item{display:flex;flex-direction:column;gap:3px;min-width:150px;flex:1;justify-content:center}.qf-item label{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8}.qf-item input,.qf-item select{height:36px;border:1px solid var(--border);border-radius:8px;padding:0 10px;font-size:.8rem;background:#fff}.qf-item input:focus,.qf-item select:focus{outline:none;border-color:#86efac;box-shadow:0 0 0 3px rgba(34,197,94,.1)}.qf-actions{display:flex;align-items:center;gap:8px;min-width:max-content;padding-top:18px}.qf-reset{height:36px;display:inline-flex;align-items:center;justify-content:center;padding:0 14px;border-radius:8px;background:#f97316;color:#fff;border:none;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap}
 .qf-picker{position:relative}.qf-picker-btn{height:36px;width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--border);border-radius:8px;padding:0 10px;background:#fff;font-size:.8rem;color:var(--text-main);cursor:pointer;text-align:left}.qf-picker-btn .muted{color:#94a3b8}.qf-picker-btn.active{border-color:#fdba74;background:#fff7ed}.qf-popup{display:none;position:fixed;z-index:240;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.18);width:260px;overflow:hidden}.qf-popup.open{display:block}.qf-popup-head{padding:10px;border-bottom:1px solid #f1f5f9}.qf-popup-search{width:100%;height:34px;border:1px solid var(--border);border-radius:8px;padding:0 10px;font-size:.78rem;background:#f8fafc}.qf-popup-list{max-height:220px;overflow-y:auto;padding:6px 0}.qf-popup-item{display:flex;align-items:center;padding:7px 10px;font-size:.78rem;cursor:pointer}.qf-popup-item:hover{background:#f8fafc}.qf-popup-item.active{background:#fff7ed;color:#ea580c;font-weight:700}
 .col-filter-wrap{position:relative;display:inline-flex;align-items:center}.col-filter-btn{background:none;border:none;cursor:pointer;padding:2px 4px;color:#94a3b8;font-size:10px;margin-left:4px;border-radius:4px;transition:all .12s}.col-filter-btn:hover,.col-filter-btn.active{color:#16a34a;background:rgba(34,197,94,.12)}.col-filter-btn .filter-count{display:none;position:absolute;top:-5px;right:-6px;background:#ef4444;color:#fff;border-radius:8px;font-size:7px;padding:1px 3px;line-height:1;min-width:11px;text-align:center}.col-filter-btn.active .filter-count{display:block}.cfp{display:none;position:fixed;z-index:260;width:290px;max-width:90vw;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.18);overflow:hidden}.cfp.open{display:block}.cfp-head{padding:10px;border-bottom:1px solid #f1f5f9;background:#f8fafc}.cfp-search{width:100%;height:32px;border:1px solid var(--border);border-radius:8px;padding:0 10px;font-size:.78rem}.cfp-select-all{display:flex;align-items:center;gap:6px;font-size:.75rem;margin-top:8px;color:#64748b}.cfp-list{max-height:220px;overflow:auto;padding:8px 10px;display:flex;flex-direction:column;gap:6px}.cfp-item{display:flex;align-items:center;gap:8px;font-size:.78rem;color:#334155}.cfp-foot{display:flex;justify-content:flex-end;gap:8px;padding:10px;border-top:1px solid #f1f5f9;background:#fff}.cfp-foot button{height:30px;border-radius:8px;border:none;padding:0 12px;font-size:.76rem;font-weight:700;cursor:pointer}.cfp-foot .ok{background:#16a34a;color:#fff}.cfp-foot .apply{background:#0f172a;color:#fff}
-.module-table thead th{background:#dbeafe;color:#1e3a8a;border-color:#bfdbfe;font-weight:700;white-space:nowrap}.module-table tbody td{border-color:#e2e8f0}
+.module-table{border:2px solid #1e3a8a;border-radius:10px;overflow:hidden;border-collapse:separate;border-spacing:0}
+.module-table thead th{background:#1e3a8a;color:#fff;border:1px solid #1e40af;font-weight:700;white-space:nowrap;padding:10px 14px;font-size:.82rem;text-transform:uppercase;letter-spacing:.04em}
+.module-table tbody td{border:1px solid #cbd5e1;padding:9px 14px;font-size:.84rem}
+.module-table tbody tr:nth-child(even) td{background:#f1f5f9}
+.module-table tbody tr:hover td{background:#dbeafe}
+.table-responsive{max-width:800px;margin:0 auto}
 @media (max-width:980px){.qf{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));}}
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000}.modal-card{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:95%;max-width:1100px;max-height:90vh;overflow:auto;background:#fff;border-radius:14px;box-shadow:0 20px 40px rgba(0,0,0,.2)}.modal-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:0;background:#0f172a;color:#fff;border-radius:14px 14px 0 0}.modal-body-pad{padding:14px}.modal-form-section{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.modal-form-label{font-size:.76rem;font-weight:700;color:#475569}.modal-form-input{height:38px;border:1px solid var(--border);border-radius:8px;padding:0 10px}.form-grid-2{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:14px}.form-group{display:flex;flex-direction:column;gap:6px}.form-group label{font-size:.76rem;font-weight:700;color:#475569}.form-group input,.form-group select{height:38px;border:1px solid var(--border);border-radius:8px;padding:0 10px}.form-actions{display:flex;justify-content:flex-end;gap:8px}.col-span-all{grid-column:1/-1}
 @media (max-width:900px){.form-grid-2{grid-template-columns:repeat(2,minmax(0,1fr));}}@media (max-width:640px){.form-grid-2{grid-template-columns:1fr;}}
+.anilox-summary{display:flex;gap:12px;margin:10px auto;flex-wrap:wrap;max-width:800px}
+.anilox-summary .sum-card{flex:1;min-width:140px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 16px;text-align:center}
+.anilox-summary .sum-card .sum-label{font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8}
+.anilox-summary .sum-card .sum-value{font-size:1.6rem;font-weight:900;color:#15803d;margin-top:2px}
 </style>
 
 <div class="card">
@@ -461,14 +433,26 @@ include __DIR__ . '/../../includes/header.php';
       <?php if (!$isDesignMode): ?>
         <button type="button" class="module-btn red" id="bulkDeleteTrigger" disabled><i class="bi bi-trash3"></i> Bulk Delete</button>
       <?php endif; ?>
-      <a class="module-btn blue" href="<?= e($exportBase) ?>?mode=<?= e($mode) ?>&format=excel<?= e($exportScopeQs) ?>"><i class="bi bi-file-earmark-excel"></i> Export Excel</a>
-      <a class="module-btn orange" target="_blank" href="<?= e($exportBase) ?>?mode=<?= e($mode) ?>&format=pdf<?= e($exportScopeQs) ?>"><i class="bi bi-printer"></i> Print / PDF</a>
+      <a class="module-btn blue" href="<?= e($exportBase) ?>?mode=<?= e($mode) ?>&format=excel"><i class="bi bi-file-earmark-excel"></i> Export Excel</a>
+      <a class="module-btn orange" target="_blank" href="<?= e($exportBase) ?>?mode=<?= e($mode) ?>&format=pdf"><i class="bi bi-printer"></i> Print / PDF</a>
     </div>
   </div>
 
   <?php if ($flash): ?>
     <div class="alert alert-<?= e($flash['type']) ?>" style="margin-bottom:10px;"><?= e($flash['message']) ?></div>
   <?php endif; ?>
+
+  <!-- Summary -->
+  <div class="anilox-summary">
+    <div class="sum-card">
+      <div class="sum-label">Total Records</div>
+      <div class="sum-value"><?= count($rows) ?></div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-label">Total Stock (QNTY)</div>
+      <div class="sum-value"><?= $totalStock ?></div>
+    </div>
+  </div>
 
   <?php if (!$isDesignMode): ?>
     <div style="border:1px solid var(--border);border-radius:10px;padding:12px;background:#f8fafc;margin-bottom:10px;">
@@ -553,18 +537,16 @@ include __DIR__ . '/../../includes/header.php';
         <tr><td colspan="<?= (int)$columnCount ?>" style="text-align:center;color:var(--text-muted);padding:24px;">No <?= e(strtolower($moduleLabel)) ?> records found.</td></tr>
       <?php else: ?>
         <?php foreach ($rows as $index => $row): ?>
-          <?php $displaySlNo = trim((string)($row['sl_no'] ?? '')); ?>
-          <?php if ($cylinderTypeScope !== '') { $displaySlNo = (string)($index + 1); } ?>
           <tr>
             <?php if (!$isDesignMode): ?>
               <td class="bulk-check-col no-print"><input type="checkbox" class="row-check" value="<?= (int)$row['id'] ?>"></td>
             <?php endif; ?>
-            <td data-field="__sl_no__"><?= e($displaySlNo !== '' ? $displaySlNo : (string)($index + 1)) ?></td>
+            <td data-field="__sl_no__"><?= (string)($index + 1) ?></td>
             <?php foreach ($columns as $key => $label): ?>
               <td data-field="<?= e($key) ?>"><?= e(dieToolingDisplayValue($row[$key] ?? '')) ?></td>
             <?php endforeach; ?>
             <td>
-              <a class="btn btn-sm btn-primary" href="<?= dieToolingRedirectUrl($mode) ?>?edit_id=<?= (int)$row['id'] ?>"><i class="bi bi-pencil"></i></a>
+              <a class="btn btn-sm btn-primary" href="<?= dieToolingRedirectUrl($mode) ?><?= strpos(dieToolingRedirectUrl($mode), '?') !== false ? '&' : '?' ?>edit_id=<?= (int)$row['id'] ?>"><i class="bi bi-pencil"></i></a>
               <?php if (!$isDesignMode): ?>
                 <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this row?');">
                   <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
@@ -594,10 +576,9 @@ include __DIR__ . '/../../includes/header.php';
       <input type="hidden" name="action" value="add_record">
       <div class="modal-form-section">
         <?php foreach ($columns as $key => $label): ?>
-          <?php if ($cylinderTypeScopeLabel !== '' && $key === 'cylinder_type') continue; ?>
           <div class="form-group">
             <label class="modal-form-label"><?= e($label) ?></label>
-            <input class="modal-form-input" type="text" name="<?= e($key) ?>" value="<?= ($cylinderTypeScopeLabel !== '' && $key === 'cylinder_type') ? e($cylinderTypeScopeLabel) : '' ?>" list="field-suggestions-<?= e($key) ?>" autocomplete="off" <?= ($cylinderTypeScopeLabel !== '' && $key === 'cylinder_type') ? 'readonly' : '' ?>>
+            <input class="modal-form-input" type="text" name="<?= e($key) ?>" value="" list="field-suggestions-<?= e($key) ?>" autocomplete="off">
           </div>
         <?php endforeach; ?>
       </div>
@@ -623,10 +604,9 @@ include __DIR__ . '/../../includes/header.php';
       <input type="hidden" name="id" value="<?= (int)$editingRow['id'] ?>">
       <div class="modal-form-section">
         <?php foreach ($columns as $key => $label): ?>
-          <?php if ($cylinderTypeScopeLabel !== '' && $key === 'cylinder_type') continue; ?>
           <div class="form-group">
             <label class="modal-form-label"><?= e($label) ?></label>
-            <input class="modal-form-input" type="text" name="<?= e($key) ?>" value="<?= e((string)($editingRow[$key] ?? '')) ?>" list="field-suggestions-<?= e($key) ?>" autocomplete="off" <?= ($cylinderTypeScopeLabel !== '' && $key === 'cylinder_type') ? 'readonly' : '' ?>>
+            <input class="modal-form-input" type="text" name="<?= e($key) ?>" value="<?= e((string)($editingRow[$key] ?? '')) ?>" list="field-suggestions-<?= e($key) ?>" autocomplete="off">
           </div>
         <?php endforeach; ?>
       </div>
@@ -1123,4 +1103,4 @@ include __DIR__ . '/../../includes/header.php';
 })();
 </script>
 
-<?php include __DIR__ . '/../../includes/footer.php'; ?>
+<?php if (!$isEmbedded) { include __DIR__ . '/../../includes/footer.php'; } ?>

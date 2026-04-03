@@ -1,8 +1,6 @@
 <?php
 $_GET['mode'] = 'design';
-$cylDataLabelOverride = 'Anilox Management';
-$cylDataPageTitleOverride = 'Anilox Management';
-$cylDataTypeScope = 'anilox';
-$cylDataTypeScopeLabel = 'Anilox';
+$aniloxDataLabelOverride = 'Anilox Stock';
+$aniloxDataPageTitleOverride = 'Anilox Stock';
 $dieToolingRedirectUrlOverride = '/modules/plate-tools/anilox-management/index.php';
-require_once __DIR__ . '/../../cylinder-data/index.php';
+require_once __DIR__ . '/../../anilox-data/index.php';
