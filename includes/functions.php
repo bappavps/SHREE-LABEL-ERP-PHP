@@ -414,7 +414,9 @@ function rbacPageCatalog() {
         '/modules/scan/index.php' => 'Physical Stock Scan Terminal',
         '/modules/inventory/slitting/index.php' => 'Inventory - Slitting',
         '/modules/inventory/finished/index.php' => 'Inventory - Finished Good',
-        '/modules/inventory/die/index.php' => 'Inventory - Die Tooling',
+        '/modules/die-tooling/index.php' => 'Barcode Die',
+        '/modules/design/barcode-die.php' => 'Design - Barcode Die',
+        '/modules/master/barcode-die.php' => 'Master - Barcode Die',
 
         '/modules/jobs/jumbo/index.php' => 'Job Card - Jumbo',
         '/modules/jobs/pos/index.php' => 'Job Card - POS Roll',

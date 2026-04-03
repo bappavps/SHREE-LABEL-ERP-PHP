@@ -76,6 +76,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
       </a>
       <div class="nav-sub">
         <?= navSubItem('/modules/artwork/index.php',  'Artwork Gallery', $currentFile, [], '', 'palette2') ?>
+        <?= navSubItem('/modules/design/barcode-die.php',  'Barcode Die', $currentFile, ['/modules/design/barcode-die.php'], '', 'tools') ?>
         <div class="nav-sub-nest">
           <a href="#" class="nav-sub-parent-toggle" aria-expanded="false">
             <span>Job Planning</span>
@@ -132,7 +133,6 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
         </div>
         <?= navSubItem('/modules/inventory/slitting/index.php', 'Slitting', $currentFile, [], '', 'scissors') ?>
         <?= navSubItem('/modules/inventory/finished/index.php', 'Finished Good', $currentFile, [], '', 'check2-circle') ?>
-        <?= navSubItem('/modules/inventory/die/index.php', 'Die Tooling', $currentFile, [], '', 'tools') ?>
       </div>
     </div>
 

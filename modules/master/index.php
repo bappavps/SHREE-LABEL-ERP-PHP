@@ -1103,6 +1103,7 @@ if ($activeTab === 'clients' && $editClientId > 0) {
     <a class="settings-tab <?= $activeTab==='suppliers'?'active':'' ?>" href="?tab=suppliers">Suppliers</a>
     <a class="settings-tab <?= $activeTab==='machines'?'active':'' ?>" href="?tab=machines">Machines</a>
     <a class="settings-tab <?= $activeTab==='cylinders'?'active':'' ?>" href="?tab=cylinders">Cylinders</a>
+    <a class="settings-tab" href="<?= BASE_URL ?>/modules/master/barcode-die.php">Barcode Die</a>
     <a class="settings-tab <?= $activeTab==='clients'?'active':'' ?>" href="?tab=clients">Clients</a>
     <a class="settings-tab <?= $activeTab==='paper_masters'?'active':'' ?>" href="?tab=paper_masters">Paper Lists</a>
     <a class="settings-tab <?= $activeTab==='prefix'?'active':'' ?>" href="?tab=prefix">Number Prefix Settings</a>
