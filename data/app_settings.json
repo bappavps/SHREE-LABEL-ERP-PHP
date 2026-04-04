@@ -61,7 +61,7 @@
         "modules": {
             "roll": {
                 "prefix": "SLC",
-                "counter": 371
+                "counter": 0
             },
             "job": {
                 "prefix": "JOB",
@@ -89,7 +89,7 @@
             },
             "planning": {
                 "prefix": "PLN",
-                "counter": 8
+                "counter": 0
             },
             "jumbo_job": {
                 "prefix": "JMB",
@@ -97,6 +97,10 @@
             },
             "printing_job": {
                 "prefix": "FLX",
+                "counter": 1
+            },
+            "die_cutting_job": {
+                "prefix": "DCT",
                 "counter": 1
             }
         }

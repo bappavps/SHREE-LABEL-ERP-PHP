@@ -361,6 +361,18 @@ function jobs_join_base_url(string $path): string {
     return $base . '/' . $rel;
 }
 
+function jobs_is_die_cutting_job(array $job): bool {
+    $department = strtolower(trim((string)($job['department'] ?? '')));
+    $jobType = strtolower(trim((string)($job['job_type'] ?? '')));
+    if (in_array($department, ['flatbed', 'die-cutting', 'die_cutting'], true)) {
+        return true;
+    }
+    if (in_array($jobType, ['die-cutting', 'diecutting'], true)) {
+        return true;
+    }
+    return $jobType === 'finishing' && in_array($department, ['flatbed', 'die-cutting', 'die_cutting'], true);
+}
+
 function jobs_first_non_empty(array $arr, array $keys, string $fallback = ''): string {
     foreach ($keys as $k) {
         if (!array_key_exists($k, $arr)) continue;
@@ -623,6 +635,29 @@ try {
                             if ($upPlanExtra) {
                                 $upPlanExtra->bind_param('si', $pExtraJson, $planId);
                                 $upPlanExtra->execute();
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Die-Cutting completion should reflect in planning board as Die-Cutting Done.
+            if (jobs_is_die_cutting_job($job)) {
+                $planId = (int)($job['planning_id'] ?? 0);
+                if ($planId > 0) {
+                    $planExtraStmtD = $db->prepare("SELECT extra_data FROM planning WHERE id = ? LIMIT 1");
+                    if ($planExtraStmtD) {
+                        $planExtraStmtD->bind_param('i', $planId);
+                        $planExtraStmtD->execute();
+                        $planRowD = $planExtraStmtD->get_result()->fetch_assoc();
+                        if ($planRowD) {
+                            $pExtraD = json_decode((string)($planRowD['extra_data'] ?? '{}'), true) ?: [];
+                            $pExtraD['printing_planning'] = 'Die-Cutting Done';
+                            $pExtraDJson = json_encode($pExtraD, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                            $upPlanExtraD = $db->prepare("UPDATE planning SET extra_data = ? WHERE id = ?");
+                            if ($upPlanExtraD) {
+                                $upPlanExtraD->bind_param('si', $pExtraDJson, $planId);
+                                $upPlanExtraD->execute();
                             }
                         }
                     }
@@ -1088,6 +1123,209 @@ try {
             'job_id' => $jobId,
             'photo_path' => $relPath,
             'photo_url' => jobs_join_base_url($relPath),
+        ]);
+        break;
+
+    // ─── Upload Die-Cutting completion photo ───────────────
+    case 'upload_die_cutting_photo':
+        if ($method !== 'POST') {
+            echo json_encode(['ok' => false, 'error' => 'POST required']);
+            break;
+        }
+
+        $jobId = (int)($_POST['job_id'] ?? 0);
+        if ($jobId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Missing job_id']);
+            break;
+        }
+        if (empty($_FILES['photo']) || !is_array($_FILES['photo'])) {
+            echo json_encode(['ok' => false, 'error' => 'Missing photo file']);
+            break;
+        }
+
+        $jobStmt = $db->prepare("SELECT id, job_type, department, extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $jobStmt->bind_param('i', $jobId);
+        $jobStmt->execute();
+        $job = $jobStmt->get_result()->fetch_assoc();
+        if (!$job) {
+            echo json_encode(['ok' => false, 'error' => 'Job not found']);
+            break;
+        }
+        if (!jobs_is_die_cutting_job($job)) {
+            echo json_encode(['ok' => false, 'error' => 'This upload is only allowed for Die-Cutting jobs']);
+            break;
+        }
+
+        $file = $_FILES['photo'];
+        if ((int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            echo json_encode(['ok' => false, 'error' => 'Upload failed']);
+            break;
+        }
+        $tmp = (string)($file['tmp_name'] ?? '');
+        if ($tmp === '' || !is_uploaded_file($tmp)) {
+            echo json_encode(['ok' => false, 'error' => 'Invalid upload source']);
+            break;
+        }
+
+        $size = (int)($file['size'] ?? 0);
+        if ($size <= 0 || $size > (8 * 1024 * 1024)) {
+            echo json_encode(['ok' => false, 'error' => 'Image must be up to 8MB']);
+            break;
+        }
+
+        $mime = '';
+        if (function_exists('finfo_open')) {
+            $fi = finfo_open(FILEINFO_MIME_TYPE);
+            if ($fi) {
+                $mime = (string)finfo_file($fi, $tmp);
+                finfo_close($fi);
+            }
+        }
+        $extMap = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+        ];
+        if (!isset($extMap[$mime])) {
+            echo json_encode(['ok' => false, 'error' => 'Only JPG, PNG, or WEBP images are allowed']);
+            break;
+        }
+
+        $uploadDir = __DIR__ . '/../../uploads/jobs/die-cutting';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+            echo json_encode(['ok' => false, 'error' => 'Upload folder is not writable']);
+            break;
+        }
+
+        $fname = 'die_cutting_' . $jobId . '_' . date('Ymd_His') . '_' . substr(sha1((string)mt_rand()), 0, 8) . '.' . $extMap[$mime];
+        $absPath = $uploadDir . '/' . $fname;
+        $relPath = 'uploads/jobs/die-cutting/' . $fname;
+        if (!move_uploaded_file($tmp, $absPath)) {
+            echo json_encode(['ok' => false, 'error' => 'Failed to move uploaded file']);
+            break;
+        }
+
+        $extra = json_decode((string)($job['extra_data'] ?? '{}'), true);
+        if (!is_array($extra)) $extra = [];
+        $extra['die_cutting_photo_path'] = $relPath;
+        $extra['die_cutting_photo_url'] = jobs_join_base_url($relPath);
+        $extra['die_cutting_photo_uploaded_at'] = date('c');
+        $extra['die_cutting_photo_uploaded_by'] = trim((string)($_SESSION['name'] ?? ($_SESSION['user_name'] ?? '')));
+        $safeJson = json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $upd = $db->prepare("UPDATE jobs SET extra_data = ? WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')");
+        $upd->bind_param('si', $safeJson, $jobId);
+        $upd->execute();
+
+        echo json_encode([
+            'ok' => true,
+            'job_id' => $jobId,
+            'photo_path' => $relPath,
+            'photo_url' => jobs_join_base_url($relPath),
+        ]);
+        break;
+
+    // ─── Upload Die-Cutting voice note ─────────────────────
+    case 'upload_die_cutting_voice':
+        if ($method !== 'POST') {
+            echo json_encode(['ok' => false, 'error' => 'POST required']);
+            break;
+        }
+
+        $jobId = (int)($_POST['job_id'] ?? 0);
+        if ($jobId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Missing job_id']);
+            break;
+        }
+        if (empty($_FILES['voice']) || !is_array($_FILES['voice'])) {
+            echo json_encode(['ok' => false, 'error' => 'Missing voice file']);
+            break;
+        }
+
+        $jobStmt = $db->prepare("SELECT id, job_type, department, extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $jobStmt->bind_param('i', $jobId);
+        $jobStmt->execute();
+        $job = $jobStmt->get_result()->fetch_assoc();
+        if (!$job) {
+            echo json_encode(['ok' => false, 'error' => 'Job not found']);
+            break;
+        }
+        if (!jobs_is_die_cutting_job($job)) {
+            echo json_encode(['ok' => false, 'error' => 'This upload is only allowed for Die-Cutting jobs']);
+            break;
+        }
+
+        $file = $_FILES['voice'];
+        if ((int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            echo json_encode(['ok' => false, 'error' => 'Upload failed']);
+            break;
+        }
+        $tmp = (string)($file['tmp_name'] ?? '');
+        if ($tmp === '' || !is_uploaded_file($tmp)) {
+            echo json_encode(['ok' => false, 'error' => 'Invalid upload source']);
+            break;
+        }
+
+        $size = (int)($file['size'] ?? 0);
+        if ($size <= 0 || $size > (10 * 1024 * 1024)) {
+            echo json_encode(['ok' => false, 'error' => 'Voice note must be up to 10MB']);
+            break;
+        }
+
+        $mime = '';
+        if (function_exists('finfo_open')) {
+            $fi = finfo_open(FILEINFO_MIME_TYPE);
+            if ($fi) {
+                $mime = (string)finfo_file($fi, $tmp);
+                finfo_close($fi);
+            }
+        }
+
+        $extMap = [
+            'audio/webm' => 'webm',
+            'audio/ogg' => 'ogg',
+            'audio/mpeg' => 'mp3',
+            'audio/wav' => 'wav',
+            'audio/x-wav' => 'wav',
+            'audio/mp4' => 'm4a',
+            'audio/x-m4a' => 'm4a',
+        ];
+        if (!isset($extMap[$mime])) {
+            echo json_encode(['ok' => false, 'error' => 'Only WEBM/OGG/MP3/WAV/M4A audio is allowed']);
+            break;
+        }
+
+        $uploadDir = __DIR__ . '/../../uploads/jobs/die-cutting';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+            echo json_encode(['ok' => false, 'error' => 'Upload folder is not writable']);
+            break;
+        }
+
+        $fname = 'die_cutting_voice_' . $jobId . '_' . date('Ymd_His') . '_' . substr(sha1((string)mt_rand()), 0, 8) . '.' . $extMap[$mime];
+        $absPath = $uploadDir . '/' . $fname;
+        $relPath = 'uploads/jobs/die-cutting/' . $fname;
+        if (!move_uploaded_file($tmp, $absPath)) {
+            echo json_encode(['ok' => false, 'error' => 'Failed to move uploaded file']);
+            break;
+        }
+
+        $extra = json_decode((string)($job['extra_data'] ?? '{}'), true);
+        if (!is_array($extra)) $extra = [];
+        $extra['die_cutting_voice_note_path'] = $relPath;
+        $extra['die_cutting_voice_note_url'] = jobs_join_base_url($relPath);
+        $extra['die_cutting_voice_uploaded_at'] = date('c');
+        $extra['die_cutting_voice_uploaded_by'] = trim((string)($_SESSION['name'] ?? ($_SESSION['user_name'] ?? '')));
+        $safeJson = json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $upd = $db->prepare("UPDATE jobs SET extra_data = ? WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')");
+        $upd->bind_param('si', $safeJson, $jobId);
+        $upd->execute();
+
+        echo json_encode([
+            'ok' => true,
+            'job_id' => $jobId,
+            'voice_path' => $relPath,
+            'voice_url' => jobs_join_base_url($relPath),
         ]);
         break;
 

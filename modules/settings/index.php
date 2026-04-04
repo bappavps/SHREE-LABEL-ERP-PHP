@@ -10,6 +10,14 @@ $tenantLabel = defined('TENANT_NAME') ? trim((string)TENANT_NAME) : APP_NAME;
 $tenantSettingsPath = getAppSettingsPath();
 $projectRoot = str_replace('\\', '/', realpath(__DIR__ . '/../../') ?: (__DIR__ . '/../../'));
 
+$libraryCategories = [
+  'company-logo' => 'Company Logo',
+  'label-asset' => 'Label Asset',
+  'background' => 'Background',
+  'product-type' => 'Product Type',
+  'misc' => 'Misc',
+];
+
 function tenantSettingsZipPath(string $projectRoot, string $settingsPath): string {
   $projectRoot = rtrim(str_replace('\\', '/', $projectRoot), '/');
   $settingsPath = str_replace('\\', '/', $settingsPath);
@@ -44,6 +52,101 @@ function tenantAssetDirectories(string $tenantSlug): array {
     'company' => 'uploads/company/' . $safeTenantSlug,
     'library' => 'uploads/library/' . $safeTenantSlug,
   ];
+}
+
+function parseCsvList(string $csv): array {
+  $items = preg_split('/\s*,\s*/', trim($csv)) ?: [];
+  $out = [];
+  foreach ($items as $item) {
+    $item = trim((string)$item);
+    if ($item === '') {
+      continue;
+    }
+    $out[] = $item;
+  }
+  return array_values(array_unique($out));
+}
+
+function collectProvisionMigrationFiles(string $migrationDir): array {
+  if (!is_dir($migrationDir)) {
+    return [];
+  }
+
+  $files = [];
+  $iterator = new RecursiveIteratorIterator(
+    new RecursiveDirectoryIterator($migrationDir, FilesystemIterator::SKIP_DOTS)
+  );
+
+  foreach ($iterator as $entry) {
+    if (!$entry->isFile()) {
+      continue;
+    }
+    $path = str_replace('\\', '/', (string)$entry->getPathname());
+    if (substr($path, -4) !== '.sql') {
+      continue;
+    }
+    if (stripos($path, '/pending_migrations/backup/') !== false) {
+      continue;
+    }
+    $files[] = $path;
+  }
+
+  sort($files, SORT_NATURAL | SORT_FLAG_CASE);
+  return $files;
+}
+
+function loadDynamicTenantRegistry(string $registryPath): array {
+  if (!is_file($registryPath)) {
+    return [
+      'default_slug' => 'default',
+      'tenants' => [],
+    ];
+  }
+
+  $raw = @file_get_contents($registryPath);
+  if ($raw === false) {
+    return [
+      'default_slug' => 'default',
+      'tenants' => [],
+    ];
+  }
+
+  $decoded = json_decode($raw, true);
+  if (!is_array($decoded)) {
+    return [
+      'default_slug' => 'default',
+      'tenants' => [],
+    ];
+  }
+
+  if (!isset($decoded['tenants']) || !is_array($decoded['tenants'])) {
+    $decoded['tenants'] = [];
+  }
+  if (empty($decoded['default_slug'])) {
+    $decoded['default_slug'] = 'default';
+  }
+
+  return $decoded;
+}
+
+function saveDynamicTenantRegistry(string $registryPath, array $registry): bool {
+  $dir = dirname($registryPath);
+  if (!is_dir($dir) && !@mkdir($dir, 0775, true)) {
+    return false;
+  }
+
+  if (!isset($registry['tenants']) || !is_array($registry['tenants'])) {
+    $registry['tenants'] = [];
+  }
+  if (empty($registry['default_slug'])) {
+    $registry['default_slug'] = 'default';
+  }
+
+  $json = json_encode($registry, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+  if ($json === false) {
+    return false;
+  }
+  return @file_put_contents($registryPath, $json, LOCK_EX) !== false;
 }
 
 function fetchWebsiteImageFromUrl(string $url): string {
@@ -262,6 +365,11 @@ function saveUploadedImage($fileKey, $targetDir, $prefix) {
 
   return ['uploads/' . trim($targetDir, '/') . '/' . $safeName, ''];
 }
+
+$tenantAssetDirs = tenantAssetDirectories($tenantSlug);
+$tenantRegistryPath = $projectRoot . '/data/tenants_registry.json';
+$tenantSettingsZipPath = tenantSettingsZipPath($projectRoot, $tenantSettingsPath);
+$tenantSettingsDisplayPath = str_replace($projectRoot . '/', '', str_replace('\\', '/', $tenantSettingsPath));
 
 $activeTab = $_GET['tab'] ?? 'company';
 $allowedTabs = ['company', 'library', 'theme', 'backup', 'update', 'tenant'];
@@ -492,15 +600,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Handle company logo upload
     if (isset($_FILES['tenant_company_logo']) && $_FILES['tenant_company_logo']['error'] === UPLOAD_ERR_OK) {
-      list($logoPath, $logoErr) = saveUploadedImage('tenant_company_logo', $tenantAssetDirs['company'] . '/' . $tenantSlugNew, 'logo');
+      $newTenantAssetDirs = tenantAssetDirectories($tenantSlugNew);
+      list($logoPath, $logoErr) = saveUploadedImage('tenant_company_logo', $newTenantAssetDirs['company'], 'logo');
       if ($logoErr === '' && $logoPath !== '') {
         $tenantDefaults['logo_path'] = $logoPath;
         @file_put_contents($tenantSettingsFile, json_encode($tenantDefaults, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), LOCK_EX);
       }
     }
 
-    $companyAssetDir = $projectRoot . '/' . $tenantAssetDirs['company'];
-    $libraryAssetDir = $projectRoot . '/' . $tenantAssetDirs['library'];
+    $newTenantAssetDirs = tenantAssetDirectories($tenantSlugNew);
+    $companyAssetDir = $projectRoot . '/' . $newTenantAssetDirs['company'];
+    $libraryAssetDir = $projectRoot . '/' . $newTenantAssetDirs['library'];
     if (!is_dir($companyAssetDir)) {
       @mkdir($companyAssetDir, 0775, true);
     }

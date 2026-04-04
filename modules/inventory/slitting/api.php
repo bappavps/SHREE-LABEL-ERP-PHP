@@ -970,6 +970,66 @@ try {
                         }
                     }
                 }
+
+                // Keep one downstream die-cutting job per plan as queued (only if die = FlatBed).
+                if ($planningId > 0 && strtolower(trim((string)($planningExtra['die'] ?? ''))) === 'flatbed') {
+                    $flexJobIdForDct = (isset($newFlexJobId) && $newFlexJobId > 0) ? (string)$newFlexJobId : (isset($existingPrintId) && $existingPrintId > 0 ? (string)$existingPrintId : '');
+                    $flexJobNoForRef = (isset($jcNoFlex) && $jcNoFlex !== '') ? $jcNoFlex : (isset($existingFlexNo) && $existingFlexNo !== '' ? $existingFlexNo : 'N/A');
+
+                    $chkD = $db->prepare("SELECT id, job_no FROM jobs WHERE department = 'flatbed' AND planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
+                    $chkD->bind_param('i', $planningId);
+                    $chkD->execute();
+                    $existingDie = $chkD->get_result()->fetch_assoc();
+                    if (!$existingDie) {
+                        $jcNoDct = '';
+                        for ($dctAttempt = 0; $dctAttempt < 30; $dctAttempt++) {
+                            $jcNoDct = (string)(generateUniqueIdForTable($db, 'die_cutting_job', 'jobs', 'job_no') ?? '');
+                            if ($jcNoDct === '') {
+                                $jcNoDct = deriveStageJobNo($planNo, 'DCT');
+                            }
+                            if ($jcNoDct === '') {
+                                $jcNoDct = 'DCT/' . date('Y') . '/' . str_pad((string)($batchId + $dctAttempt), 4, '0', STR_PAD_LEFT);
+                            }
+                            if ($jcNoDct === '') continue;
+
+                            $notesDct = 'Die-cutting queued from Flexo | Plan: ' . ($planNo ?: 'N/A') . ' | Flexo: ' . $flexJobNoForRef . ($displayJobName !== '' ? ' | Job name: ' . $displayJobName : '');
+
+                            if ($flexJobIdForDct !== '') {
+                                $jcStmtD = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Finishing', 'flatbed', 'Queued', 3, ?, ?)");
+                                $jcStmtD->bind_param('sisss', $jcNoDct, $planningId, $parentRollNo, $flexJobIdForDct, $notesDct);
+                            } else {
+                                $jcStmtD = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Finishing', 'flatbed', 'Queued', 3, NULL, ?)");
+                                $jcStmtD->bind_param('siss', $jcNoDct, $planningId, $parentRollNo, $notesDct);
+                            }
+
+                            $okDct = false;
+                            try {
+                                $okDct = $jcStmtD->execute();
+                            } catch (Throwable $insertErr) {
+                                if ((int)($jcStmtD->errno ?? 0) === 1062 || stripos((string)$insertErr->getMessage(), 'Duplicate entry') !== false) {
+                                    $okDct = false;
+                                } else {
+                                    throw $insertErr;
+                                }
+                            }
+                            if ($okDct) {
+                                $newDctJobId = (int)$db->insert_id;
+                                $createdJobCards[] = ['job_no' => $jcNoDct, 'type' => 'Finishing', 'roll' => $parentRollNo, 'id' => $newDctJobId];
+                                $nMsgD = 'New Die-Cutting job card queued: ' . $jcNoDct . ' | From: ' . $flexJobNoForRef;
+                                $nInsD = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, 'flatbed', ?, 'info')");
+                                if ($nInsD) {
+                                    $nInsD->bind_param('is', $newDctJobId, $nMsgD);
+                                    $nInsD->execute();
+                                }
+                                break;
+                            }
+                            if ((int)$jcStmtD->errno === 1062) continue;
+                            if ($dctAttempt >= 29) {
+                                throw new Exception('Unable to generate unique DCT job number. Please try again.');
+                            }
+                        }
+                    }
+                }
             }
 
             // 9. Update planning status to a valid planning enum state.

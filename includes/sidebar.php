@@ -76,7 +76,6 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
       </a>
       <div class="nav-sub">
         <?= navSubItem('/modules/artwork/index.php',  'Artwork Gallery', $currentFile, [], '', 'palette2') ?>
-        <?= navSubItem('/modules/design/cylinder-data.php',  'Cylinder Data', $currentFile, ['/modules/design/cylinder-data.php'], '', 'circle-square') ?>
         <div class="nav-sub-nest">
           <a href="#" class="nav-sub-parent-toggle" aria-expanded="false">
             <span>Job Planning</span>
@@ -86,8 +85,8 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
             <?= navSubItem('/modules/planning/label/index.php',          'Label Printing',  $currentFile, [], 'nav-sub-item-nested', 'tag') ?>
             <?= navSubItem('/modules/planning/slitting/index.php',       'Jumbo Slitting',  $currentFile, [], 'nav-sub-item-nested', 'scissors') ?>
             <?= navSubItem('/modules/planning/printing/index.php',       'Printing',        $currentFile, [], 'nav-sub-item-nested', 'printer') ?>
-            <?= navSubItem('/modules/planning/flatbed/index.php',        'Flatbed',         $currentFile, [], 'nav-sub-item-nested', 'layout-wtf') ?>
-            <?= navSubItem('/modules/planning/rotery/index.php',         'Rotery Die',      $currentFile, [], 'nav-sub-item-nested', 'gear-wide-connected') ?>
+            <?= navSubItem('/modules/planning/flatbed/index.php',        'Die-Cutting',     $currentFile, [], 'nav-sub-item-nested', 'layout-wtf') ?>
+            <?= navSubItem('/modules/planning/rotery/index.php',         'BarCode',         $currentFile, [], 'nav-sub-item-nested', 'upc-scan') ?>
             <?= navSubItem('/modules/planning/label-slitting/index.php', 'Label Slitting',  $currentFile, [], 'nav-sub-item-nested', 'layout-split') ?>
             <?= navSubItem('/modules/planning/batch/index.php',          'Batch Printing',  $currentFile, [], 'nav-sub-item-nested', 'stack') ?>
             <?= navSubItem('/modules/planning/packing/index.php',        'Packaging',       $currentFile, [], 'nav-sub-item-nested', 'box') ?>
@@ -176,7 +175,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
         <?= navSubItem('/modules/operators/pos/index.php',            'POS Roll Operator',        $currentFile, [], 'nav-sub-item-nested', 'receipt') ?>
         <?= navSubItem('/modules/operators/oneply/index.php',         'Only Ply Operator',        $currentFile, [], 'nav-sub-item-nested', 'layers') ?>
         <?= navSubItem('/modules/operators/printing/index.php',       'Flexo Operator',           $currentFile, [], 'nav-sub-item-nested', 'printer') ?>
-        <?= navSubItem('/modules/operators/flatbed/index.php',        'Flat Bed Operator',        $currentFile, [], 'nav-sub-item-nested', 'layout-wtf') ?>
+        <?= navSubItem('/modules/operators/flatbed/index.php',        'Die-Cutting Operator',     $currentFile, [], 'nav-sub-item-nested', 'layout-wtf') ?>
         <?= navSubItem('/modules/operators/rotery/index.php',         'Rotery Die Operator',      $currentFile, [], 'nav-sub-item-nested', 'gear-wide-connected') ?>
         <?= navSubItem('/modules/operators/label-slitting/index.php', 'Label Slitting Operator',  $currentFile, [], 'nav-sub-item-nested', 'layout-split') ?>
         <?= navSubItem('/modules/operators/packing/index.php',        'Packing Operator',         $currentFile, [], 'nav-sub-item-nested', 'box-seam') ?>
@@ -221,7 +220,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
             <?= navSubItem('/modules/jobs/pos/index.php',            'POS Roll',        $currentFile, [], 'nav-sub-item-nested', 'receipt') ?>
             <?= navSubItem('/modules/jobs/oneply/index.php',         'One Ply',         $currentFile, [], 'nav-sub-item-nested', 'layers') ?>
             <?= navSubItem('/modules/jobs/printing/index.php',       'Flexo Printing',  $currentFile, [], 'nav-sub-item-nested', 'printer') ?>
-            <?= navSubItem('/modules/jobs/flatbed/index.php',        'Flat Bed',        $currentFile, [], 'nav-sub-item-nested', 'layout-wtf') ?>
+            <?= navSubItem('/modules/jobs/flatbed/index.php',        'Die-Cutting',     $currentFile, [], 'nav-sub-item-nested', 'layout-wtf') ?>
             <?= navSubItem('/modules/jobs/rotery/index.php',         'Rotery Die',      $currentFile, [], 'nav-sub-item-nested', 'gear-wide-connected') ?>
             <?= navSubItem('/modules/jobs/label-slitting/index.php', 'Label Slitting',  $currentFile, [], 'nav-sub-item-nested', 'layout-split') ?>
             <?= navSubItem('/modules/jobs/packing/index.php',        'Packing Slip',    $currentFile, [], 'nav-sub-item-nested', 'box-seam') ?>

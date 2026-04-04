@@ -164,6 +164,7 @@ $baseUrlDetected = detect_base_url();
 $defaultAppVersion = detect_default_app_version($configFile);
 $input = [
     'db_host' => 'localhost',
+    'db_port' => '3306',
     'db_name' => '',
     'db_user' => '',
     'db_pass' => '',
@@ -247,12 +248,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($input['db_host'] === '' || $input['db_name'] === '' || $input['db_user'] === '') {
         log_err('DB Host, DB Name, and DB Username are required.');
     }
+    $dbPort = (int)$input['db_port'];
+    if ($dbPort < 1 || $dbPort > 65535) {
+        log_err('DB Port must be between 1 and 65535.');
+    }
     if (!preg_match('/^\d+(?:\.\d+){0,3}$/', (string)$input['app_version'])) {
         log_err('Invalid App Version format. Use examples like 1.0 or 1.7.2');
     }
 
     if (empty($errors) && $input['create_database'] === '1') {
-        $serverConn = new mysqli($input['db_host'], $input['db_user'], $input['db_pass']);
+        $serverConn = new mysqli($input['db_host'], $input['db_user'], $input['db_pass'], '', $dbPort);
         if ($serverConn->connect_error) {
             log_err('Cannot connect to DB server for create-database: ' . $serverConn->connect_error);
         } else {
@@ -267,7 +272,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errors)) {
-        $conn = new mysqli($input['db_host'], $input['db_user'], $input['db_pass'], $input['db_name']);
+        $conn = new mysqli($input['db_host'], $input['db_user'], $input['db_pass'], $input['db_name'], $dbPort);
         if ($conn->connect_error) {
             log_err('Cannot connect to MySQL: ' . $conn->connect_error);
         } else {
@@ -346,6 +351,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $runtime[$targetEnv] = [
                     'DB_HOST' => $input['db_host'],
+                    'DB_PORT' => $dbPort,
                     'DB_USER' => $input['db_user'],
                     'DB_PASS' => $input['db_pass'],
                     'DB_NAME' => $input['db_name'],
@@ -452,6 +458,7 @@ table{width:100%;border-collapse:collapse;margin:10px 0 16px}th,td{border:1px so
         <input type="hidden" name="setup_csrf" value="<?= h((string)$_SESSION['setup_csrf']) ?>">
     <div class="grid">
       <div><label>DB Host</label><input name="db_host" value="<?= h($input['db_host']) ?>" required></div>
+            <div><label>DB Port</label><input name="db_port" type="number" min="1" max="65535" value="<?= h($input['db_port']) ?>" required></div>
       <div><label>DB Name</label><input name="db_name" value="<?= h($input['db_name']) ?>" required></div>
       <div><label>DB Username</label><input name="db_user" value="<?= h($input['db_user']) ?>" required></div>
       <div><label>DB Password</label><input type="password" name="db_pass" value="<?= h($input['db_pass']) ?>"></div>
