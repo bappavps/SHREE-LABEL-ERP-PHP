@@ -516,7 +516,7 @@ if (!$isEmbedded) {
 .bulk-check-col { width:42px; text-align:center; }
 
 .ps-quick-filter{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;padding:10px;border:1px solid #dbeafe;background:#f8fbff;border-radius:10px;margin:10px 0 12px}
-.ps-qf-item{display:flex;flex-direction:column;gap:3px;min-width:150px;flex:1;justify-content:center}
+.ps-qf-item{display:flex;flex-direction:column;gap:3px;min-width:120px;flex:1;justify-content:center}
 .ps-qf-item label{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8}
 .ps-qf-item input,.ps-qf-item select{height:36px;border:1px solid var(--border);border-radius:8px;padding:0 10px;font-size:.8rem;background:#fff}
 .ps-qf-item input:focus,.ps-qf-item select:focus{outline:none;border-color:#86efac;box-shadow:0 0 0 3px rgba(34,197,94,.1)}
@@ -558,7 +558,10 @@ if (!$isEmbedded) {
 .die-calc-title{font-size:.8rem;font-weight:800;color:#9a3412;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
 .die-calc-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px}
 .die-calc-grid select,.die-calc-grid input{height:38px;border:1px solid #fdba74;border-radius:8px;padding:0 10px;background:#fff;font-size:.85rem}
-@media (max-width:980px) { .ps-quick-filter{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));} .die-calc-grid{grid-template-columns:1fr;} }
+@media (max-width:1200px){.die-calc-grid{grid-template-columns:1fr 1fr}}
+@media (max-width:980px){.ps-quick-filter{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.die-calc-grid{grid-template-columns:1fr}}
+@media (max-width:768px){.ps-quick-filter{display:grid;grid-template-columns:1fr;margin:8px 0 10px}.ps-qf-item{min-width:auto}.ps-qf-actions{padding-top:10px;min-width:auto;width:100%}.ps-qf-reset{width:100%;justify-content:center}.die-calc-grid{grid-template-columns:1fr}.barcode-actions{flex-direction:column;align-items:stretch}.barcode-btn{width:100%;justify-content:center}.modal-card{width:90%;max-height:95vh}}
+@media (max-width:640px){.barcode-die-table{font-size:.7rem}.barcode-die-table thead th{padding:4px 2px}.barcode-die-table tbody td{padding:4px 2px}.ps-quick-filter{padding:8px;gap:6px;margin:6px 0 8px}.ps-qf-item{gap:2px}.ps-qf-item label{font-size:.55rem}.ps-qf-item input,.ps-qf-item select{height:32px;padding:0 8px;font-size:.7rem}.die-calc-box{padding:8px;margin-top:6px}.die-calc-title{font-size:.7rem;margin-bottom:6px}.die-calc-grid{grid-template-columns:1fr;gap:8px}.die-calc-grid select,.die-calc-grid input{height:34px;padding:0 8px;font-size:.75rem}.modal-form-section{grid-template-columns:1fr}.modal-body-pad{padding:10px 14px}.modal-head{padding:10px 14px}.modal-form-label{font-size:.6rem;margin-bottom:3px}.modal-form-input{height:36px;font-size:.7rem}.barcode-btn{padding:6px 10px;font-size:.7rem}.col-filter-btn{font-size:8px}.ps-qf-popup,.cfp{width:90vw;max-width:280px}.card-header{padding:8px 10px}}
 
 .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:2000; align-items:center; justify-content:center; }
 .modal-card { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:960px; max-height:92vh; overflow:auto; background:#fff; border-radius:14px; box-shadow:0 24px 60px rgba(0,0,0,.25); }
@@ -568,6 +571,7 @@ if (!$isEmbedded) {
 .modal-head .btn-ghost:hover { color:#fff !important; background:rgba(255,255,255,.1) !important; }
 .modal-body-pad { padding:20px 22px; }
 .modal-form-section { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px 16px; }
+@media (max-width:900px) { .modal-form-section { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 .modal-form-label { font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:#64748b; display:block; margin-bottom:4px; }
 .modal-form-input { width:100%; height:40px; border:1px solid #cbd5e1; border-radius:10px; padding:0 12px; font-size:.85rem; background:#fff; color:#0f172a; transition:border-color .15s,box-shadow .15s; }
 .modal-form-input:focus { outline:none; border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,.15); }

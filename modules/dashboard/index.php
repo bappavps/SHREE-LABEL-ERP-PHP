@@ -36,45 +36,61 @@ $whereRollPeriod = periodWhere('created_at', $period);
 $whereJobPeriod = periodWhere('created_at', $period);
 $whereJobCompletedPeriod = periodWhere('completed_at', $period);
 
+function safeQuery(mysqli $db, string $sql) {
+  try {
+    return $db->query($sql);
+  } catch (Throwable $e) {
+    return false;
+  }
+}
+
+function safeValue($result, string $key, $default = 0) {
+  if (!$result) {
+    return $default;
+  }
+  $row = $result->fetch_assoc();
+  return $row[$key] ?? $default;
+}
+
 // ── KPI Queries ──────────────────────────────────────────────
 $kpi = [];
 
-$r = $db->query("SELECT COUNT(*) AS c FROM paper_stock WHERE LOWER(COALESCE(status,'')) NOT IN ('consumed','disposed','scrap')");
-$kpi['stock_available'] = $r ? $r->fetch_assoc()['c'] : 0;
+$r = safeQuery($db, "SELECT COUNT(*) AS c FROM paper_stock WHERE LOWER(COALESCE(status,'')) NOT IN ('consumed','disposed','scrap')");
+$kpi['stock_available'] = (int)safeValue($r, 'c', 0);
 
-$r = $db->query("SELECT COUNT(*) AS c FROM estimates WHERE LOWER(COALESCE(status,'')) NOT IN ('rejected','converted','cancelled')");
-$kpi['estimates_active'] = $r ? $r->fetch_assoc()['c'] : 0;
+$r = safeQuery($db, "SELECT COUNT(*) AS c FROM estimates WHERE LOWER(COALESCE(status,'')) NOT IN ('rejected','converted','cancelled')");
+$kpi['estimates_active'] = (int)safeValue($r, 'c', 0);
 
-$r = $db->query("SELECT COUNT(*) AS c FROM sales_orders WHERE LOWER(COALESCE(status,'')) NOT IN ('completed','dispatched','cancelled','closed')");
-$kpi['orders_active'] = $r ? $r->fetch_assoc()['c'] : 0;
+$r = safeQuery($db, "SELECT COUNT(*) AS c FROM sales_orders WHERE LOWER(COALESCE(status,'')) NOT IN ('completed','dispatched','cancelled','closed')");
+$kpi['orders_active'] = (int)safeValue($r, 'c', 0);
 
-$r = $db->query("SELECT COUNT(*) AS c FROM planning WHERE LOWER(COALESCE(status,'')) NOT IN ('completed','closed','finalized','cancelled','done')");
-$kpi['jobs_pending'] = $r ? $r->fetch_assoc()['c'] : 0;
+$r = safeQuery($db, "SELECT COUNT(*) AS c FROM planning WHERE LOWER(COALESCE(status,'')) NOT IN ('completed','closed','finalized','cancelled','done')");
+$kpi['jobs_pending'] = (int)safeValue($r, 'c', 0);
 
-$r = $db->query("SELECT IFNULL(SUM(length_mtr),0) AS total FROM paper_stock WHERE LOWER(COALESCE(status,'')) NOT IN ('consumed','disposed','scrap')");
-$kpi['total_stock_mtr'] = $r ? number_format((float)$r->fetch_assoc()['total'], 0) : 0;
+$r = safeQuery($db, "SELECT IFNULL(SUM(length_mtr),0) AS total FROM paper_stock WHERE LOWER(COALESCE(status,'')) NOT IN ('consumed','disposed','scrap')");
+$kpi['total_stock_mtr'] = number_format((float)safeValue($r, 'total', 0), 0);
 
-$r = $db->query("SELECT IFNULL(SUM(selling_price),0) AS total FROM estimates WHERE created_at >= DATE_FORMAT(NOW(),'%Y-%m-01')");
-$kpi['monthly_estimates_value'] = $r ? number_format((float)$r->fetch_assoc()['total'], 2) : '0.00';
+$r = safeQuery($db, "SELECT IFNULL(SUM(selling_price),0) AS total FROM estimates WHERE created_at >= DATE_FORMAT(NOW(),'%Y-%m-01')");
+$kpi['monthly_estimates_value'] = number_format((float)safeValue($r, 'total', 0), 2);
 
-$r = $db->query("SELECT COUNT(*) AS c FROM paper_stock WHERE $whereRollPeriod");
-$kpi['rolls_added_period'] = $r ? (int)$r->fetch_assoc()['c'] : 0;
+$r = safeQuery($db, "SELECT COUNT(*) AS c FROM paper_stock WHERE $whereRollPeriod");
+$kpi['rolls_added_period'] = (int)safeValue($r, 'c', 0);
 
-$r = $db->query("SELECT COUNT(*) AS c FROM jobs WHERE $whereJobPeriod");
-$kpi['jobs_created_period'] = $r ? (int)$r->fetch_assoc()['c'] : 0;
+$r = safeQuery($db, "SELECT COUNT(*) AS c FROM jobs WHERE $whereJobPeriod");
+$kpi['jobs_created_period'] = (int)safeValue($r, 'c', 0);
 
-$r = $db->query("SELECT COUNT(*) AS c FROM jobs WHERE LOWER(status) IN ('closed','finalized','completed','qc passed') AND completed_at IS NOT NULL AND $whereJobCompletedPeriod");
-$kpi['jobs_completed_period'] = $r ? (int)$r->fetch_assoc()['c'] : 0;
+$r = safeQuery($db, "SELECT COUNT(*) AS c FROM jobs WHERE LOWER(status) IN ('closed','finalized','completed','qc passed') AND completed_at IS NOT NULL AND $whereJobCompletedPeriod");
+$kpi['jobs_completed_period'] = (int)safeValue($r, 'c', 0);
 
-$r = $db->query("SELECT COUNT(*) AS c FROM jobs WHERE LOWER(status) = 'running'");
-$kpi['jobs_running_now'] = $r ? (int)$r->fetch_assoc()['c'] : 0;
+$r = safeQuery($db, "SELECT COUNT(*) AS c FROM jobs WHERE LOWER(status) = 'running'");
+$kpi['jobs_running_now'] = (int)safeValue($r, 'c', 0);
 
-$r = $db->query("SELECT COUNT(*) AS c FROM paper_stock WHERE status='Available' AND length_mtr < 500");
-$kpi['rolls_low_stock'] = $r ? (int)$r->fetch_assoc()['c'] : 0;
+$r = safeQuery($db, "SELECT COUNT(*) AS c FROM paper_stock WHERE status='Available' AND length_mtr < 500");
+$kpi['rolls_low_stock'] = (int)safeValue($r, 'c', 0);
 
 // ── Breakdown: Paper Roll Status ────────────────────────────
 $paperStatusBreakdown = [];
-$r = $db->query("SELECT COALESCE(NULLIF(TRIM(status),''),'Unknown') AS status_name, COUNT(*) AS c FROM paper_stock WHERE $whereRollPeriod GROUP BY status_name ORDER BY c DESC");
+$r = safeQuery($db, "SELECT COALESCE(NULLIF(TRIM(status),''),'Unknown') AS status_name, COUNT(*) AS c FROM paper_stock WHERE $whereRollPeriod GROUP BY status_name ORDER BY c DESC");
 if ($r) {
   while ($row = $r->fetch_assoc()) {
     $paperStatusBreakdown[] = [
@@ -86,7 +102,7 @@ if ($r) {
 
 // ── Breakdown: Job Status ───────────────────────────────────
 $jobStatusBreakdown = [];
-$r = $db->query("SELECT COALESCE(NULLIF(TRIM(status),''),'Unknown') AS status_name, COUNT(*) AS c FROM jobs WHERE $whereJobPeriod GROUP BY status_name ORDER BY c DESC");
+$r = safeQuery($db, "SELECT COALESCE(NULLIF(TRIM(status),''),'Unknown') AS status_name, COUNT(*) AS c FROM jobs WHERE $whereJobPeriod GROUP BY status_name ORDER BY c DESC");
 if ($r) {
   while ($row = $r->fetch_assoc()) {
     $jobStatusBreakdown[] = [
@@ -109,14 +125,14 @@ for ($i = 5; $i >= 0; $i--) {
 $rollTrendMap = [];
 $jobTrendMap = [];
 
-$r = $db->query("SELECT DATE_FORMAT(created_at, '%Y-%m') AS ym, COUNT(*) AS c FROM paper_stock WHERE created_at >= '$trendStart' GROUP BY ym");
+$r = safeQuery($db, "SELECT DATE_FORMAT(created_at, '%Y-%m') AS ym, COUNT(*) AS c FROM paper_stock WHERE created_at >= '$trendStart' GROUP BY ym");
 if ($r) {
   while ($row = $r->fetch_assoc()) {
     $rollTrendMap[(string)$row['ym']] = (int)$row['c'];
   }
 }
 
-$r = $db->query("SELECT DATE_FORMAT(completed_at, '%Y-%m') AS ym, COUNT(*) AS c FROM jobs WHERE completed_at IS NOT NULL AND LOWER(status) IN ('closed','finalized','completed','qc passed') AND completed_at >= '$trendStart' GROUP BY ym");
+$r = safeQuery($db, "SELECT DATE_FORMAT(completed_at, '%Y-%m') AS ym, COUNT(*) AS c FROM jobs WHERE completed_at IS NOT NULL AND LOWER(status) IN ('closed','finalized','completed','qc passed') AND completed_at >= '$trendStart' GROUP BY ym");
 if ($r) {
   while ($row = $r->fetch_assoc()) {
     $jobTrendMap[(string)$row['ym']] = (int)$row['c'];
@@ -132,15 +148,15 @@ foreach ($monthKeys as $mk) {
 
 // ── Recent Sales Orders ──────────────────────────────────────
 $recentOrders = [];
-$res = $db->query("SELECT id, order_no, client_name, status, selling_price, created_at FROM sales_orders ORDER BY id DESC LIMIT 8");
+$res = safeQuery($db, "SELECT id, order_no, client_name, status, selling_price, created_at FROM sales_orders ORDER BY id DESC LIMIT 8");
 if ($res) {
     while ($row = $res->fetch_assoc()) $recentOrders[] = $row;
 }
 
 // ── Low Stock Alert ──────────────────────────────────────────
 $lowStockCount = 0;
-$r = $db->query("SELECT COUNT(*) AS c FROM paper_stock WHERE status = 'Available' AND length_mtr < 500");
-if ($r) $lowStockCount = (int)$r->fetch_assoc()['c'];
+$r = safeQuery($db, "SELECT COUNT(*) AS c FROM paper_stock WHERE status = 'Available' AND length_mtr < 500");
+$lowStockCount = (int)safeValue($r, 'c', 0);
 
 $canUseQrScanner = function_exists('canAccessPath')
   ? canAccessPath('/modules/dashboard/index.php')

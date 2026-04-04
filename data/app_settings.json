@@ -99,5 +99,5 @@
             }
         }
     },
-    "sidebar_collapse_delay_ms": 5000
+    "sidebar_collapse_delay_ms": 10000
 }
