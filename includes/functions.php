@@ -737,6 +737,9 @@ function paginationBar($total, $per_page, $current_page, $url_pattern) {
 function appSettingsDefaults() {
     return [
         'company_name' => APP_NAME,
+        'company_legal_name' => '',
+        'contact_person' => '',
+        'erp_display_name' => defined('TENANT_ERP_DISPLAY_NAME') ? TENANT_ERP_DISPLAY_NAME : '',
         'company_tagline' => 'ERP Master System',
         'company_email' => '',
         'company_mobile' => '',
@@ -744,7 +747,12 @@ function appSettingsDefaults() {
         'company_currency' => 'INR',
         'company_address' => '',
         'company_gst' => '',
+        'erp_email' => '',
+        'erp_phone' => '',
+        'erp_address' => '',
+        'erp_gst' => '',
         'logo_path' => '',
+        'erp_logo_path' => '',
         'flag_emoji' => '🇮🇳',
         'animated_flag_path' => '',
         'animated_flag_url' => '',
@@ -762,54 +770,83 @@ function appSettingsDefaults() {
  * Path to persistent app settings JSON.
  */
 function getAppSettingsPath() {
-    return __DIR__ . '/../data/app_settings.json';
+    $configuredPath = defined('TENANT_SETTINGS_FILE') ? trim((string)TENANT_SETTINGS_FILE) : '';
+    if ($configuredPath !== '') {
+        if (preg_match('#^(?:[A-Za-z]:)?[\\/]#', $configuredPath)) {
+            return $configuredPath;
+        }
+        return __DIR__ . '/../' . ltrim(str_replace('\\', '/', $configuredPath), '/');
+    }
+
+    $tenantSlug = defined('TENANT_SLUG') ? trim((string)TENANT_SLUG) : 'default';
+    $safeTenantSlug = preg_replace('/[^a-z0-9._-]+/i', '-', $tenantSlug);
+    $tenantPath = __DIR__ . '/../data/tenants/' . $safeTenantSlug . '/app_settings.json';
+    $legacyPath = __DIR__ . '/../data/app_settings.json';
+
+    if (is_file($tenantPath)) {
+        return $tenantPath;
+    }
+    if ($safeTenantSlug === 'default' && is_file($legacyPath)) {
+        return $legacyPath;
+    }
+    if (!is_file($tenantPath) && !is_file($legacyPath)) {
+        return $tenantPath;
+    }
+    return $legacyPath;
 }
 
 /**
  * Read app settings from JSON and merge with defaults.
  */
 function getAppSettings($noCache = false) {
-    static $cache = null;
-    if ($noCache) $cache = null;
-    if ($cache !== null) return $cache;
+    static $cache = [];
+    $path = getAppSettingsPath();
+    if ($noCache) {
+        unset($cache[$path]);
+    }
+    if (array_key_exists($path, $cache)) {
+        return $cache[$path];
+    }
 
     $defaults = appSettingsDefaults();
-    $path = getAppSettingsPath();
+    if (defined('TENANT_NAME') && trim((string)TENANT_NAME) !== '' && trim((string)$defaults['company_name']) === trim((string)APP_NAME)) {
+        $defaults['company_name'] = (string)TENANT_NAME;
+    }
     if (!is_file($path)) {
-        $cache = $defaults;
-        return $cache;
+        $cache[$path] = $defaults;
+        return $cache[$path];
     }
 
     $raw = @file_get_contents($path);
     if ($raw === false) {
-        $cache = $defaults;
-        return $cache;
+        $cache[$path] = $defaults;
+        return $cache[$path];
     }
 
     $decoded = json_decode($raw, true);
     if (!is_array($decoded)) {
-        $cache = $defaults;
-        return $cache;
+        $cache[$path] = $defaults;
+        return $cache[$path];
     }
 
-    $cache = array_merge($defaults, $decoded);
-    if (trim((string)$cache['company_mobile']) === '' && trim((string)$cache['company_phone']) !== '') {
-        $cache['company_mobile'] = (string)$cache['company_phone'];
+    $cache[$path] = array_merge($defaults, $decoded);
+    if (trim((string)$cache[$path]['company_mobile']) === '' && trim((string)$cache[$path]['company_phone']) !== '') {
+        $cache[$path]['company_mobile'] = (string)$cache[$path]['company_phone'];
     }
-    if (!is_array($cache['image_library'])) {
-        $cache['image_library'] = [];
+    if (!is_array($cache[$path]['image_library'])) {
+        $cache[$path]['image_library'] = [];
     } else {
-        foreach ($cache['image_library'] as $i => $img) {
+        foreach ($cache[$path]['image_library'] as $i => $img) {
             if (!is_array($img)) {
-                $cache['image_library'][$i] = ['path' => '', 'name' => '', 'uploaded_at' => '', 'category' => 'misc'];
+                $cache[$path]['image_library'][$i] = ['path' => '', 'name' => '', 'uploaded_at' => '', 'category' => 'misc'];
                 continue;
             }
-            if (empty($cache['image_library'][$i]['category'])) {
-                $cache['image_library'][$i]['category'] = 'misc';
+            if (empty($cache[$path]['image_library'][$i]['category'])) {
+                $cache[$path]['image_library'][$i]['category'] = 'misc';
             }
         }
     }
-    return $cache;
+    return $cache[$path];
 }
 
 /**
@@ -846,7 +883,6 @@ function saveAppSettings(array $settings) {
     $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     $ok = $json !== false ? (@file_put_contents($path, $json) !== false) : false;
     if ($ok) {
-        // Clear the cache so next getAppSettings() call reads fresh data
         getAppSettings(true);
     }
     return $ok;
@@ -1121,6 +1157,12 @@ function getNextJobId($department) {
  * Build ERP display name as "Company Name ERP".
  */
 function getErpDisplayName($companyName = '') {
+    $settings = getAppSettings();
+    $explicitDisplayName = trim((string)($settings['erp_display_name'] ?? (defined('TENANT_ERP_DISPLAY_NAME') ? TENANT_ERP_DISPLAY_NAME : '')));
+    if ($explicitDisplayName !== '') {
+        return $explicitDisplayName;
+    }
+
     $base = trim((string)$companyName);
     if ($base === '') {
         $app = trim((string)APP_NAME);

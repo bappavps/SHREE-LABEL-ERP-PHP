@@ -164,6 +164,7 @@ $canUseQrScanner = function_exists('canAccessPath')
 
 $pageTitle = 'Dashboard';
 include __DIR__ . '/../../includes/header.php';
+$dashboardBrand = function_exists('getErpDisplayName') ? getErpDisplayName() : APP_NAME;
 ?>
 
 <!-- Breadcrumb -->
@@ -178,7 +179,7 @@ include __DIR__ . '/../../includes/header.php';
   <div>
     <h1>Good <?= date('H') < 12 ? 'Morning' : (date('H') < 17 ? 'Afternoon' : 'Evening') ?>,
         <?= e(explode(' ', $_SESSION['user_name'] ?? 'User')[0]) ?> 👋</h1>
-    <p>Here's what's happening at <?= APP_NAME ?> today, <?= date('l, d M Y') ?></p>
+    <p>Here's what's happening at <?= e($dashboardBrand) ?> today, <?= date('l, d M Y') ?></p>
   </div>
 </div>
 

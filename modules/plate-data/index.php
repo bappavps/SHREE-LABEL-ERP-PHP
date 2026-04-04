@@ -52,6 +52,22 @@ function dieToolingNormalizeHeaderKey($value) {
   return trim($value);
 }
 
+function dieToolingExcelColumnLabel($index) {
+  $index = (int)$index;
+  if ($index < 0) {
+    return '';
+  }
+
+  $label = '';
+  do {
+    $remainder = $index % 26;
+    $label = chr(65 + $remainder) . $label;
+    $index = (int)floor($index / 26) - 1;
+  } while ($index >= 0);
+
+  return $label;
+}
+
 function dieToolingAutoMapHeaders(array $headers) {
   $synonyms = dieToolingColumnSynonyms();
   $normalizedHeaders = [];
@@ -439,6 +455,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       redirect(dieToolingRedirectUrl($mode));
     }
 
+    $nextSerial = 1;
+    $serialRes = $db->query("SELECT COALESCE(MAX(CAST(TRIM(sl_no) AS UNSIGNED)), 0) AS max_sl FROM {$tableName} WHERE TRIM(COALESCE(sl_no, '')) REGEXP '^[0-9]+$'");
+    if ($serialRes instanceof mysqli_result) {
+      $serialRow = $serialRes->fetch_assoc();
+      $nextSerial = ((int)($serialRow['max_sl'] ?? 0)) + 1;
+      $serialRes->close();
+    }
+
     $inserted = 0;
     foreach ($rows as $row) {
       $payload = [];
@@ -463,6 +487,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $payload[$key] = dieToolingCleanText($value, 190);
       }
 
+      // Import file serial is ignored; serial number is always auto-generated.
+      $payload['sl_no'] = (string)$nextSerial;
+
       $values = [];
       foreach ($importColumnKeys as $key) {
         $values[] = $payload[$key] ?? '';
@@ -470,6 +497,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $stmt->bind_param(str_repeat('s', count($values)), ...$values);
       if ($stmt->execute()) {
         $inserted++;
+        $nextSerial++;
       }
     }
     $stmt->close();
@@ -498,23 +526,134 @@ if ($editingId > 0) {
   }
 }
 
+$searchQuery = trim((string)($_GET['q'] ?? ''));
+$activeQuickFilters = [];
+$whereClauses = [];
+$quickWhereClauses = [];
+
+$rowOrderSql = "CASE WHEN TRIM(COALESCE(sl_no, '')) REGEXP '^[0-9]+$' THEN CAST(TRIM(sl_no) AS UNSIGNED) ELSE 2147483647 END ASC, id ASC";
+
+foreach ($quickFilters as $filter) {
+  $filterType = (string)($filter['type'] ?? '');
+  $filterKey = (string)($filter['key'] ?? '');
+  if ($filterKey === '' || !array_key_exists($filterKey, $columns)) {
+    continue;
+  }
+
+  if ($filterType === 'text' || $filterType === 'pick') {
+    $paramKey = 'qf_' . $filterKey;
+    $value = trim((string)($_GET[$paramKey] ?? ''));
+    $activeQuickFilters[$paramKey] = $value;
+    if ($value !== '') {
+      $valueEsc = $db->real_escape_string($value);
+      if ($filterType === 'text') {
+        $condition = "COALESCE(`{$filterKey}`, '') LIKE '%{$valueEsc}%'";
+      } else {
+        $condition = "TRIM(COALESCE(`{$filterKey}`, '')) = '{$valueEsc}'";
+      }
+      $whereClauses[] = $condition;
+      $quickWhereClauses[] = $condition;
+    }
+    continue;
+  }
+
+  if ($filterType === 'number_range') {
+    $minParam = 'qf_' . $filterKey . '_min';
+    $maxParam = 'qf_' . $filterKey . '_max';
+    $minRaw = trim((string)($_GET[$minParam] ?? ''));
+    $maxRaw = trim((string)($_GET[$maxParam] ?? ''));
+    $activeQuickFilters[$minParam] = $minRaw;
+    $activeQuickFilters[$maxParam] = $maxRaw;
+
+    $numericExpr = "CASE WHEN TRIM(COALESCE(`{$filterKey}`, '')) REGEXP '^-?[0-9]+(\\.[0-9]+)?$' THEN CAST(TRIM(`{$filterKey}`) AS DECIMAL(18,4)) ELSE NULL END";
+
+    if ($minRaw !== '' && is_numeric($minRaw)) {
+      $minValue = (float)$minRaw;
+      $condition = "{$numericExpr} >= {$minValue}";
+      $whereClauses[] = $condition;
+      $quickWhereClauses[] = $condition;
+    }
+    if ($maxRaw !== '' && is_numeric($maxRaw)) {
+      $maxValue = (float)$maxRaw;
+      $condition = "{$numericExpr} <= {$maxValue}";
+      $whereClauses[] = $condition;
+      $quickWhereClauses[] = $condition;
+    }
+  }
+}
+
+if ($searchQuery !== '') {
+  $searchEsc = $db->real_escape_string($searchQuery);
+  $searchLike = "'%" . $searchEsc . "%'";
+  $searchFields = array_merge(['sl_no'], array_keys($columns));
+  $searchParts = ["CAST(id AS CHAR) LIKE {$searchLike}"];
+  foreach ($searchFields as $fieldKey) {
+    $searchParts[] = "COALESCE(`{$fieldKey}`, '') LIKE {$searchLike}";
+  }
+
+  // Support searching by visual Sl.NO fallback (ordered row position) across full filtered dataset.
+  if (ctype_digit($searchQuery)) {
+    $serialNo = (int)$searchQuery;
+    if ($serialNo > 0) {
+      $serialOffset = $serialNo - 1;
+      $quickWhereSql = $quickWhereClauses ? (' WHERE ' . implode(' AND ', $quickWhereClauses)) : '';
+      $serialSql = "SELECT id FROM {$tableName}{$quickWhereSql} ORDER BY {$rowOrderSql} LIMIT {$serialOffset}, 1";
+      $serialRes = $db->query($serialSql);
+      if ($serialRes instanceof mysqli_result) {
+        $serialRow = $serialRes->fetch_assoc();
+        $serialRes->close();
+        if ($serialRow && isset($serialRow['id'])) {
+          $searchParts[] = 'id = ' . (int)$serialRow['id'];
+        }
+      }
+    }
+  }
+
+  if ($searchParts) {
+    $whereClauses[] = '(' . implode(' OR ', $searchParts) . ')';
+  }
+}
+
+$whereSql = $whereClauses ? (' WHERE ' . implode(' AND ', $whereClauses)) : '';
+
+$allowedRowsPerPage = [10, 20, 40, 50, 100];
+$rowsPerPageRaw = strtoupper(trim((string)($_GET['per_page'] ?? '100')));
+$showAllRows = $rowsPerPageRaw === 'ALL';
 $rowsPerPage = 100;
+if (!$showAllRows) {
+  $rowsPerPageCandidate = (int)$rowsPerPageRaw;
+  if (in_array($rowsPerPageCandidate, $allowedRowsPerPage, true)) {
+    $rowsPerPage = $rowsPerPageCandidate;
+  }
+}
 $currentPage = max(1, (int)($_GET['page'] ?? 1));
 $totalRows = 0;
-$countRes = $db->query("SELECT COUNT(*) AS total_count FROM {$tableName}");
+$countRes = $db->query("SELECT COUNT(*) AS total_count FROM {$tableName}{$whereSql}");
 if ($countRes instanceof mysqli_result) {
   $countRow = $countRes->fetch_assoc();
   $totalRows = (int)($countRow['total_count'] ?? 0);
   $countRes->close();
 }
-$totalPages = max(1, (int)ceil($totalRows / $rowsPerPage));
-if ($currentPage > $totalPages) {
-  $currentPage = $totalPages;
+
+if ($showAllRows) {
+  $rowsPerPage = max(1, $totalRows);
+  $totalPages = 1;
+  $currentPage = 1;
+  $offset = 0;
+} else {
+  $totalPages = max(1, (int)ceil($totalRows / $rowsPerPage));
+  if ($currentPage > $totalPages) {
+    $currentPage = $totalPages;
+  }
+  $offset = ($currentPage - 1) * $rowsPerPage;
 }
-$offset = ($currentPage - 1) * $rowsPerPage;
 
 $rows = [];
-$res = $db->query("SELECT * FROM {$tableName} ORDER BY CASE WHEN TRIM(COALESCE(sl_no, '')) REGEXP '^[0-9]+$' THEN CAST(TRIM(sl_no) AS UNSIGNED) ELSE 2147483647 END ASC, id ASC LIMIT {$offset}, {$rowsPerPage}");
+$rowSql = "SELECT * FROM {$tableName}{$whereSql} ORDER BY {$rowOrderSql}";
+if (!$showAllRows) {
+  $rowSql .= " LIMIT {$offset}, {$rowsPerPage}";
+}
+$res = $db->query($rowSql);
 if ($res) {
   $rows = $res->fetch_all(MYSQLI_ASSOC);
 }
@@ -543,6 +682,9 @@ if ($calcRes instanceof mysqli_result) {
     $calculatorPlates[] = [
       'id' => (int)($calcRow['id'] ?? 0),
       'label' => $calcLabel,
+      'sl_no' => $calcSlNo,
+      'job_name' => $calcName,
+      'plate_no' => $calcPlate,
       'qty_roll' => trim((string)($calcRow['qty_roll'] ?? '')),
       'ups' => trim((string)($calcRow['ups'] ?? '')),
       'repeat_value' => trim((string)($calcRow['repeat_value'] ?? '')),
@@ -619,12 +761,17 @@ if (!$isEmbedded) {
 .plate-calc-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px}
 .plate-calc-grid select,.plate-calc-grid input{height:38px;border:1px solid #fdba74;border-radius:8px;padding:0 10px;background:#fff;font-size:.85rem}
 .plate-calc-grid input[readonly]{background:#f8fafc;font-weight:800;color:#0f172a}
+.plate-calc-meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
+.plate-calc-meta .meta-item{border:1px solid #fdba74;border-radius:8px;background:#fff;padding:8px 10px}
+.plate-calc-meta .meta-key{font-size:.65rem;font-weight:800;color:#9a3412;text-transform:uppercase;letter-spacing:.06em}
+.plate-calc-meta .meta-val{margin-top:3px;font-size:.84rem;color:#0f172a;font-weight:700;word-break:break-word}
 @media (max-width:1200px){.plate-calc-grid{grid-template-columns:1fr 1fr}.detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:980px){.qf{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000}.modal-card{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:95%;max-width:1100px;max-height:90vh;overflow:auto;background:#fff;border-radius:10px;box-shadow:0 20px 40px rgba(0,0,0,.2)}.modal-head{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--border)}.form-grid-2{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:14px}.form-group{display:flex;flex-direction:column;gap:6px}.form-group label{font-size:.76rem;font-weight:700;color:#475569}.form-group input,.form-group select{height:38px;border:1px solid var(--border);border-radius:8px;padding:0 10px}.form-actions{display:flex;justify-content:flex-end;gap:8px}.col-span-all{grid-column:1/-1}
 @media (max-width:900px){.form-grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}.module-table{font-size:.75rem}.detail-grid{grid-template-columns:1fr}}
-@media (max-width:768px){.qf{display:grid;grid-template-columns:1fr;margin:8px 0 10px}.qf-item{min-width:auto}.qf-actions{padding-top:10px;min-width:auto;width:100%}.qf-reset{width:100%;justify-content:center}.detail-grid{grid-template-columns:1fr}.plate-calc-grid{grid-template-columns:1fr}.module-actions{flex-direction:column;align-items:stretch}.module-btn{width:100%;justify-content:center}.modal-card{width:90%;max-height:95vh;top:50%;max-width:500px}.form-grid-2{grid-template-columns:1fr;padding:10px}}
-@media (max-width:640px){.module-table{min-width:auto;font-size:.7rem}.module-table thead th{padding:4px 2px}.module-table tbody td{padding:4px 2px}.qf{padding:8px;gap:6px;margin:6px 0 8px}.qf-item{gap:2px}.qf-item label{font-size:.55rem}.qf-item input,.qf-item select{height:32px;padding:0 8px;font-size:.7rem}.text-responsive{font-size:.7rem !important}.detail-grid{grid-template-columns:1fr;gap:8px}.detail-item{padding:6px}.detail-key{font-size:.6rem}.detail-val{font-size:.75rem}.plate-calc-box{padding:8px;margin-top:6px}.plate-calc-title{font-size:.7rem;margin-bottom:6px}.plate-calc-grid{grid-template-columns:1fr;gap:8px}.plate-calc-grid select,.plate-calc-grid input{height:34px;padding:0 8px;font-size:.75rem}.card-header{padding:8px 10px}.form-grid-2{grid-template-columns:1fr;padding:8px;gap:8px}.module-bulk-bar{padding:8px 10px;gap:8px;flex-direction:column}.module-bulk-meta{font-size:.75rem}.module-pagination{padding:8px 4px}.module-btn{padding:6px 10px;font-size:.7rem}.qf-popup,.cfp{width:90vw;max-width:280px}.col-filter-btn{font-size:8px}}
+@media (max-width:768px){.qf{display:grid;grid-template-columns:1fr;margin:8px 0 10px}.qf-item{min-width:auto}.qf-actions{padding-top:10px;min-width:auto;width:100%}.qf-reset{width:100%;justify-content:center}.detail-grid{grid-template-columns:1fr}.plate-calc-grid{grid-template-columns:1fr}.plate-calc-meta{grid-template-columns:1fr}.module-actions{flex-direction:column;align-items:stretch}.module-btn{width:100%;justify-content:center}.modal-card{width:90%;max-height:95vh;top:50%;max-width:500px}.form-grid-2{grid-template-columns:1fr;padding:10px}}
+@media (max-width:640px){.module-table{min-width:900px;font-size:.7rem}.module-table thead th{padding:4px 2px}.module-table tbody td{padding:4px 2px}.qf{padding:8px;gap:6px;margin:6px 0 8px}.qf-item{gap:2px}.qf-item label{font-size:.55rem}.qf-item input,.qf-item select{height:32px;padding:0 8px;font-size:.7rem}.text-responsive{font-size:.7rem !important}.detail-grid{grid-template-columns:1fr;gap:8px}.detail-item{padding:6px}.detail-key{font-size:.6rem}.detail-val{font-size:.75rem}.plate-calc-box{padding:8px;margin-top:6px}.plate-calc-title{font-size:.7rem;margin-bottom:6px}.plate-calc-grid{grid-template-columns:1fr;gap:8px}.plate-calc-grid select,.plate-calc-grid input{height:34px;padding:0 8px;font-size:.75rem}.card-header{padding:8px 10px}.form-grid-2{grid-template-columns:1fr;padding:8px;gap:8px}.module-bulk-bar{padding:8px 10px;gap:8px;flex-direction:column}.module-bulk-meta{font-size:.75rem}.module-pagination{padding:8px 4px}.module-btn{padding:6px 10px;font-size:.7rem}.qf-popup,.cfp{width:90vw;max-width:280px}.col-filter-btn{font-size:8px}}
+@media (max-width:360px){.card{border-radius:10px}.card-header{padding:7px 8px}.card-title{font-size:.78rem}.module-actions{gap:6px}.module-btn{padding:6px 8px;font-size:.66rem;gap:4px}.qf{padding:6px;gap:5px;margin:5px 0 7px}.qf-item label{font-size:.5rem;letter-spacing:.04em}.qf-item input,.qf-item select{height:30px;padding:0 6px;font-size:.66rem}.qf-reset{height:32px;font-size:.66rem;padding:0 10px}.module-table{min-width:820px}.module-table thead th{padding:3px 2px;font-size:.62rem}.module-table tbody td{padding:3px 2px;font-size:.64rem}.detail-item{padding:5px}.detail-key{font-size:.55rem}.detail-val{font-size:.68rem}.plate-calc-box{padding:7px}.plate-calc-title{font-size:.66rem}.plate-calc-grid select,.plate-calc-grid input{height:32px;font-size:.68rem}.modal-head{padding:8px 10px}.modal-body-pad{padding:8px 10px}.modal-form-input{height:34px;font-size:.66rem}.module-page-btn{min-width:30px;height:28px;padding:0 7px;font-size:.66rem}.qf-popup,.cfp{max-width:260px}}
 </style>
 
 <div class="card">
@@ -668,9 +815,18 @@ if (!$isEmbedded) {
 </div>
 
 <div class="card">
-  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
     <span class="card-title"><?= e($moduleLabel) ?> Table</span>
-    <span style="font-size:.82rem;color:var(--text-muted);">Total Rows: <?= (int)$totalRows ?></span>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <label for="rowsPerPageSelect" style="font-size:.78rem;color:#475569;font-weight:700;">Rows:</label>
+      <select id="rowsPerPageSelect" style="height:34px;border:1px solid var(--border);border-radius:8px;padding:0 10px;font-size:.78rem;background:#fff;">
+        <?php foreach ($allowedRowsPerPage as $perPageOption): ?>
+          <option value="<?= (int)$perPageOption ?>" <?= (!$showAllRows && (int)$rowsPerPage === (int)$perPageOption) ? 'selected' : '' ?>><?= (int)$perPageOption ?></option>
+        <?php endforeach; ?>
+        <option value="ALL" <?= $showAllRows ? 'selected' : '' ?>>ALL</option>
+      </select>
+      <span id="tableVisibleCount" data-total-rows="<?= (int)$totalRows ?>" style="font-size:.82rem;color:var(--text-muted);">Visible Rows: <?= (int)count($rows) ?> / <?= (int)count($rows) ?> | Total: <?= (int)$totalRows ?></span>
+    </div>
   </div>
 
   <?php if (!$isDesignMode): ?>
@@ -694,7 +850,7 @@ if (!$isEmbedded) {
           <select id="plateCalcSelect">
             <option value="">-- Select Plate --</option>
             <?php foreach ($calculatorPlates as $calcPlate): ?>
-              <option value="<?= (int)$calcPlate['id'] ?>" data-qty-roll="<?= e((string)$calcPlate['qty_roll']) ?>" data-ups="<?= e((string)$calcPlate['ups']) ?>" data-repeat="<?= e((string)$calcPlate['repeat_value']) ?>"><?= e((string)$calcPlate['label']) ?></option>
+              <option value="<?= (int)$calcPlate['id'] ?>" data-sl-no="<?= e((string)$calcPlate['sl_no']) ?>" data-plate-no="<?= e((string)$calcPlate['plate_no']) ?>" data-job-name="<?= e((string)$calcPlate['job_name']) ?>" data-qty-roll="<?= e((string)$calcPlate['qty_roll']) ?>" data-ups="<?= e((string)$calcPlate['ups']) ?>" data-repeat="<?= e((string)$calcPlate['repeat_value']) ?>"><?= e((string)$calcPlate['label']) ?></option>
             <?php endforeach; ?>
           </select>
         </div>
@@ -707,30 +863,35 @@ if (!$isEmbedded) {
           <input type="number" id="plateCalcMeter" min="0" step="0.01" placeholder="Enter meter">
         </div>
       </div>
+      <div class="plate-calc-meta">
+        <div class="meta-item"><div class="meta-key">SL No</div><div class="meta-val" id="plateCalcSlNo">-</div></div>
+        <div class="meta-item"><div class="meta-key">Plate No</div><div class="meta-val" id="plateCalcPlateNo">-</div></div>
+        <div class="meta-item"><div class="meta-key">Job Name</div><div class="meta-val" id="plateCalcJobName">-</div></div>
+      </div>
       <div style="font-size:.74rem;color:#9a3412;margin-top:8px;">Enter Quantity to get Meter, or enter Meter to get Quantity. Formula: If Qty.Roll available → Meter = Qty / Qty.Roll; else → Meter = (Qty / UPS) × (Repeat / 1000)</div>
     </div>
   <?php endif; ?>
 
   <div class="qf no-print" id="moduleQuickFilter">
-    <div class="qf-item"><label>Global Search</label><input type="text" id="qf-search" placeholder="Search everything..."></div>
+    <div class="qf-item"><label>Global Search</label><input type="text" id="qf-search" value="<?= e($searchQuery) ?>" placeholder="Search everything..."></div>
     <?php foreach ($quickFilters as $filter): ?>
       <?php if (($filter['type'] ?? '') === 'text'): ?>
         <div class="qf-item">
           <label><?= e((string)$filter['label']) ?></label>
-          <input type="text" id="qf-<?= e((string)$filter['key']) ?>" placeholder="<?= e((string)($filter['placeholder'] ?? 'Search...')) ?>">
+          <input type="text" id="qf-<?= e((string)$filter['key']) ?>" value="<?= e((string)($activeQuickFilters['qf_' . (string)$filter['key']] ?? '')) ?>" placeholder="<?= e((string)($filter['placeholder'] ?? 'Search...')) ?>">
         </div>
       <?php elseif (($filter['type'] ?? '') === 'pick'): ?>
         <div class="qf-item">
           <label><?= e((string)$filter['label']) ?></label>
           <div class="qf-picker">
-            <input type="hidden" id="qf-<?= e((string)$filter['key']) ?>" value="">
+            <input type="hidden" id="qf-<?= e((string)$filter['key']) ?>" value="<?= e((string)($activeQuickFilters['qf_' . (string)$filter['key']] ?? '')) ?>">
             <button type="button" class="qf-picker-btn" data-qf-picker="<?= e((string)$filter['key']) ?>"><span class="muted"><?= e((string)($filter['allLabel'] ?? 'All')) ?></span><i class="bi bi-chevron-down"></i></button>
             <div class="qf-popup" id="qf-popup-<?= e((string)$filter['key']) ?>"></div>
           </div>
         </div>
       <?php elseif (($filter['type'] ?? '') === 'number_range'): ?>
-        <div class="qf-item"><label><?= e((string)$filter['label']) ?> Min</label><input type="number" step="0.01" id="qf-<?= e((string)$filter['key']) ?>-min" placeholder="<?= e((string)($filter['minPlaceholder'] ?? 'Min')) ?>"></div>
-        <div class="qf-item"><label><?= e((string)$filter['label']) ?> Max</label><input type="number" step="0.01" id="qf-<?= e((string)$filter['key']) ?>-max" placeholder="<?= e((string)($filter['maxPlaceholder'] ?? 'Max')) ?>"></div>
+        <div class="qf-item"><label><?= e((string)$filter['label']) ?> Min</label><input type="number" step="0.01" id="qf-<?= e((string)$filter['key']) ?>-min" value="<?= e((string)($activeQuickFilters['qf_' . (string)$filter['key'] . '_min'] ?? '')) ?>" placeholder="<?= e((string)($filter['minPlaceholder'] ?? 'Min')) ?>"></div>
+        <div class="qf-item"><label><?= e((string)$filter['label']) ?> Max</label><input type="number" step="0.01" id="qf-<?= e((string)$filter['key']) ?>-max" value="<?= e((string)($activeQuickFilters['qf_' . (string)$filter['key'] . '_max'] ?? '')) ?>" placeholder="<?= e((string)($filter['maxPlaceholder'] ?? 'Max')) ?>"></div>
       <?php endif; ?>
     <?php endforeach; ?>
     <div class="qf-actions"><button type="button" class="qf-reset" onclick="resetQuickFilters()">Reset</button></div>
@@ -744,8 +905,10 @@ if (!$isEmbedded) {
           <?php if (!$isDesignMode): ?>
             <th class="bulk-check-col no-print"><input type="checkbox" id="selectAllRows"></th>
           <?php endif; ?>
-          <th><span class="col-filter-wrap">SL No.<button type="button" class="col-filter-btn no-print" data-filter-field="__sl_no__"><i class="bi bi-funnel-fill"></i><span class="filter-count"></span></button><div class="cfp no-print" id="cfp-__sl_no__"></div></span></th>
+          <th><span class="col-filter-wrap">Sl.NO<button type="button" class="col-filter-btn no-print" data-filter-field="__sl_no__"><i class="bi bi-funnel-fill"></i><span class="filter-count"></span></button><div class="cfp no-print" id="cfp-__sl_no__"></div></span></th>
+          <th><span class="col-filter-wrap">Plate Number<button type="button" class="col-filter-btn no-print" data-filter-field="plate"><i class="bi bi-funnel-fill"></i><span class="filter-count"></span></button><div class="cfp no-print" id="cfp-plate"></div></span></th>
           <?php foreach ($columns as $key => $label): ?>
+            <?php if ($key === 'plate') { continue; } ?>
             <th><span class="col-filter-wrap"><?= e($label) ?><button type="button" class="col-filter-btn no-print" data-filter-field="<?= e($key) ?>"><i class="bi bi-funnel-fill"></i><span class="filter-count"></span></button><div class="cfp no-print" id="cfp-<?= e($key) ?>"></div></span></th>
           <?php endforeach; ?>
           <th>Actions</th>
@@ -762,7 +925,9 @@ if (!$isEmbedded) {
               <td class="bulk-check-col no-print"><input type="checkbox" class="row-check" value="<?= (int)$row['id'] ?>"></td>
             <?php endif; ?>
             <td data-field="__sl_no__"><?= e($displaySlNo !== '' ? $displaySlNo : (string)($index + 1)) ?></td>
+            <td data-field="plate"><?= e(trim((string)($row['plate'] ?? ''))) ?></td>
             <?php foreach ($columns as $key => $label): ?>
+              <?php if ($key === 'plate') { continue; } ?>
               <?php
                 $rawValue = (string)($row[$key] ?? '');
                 $displayValue = dieToolingDisplayValue($rawValue);
@@ -805,6 +970,18 @@ if (!$isEmbedded) {
   <?php if ($totalPages > 1): ?>
     <?php
       $basePath = dieToolingRedirectUrl($mode);
+      $pageBaseParams = ['per_page' => $showAllRows ? 'ALL' : (string)$rowsPerPage];
+      if ($searchQuery !== '') {
+        $pageBaseParams['q'] = $searchQuery;
+      }
+      foreach ($activeQuickFilters as $filterParamKey => $filterParamValue) {
+        if (trim((string)$filterParamValue) === '') {
+          continue;
+        }
+        $pageBaseParams[$filterParamKey] = (string)$filterParamValue;
+      }
+      $pageBaseQuery = http_build_query($pageBaseParams);
+      $queryJoiner = (strpos($basePath, '?') !== false) ? '&' : '?';
       $prevPage = max(1, $currentPage - 1);
       $nextPage = min($totalPages, $currentPage + 1);
       $windowStart = max(1, $currentPage - 3);
@@ -813,11 +990,11 @@ if (!$isEmbedded) {
     <div class="module-pagination no-print">
       <div style="font-size:.78rem;color:#64748b;">Showing page <?= (int)$currentPage ?> of <?= (int)$totalPages ?> (<?= (int)$rowsPerPage ?> rows/page)</div>
       <div class="module-page-list">
-        <a class="module-page-btn <?= $currentPage <= 1 ? 'disabled' : '' ?>" href="<?= e($basePath) ?>?page=<?= (int)$prevPage ?>">Prev</a>
+        <a class="module-page-btn <?= $currentPage <= 1 ? 'disabled' : '' ?>" href="<?= e($basePath) ?><?= e($queryJoiner) ?><?= e($pageBaseQuery) ?>&page=<?= (int)$prevPage ?>">Prev</a>
         <?php for ($p = $windowStart; $p <= $windowEnd; $p++): ?>
-          <a class="module-page-btn <?= $p === $currentPage ? 'active' : '' ?>" href="<?= e($basePath) ?>?page=<?= (int)$p ?>"><?= (int)$p ?></a>
+          <a class="module-page-btn <?= $p === $currentPage ? 'active' : '' ?>" href="<?= e($basePath) ?><?= e($queryJoiner) ?><?= e($pageBaseQuery) ?>&page=<?= (int)$p ?>"><?= (int)$p ?></a>
         <?php endfor; ?>
-        <a class="module-page-btn <?= $currentPage >= $totalPages ? 'disabled' : '' ?>" href="<?= e($basePath) ?>?page=<?= (int)$nextPage ?>">Next</a>
+        <a class="module-page-btn <?= $currentPage >= $totalPages ? 'disabled' : '' ?>" href="<?= e($basePath) ?><?= e($queryJoiner) ?><?= e($pageBaseQuery) ?>&page=<?= (int)$nextPage ?>">Next</a>
       </div>
     </div>
   <?php endif; ?>
@@ -951,9 +1128,13 @@ if (!$isEmbedded) {
             </label>
             <select name="mapping[<?= e($key) ?>]" data-map-select="<?= e($key) ?>">
               <option value="">-- Skip --</option>
-              <?php foreach ((array)$importPreview['headers'] as $header): ?>
-                <?php $header = (string)$header; ?>
-                <option value="<?= e($header) ?>" <?= ($suggested !== '' && $suggested === $header) ? 'selected' : '' ?>><?= e($header) ?></option>
+              <?php foreach ((array)$importPreview['headers'] as $headerIndex => $header): ?>
+                <?php
+                  $header = (string)$header;
+                  $excelCol = dieToolingExcelColumnLabel((int)$headerIndex);
+                  $displayLabel = trim($header) !== '' ? ($excelCol . ' | ' . $header) : $excelCol;
+                ?>
+                <option value="<?= e($header) ?>" <?= ($suggested !== '' && $suggested === $header) ? 'selected' : '' ?>><?= e($displayLabel) ?></option>
               <?php endforeach; ?>
             </select>
           </div>
@@ -975,10 +1156,94 @@ if (!$isEmbedded) {
 
 <script>
 (function () {
+  var rowsPerPageSelect = document.getElementById('rowsPerPageSelect');
+  if (rowsPerPageSelect) {
+    rowsPerPageSelect.addEventListener('change', function () {
+      var value = String(rowsPerPageSelect.value || '100').trim().toUpperCase();
+      var url = new URL(window.location.href);
+      url.searchParams.set('per_page', value);
+      url.searchParams.set('page', '1');
+      window.location.href = url.toString();
+    });
+  }
+
   var calcSelect = document.getElementById('plateCalcSelect');
   var calcQty = document.getElementById('plateCalcQty');
   var calcMeter = document.getElementById('plateCalcMeter');
+  var calcSlNo = document.getElementById('plateCalcSlNo');
+  var calcPlateNo = document.getElementById('plateCalcPlateNo');
+  var calcJobName = document.getElementById('plateCalcJobName');
   if (calcSelect && calcQty && calcMeter) {
+    var calcMissingModal = null;
+    var lastMissingSignature = '';
+
+    function ensureCalcMissingModal() {
+      if (calcMissingModal) return calcMissingModal;
+
+      var overlay = document.createElement('div');
+      overlay.id = 'plateCalcMissingModal';
+      overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:3500;align-items:center;justify-content:center;padding:14px;';
+
+      var card = document.createElement('div');
+      card.style.cssText = 'width:100%;max-width:420px;background:#fff;border-radius:12px;box-shadow:0 20px 45px rgba(2,6,23,.35);overflow:hidden;border:1px solid #e2e8f0;';
+      card.innerHTML = '' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#fff7ed;border-bottom:1px solid #fed7aa;">' +
+          '<strong style="font-size:.92rem;color:#9a3412;">Calculation blocked</strong>' +
+          '<button type="button" data-close="1" style="border:none;background:transparent;color:#9a3412;font-size:1rem;cursor:pointer;line-height:1;">&times;</button>' +
+        '</div>' +
+        '<div style="padding:12px;">' +
+          '<div style="font-size:.84rem;color:#334155;">Required data missing for calculator:</div>' +
+          '<ul data-missing-list style="margin:8px 0 0;padding-left:18px;font-size:.84rem;color:#b91c1c;"></ul>' +
+        '</div>' +
+        '<div style="padding:0 12px 12px;display:flex;justify-content:flex-end;">' +
+          '<button type="button" data-close="1" class="btn btn-secondary">OK</button>' +
+        '</div>';
+
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+
+      overlay.addEventListener('click', function (event) {
+        var target = event.target;
+        if (target === overlay || (target && target.getAttribute && target.getAttribute('data-close') === '1')) {
+          hideCalcMissingModal();
+        }
+      });
+
+      calcMissingModal = overlay;
+      return calcMissingModal;
+    }
+
+    function hideCalcMissingModal(resetSignature) {
+      if (calcMissingModal) calcMissingModal.style.display = 'none';
+      if (resetSignature) lastMissingSignature = '';
+    }
+
+    function showCalcMissingModal(missingFields) {
+      var cleanMissing = (missingFields || []).filter(function (item) { return String(item || '').trim() !== ''; });
+      if (!cleanMissing.length) {
+        hideCalcMissingModal(false);
+        return;
+      }
+
+      var signature = cleanMissing.join('|');
+      if (signature === lastMissingSignature) {
+        return;
+      }
+      lastMissingSignature = signature;
+
+      var modal = ensureCalcMissingModal();
+      var list = modal.querySelector('[data-missing-list]');
+      if (list) {
+        list.innerHTML = '';
+        cleanMissing.forEach(function (fieldName) {
+          var li = document.createElement('li');
+          li.textContent = fieldName;
+          list.appendChild(li);
+        });
+      }
+      modal.style.display = 'flex';
+    }
+
     function parseNum(raw) {
       var cleaned = String(raw || '').trim().replace(/,/g, '').replace(/[^0-9.\-]/g, '');
       var n = parseFloat(cleaned);
@@ -987,41 +1252,84 @@ if (!$isEmbedded) {
     function getPlateParams() {
       var option = calcSelect.options[calcSelect.selectedIndex] || null;
       return {
+        selected: !!(option && String(option.value || '').trim() !== ''),
         qtyRoll: parseNum(option ? option.getAttribute('data-qty-roll') : 0),
         ups: parseNum(option ? option.getAttribute('data-ups') : 0),
         repeatValue: parseNum(option ? option.getAttribute('data-repeat') : 0)
       };
     }
+    function getMissingCalcFields(params) {
+      if (!params || !params.selected) {
+        return ['Plate Selection'];
+      }
+      if (params.qtyRoll > 0) {
+        return [];
+      }
+      var missing = [];
+      if (params.ups <= 0) missing.push('UPS');
+      if (params.repeatValue <= 0) missing.push('Repeat Value');
+      return missing;
+    }
+    function updatePlateMeta() {
+      var option = calcSelect.options[calcSelect.selectedIndex] || null;
+      var slNo = option ? String(option.getAttribute('data-sl-no') || '').trim() : '';
+      var plateNo = option ? String(option.getAttribute('data-plate-no') || '').trim() : '';
+      var jobName = option ? String(option.getAttribute('data-job-name') || '').trim() : '';
+      if (calcSlNo) calcSlNo.textContent = slNo !== '' ? slNo : '-';
+      if (calcPlateNo) calcPlateNo.textContent = plateNo !== '' ? plateNo : '-';
+      if (calcJobName) calcJobName.textContent = jobName !== '' ? jobName : '-';
+    }
     function recalcFromQty() {
       var p = getPlateParams();
       var qty = parseNum(calcQty.value || 0);
-      if (qty <= 0) { calcMeter.value = ''; return; }
+      if (qty <= 0) { calcMeter.value = ''; hideCalcMissingModal(true); return; }
+
+      var missing = getMissingCalcFields(p);
+      if (missing.length) {
+        calcMeter.value = '';
+        showCalcMissingModal(missing);
+        return;
+      }
+
       var meter = 0;
       if (p.qtyRoll > 0) {
         meter = qty / p.qtyRoll;
       } else if (p.ups > 0 && p.repeatValue > 0) {
         meter = (qty / p.ups) * (p.repeatValue / 1000);
       }
+      hideCalcMissingModal(true);
       calcMeter.value = meter > 0 ? meter.toFixed(2) : '';
     }
     function recalcFromMeter() {
       var p = getPlateParams();
       var meter = parseNum(calcMeter.value || 0);
-      if (meter <= 0) { calcQty.value = ''; return; }
+      if (meter <= 0) { calcQty.value = ''; hideCalcMissingModal(true); return; }
+
+      var missing = getMissingCalcFields(p);
+      if (missing.length) {
+        calcQty.value = '';
+        showCalcMissingModal(missing);
+        return;
+      }
+
       var qty = 0;
       if (p.qtyRoll > 0) {
         qty = meter * p.qtyRoll;
       } else if (p.ups > 0 && p.repeatValue > 0) {
         qty = (meter / (p.repeatValue / 1000)) * p.ups;
       }
+      hideCalcMissingModal(true);
       calcQty.value = qty > 0 ? Math.round(qty) : '';
     }
     calcQty.addEventListener('input', function () { recalcFromQty(); });
     calcMeter.addEventListener('input', function () { recalcFromMeter(); });
     calcSelect.addEventListener('change', function () {
+      hideCalcMissingModal(true);
+      updatePlateMeta();
       if (parseNum(calcQty.value) > 0) recalcFromQty();
       else if (parseNum(calcMeter.value) > 0) recalcFromMeter();
     });
+    updatePlateMeta();
   }
 
   var detailLabels = <?= json_encode($columns, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?> || {};
@@ -1216,6 +1524,9 @@ if (!$isEmbedded) {
   var qfConfig = <?= $quickFiltersJson ?: '[]' ?>;
   var paperTypeOptions = <?= json_encode(array_values($paperTypeOptions), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?> || [];
   var rows = Array.prototype.slice.call(table.querySelectorAll('tbody tr')).filter(function (row) { return row.querySelector('td[data-field]'); });
+  var tableVisibleCount = document.getElementById('tableVisibleCount');
+  var loadedRowsCount = rows.length;
+  var totalRowsCount = tableVisibleCount ? parseInt(String(tableVisibleCount.getAttribute('data-total-rows') || '0'), 10) || 0 : 0;
   var activeColFilters = {};
   var activeColPopup = null;
   var activeQuickPopup = null;
@@ -1243,6 +1554,58 @@ if (!$isEmbedded) {
       qf[filter.key + '_max'] = document.getElementById('qf-' + filter.key + '-max');
     }
   });
+
+  var serverFilterTimer = null;
+  function applyServerFiltersNow() {
+    var url = new URL(window.location.href);
+
+    var globalSearchValue = String((qf.search && qf.search.value) || '').trim();
+    if (globalSearchValue !== '') {
+      url.searchParams.set('q', globalSearchValue);
+    } else {
+      url.searchParams.delete('q');
+    }
+
+    qfConfig.forEach(function (filter) {
+      if (filter.type === 'text' || filter.type === 'pick') {
+        var key = 'qf_' + filter.key;
+        var value = String((qf[filter.key] && qf[filter.key].value) || '').trim();
+        if (value !== '') {
+          url.searchParams.set(key, value);
+        } else {
+          url.searchParams.delete(key);
+        }
+      }
+      if (filter.type === 'number_range') {
+        var minKey = 'qf_' + filter.key + '_min';
+        var maxKey = 'qf_' + filter.key + '_max';
+        var minVal = String((qf[filter.key + '_min'] && qf[filter.key + '_min'].value) || '').trim();
+        var maxVal = String((qf[filter.key + '_max'] && qf[filter.key + '_max'].value) || '').trim();
+        if (minVal !== '') {
+          url.searchParams.set(minKey, minVal);
+        } else {
+          url.searchParams.delete(minKey);
+        }
+        if (maxVal !== '') {
+          url.searchParams.set(maxKey, maxVal);
+        } else {
+          url.searchParams.delete(maxKey);
+        }
+      }
+    });
+
+    url.searchParams.set('page', '1');
+    window.location.href = url.toString();
+  }
+
+  function applyServerFiltersDebounced() {
+    if (serverFilterTimer) {
+      window.clearTimeout(serverFilterTimer);
+    }
+    serverFilterTimer = window.setTimeout(function () {
+      applyServerFiltersNow();
+    }, 350);
+  }
 
   function uniqueFieldValues(field) {
     if (field === 'paper_type' && Array.isArray(paperTypeOptions) && paperTypeOptions.length) {
@@ -1340,10 +1703,22 @@ if (!$isEmbedded) {
     return true;
   }
 
+  function updateVisibleCount() {
+    if (!tableVisibleCount) return;
+    var visible = 0;
+    rows.forEach(function (row) {
+      if (row.style.display !== 'none') {
+        visible += 1;
+      }
+    });
+    tableVisibleCount.textContent = 'Visible Rows: ' + visible + ' / ' + loadedRowsCount + ' | Total: ' + totalRowsCount;
+  }
+
   function applyAllFilters() {
     rows.forEach(function (row) {
       row.style.display = (quickPass(row) && colPass(row)) ? '' : 'none';
     });
+    updateVisibleCount();
   }
 
   function updateFilterButton(field) {
@@ -1425,33 +1800,28 @@ if (!$isEmbedded) {
   }
 
   window.resetQuickFilters = function () {
-    if (qf.search) qf.search.value = '';
+    var url = new URL(window.location.href);
+    url.searchParams.delete('q');
     qfConfig.forEach(function (filter) {
       if (filter.type === 'text' || filter.type === 'pick') {
-        if (qf[filter.key]) qf[filter.key].value = '';
+        url.searchParams.delete('qf_' + filter.key);
       } else if (filter.type === 'number_range') {
-        if (qf[filter.key + '_min']) qf[filter.key + '_min'].value = '';
-        if (qf[filter.key + '_max']) qf[filter.key + '_max'].value = '';
+        url.searchParams.delete('qf_' + filter.key + '_min');
+        url.searchParams.delete('qf_' + filter.key + '_max');
       }
-      if (filter.type === 'pick') updatePickerLabel(filter);
     });
-    activeColFilters = {};
-    document.querySelectorAll('.col-filter-btn').forEach(function (button) {
-      button.classList.remove('active');
-      var count = button.querySelector('.filter-count');
-      if (count) count.textContent = '';
-    });
-    applyAllFilters();
+    url.searchParams.set('page', '1');
+    window.location.href = url.toString();
   };
 
-  if (qf.search) qf.search.addEventListener('input', applyAllFilters);
+  if (qf.search) qf.search.addEventListener('input', applyServerFiltersDebounced);
   qfConfig.forEach(function (filter) {
     if (filter.type === 'text' && qf[filter.key]) {
-      qf[filter.key].addEventListener('input', applyAllFilters);
+      qf[filter.key].addEventListener('input', applyServerFiltersDebounced);
     }
     if (filter.type === 'number_range') {
-      if (qf[filter.key + '_min']) qf[filter.key + '_min'].addEventListener('input', applyAllFilters);
-      if (qf[filter.key + '_max']) qf[filter.key + '_max'].addEventListener('input', applyAllFilters);
+      if (qf[filter.key + '_min']) qf[filter.key + '_min'].addEventListener('input', applyServerFiltersDebounced);
+      if (qf[filter.key + '_max']) qf[filter.key + '_max'].addEventListener('input', applyServerFiltersDebounced);
     }
     if (filter.type === 'pick') {
       updatePickerLabel(filter);
@@ -1504,7 +1874,7 @@ if (!$isEmbedded) {
       var key = qfItem.getAttribute('data-qf-key') || '';
       if (qf[key]) qf[key].value = qfItem.getAttribute('data-qf-value') || '';
       qfConfig.forEach(function (filter) { if (filter.key === key) updatePickerLabel(filter); });
-      applyAllFilters();
+      applyServerFiltersNow();
       closeQuickPopup();
     }
 
@@ -1548,6 +1918,7 @@ if (!$isEmbedded) {
   });
 
   applyAllFilters();
+  updateVisibleCount();
 })();
 </script>
 

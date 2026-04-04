@@ -11,6 +11,8 @@ $lockFile = __DIR__ . '/data/install.lock';
 $schemaFile = __DIR__ . '/database/schema.sql';
 $runtimeConfigFile = __DIR__ . '/config/db.runtime.php';
 $migrationDir = __DIR__ . '/pending_migrations';
+$updateLogFile = __DIR__ . '/data/update_log.json';
+$configFile = __DIR__ . '/config/db.php';
 
 $log = [];
 $errors = [];
@@ -102,13 +104,71 @@ function run_sql_file(mysqli $conn, string $filePath, string $label): int {
     return $errs;
 }
 
+function detect_default_app_version(string $configFile): string {
+    if (!file_exists($configFile)) {
+        return '1.0';
+    }
+    $content = file_get_contents($configFile);
+    if ($content !== false && preg_match("/'APP_VERSION'\\s*=>\\s*'([^']+)'/", $content, $m)) {
+        return trim((string)$m[1]) !== '' ? trim((string)$m[1]) : '1.0';
+    }
+    return '1.0';
+}
+
+function collect_migration_sql_files(string $migrationDir): array {
+    if (!is_dir($migrationDir)) {
+        return [];
+    }
+
+    $files = [];
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($migrationDir, FilesystemIterator::SKIP_DOTS)
+    );
+
+    foreach ($iterator as $fileInfo) {
+        if (!$fileInfo->isFile()) {
+            continue;
+        }
+        $fullPath = str_replace('\\', '/', (string)$fileInfo->getPathname());
+        if (substr($fullPath, -4) !== '.sql') {
+            continue;
+        }
+        // Keep backup SQL snapshots out of automatic fresh-install execution.
+        if (stripos($fullPath, '/pending_migrations/backup/') !== false) {
+            continue;
+        }
+        $files[] = $fullPath;
+    }
+
+    sort($files, SORT_NATURAL | SORT_FLAG_CASE);
+    return $files;
+}
+
+function append_setup_log(string $logFile, array $entry): void {
+    $entries = [];
+    if (file_exists($logFile)) {
+        $raw = file_get_contents($logFile);
+        if ($raw !== false) {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                $entries = $decoded;
+            }
+        }
+    }
+
+    $entries[] = $entry;
+    file_put_contents($logFile, json_encode($entries, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), LOCK_EX);
+}
+
 $baseUrlDetected = detect_base_url();
+$defaultAppVersion = detect_default_app_version($configFile);
 $input = [
     'db_host' => 'localhost',
     'db_name' => '',
     'db_user' => '',
     'db_pass' => '',
     'base_url' => $baseUrlDetected,
+    'app_version' => $defaultAppVersion,
     'create_database' => '0',
 ];
 
@@ -119,6 +179,10 @@ $checks = [
     ['schema.sql present', file_exists($schemaFile), 'database/schema.sql'],
     ['pending_migrations folder present', is_dir($migrationDir), 'pending_migrations/'],
 ];
+
+$pendingMigrationFiles = collect_migration_sql_files($migrationDir);
+$pendingMigrationCount = count($pendingMigrationFiles);
+$pendingMigrationPreview = array_slice(array_map('basename', $pendingMigrationFiles), 0, 5);
 
 $pathChecks = [
     'config' => check_writable(__DIR__ . '/config'),
@@ -183,6 +247,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($input['db_host'] === '' || $input['db_name'] === '' || $input['db_user'] === '') {
         log_err('DB Host, DB Name, and DB Username are required.');
     }
+    if (!preg_match('/^\d+(?:\.\d+){0,3}$/', (string)$input['app_version'])) {
+        log_err('Invalid App Version format. Use examples like 1.0 or 1.7.2');
+    }
 
     if (empty($errors) && $input['create_database'] === '1') {
         $serverConn = new mysqli($input['db_host'], $input['db_user'], $input['db_pass']);
@@ -208,15 +275,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             log_ok('Connected to target database.');
 
             $schemaErr = run_sql_file($conn, $schemaFile, 'Schema import');
+            $appliedMigrations = [];
 
             if ($schemaErr === 0) {
-                $migrationFiles = glob($migrationDir . '/*.sql') ?: [];
-                sort($migrationFiles);
+                $migrationFiles = collect_migration_sql_files($migrationDir);
                 if (empty($migrationFiles)) {
                     log_ok('No pending migration files found.');
                 } else {
                     foreach ($migrationFiles as $mf) {
                         run_sql_file($conn, $mf, 'Migration ' . basename($mf));
+                        $appliedMigrations[] = basename($mf);
                     }
                 }
             }
@@ -283,7 +351,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'DB_NAME' => $input['db_name'],
                     'BASE_URL' => $baseUrl,
                     'APP_NAME' => 'Enterprise ERP',
-                    'APP_VERSION' => '1.0',
+                    'APP_VERSION' => $input['app_version'],
                 ];
 
                 $runtimePhp = "<?php\nreturn " . var_export($runtime, true) . ";\n";
@@ -299,6 +367,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     log_err('Failed to create install lock file.');
                 } else {
                     log_ok('Install lock file created.');
+                    append_setup_log($updateLogFile, [
+                        'event' => 'fresh_install',
+                        'version' => $input['app_version'],
+                        'environment' => $targetEnv,
+                        'installed_at' => date('c'),
+                        'migrations' => $appliedMigrations,
+                    ]);
+                    log_ok('Installation logged in data/update_log.json.');
                 }
             }
 
@@ -320,14 +396,45 @@ label{font-size:.78rem;font-weight:700;color:#334155;display:block;margin-bottom
 .check{display:flex;gap:8px;align-items:center;padding-top:8px}.check input{width:auto}.btn{margin-top:16px;padding:12px 16px;border:none;border-radius:8px;background:#0f172a;color:#fff;font-weight:700;cursor:pointer}
 .log{margin-top:16px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:8px;padding:12px}.ok{color:#166534;margin:6px 0}.err{color:#b91c1c;margin:6px 0}
 .next{margin-top:12px;padding:10px;background:#ecfeff;border:1px solid #a5f3fc;border-radius:8px;color:#155e75}
+.summary{margin:12px 0 14px;border:1px solid #c7d2fe;background:#eef2ff;border-radius:10px;padding:12px 14px}
+.summary-title{font-size:.82rem;font-weight:800;color:#312e81;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+.summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.summary-item{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px}
+.summary-item .k{font-size:.68rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.summary-item .v{font-size:.95rem;color:#0f172a;font-weight:800;margin-top:3px;word-break:break-all}
+.summary-note{font-size:.74rem;color:#475569;margin-top:8px}
 table{width:100%;border-collapse:collapse;margin:10px 0 16px}th,td{border:1px solid #e2e8f0;padding:8px;text-align:left;font-size:.86rem}th{background:#f8fafc}
 .status-ok{color:#166534;font-weight:700}.status-bad{color:#b91c1c;font-weight:700}
+@media (max-width:760px){.summary-grid{grid-template-columns:1fr}.grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Enterprise ERP One-Click Setup</h1>
-  <p class="muted">Provide only database details. Setup will auto-check environment, import schema, run pending migrations, create default admin, and lock installer.</p>
+    <p class="muted">Provide database details and version. Setup will auto-check environment, import schema, run all pending migrations, create default admin, save runtime config, and lock installer.</p>
+
+    <div class="summary">
+        <div class="summary-title">Setup Snapshot</div>
+        <div class="summary-grid">
+            <div class="summary-item">
+                <div class="k">Default Version</div>
+                <div class="v"><?= h($defaultAppVersion) ?></div>
+            </div>
+            <div class="summary-item">
+                <div class="k">Pending Migrations</div>
+                <div class="v"><?= (int)$pendingMigrationCount ?></div>
+            </div>
+            <div class="summary-item">
+                <div class="k">Installer Environment</div>
+                <div class="v"><?= h(is_local_request() ? 'Local' : 'Live') ?></div>
+            </div>
+        </div>
+        <?php if (!empty($pendingMigrationPreview)): ?>
+            <div class="summary-note">Next migrations: <?= h(implode(', ', $pendingMigrationPreview)) ?><?= $pendingMigrationCount > count($pendingMigrationPreview) ? ' ...' : '' ?></div>
+        <?php else: ?>
+            <div class="summary-note">No pending migration files detected.</div>
+        <?php endif; ?>
+    </div>
 
   <table>
     <thead><tr><th>Environment Check</th><th>Status</th><th>Details</th></tr></thead>
@@ -349,6 +456,7 @@ table{width:100%;border-collapse:collapse;margin:10px 0 16px}th,td{border:1px so
       <div><label>DB Username</label><input name="db_user" value="<?= h($input['db_user']) ?>" required></div>
       <div><label>DB Password</label><input type="password" name="db_pass" value="<?= h($input['db_pass']) ?>"></div>
       <div class="full"><label>Base URL (empty for domain root)</label><input name="base_url" value="<?= h($input['base_url']) ?>" placeholder="/erp"></div>
+            <div><label>App Version</label><input name="app_version" value="<?= h($input['app_version']) ?>" placeholder="1.0" required></div>
       <div class="full check"><input type="checkbox" name="create_database" value="1" <?= $input['create_database'] === '1' ? 'checked' : '' ?>><label>Create database automatically (disable for shared hosting if permission denied)</label></div>
     </div>
     <button class="btn" type="submit">Run Automatic Installation</button>

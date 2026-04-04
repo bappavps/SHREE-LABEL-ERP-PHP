@@ -7,7 +7,7 @@ $currentFile = $_SERVER['PHP_SELF'] ?? '';
 $appSettings = function_exists('getAppSettings') ? getAppSettings() : [];
 $sidebarCompanyName = trim((string)($appSettings['company_name'] ?? ''));
 $sidebarCompanyName = function_exists('getErpDisplayName') ? getErpDisplayName($sidebarCompanyName) : APP_NAME;
-$sidebarLogoPath = (string)($appSettings['logo_path'] ?? '');
+$sidebarLogoPath = (string)($appSettings['erp_logo_path'] ?? ($appSettings['logo_path'] ?? ''));
 
 function navItem($href, $icon, $label, $currentFile) {
     if (function_exists('canAccessPath') && !canAccessPath($href)) {

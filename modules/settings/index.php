@@ -5,35 +5,58 @@ require_once __DIR__ . '/../../includes/auth_check.php';
 
 $db = getDB();
 $settings = getAppSettings();
+$tenantSlug = defined('TENANT_SLUG') ? trim((string)TENANT_SLUG) : 'default';
+$tenantLabel = defined('TENANT_NAME') ? trim((string)TENANT_NAME) : APP_NAME;
+$tenantSettingsPath = getAppSettingsPath();
+$projectRoot = str_replace('\\', '/', realpath(__DIR__ . '/../../') ?: (__DIR__ . '/../../'));
 
-$libraryCategories = [
-  'company-logo' => 'Company Logo',
-  'label-asset' => 'Label Asset',
-  'background' => 'Background',
-  'product-type' => 'Product Type',
-  'misc' => 'Misc',
-];
+function tenantSettingsZipPath(string $projectRoot, string $settingsPath): string {
+  $projectRoot = rtrim(str_replace('\\', '/', $projectRoot), '/');
+  $settingsPath = str_replace('\\', '/', $settingsPath);
+  if ($projectRoot !== '' && strpos($settingsPath, $projectRoot . '/') === 0) {
+    return ltrim(substr($settingsPath, strlen($projectRoot)), '/');
+  }
+  return 'data/tenants/imported/app_settings.json';
+}
 
 function normalizeHexColor($value, $fallback) {
   $value = trim((string)$value);
-  if (preg_match('/^#[0-9a-fA-F]{6}$/', $value)) return strtoupper($value);
+  if (preg_match('/^#[0-9a-fA-F]{6}$/', $value)) {
+    return strtoupper($value);
+  }
   return $fallback;
 }
 
 function isDirectImageUrl($url) {
   $url = trim((string)$url);
-  if ($url === '') return false;
+  if ($url === '') {
+    return false;
+  }
   return (bool)preg_match('/\.(gif|png|jpe?g|webp|avif|svg)(\?|#|$)/i', $url);
 }
 
-function resolveImageUrlFromPage($url) {
-  $url = trim((string)$url);
-  if ($url === '' || !filter_var($url, FILTER_VALIDATE_URL)) return '';
+function tenantAssetDirectories(string $tenantSlug): array {
+  $safeTenantSlug = preg_replace('/[^a-z0-9._-]+/i', '-', trim($tenantSlug));
+  if ($safeTenantSlug === '') {
+    $safeTenantSlug = 'default';
+  }
+  return [
+    'company' => 'uploads/company/' . $safeTenantSlug,
+    'library' => 'uploads/library/' . $safeTenantSlug,
+  ];
+}
+
+function fetchWebsiteImageFromUrl(string $url): string {
+  $url = trim($url);
+  if ($url === '' || !filter_var($url, FILTER_VALIDATE_URL)) {
+    return '';
+  }
 
   $context = stream_context_create([
     'http' => [
       'timeout' => 6,
       'user_agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+      'follow_location' => 1,
     ],
     'https' => [
       'timeout' => 6,
@@ -176,10 +199,8 @@ function addDirectoryToZip(ZipArchive $zip, string $sourceDir, string $zipPrefix
   }
 }
 
-function restoreZipAsset(ZipArchive $zip, string $entryName, string $projectRoot): void {
+function restoreZipAsset(ZipArchive $zip, string $entryName, string $projectRoot, array $allowedPrefixes, array $allowedSingles): void {
   $name = str_replace('\\', '/', $entryName);
-  $allowedPrefixes = ['uploads/company/', 'uploads/library/'];
-  $allowedSingles = ['data/app_settings.json'];
 
   $isAllowed = in_array($name, $allowedSingles, true);
   if (!$isAllowed) {
@@ -243,7 +264,7 @@ function saveUploadedImage($fileKey, $targetDir, $prefix) {
 }
 
 $activeTab = $_GET['tab'] ?? 'company';
-$allowedTabs = ['company', 'library', 'theme', 'backup', 'update'];
+$allowedTabs = ['company', 'library', 'theme', 'backup', 'update', 'tenant'];
 if (!in_array($activeTab, $allowedTabs, true)) $activeTab = 'company';
 
 // Support paper_type parameter from paper stock view
@@ -268,50 +289,267 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $action = $_POST['action'] ?? '';
 
   if ($action === 'save_company') {
-    $settings['company_name'] = trim((string)($_POST['company_name'] ?? ''));
-    $settings['company_email'] = trim((string)($_POST['company_email'] ?? ''));
-    $settings['company_mobile'] = trim((string)($_POST['company_mobile'] ?? ''));
-    $settings['company_phone'] = $settings['company_mobile'];
-    $settings['company_currency'] = strtoupper(trim((string)($_POST['company_currency'] ?? 'INR')));
-    $settings['company_address'] = trim((string)($_POST['company_address'] ?? ''));
-    $settings['company_gst'] = trim((string)($_POST['company_gst'] ?? ''));
-    $settings['flag_emoji'] = trim((string)($_POST['flag_emoji'] ?? '🇮🇳')) ?: '🇮🇳';
-    $animatedFlagUrl = trim((string)($_POST['animated_flag_url'] ?? ''));
-    if ($animatedFlagUrl !== '' && !filter_var($animatedFlagUrl, FILTER_VALIDATE_URL)) {
-      setFlash('error', 'Please enter a valid animated flag image URL.');
-      redirect(BASE_URL . '/modules/settings/index.php?tab=company');
-    }
-    if ($animatedFlagUrl !== '' && !isDirectImageUrl($animatedFlagUrl)) {
-      $resolvedFlagUrl = resolveImageUrlFromPage($animatedFlagUrl);
-      if ($resolvedFlagUrl !== '') {
-        $animatedFlagUrl = $resolvedFlagUrl;
-      } else {
-        setFlash('error', 'This link is a webpage, not a direct image. Use a direct GIF/WEBP/JPG/PNG link, or a Tenor media link.');
-        redirect(BASE_URL . '/modules/settings/index.php?tab=company');
-      }
-    }
-    $settings['animated_flag_url'] = $animatedFlagUrl;
+    // Only save ERP settings (company profile is set during tenant provisioning)
+    $settings['erp_display_name'] = trim((string)($_POST['erp_display_name'] ?? ''));
+    $settings['erp_email'] = trim((string)($_POST['erp_email'] ?? ''));
+    $settings['erp_phone'] = trim((string)($_POST['erp_phone'] ?? ''));
+    $settings['erp_address'] = trim((string)($_POST['erp_address'] ?? ''));
+    $settings['erp_gst'] = trim((string)($_POST['erp_gst'] ?? ''));
 
-    list($logoPath, $logoErr) = saveUploadedImage('company_logo', 'company', 'logo');
-    if ($logoErr !== '') {
-      setFlash('error', $logoErr);
+    list($erpLogoPath, $erpLogoErr) = saveUploadedImage('erp_logo', $tenantAssetDirs['company'], 'erp_logo');
+    if ($erpLogoErr !== '') {
+      setFlash('error', $erpLogoErr);
       redirect(BASE_URL . '/modules/settings/index.php?tab=company');
     }
-    if ($logoPath !== '') $settings['logo_path'] = $logoPath;
-
-    list($flagPath, $flagErr) = saveUploadedImage('animated_flag', 'company', 'flag');
-    if ($flagErr !== '') {
-      setFlash('error', $flagErr);
-      redirect(BASE_URL . '/modules/settings/index.php?tab=company');
-    }
-    if ($flagPath !== '') $settings['animated_flag_path'] = $flagPath;
+    if ($erpLogoPath !== '') $settings['erp_logo_path'] = $erpLogoPath;
 
     if (saveAppSettings($settings)) {
-      setFlash('success', 'Company profile saved successfully.');
+      setFlash('success', 'ERP profile saved successfully.');
     } else {
-      setFlash('error', 'Unable to save company profile settings.');
+      setFlash('error', 'Unable to save ERP profile settings.');
     }
     redirect(BASE_URL . '/modules/settings/index.php?tab=company');
+  }
+
+  if ($action === 'provision_tenant') {
+    if (!isAdmin()) {
+      setFlash('error', 'Only administrators can provision new company tenants.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+
+    $slugRaw = strtolower(trim((string)($_POST['tenant_slug'] ?? '')));
+    $tenantSlugNew = preg_replace('/[^a-z0-9._-]+/', '-', $slugRaw);
+    $tenantSlugNew = trim((string)$tenantSlugNew, '-');
+    $tenantLabelNew = trim((string)($_POST['tenant_label'] ?? ''));
+    $tenantCompanyName = trim((string)($_POST['tenant_company_name'] ?? ''));
+    $tenantErpDisplayName = trim((string)($_POST['tenant_erp_display_name'] ?? ''));
+    $tenantHostCsv = trim((string)($_POST['tenant_hosts'] ?? ''));
+    $tenantPrefixCsv = trim((string)($_POST['tenant_path_prefixes'] ?? ''));
+
+    $newDbHost = trim((string)($_POST['db_host'] ?? 'localhost'));
+    $newDbPort = (int)($_POST['db_port'] ?? 3306);
+    $newDbName = trim((string)($_POST['db_name'] ?? ''));
+    $newDbUser = trim((string)($_POST['db_user'] ?? ''));
+    $newDbPass = (string)($_POST['db_pass'] ?? '');
+    $newDbCreate = (($_POST['create_database'] ?? '1') === '1');
+
+    $adminName = trim((string)($_POST['admin_name'] ?? 'System Admin'));
+    $adminEmail = trim((string)($_POST['admin_email'] ?? 'admin@example.com'));
+    $adminPass = (string)($_POST['admin_password'] ?? 'admin123');
+
+    // Company details (comprehensive - captured during provisioning)
+    $tenantCompanyEmailNew = trim((string)($_POST['tenant_company_email'] ?? ''));
+    $tenantCompanyPhoneNew = trim((string)($_POST['tenant_company_phone'] ?? ''));
+    $tenantCompanyAddressNew = trim((string)($_POST['tenant_company_address'] ?? ''));
+    $tenantCompanyCurrencyNew = trim((string)($_POST['tenant_company_currency'] ?? 'INR'));
+    $tenantCompanyGstNew = trim((string)($_POST['tenant_company_gst'] ?? ''));
+    $tenantContactPersonNew = trim((string)($_POST['tenant_contact_person'] ?? ''));
+    $tenantCompanyNameLegalNew = trim((string)($_POST['tenant_company_name_legal'] ?? $tenantCompanyName));
+    $tenantFlagEmojiNew = trim((string)($_POST['tenant_flag_emoji'] ?? '🇮🇳')) ?: '🇮🇳';
+
+    if ($tenantSlugNew === '' || strlen($tenantSlugNew) < 2) {
+      setFlash('error', 'Tenant slug is required and must be at least 2 characters.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    if ($tenantLabelNew === '') {
+      setFlash('error', 'Tenant label is required.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    if ($tenantCompanyName === '') {
+      setFlash('error', 'Company legal name is required.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    if ($newDbHost === '' || $newDbName === '' || $newDbUser === '') {
+      setFlash('error', 'DB host, name and user are required.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    if ($newDbPort < 1 || $newDbPort > 65535) {
+      setFlash('error', 'DB port must be between 1 and 65535.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    if (!filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
+      setFlash('error', 'Valid admin email is required.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    if (strlen($adminPass) < 6) {
+      setFlash('error', 'Admin password must be at least 6 characters.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+
+    $fullRegistry = function_exists('erp_load_tenant_registry') ? erp_load_tenant_registry() : ['tenants' => []];
+    if (isset($fullRegistry['tenants'][$tenantSlugNew])) {
+      setFlash('error', 'Tenant slug already exists. Choose another slug.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+
+    $schemaPath = $projectRoot . '/database/schema.sql';
+    if (!is_file($schemaPath)) {
+      setFlash('error', 'Schema file missing: database/schema.sql');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    $schemaSql = file_get_contents($schemaPath);
+    if ($schemaSql === false || trim($schemaSql) === '') {
+      setFlash('error', 'Schema file could not be read.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+
+    $migrationFiles = collectProvisionMigrationFiles($projectRoot . '/pending_migrations');
+    $serverConn = @new mysqli($newDbHost, $newDbUser, $newDbPass, '', $newDbPort);
+    if ($serverConn->connect_error) {
+      setFlash('error', 'Cannot connect to DB server: ' . $serverConn->connect_error);
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    $serverConn->set_charset('utf8mb4');
+
+    if ($newDbCreate) {
+      $createSql = 'CREATE DATABASE IF NOT EXISTS `' . $serverConn->real_escape_string($newDbName) . '` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci';
+      if (!$serverConn->query($createSql)) {
+        $serverConn->close();
+        setFlash('error', 'Database create failed: ' . $serverConn->error);
+        redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+      }
+    }
+    $serverConn->close();
+
+    $tenantDb = @new mysqli($newDbHost, $newDbUser, $newDbPass, $newDbName, $newDbPort);
+    if ($tenantDb->connect_error) {
+      setFlash('error', 'Cannot connect to tenant database: ' . $tenantDb->connect_error);
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    $tenantDb->set_charset('utf8mb4');
+
+    $schemaRes = restoreDatabaseFromSql($tenantDb, $schemaSql);
+    if (!$schemaRes['ok']) {
+      $tenantDb->close();
+      setFlash('error', 'Schema import failed: ' . ($schemaRes['error'] ?: 'Unknown SQL error.'));
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+
+    foreach ($migrationFiles as $mf) {
+      $mfContent = file_get_contents($mf);
+      if ($mfContent === false || trim($mfContent) === '') {
+        continue;
+      }
+      $migRes = restoreDatabaseFromSql($tenantDb, $mfContent);
+      if (!$migRes['ok']) {
+        $tenantDb->close();
+        setFlash('error', 'Migration failed (' . basename($mf) . '): ' . ($migRes['error'] ?: 'Unknown SQL error.'));
+        redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+      }
+    }
+
+    $adminHash = password_hash($adminPass, PASSWORD_BCRYPT);
+    $check = $tenantDb->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
+    if ($check) {
+      $check->bind_param('s', $adminEmail);
+      $check->execute();
+      $existing = $check->get_result()->fetch_assoc();
+      $check->close();
+
+      if ($existing) {
+        $upd = $tenantDb->prepare('UPDATE users SET name = ?, password = ?, role = ?, is_active = 1 WHERE email = ?');
+        if ($upd) {
+          $role = 'admin';
+          $upd->bind_param('ssss', $adminName, $adminHash, $role, $adminEmail);
+          $upd->execute();
+          $upd->close();
+        }
+      } else {
+        $ins = $tenantDb->prepare('INSERT INTO users (name, email, password, role, is_active) VALUES (?, ?, ?, ?, 1)');
+        if ($ins) {
+          $role = 'admin';
+          $ins->bind_param('ssss', $adminName, $adminEmail, $adminHash, $role);
+          $ins->execute();
+          $ins->close();
+        }
+      }
+    }
+    $tenantDb->close();
+
+    $tenantDataDir = $projectRoot . '/data/tenants/' . $tenantSlugNew;
+    if (!is_dir($tenantDataDir)) {
+      @mkdir($tenantDataDir, 0775, true);
+    }
+    $tenantSettingsFile = $tenantDataDir . '/app_settings.json';
+    $tenantDefaults = appSettingsDefaults();
+    
+    // Company brand and contact details
+    $tenantDefaults['company_name'] = $tenantCompanyName;
+    $tenantDefaults['company_legal_name'] = $tenantCompanyNameLegalNew !== '' ? $tenantCompanyNameLegalNew : $tenantCompanyName;
+    $tenantDefaults['contact_person'] = $tenantContactPersonNew;
+    $tenantDefaults['company_email'] = $tenantCompanyEmailNew !== '' ? $tenantCompanyEmailNew : $adminEmail;
+    $tenantDefaults['company_phone'] = $tenantCompanyPhoneNew;
+    $tenantDefaults['company_mobile'] = $tenantCompanyPhoneNew;
+    $tenantDefaults['company_address'] = $tenantCompanyAddressNew;
+    $tenantDefaults['company_currency'] = $tenantCompanyCurrencyNew;
+    $tenantDefaults['company_gst'] = $tenantCompanyGstNew;
+    $tenantDefaults['flag_emoji'] = $tenantFlagEmojiNew;
+    
+    // ERP details from global settings
+    $tenantDefaults['erp_display_name'] = $tenantErpDisplayName;
+    $tenantDefaults['image_library'] = [];
+    @file_put_contents($tenantSettingsFile, json_encode($tenantDefaults, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), LOCK_EX);
+
+    // Handle company logo upload
+    if (isset($_FILES['tenant_company_logo']) && $_FILES['tenant_company_logo']['error'] === UPLOAD_ERR_OK) {
+      list($logoPath, $logoErr) = saveUploadedImage('tenant_company_logo', $tenantAssetDirs['company'] . '/' . $tenantSlugNew, 'logo');
+      if ($logoErr === '' && $logoPath !== '') {
+        $tenantDefaults['logo_path'] = $logoPath;
+        @file_put_contents($tenantSettingsFile, json_encode($tenantDefaults, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), LOCK_EX);
+      }
+    }
+
+    $companyAssetDir = $projectRoot . '/' . $tenantAssetDirs['company'];
+    $libraryAssetDir = $projectRoot . '/' . $tenantAssetDirs['library'];
+    if (!is_dir($companyAssetDir)) {
+      @mkdir($companyAssetDir, 0775, true);
+    }
+    if (!is_dir($libraryAssetDir)) {
+      @mkdir($libraryAssetDir, 0775, true);
+    }
+
+    $tenantHosts = parseCsvList($tenantHostCsv);
+    $tenantPrefixes = parseCsvList($tenantPrefixCsv);
+    if (empty($tenantPrefixes)) {
+      $tenantPrefixes = ['/' . $tenantSlugNew];
+    }
+
+    $dynamicRegistry = loadDynamicTenantRegistry($tenantRegistryPath);
+    $dynamicRegistry['tenants'][$tenantSlugNew] = [
+      'label' => $tenantLabelNew,
+      'active' => true,
+      'hosts' => $tenantHosts,
+      'path_prefixes' => $tenantPrefixes,
+      'settings_file' => 'data/tenants/' . $tenantSlugNew . '/app_settings.json',
+      'erp_display_name' => $tenantErpDisplayName,
+      'db' => [
+        'local' => [
+          'DB_HOST' => $newDbHost,
+          'DB_PORT' => $newDbPort,
+          'DB_USER' => $newDbUser,
+          'DB_PASS' => $newDbPass,
+          'DB_NAME' => $newDbName,
+        ],
+        'live' => [
+          'DB_HOST' => $newDbHost,
+          'DB_PORT' => $newDbPort,
+          'DB_USER' => $newDbUser,
+          'DB_PASS' => $newDbPass,
+          'DB_NAME' => $newDbName,
+        ],
+      ],
+    ];
+    if (empty($dynamicRegistry['default_slug'])) {
+      $dynamicRegistry['default_slug'] = $tenantSlug;
+    }
+
+    if (!saveDynamicTenantRegistry($tenantRegistryPath, $dynamicRegistry)) {
+      setFlash('error', 'Tenant created, but registry file write failed. Check data folder permissions.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+
+    setFlash('success', 'Tenant provisioned: ' . $tenantLabelNew . ' (' . $tenantSlugNew . '). Admin: ' . $adminEmail);
+    redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
   }
 
   if ($action === 'upload_library_image') {
@@ -324,7 +562,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       redirect(BASE_URL . '/modules/settings/index.php?tab=library');
     }
 
-    list($imgPath, $imgErr) = saveUploadedImage('library_image', 'library', 'lib');
+    list($imgPath, $imgErr) = saveUploadedImage('library_image', $tenantAssetDirs['library'], 'lib');
     if ($imgErr !== '') {
       setFlash('error', $imgErr);
       redirect(BASE_URL . '/modules/settings/index.php?tab=library');
@@ -448,10 +686,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $stamp = date('Ymd_His');
-    $projectRoot = realpath(__DIR__ . '/../../') ?: (__DIR__ . '/../../');
-
     if (!class_exists('ZipArchive')) {
-      $fileName = DB_NAME . '_backup_' . $stamp . '.sql';
+      $fileName = $tenantSlug . '_' . DB_NAME . '_backup_' . $stamp . '.sql';
       header('Content-Type: application/sql; charset=UTF-8');
       header('Content-Disposition: attachment; filename="' . $fileName . '"');
       header('Content-Length: ' . strlen($backupSql));
@@ -473,15 +709,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $zip->addFromString('backup/database.sql', $backupSql);
-    $settingsFile = $projectRoot . '/data/app_settings.json';
+    $settingsFile = $tenantSettingsPath;
     if (is_file($settingsFile)) {
-      $zip->addFile($settingsFile, 'data/app_settings.json');
+      $zip->addFile($settingsFile, $tenantSettingsZipPath);
     }
-    addDirectoryToZip($zip, $projectRoot . '/uploads/company', 'uploads/company');
-    addDirectoryToZip($zip, $projectRoot . '/uploads/library', 'uploads/library');
+    addDirectoryToZip($zip, $projectRoot . '/' . $tenantAssetDirs['company'], $tenantAssetDirs['company']);
+    addDirectoryToZip($zip, $projectRoot . '/' . $tenantAssetDirs['library'], $tenantAssetDirs['library']);
     $zip->close();
 
-    $fileName = DB_NAME . '_full_backup_' . $stamp . '.zip';
+    $fileName = $tenantSlug . '_' . DB_NAME . '_full_backup_' . $stamp . '.zip';
     $size = @filesize($tmpZip);
     header('Content-Type: application/zip');
     header('Content-Disposition: attachment; filename="' . $fileName . '"');
@@ -568,11 +804,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
     }
 
-    $projectRoot = realpath(__DIR__ . '/../../') ?: (__DIR__ . '/../../');
+    $allowedRestorePrefixes = [
+      rtrim($tenantAssetDirs['company'], '/') . '/',
+      rtrim($tenantAssetDirs['library'], '/') . '/',
+      'uploads/company/',
+      'uploads/library/',
+    ];
+    $allowedRestoreSingles = array_values(array_unique(array_filter([
+      $tenantSettingsZipPath,
+      'data/app_settings.json',
+    ])));
     for ($i = 0; $i < $zip->numFiles; $i++) {
       $entryName = (string)$zip->getNameIndex($i);
       if ($entryName === '' || substr($entryName, -1) === '/') continue;
-      restoreZipAsset($zip, $entryName, str_replace('\\', '/', $projectRoot));
+      restoreZipAsset($zip, $entryName, $projectRoot, $allowedRestorePrefixes, $allowedRestoreSingles);
     }
     $zip->close();
 
@@ -930,80 +1175,86 @@ include __DIR__ . '/../../includes/header.php';
   <div>
     <h1>Settings</h1>
     <p>Modern configuration panel for company profile, image assets, and visual theme.</p>
+    <p style="margin-top:6px;font-size:.85rem;color:#475569">Workspace: <strong><?= e($tenantLabel) ?></strong> | Tenant: <strong><?= e($tenantSlug) ?></strong> | Settings File: <strong><?= e($tenantSettingsDisplayPath) ?></strong></p>
   </div>
 </div>
 
 <div class="card settings-card settings-modern">
   <div class="settings-tabs" role="tablist" aria-label="Settings Tabs">
-    <a class="settings-tab <?= $activeTab==='company'?'active':'' ?>" href="?tab=company">Company Profile</a>
+    <a class="settings-tab <?= $activeTab==='company'?'active':'' ?>" href="?tab=company">ERP Profile</a>
     <a class="settings-tab <?= $activeTab==='library'?'active':'' ?>" href="?tab=library">Image Library</a>
     <a class="settings-tab <?= $activeTab==='theme'?'active':'' ?>" href="?tab=theme">Color Theme</a>
+    <a class="settings-tab <?= $activeTab==='tenant'?'active':'' ?>" href="?tab=tenant">Tenant Provision</a>
     <a class="settings-tab <?= $activeTab==='backup'?'active':'' ?>" href="?tab=backup">Backup &amp; Restore</a>
     <a class="settings-tab <?= $activeTab==='update'?'active':'' ?>" href="?tab=update">System Update</a>
   </div>
 
   <div class="settings-body">
     <?php if ($activeTab === 'company'): ?>
+      <style>
+      .info-box { background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%); border: 1px solid #0284c7; border-radius: 10px; padding: 14px; margin-bottom: 20px; color: #0c4a6e; font-size: .95rem; }
+      .info-box strong { color: #0555cc; }
+      .profile-section { border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin-bottom: 20px; background: #fafbfc; }
+      .profile-section h3 { margin: 0 0 14px; font-size: 1.1rem; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 10px; }
+      .profile-section h3 i { font-size: 1.3rem; }
+      .profile-section.erp { border-left: 4px solid #6366f1; background: linear-gradient(135deg, #ede9fe 0%, #f3f4f6 100%); }
+      </style>
+
+      <div class="info-box">
+        <i class="bi bi-info-circle"></i> <strong>ERP Software Settings Only</strong><br>
+        Company profile details (name, logo, address, GST, contact) are created separately in the <strong>Tenant Provision</strong> page when setting up a new company workspace.
+      </div>
+
       <form method="POST" enctype="multipart/form-data" class="form-grid-2">
         <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
         <input type="hidden" name="action" value="save_company">
 
-        <div class="form-group col-span-2">
-          <label>Company Legal Name</label>
-          <input type="text" name="company_name" value="<?= e($settings['company_name'] ?? '') ?>" required>
-        </div>
+        <!-- ERP PROFILE SECTION ONLY -->
+        <div class="profile-section erp col-span-2">
+          <h3><i class="bi bi-gear"></i> ERP Software Profile</h3>
+          
+          <div class="form-grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group col-span-2">
+              <label>ERP Display Name</label>
+              <input type="text" name="erp_display_name" value="<?= e($settings['erp_display_name'] ?? '') ?>" placeholder="e.g. e-Flexo ERP">
+              <small class="help-text">Global ERP title shown on login page and headers.</small>
+            </div>
 
-        <div class="form-group">
-          <label>Email</label>
-          <input type="email" name="company_email" value="<?= e($settings['company_email'] ?? '') ?>">
-        </div>
-        <div class="form-group">
-          <label>Mobile Number</label>
-          <input type="text" name="company_mobile" value="<?= e($settings['company_mobile'] ?? ($settings['company_phone'] ?? '')) ?>" placeholder="e.g. +91 9876543210">
-        </div>
+            <div class="form-group">
+              <label>ERP Email</label>
+              <input type="email" name="erp_email" value="<?= e($settings['erp_email'] ?? '') ?>" placeholder="e.g. support@yourerp.com">
+              <small class="help-text">Global ERP support email address.</small>
+            </div>
+            <div class="form-group">
+              <label>ERP Phone</label>
+              <input type="text" name="erp_phone" value="<?= e($settings['erp_phone'] ?? '') ?>" placeholder="e.g. +91 9876543210">
+              <small class="help-text">Global ERP support phone number.</small>
+            </div>
 
-        <div class="form-group">
-          <label>Currency</label>
-          <input type="text" name="company_currency" value="<?= e($settings['company_currency'] ?? 'INR') ?>" placeholder="e.g. INR, USD">
-        </div>
-        <div class="form-group">
-          <label>GST / Tax ID</label>
-          <input type="text" name="company_gst" value="<?= e($settings['company_gst'] ?? '') ?>">
-        </div>
-        <div class="form-group">
-          <label>Flag Emoji Fallback</label>
-          <input type="text" name="flag_emoji" value="<?= e($settings['flag_emoji'] ?? '🇮🇳') ?>" maxlength="4">
-        </div>
+            <div class="form-group col-span-2">
+              <label>ERP Address</label>
+              <textarea name="erp_address" rows="2" placeholder="ERP vendor/support office address"><?= e($settings['erp_address'] ?? '') ?></textarea>
+            </div>
 
-        <div class="form-group col-span-2">
-          <label>Address</label>
-          <textarea name="company_address" rows="3"><?= e($settings['company_address'] ?? '') ?></textarea>
-        </div>
+            <div class="form-group">
+              <label>ERP GST / Tax ID</label>
+              <input type="text" name="erp_gst" value="<?= e($settings['erp_gst'] ?? '') ?>">
+              <small class="help-text">ERP vendor's tax identification number.</small>
+            </div>
 
-        <div class="form-group">
-          <label>Company Logo</label>
-          <input type="file" name="company_logo" accept="image/png,image/jpeg,image/webp,image/gif">
-          <?php if (!empty($settings['logo_path'])): ?>
-            <div class="settings-preview mt-8"><img src="<?= e(appUrl($settings['logo_path'])) ?>" alt="Current logo"></div>
-          <?php endif; ?>
-        </div>
-
-        <div class="form-group">
-          <label>Animated Flag Image</label>
-          <input type="file" name="animated_flag" accept="image/png,image/jpeg,image/webp,image/gif">
-          <?php if (!empty($settings['animated_flag_path'])): ?>
-            <div class="settings-preview mt-8"><img src="<?= e(appUrl($settings['animated_flag_path'])) ?>" alt="Current flag"></div>
-          <?php endif; ?>
-        </div>
-
-        <div class="form-group col-span-2">
-          <label>Animated Flag Image URL (Optional)</label>
-          <input type="url" name="animated_flag_url" value="<?= e($settings['animated_flag_url'] ?? '') ?>" placeholder="https://example.com/flag.gif">
-          <small class="help-text">If provided, this URL is used first. Page links are auto-resolved to image URLs when possible.</small>
+            <div class="form-group col-span-2">
+              <label>ERP Logo</label>
+              <input type="file" name="erp_logo" accept="image/png,image/jpeg,image/webp,image/gif">
+              <small class="help-text">Displayed on ERP login page, header, and sidebar. Each company can override this.</small>
+              <?php if (!empty($settings['erp_logo_path'])): ?>
+                <div class="settings-preview mt-8"><img src="<?= e(appUrl($settings['erp_logo_path'])) ?>" alt="Current ERP logo"></div>
+              <?php endif; ?>
+            </div>
+          </div>
         </div>
 
         <div class="form-actions col-span-2">
-          <button class="btn btn-primary" type="submit"><i class="bi bi-save"></i> Save Company Profile</button>
+          <button class="btn btn-primary" type="submit"><i class="bi bi-save"></i> Save ERP Settings</button>
         </div>
       </form>
     <?php endif; ?>
@@ -1135,6 +1386,227 @@ include __DIR__ . '/../../includes/header.php';
           <button class="btn btn-primary" type="submit"><i class="bi bi-palette"></i> Save Theme</button>
         </div>
       </form>
+    <?php endif; ?>
+
+    <?php if ($activeTab === 'tenant'): ?>
+      <style>
+      .tenant-shell { display:grid; grid-template-columns:1.4fr .8fr; gap:16px; }
+      .tenant-hero {
+        border:1px solid #c7d2fe;
+        background:linear-gradient(135deg,#eef2ff 0%, #ecfeff 100%);
+        border-radius:14px;
+        padding:14px 16px;
+        margin-bottom:14px;
+      }
+      .tenant-hero h3 { margin:0 0 4px; color:#1e1b4b; font-size:1rem; }
+      .tenant-hero p { margin:0; color:#334155; font-size:.85rem; }
+      .tenant-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+      .tenant-group { border:1px solid #e2e8f0; background:#fff; border-radius:12px; padding:12px; }
+      .tenant-group h4 { margin:0 0 10px; font-size:.82rem; text-transform:uppercase; letter-spacing:.05em; color:#475569; }
+      .tenant-field { margin-bottom:10px; }
+      .tenant-field:last-child { margin-bottom:0; }
+      .tenant-field label { display:block; font-size:.76rem; font-weight:700; color:#334155; margin-bottom:4px; }
+      .tenant-field input { width:100%; }
+      .tenant-field small { color:#64748b; font-size:.72rem; display:block; margin-top:4px; }
+      .tenant-check { border:1px solid #e2e8f0; background:#f8fafc; border-radius:10px; padding:10px 12px; font-size:.82rem; color:#334155; }
+      .tenant-note { border:1px solid #bfdbfe; background:linear-gradient(180deg,#eff6ff 0%,#f8fbff 100%); border-radius:12px; padding:12px; margin-bottom:12px; }
+      .tenant-note h4 { margin:0 0 8px; font-size:.84rem; color:#1d4ed8; text-transform:uppercase; letter-spacing:.05em; }
+      .tenant-note ol { margin:0; padding-left:18px; color:#334155; font-size:.82rem; line-height:1.55; }
+      .tenant-meta-card { border:1px solid #e2e8f0; border-radius:12px; background:#fff; overflow:hidden; }
+      .tenant-meta-head { padding:10px 12px; background:#f8fafc; border-bottom:1px solid #e2e8f0; font-weight:700; font-size:.82rem; color:#0f172a; }
+      .tenant-meta-body { padding:10px 12px; }
+      .tenant-meta-row { display:flex; gap:8px; justify-content:space-between; padding:6px 0; font-size:.8rem; border-bottom:1px dashed #e2e8f0; }
+      .tenant-meta-row:last-child { border-bottom:none; }
+      .tenant-actions { margin-top:12px; display:flex; justify-content:flex-start; }
+      @media (max-width: 980px) {
+        .tenant-shell { grid-template-columns:1fr; }
+        .tenant-grid { grid-template-columns:1fr; }
+      }
+      </style>
+
+      <div class="tenant-hero">
+        <h3><i class="bi bi-diagram-3"></i> Provision New Company Workspace</h3>
+        <p>Create a new branded tenant with isolated database, auto schema/migration setup, default admin, settings file, and asset folders.</p>
+      </div>
+
+      <div class="tenant-shell">
+        <form method="POST" enctype="multipart/form-data" onsubmit="return confirm('Provision this tenant now?');">
+          <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
+          <input type="hidden" name="action" value="provision_tenant">
+
+          <div class="tenant-grid">
+            <div class="tenant-group">
+              <h4>Identity</h4>
+              <div class="tenant-field">
+                <label>Tenant Slug</label>
+                <input type="text" id="tenant_slug" name="tenant_slug" required placeholder="e.g. ram">
+                <small>Use lowercase letters, numbers, dot, underscore, hyphen.</small>
+              </div>
+              <div class="tenant-field">
+                <label>Tenant Label</label>
+                <input type="text" name="tenant_label" required placeholder="e.g. Ram Company">
+              </div>
+              <div class="tenant-field">
+                <label>Company Legal Name</label>
+                <input type="text" name="tenant_company_name" required placeholder="e.g. Ram Flexible Packaging Pvt Ltd">
+              </div>
+              <div class="tenant-field">
+                <label>ERP Display Name</label>
+                <input type="text" name="tenant_erp_display_name" placeholder="e.g. e-Flexo for Ram">
+              </div>
+            </div>
+
+            <div class="tenant-group">
+              <h4>Routing</h4>
+              <div class="tenant-field">
+                <label>Hosts / Subdomains</label>
+                <input type="text" name="tenant_hosts" placeholder="e.g. ram.localhost, ram.example.com">
+                <small>Comma separated values.</small>
+              </div>
+              <div class="tenant-field">
+                <label>Path Prefixes</label>
+                <input type="text" id="tenant_path_prefixes" name="tenant_path_prefixes" placeholder="e.g. /ram">
+                <small>Fallback routing when host mapping is unavailable.</small>
+              </div>
+            </div>
+
+            <div class="tenant-group">
+              <h4>Database</h4>
+              <div class="tenant-field">
+                <label>DB Host</label>
+                <input type="text" name="db_host" value="localhost" required>
+              </div>
+              <div class="tenant-field">
+                <label>DB Port</label>
+                <input type="number" name="db_port" value="3306" min="1" max="65535" required>
+              </div>
+              <div class="tenant-field">
+                <label>DB Name</label>
+                <input type="text" name="db_name" required placeholder="e.g. ram_erp">
+              </div>
+              <div class="tenant-field">
+                <label>DB User</label>
+                <input type="text" name="db_user" required>
+              </div>
+              <div class="tenant-field">
+                <label>DB Password</label>
+                <input type="password" name="db_pass" placeholder="Database password">
+              </div>
+              <label class="tenant-check"><input type="checkbox" name="create_database" value="1" checked> Create database if missing</label>
+            </div>
+
+            <div class="tenant-group">
+              <h4>Default Admin</h4>
+              <div class="tenant-field">
+                <label>Admin Name</label>
+                <input type="text" name="admin_name" value="System Admin" required>
+              </div>
+              <div class="tenant-field">
+                <label>Admin Email</label>
+                <input type="email" name="admin_email" value="admin@example.com" required>
+              </div>
+              <div class="tenant-field">
+                <label>Admin Password</label>
+                <input type="password" name="admin_password" value="admin123" minlength="6" required>
+              </div>
+            </div>
+
+            <div class="tenant-group">
+              <h4><i class="bi bi-building"></i> Company Profile</h4>
+              <div class="tenant-field">
+                <label>Company Legal Name</label>
+                <input type="text" name="tenant_company_name_legal" placeholder="e.g. Ram Flexible Packaging Private Limited">
+                <small>Actual company name registered with government/tax authorities.</small>
+              </div>
+              <div class="tenant-field">
+                <label>Contact Person / Owner Name</label>
+                <input type="text" name="tenant_contact_person" placeholder="e.g. Raj Kumar Sharma">
+                <small>Primary contact person for this company.</small>
+              </div>
+              <div class="tenant-field">
+                <label>Company Email</label>
+                <input type="email" name="tenant_company_email" placeholder="e.g. contact@company.com">
+              </div>
+              <div class="tenant-field">
+                <label>Company Phone</label>
+                <input type="text" name="tenant_company_phone" placeholder="e.g. +91 9876543210">
+              </div>
+              <div class="tenant-field">
+                <label>Currency</label>
+                <input type="text" name="tenant_company_currency" value="INR" placeholder="e.g. INR, USD">
+              </div>
+              <div class="tenant-field">
+                <label>GST / Tax ID</label>
+                <input type="text" name="tenant_company_gst" placeholder="e.g. 27AAFCD5055K1Z0">
+              </div>
+            </div>
+
+            <div class="tenant-group">
+              <h4><i class="bi bi-map"></i> Address & Branding</h4>
+              <div class="tenant-field">
+                <label>Company Address</label>
+                <textarea name="tenant_company_address" rows="2" placeholder="Street address, city, state, PIN code"></textarea>
+              </div>
+              <div class="tenant-field">
+                <label>Company Logo (JPG/PNG)</label>
+                <input type="file" name="tenant_company_logo" accept="image/png,image/jpeg,image/webp,image/gif">
+                <small>Logo to be used for company documents and exports. Optional - can be uploaded later.</small>
+              </div>
+              <div class="tenant-field">
+                <label>Flag Emoji Fallback</label>
+                <input type="text" name="tenant_flag_emoji" value="🇮🇳" maxlength="4" placeholder="e.g. 🇮🇳">
+                <small>Country flag emoji for branding.</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="tenant-actions">
+            <button class="btn btn-primary" type="submit"><i class="bi bi-plus-circle"></i> Provision Tenant</button>
+          </div>
+        </form>
+
+        <div>
+          <div class="tenant-note">
+            <h4>How To Use</h4>
+            <ol>
+              <li>In Identity, enter tenant slug, tenant label, and legal company name.</li>
+              <li>If host mapping is ready, enter Hosts; otherwise provide a path prefix like /ram.</li>
+              <li>Provide database host, port, name, user, and password for this company.</li>
+              <li>Set default admin name, email, and password for first login.</li>
+              <li>Click Provision Tenant to create DB schema, run migrations, and seed admin/settings.</li>
+              <li>Open the configured tenant URL and complete company branding from profile settings.</li>
+            </ol>
+          </div>
+
+          <div class="tenant-meta-card">
+            <div class="tenant-meta-head">Provisioning Target</div>
+            <div class="tenant-meta-body">
+              <div class="tenant-meta-row"><span>Registry File</span><strong><?= e(str_replace($projectRoot . '/', '', str_replace('\\', '/', $tenantRegistryPath))) ?></strong></div>
+              <div class="tenant-meta-row"><span>Schema Source</span><strong>database/schema.sql + pending_migrations/*.sql</strong></div>
+              <div class="tenant-meta-row"><span>Asset Folders</span><strong>uploads/company/{slug}, uploads/library/{slug}</strong></div>
+              <div class="tenant-meta-row"><span>Settings Path</span><strong>data/tenants/{slug}/app_settings.json</strong></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <script>
+      (function() {
+        var slugInput = document.getElementById('tenant_slug');
+        var prefixInput = document.getElementById('tenant_path_prefixes');
+        if (!slugInput || !prefixInput) return;
+        slugInput.addEventListener('input', function() {
+          var clean = (slugInput.value || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9._-]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+          slugInput.value = clean;
+          if ((prefixInput.value || '').trim() === '' && clean !== '') {
+            prefixInput.value = '/' + clean;
+          }
+        });
+      })();
+      </script>
     <?php endif; ?>
 
     <?php if ($activeTab === 'backup'): ?>

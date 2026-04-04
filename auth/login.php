@@ -7,8 +7,10 @@ require_once __DIR__ . '/../includes/functions.php';
 
 if (session_status() === PHP_SESSION_NONE) session_start();
 
+$tenantInactiveMessage = 'This company workspace is currently inactive. Please contact E-Flexo support.';
+
 // Already logged in
-if (isset($_SESSION['user_id'])) {
+if (isset($_SESSION['user_id']) && (!defined('TENANT_ACTIVE') || TENANT_ACTIVE)) {
     redirect(BASE_URL . '/modules/dashboard/index.php');
 }
 
@@ -19,7 +21,9 @@ if (function_exists('ensureRbacSchema')) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!verifyCSRF($_POST['csrf_token'] ?? '')) {
+  if (defined('TENANT_ACTIVE') && !TENANT_ACTIVE) {
+    $error = $tenantInactiveMessage;
+  } elseif (!verifyCSRF($_POST['csrf_token'] ?? '')) {
         $error = 'Invalid request. Please refresh and try again.';
     } else {
         $email    = trim($_POST['email']    ?? '');
@@ -41,6 +45,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['user_email']= $user['email'];
                 $_SESSION['role']      = $user['role'];
                 $_SESSION['group_id']  = isset($user['group_id']) ? (int)$user['group_id'] : 0;
+              $_SESSION['tenant_slug'] = defined('TENANT_SLUG') ? TENANT_SLUG : 'default';
+              $_SESSION['tenant_name'] = defined('TENANT_NAME') ? TENANT_NAME : APP_NAME;
                 redirect(BASE_URL . '/modules/dashboard/index.php');
             } else {
                 $error = 'Invalid email or password.';
@@ -49,13 +55,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+if ($error === '' && defined('TENANT_ACTIVE') && !TENANT_ACTIVE) {
+  $error = $tenantInactiveMessage;
+}
+
 $csrf = generateCSRF();
 $settings = getAppSettings();
 $companyName = trim((string)($settings['company_name'] ?? '')) ?: APP_NAME;
 $erpDisplayName = function_exists('getErpDisplayName') ? getErpDisplayName($companyName) : APP_NAME;
 $footerErpName = function_exists('getErpDisplayName') ? getErpDisplayName($companyName) : APP_NAME;
 $logoPath = (string)($settings['logo_path'] ?? '');
-$companyLogoUrl = $logoPath !== '' ? appUrl($logoPath) : appUrl('assets/img/logo.svg');
+$erpLogoPath = (string)($settings['erp_logo_path'] ?? '');
+$uiLogoPath = $erpLogoPath !== '' ? $erpLogoPath : $logoPath;
+$companyLogoUrl = $uiLogoPath !== '' ? appUrl($uiLogoPath) : appUrl('assets/img/logo.svg');
 $themeColor = (string)($settings['sidebar_button_color'] ?? '#22c55e');
 $loginBg = (string)($settings['login_background_image'] ?? '');
 if ($loginBg === '') {

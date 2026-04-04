@@ -4,8 +4,10 @@ require_once __DIR__ . '/includes/functions.php';
 
 $settings = getAppSettings();
 $companyName = trim((string)($settings['company_name'] ?? '')) ?: APP_NAME;
+$erpLogoPath = trim((string)($settings['erp_logo_path'] ?? ''));
 $logoPath = trim((string)($settings['logo_path'] ?? ''));
-$iconSrc = $logoPath !== '' ? appUrl($logoPath) : appUrl('assets/img/logo.svg');
+$iconPath = $erpLogoPath !== '' ? $erpLogoPath : $logoPath;
+$iconSrc = $iconPath !== '' ? appUrl($iconPath) : appUrl('assets/img/logo.svg');
 $themeColor = trim((string)($settings['sidebar_button_color'] ?? '#22c55e')) ?: '#22c55e';
 $iconExt = strtolower(pathinfo($iconSrc, PATHINFO_EXTENSION));
 $mimeMap = [

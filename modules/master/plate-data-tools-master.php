@@ -127,6 +127,8 @@ include __DIR__ . '/../../includes/header.php';
 .ptm-empty{padding:22px 10px;text-align:center;color:#94a3b8;font-size:.84rem}
 .ptm-empty i{font-size:1.2rem;display:block;margin-bottom:7px;color:#cbd5e1}
 @keyframes ptmFade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+@media (max-width:768px){.ptm-title{font-size:1rem}.ptm-sub{font-size:.76rem}.ptm-tab-wrap{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:6px;padding-bottom:4px;-webkit-overflow-scrolling:touch}.ptm-tab{height:34px;padding:0 10px;font-size:.72rem;flex:0 0 auto}.ptm-panel-card{padding:8px}}
+@media (max-width:360px){.ptm-title{font-size:.9rem}.ptm-sub{font-size:.7rem}.ptm-chip{font-size:.62rem;padding:5px 8px}.ptm-tab{height:32px;padding:0 8px;font-size:.68rem}.ptm-tab i{font-size:.8rem}.ptm-panel-card{padding:6px;border-radius:10px}}
 </style>
 
 <div class="card">

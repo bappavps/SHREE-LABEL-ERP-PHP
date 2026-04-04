@@ -32,6 +32,23 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
     if (toggleBtn && sidebar && appShell) {
         var hoverCollapseTimer = null;
 
+        function closeAllSidebarTabs() {
+            document.querySelectorAll('.nav-group.is-open').forEach(function (node) {
+                node.classList.remove('is-open');
+                var toggle = node.querySelector('.nav-group-toggle');
+                if (toggle) toggle.setAttribute('aria-expanded', 'false');
+            });
+
+            document.querySelectorAll('.nav-sub-nest.is-open').forEach(function (node) {
+                node.classList.remove('is-open');
+                var toggle = node.querySelector('.nav-sub-nest-toggle');
+                if (toggle) toggle.setAttribute('aria-expanded', 'false');
+            });
+
+            localStorage.removeItem('erp_sidebar_open_groups_v1');
+            localStorage.removeItem('erp_sidebar_open_nested_v1');
+        }
+
         function isDesktopSidebar() {
             return window.innerWidth > 900;
         }
@@ -52,6 +69,7 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             hoverCollapseTimer = setTimeout(function () {
                 appShell.classList.add('sidebar-collapsed');
                 localStorage.setItem('erp_sidebar_collapsed', '1');
+                closeAllSidebarTabs();
                 hoverCollapseTimer = null;
             }, delayMs);
         }
@@ -62,6 +80,7 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             var sidebarPref = localStorage.getItem('erp_sidebar_collapsed');
             if (sidebarPref === null || sidebarPref === '1') {
                 appShell.classList.add('sidebar-collapsed');
+                closeAllSidebarTabs();
             } else {
                 appShell.classList.remove('sidebar-collapsed');
             }
@@ -74,6 +93,13 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                 cancelDesktopAutoCollapse();
                 appShell.classList.toggle('sidebar-collapsed');
                 localStorage.setItem('erp_sidebar_collapsed', appShell.classList.contains('sidebar-collapsed') ? '1' : '0');
+                if (appShell.classList.contains('sidebar-collapsed')) {
+                    closeAllSidebarTabs();
+                } else {
+                    // When manually expanded from collapsed state, mouse may still be outside sidebar.
+                    // Start delay timer immediately so collapse delay setting is respected.
+                    scheduleDesktopAutoCollapse();
+                }
             }
         });
 
@@ -99,6 +125,7 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                 sidebar.classList.remove('is-open');
                 appShell.classList.add('sidebar-collapsed');
                 localStorage.setItem('erp_sidebar_collapsed', '1');
+                closeAllSidebarTabs();
             }
         });
     }

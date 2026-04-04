@@ -13,12 +13,13 @@ $mode   = $_GET['mode']   ?? 'all';
 $appSettings = getAppSettings();
 $companyName = $appSettings['company_name'] ?? APP_NAME;
 $companyTagline = $appSettings['company_tagline'] ?? '';
-$companyAddress = $appSettings['company_address'] ?? '';
-$companyPhone = $appSettings['company_mobile'] ?? ($appSettings['company_phone'] ?? '');
-$companyEmail = $appSettings['company_email'] ?? '';
-$companyGST = $appSettings['company_gst'] ?? '';
-$logoPath = $appSettings['logo_path'] ?? '';
-$logoUrl = $logoPath ? (BASE_URL . '/' . $logoPath) : '';
+$companyAddress = trim((string)($appSettings['erp_address'] ?? '')) !== '' ? (string)$appSettings['erp_address'] : (string)($appSettings['company_address'] ?? '');
+$companyPhone = trim((string)($appSettings['erp_phone'] ?? '')) !== '' ? (string)$appSettings['erp_phone'] : (string)($appSettings['company_mobile'] ?? ($appSettings['company_phone'] ?? ''));
+$companyEmail = trim((string)($appSettings['erp_email'] ?? '')) !== '' ? (string)$appSettings['erp_email'] : (string)($appSettings['company_email'] ?? '');
+$companyGST = trim((string)($appSettings['erp_gst'] ?? '')) !== '' ? (string)$appSettings['erp_gst'] : (string)($appSettings['company_gst'] ?? '');
+$erpLogoPath = (string)($appSettings['erp_logo_path'] ?? '');
+$logoPath = $erpLogoPath !== '' ? $erpLogoPath : (string)($appSettings['logo_path'] ?? '');
+$logoUrl = $logoPath ? appUrl($logoPath) : '';
 
 // ── All 19 columns (master list) ─────────────────────────────
 $allColumns = [

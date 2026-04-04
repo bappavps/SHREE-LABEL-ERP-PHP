@@ -12,6 +12,7 @@ $companyName = trim((string)($appSettings['company_name'] ?? '')) ?: APP_NAME;
 $erpDisplayName = function_exists('getErpDisplayName') ? getErpDisplayName($companyName) : APP_NAME;
 $companyTagline = trim((string)($appSettings['company_tagline'] ?? '')) ?: 'ERP Master System';
 $logoPath = (string)($appSettings['logo_path'] ?? '');
+$erpLogoPath = (string)($appSettings['erp_logo_path'] ?? '');
 $animatedFlagPath = (string)($appSettings['animated_flag_path'] ?? '');
 $animatedFlagUrl = trim((string)($appSettings['animated_flag_url'] ?? ''));
 $flagEmoji = trim((string)($appSettings['flag_emoji'] ?? '🇮🇳')) ?: '🇮🇳';
@@ -27,7 +28,8 @@ if ($animatedFlagUrl !== '' && filter_var($animatedFlagUrl, FILTER_VALIDATE_URL)
 } elseif ($animatedFlagPath !== '') {
   $animatedFlagSrc = appUrl($animatedFlagPath);
 }
-$companyLogoUrl = $logoPath !== '' ? appUrl($logoPath) : appUrl('assets/img/logo.svg');
+$uiLogoPath = $erpLogoPath !== '' ? $erpLogoPath : $logoPath;
+$companyLogoUrl = $uiLogoPath !== '' ? appUrl($uiLogoPath) : appUrl('assets/img/logo.svg');
 $themeColor = (string)($appSettings['sidebar_button_color'] ?? '#22c55e');
 $csrfToken = function_exists('generateCSRF') ? generateCSRF() : '';
 $currentPath = function_exists('rbacCurrentPath') ? rbacCurrentPath() : (string)($_SERVER['PHP_SELF'] ?? '');
@@ -61,7 +63,7 @@ $notificationDeptCsv = implode(',', $notificationDepartments);
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title><?= e($pageTitle) ?> — <?= APP_NAME ?></title>
+<title><?= e($pageTitle) ?> — <?= e($erpDisplayName) ?></title>
 <meta name="csrf-token" content="<?= e($csrfToken) ?>">
 <link rel="icon" href="<?= e($companyLogoUrl) ?>">
 <link rel="apple-touch-icon" href="<?= e($companyLogoUrl) ?>">
