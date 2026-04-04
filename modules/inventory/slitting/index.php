@@ -149,6 +149,21 @@ include __DIR__ . '/../../../includes/header.php';
 .slt-util-fill.warn{background:#f59e0b}
 .slt-util-fill.over{background:#ef4444}
 .slt-execute-bar{margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}
+.slt-choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.slt-machine-grid{grid-template-columns:1fr}
+.slt-check-card{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#fff;cursor:pointer;transition:all .18s}
+.slt-check-card:hover{border-color:#86efac;background:#f0fdf4}
+.slt-check-card.active{border-color:var(--brand);background:#f0fdf4;box-shadow:0 0 0 3px rgba(34,197,94,.12)}
+.slt-check-card input{margin-top:2px}
+.slt-check-card strong{display:block;font-size:.8rem;color:var(--text-main)}
+.slt-check-card span{display:block;font-size:.7rem;color:var(--text-muted);margin-top:2px}
+.slt-choice-empty{padding:10px 12px;border:1px dashed var(--border);border-radius:10px;font-size:.76rem;color:var(--text-muted);background:#f8fafc}
+.slt-dept-summary{margin-top:8px;padding:10px 12px;border:1px solid #bbf7d0;border-radius:10px;background:#f0fdf4}
+.slt-dept-summary strong{display:block;font-size:.76rem;color:#166534;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.slt-dept-summary div{font-size:.8rem;font-weight:700;color:#14532d}
+.slt-dept-summary span{display:block;font-size:.72rem;color:#166534;margin-top:4px}
+.slt-dept-summary.is-empty{border-color:#e2e8f0;background:#f8fafc}
+.slt-dept-summary.is-empty strong,.slt-dept-summary.is-empty div,.slt-dept-summary.is-empty span{color:#64748b}
 
 /* Col 3: Config */
 .slt-config-header{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:.78rem}
@@ -344,12 +359,16 @@ include __DIR__ . '/../../../includes/header.php';
             <label>Operator</label>
             <input type="text" id="execOperator" class="form-control" style="height:34px;font-size:.8rem;background:#f8fafc" placeholder="Auto detected from login" readonly>
           </div>
-          <div class="form-group">
-            <label>Machine</label>
-            <select id="execMachine" class="form-control" style="height:34px;font-size:.8rem">
-              <option value="">Select machine…</option>
-            </select>
+          <div class="form-group" style="grid-column:1 / -1">
+            <label>Department</label>
+            <div id="execDepartmentChooser" class="slt-choice-grid"></div>
+            <div id="execDepartmentIssueHint" class="slt-dept-summary is-empty">
+              <strong>Job Issue Department</strong>
+              <div>No department selected yet</div>
+              <span>Only selected departments will receive auto-issued job cards after execution.</span>
+            </div>
           </div>
+          <input type="hidden" id="execMachine" value="">
         </div>
         <button class="btn btn-primary btn-full" id="btnExecuteBatch" disabled><i class="bi bi-play-circle"></i> <?= $isAcceptMode ? 'Update Roll' : 'Execute Batch' ?></button>
       </div>
@@ -473,6 +492,7 @@ const SLT = (() => {
   const ACCEPT_OLD_PARENT_PREV_STATUS = '<?= e($acceptOldParentPrevStatus) ?>';
   const ACCEPT_PLANNING_ID = <?= (int)$acceptPlanningId ?>;
   const ACCEPT_PLAN_NO = '<?= e($acceptPlanNo) ?>';
+  const DEFAULT_DEPARTMENTS = <?= json_encode(erp_default_department_selection(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 
   // ── State ──────────────────────────────────────────────────
   let plannerJobs     = [];
@@ -482,6 +502,10 @@ const SLT = (() => {
   let activeRollNo    = null; // currently selected roll for config
   let rollConfigs     = {};   // rollNo -> { runs: [{width,length,qty}], destination, job_no, job_name, job_size, remainderAction }
   let machines        = [];
+  let machineDepartments = [];
+  let selectedMachineDepartments = [];
+  let departmentSelectionTouched = false;
+  let activePlannerDepartmentSeed = [];
   let plannerFilter   = 'pending'; // status tab filter
   let allStockOptions = [];    // raw options from API (unfiltered)
   let allStockGroups  = [];    // grouped options across all suppliers
@@ -566,6 +590,172 @@ const SLT = (() => {
         else hideSuggestions();
       }, 300);
     });
+  }
+
+  function parseDepartmentList(value) {
+    const raw = Array.isArray(value)
+      ? value.slice()
+      : String(value == null ? '' : value).split(/\s*,\s*|\r\n|\r|\n/);
+    const seen = {};
+    const out = [];
+    raw.forEach(function(item){
+      const text = String(item == null ? '' : item).trim();
+      if (!text) return;
+      const norm = text.toLowerCase();
+      if (seen[norm]) return;
+      seen[norm] = true;
+      out.push(text);
+    });
+    return out;
+  }
+
+  function sameText(a, b) {
+    return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  }
+
+  function getFilteredMachines() {
+    if (!selectedMachineDepartments.length) {
+      return machines.slice();
+    }
+    return machines.filter(function(machine){
+      const sections = Array.isArray(machine.sections_list) ? machine.sections_list : parseDepartmentList(machine.section || '');
+      return sections.some(function(section){
+        return selectedMachineDepartments.some(function(selected){ return sameText(selected, section); });
+      });
+    });
+  }
+
+  function syncOperatorFromMachine() {
+    const machineField = document.getElementById('execMachine');
+    const opField = document.getElementById('execOperator');
+    if (!opField || !machineField) return;
+    opField.value = (machineField.value || selectedMachineDepartments.length) ? CURRENT_OPERATOR : '';
+  }
+
+  function setSelectedMachine(machineName, rerender) {
+    const machineField = document.getElementById('execMachine');
+    if (!machineField) return;
+    machineField.value = String(machineName || '').trim();
+    syncOperatorFromMachine();
+    if (rerender !== false) renderMachineChooser();
+  }
+
+  function setSelectedDepartments(values, preferredMachine) {
+    const picked = parseDepartmentList(values);
+    selectedMachineDepartments = picked;
+    activePlannerDepartmentSeed = picked.slice();
+    departmentSelectionTouched = false;
+    renderDepartmentChooser();
+    renderMachineChooser(preferredMachine || '');
+  }
+
+  function renderDepartmentIssueHint() {
+    const hint = document.getElementById('execDepartmentIssueHint');
+    if (!hint) return;
+    const picked = parseDepartmentList(selectedMachineDepartments);
+    const title = hint.querySelector('div');
+    const note = hint.querySelector('span');
+    hint.classList.toggle('is-empty', !picked.length);
+    if (title) {
+      title.textContent = picked.length ? picked.join(', ') : 'No department selected yet';
+    }
+    if (note) {
+      note.textContent = picked.length
+        ? 'After execution, job cards will be issued only to the selected departments below. The machine will be auto-selected from the Machine Master mapping.'
+        : 'Select one or more departments below. Final job cards will be generated only for the departments selected here.';
+    }
+  }
+
+  function renderDepartmentChooser() {
+    const wrap = document.getElementById('execDepartmentChooser');
+    if (!wrap) return;
+    if (!machineDepartments.length) {
+      wrap.innerHTML = '<div class="slt-choice-empty">No departments available from Machine Master.</div>';
+      renderDepartmentIssueHint();
+      return;
+    }
+    wrap.innerHTML = machineDepartments.map(function(dept, idx){
+      const checked = selectedMachineDepartments.some(function(selected){ return sameText(selected, dept); });
+      return '<label class="slt-check-card' + (checked ? ' active' : '') + '">' +
+        '<input type="checkbox" data-dept-index="' + idx + '" ' + (checked ? 'checked' : '') + '>' +
+        '<div><strong>' + esc(dept) + '</strong><span>You can add or uncheck this department before final job card generation</span></div>' +
+      '</label>';
+    }).join('');
+
+    wrap.querySelectorAll('input[type="checkbox"]').forEach(function(box){
+      box.addEventListener('change', function(){
+        const dept = machineDepartments[Number(this.getAttribute('data-dept-index') || 0)] || '';
+        if (this.checked) {
+          if (!selectedMachineDepartments.some(function(item){ return sameText(item, dept); })) {
+            selectedMachineDepartments.push(dept);
+          }
+        } else {
+          selectedMachineDepartments = selectedMachineDepartments.filter(function(item){ return !sameText(item, dept); });
+        }
+        departmentSelectionTouched = true;
+        renderDepartmentChooser();
+        renderMachineChooser();
+      });
+    });
+
+    renderDepartmentIssueHint();
+  }
+
+  function renderMachineChooser(preferredMachine) {
+    const available = getFilteredMachines();
+    let currentMachine = String(document.getElementById('execMachine').value || '').trim();
+    if (preferredMachine && available.some(function(machine){ return sameText(machine.name, preferredMachine); })) {
+      currentMachine = preferredMachine;
+    }
+    if (currentMachine && !available.some(function(machine){ return sameText(machine.name, currentMachine); })) {
+      currentMachine = '';
+    }
+    if (!currentMachine && available.length) {
+      currentMachine = String(available[0].name || '').trim();
+    }
+    setSelectedMachine(currentMachine, false);
+  }
+
+  function applyPlannerMachineSelection() {
+    const jobDepartments = selectedJob ? parseDepartmentList(selectedJob.department_route || '') : [];
+    const preferredMachine = selectedJob ? String(selectedJob.machine_name || '').trim() : '';
+
+    const plannerSeedChanged = JSON.stringify(jobDepartments) !== JSON.stringify(activePlannerDepartmentSeed);
+
+    if (plannerSeedChanged) {
+      activePlannerDepartmentSeed = jobDepartments.slice();
+      departmentSelectionTouched = false;
+    }
+
+    if (!departmentSelectionTouched) {
+      if (jobDepartments.length) {
+        selectedMachineDepartments = jobDepartments.slice();
+      } else if (!selectedJob) {
+        selectedMachineDepartments = [];
+      }
+    }
+
+    renderDepartmentChooser();
+
+    if (preferredMachine) {
+      renderMachineChooser(preferredMachine);
+      return;
+    }
+
+    if (isAcceptMode()) {
+      const available = getFilteredMachines();
+      const jumboMachine = available.find(function(machine){
+        const blob = String((machine.name || '') + ' ' + (machine.type || '') + ' ' + (machine.section || '')).toLowerCase();
+        return blob.includes('jumbo');
+      }) || machines.find(function(machine){
+        const blob = String((machine.name || '') + ' ' + (machine.type || '') + ' ' + (machine.section || '')).toLowerCase();
+        return blob.includes('jumbo');
+      });
+      renderMachineChooser(jumboMachine && jumboMachine.name ? jumboMachine.name : '');
+      return;
+    }
+
+    renderMachineChooser();
   }
 
   async function showSuggestions(q) {
@@ -1372,6 +1562,7 @@ const SLT = (() => {
       }
     }
     renderPlannerTabs();
+    applyPlannerMachineSelection();
     renderPlannerJobs();
     renderJobDetail();
     renderConfig();
@@ -1456,6 +1647,7 @@ const SLT = (() => {
       return;
     }
     autofillSelectedPlanNo();
+    applyPlannerMachineSelection();
     renderPlannerJobs();
     renderJobDetail();
     renderConfig();
@@ -1808,7 +2000,7 @@ const SLT = (() => {
     const machine  = document.getElementById('execMachine').value;
 
     if (!machine) {
-      showToast('Please select machine first', 'warning');
+      showToast('Selected department-er jonno kono active machine mapping paoa jayni', 'warning');
       btn.disabled = false;
       btn.innerHTML = '<i class="bi bi-play-circle"></i> ' + getExecuteButtonLabel();
       return;
@@ -1845,6 +2037,7 @@ const SLT = (() => {
       fd.append('remainder_action', cfg.remainderAction);
       fd.append('operator_name', operator);
       fd.append('machine', machine);
+      fd.append('department_route', selectedMachineDepartments.join(', '));
       fd.append('destination', cfg.destination);
       fd.append('job_no', cfg.job_no);
       fd.append('job_name', cfg.job_name);
@@ -2189,39 +2382,13 @@ const SLT = (() => {
     const data = await apiGet('get_machines');
     if (!data.ok) return;
     machines = data.machines || [];
-    const sel = document.getElementById('execMachine');
+    machineDepartments = data.departments || [];
     const op = document.getElementById('execOperator');
     if (op) {
       op.value = '';
       op.readOnly = true;
     }
-    machines.forEach(m => {
-      const opt = document.createElement('option');
-      opt.value = m.name;
-      opt.textContent = m.name + (m.type ? ' (' + m.type + ')' : '');
-      sel.appendChild(opt);
-    });
-
-    // Accept mode: auto-select Jumbo machine for roll update flow.
-    if (isAcceptMode() && machines.length) {
-      const jumboMachine = machines.find(m => {
-        const blob = String((m.name || '') + ' ' + (m.type || '') + ' ' + (m.section || '')).toLowerCase();
-        return blob.includes('jumbo');
-      });
-      if (jumboMachine && jumboMachine.name) {
-        sel.value = jumboMachine.name;
-      }
-    }
-
-    if (sel.value && op) {
-      op.value = CURRENT_OPERATOR;
-    }
-
-    sel.addEventListener('change', function() {
-      const opField = document.getElementById('execOperator');
-      if (!opField) return;
-      opField.value = this.value ? CURRENT_OPERATOR : '';
-    });
+    applyPlannerMachineSelection();
   }
 
   // ── Modal helpers ──────────────────────────────────────────

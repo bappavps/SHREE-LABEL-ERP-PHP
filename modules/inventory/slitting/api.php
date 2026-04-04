@@ -170,6 +170,31 @@ function shouldBypassJumboForMachine(mysqli $db, string $machine): bool {
     return false;
 }
 
+function resolveMachineFromDepartmentRoute(mysqli $db, string $departmentRoute): string {
+    $selectedDepartments = erp_parse_multi_value_list($departmentRoute);
+    if (empty($selectedDepartments)) return '';
+
+    $rows = $db->query("SELECT name, section FROM master_machines WHERE status = 'Active' ORDER BY name ASC");
+    if (!($rows instanceof mysqli_result)) return '';
+
+    while ($row = $rows->fetch_assoc()) {
+        $machineName = trim((string)($row['name'] ?? ''));
+        if ($machineName === '') continue;
+        $sections = erp_parse_multi_value_list($row['section'] ?? '');
+        foreach ($sections as $section) {
+            foreach ($selectedDepartments as $department) {
+                if (strcasecmp(erp_canonical_department_label($section), erp_canonical_department_label($department)) === 0) {
+                    $rows->close();
+                    return $machineName;
+                }
+            }
+        }
+    }
+
+    $rows->close();
+    return '';
+}
+
 // ─── Route actions ──────────────────────────────────────────
 try {
     switch ($action) {
@@ -336,6 +361,12 @@ try {
                 $row['printing_planning'] = $extra['printing_planning'] ?? '';
                 $row['roll_direction'] = $extra['roll_direction'] ?? '';
                 $row['repeat_val'] = $extra['repeat'] ?? '';
+                $row['department_route'] = erp_normalize_department_selection(
+                    $extra['department_route'] ?? '',
+                    erp_get_machine_departments($db),
+                    erp_default_department_selection()
+                );
+                $row['machine_name'] = $extra['machine'] ?? ($row['machine'] ?? '');
             }
         }
         unset($row);
@@ -435,6 +466,7 @@ try {
         $jobSize        = trim($_POST['job_size'] ?? '');
         $planNoInput    = trim($_POST['plan_no'] ?? $jobNo);
         $destination    = trim($_POST['destination'] ?? 'STOCK');
+        $departmentRouteInput = trim($_POST['department_route'] ?? '');
         $planningId     = (int)($_POST['planning_id'] ?? 0);
         $runs           = json_decode($runsJson, true);
 
@@ -444,7 +476,11 @@ try {
         }
 
         if ($machine === '') {
-            echo json_encode(['ok' => false, 'error' => 'Error: Select machine first']);
+            $machine = resolveMachineFromDepartmentRoute($db, $departmentRouteInput);
+        }
+
+        if ($machine === '') {
+            echo json_encode(['ok' => false, 'error' => 'No active machine found for the selected department mapping']);
             break;
         }
 
@@ -525,7 +561,18 @@ try {
                 throw new Exception('Over-cut! Total width ' . round($totalUsedWidth,2) . 'mm exceeds parent ' . round($pw,2) . 'mm');
             }
 
-            $directFlexoBypass = shouldBypassJumboForMachine($db, $machine);
+            $departmentChoices = erp_get_machine_departments($db);
+            $selectedDepartments = erp_department_selection_list(
+                $departmentRouteInput !== '' ? $departmentRouteInput : ($planningExtra['department_route'] ?? ''),
+                $departmentChoices,
+                []
+            );
+            $allowJumboJob = erp_department_selection_contains($selectedDepartments, 'Jumbo Slitting', $departmentChoices, []);
+            $allowPrintingJob = erp_department_selection_contains($selectedDepartments, 'Printing', $departmentChoices, []);
+            $allowDieCuttingJob = erp_department_selection_contains($selectedDepartments, 'Die-Cutting', $departmentChoices, []);
+            $allowLabelSlittingJob = erp_department_selection_contains($selectedDepartments, 'Label Slitting', $departmentChoices, []);
+
+            $directFlexoBypass = $allowPrintingJob && !$allowJumboJob;
 
             // 3. Create batch (collision-safe for unique batch_no)
             $userId  = $_SESSION['user_id'] ?? null;
@@ -789,8 +836,12 @@ try {
             $displayJobName = ($planningJobName !== '' ? $planningJobName : $jobName);
             $jumboJobId = 0;
             if (!empty($jobChildRolls)) {
+                $prefixSettings = getPrefixSettings();
+                $jumboPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['jumbo_job']['prefix'] ?? 'JMB')));
+                if ($jumboPrefix === '') $jumboPrefix = 'JMB';
+
                 $jumboRefNo = '';
-                if (!$directFlexoBypass) {
+                if ($allowJumboJob) {
                     $existingJumbo = null;
                     if ($planningId > 0) {
                         $findJ = $db->prepare("SELECT * FROM jobs WHERE job_type = 'Slitting' AND planning_id = ? AND status IN ('Pending','Running') AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
@@ -825,7 +876,7 @@ try {
 
                         $newExtra = json_encode($extraPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                         $updJ = $db->prepare("UPDATE jobs SET extra_data = ?, notes = ? WHERE id = ?");
-                        $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | JMB: ' . (string)($existingJumbo['job_no'] ?? 'N/A') . ($displayJobName !== '' ? ' | Job Name : ' . $displayJobName : '');
+                        $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | ' . $jumboPrefix . ': ' . (string)($existingJumbo['job_no'] ?? 'N/A') . ($displayJobName !== '' ? ' | Job Name : ' . $displayJobName : '');
                         $jid = (int)$existingJumbo['id'];
                         $updJ->bind_param('ssi', $newExtra, $notesJ, $jid);
                         $updJ->execute();
@@ -833,23 +884,23 @@ try {
                         $jumboRefNo = (string)($existingJumbo['job_no'] ?? '');
                         $createdJobCards[] = ['job_no' => $existingJumbo['job_no'], 'type' => 'Slitting', 'roll' => $parentRollNo, 'id' => $jumboJobId];
                     } else {
-                        // Derive JMB suffix from planning number (e.g., PLN/2026/0002 → JMB/2026/0002)
+                        // Derive stage suffix from planning number (e.g., PLN/2026/0002 -> PREFIX/2026/0002)
                         $jcNoJumbo = '';
                         if ($planNo !== '') {
                             $parts = explode('/', $planNo);
                             if (count($parts) >= 3) {
                                 $suffix = (string)$parts[2];
                                 $year = (string)($parts[1] ?? date('Y'));
-                                $jcNoJumbo = 'JMB/' . $year . '/' . $suffix;
+                                $jcNoJumbo = $jumboPrefix . '/' . $year . '/' . $suffix;
                             }
                         }
 
                         // Fallback to deriveStageJobNo if suffix extraction fails
                         if ($jcNoJumbo === '') {
-                            $jcNoJumbo = deriveStageJobNo($planNo, 'JMB');
+                            $jcNoJumbo = deriveStageJobNo($planNo, $jumboPrefix);
                         }
                         if ($jcNoJumbo === '') {
-                            $jcNoJumbo = 'JMB/' . date('Y') . '/' . str_pad((string)$batchId, 4, '0', STR_PAD_LEFT);
+                            $jcNoJumbo = $jumboPrefix . '/' . date('Y') . '/' . str_pad((string)$batchId, 4, '0', STR_PAD_LEFT);
                         }
 
                         $extraJson = json_encode($extraPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -859,11 +910,11 @@ try {
                             if ($jumboAttempt > 0) {
                                 $jcNoJumbo = (string)(generateUniqueIdForTable($db, 'jumbo_job', 'jobs', 'job_no') ?? '');
                                 if ($jcNoJumbo === '') {
-                                    $jcNoJumbo = 'JMB/' . date('Y') . '/' . str_pad((string)($batchId + $jumboAttempt), 4, '0', STR_PAD_LEFT);
+                                    $jcNoJumbo = $jumboPrefix . '/' . date('Y') . '/' . str_pad((string)($batchId + $jumboAttempt), 4, '0', STR_PAD_LEFT);
                                 }
                             }
 
-                            $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | JMB: ' . $jcNoJumbo . ($displayJobName !== '' ? ' | Job Name : ' . $displayJobName : '');
+                            $notesJ = 'Jumbo grouped slitting job | Plan: ' . ($planNo ?: 'N/A') . ' | ' . $jumboPrefix . ': ' . $jcNoJumbo . ($displayJobName !== '' ? ' | Job Name : ' . $displayJobName : '');
                             $jcStmtJ = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, notes, extra_data) VALUES (?, ?, NULL, ?, 'Slitting', 'jumbo_slitting', 'Pending', 1, ?, ?)");
                             $jcStmtJ->bind_param('sisss', $jcNoJumbo, $pidJ, $parentRollNo, $notesJ, $extraJson);
                             $okJumbo = false;
@@ -901,14 +952,28 @@ try {
                     }
                 }
 
+                $existingPrint = null;
+                $existingPrintId = 0;
+                $existingFlexNo = '';
+                $newFlexJobId = 0;
+                $jcNoFlex = '';
+                $existingDieId = 0;
+                $existingDieNo = '';
+                $newDctJobId = 0;
+                $jcNoDct = '';
+
                 // Keep one downstream printing job per plan as queued.
-                if ($planningId > 0) {
+                if ($planningId > 0 && ($allowPrintingJob || $allowDieCuttingJob)) {
                     $chkP = $db->prepare("SELECT id, job_no FROM jobs WHERE job_type = 'Printing' AND planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
                     $chkP->bind_param('i', $planningId);
                     $chkP->execute();
                     $existingPrint = $chkP->get_result()->fetch_assoc();
+                    $existingPrintId = (int)($existingPrint['id'] ?? 0);
+                    $existingFlexNo = trim((string)($existingPrint['job_no'] ?? ''));
+                }
+
+                if ($planningId > 0 && $allowPrintingJob) {
                     if (!$existingPrint) {
-                        $jcNoFlex = '';
                         for ($flexAttempt = 0; $flexAttempt < 30; $flexAttempt++) {
                             $jcNoFlex = (string)(generateUniqueIdForTable($db, 'printing_job', 'jobs', 'job_no') ?? '');
                             if ($jcNoFlex === '') {
@@ -958,8 +1023,6 @@ try {
                             }
                         }
                     } else {
-                        $existingPrintId = (int)($existingPrint['id'] ?? 0);
-                        $existingFlexNo = trim((string)($existingPrint['job_no'] ?? ''));
                         $notesF = $directFlexoBypass
                             ? ('Flexo printing queued directly from slitting terminal | Plan: ' . ($planNo ?: 'N/A') . ' | Machine: ' . $machine . ' I Flexo: ' . ($existingFlexNo !== '' ? $existingFlexNo : 'N/A') . ($displayJobName !== '' ? ' | Job name : ' . $displayJobName : ''))
                             : ('Flexo printing queued from Jumbo | Plan: ' . ($planNo ?: 'N/A') . ' | Jumbo: ' . ($jumboRefNo !== '' ? $jumboRefNo : 'N/A') . ' I Flexo: ' . ($existingFlexNo !== '' ? $existingFlexNo : 'N/A') . ($displayJobName !== '' ? ' | Job name : ' . $displayJobName : ''));
@@ -971,8 +1034,10 @@ try {
                     }
                 }
 
-                // Keep one downstream die-cutting job per plan as queued (only if die = FlatBed).
-                if ($planningId > 0 && strtolower(trim((string)($planningExtra['die'] ?? ''))) === 'flatbed') {
+                // Keep one downstream die-cutting job per plan as queued (FlatBed variants only).
+                $dieValueNorm = strtolower(trim((string)($planningExtra['die'] ?? '')));
+                $isFlatbedLikeDie = ($dieValueNorm !== '') && (strpos($dieValueNorm, 'flatbed') !== false) && (strpos($dieValueNorm, 'rotary') === false);
+                if ($planningId > 0 && $allowDieCuttingJob && $isFlatbedLikeDie) {
                     $flexJobIdForDct = (isset($newFlexJobId) && $newFlexJobId > 0) ? (string)$newFlexJobId : (isset($existingPrintId) && $existingPrintId > 0 ? (string)$existingPrintId : '');
                     $flexJobNoForRef = (isset($jcNoFlex) && $jcNoFlex !== '') ? $jcNoFlex : (isset($existingFlexNo) && $existingFlexNo !== '' ? $existingFlexNo : 'N/A');
 
@@ -980,8 +1045,9 @@ try {
                     $chkD->bind_param('i', $planningId);
                     $chkD->execute();
                     $existingDie = $chkD->get_result()->fetch_assoc();
+                    $existingDieId = (int)($existingDie['id'] ?? 0);
+                    $existingDieNo = trim((string)($existingDie['job_no'] ?? ''));
                     if (!$existingDie) {
-                        $jcNoDct = '';
                         for ($dctAttempt = 0; $dctAttempt < 30; $dctAttempt++) {
                             $jcNoDct = (string)(generateUniqueIdForTable($db, 'die_cutting_job', 'jobs', 'job_no') ?? '');
                             if ($jcNoDct === '') {
@@ -1026,6 +1092,108 @@ try {
                             if ((int)$jcStmtD->errno === 1062) continue;
                             if ($dctAttempt >= 29) {
                                 throw new Exception('Unable to generate unique DCT job number. Please try again.');
+                            }
+                        }
+                    }
+                }
+
+                // Ensure one downstream label-slitting job per plan as queued, so card appears before release.
+                if ($planningId > 0 && $allowLabelSlittingJob) {
+                    $labelPrevId = 0;
+                    $labelFromRef = 'N/A';
+
+                    if ($allowDieCuttingJob && $isFlatbedLikeDie) {
+                        $labelPrevId = $newDctJobId > 0 ? $newDctJobId : $existingDieId;
+                        $labelFromRef = $jcNoDct !== '' ? $jcNoDct : ($existingDieNo !== '' ? $existingDieNo : 'N/A');
+                    } else {
+                        $labelPrevId = $newFlexJobId > 0 ? $newFlexJobId : $existingPrintId;
+                        $labelFromRef = $jcNoFlex !== '' ? $jcNoFlex : ($existingFlexNo !== '' ? $existingFlexNo : 'N/A');
+                    }
+
+                    $chkLabel = $db->prepare("SELECT id, job_no FROM jobs WHERE department = 'label_slitting' AND planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
+                    $chkLabel->bind_param('i', $planningId);
+                    $chkLabel->execute();
+                    $existingLabel = $chkLabel->get_result()->fetch_assoc();
+
+                    $jumboChainRef = $jumboRefNo !== '' ? $jumboRefNo : 'N/A';
+                    $flexoChainRef = $jcNoFlex !== '' ? $jcNoFlex : ($existingFlexNo !== '' ? $existingFlexNo : 'N/A');
+                    $dieCutChainRef = $jcNoDct !== '' ? $jcNoDct : ($existingDieNo !== '' ? $existingDieNo : 'N/A');
+                    $labelChainRef = trim((string)($existingLabel['job_no'] ?? ''));
+                    $labelNotes = 'Label slitting queued from upstream'
+                        . ' | Plan: ' . ($planNo ?: 'N/A')
+                        . ' | Jumbo: ' . $jumboChainRef
+                        . ' | Flexo: ' . $flexoChainRef
+                        . ' | Die-Cut: ' . $dieCutChainRef
+                        . ' | Label: ' . ($labelChainRef !== '' ? $labelChainRef : 'N/A');
+                    if ($displayJobName !== '') {
+                        $labelNotes .= ' | Job name: ' . $displayJobName;
+                    }
+
+                    if ($existingLabel) {
+                        $labelId = (int)$existingLabel['id'];
+                        if ($labelPrevId > 0) {
+                            $updLabel = $db->prepare("UPDATE jobs SET previous_job_id = ?, notes = ? WHERE id = ?");
+                            $updLabel->bind_param('isi', $labelPrevId, $labelNotes, $labelId);
+                        } else {
+                            $updLabel = $db->prepare("UPDATE jobs SET previous_job_id = NULL, notes = ? WHERE id = ?");
+                            $updLabel->bind_param('si', $labelNotes, $labelId);
+                        }
+                        $updLabel->execute();
+                    } else {
+                        $jcNoLabel = '';
+                        for ($labelAttempt = 0; $labelAttempt < 30; $labelAttempt++) {
+                            $jcNoLabel = (string)(generateUniqueIdForTable($db, 'label_slitting_job', 'jobs', 'job_no') ?? '');
+                            if ($jcNoLabel === '') {
+                                $jcNoLabel = deriveStageJobNo($planNo, 'LSL');
+                            }
+                            if ($jcNoLabel === '') {
+                                $jcNoLabel = 'LSL/' . date('Y') . '/' . str_pad((string)($batchId + $labelAttempt), 4, '0', STR_PAD_LEFT);
+                            }
+
+                            $labelNotesForInsert = 'Label slitting queued from upstream'
+                                . ' | Plan: ' . ($planNo ?: 'N/A')
+                                . ' | Jumbo: ' . $jumboChainRef
+                                . ' | Flexo: ' . $flexoChainRef
+                                . ' | Die-Cut: ' . $dieCutChainRef
+                                . ' | Label: ' . $jcNoLabel;
+                            if ($displayJobName !== '') {
+                                $labelNotesForInsert .= ' | Job name: ' . $displayJobName;
+                            }
+
+                            if ($labelPrevId > 0) {
+                                $insLabel = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Finishing', 'label_slitting', 'Queued', 4, ?, ?)");
+                                $insLabel->bind_param('sisis', $jcNoLabel, $planningId, $parentRollNo, $labelPrevId, $labelNotesForInsert);
+                            } else {
+                                $insLabel = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Finishing', 'label_slitting', 'Queued', 4, NULL, ?)");
+                                $insLabel->bind_param('siss', $jcNoLabel, $planningId, $parentRollNo, $labelNotesForInsert);
+                            }
+
+                            $okLabel = false;
+                            try {
+                                $okLabel = $insLabel->execute();
+                            } catch (Throwable $insertErr) {
+                                if ((int)($insLabel->errno ?? 0) === 1062 || stripos((string)$insertErr->getMessage(), 'Duplicate entry') !== false) {
+                                    $okLabel = false;
+                                } else {
+                                    throw $insertErr;
+                                }
+                            }
+
+                            if ($okLabel) {
+                                $labelId = (int)$db->insert_id;
+                                $createdJobCards[] = ['job_no' => $jcNoLabel, 'type' => 'Finishing', 'roll' => $parentRollNo, 'id' => $labelId];
+                                $nMsgL = 'New Label Slitting job card queued: ' . $jcNoLabel . ' | From: ' . $labelFromRef;
+                                $nInsL = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, 'label_slitting', ?, 'info')");
+                                if ($nInsL) {
+                                    $nInsL->bind_param('is', $labelId, $nMsgL);
+                                    $nInsL->execute();
+                                }
+                                break;
+                            }
+
+                            if ((int)$insLabel->errno === 1062) continue;
+                            if ($labelAttempt >= 29) {
+                                throw new Exception('Unable to generate unique label slitting job number. Please try again.');
                             }
                         }
                     }
@@ -1202,7 +1370,13 @@ try {
     // ═════════════════════════════════════════════════════════
     case 'get_machines':
         $rows = $db->query("SELECT * FROM master_machines WHERE status = 'Active' ORDER BY name")->fetch_all(MYSQLI_ASSOC);
-        echo json_encode(['ok' => true, 'machines' => $rows]);
+        $departments = erp_get_machine_departments($db);
+        foreach ($rows as &$row) {
+            $row['sections_list'] = erp_parse_multi_value_list($row['section'] ?? '');
+            $row['section'] = implode(', ', $row['sections_list']);
+        }
+        unset($row);
+        echo json_encode(['ok' => true, 'machines' => $rows, 'departments' => $departments]);
         break;
 
     default:

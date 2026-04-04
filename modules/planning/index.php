@@ -6,6 +6,7 @@
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';
 require_once __DIR__ . '/../../includes/auth_check.php';
+require_once __DIR__ . '/../plate-data/_common.php';
 
 $db = getDB();
 
@@ -43,18 +44,81 @@ $defaultColumns = [
   ['key' => 'repeat', 'label' => 'Repeat', 'type' => 'Text', 'sort' => 9],
   ['key' => 'material', 'label' => 'Material', 'type' => 'Text', 'sort' => 10],
   ['key' => 'paper_size', 'label' => 'Paper Size', 'type' => 'Text', 'sort' => 11],
-  ['key' => 'die', 'label' => 'Die', 'type' => 'Text', 'sort' => 12],
-  ['key' => 'allocate_mtrs', 'label' => 'MTRS', 'type' => 'Number', 'sort' => 13],
-  ['key' => 'qty_pcs', 'label' => 'QTY', 'type' => 'Number', 'sort' => 14],
-  ['key' => 'core_size', 'label' => 'Core', 'type' => 'Text', 'sort' => 15],
-  ['key' => 'qty_per_roll', 'label' => 'Qty/Roll', 'type' => 'Text', 'sort' => 16],
-  ['key' => 'roll_direction', 'label' => 'Direction', 'type' => 'Text', 'sort' => 17],
-  ['key' => 'remarks', 'label' => 'Remarks', 'type' => 'Text', 'sort' => 18],
+  ['key' => 'department_route', 'label' => 'Department', 'type' => 'Department', 'sort' => 12],
+  ['key' => 'die', 'label' => 'Die', 'type' => 'Text', 'sort' => 13],
+  ['key' => 'allocate_mtrs', 'label' => 'MTRS', 'type' => 'Number', 'sort' => 14],
+  ['key' => 'qty_pcs', 'label' => 'QTY', 'type' => 'Number', 'sort' => 15],
+  ['key' => 'core_size', 'label' => 'Core', 'type' => 'Text', 'sort' => 16],
+  ['key' => 'qty_per_roll', 'label' => 'Qty/Roll', 'type' => 'Text', 'sort' => 17],
+  ['key' => 'roll_direction', 'label' => 'Direction', 'type' => 'Text', 'sort' => 18],
+  ['key' => 'remarks', 'label' => 'Remarks', 'type' => 'Text', 'sort' => 19],
 ];
 
-$allowedTypes = ['Text', 'Number', 'Date', 'Status', 'Priority'];
+$allowedTypes = ['Text', 'Number', 'Date', 'Status', 'Priority', 'Department'];
 $statusList = ['Pending', 'Preparing Slitting', 'Slitting Completed', 'Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval'];
 $priorityList = ['Low', 'Normal', 'High', 'Urgent'];
+
+function planning_route_department_choices() {
+  return erp_get_machine_departments(getDB());
+}
+
+function planning_die_options() {
+  return ['FlatBed', 'Rotary', 'Sheeting', 'FlatBed With Sheeting', 'Rotary with Sheeting'];
+}
+
+function planning_normalize_die_value($value) {
+  $text = trim((string)$value);
+  if ($text === '') return '';
+
+  $norm = strtolower(preg_replace('/[^a-z0-9]+/', ' ', $text));
+  $norm = trim(preg_replace('/\s+/', ' ', $norm));
+
+  if ($norm === 'flatbed' || $norm === 'flat bed') return 'FlatBed';
+  if ($norm === 'rotary' || $norm === 'rotery') return 'Rotary';
+  if ($norm === 'sheeting') return 'Sheeting';
+  if ($norm === 'flatbed with sheeting' || $norm === 'flat bed with sheeting') return 'FlatBed With Sheeting';
+  if ($norm === 'rotary with sheeting' || $norm === 'rotery with sheeting') return 'Rotary with Sheeting';
+
+  foreach (planning_die_options() as $option) {
+    if (strcasecmp($text, $option) === 0) return $option;
+  }
+
+  return $text;
+}
+
+function planning_route_default_department_list($dieValue = '') {
+  $dieNorm = strtolower(trim((string)planning_normalize_die_value($dieValue)));
+  $defaults = ['Jumbo Slitting', 'Printing', 'Die-Cutting', 'Label Slitting', 'Packaging', 'Dispatch'];
+  if ($dieNorm !== '' && (strpos($dieNorm, 'rotary') !== false || strpos($dieNorm, 'rotery') !== false)) {
+    $defaults = array_values(array_filter($defaults, function($item) {
+      return strcasecmp((string)$item, 'Die-Cutting') !== 0;
+    }));
+  }
+  return $defaults;
+}
+
+function planning_apply_die_route_rules($value, $dieValue = '') {
+  $normalized = erp_normalize_department_selection(
+    $value,
+    planning_route_department_choices(),
+    planning_route_default_department_list($dieValue)
+  );
+
+  $dieNorm = strtolower(trim((string)planning_normalize_die_value($dieValue)));
+  if ($dieNorm !== '' && (strpos($dieNorm, 'rotary') !== false || strpos($dieNorm, 'rotery') !== false)) {
+    $selected = erp_department_selection_list($normalized, planning_route_department_choices());
+    $selected = array_values(array_filter($selected, function($item) {
+      return strcasecmp((string)$item, 'Die-Cutting') !== 0;
+    }));
+    return implode(', ', $selected);
+  }
+
+  return $normalized;
+}
+
+function planning_default_route_departments($dieValue = '') {
+  return erp_normalize_department_selection('', planning_route_department_choices(), planning_route_default_department_list($dieValue));
+}
 
 function planning_department_options() {
   return ['label-printing', 'printing', 'slitting', 'packing', 'dispatch', 'general'];
@@ -64,6 +128,127 @@ function planning_department_label($department) {
   $department = trim((string)$department);
   if ($department === '') return 'General';
   return ucwords(str_replace('-', ' ', $department));
+}
+
+function planning_normalize_route_departments($value) {
+  return planning_normalize_route_departments_by_die($value, '');
+}
+
+function planning_normalize_route_departments_by_die($value, $dieValue = '') {
+  return planning_apply_die_route_rules($value, $dieValue);
+}
+
+function planning_normalize_lookup_key($value) {
+  return strtolower(preg_replace('/[^a-z0-9]+/', '', trim((string)$value)));
+}
+
+function planning_value_is_blankish($value) {
+  $text = trim((string)$value);
+  return $text === '' || $text === '-' || $text === '—' || strtoupper($text) === 'NA';
+}
+
+function planning_material_suggestions(mysqli $db) {
+  static $cache = null;
+  if ($cache !== null) return $cache;
+
+  $cache = [];
+  $res = $db->query("SELECT DISTINCT paper_type FROM paper_stock WHERE paper_type IS NOT NULL AND TRIM(paper_type) <> '' ORDER BY paper_type");
+  if ($res instanceof mysqli_result) {
+    while ($row = $res->fetch_assoc()) {
+      $text = trim((string)($row['paper_type'] ?? ''));
+      if ($text !== '') $cache[] = $text;
+    }
+    $res->close();
+  }
+
+  return $cache;
+}
+
+function planning_match_material_suggestion($value, array $options) {
+  $text = trim((string)$value);
+  if ($text === '') return '';
+  foreach ($options as $option) {
+    if (strcasecmp((string)$option, $text) === 0) return (string)$option;
+  }
+  return $text;
+}
+
+function planning_plate_records(mysqli $db) {
+  static $cache = null;
+  if ($cache !== null) return $cache;
+
+  $cache = [];
+  try {
+    ensureDieToolingSchema($db);
+    $table = dieToolingTableName();
+    $res = $db->query("SELECT plate, name, image_path, size, paper_size, paper_type, die, repeat_value, core, qty_roll, ups, rewinding, date_received FROM `{$table}` WHERE TRIM(COALESCE(plate, '')) <> '' ORDER BY id DESC");
+    if ($res instanceof mysqli_result) {
+      $cache = $res->fetch_all(MYSQLI_ASSOC);
+      $res->close();
+    }
+  } catch (Exception $e) {
+    $cache = [];
+  }
+
+  return $cache;
+}
+
+function planning_plate_autofill_payload(array $plateRow, array $materialOptions = []) {
+  $imagePath = trim((string)($plateRow['image_path'] ?? ''));
+  $imageName = $imagePath !== '' ? basename(str_replace('\\', '/', $imagePath)) : '';
+  $material = planning_match_material_suggestion($plateRow['paper_type'] ?? '', $materialOptions);
+
+  return [
+    'plate_no' => trim((string)($plateRow['plate'] ?? '')),
+    'name' => trim((string)($plateRow['name'] ?? '')),
+    'size' => trim((string)($plateRow['size'] ?? '')),
+    'repeat' => trim((string)($plateRow['repeat_value'] ?? '')),
+    'paper_size' => trim((string)($plateRow['paper_size'] ?? '')),
+    'material' => $material,
+    'die' => planning_normalize_die_value($plateRow['die'] ?? ''),
+    'core_size' => trim((string)($plateRow['core'] ?? '')),
+    'qty_per_roll' => trim((string)($plateRow['qty_roll'] ?? '')),
+    'ups' => trim((string)($plateRow['ups'] ?? '')),
+    'roll_direction' => trim((string)($plateRow['rewinding'] ?? '')),
+    'image_path' => $imagePath,
+    'image_name' => $imageName,
+    'image_uploaded_at' => trim((string)($plateRow['date_received'] ?? '')),
+    'image_source' => $imagePath !== '' ? 'plate' : '',
+    'image_url' => $imagePath !== '' ? appUrl($imagePath) : '',
+  ];
+}
+
+function planning_find_plate_autofill_data(mysqli $db, $plateNo) {
+  $lookup = planning_normalize_lookup_key($plateNo);
+  if ($lookup === '') return [];
+
+  $materialOptions = planning_material_suggestions($db);
+  foreach (planning_plate_records($db) as $row) {
+    if (planning_normalize_lookup_key($row['plate'] ?? '') === $lookup) {
+      return planning_plate_autofill_payload($row, $materialOptions);
+    }
+  }
+
+  return [];
+}
+
+function planning_apply_plate_defaults(array $rowValues, array $plateData) {
+  if (empty($plateData)) return $rowValues;
+
+  $fieldMap = ['name', 'size', 'repeat', 'paper_size', 'material', 'die', 'core_size', 'qty_per_roll', 'ups', 'roll_direction'];
+  foreach ($fieldMap as $field) {
+    if (planning_value_is_blankish($rowValues[$field] ?? '') && !planning_value_is_blankish($plateData[$field] ?? '')) {
+      $rowValues[$field] = (string)$plateData[$field];
+    }
+  }
+
+  foreach (['image_path', 'image_name', 'image_uploaded_at', 'image_source'] as $imageField) {
+    if (planning_value_is_blankish($rowValues[$imageField] ?? '') && !planning_value_is_blankish($plateData[$imageField] ?? '')) {
+      $rowValues[$imageField] = (string)$plateData[$imageField];
+    }
+  }
+
+  return $rowValues;
 }
 
 function planning_json_response($payload, $status = 200) {
@@ -135,6 +320,34 @@ function planning_get_columns(mysqli $db, $department, array $defaultColumns) {
     $pIns = $db->prepare("INSERT IGNORE INTO planning_board_columns (department, col_key, col_label, col_type, sort_order) VALUES (?,?,?,?,?)");
     $pIns->bind_param('ssssi', $department, $priKey, $priLabel, $priType, $priSort);
     $pIns->execute();
+    $stmt2 = $db->prepare("SELECT col_key, col_label, col_type, sort_order FROM planning_board_columns WHERE department = ? ORDER BY sort_order ASC, id ASC");
+    $stmt2->bind_param('s', $department);
+    $stmt2->execute();
+    $rows = $stmt2->get_result()->fetch_all(MYSQLI_ASSOC);
+    $keys = array_map(function($r){ return (string)$r['col_key']; }, $rows);
+  }
+
+  if ($department === 'label-printing' && !in_array('department_route', $keys, true)) {
+    $dieSort = null;
+    $maxSort = 0;
+    foreach ($rows as $_r) {
+      $maxSort = max($maxSort, (int)$_r['sort_order']);
+      if ((string)$_r['col_key'] === 'die') {
+        $dieSort = (int)$_r['sort_order'];
+      }
+    }
+    $insertSort = $dieSort ?: ($maxSort + 1);
+    $shift = $db->prepare("UPDATE planning_board_columns SET sort_order = sort_order + 1 WHERE department = ? AND sort_order >= ?");
+    $shift->bind_param('si', $department, $insertSort);
+    $shift->execute();
+
+    $insDept = $db->prepare("INSERT IGNORE INTO planning_board_columns (department, col_key, col_label, col_type, sort_order) VALUES (?,?,?,?,?)");
+    $deptKey = 'department_route';
+    $deptLabel = 'Department';
+    $deptType = 'Department';
+    $insDept->bind_param('ssssi', $department, $deptKey, $deptLabel, $deptType, $insertSort);
+    $insDept->execute();
+
     $stmt2 = $db->prepare("SELECT col_key, col_label, col_type, sort_order FROM planning_board_columns WHERE department = ? ORDER BY sort_order ASC, id ASC");
     $stmt2->bind_param('s', $department);
     $stmt2->execute();
@@ -269,7 +482,7 @@ function planning_status_badge($status) {
 
     try {
       $dt = new DateTimeImmutable($orderDate);
-      return $dt->modify('+10 days')->format('Y-m-d');
+      return $dt->modify('+12 days')->format('Y-m-d');
     } catch (Exception $e) {
       return '';
     }
@@ -297,6 +510,14 @@ function planning_status_badge($status) {
       }
       if ($k === 'priority') {
         $vals[$k] = (string)($row['priority'] ?? $extra['priority'] ?? 'Normal');
+        continue;
+      }
+      if ($k === 'department_route') {
+        $vals[$k] = planning_normalize_route_departments_by_die($extra['department_route'] ?? '', $extra['die'] ?? '');
+        continue;
+      }
+      if ($k === 'die') {
+        $vals[$k] = planning_normalize_die_value($extra['die'] ?? '');
         continue;
       }
       if ($k === 'dispatch_date') {
@@ -444,6 +665,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
       $status = planning_normalize_status($statusRaw);
       // Persist canonical status token in extra_data so reload keeps correct color class.
       $rowValues['printing_planning'] = $status;
+      $rowValues['die'] = planning_normalize_die_value($rowValues['die'] ?? '');
+      $rowValues['department_route'] = planning_normalize_route_departments_by_die($rowValues['department_route'] ?? '', $rowValues['die'] ?? '');
       $priority = (string)($rowValues['priority'] ?? 'Normal');
         if (!in_array($priority, $priorityList, true)) $priority = 'Normal';
 
@@ -595,6 +818,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
       $statusRaw = 'Pending';
       $rowValues['printing_planning'] = 'Pending';
+      $rowValues = planning_apply_plate_defaults($rowValues, planning_find_plate_autofill_data($db, $rowValues['plate_no'] ?? $_POST['plate_no'] ?? ''));
+      $rowValues['die'] = planning_normalize_die_value($rowValues['die'] ?? $_POST['die'] ?? '');
+      $rowValues['department_route'] = planning_normalize_route_departments_by_die($rowValues['department_route'] ?? '', $rowValues['die'] ?? '');
 
       $status = 'Pending';
       $priority = (string)($rowValues['priority'] ?? $_POST['priority'] ?? 'Normal');
@@ -693,6 +919,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 'repeat' => ['repeat'],
                 'material' => ['material'],
                 'paper_size' => ['paper_size', 'paper size'],
+              'department_route' => ['department_route', 'department', 'departments'],
                 'die' => ['die'],
                 'allocate_mtrs' => ['allocate_mtrs', 'mtrs', 'allocate mtrs', 'allocate'],
                 'qty_pcs' => ['qty_pcs', 'qty', 'qty. (pcs)', 'qty (pcs)'],
@@ -708,9 +935,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                  $rowValues[$k] = (string)$v;
                } else {
                  // Show NA for missing/blank values - user can edit them later
-                 $rowValues[$k] = 'NA';
+                 $rowValues[$k] = $k === 'department_route' ? '' : 'NA';
                }
             }
+
+            $rowValues = planning_apply_plate_defaults($rowValues, planning_find_plate_autofill_data($db, $rowValues['plate_no'] ?? ''));
+            $rowValues['die'] = planning_normalize_die_value($rowValues['die'] ?? '');
+            $rowValues['department_route'] = planning_normalize_route_departments_by_die($rowValues['department_route'] ?? '', $rowValues['die'] ?? '');
 
             $jobName = trim((string)($rowValues['name'] ?? ''));
             if ($jobName === '') continue;
@@ -799,6 +1030,33 @@ $columns = planning_get_columns($db, $department, $defaultColumns);
 $rows = planning_get_rows($db, $department);
 $planningJobPreview = previewNextId('planning') ?: 'Auto-generated on save';
 $deptOptions = planning_department_options();
+$routeDepartmentChoices = planning_route_department_choices();
+$planningMaterialSuggestions = planning_material_suggestions($db);
+$planningPlateSuggestionList = [];
+$planningJobSuggestionList = [];
+$planningPlateAutofillMap = [];
+$planningPickerItems = [];
+foreach (planning_plate_records($db) as $plateRow) {
+  $payload = planning_plate_autofill_payload($plateRow, $planningMaterialSuggestions);
+  $plateNo = trim((string)($payload['plate_no'] ?? ''));
+  if ($plateNo === '') continue;
+  $planningPlateSuggestionList[] = $plateNo;
+  $jobName = trim((string)($payload['name'] ?? ''));
+  if ($jobName !== '') $planningJobSuggestionList[] = $jobName;
+  $lookupKey = planning_normalize_lookup_key($plateNo);
+  if ($lookupKey !== '' && !isset($planningPlateAutofillMap[$lookupKey])) {
+    $planningPlateAutofillMap[$lookupKey] = $payload;
+  }
+  $planningPickerItems[] = [
+    'lookup_key' => $lookupKey,
+    'plate_no' => $plateNo,
+    'name' => $jobName,
+    'label' => trim($plateNo . ($jobName !== '' ? ' - ' . $jobName : '')),
+    'meta' => trim(($payload['size'] ?? '') . (($payload['material'] ?? '') !== '' ? ' | ' . $payload['material'] : '')),
+  ] + $payload;
+}
+$planningPlateSuggestionList = array_values(array_unique($planningPlateSuggestionList));
+$planningJobSuggestionList = array_values(array_unique($planningJobSuggestionList));
 $boardUrl = appUrl('modules/planning/index.php?department=' . rawurlencode($department));
 $historyUrl = appUrl('modules/planning/history.php?department=' . rawurlencode($department));
 
@@ -886,8 +1144,9 @@ include __DIR__ . '/../../includes/header.php';
             $jobImageName = trim((string)($rowExtra['image_name'] ?? ''));
             $jobImageUploadedAt = trim((string)($rowExtra['image_uploaded_at'] ?? ''));
             $jobImageUrl = $jobImagePath !== '' ? appUrl($jobImagePath) : '';
+            $rowPlateUps = trim((string)($rowExtra['ups'] ?? ''));
           ?>
-          <tr data-id="<?= (int)$r['id'] ?>" class="row-s-<?= $rowSCls ?>" <?= $canEdit ? 'draggable="true"' : '' ?>>
+          <tr data-id="<?= (int)$r['id'] ?>" data-plate-ups="<?= e($rowPlateUps) ?>" class="row-s-<?= $rowSCls ?>" <?= $canEdit ? 'draggable="true"' : '' ?>>
             <td class="seq-drag-col <?= $canEdit ? 'seq-drag-handle' : '' ?>" <?= $canEdit ? 'title="Drag to reorder"' : '' ?>><?php if ($canEdit): ?><i class="bi bi-grip-vertical"></i><?php endif; ?></td>
             <td class="sticky-col">
               <div class="row-actions">
@@ -927,7 +1186,7 @@ include __DIR__ . '/../../includes/header.php';
                 $k = $c['key'];
                 $v = (string)($rowVals[$k] ?? '');
               ?>
-              <td data-key="<?= e($k) ?>" data-type="<?= e($c['type']) ?>">
+              <td data-key="<?= e($k) ?>" data-type="<?= e($c['type']) ?>" data-raw="<?= e($v) ?>">
                 <?php if ($c['type'] === 'Status'): ?>
                   <span class="cell-display status-pill status-pill-<?= e(planning_status_pill_class($v ?: 'Pending')) ?>"><?= e($v ?: 'Pending') ?></span>
                   <?php
@@ -946,6 +1205,44 @@ include __DIR__ . '/../../includes/header.php';
                   <select class="cell-input cell-select-priority form-control" style="display:none">
                     <?php foreach ($priorityList as $p): ?><option value="<?= e($p) ?>"<?= $pVal === $p ? ' selected' : '' ?>><?= e($p) ?></option><?php endforeach; ?>
                   </select>
+                <?php elseif ($c['type'] === 'Department'): ?>
+                  <?php $selectedRoutes = array_filter(array_map('trim', explode(',', $v))); ?>
+                  <span class="cell-display department-cell-display"><?= e($v !== '' ? $v : '—') ?></span>
+                  <div class="cell-input department-check-group" data-input-type="department" style="display:none">
+                    <?php foreach ($routeDepartmentChoices as $routeLabel): ?>
+                      <label class="department-check-option">
+                        <input type="checkbox" class="department-check-input" value="<?= e($routeLabel) ?>"<?= in_array($routeLabel, $selectedRoutes, true) ? ' checked' : '' ?>>
+                        <span><?= e($routeLabel) ?></span>
+                      </label>
+                    <?php endforeach; ?>
+                  </div>
+                <?php elseif ($k === 'die'): ?>
+                  <?php $dieOptions = planning_die_options(); ?>
+                  <span class="cell-display"><?= e($v !== '' ? $v : '—') ?></span>
+                  <select class="cell-input form-control" style="display:none">
+                    <option value="">Select Die</option>
+                    <?php foreach ($dieOptions as $dieOption): ?>
+                      <option value="<?= e($dieOption) ?>"<?= $v === $dieOption ? ' selected' : '' ?>><?= e($dieOption) ?></option>
+                    <?php endforeach; ?>
+                    <?php if ($v !== '' && !in_array($v, $dieOptions, true)): ?>
+                      <option value="<?= e($v) ?>" selected><?= e($v) ?></option>
+                    <?php endif; ?>
+                  </select>
+                <?php elseif ($k === 'plate_no'): ?>
+                  <span class="cell-display planning-field-highlight"><?= e($v !== '' ? $v : '—') ?></span>
+                  <div class="planning-picker-inline">
+                    <input class="cell-input form-control planning-picker-source planning-picker-highlight" type="text" value="<?= e($v) ?>" list="planning-plate-options" autocomplete="off" data-picker-field="plate_no" style="display:none">
+                    <button type="button" class="cell-input-action planning-picker-btn" data-picker-trigger="plate_no" style="display:none"><i class="bi bi-search"></i></button>
+                  </div>
+                <?php elseif ($k === 'name'): ?>
+                  <span class="cell-display planning-field-highlight"><?= e($v !== '' ? $v : '—') ?></span>
+                  <div class="planning-picker-inline">
+                    <input class="cell-input form-control planning-picker-source planning-picker-highlight" type="text" value="<?= e($v) ?>" list="planning-job-options" autocomplete="off" data-picker-field="name" style="display:none">
+                    <button type="button" class="cell-input-action planning-picker-btn" data-picker-trigger="name" style="display:none"><i class="bi bi-search"></i></button>
+                  </div>
+                <?php elseif ($k === 'material'): ?>
+                  <span class="cell-display"><?= e($v !== '' ? $v : '—') ?></span>
+                  <input class="cell-input form-control" type="text" value="<?= e($v) ?>" list="planning-material-options" autocomplete="off" style="display:none">
                 <?php else: ?>
                   <span class="cell-display"><?= e($v !== '' ? $v : '—') ?></span>
                   <input class="cell-input form-control" type="text" value="<?= e($v) ?>" style="display:none">
@@ -990,7 +1287,7 @@ include __DIR__ . '/../../includes/header.php';
       <div class="planning-grid">
         <?php foreach ($columns as $c): ?>
           <?php if ($c['key'] === 'sn') continue; ?>
-          <div<?= $c['key'] === 'remarks' ? ' style="grid-column:1 / -1"' : '' ?>>
+          <div<?= in_array($c['key'], ['department_route', 'remarks'], true) ? ' style="grid-column:1 / -1"' : '' ?>>
             <label><?= e($c['label']) ?><?= $c['key'] === 'name' ? ' *' : '' ?></label>
             <?php if ($c['type'] === 'Status'): ?>
               <input class="form-control" type="text" value="Pending" readonly>
@@ -999,6 +1296,33 @@ include __DIR__ . '/../../includes/header.php';
               <select class="form-control" name="<?= e($c['key']) ?>">
                 <?php foreach ($priorityList as $p): ?><option value="<?= e($p) ?>"<?= $p === 'Normal' ? ' selected' : '' ?>><?= e($p) ?></option><?php endforeach; ?>
               </select>
+            <?php elseif ($c['type'] === 'Department'): ?>
+              <div class="department-check-group department-check-group-modal" data-input-type="department" data-name="<?= e($c['key']) ?>">
+                <?php foreach ($routeDepartmentChoices as $routeLabel): ?>
+                  <label class="department-check-option">
+                        <input type="checkbox" class="department-check-input" value="<?= e($routeLabel) ?>"<?= in_array($routeLabel, array_filter(array_map('trim', explode(',', planning_default_route_departments('FlatBed')))), true) ? ' checked' : '' ?>>
+                    <span><?= e($routeLabel) ?></span>
+                  </label>
+                <?php endforeach; ?>
+              </div>
+            <?php elseif ($c['key'] === 'die'): ?>
+              <select class="form-control" name="<?= e($c['key']) ?>">
+                <?php foreach (planning_die_options() as $dieOption): ?>
+                  <option value="<?= e($dieOption) ?>"<?= $dieOption === 'FlatBed' ? ' selected' : '' ?>><?= e($dieOption) ?></option>
+                <?php endforeach; ?>
+              </select>
+            <?php elseif ($c['key'] === 'plate_no'): ?>
+              <div class="planning-picker-inline planning-picker-inline-modal">
+                <input class="form-control planning-picker-source planning-picker-highlight" name="<?= e($c['key']) ?>" type="text" list="planning-plate-options" autocomplete="off" data-picker-field="plate_no">
+                <button type="button" class="planning-picker-btn" data-picker-trigger="plate_no"><i class="bi bi-search"></i></button>
+              </div>
+            <?php elseif ($c['key'] === 'name'): ?>
+              <div class="planning-picker-inline planning-picker-inline-modal">
+                <input class="form-control planning-picker-source planning-picker-highlight" name="<?= e($c['key']) ?>" type="text" list="planning-job-options" autocomplete="off" data-picker-field="name" required>
+                <button type="button" class="planning-picker-btn" data-picker-trigger="name"><i class="bi bi-search"></i></button>
+              </div>
+            <?php elseif ($c['key'] === 'material'): ?>
+              <input class="form-control" name="<?= e($c['key']) ?>" type="text" list="planning-material-options" autocomplete="off">
             <?php else: ?>
               <input class="form-control" name="<?= e($c['key']) ?>" type="<?= $c['type'] === 'Number' ? 'number' : ($c['type'] === 'Date' ? 'date' : 'text') ?>" <?= $c['key'] === 'name' ? 'required' : '' ?>>
             <?php endif; ?>
@@ -1007,12 +1331,52 @@ include __DIR__ . '/../../includes/header.php';
         <div style="grid-column:1 / -1">
           <label>Job Image (Optional)</label>
           <input class="form-control" name="job_image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+          <div id="planning-plate-link-note" style="margin-top:6px;font-size:.76rem;color:#64748b">Select Plate No to auto-fill linked plate data. Manual upload overrides plate image.</div>
+          <input type="hidden" name="image_path" value="">
+          <input type="hidden" name="image_name" value="">
+          <input type="hidden" name="image_uploaded_at" value="">
+          <input type="hidden" name="image_source" value="">
+          <input type="hidden" name="ups" value="">
         </div>
       </div>
       <div class="planning-modal-foot">
         <button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle"></i> Save Entry</button>
       </div>
     </form>
+  </div>
+</div>
+
+<datalist id="planning-plate-options">
+  <?php foreach ($planningPlateSuggestionList as $plateOption): ?>
+    <option value="<?= e($plateOption) ?>"></option>
+  <?php endforeach; ?>
+</datalist>
+
+<datalist id="planning-material-options">
+  <?php foreach ($planningMaterialSuggestions as $materialOption): ?>
+    <option value="<?= e($materialOption) ?>"></option>
+  <?php endforeach; ?>
+</datalist>
+
+<datalist id="planning-job-options">
+  <?php foreach ($planningJobSuggestionList as $jobOption): ?>
+    <option value="<?= e($jobOption) ?>"></option>
+  <?php endforeach; ?>
+</datalist>
+
+<div class="planning-modal" id="modal-planning-picker" style="display:none">
+  <div class="planning-modal-card planning-picker-modal-card">
+    <div class="planning-modal-head">
+      <h3 id="planning-picker-title">Search</h3>
+      <button type="button" class="btn btn-ghost btn-sm modal-close"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="planning-picker-modal-body">
+      <div class="planning-picker-searchbar">
+        <i class="bi bi-search"></i>
+        <input type="text" id="planning-picker-search" class="form-control" placeholder="Search...">
+      </div>
+      <div id="planning-picker-list" class="planning-picker-list"></div>
+    </div>
   </div>
 </div>
 
@@ -1092,6 +1456,7 @@ include __DIR__ . '/../../includes/header.php';
   var boardTable = document.getElementById('planning-board-table');
   var deptSwitch = document.getElementById('dept-switch');
   var addModal = document.getElementById('modal-add');
+  var addForm = document.getElementById('form-add-row');
   var cfgModal = document.getElementById('modal-config');
   var importMapModal = document.getElementById('modal-import-map');
   var detailModal = document.getElementById('modal-plan-detail');
@@ -1112,6 +1477,11 @@ include __DIR__ . '/../../includes/header.php';
   var btnImportMapApply = document.getElementById('btn-import-map-apply');
   var btnImportMapCancel = document.getElementById('btn-import-map-cancel');
   var columns = <?= json_encode($columns, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+  var routeDepartmentChoices = <?= json_encode($routeDepartmentChoices, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+  var defaultRouteDepartments = <?= json_encode(planning_default_route_departments('FlatBed'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+  var plateAutofillMap = <?= json_encode($planningPlateAutofillMap, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+  var planningPickerItems = <?= json_encode($planningPickerItems, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+  var materialSuggestions = <?= json_encode($planningMaterialSuggestions, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
   var csrfToken = document.querySelector('#csrf-form [name="csrf_token"]').value;
   var currentDepartment = <?= json_encode($department, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
   var CAN_ADD = <?= $canAdd ? 'true' : 'false' ?>;
@@ -1119,6 +1489,11 @@ include __DIR__ . '/../../includes/header.php';
   var CAN_DELETE = <?= $canDelete ? 'true' : 'false' ?>;
   var imageViewerScale = 1;
   var imageViewerRowId = '';
+  var pickerModal = document.getElementById('modal-planning-picker');
+  var pickerTitle = document.getElementById('planning-picker-title');
+  var pickerSearch = document.getElementById('planning-picker-search');
+  var pickerList = document.getElementById('planning-picker-list');
+  var activePickerContext = null;
   var pendingImportRows = [];
   var pendingImportHeaders = [];
   var imageUploadInput = document.createElement('input');
@@ -1133,6 +1508,373 @@ include __DIR__ . '/../../includes/header.php';
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+  }
+
+  function normalizeLookupKey(value) {
+    return String(value == null ? '' : value).trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+  }
+
+  function isBlankishValue(value) {
+    var text = String(value == null ? '' : value).trim();
+    return text === '' || text === '-' || text === '—' || text.toUpperCase() === 'NA';
+  }
+
+  function addDaysToDate(dateValue, dayCount) {
+    var text = String(dateValue == null ? '' : dateValue).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return '';
+    var dt = new Date(text + 'T00:00:00');
+    if (Number.isNaN(dt.getTime())) return '';
+    dt.setDate(dt.getDate() + dayCount);
+    var y = dt.getFullYear();
+    var m = String(dt.getMonth() + 1).padStart(2, '0');
+    var d = String(dt.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + d;
+  }
+
+  function lookupPlateAutofillData(plateValue) {
+    var key = normalizeLookupKey(plateValue);
+    return key && Object.prototype.hasOwnProperty.call(plateAutofillMap, key) ? plateAutofillMap[key] : null;
+  }
+
+  function lookupByJobName(jobName) {
+    var key = normalizeLookupKey(jobName);
+    if (!key) return null;
+    for (var i = 0; i < planningPickerItems.length; i += 1) {
+      if (normalizeLookupKey(planningPickerItems[i].name) === key) return planningPickerItems[i];
+    }
+    return null;
+  }
+
+  function setFormValue(field, value) {
+    if (!addForm) return;
+    var input = addForm.querySelector('[name="' + field + '"]');
+    if (!input) return;
+    input.value = String(value == null ? '' : value);
+  }
+
+  function parseCalcNumber(value) {
+    var text = String(value == null ? '' : value).replace(/,/g, '').trim();
+    var num = parseFloat(text);
+    return Number.isFinite(num) ? num : 0;
+  }
+
+  function getCalcParams(source) {
+    if (!source) return { qtyRoll: 0, ups: 0, repeatValue: 0 };
+    return {
+      qtyRoll: parseCalcNumber(source.qtyPerRoll || source.qty_roll || source.qty_per_roll || ''),
+      ups: parseCalcNumber(source.ups || ''),
+      repeatValue: parseCalcNumber(source.repeat || source.repeat_value || '')
+    };
+  }
+
+  function calculateMeterFromQty(params, qty) {
+    if (qty <= 0) return '';
+    if (params.qtyRoll > 0) return (qty / params.qtyRoll).toFixed(2);
+    if (params.ups > 0 && params.repeatValue > 0) return ((qty / params.ups) * (params.repeatValue / 1000)).toFixed(2);
+    return '';
+  }
+
+  function calculateQtyFromMeter(params, meter) {
+    if (meter <= 0) return '';
+    if (params.qtyRoll > 0) return String(Math.round(meter * params.qtyRoll));
+    if (params.ups > 0 && params.repeatValue > 0) return String(Math.round((meter / (params.repeatValue / 1000)) * params.ups));
+    return '';
+  }
+
+  function updateAddPlateLinkNote(data) {
+    var note = document.getElementById('planning-plate-link-note');
+    if (!note) return;
+    if (data && data.image_path) {
+      note.textContent = 'Plate data matched. Linked plate image will be used unless you upload a new image.';
+      return;
+    }
+    note.textContent = 'Select Plate No to auto-fill linked plate data. Manual upload overrides plate image.';
+  }
+
+  function setAddFormPlateImageData(data) {
+    setFormValue('image_path', data && data.image_path ? data.image_path : '');
+    setFormValue('image_name', data && data.image_name ? data.image_name : '');
+    setFormValue('image_uploaded_at', data && data.image_uploaded_at ? data.image_uploaded_at : '');
+    setFormValue('image_source', data && data.image_source ? data.image_source : '');
+    updateAddPlateLinkNote(data);
+  }
+
+  function applyPlateAutofillToAddForm(data) {
+    if (!addForm || !data) return;
+    ['plate_no', 'name', 'size', 'repeat', 'paper_size', 'material', 'die', 'core_size', 'qty_per_roll', 'roll_direction', 'ups'].forEach(function(field){
+      if (Object.prototype.hasOwnProperty.call(data, field) && data[field] != null && data[field] !== '') {
+        setFormValue(field, data[field]);
+      }
+    });
+    setAddFormPlateImageData(data);
+    var dieInput = addForm.querySelector('[name="die"]');
+    var departmentGroup = addForm.querySelector('[data-input-type="department"][data-name="department_route"]');
+    if (dieInput && departmentGroup) {
+      setDepartmentInputValue(departmentGroup, getRouteDefaultDepartmentsByDie(dieInput.value));
+    }
+    syncCalcFieldsForContainer(addForm, data);
+  }
+
+  function getContainerFieldValue(container, field) {
+    if (!container) return '';
+    var input = container.querySelector('[name="' + field + '"]') || container.querySelector('td[data-key="' + field + '"] .cell-input');
+    return input ? String(input.value || '').trim() : '';
+  }
+
+  function setContainerFieldValue(container, field, value) {
+    if (!container) return;
+    var input = container.querySelector('[name="' + field + '"]') || container.querySelector('td[data-key="' + field + '"] .cell-input');
+    if (input) input.value = String(value == null ? '' : value);
+  }
+
+  function syncCalcFieldsForContainer(container, source) {
+    if (!container) return;
+    var qtyVal = parseCalcNumber(getContainerFieldValue(container, 'qty_pcs'));
+    var meterVal = parseCalcNumber(getContainerFieldValue(container, 'allocate_mtrs'));
+    var params = getCalcParams(source || {
+      qtyPerRoll: getContainerFieldValue(container, 'qty_per_roll'),
+      ups: getContainerFieldValue(container, 'ups'),
+      repeat: getContainerFieldValue(container, 'repeat')
+    });
+    if (qtyVal > 0) {
+      setContainerFieldValue(container, 'allocate_mtrs', calculateMeterFromQty(params, qtyVal));
+    } else if (meterVal > 0) {
+      setContainerFieldValue(container, 'qty_pcs', calculateQtyFromMeter(params, meterVal));
+    }
+  }
+
+  function bindQtyMeterAutoCalc(container, paramsSource) {
+    if (!container) return;
+    var qtyInput = container.querySelector('[name="qty_pcs"]') || container.querySelector('td[data-key="qty_pcs"] .cell-input');
+    var meterInput = container.querySelector('[name="allocate_mtrs"]') || container.querySelector('td[data-key="allocate_mtrs"] .cell-input');
+    if (!qtyInput || !meterInput) return;
+
+    qtyInput.oninput = function() {
+      var params = getCalcParams(typeof paramsSource === 'function' ? paramsSource() : paramsSource);
+      meterInput.value = calculateMeterFromQty(params, parseCalcNumber(qtyInput.value));
+    };
+    meterInput.oninput = function() {
+      var params = getCalcParams(typeof paramsSource === 'function' ? paramsSource() : paramsSource);
+      qtyInput.value = calculateQtyFromMeter(params, parseCalcNumber(meterInput.value));
+    };
+  }
+
+  function filterPickerItems(mode, searchText) {
+    var needle = normalizeLookupKey(searchText);
+    return planningPickerItems.filter(function(item){
+      var pool = mode === 'name'
+        ? [item.name, item.plate_no, item.label, item.meta]
+        : [item.plate_no, item.name, item.label, item.meta];
+      if (!needle) return true;
+      return pool.some(function(part){ return normalizeLookupKey(part).indexOf(needle) !== -1; });
+    });
+  }
+
+  function renderPickerList() {
+    if (!pickerList || !activePickerContext) return;
+    var items = filterPickerItems(activePickerContext.mode, pickerSearch ? pickerSearch.value : '');
+    if (!items.length) {
+      pickerList.innerHTML = '<div class="planning-picker-empty">No match found</div>';
+      return;
+    }
+    pickerList.innerHTML = items.map(function(item){
+      return '' +
+        '<button type="button" class="planning-picker-item" data-lookup-key="' + safeText(item.lookup_key || '') + '">' +
+          '<strong>' + safeText(activePickerContext.mode === 'name' ? (item.name || '-') : (item.plate_no || '-')) + '</strong>' +
+          '<span>' + safeText(activePickerContext.mode === 'name' ? (item.plate_no || '-') : (item.name || '-')) + '</span>' +
+          '<small>' + safeText(item.meta || '') + '</small>' +
+        '</button>';
+    }).join('');
+  }
+
+  function applyPickerSelection(item) {
+    if (!item || !activePickerContext) return;
+    if (activePickerContext.kind === 'add') {
+      applyPlateAutofillToAddForm(item);
+      closeModal(pickerModal);
+      return;
+    }
+    if (activePickerContext.kind === 'row' && activePickerContext.row) {
+      applyPlateAutofillToRow(activePickerContext.row, item);
+      closeModal(pickerModal);
+    }
+  }
+
+  function openPlanningPicker(kind, mode, row) {
+    activePickerContext = { kind: kind, mode: mode, row: row || null };
+    if (pickerTitle) pickerTitle.textContent = mode === 'name' ? 'Search Job Name' : 'Search Plate No';
+    if (pickerSearch) pickerSearch.value = '';
+    renderPickerList();
+    openModal(pickerModal);
+    if (pickerSearch) pickerSearch.focus();
+  }
+
+  function bindDispatchDateAutoFill(orderInput, dispatchInput) {
+    if (!orderInput || !dispatchInput) return;
+    function syncDispatch() {
+      var nextDate = addDaysToDate(orderInput.value, 12);
+      if (nextDate) dispatchInput.value = nextDate;
+    }
+    orderInput.oninput = syncDispatch;
+    orderInput.onchange = syncDispatch;
+  }
+
+  function normalizeRouteDepartmentValue(value) {
+    var rawItems = Array.isArray(value)
+      ? value.slice()
+      : String(value == null ? '' : value).split(/\s*,\s*|\r\n|\r|\n/);
+    var wanted = {};
+
+    rawItems.forEach(function(item){
+      var text = String(item == null ? '' : item).trim();
+      if (!text) return;
+      var norm = text.toLowerCase().replace(/[^a-z0-9]+/g, '');
+      routeDepartmentChoices.forEach(function(choice){
+        var choiceNorm = String(choice).toLowerCase().replace(/[^a-z0-9]+/g, '');
+        if (choiceNorm === norm || choiceNorm.indexOf(norm) !== -1 || norm.indexOf(choiceNorm) !== -1) {
+          wanted[choice] = true;
+        }
+      });
+    });
+
+    var normalized = routeDepartmentChoices.filter(function(choice){
+      return wanted[choice];
+    }).join(', ');
+    return normalized || defaultRouteDepartments;
+  }
+
+  function getRouteDefaultDepartmentsByDie(dieValue) {
+    var text = String(dieValue == null ? '' : dieValue).trim().toLowerCase();
+    var defaults = ['Jumbo Slitting', 'Printing', 'Die-Cutting', 'Label Slitting', 'Packaging', 'Dispatch'];
+    if (text && (text.indexOf('rotary') !== -1 || text.indexOf('rotery') !== -1)) {
+      defaults = defaults.filter(function(item){ return item !== 'Die-Cutting'; });
+    }
+    return normalizeRouteDepartmentValue(defaults);
+  }
+
+  function applyDieRulesToDepartmentValue(value, dieValue) {
+    var normalized = normalizeRouteDepartmentValue(value);
+    var text = String(dieValue == null ? '' : dieValue).trim().toLowerCase();
+    if (!text || (text.indexOf('rotary') === -1 && text.indexOf('rotery') === -1)) {
+      var selectedKeep = normalized ? normalized.split(/\s*,\s*/) : [];
+      var dieDefaultDepartments = getRouteDefaultDepartmentsByDie(dieValue).split(/\s*,\s*/).filter(Boolean);
+      if (dieDefaultDepartments.indexOf('Die-Cutting') !== -1 && selectedKeep.indexOf('Die-Cutting') === -1) {
+        selectedKeep.push('Die-Cutting');
+      }
+      return normalizeRouteDepartmentValue(selectedKeep);
+    }
+    var selected = normalized ? normalized.split(/\s*,\s*/) : [];
+    selected = selected.filter(function(item){ return item !== 'Die-Cutting'; });
+    return selected.join(', ');
+  }
+
+  function setDepartmentInputValue(input, value) {
+    if (!input) return;
+    var normalized = normalizeRouteDepartmentValue(value);
+    var selected = normalized ? normalized.split(/\s*,\s*/) : [];
+    input.querySelectorAll('.department-check-input').forEach(function(box){
+      box.checked = selected.indexOf(box.value) !== -1;
+    });
+    input.setAttribute('data-value', normalized);
+  }
+
+  function syncDepartmentGroupByDie(group, dieValue) {
+    if (!group) return;
+    setDepartmentInputValue(group, applyDieRulesToDepartmentValue(getDepartmentInputValue(group), dieValue));
+  }
+
+  function getDepartmentInputValue(input) {
+    if (!input) return '';
+    var selected = Array.prototype.slice.call(input.querySelectorAll('.department-check-input:checked')).map(function(box){
+      return box.value;
+    });
+    var normalized = normalizeRouteDepartmentValue(selected);
+    input.setAttribute('data-value', normalized);
+    return normalized;
+  }
+
+  function getCellInputValue(td) {
+    var input = td.querySelector('.cell-input');
+    var type = td.getAttribute('data-type');
+    if (!input) return '';
+    if (type === 'Department') return getDepartmentInputValue(input);
+    return input.value || '';
+  }
+
+  function resetAddFormDefaults() {
+    if (!addForm) return;
+    addForm.reset();
+    var dieInput = addForm.querySelector('[name="die"]');
+    addForm.querySelectorAll('[data-input-type="department"][data-name]').forEach(function(group){
+      setDepartmentInputValue(group, getRouteDefaultDepartmentsByDie(dieInput ? dieInput.value : ''));
+    });
+    setAddFormPlateImageData(null);
+  }
+
+  function bindAddFormDepartmentDefaults() {
+    if (!addForm) return;
+    var dieInput = addForm.querySelector('[name="die"]');
+    var departmentGroup = addForm.querySelector('[data-input-type="department"][data-name="department_route"]');
+    if (!dieInput || !departmentGroup) return;
+    function syncDefaults() {
+      setDepartmentInputValue(departmentGroup, getRouteDefaultDepartmentsByDie(dieInput.value));
+    }
+    dieInput.addEventListener('input', syncDefaults);
+    dieInput.addEventListener('change', syncDefaults);
+  }
+
+  function bindAddFormAutoFill() {
+    if (!addForm) return;
+    var plateInput = addForm.querySelector('[name="plate_no"]');
+    var jobInput = addForm.querySelector('[name="name"]');
+    var materialInput = addForm.querySelector('[name="material"]');
+    var orderInput = addForm.querySelector('[name="order_date"]');
+    var dispatchInput = addForm.querySelector('[name="dispatch_date"]');
+
+    if (materialInput) {
+      materialInput.setAttribute('list', 'planning-material-options');
+      materialInput.setAttribute('autocomplete', 'off');
+    }
+    if (plateInput) {
+      plateInput.setAttribute('list', 'planning-plate-options');
+      plateInput.setAttribute('autocomplete', 'off');
+      function syncPlateData() {
+        var data = lookupPlateAutofillData(plateInput.value);
+        if (data) {
+          applyPlateAutofillToAddForm(data);
+        } else {
+          setAddFormPlateImageData(null);
+        }
+      }
+      plateInput.addEventListener('input', syncPlateData);
+      plateInput.addEventListener('change', syncPlateData);
+    }
+
+    if (jobInput) {
+      jobInput.setAttribute('list', 'planning-job-options');
+      jobInput.setAttribute('autocomplete', 'off');
+      function syncJobData() {
+        var data = lookupByJobName(jobInput.value);
+        if (data) applyPlateAutofillToAddForm(data);
+      }
+      jobInput.addEventListener('input', syncJobData);
+      jobInput.addEventListener('change', syncJobData);
+    }
+
+    addForm.querySelectorAll('[data-picker-trigger]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        openPlanningPicker('add', btn.getAttribute('data-picker-trigger') || 'plate_no');
+      });
+    });
+
+    bindDispatchDateAutoFill(orderInput, dispatchInput);
+    bindQtyMeterAutoCalc(addForm, function(){
+      return {
+        qtyPerRoll: getContainerFieldValue(addForm, 'qty_per_roll'),
+        ups: getContainerFieldValue(addForm, 'ups'),
+        repeat: getContainerFieldValue(addForm, 'repeat')
+      };
+    });
   }
 
   function boardHeaders() {
@@ -1728,12 +2470,55 @@ include __DIR__ . '/../../includes/header.php';
     window.location.href = url.toString();
   });
 
+  function setRowFieldInputValue(tr, key, value) {
+    var td = tr.querySelector('td[data-key="' + key + '"]');
+    if (!td) return;
+    var input = td.querySelector('.cell-input');
+    if (!input) return;
+    if (td.getAttribute('data-type') === 'Department') {
+      setDepartmentInputValue(input, value);
+      return;
+    }
+    input.value = String(value == null ? '' : value);
+  }
+
+  function applyPlateAutofillToRow(tr, data) {
+    if (!tr || !data) return;
+    ['plate_no', 'name', 'size', 'repeat', 'paper_size', 'material', 'die', 'core_size', 'qty_per_roll', 'roll_direction'].forEach(function(field){
+      if (Object.prototype.hasOwnProperty.call(data, field) && data[field] != null && data[field] !== '') {
+        setRowFieldInputValue(tr, field, data[field]);
+      }
+    });
+    tr.setAttribute('data-plate-ups', String(data.ups || '').trim());
+    if (data.image_path) {
+      setRowImageData(tr, {
+        image_path: data.image_path || '',
+        image_url: data.image_url || '',
+        image_name: data.image_name || '',
+        image_uploaded_at: data.image_uploaded_at || ''
+      });
+    }
+    var rowDieInput = tr.querySelector('td[data-key="die"] .cell-input');
+    var rowDepartmentGroup = tr.querySelector('td[data-key="department_route"] [data-input-type="department"]');
+    if (rowDieInput && rowDepartmentGroup) {
+      setDepartmentInputValue(rowDepartmentGroup, getRouteDefaultDepartmentsByDie(rowDieInput.value));
+    }
+    syncCalcFieldsForContainer(tr, {
+      qtyPerRoll: getContainerFieldValue(tr, 'qty_per_roll'),
+      ups: tr.getAttribute('data-plate-ups') || '',
+      repeat: getContainerFieldValue(tr, 'repeat')
+    });
+  }
+
   function setRowEditMode(tr, on) {
     tr.classList.toggle('is-editing', on);
     tr.querySelector('.btn-edit').style.display = on ? 'none' : '';
     tr.querySelector('.btn-delete').style.display = on ? 'none' : '';
     tr.querySelector('.btn-save').style.display = on ? '' : 'none';
     tr.querySelector('.btn-cancel').style.display = on ? '' : 'none';
+
+    var rowDieInput = tr.querySelector('td[data-key="die"] .cell-input');
+    var rowDepartmentGroup = tr.querySelector('td[data-key="department_route"] [data-input-type="department"]');
 
     tr.querySelectorAll('td[data-key]').forEach(function(td){
       var key = td.getAttribute('data-key');
@@ -1742,8 +2527,20 @@ include __DIR__ . '/../../includes/header.php';
       if (key === 'sn') return;
       disp.style.display = on ? 'none' : '';
       input.style.display = on ? '' : 'none';
+      td.querySelectorAll('.cell-input-action').forEach(function(actionBtn){
+        actionBtn.style.display = on ? '' : 'none';
+      });
 
       var type = td.getAttribute('data-type');
+      if (type === 'Department') {
+        if (on) {
+          var deptCurrent = td.getAttribute('data-raw') || disp.textContent.trim();
+          if (deptCurrent === '—') deptCurrent = '';
+          setDepartmentInputValue(input, deptCurrent);
+        }
+        return;
+      }
+
       if (input.tagName !== 'SELECT') {
         if (type === 'Date') input.type = 'date';
         else if (type === 'Number') input.type = 'number';
@@ -1762,8 +2559,64 @@ include __DIR__ . '/../../includes/header.php';
           applyPriorityStyle(input);
           input.onchange = function(){ applyPriorityStyle(this); };
         }
+        if (key === 'die' && rowDepartmentGroup) {
+          input.onchange = function(){ syncDepartmentGroupByDie(rowDepartmentGroup, this.value); };
+          input.oninput = function(){ syncDepartmentGroupByDie(rowDepartmentGroup, this.value); };
+        }
+        if (key === 'plate_no') {
+          input.setAttribute('list', 'planning-plate-options');
+          input.setAttribute('autocomplete', 'off');
+          var plateBtn = td.querySelector('[data-picker-trigger="plate_no"]');
+          if (plateBtn) {
+            plateBtn.onclick = function(){ openPlanningPicker('row', 'plate_no', tr); };
+          }
+          input.onchange = function(){
+            var data = lookupPlateAutofillData(this.value);
+            if (data) applyPlateAutofillToRow(tr, data);
+          };
+          input.oninput = function(){
+            var data = lookupPlateAutofillData(this.value);
+            if (data) applyPlateAutofillToRow(tr, data);
+          };
+        }
+        if (key === 'name') {
+          input.setAttribute('list', 'planning-job-options');
+          input.setAttribute('autocomplete', 'off');
+          var jobBtn = td.querySelector('[data-picker-trigger="name"]');
+          if (jobBtn) {
+            jobBtn.onclick = function(){ openPlanningPicker('row', 'name', tr); };
+          }
+          input.onchange = function(){
+            var data = lookupByJobName(this.value);
+            if (data) applyPlateAutofillToRow(tr, data);
+          };
+          input.oninput = function(){
+            var data = lookupByJobName(this.value);
+            if (data) applyPlateAutofillToRow(tr, data);
+          };
+        }
+        if (key === 'material') {
+          input.setAttribute('list', 'planning-material-options');
+          input.setAttribute('autocomplete', 'off');
+        }
+        if (key === 'order_date') {
+          bindDispatchDateAutoFill(input, tr.querySelector('td[data-key="dispatch_date"] .cell-input'));
+        }
       }
     });
+
+    if (on && rowDieInput && rowDepartmentGroup) {
+      syncDepartmentGroupByDie(rowDepartmentGroup, rowDieInput.value);
+    }
+    if (on) {
+      bindQtyMeterAutoCalc(tr, function(){
+        return {
+          qtyPerRoll: getContainerFieldValue(tr, 'qty_per_roll'),
+          ups: tr.getAttribute('data-plate-ups') || '',
+          repeat: getContainerFieldValue(tr, 'repeat')
+        };
+      });
+    }
   }
 
   function updateImageZoom(scale) {
@@ -1916,20 +2769,29 @@ include __DIR__ . '/../../includes/header.php';
       tr.querySelectorAll('td[data-key]').forEach(function(td){
         var key = td.getAttribute('data-key');
         if (key === 'sn') return;
-        rowValues[key] = td.querySelector('.cell-input').value || '';
+        rowValues[key] = getCellInputValue(td);
         payload[key] = rowValues[key];
       });
+      rowValues.ups = String(tr.getAttribute('data-plate-ups') || '').trim();
+      payload.ups = rowValues.ups;
+      var imageCell = tr.querySelector('.job-image-cell');
+      if (imageCell) {
+        rowValues.image_path = String(imageCell.getAttribute('data-image-path') || '').trim();
+        rowValues.image_name = String(imageCell.getAttribute('data-image-name') || '').trim();
+        rowValues.image_uploaded_at = String(imageCell.getAttribute('data-image-uploaded-at') || '').trim();
+        payload.image_path = rowValues.image_path;
+        payload.image_name = rowValues.image_name;
+        payload.image_uploaded_at = rowValues.image_uploaded_at;
+      }
       payload.row_values_json = JSON.stringify(rowValues);
       postAction(payload).then(function(){
         tr.querySelectorAll('td[data-key]').forEach(function(td){
           var key = td.getAttribute('data-key');
           var type = td.getAttribute('data-type');
           var disp = td.querySelector('.cell-display');
-          var input = td.querySelector('.cell-input');
           if (key === 'sn') return;
 
-          var v = input.value || '';
-          td.setAttribute('data-raw', v);
+          var v = getCellInputValue(td);
           if (type === 'Status') {
             var vl = String(v || 'Pending').trim().toLowerCase().replace(/[^a-z]/g,'');
             var pilClass = (vl.indexOf('slitting') !== -1 || vl.indexOf('sliting') !== -1)
@@ -1950,10 +2812,16 @@ include __DIR__ . '/../../includes/header.php';
             var pCls = String(v || 'Normal').trim().toLowerCase();
             disp.className = 'cell-display priority-pill priority-pill-' + pCls;
             disp.textContent = v || 'Normal';
+          } else if (type === 'Department') {
+            v = normalizeRouteDepartmentValue(v);
+            disp.textContent = v || '—';
           } else {
             disp.textContent = v || '—';
           }
+          td.setAttribute('data-raw', v);
         });
+
+        tr.setAttribute('data-plate-ups', String(rowValues.ups || '').trim());
 
         setRowEditMode(tr, false);
         toast('Plan saved');
@@ -1976,6 +2844,14 @@ include __DIR__ . '/../../includes/header.php';
   function openModal(el) { el.style.display = 'flex'; }
   function closeModal(el) {
     el.style.display = 'none';
+    if (el === addModal) {
+      resetAddFormDefaults();
+    }
+    if (el === pickerModal) {
+      activePickerContext = null;
+      if (pickerSearch) pickerSearch.value = '';
+      if (pickerList) pickerList.innerHTML = '';
+    }
     if (el === importMapModal) {
       pendingImportRows = [];
       pendingImportHeaders = [];
@@ -2028,7 +2904,34 @@ include __DIR__ . '/../../includes/header.php';
     removeImageForRow(row);
   });
 
-  document.getElementById('btn-add-row').addEventListener('click', function(){ openModal(addModal); });
+  document.getElementById('btn-add-row').addEventListener('click', function(){
+    resetAddFormDefaults();
+    openModal(addModal);
+  });
+  if (pickerSearch) {
+    pickerSearch.addEventListener('input', function(){
+      renderPickerList();
+    });
+    pickerSearch.addEventListener('keydown', function(e){
+      if (e.key === 'Escape') {
+        closeModal(pickerModal);
+      }
+    });
+  }
+  if (pickerList) {
+    pickerList.addEventListener('click', function(e){
+      var btn = e.target.closest('.planning-picker-item');
+      if (!btn) return;
+      var lookupKey = normalizeLookupKey(btn.getAttribute('data-lookup-key') || '');
+      if (!lookupKey) return;
+      for (var i = 0; i < planningPickerItems.length; i += 1) {
+        if (normalizeLookupKey(planningPickerItems[i].lookup_key || '') === lookupKey) {
+          applyPickerSelection(planningPickerItems[i]);
+          break;
+        }
+      }
+    });
+  }
   btnExportExcel.addEventListener('click', exportPlanningExcel);
   btnPrintPdf.addEventListener('click', printPlanningBoard);
   document.getElementById('btn-board-config').addEventListener('click', function(){
@@ -2042,11 +2945,14 @@ include __DIR__ . '/../../includes/header.php';
     });
   });
 
-  [addModal, cfgModal, importMapModal, detailModal, imageViewerModal].forEach(function(m){
+  [addModal, cfgModal, importMapModal, detailModal, imageViewerModal, pickerModal].forEach(function(m){
     m.addEventListener('click', function(e){ if (e.target === m) closeModal(m); });
   });
 
-  document.getElementById('form-add-row').addEventListener('submit', function(e){
+  bindAddFormDepartmentDefaults();
+  bindAddFormAutoFill();
+
+  addForm.addEventListener('submit', function(e){
     e.preventDefault();
     var fd = new FormData(e.target);
     var payload = { action: 'create_row' };
@@ -2056,6 +2962,12 @@ include __DIR__ . '/../../includes/header.php';
       if (k === 'job_image') return;
       payload[k] = v;
       rowValues[k] = v;
+    });
+    e.target.querySelectorAll('[data-input-type="department"][data-name]').forEach(function(group){
+      var fieldName = group.getAttribute('data-name');
+      var fieldValue = getDepartmentInputValue(group);
+      payload[fieldName] = fieldValue;
+      rowValues[fieldName] = fieldValue;
     });
     payload.row_values_json = JSON.stringify(rowValues);
 
@@ -2099,6 +3011,7 @@ include __DIR__ . '/../../includes/header.php';
       { key: 'dispatch_date', label: 'Dispatch Date' },
       { key: 'order_date', label: 'Order Date' },
       { key: 'remarks', label: 'Remarks' },
+      { key: 'department_route', label: 'Department' },
       { key: 'priority', label: 'Priority' },
       { key: 'machine', label: 'Machine' },
       { key: 'operator_name', label: 'Operator Name' }
@@ -2125,6 +3038,7 @@ include __DIR__ . '/../../includes/header.php';
       repeat: ['repeat', 'repeatmm', 'repeat_mm'],
       material: ['material'],
       paper_size: ['papersize', 'paper_size'],
+      department_route: ['department', 'departments', 'departmentroute', 'department_route'],
       die: ['die'],
       allocate_mtrs: ['allocatemtrs', 'allocate_mtrs', 'mtrs', 'allocatemeters'],
       qty_pcs: ['qtypcs', 'qty_pcs', 'qty', 'quantity'],
@@ -2298,6 +3212,7 @@ include __DIR__ . '/../../includes/header.php';
           '<option value="Date">Date</option>' +
           '<option value="Status">Status</option>' +
           '<option value="Priority">Priority</option>' +
+          '<option value="Department">Department</option>' +
         '</select>';
 
       row.querySelector('.config-type').value = col.type || 'Text';
@@ -2489,7 +3404,38 @@ include __DIR__ . '/../../includes/header.php';
 }
 .planning-board-table tr.is-editing td[data-type="Date"] .cell-input { min-width: 140px; }
 .planning-board-table tr.is-editing td[data-type="Number"] .cell-input { min-width: 80px; }
+.planning-board-table tr.is-editing td[data-type="Department"] .cell-input { min-width: 240px; }
 .planning-board-table td[data-key] { min-width: 80px; }
+.department-cell-display {
+  display: block;
+  min-width: 220px;
+  white-space: normal;
+  line-height: 1.35;
+}
+.department-check-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  min-width: 240px;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+}
+.department-check-group-modal {
+  background: #f8fafc;
+}
+.department-check-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .8rem;
+  color: #334155;
+  line-height: 1.25;
+}
+.department-check-option input {
+  margin: 0;
+}
 .sticky-col {
   position: sticky;
   left: 0;
@@ -2657,6 +3603,103 @@ include __DIR__ . '/../../includes/header.php';
   text-transform: uppercase;
   letter-spacing: .04em;
 }
+.planning-picker-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.planning-picker-inline .planning-picker-source {
+  flex: 1 1 auto;
+}
+.planning-picker-inline-modal {
+  width: 100%;
+}
+.planning-picker-highlight {
+  border-color: #f59e0b !important;
+  background: linear-gradient(180deg, #fffdf5 0%, #fff7db 100%);
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, .18);
+}
+.planning-picker-highlight:focus {
+  border-color: #d97706 !important;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, .18);
+}
+.planning-picker-btn {
+  width: 40px;
+  min-width: 40px;
+  height: 38px;
+  border: 1px solid #f4b860;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fff1c2 0%, #fed27a 100%);
+  color: #8a4b08;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
+}
+.planning-picker-btn:hover {
+  border-color: #d97706;
+  box-shadow: 0 8px 18px rgba(217, 119, 6, .18);
+  transform: translateY(-1px);
+}
+.planning-picker-btn i {
+  font-size: .92rem;
+}
+.planning-picker-modal-card {
+  width: min(680px, 100%);
+}
+.planning-picker-modal-body {
+  padding: 14px 16px 16px;
+}
+.planning-picker-searchbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.planning-picker-list {
+  display: grid;
+  gap: 10px;
+  max-height: 52vh;
+  overflow: auto;
+}
+.planning-picker-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #fde68a;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fffdf5 0%, #fff8df 100%);
+  padding: 12px 14px;
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+}
+.planning-picker-item strong {
+  color: #8a4b08;
+  font-size: .92rem;
+}
+.planning-picker-item span {
+  color: #1f2937;
+  font-size: .84rem;
+  font-weight: 600;
+}
+.planning-picker-item small {
+  color: #6b7280;
+  font-size: .74rem;
+}
+.planning-picker-item:hover {
+  border-color: #f59e0b;
+  box-shadow: 0 10px 22px rgba(245, 158, 11, .16);
+}
+.planning-picker-empty {
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #64748b;
+  padding: 18px;
+  text-align: center;
+  font-weight: 600;
+}
 .config-list { padding: 14px 16px; display: grid; gap: 8px; }
 .import-map-list {
   padding: 14px 16px;
@@ -2731,6 +3774,14 @@ include __DIR__ . '/../../includes/header.php';
   .import-map-row { grid-template-columns: 1fr; }
   .plan-detail-grid { grid-template-columns: 1fr; }
   .job-image-cell { min-width: 64px; }
+  .planning-picker-inline {
+    gap: 6px;
+  }
+  .planning-picker-btn {
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+  }
   .job-image-thumb,
   .job-image-empty-btn { width: 48px; height: 34px; }
   .image-viewer-stage { min-height: 36vh; }

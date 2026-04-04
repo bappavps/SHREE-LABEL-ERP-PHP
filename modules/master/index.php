@@ -327,7 +327,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if ($action === 'add_machine') {
     $name = trim((string)($_POST['machine_name'] ?? ''));
     $type = trim((string)($_POST['machine_type'] ?? ''));
-    $section = trim((string)($_POST['machine_section'] ?? ''));
+    $section = erp_normalize_department_selection(
+      $_POST['machine_section'] ?? '',
+      erp_get_machine_departments($db),
+      []
+    );
     $operatorName = trim((string)($_POST['machine_operator_name'] ?? ''));
     $status = trim((string)($_POST['machine_status'] ?? 'Active'));
 
@@ -349,7 +353,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $id = (int)($_POST['machine_id'] ?? 0);
     $name = trim((string)($_POST['machine_name'] ?? ''));
     $type = trim((string)($_POST['machine_type'] ?? ''));
-    $section = trim((string)($_POST['machine_section'] ?? ''));
+    $section = erp_normalize_department_selection(
+      $_POST['machine_section'] ?? '',
+      erp_get_machine_departments($db),
+      []
+    );
     $operatorName = trim((string)($_POST['machine_operator_name'] ?? ''));
     $status = trim((string)($_POST['machine_status'] ?? 'Active'));
 
@@ -1025,6 +1033,7 @@ $sampleBoms = [
 $suppliers = [];
 $raw_materials = [];
 $machines = [];
+$machineDepartments = erp_get_machine_departments($db);
 $cylinders = [];
 $clients = [];
 $paperCompanies = [];
@@ -1339,7 +1348,7 @@ if ($activeTab === 'clients' && $editClientId > 0) {
                 <tr>
                   <th>Name</th>
                   <th>Type</th>
-                  <th>Section</th>
+                  <th>Department</th>
                   <th>Operator Name</th>
                   <th>Status</th>
                   <th>Actions</th>
@@ -1389,8 +1398,16 @@ if ($activeTab === 'clients' && $editClientId > 0) {
             </div>
 
             <div style="margin-bottom:16px">
-              <label style="display:block;margin-bottom:4px;font-weight:500">Section</label>
-              <input type="text" name="machine_section" id="machineSection" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px">
+              <label style="display:block;margin-bottom:6px;font-weight:500">Department</label>
+              <input type="hidden" name="machine_section" id="machineSection">
+              <div id="machineSectionChooser" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:10px;border:1px solid #ddd;border-radius:8px;background:#f8fafc">
+                <?php foreach ($machineDepartments as $dept): ?>
+                  <label style="display:flex;align-items:center;gap:8px;font-size:.9rem;color:#334155">
+                    <input type="checkbox" class="machine-section-check" value="<?= e($dept) ?>">
+                    <span><?= e($dept) ?></span>
+                  </label>
+                <?php endforeach; ?>
+              </div>
             </div>
 
             <div style="margin-bottom:16px">
@@ -2082,6 +2099,7 @@ if ($activeTab === 'clients' && $editClientId > 0) {
 const suppliersData = <?= json_encode($suppliers, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 const clientsData = <?= json_encode($clients, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 const machinesData = <?= json_encode($machines, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+const machineDepartmentsData = <?= json_encode($machineDepartments, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 const paperCompaniesData = <?= json_encode($paperCompanies, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 const paperTypesData = <?= json_encode($paperTypes, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 
@@ -2208,12 +2226,59 @@ function editSupplier(id) {
   document.getElementById('supplierModal').style.display = 'flex';
 }
 
+function parseMachineDepartments(value) {
+  var raw = Array.isArray(value) ? value.slice() : String(value || '').split(/\s*,\s*|\r\n|\r|\n/);
+  var seen = {};
+  var out = [];
+  raw.forEach(function(item) {
+    var text = String(item || '').trim();
+    if (!text) return;
+    var key = text.toLowerCase();
+    if (seen[key]) return;
+    seen[key] = true;
+    out.push(text);
+  });
+  return out;
+}
+
+function syncMachineSectionInput(selectedValue, customValue) {
+  var selected = parseMachineDepartments(selectedValue);
+  document.getElementById('machineSection').value = selected.join(', ');
+}
+
+function setMachineDepartmentChooser(value) {
+  var selected = parseMachineDepartments(value);
+  document.querySelectorAll('#machineSectionChooser .machine-section-check').forEach(function(box) {
+    box.checked = selected.some(function(item){ return item.toLowerCase() === String(box.value || '').toLowerCase(); });
+  });
+  syncMachineSectionInput(selected, '');
+}
+
+function bindMachineDepartmentChooser() {
+  document.querySelectorAll('#machineSectionChooser .machine-section-check').forEach(function(box) {
+    box.addEventListener('change', function() {
+      var selected = Array.prototype.slice.call(document.querySelectorAll('#machineSectionChooser .machine-section-check:checked')).map(function(item){ return item.value; });
+      syncMachineSectionInput(selected, '');
+    });
+  });
+}
+
+bindMachineDepartmentChooser();
+var machineFormEl = document.getElementById('machineForm');
+if (machineFormEl) {
+  machineFormEl.addEventListener('submit', function() {
+    var selected = Array.prototype.slice.call(document.querySelectorAll('#machineSectionChooser .machine-section-check:checked')).map(function(item){ return item.value; });
+    syncMachineSectionInput(selected, '');
+  });
+}
+
 // Machine Modal Functions
 function openMachineModal() {
   document.getElementById('machineForm').reset();
   document.getElementById('machineAction').value = 'add_machine';
   document.getElementById('machineId').value = '';
   var op = document.getElementById('machineOperatorName'); if (op) op.value = '';
+  setMachineDepartmentChooser('');
   document.getElementById('machineModal').style.display = 'flex';
 }
 
@@ -2235,7 +2300,7 @@ function editMachine(id) {
   document.getElementById('machineId').value = item.id || '';
   document.getElementById('machineName').value = item.name || '';
   document.getElementById('machineType').value = item.type || '';
-  document.getElementById('machineSection').value = item.section || '';
+  setMachineDepartmentChooser(item.section || '');
   var op = document.getElementById('machineOperatorName'); if (op) op.value = item.operator_name || '';
   document.getElementById('machineStatus').value = item.status || 'Active';
   document.getElementById('machineModal').style.display = 'flex';

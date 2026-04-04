@@ -77,6 +77,296 @@ function appUrl($path = '') {
     return $baseUrl . $normalizedPath;
 }
 
+function erp_parse_multi_value_list($value) {
+    if (is_array($value)) {
+        $parts = $value;
+    } else {
+        $text = trim((string)$value);
+        if ($text === '') {
+            return [];
+        }
+        $parts = preg_split('/\s*,\s*|\r\n|\r|\n/', $text);
+    }
+
+    $items = [];
+    foreach ($parts as $part) {
+        $text = trim((string)$part);
+        if ($text === '') {
+            continue;
+        }
+        $items[] = $text;
+    }
+    return $items;
+}
+
+function erp_default_department_selection() {
+    return ['Packaging', 'Dispatch'];
+}
+
+function erp_configured_departments(): array {
+    return [
+        'Jumbo Slitting',
+        'Printing',
+        'Die-Cutting',
+        'BarCode',
+        'Label Slitting',
+        'Batch Printing',
+        'Packaging',
+        'Dispatch',
+    ];
+}
+
+function erp_normalize_department_key(string $value): string {
+    return strtolower((string)preg_replace('/[^a-z0-9]+/', '', trim($value)));
+}
+
+function erp_department_alias_map(): array {
+    static $map = null;
+    if ($map !== null) {
+        return $map;
+    }
+
+    $definitions = [
+        'Jumbo Slitting' => ['jumbo', 'jumbo slitting', 'jumbo_slitting', 'jumbo-slitting'],
+        'Printing' => ['printing', 'label printing', 'label-printing', 'label_printing', 'printing label', 'flexo', 'flexo printing', 'flexo_printing', 'flexo-printing', 'markandy', 'mark andy', '8 color printing', '8.color printing'],
+        'Die-Cutting' => ['die cutting', 'die-cutting', 'die_cutting', 'flatbed', 'flat bed'],
+        'BarCode' => ['barcode', 'bar code', 'bar-code', 'bar_code'],
+        'Label Slitting' => ['label slitting', 'label-slitting', 'label_slitting', 'slitting'],
+        'Batch Printing' => ['batch printing', 'batch-printing', 'batch_printing', 'one ply', 'oneply', 'one_ply', 'one-ply', 'pos', 'pos roll', 'pos_roll', 'pos-roll', 'posroll', 'rotery', 'rotery die', 'rotary die', 'rotary'],
+        'Packaging' => ['packing', 'packaging', 'packing slip'],
+        'Dispatch' => ['dispatch', 'despatch'],
+    ];
+
+    $map = [];
+    foreach ($definitions as $label => $aliases) {
+        $allAliases = array_merge([$label], $aliases);
+        foreach ($allAliases as $alias) {
+            $key = erp_normalize_department_key((string)$alias);
+            if ($key !== '') {
+                $map[$key] = $label;
+            }
+        }
+    }
+
+    return $map;
+}
+
+function erp_get_job_card_departments(?array $defaults = null): array {
+    static $cache = [];
+
+    if ($defaults === null) {
+        $defaults = [];
+    }
+
+    $cacheKey = implode('|', $defaults);
+    if (isset($cache[$cacheKey])) {
+        return $cache[$cacheKey];
+    }
+
+    $departments = [];
+    foreach ($defaults as $default) {
+        $label = erp_canonical_department_label((string)$default);
+        if ($label !== '') {
+            $departments[$label] = true;
+        }
+    }
+
+    foreach (erp_configured_departments() as $department) {
+        $label = erp_canonical_department_label($department);
+        if ($label !== '') {
+            $departments[$label] = true;
+        }
+    }
+
+    $ordered = array_keys($departments);
+    natcasesort($ordered);
+
+    $cache[$cacheKey] = array_values($ordered);
+    return $cache[$cacheKey];
+}
+
+function erp_canonical_department_label(string $value, ?array $choices = null): string {
+    $value = trim($value);
+    if ($value === '') {
+        return '';
+    }
+
+    $aliasMap = erp_department_alias_map();
+    $key = erp_normalize_department_key($value);
+    $label = $key !== '' && isset($aliasMap[$key]) ? $aliasMap[$key] : $value;
+
+    if ($choices === null) {
+        return $label;
+    }
+
+    foreach ($choices as $choice) {
+        $choiceLabel = trim((string)$choice);
+        if ($choiceLabel === '') {
+            continue;
+        }
+        if (strcasecmp($choiceLabel, $label) === 0 || erp_normalize_department_key($choiceLabel) === $key) {
+            return $choiceLabel;
+        }
+    }
+
+    return $label;
+}
+
+function erp_get_machine_departments(mysqli $db = null, ?array $defaults = null) {
+    static $cache = [];
+
+    if ($db === null) {
+        $db = getDB();
+    }
+
+    if ($defaults === null) {
+        $defaults = erp_configured_departments();
+    }
+
+    $cacheKey = spl_object_hash($db) . '|' . implode(',', $defaults);
+    if (isset($cache[$cacheKey])) {
+        return $cache[$cacheKey];
+    }
+
+    $departments = [];
+    foreach ($defaults as $default) {
+        $label = erp_canonical_department_label((string)$default);
+        if ($label !== '') {
+            $departments[$label] = true;
+        }
+    }
+
+    foreach (erp_get_job_card_departments() as $jobDepartment) {
+        $label = erp_canonical_department_label($jobDepartment);
+        if ($label !== '') {
+            $departments[$label] = true;
+        }
+    }
+
+    $labels = array_keys($departments);
+    natcasesort($labels);
+
+    $ordered = [];
+    foreach ($defaults as $default) {
+        foreach ($labels as $idx => $label) {
+            if (strcasecmp($label, (string)$default) === 0) {
+                $ordered[] = $label;
+                unset($labels[$idx]);
+            }
+        }
+    }
+    foreach ($labels as $label) {
+        $ordered[] = $label;
+    }
+
+    $cache[$cacheKey] = array_values(array_unique($ordered));
+    return $cache[$cacheKey];
+}
+
+function erp_normalize_department_selection($value, ?array $choices = null, ?array $defaults = null) {
+    if ($defaults === null) {
+        $defaults = erp_default_department_selection();
+    }
+
+    if ($choices === null) {
+        $choices = $defaults;
+    }
+
+    $choiceMap = [];
+    foreach ($choices as $choice) {
+        $label = trim((string)$choice);
+        if ($label === '') {
+            continue;
+        }
+        $choiceMap[erp_normalize_department_key($label)] = $label;
+    }
+
+    foreach (erp_department_alias_map() as $aliasKey => $aliasLabel) {
+        if ($aliasKey === '') {
+            continue;
+        }
+        foreach ($choices as $choice) {
+            $choiceLabel = trim((string)$choice);
+            if ($choiceLabel === '') {
+                continue;
+            }
+            if (strcasecmp($choiceLabel, $aliasLabel) === 0) {
+                $choiceMap[$aliasKey] = $choiceLabel;
+                break;
+            }
+        }
+    }
+
+    $selected = [];
+    $extras = [];
+    foreach (erp_parse_multi_value_list($value) as $item) {
+        $norm = erp_normalize_department_key($item);
+        if ($norm === '') {
+            continue;
+        }
+        if (isset($choiceMap[$norm])) {
+            $selected[$choiceMap[$norm]] = true;
+            continue;
+        }
+        $matched = false;
+        foreach ($choiceMap as $key => $label) {
+            if ($key === $norm || strpos($key, $norm) !== false || strpos($norm, $key) !== false) {
+                $selected[$label] = true;
+                $matched = true;
+                break;
+            }
+        }
+        if (!$matched) {
+            $extras[$item] = true;
+        }
+    }
+
+    if (empty($selected) && empty($extras)) {
+        foreach ($defaults as $default) {
+            $label = erp_canonical_department_label((string)$default, $choices);
+            if ($label === '') {
+                continue;
+            }
+            $norm = erp_normalize_department_key($label);
+            if ($norm !== '' && isset($choiceMap[$norm])) {
+                $selected[$choiceMap[$norm]] = true;
+            }
+        }
+    }
+
+    $ordered = [];
+    foreach ($choices as $choice) {
+        $label = trim((string)$choice);
+        if ($label !== '' && isset($selected[$label])) {
+            $ordered[] = $label;
+        }
+    }
+    foreach (array_keys($extras) as $extra) {
+        $ordered[] = $extra;
+    }
+
+    return implode(', ', array_values(array_unique($ordered)));
+}
+
+function erp_department_selection_list($value, ?array $choices = null, ?array $defaults = null): array {
+    return erp_parse_multi_value_list(erp_normalize_department_selection($value, $choices, $defaults));
+}
+
+function erp_department_selection_contains($value, string $target, ?array $choices = null, ?array $defaults = null): bool {
+    $targetKey = erp_normalize_department_key(erp_canonical_department_label($target, $choices));
+    if ($targetKey === '') {
+        return false;
+    }
+
+    foreach (erp_department_selection_list($value, $choices, $defaults) as $item) {
+        if (erp_normalize_department_key($item) === $targetKey) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function planningNotificationTargets($planningDepartment = '') {
     $department = strtolower(trim((string)$planningDepartment));
     $targets = ['planning'];
@@ -907,7 +1197,7 @@ function prefixSettingsDefaults() {
                 'batch' => ['prefix' => 'BAT', 'counter' => 0],
                 'sales_order' => ['prefix' => 'SO', 'counter' => 0],
                 'planning' => ['prefix' => 'PLN', 'counter' => 0],
-                'jumbo_job' => ['prefix' => 'JMB', 'counter' => 0],
+                'jumbo_job' => ['prefix' => 'SLT', 'counter' => 0],
                 'printing_job' => ['prefix' => 'FLX', 'counter' => 0],
             ],
         ],
@@ -1120,7 +1410,7 @@ function previewNextId($type) {
 /**
  * Generate a job ID using the GLOBAL shared counter but department-specific prefix.
  * All departments share the same incrementing counter; only the prefix differs.
- * E.g. JMB/2026/1020 (jumbo_job), FLX/2026/1021 (printing_job)
+ * E.g. SLT/2026/1020 (jumbo_job), FLX/2026/1021 (printing_job)
  *
  * @param string $department  Module key: 'jumbo_job', 'printing_job', etc.
  * @return string|null  The formatted job ID, or null if department not found.

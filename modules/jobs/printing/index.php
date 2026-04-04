@@ -2373,21 +2373,21 @@ function renderPrintCardHtml(job, card, extra, qrDataUrl) {
         </table>
 
         <!-- ROLL-WISE MATERIAL AND WASTAGE -->
-        <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#5b21b6;background:#ede9fe;padding:5px 8px;border-radius:4px">Roll-wise Material and Wastage</div>
+        <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#c2410c;background:#fff7ed;padding:5px 8px;border-radius:4px">Roll-wise Material and Wastage</div>
         <table style="width:100%;border-collapse:collapse;font-size:.7rem;margin-bottom:10px">
           <thead><tr>
-            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">#</th>
-            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Roll No</th>
-            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Material</th>
-            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Slitted Size</th>
-            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Length (m)</th>
-            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Color Match</th>
-            <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#ede9fe;color:#5b21b6">Wastage (m)</th>
+            <th style="padding:5px 6px;border:1px solid #fdba74;background:#fff7ed;color:#c2410c">#</th>
+            <th style="padding:5px 6px;border:1px solid #fdba74;background:#fff7ed;color:#c2410c">Roll No</th>
+            <th style="padding:5px 6px;border:1px solid #fdba74;background:#fff7ed;color:#c2410c">Material</th>
+            <th style="padding:5px 6px;border:1px solid #fdba74;background:#fff7ed;color:#c2410c">Slitted Size</th>
+            <th style="padding:5px 6px;border:1px solid #fdba74;background:#fff7ed;color:#c2410c">Length (m)</th>
+            <th style="padding:5px 6px;border:1px solid #fdba74;background:#fff7ed;color:#c2410c">Color Match</th>
+            <th style="padding:5px 6px;border:1px solid #fdba74;background:#fff7ed;color:#c2410c">Wastage (m)</th>
           </tr></thead>
           <tbody>
             ${rollRows.map((r, i) => `<tr>
               <td style="padding:5px 6px;border:1px solid #cbd5e1">${i + 1}</td>
-              <td style="padding:5px 6px;border:1px solid #cbd5e1;font-weight:700;color:#5b21b6">${esc(r.roll_no||'—')}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1;font-weight:700;color:#c2410c">${esc(r.roll_no||'—')}</td>
               <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.material_name||card.material_name||'—')}</td>
               <td style="padding:5px 6px;border:1px solid #cbd5e1">${r.slitted_width ? esc(r.slitted_width+'mm') : '—'}</td>
               <td style="padding:5px 6px;border:1px solid #cbd5e1;font-weight:700">${r.slitted_length ? esc(String(r.slitted_length)) : '—'}</td>

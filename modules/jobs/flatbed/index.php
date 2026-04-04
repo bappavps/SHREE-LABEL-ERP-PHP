@@ -118,6 +118,7 @@ $historyCount = count($historyJobs);
 // ── Stat counts ───────────────────────────────────────────
 $dcCountBase = "SELECT COUNT(*) FROM jobs j WHERE {$dcWhereClause} AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')";
 $totalCount   = safeCountQueryDC($db, $dcCountBase);
+$queuedCount  = safeCountQueryDC($db, $dcCountBase . " AND j.status = 'Queued'");
 $pendingCount = safeCountQueryDC($db, $dcCountBase . " AND j.status = 'Pending'");
 $runningCount = safeCountQueryDC($db, $dcCountBase . " AND j.status = 'Running'");
 $holdCount    = safeCountQueryDC($db, $dcCountBase . " AND j.status IN ('Hold','Hold for Payment','Hold for Approval')");
@@ -145,7 +146,7 @@ include __DIR__ . '/../../../includes/header.php';
 :root { --dc-brand: #0ea5a4; --dc-brand-light: #ccfbf1; --dc-brand-dark: #0f766e; --dc-blue: #3b82f6; }
 
 /* ── Stats Grid ── */
-.dc-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+.dc-stats{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px}
 .dc-stat{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:14px 16px;cursor:pointer;transition:all .18s;position:relative;overflow:hidden}
 .dc-stat:hover{border-color:var(--dc-brand);box-shadow:0 4px 12px rgba(14,165,164,.12)}
 .dc-stat.active{border-color:var(--dc-brand);box-shadow:0 4px 16px rgba(14,165,164,.18)}
@@ -173,6 +174,7 @@ include __DIR__ . '/../../../includes/header.php';
 .dc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
 .dc-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;transition:all .15s;cursor:pointer;position:relative}
 .dc-card:hover{border-color:var(--dc-brand);box-shadow:0 4px 16px rgba(14,165,164,.1)}
+.dc-card.dc-queued{opacity:.78;border-left:4px solid #94a3b8}
 .dc-card.dc-selected{outline:2px solid var(--dc-brand);outline-offset:-2px;background:#f0fdfa}
 .dc-select-check{position:absolute;top:12px;right:12px;width:18px;height:18px;accent-color:var(--dc-brand);cursor:pointer;z-index:2}
 .dc-card-head{padding:12px 14px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -186,6 +188,7 @@ include __DIR__ . '/../../../includes/header.php';
 
 /* ── Badges ── */
 .dc-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:.58rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.dc-badge-queued{background:#f1f5f9;color:#64748b}
 .dc-badge-pending{background:#fef3c7;color:#92400e}
 .dc-badge-running{background:#dbeafe;color:#1d4ed8}
 .dc-badge-completed{background:#dcfce7;color:#166534}
@@ -371,6 +374,10 @@ include __DIR__ . '/../../../includes/header.php';
     <div class="dc-stat-icon" style="background:var(--dc-brand-light);color:var(--dc-brand)"><i class="bi bi-stack"></i></div>
     <div><div class="dc-stat-val"><?= $totalCount ?></div><div class="dc-stat-label">Total</div></div>
   </div>
+  <div class="dc-stat" data-filter="Queued" onclick="filterFromStat('Queued')">
+    <div class="dc-stat-icon" style="background:#f1f5f9;color:#64748b"><i class="bi bi-lock"></i></div>
+    <div><div class="dc-stat-val"><?= $queuedCount ?></div><div class="dc-stat-label">Queued</div></div>
+  </div>
   <div class="dc-stat" data-filter="Pending" onclick="filterFromStat('Pending')">
     <div class="dc-stat-icon" style="background:#fef3c7;color:#d97706"><i class="bi bi-hourglass-split"></i></div>
     <div><div class="dc-stat-val"><?= $pendingCount ?></div><div class="dc-stat-label">Pending</div></div>
@@ -401,7 +408,8 @@ include __DIR__ . '/../../../includes/header.php';
 <div class="dc-filters no-print">
   <input type="text" class="dc-search" id="dcSearch" placeholder="Search by job no, name, material&hellip;">
   <button class="dc-filter-btn" onclick="filterJobs('all',this)">All</button>
-  <button class="dc-filter-btn active" onclick="filterJobs('Pending',this)">Pending</button>
+  <button class="dc-filter-btn" onclick="filterJobs('Queued',this)">Queued</button>
+  <button class="dc-filter-btn" onclick="filterJobs('Pending',this)">Pending</button>
   <button class="dc-filter-btn" onclick="filterJobs('Running',this)">Running</button>
   <button class="dc-filter-btn" onclick="filterJobs('Hold',this)">Hold</button>
   <button class="dc-filter-btn" onclick="filterJobs('Finished',this)">Finished</button>
@@ -416,7 +424,7 @@ include __DIR__ . '/../../../includes/header.php';
 <?php else: ?>
   <?php foreach ($activeJobs as $idx => $job):
     $sts = $job['status'];
-    $stsClass = match($sts) { 'Pending'=>'pending', 'Running'=>'running', 'Closed','Finalized'=>'completed', default=>'pending' };
+    $stsClass = match($sts) { 'Queued'=>'queued', 'Pending'=>'pending', 'Running'=>'running', 'Closed','Finalized','Completed'=>'completed', default=>'pending' };
     $timerActive = !empty($job['extra_data_parsed']['timer_active']);
     $timerState = strtolower(trim((string)($job['extra_data_parsed']['timer_state'] ?? '')));
     $startedTs = $job['started_at'] ? strtotime($job['started_at']) * 1000 : 0;
@@ -425,12 +433,13 @@ include __DIR__ . '/../../../includes/header.php';
     $pri = $job['planning_priority'] ?? 'Normal';
     $priClass = match(strtolower($pri)) { 'urgent'=>'urgent', 'high'=>'high', default=>'normal' };
     $isLocked = !$job['upstream_ready'];
+    $isQueued = ($sts === 'Queued');
     $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : '—';
     $startedAt = $job['started_at'] ? date('d M Y, H:i', strtotime($job['started_at'])) : '—';
     $completedAt = $job['completed_at'] ? date('d M Y, H:i', strtotime($job['completed_at'])) : '—';
     $searchText = strtolower($job['job_no'] . ' ' . ($job['display_job_name'] ?? '') . ' ' . ($job['planning_material'] ?? '') . ' ' . ($job['planning_die_size'] ?? ''));
   ?>
-  <div class="dc-card" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" onclick="openJobDetail(<?= $job['id'] ?>)">
+  <div class="dc-card <?= $isQueued ? 'dc-queued' : '' ?>" data-status="<?= e($sts) ?>" data-lockstate="<?= $isLocked ? 'locked' : 'unlocked' ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" onclick="openJobDetail(<?= $job['id'] ?>)">
     <input type="checkbox" class="dc-select-check" data-job-id="<?= $job['id'] ?>" onclick="event.stopPropagation();dcUpdateBulkBar()" title="Select for bulk print">
     <div class="dc-card-head">
       <div class="dc-jobno"><i class="bi bi-scissors"></i> <?= e($job['job_no']) ?></div>
@@ -688,25 +697,37 @@ function switchDCTab(tab) {
 }
 
 // ═══ FILTERS ═══
+let ACTIVE_DC_FILTER = 'Pending';
+
+function dcCardMatchesFilter(card, status) {
+  const cardStatus = (card.dataset.status || '').toLowerCase();
+  const finishedOnly = card.dataset.finishedOnly === '1';
+  const lockState = String(card.dataset.lockstate || '').toLowerCase();
+
+  if (status === 'all') return !finishedOnly;
+  if (status === 'Finished') return ['finished', 'completed', 'closed', 'finalized', 'qc passed'].includes(cardStatus);
+  if (finishedOnly) return false;
+  if (status === 'Hold') return cardStatus === 'hold' || cardStatus === 'hold for payment' || cardStatus === 'hold for approval';
+  if (status === 'Queued') return lockState === 'locked';
+  if (status === 'Pending') return cardStatus === 'pending';
+  return cardStatus === status.toLowerCase();
+}
+
+function applyDCFilters() {
+  const q = (document.getElementById('dcSearch')?.value || '').toLowerCase();
+  document.querySelectorAll('.dc-card').forEach(card => {
+    const searchOk = (card.dataset.search || '').includes(q);
+    const statusOk = dcCardMatchesFilter(card, ACTIVE_DC_FILTER);
+    card.style.display = searchOk && statusOk ? '' : 'none';
+  });
+}
+
 function filterJobs(status, btn) {
+  ACTIVE_DC_FILTER = status;
   document.querySelectorAll('.dc-filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   updateStatBoxes(status);
-  document.querySelectorAll('.dc-card').forEach(card => {
-    const cardStatus = (card.dataset.status || '').toLowerCase();
-    const finishedOnly = card.dataset.finishedOnly === '1';
-    if (status === 'all') { card.style.display = finishedOnly ? 'none' : ''; return; }
-    if (status === 'Finished') {
-      const isFinished = ['finished', 'completed', 'closed', 'finalized', 'qc passed'].includes(cardStatus);
-      card.style.display = isFinished ? '' : 'none'; return;
-    }
-    if (finishedOnly) { card.style.display = 'none'; return; }
-    if (status === 'Hold') {
-      const isHold = cardStatus === 'hold' || cardStatus === 'hold for payment' || cardStatus === 'hold for approval';
-      card.style.display = isHold ? '' : 'none'; return;
-    }
-    card.style.display = (cardStatus === status.toLowerCase()) ? '' : 'none';
-  });
+  applyDCFilters();
 }
 
 function filterFromStat(status) {
@@ -724,10 +745,7 @@ function updateStatBoxes(status) {
 }
 
 document.getElementById('dcSearch').addEventListener('input', function() {
-  const q = this.value.toLowerCase();
-  document.querySelectorAll('.dc-card').forEach(card => {
-    card.style.display = (card.dataset.search || '').includes(q) ? '' : 'none';
-  });
+  applyDCFilters();
 });
 
 // ═══ HISTORY TABLE ═══
@@ -1391,11 +1409,15 @@ async function submitAndClose(id) {
 
 // ═══ DETAIL MODAL ═══
 async function openJobDetail(id, mode) {
-  const job = ALL_JOBS.find(j => j.id == id);
-  if (!job) return;
+  const numericId = Number(id);
+  const job = ALL_JOBS.find(j => Number(j.id) === numericId) || ALL_JOBS.find(j => String(j.id) === String(id));
+  if (!job) {
+    alert('Job details not found. Please refresh the page once.');
+    return;
+  }
 
   const sts = job.status;
-  const stsClass = {Pending:'pending',Running:'running',Closed:'completed',Finalized:'completed',Completed:'completed'}[sts]||'pending';
+  const stsClass = {Queued:'queued',Pending:'pending',Running:'running',Closed:'completed',Finalized:'completed',Completed:'completed'}[sts]||'pending';
   const timerActive = isDCTimerActive(job);
   const timerState = String((job.extra_data_parsed || {}).timer_state || '').toLowerCase();
   const extra = job.extra_data_parsed || {};
@@ -1452,34 +1474,41 @@ async function openJobDetail(id, mode) {
 
   // ── Printing Production vs Planning Quantity ──
   {
-    const planQty = Number(job.planning_order_qty || 0);
-    const printQty = Number(job.prev_actual_qty || 0);
-    if (planQty > 0 || printQty > 0) {
-      const diff = printQty - planQty;
-      const pct = planQty > 0 ? ((diff / planQty) * 100).toFixed(1) : '—';
-      const isExtra = diff > 0;
-      const isShort = diff < 0;
+    const rawPlanQty = String(job.planning_order_qty || '').trim();
+    const rawPrintQty = String(job.prev_actual_qty || '').trim();
+    const hasPlanQty = rawPlanQty !== '';
+    const hasPrintQty = rawPrintQty !== '';
+    const planQty = Number(rawPlanQty || 0);
+    const printQty = Number(rawPrintQty || 0);
+    if (hasPlanQty || hasPrintQty) {
+      const canCompare = hasPlanQty && hasPrintQty;
+      const diff = canCompare ? (printQty - planQty) : 0;
+      const pctText = canCompare && planQty > 0
+        ? (((diff / planQty) * 100) > 0 ? '+' : '') + ((diff / planQty) * 100).toFixed(1) + '%'
+        : '';
+      const isExtra = canCompare && diff > 0;
+      const isShort = canCompare && diff < 0;
       const diffColor = isExtra ? '#16a34a' : (isShort ? '#dc2626' : '#64748b');
-      const diffLabel = isExtra ? 'Extra' : (isShort ? 'Shortage' : 'Matched');
-      const diffIcon = isExtra ? 'bi-arrow-up-circle-fill' : (isShort ? 'bi-arrow-down-circle-fill' : 'bi-check-circle-fill');
+      const diffLabel = canCompare ? (isExtra ? 'Extra' : (isShort ? 'Shortage' : 'Matched')) : 'Difference';
+      const diffIcon = canCompare ? (isExtra ? 'bi-arrow-up-circle-fill' : (isShort ? 'bi-arrow-down-circle-fill' : 'bi-check-circle-fill')) : 'bi-dash-circle';
       html += `<div class="dc-op-section" style="border-color:#e0e7ff">
         <div class="dc-op-h" style="background:#eef2ff;color:#4338ca"><i class="bi bi-bar-chart-line"></i> Printing Production vs Plan</div>
         <div class="dc-op-b">
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;text-align:center">
             <div style="background:#f8fafc;border-radius:10px;padding:10px 8px">
               <div style="font-size:.58rem;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:.06em">Planning Qty</div>
-              <div style="font-size:1.2rem;font-weight:900;color:#0f172a;margin-top:4px">${planQty > 0 ? planQty.toLocaleString() : '—'}</div>
+              <div style="font-size:1.2rem;font-weight:900;color:#0f172a;margin-top:4px">${hasPlanQty ? planQty.toLocaleString() : '—'}</div>
               <div style="font-size:.58rem;color:#64748b">Pcs</div>
             </div>
             <div style="background:#f8fafc;border-radius:10px;padding:10px 8px">
               <div style="font-size:.58rem;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:.06em">Printing Produced</div>
-              <div style="font-size:1.2rem;font-weight:900;color:#3b82f6;margin-top:4px">${printQty > 0 ? printQty.toLocaleString() : '—'}</div>
+              <div style="font-size:1.2rem;font-weight:900;color:#3b82f6;margin-top:4px">${hasPrintQty ? printQty.toLocaleString() : '—'}</div>
               <div style="font-size:.58rem;color:#64748b">Pcs</div>
             </div>
-            <div style="background:${isExtra?'#f0fdf4':(isShort?'#fef2f2':'#f8fafc')};border-radius:10px;padding:10px 8px">
+            <div style="background:${canCompare ? (isExtra?'#f0fdf4':(isShort?'#fef2f2':'#f8fafc')) : '#f8fafc'};border-radius:10px;padding:10px 8px">
               <div style="font-size:.58rem;font-weight:800;text-transform:uppercase;color:${diffColor};letter-spacing:.06em"><i class="bi ${diffIcon}"></i> ${diffLabel}</div>
-              <div style="font-size:1.2rem;font-weight:900;color:${diffColor};margin-top:4px">${Math.abs(diff).toLocaleString()}</div>
-              <div style="font-size:.62rem;font-weight:800;color:${diffColor}">${pct !== '—' ? ((isExtra?'+':'') + pct + '%') : '—'}</div>
+              <div style="font-size:1.2rem;font-weight:900;color:${diffColor};margin-top:4px">${canCompare ? Math.abs(diff).toLocaleString() : ''}</div>
+              <div style="font-size:.62rem;font-weight:800;color:${diffColor};min-height:1em">${pctText}</div>
             </div>
           </div>
         </div>
@@ -1817,25 +1846,31 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
         </table>
         ${previewHtml ? `<table style="width:100%">${previewHtml}</table>` : ''}
         ${(() => {
-          const planQty = Number(job.planning_order_qty || 0);
-          const printQty = Number(job.prev_actual_qty || 0);
-          if (planQty <= 0 && printQty <= 0) return '';
-          const diff = printQty - planQty;
-          const pct = planQty > 0 ? ((diff / planQty) * 100).toFixed(1) : '—';
-          const isExtra = diff > 0;
-          const isShort = diff < 0;
-          const diffLabel = isExtra ? 'Extra' : (isShort ? 'Shortage' : 'Matched');
+          const rawPlanQty = String(job.planning_order_qty || '').trim();
+          const rawPrintQty = String(job.prev_actual_qty || '').trim();
+          const hasPlanQty = rawPlanQty !== '';
+          const hasPrintQty = rawPrintQty !== '';
+          const planQty = Number(rawPlanQty || 0);
+          const printQty = Number(rawPrintQty || 0);
+          if (!hasPlanQty && !hasPrintQty) return '';
+          const canCompare = hasPlanQty && hasPrintQty;
+          const diff = canCompare ? (printQty - planQty) : 0;
+          const isExtra = canCompare && diff > 0;
+          const isShort = canCompare && diff < 0;
+          const diffLabel = canCompare ? (isExtra ? 'Extra' : (isShort ? 'Shortage' : 'Matched')) : 'Difference';
           const diffColor = isExtra ? '#16a34a' : (isShort ? '#dc2626' : '#475569');
-          const diffSign = isExtra ? '+' : '';
+          const pctText = canCompare && planQty > 0
+            ? (((diff / planQty) * 100) > 0 ? '+' : '') + ((diff / planQty) * 100).toFixed(1) + '%'
+            : '';
           return `<div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#4338ca;background:#eef2ff;padding:5px 8px;border-radius:4px;margin-top:8px">Printing Production vs Plan</div>
           <table style="width:100%;border-collapse:collapse;font-size:.72rem;margin-bottom:10px">
             <tr>
               <td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:16%">Planning Qty</td>
-              <td style="padding:5px 7px;border:1px solid #cbd5e1;width:17%;font-weight:700">${planQty > 0 ? planQty.toLocaleString() + ' Pcs' : '—'}</td>
+              <td style="padding:5px 7px;border:1px solid #cbd5e1;width:17%;font-weight:700">${hasPlanQty ? planQty.toLocaleString() + ' Pcs' : '—'}</td>
               <td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:16%">Printing Produced</td>
-              <td style="padding:5px 7px;border:1px solid #cbd5e1;width:17%;font-weight:700;color:#3b82f6">${printQty > 0 ? printQty.toLocaleString() + ' Pcs' : '—'}</td>
-              <td style="padding:5px 7px;border:1px solid #cbd5e1;background:${isExtra?'#f0fdf4':(isShort?'#fef2f2':'#f8fafc')};font-weight:800;width:16%;color:${diffColor}">${diffLabel}</td>
-              <td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:900;color:${diffColor};width:18%">${Math.abs(diff).toLocaleString()} Pcs ${pct !== '—' ? '(' + diffSign + pct + '%)' : ''}</td>
+              <td style="padding:5px 7px;border:1px solid #cbd5e1;width:17%;font-weight:700;color:#3b82f6">${hasPrintQty ? printQty.toLocaleString() + ' Pcs' : '—'}</td>
+              <td style="padding:5px 7px;border:1px solid #cbd5e1;background:${canCompare ? (isExtra?'#f0fdf4':(isShort?'#fef2f2':'#f8fafc')) : '#f8fafc'};font-weight:800;width:16%;color:${diffColor}">${diffLabel}</td>
+              <td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:900;color:${diffColor};width:18%">${canCompare ? (Math.abs(diff).toLocaleString() + ' Pcs' + (pctText ? ' (' + pctText + ')' : '')) : ''}</td>
             </tr>
           </table>`;
         })()}
@@ -1946,10 +1981,10 @@ function generateQR(text) {
   if (autoId) setTimeout(function(){ try { openJobDetail(parseInt(autoId)); } catch(e){} }, 600);
 })();
 
-// Default to Pending filter on page load
+// Default to Pending filter on page load.
 (function(){
-  const pendingBtn = document.querySelector('.dc-filter-btn.active');
-  if (pendingBtn && pendingBtn.textContent.trim() === 'Pending') filterJobs('Pending', pendingBtn);
+  const pendingBtn = Array.from(document.querySelectorAll('.dc-filter-btn')).find(b => b.textContent.trim() === 'Pending');
+  if (pendingBtn) filterJobs('Pending', pendingBtn);
 })();
 </script>
 

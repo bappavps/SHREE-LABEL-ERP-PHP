@@ -2,7 +2,7 @@
     "company_name": "Shree Label Creations",
     "company_legal_name": "Shree Label Creations Pvt. Ltd.",
     "contact_person": "Aditya Sitani",
-    "erp_display_name": "e-Flexo Enterpices",
+    "erp_display_name": "e-Flexo Enterprices",
     "company_tagline": "All types of Label Printing Solutions",
     "company_email": "gm.shreelabel@gmail.com",
     "company_mobile": "+917001449757",
@@ -15,7 +15,7 @@
     "erp_address": "siliguri\r\nsiliguri",
     "erp_gst": "",
     "logo_path": "uploads/company/logo_20260329_002856_3ee534f4.png",
-    "erp_logo_path": "uploads//erp_logo_20260404_131308_da1d03bf.png",
+    "erp_logo_path": "uploads/uploads/company/default/erp_logo_20260404_205743_39688c9a.png",
     "flag_emoji": "🇮🇳",
     "animated_flag_path": "",
     "animated_flag_url": "https://media1.tenor.com/m/f7t624exZA0AAAAC/india-india-flag.gif",
@@ -81,7 +81,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 2
+                "counter": 10
             },
             "sales_order": {
                 "prefix": "SO",
@@ -92,7 +92,7 @@
                 "counter": 0
             },
             "jumbo_job": {
-                "prefix": "JMB",
+                "prefix": "SLT",
                 "counter": 0
             },
             "printing_job": {

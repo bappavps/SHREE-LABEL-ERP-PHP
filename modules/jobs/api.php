@@ -373,6 +373,163 @@ function jobs_is_die_cutting_job(array $job): bool {
     return $jobType === 'finishing' && in_array($department, ['flatbed', 'die-cutting', 'die_cutting'], true);
 }
 
+function jobs_is_flatbed_like_die(string $dieValue): bool {
+    $die = strtolower(trim($dieValue));
+    if ($die === '') return false;
+    return strpos($die, 'flatbed') !== false && strpos($die, 'rotary') === false;
+}
+
+function jobs_derive_stage_job_no(string $planNo, string $targetPrefix): string {
+    $planNo = trim($planNo);
+    $targetPrefix = strtoupper(trim($targetPrefix));
+    if ($planNo === '' || $targetPrefix === '') return '';
+
+    if (preg_match('/^[A-Za-z]+([\/-].+)$/', $planNo, $m)) {
+        return $targetPrefix . $m[1];
+    }
+
+    return $targetPrefix . '/' . $planNo;
+}
+
+function jobs_generate_unique_stage_job_no(mysqli $db, string $moduleType, string $planNo, string $targetPrefix, int $maxAttempts = 30): string {
+    $derived = jobs_derive_stage_job_no($planNo, $targetPrefix);
+
+    for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+        $candidate = '';
+        if (function_exists('getNextId')) {
+            $candidate = trim((string)(getNextId($moduleType) ?? ''));
+        }
+        if ($candidate === '') {
+            if ($derived !== '') {
+                $candidate = $attempt === 0 ? $derived : ($derived . '-' . ($attempt + 1));
+            } else {
+                $candidate = strtoupper($targetPrefix) . '/' . date('Y') . '/' . str_pad((string)((int)date('His') + $attempt), 6, '0', STR_PAD_LEFT);
+            }
+        }
+
+        $chk = $db->prepare("SELECT COUNT(*) AS c FROM jobs WHERE job_no = ?");
+        if (!$chk) continue;
+        $chk->bind_param('s', $candidate);
+        $chk->execute();
+        $exists = (int)($chk->get_result()->fetch_assoc()['c'] ?? 0) > 0;
+        if (!$exists) {
+            return $candidate;
+        }
+    }
+
+    return '';
+}
+
+function jobs_ensure_label_slitting_job(
+    mysqli $db,
+    int $planningId,
+    string $planNo,
+    string $rollNo,
+    int $previousJobId,
+    string $previousJobNo,
+    string $sourceLabel,
+    string $displayJobName = '',
+    int $sequenceOrder = 4
+): int {
+    if ($planningId <= 0 || $previousJobId <= 0) return 0;
+
+    $jumboRef = 'N/A';
+    $flexoRef = 'N/A';
+    $dieCutRef = 'N/A';
+    $labelRef = 'N/A';
+
+    $chainStmt = $db->prepare("SELECT job_no, department FROM jobs WHERE planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id ASC");
+    if ($chainStmt) {
+        $chainStmt->bind_param('i', $planningId);
+        $chainStmt->execute();
+        $chainRows = $chainStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        foreach ($chainRows as $chainRow) {
+            $chainDept = strtolower(trim((string)($chainRow['department'] ?? '')));
+            $chainJobNo = trim((string)($chainRow['job_no'] ?? ''));
+            if ($chainJobNo === '') continue;
+            if ($chainDept === 'jumbo_slitting' && $jumboRef === 'N/A') $jumboRef = $chainJobNo;
+            if ($chainDept === 'flexo_printing' && $flexoRef === 'N/A') $flexoRef = $chainJobNo;
+            if ($chainDept === 'flatbed' && $dieCutRef === 'N/A') $dieCutRef = $chainJobNo;
+            if (in_array($chainDept, ['label-slitting', 'label_slitting', 'label slitting'], true) && $labelRef === 'N/A') $labelRef = $chainJobNo;
+        }
+    }
+
+    if ($previousJobNo !== '') {
+        $prevUpper = strtoupper($previousJobNo);
+        if (strpos($prevUpper, 'DCT/') === 0) $dieCutRef = $previousJobNo;
+        if (strpos($prevUpper, 'FLX/') === 0) $flexoRef = $previousJobNo;
+        if (strpos($prevUpper, 'JMB/') === 0) $jumboRef = $previousJobNo;
+    }
+
+    $buildLabelNotes = static function(string $labelJobNo) use ($planNo, $jumboRef, $flexoRef, $dieCutRef, $displayJobName): string {
+        $notesText = 'Label slitting released from upstream'
+            . ' | Plan: ' . ($planNo !== '' ? $planNo : 'N/A')
+            . ' | Jumbo: ' . $jumboRef
+            . ' | Flexo: ' . $flexoRef
+            . ' | Die-Cut: ' . $dieCutRef
+            . ' | Label: ' . ($labelJobNo !== '' ? $labelJobNo : 'N/A');
+        if ($displayJobName !== '') {
+            $notesText .= ' | Job name: ' . $displayJobName;
+        }
+        return $notesText;
+    };
+
+    $existingStmt = $db->prepare("SELECT id, job_no, status FROM jobs WHERE planning_id = ? AND LOWER(COALESCE(department, '')) IN ('label-slitting', 'label_slitting', 'label slitting') AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
+    if ($existingStmt) {
+        $existingStmt->bind_param('i', $planningId);
+        $existingStmt->execute();
+        $existing = $existingStmt->get_result()->fetch_assoc();
+        if ($existing) {
+            $existingId = (int)($existing['id'] ?? 0);
+            $labelRef = trim((string)($existing['job_no'] ?? '')) ?: $labelRef;
+            $notes = $buildLabelNotes($labelRef !== 'N/A' ? $labelRef : '');
+            $currentStatus = trim((string)($existing['status'] ?? ''));
+            $nextStatus = in_array($currentStatus, ['Queued', 'Pending'], true) ? 'Pending' : $currentStatus;
+            $updExisting = $db->prepare("UPDATE jobs SET previous_job_id = ?, sequence_order = ?, notes = ?, status = ? WHERE id = ?");
+            if ($updExisting) {
+                $updExisting->bind_param('iissi', $previousJobId, $sequenceOrder, $notes, $nextStatus, $existingId);
+                $updExisting->execute();
+            }
+
+            if ($existingId > 0 && $currentStatus === 'Queued' && $nextStatus === 'Pending') {
+                $nMsg = ((string)($existing['job_no'] ?? 'Label Slitting')) . ' is now ready | From: ' . ($previousJobNo !== '' ? $previousJobNo : 'N/A');
+                $nIns = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, 'label-slitting', ?, 'success')");
+                if ($nIns) {
+                    $nIns->bind_param('is', $existingId, $nMsg);
+                    $nIns->execute();
+                }
+            }
+            return $existingId;
+        }
+    }
+
+    $jobNo = jobs_generate_unique_stage_job_no($db, 'label_slitting_job', $planNo, 'LST');
+    if ($jobNo === '') {
+        throw new RuntimeException('Unable to generate unique Label Slitting job number.');
+    }
+
+    $notes = $buildLabelNotes($jobNo);
+
+    $insert = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Finishing', 'label-slitting', 'Pending', ?, ?, ?)");
+    if (!$insert) {
+        throw new RuntimeException('Unable to prepare Label Slitting job creation.');
+    }
+    $insert->bind_param('sisiis', $jobNo, $planningId, $rollNo, $sequenceOrder, $previousJobId, $notes);
+    $insert->execute();
+    $labelJobId = (int)$db->insert_id;
+
+    if ($labelJobId > 0) {
+        $nMsg = 'New Label Slitting job card ready: ' . $jobNo . ' | From: ' . ($previousJobNo !== '' ? $previousJobNo : 'N/A');
+        $nIns = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, 'label-slitting', ?, 'success')");
+        if ($nIns) {
+            $nIns->bind_param('is', $labelJobId, $nMsg);
+            $nIns->execute();
+        }
+    }
+
+    return $labelJobId;
+}
+
 function jobs_first_non_empty(array $arr, array $keys, string $fallback = ''): string {
     foreach ($keys as $k) {
         if (!array_key_exists($k, $arr)) continue;
@@ -621,12 +778,13 @@ try {
             if (in_array($jobTypeNow, ['printing', 'flexo'], true)) {
                 $planId = (int)($job['planning_id'] ?? 0);
                 if ($planId > 0) {
-                    $planExtraStmt = $db->prepare("SELECT extra_data FROM planning WHERE id = ? LIMIT 1");
+                    $planExtraStmt = $db->prepare("SELECT job_no, extra_data FROM planning WHERE id = ? LIMIT 1");
                     if ($planExtraStmt) {
                         $planExtraStmt->bind_param('i', $planId);
                         $planExtraStmt->execute();
                         $planRow = $planExtraStmt->get_result()->fetch_assoc();
                         if ($planRow) {
+                            $planNoForStage = trim((string)($planRow['job_no'] ?? ''));
                             $pExtra = json_decode((string)($planRow['extra_data'] ?? '{}'), true) ?: [];
                             $planningExtraForNotifications = $pExtra;
                             $pExtra['printing_planning'] = 'Printing Done';
@@ -635,6 +793,26 @@ try {
                             if ($upPlanExtra) {
                                 $upPlanExtra->bind_param('si', $pExtraJson, $planId);
                                 $upPlanExtra->execute();
+                            }
+
+                            $departmentChoices = erp_get_machine_departments($db);
+                            $selectedDepartments = erp_department_selection_list((string)($pExtra['department_route'] ?? ''), $departmentChoices, []);
+                            $allowLabelSlitting = erp_department_selection_contains($selectedDepartments, 'Label Slitting', $departmentChoices, []);
+                            $allowDieCutting = erp_department_selection_contains($selectedDepartments, 'Die-Cutting', $departmentChoices, []);
+                            $dieIsFlatbedLike = jobs_is_flatbed_like_die((string)($pExtra['die'] ?? ''));
+
+                            if ($allowLabelSlitting && !($allowDieCutting && $dieIsFlatbedLike)) {
+                                jobs_ensure_label_slitting_job(
+                                    $db,
+                                    $planId,
+                                    $planNoForStage,
+                                    trim((string)($job['roll_no'] ?? '')),
+                                    $jobId,
+                                    trim((string)($job['job_no'] ?? '')),
+                                    'Printing',
+                                    jobs_display_job_name($job),
+                                    3
+                                );
                             }
                         }
                     }
@@ -645,19 +823,38 @@ try {
             if (jobs_is_die_cutting_job($job)) {
                 $planId = (int)($job['planning_id'] ?? 0);
                 if ($planId > 0) {
-                    $planExtraStmtD = $db->prepare("SELECT extra_data FROM planning WHERE id = ? LIMIT 1");
+                    $planExtraStmtD = $db->prepare("SELECT job_no, extra_data FROM planning WHERE id = ? LIMIT 1");
                     if ($planExtraStmtD) {
                         $planExtraStmtD->bind_param('i', $planId);
                         $planExtraStmtD->execute();
                         $planRowD = $planExtraStmtD->get_result()->fetch_assoc();
                         if ($planRowD) {
+                            $planNoForStageD = trim((string)($planRowD['job_no'] ?? ''));
                             $pExtraD = json_decode((string)($planRowD['extra_data'] ?? '{}'), true) ?: [];
+                            $planningExtraForNotifications = $pExtraD;
                             $pExtraD['printing_planning'] = 'Die-Cutting Done';
                             $pExtraDJson = json_encode($pExtraD, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                             $upPlanExtraD = $db->prepare("UPDATE planning SET extra_data = ? WHERE id = ?");
                             if ($upPlanExtraD) {
                                 $upPlanExtraD->bind_param('si', $pExtraDJson, $planId);
                                 $upPlanExtraD->execute();
+                            }
+
+                            $departmentChoicesD = erp_get_machine_departments($db);
+                            $selectedDepartmentsD = erp_department_selection_list((string)($pExtraD['department_route'] ?? ''), $departmentChoicesD, []);
+                            $allowLabelSlittingD = erp_department_selection_contains($selectedDepartmentsD, 'Label Slitting', $departmentChoicesD, []);
+                            if ($allowLabelSlittingD) {
+                                jobs_ensure_label_slitting_job(
+                                    $db,
+                                    $planId,
+                                    $planNoForStageD,
+                                    trim((string)($job['roll_no'] ?? '')),
+                                    $jobId,
+                                    trim((string)($job['job_no'] ?? '')),
+                                    'Die-Cutting',
+                                    jobs_display_job_name($job),
+                                    4
+                                );
                             }
                         }
                     }
