@@ -794,17 +794,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   // ============================================================
-  // RESET TEST DATA — planning, jumbo, flexo counters + rows
+  // RESET TEST DATA — keep planning, clear production/job-card data
   // ============================================================
   if ($action === 'reset_test_data') {
     $errors = [];
 
-    // 1. Reset only planning, jumbo_job and printing_job prefix counters
+    // 1. Reset planning + production job counters
     $idg = getPrefixSettings();
     if (!isset($idg['modules']) || !is_array($idg['modules'])) {
       $idg['modules'] = [];
     }
-    foreach (['planning', 'jumbo_job', 'printing_job'] as $type) {
+    foreach (['planning', 'planning_barcode', 'jumbo_job', 'printing_job', 'die_cutting_job', 'label_slitting_job', 'barcode_job'] as $type) {
       if (isset($idg['modules'][$type])) {
         $idg['modules'][$type]['counter'] = 0;
       }
@@ -814,23 +814,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $errors[] = 'Could not reset prefix counters.';
     }
 
-    // 2. Delete database rows — jobs (jumbo + printing job cards), planning rows,
-    //    slitting batches and entries (all test slitting output)
+    // 2. Reset planning board statuses to default while keeping planning rows
+    // 3. Delete production/job-card and live-floor data
     try {
       // Disable FK checks temporarily so truncates succeed regardless of references
       $db->query("SET FOREIGN_KEY_CHECKS=0");
+
+      // Keep planning rows, but reset status to default and clear runtime assignment fields.
+      $db->query("UPDATE planning SET status='Pending', machine=NULL, operator_name=NULL");
+
       $db->query("DELETE FROM slitting_entries");
       $db->query("DELETE FROM slitting_batches");
       $db->query("DELETE FROM job_change_requests");
+      $db->query("DELETE FROM job_notifications");
+      $db->query("DELETE FROM job_delete_audit");
       $db->query("DELETE FROM jobs");
-      $db->query("DELETE FROM planning");
+
       $db->query("SET FOREIGN_KEY_CHECKS=1");
     } catch (Exception $e) {
+      // Try to re-enable FK checks if an error occurs in-between.
+      $db->query("SET FOREIGN_KEY_CHECKS=1");
       $errors[] = 'DB error: ' . $e->getMessage();
     }
 
     if (empty($errors)) {
-      setFlash('success', 'Test data reset: planning board, jumbo job cards, flexo job cards and slitting batches cleared. Counters restarted from 0001.');
+      setFlash('success', 'Testing reset complete: all production job cards/live-floor data cleared, planning rows kept with Pending status, and counters restarted from 0001.');
     } else {
       setFlash('error', 'Reset partially failed: ' . implode(' ', $errors));
     }
@@ -2004,9 +2012,9 @@ if ($activeTab === 'clients' && $editClientId > 0) {
             type="submit"
             name="action"
             value="reset_test_data"
-            onclick="return confirm('⚠️ TESTING RESET\n\nThis will permanently delete:\n• All Planning Board rows\n• All Jumbo job cards\n• All Flexo/Printing job cards\n• All Slitting batches and entries\n• All Jumbo change requests\n\nAnd reset PLN / JMB / FLX counters to 0001.\n\nThis cannot be undone. Continue only on a test environment.');"
+            onclick="return confirm('⚠️ TESTING RESET\n\nThis will permanently delete/reset:\n• All production job cards (Jumbo/Flexo/Die/Label Slitting/Barcode)\n• Live Floor runtime data (slitting batches, entries, change requests, notifications, audits)\n\nPlanning rows will be kept, but all planning statuses become Pending.\n\nAnd related planning/job counters reset to 0001.\n\nThis cannot be undone. Continue only on a test environment.');"
             style="background:#dc2626;border-color:#dc2626;color:#fff"
-          ><i class="bi bi-trash3"></i> Reset Planning / Jumbo / Flexo (Testing)</button>
+          ><i class="bi bi-trash3"></i> Reset Production + Live Floor (Keep Planning)</button>
         </div>
       </form>
 

@@ -506,7 +506,7 @@ const SLT = (() => {
   let selectedMachineDepartments = [];
   let departmentSelectionTouched = false;
   let activePlannerDepartmentSeed = [];
-  let plannerFilter   = 'pending'; // status tab filter
+  let plannerFilter   = 'all'; // status tab filter
   let allStockOptions = [];    // raw options from API (unfiltered)
   let allStockGroups  = [];    // grouped options across all suppliers
   let selectedSupplier = 'all';
@@ -1574,12 +1574,13 @@ const SLT = (() => {
     const jobsForTabs = getAcceptScopedJobs(plannerJobs);
     const counts = { all: jobsForTabs.length };
     jobsForTabs.forEach(j => {
-      const pp = (j.printing_planning || j.status || 'Pending').toLowerCase();
+      const pp = normalizePlannerStatus(j.printing_planning || j.status || 'Pending');
       counts[pp] = (counts[pp] || 0) + 1;
     });
     const tabs = [
       { key: 'all', label: 'All', count: counts.all },
       { key: 'pending', label: 'Pending', count: counts['pending'] || 0 },
+      { key: 'barcode ready', label: 'Barcode Ready', count: counts['barcode ready'] || 0 },
       { key: 'running', label: 'Running', count: (counts['running']||0) + (counts['in progress']||0) },
       { key: 'completed', label: 'Completed', count: counts['completed'] || 0 },
     ];
@@ -1606,7 +1607,7 @@ const SLT = (() => {
     // Apply status tab filter
     if (!isAcceptMode() && plannerFilter !== 'all') {
       jobs = jobs.filter(j => {
-        const s = (j.printing_planning || j.status || '').toLowerCase();
+        const s = normalizePlannerStatus(j.printing_planning || j.status || '');
         if (plannerFilter === 'running') return s === 'running' || s === 'in progress';
         return s === plannerFilter;
       });
@@ -2447,12 +2448,19 @@ const SLT = (() => {
       'Consumed':'consumed','Available':'available','Assigned':'assigned',
       'Draft':'draft','Executing':'in-progress','Completed':'completed',
       'Queued':'queued','In Progress':'in-progress','On Hold':'on-hold',
-      'Pending':'pending','Running':'in-progress','Urgent':'urgent','High':'high','Normal':'normal','Low':'low',
+      'Pending':'pending','Barcode Ready':'approved','Preparing Slitting':'in-production','Running':'in-progress','Urgent':'urgent','High':'high','Normal':'normal','Low':'low',
       'Printing':'in-production','Fabrication':'slitting','Packing':'pending',
       'Ready to Dispatch':'approved','Dispatched':'dispatched',
     };
     const cls = map[status] || 'draft';
     return '<span class="badge badge-' + cls + '">' + esc(status) + '</span>';
+  }
+
+  function normalizePlannerStatus(status) {
+    const s = String(status || '').trim().toLowerCase();
+    if (!s) return 'pending';
+    if (s === 'barcode_ready') return 'barcode ready';
+    return s;
   }
 
   function formatDate(dt) {

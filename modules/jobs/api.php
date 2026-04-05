@@ -206,6 +206,91 @@ function jobs_decode_extra_data($raw): array {
     return is_array($decoded) ? $decoded : [];
 }
 
+function jobs_parse_stock_qty_value($raw): int {
+    $txt = trim((string)$raw);
+    if ($txt === '') return 0;
+    if (preg_match('/-?\d+(?:\.\d+)?/', $txt, $m)) {
+        return max(0, (int)floor((float)$m[0]));
+    }
+    return 0;
+}
+
+function jobs_table_exists(mysqli $db, string $table): bool {
+    $table = trim($table);
+    if ($table === '') return false;
+    $safe = $db->real_escape_string($table);
+    $res = @$db->query("SHOW TABLES LIKE '{$safe}'");
+    if (!($res instanceof mysqli_result)) return false;
+    $exists = $res->num_rows > 0;
+    $res->close();
+    return $exists;
+}
+
+function jobs_validate_printing_anilox_usage(mysqli $db, array $extra): array {
+    $selected = [];
+    if (isset($extra['color_anilox_rows']) && is_array($extra['color_anilox_rows'])) {
+        foreach ($extra['color_anilox_rows'] as $row) {
+            if (!is_array($row)) continue;
+            $value = trim((string)($row['anilox_value'] ?? ''));
+            if ($value === '' || strcasecmp($value, 'none') === 0) continue;
+            $selected[] = $value;
+        }
+    } elseif (isset($extra['anilox_lanes']) && is_array($extra['anilox_lanes'])) {
+        foreach ($extra['anilox_lanes'] as $value) {
+            $v = trim((string)$value);
+            if ($v === '' || strcasecmp($v, 'none') === 0) continue;
+            $selected[] = $v;
+        }
+    }
+
+    if (empty($selected)) return ['ok' => true];
+
+    $stockMap = [];
+    foreach (['master_anilox_data', 'anilox_data'] as $table) {
+        if (!jobs_table_exists($db, $table)) continue;
+        $res = @$db->query("SELECT anilox_lpi, stock_qty FROM {$table}");
+        if (!($res instanceof mysqli_result)) continue;
+        while ($row = $res->fetch_assoc()) {
+            $lpi = trim((string)($row['anilox_lpi'] ?? ''));
+            if ($lpi === '') continue;
+            if (!isset($stockMap[$lpi])) $stockMap[$lpi] = 0;
+            $stockMap[$lpi] += jobs_parse_stock_qty_value($row['stock_qty'] ?? 0);
+        }
+        $res->close();
+    }
+
+    if (empty($stockMap)) {
+        return ['ok' => false, 'error' => 'Anilox stock is not configured in Anilox Management.'];
+    }
+
+    $usage = [];
+    foreach ($selected as $val) {
+        $usage[$val] = ($usage[$val] ?? 0) + 1;
+    }
+
+    $missing = [];
+    $exceeded = [];
+    foreach ($usage as $lpi => $count) {
+        $available = (int)($stockMap[$lpi] ?? 0);
+        if ($available <= 0) {
+            $missing[] = $lpi;
+            continue;
+        }
+        if ($count > $available) {
+            $exceeded[] = $lpi . ': selected ' . $count . ', available ' . $available;
+        }
+    }
+
+    if (!empty($missing) || !empty($exceeded)) {
+        $parts = [];
+        if (!empty($missing)) $parts[] = 'Not available: ' . implode(', ', $missing);
+        if (!empty($exceeded)) $parts[] = 'Quantity mismatch: ' . implode(' | ', $exceeded);
+        return ['ok' => false, 'error' => 'Anilox stock validation failed. ' . implode('. ', $parts) . '.'];
+    }
+
+    return ['ok' => true];
+}
+
 function jobs_timer_now(): string {
     return date('Y-m-d H:i:s');
 }
@@ -371,6 +456,31 @@ function jobs_is_die_cutting_job(array $job): bool {
         return true;
     }
     return $jobType === 'finishing' && in_array($department, ['flatbed', 'die-cutting', 'die_cutting'], true);
+}
+
+function jobs_is_operator_media_upload_job(array $job): bool {
+    if (jobs_is_die_cutting_job($job)) {
+        return true;
+    }
+
+    $department = strtolower(trim((string)($job['department'] ?? '')));
+    $jobType = strtolower(trim((string)($job['job_type'] ?? '')));
+
+    if (in_array($department, ['barcode'], true)) {
+        return true;
+    }
+    if (in_array($jobType, ['barcode'], true)) {
+        return true;
+    }
+
+    if (in_array($department, ['label-slitting', 'label_slitting', 'label slitting', 'slitting'], true)) {
+        return true;
+    }
+    if (in_array($jobType, ['label-slitting', 'label_slitting', 'label slitting', 'slitting'], true)) {
+        return true;
+    }
+
+    return $jobType === 'finishing' && in_array($department, ['barcode', 'label-slitting', 'label_slitting', 'label slitting', 'slitting'], true);
 }
 
 function jobs_is_flatbed_like_die(string $dieValue): bool {
@@ -1102,12 +1212,22 @@ try {
             break;
         }
 
-        $curStmt = $db->prepare("SELECT extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $curStmt = $db->prepare("SELECT job_type, department, extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
         $curStmt->bind_param('i', $jobId);
         $curStmt->execute();
         $curJob = $curStmt->get_result()->fetch_assoc();
         $currentExtra = jobs_decode_extra_data($curJob['extra_data'] ?? '{}');
         $extraArr = jobs_array_merge_deep($currentExtra, $extraArr);
+
+        $jobType = trim((string)($curJob['job_type'] ?? ''));
+        $department = trim((string)($curJob['department'] ?? ''));
+        if ($jobType === 'Printing' || strtolower($department) === 'flexo_printing') {
+            $aniloxValidation = jobs_validate_printing_anilox_usage($db, $extraArr);
+            if (empty($aniloxValidation['ok'])) {
+                echo json_encode(['ok' => false, 'error' => (string)($aniloxValidation['error'] ?? 'Anilox validation failed')]);
+                break;
+            }
+        }
 
         // Sanitize values
         array_walk_recursive($extraArr, function(&$val) {
@@ -1348,8 +1468,8 @@ try {
             echo json_encode(['ok' => false, 'error' => 'Job not found']);
             break;
         }
-        if (!jobs_is_die_cutting_job($job)) {
-            echo json_encode(['ok' => false, 'error' => 'This upload is only allowed for Die-Cutting jobs']);
+        if (!jobs_is_operator_media_upload_job($job)) {
+            echo json_encode(['ok' => false, 'error' => 'This upload is only allowed for Barcode, Die-Cutting, or Label Slitting jobs']);
             break;
         }
 
@@ -1447,8 +1567,8 @@ try {
             echo json_encode(['ok' => false, 'error' => 'Job not found']);
             break;
         }
-        if (!jobs_is_die_cutting_job($job)) {
-            echo json_encode(['ok' => false, 'error' => 'This upload is only allowed for Die-Cutting jobs']);
+        if (!jobs_is_operator_media_upload_job($job)) {
+            echo json_encode(['ok' => false, 'error' => 'This upload is only allowed for Barcode, Die-Cutting, or Label Slitting jobs']);
             break;
         }
 

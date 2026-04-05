@@ -24,6 +24,18 @@ $importColumns = dieToolingImportColumns();
 $quickFilters = dieToolingQuickFilters();
 $csrf = generateCSRF();
 
+$dieToolingImageUploadError = '';
+
+function dieToolingSetImageUploadError($message) {
+  global $dieToolingImageUploadError;
+  $dieToolingImageUploadError = trim((string)$message);
+}
+
+function dieToolingGetImageUploadError() {
+  global $dieToolingImageUploadError;
+  return trim((string)$dieToolingImageUploadError);
+}
+
 function dieToolingGetPaperTypeOptions(mysqli $db) {
   $options = [];
   $res = $db->query("SELECT DISTINCT TRIM(COALESCE(paper_type, '')) AS paper_type FROM paper_stock WHERE TRIM(COALESCE(paper_type, '')) <> '' ORDER BY paper_type ASC");
@@ -121,10 +133,28 @@ function dieToolingImageSrc($path) {
   if (preg_match('/^https?:\/\//i', $path)) {
     return $path;
   }
-  if (function_exists('appUrl')) {
-    return appUrl(ltrim($path, '/'));
+
+  // Normalize Windows separators and recover relative upload path from legacy absolute values.
+  $normalized = str_replace('\\', '/', $path);
+  if (preg_match('/^[A-Za-z]:\//', $normalized) || strpos($normalized, '/') === 0) {
+    $uploadsPos = stripos($normalized, '/uploads/');
+    if ($uploadsPos !== false) {
+      $normalized = ltrim(substr($normalized, $uploadsPos + 1), '/');
+    }
   }
-  return rtrim((string)BASE_URL, '/') . '/' . ltrim($path, '/');
+
+  // If only file name is stored, resolve it from the plate-data upload folder.
+  if (strpos($normalized, '/') === false) {
+    $probe = __DIR__ . '/../../uploads/library/plate-data/' . $normalized;
+    if (is_file($probe)) {
+      $normalized = 'uploads/library/plate-data/' . $normalized;
+    }
+  }
+
+  if (function_exists('appUrl')) {
+    return appUrl(ltrim($normalized, '/'));
+  }
+  return rtrim((string)BASE_URL, '/') . '/' . ltrim($normalized, '/');
 }
 
 function dieToolingNormalizeImportedDate($value) {
@@ -169,39 +199,55 @@ function dieToolingDateForInput($value) {
 }
 
 function dieToolingSavePlateImage($inputName, $existingPath = '') {
+  dieToolingSetImageUploadError('');
+
   if (!isset($_FILES[$inputName]) || !is_array($_FILES[$inputName])) {
     return $existingPath;
   }
 
   $file = $_FILES[$inputName];
   $error = (int)($file['error'] ?? UPLOAD_ERR_NO_FILE);
-  if ($error === UPLOAD_ERR_NO_FILE || $error !== UPLOAD_ERR_OK) {
+  if ($error === UPLOAD_ERR_NO_FILE) {
+    return $existingPath;
+  }
+  if ($error !== UPLOAD_ERR_OK) {
+    dieToolingSetImageUploadError('Image upload failed. Please retry with a smaller valid image file.');
     return $existingPath;
   }
 
   $tmpName = (string)($file['tmp_name'] ?? '');
   if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+    dieToolingSetImageUploadError('Invalid upload source. Please select the image again.');
     return $existingPath;
   }
 
   $original = (string)($file['name'] ?? '');
   $ext = strtolower(pathinfo($original, PATHINFO_EXTENSION));
-  $allowed = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+  $allowed = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'jfif', 'avif'];
   if (!in_array($ext, $allowed, true)) {
+    dieToolingSetImageUploadError('Unsupported image format. Allowed: JPG, PNG, WEBP, GIF, BMP, JFIF, AVIF.');
     return $existingPath;
   }
 
   $uploadDir = __DIR__ . '/../../uploads/library/plate-data';
   if (!is_dir($uploadDir)) {
     @mkdir($uploadDir, 0775, true);
+    @chmod($uploadDir, 0775);
   }
   if (!is_dir($uploadDir)) {
+    dieToolingSetImageUploadError('Upload folder is not available. Please contact admin.');
     return $existingPath;
   }
 
   $name = 'plate_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
   $target = $uploadDir . '/' . $name;
-  if (!move_uploaded_file($tmpName, $target)) {
+  $moved = move_uploaded_file($tmpName, $target);
+  if (!$moved) {
+    // Fallback for environments where move_uploaded_file intermittently fails.
+    $moved = @copy($tmpName, $target);
+  }
+  if (!$moved) {
+    dieToolingSetImageUploadError('Failed to save uploaded image. Please check folder permission.');
     return $existingPath;
   }
 
@@ -242,6 +288,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $data['paper_type'] = $paperTypeLookup[$paperTypeInput];
     }
     $data['image_path'] = dieToolingSavePlateImage('image_path_file', $data['image_path'] ?? '');
+    $imageUploadError = dieToolingGetImageUploadError();
+    if ($imageUploadError !== '') {
+      setFlash('error', $imageUploadError);
+      redirect(dieToolingRedirectUrl($mode));
+    }
     $stmt = dieToolingPrepareInsert($db, $tableName, $columnKeys);
     if ($stmt) {
       $values = [];
@@ -289,6 +340,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $data['paper_type'] = $paperTypeLookup[$paperTypeInput];
     }
     $data['image_path'] = dieToolingSavePlateImage('image_path_file', $existingImage);
+    $imageUploadError = dieToolingGetImageUploadError();
+    if ($imageUploadError !== '') {
+      setFlash('error', $imageUploadError);
+      redirect(dieToolingRedirectUrl($mode));
+    }
     $stmt = dieToolingPrepareUpdate($db, $tableName, $columnKeys);
     if ($stmt) {
       $values = [];
@@ -750,11 +806,15 @@ if (!$isEmbedded) {
 .module-table thead th{background:#dbeafe;color:#1e3a8a;border-color:#bfdbfe;font-weight:700;white-space:nowrap}
 .module-table tbody td{border-color:#e2e8f0;white-space:nowrap}
 .plate-thumb{width:42px;height:42px;border-radius:8px;object-fit:cover;border:1px solid #cbd5e1;background:#f8fafc}
+.plate-preview-lg{width:86px;height:86px;border-radius:10px;object-fit:cover;border:1px solid #cbd5e1;background:#f8fafc}
 .name-link-btn{background:none;border:none;color:#1d4ed8;font-weight:700;cursor:pointer;text-decoration:underline;padding:0}
 .detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 .detail-item{border:1px solid #e2e8f0;border-radius:8px;padding:8px;background:#f8fafc}
 .detail-key{font-size:.68rem;color:#64748b;text-transform:uppercase;font-weight:700;letter-spacing:.05em}
 .detail-val{font-size:.85rem;color:#0f172a;margin-top:3px;word-break:break-word}
+.camera-modal-card{max-width:620px}
+.camera-video{width:100%;max-height:340px;background:#0f172a;border-radius:10px;object-fit:cover}
+.camera-help{font-size:.78rem;color:#64748b;margin-top:8px}
 .module-pagination{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 4px 2px}.module-page-list{display:flex;gap:6px;flex-wrap:wrap}.module-page-btn{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:32px;padding:0 10px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--text-main);font-size:.78rem;font-weight:700;text-decoration:none}.module-page-btn.active{background:#0f172a;color:#fff;border-color:#0f172a}.module-page-btn.disabled{opacity:.5;pointer-events:none}
 .plate-calc-box{margin-top:10px;border:1px solid #fdba74;border-radius:12px;background:#fff7ed;padding:12px}
 .plate-calc-title{font-size:.8rem;font-weight:800;color:#9a3412;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
@@ -1015,7 +1075,12 @@ if (!$isEmbedded) {
           <label><?= e($label) ?></label>
           <?php if ($key === 'image_path'): ?>
             <input type="hidden" name="image_path" value="">
-            <input type="file" name="image_path_file" accept="image/*">
+            <input type="file" id="addImageFileInput" class="js-plate-image-input" data-preview-id="addImagePreview" name="image_path_file" accept="image/*" capture="environment">
+            <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+              <button type="button" class="btn btn-sm btn-secondary js-open-camera" data-input-id="addImageFileInput" data-preview-id="addImagePreview"><i class="bi bi-camera"></i> Camera</button>
+              <span style="font-size:.74rem;color:#64748b;">On mobile, tap Camera to capture directly.</span>
+            </div>
+            <div id="addImagePreviewWrap" style="margin-top:8px;display:none;"><img id="addImagePreview" src="" alt="Selected image" class="plate-preview-lg"></div>
           <?php elseif ($key === 'paper_type'): ?>
             <select name="paper_type">
               <option value="">-- Select Paper Type --</option>
@@ -1056,10 +1121,12 @@ if (!$isEmbedded) {
           <?php if ($key === 'image_path'): ?>
             <?php $existingImgSrc = dieToolingImageSrc((string)($editingRow[$key] ?? '')); ?>
             <input type="hidden" name="image_path" value="<?= e((string)($editingRow[$key] ?? '')) ?>">
-            <input type="file" name="image_path_file" accept="image/*">
-            <?php if ($existingImgSrc !== ''): ?>
-              <div style="margin-top:6px;"><img src="<?= e($existingImgSrc) ?>" alt="Current image" class="plate-thumb"></div>
-            <?php endif; ?>
+            <input type="file" id="editImageFileInput" class="js-plate-image-input" data-preview-id="editImagePreview" name="image_path_file" accept="image/*" capture="environment">
+            <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+              <button type="button" class="btn btn-sm btn-secondary js-open-camera" data-input-id="editImageFileInput" data-preview-id="editImagePreview"><i class="bi bi-camera"></i> Camera</button>
+              <span style="font-size:.74rem;color:#64748b;">Preview updates immediately after a new photo is selected.</span>
+            </div>
+            <div id="editImagePreviewWrap" style="margin-top:8px;<?= $existingImgSrc !== '' ? 'display:block;' : 'display:none;' ?>"><img id="editImagePreview" src="<?= e($existingImgSrc) ?>" alt="Current image" class="plate-preview-lg"></div>
           <?php elseif ($key === 'paper_type'): ?>
             <?php $currentPaperType = trim((string)($editingRow['paper_type'] ?? '')); ?>
             <select name="paper_type">
@@ -1095,6 +1162,24 @@ if (!$isEmbedded) {
         <img id="detailImage" src="" alt="Record image" style="max-width:220px;max-height:220px;border:1px solid #cbd5e1;border-radius:10px;object-fit:cover;">
       </div>
       <div id="detailGrid" class="detail-grid"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="cameraCaptureModal">
+  <div class="modal-card camera-modal-card">
+    <div class="modal-head">
+      <strong>Capture Image</strong>
+      <button class="btn btn-sm btn-ghost" type="button" id="cameraCloseBtn"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div style="padding:14px;display:flex;flex-direction:column;gap:10px;">
+      <video id="cameraCaptureVideo" class="camera-video" autoplay playsinline muted></video>
+      <canvas id="cameraCaptureCanvas" style="display:none;"></canvas>
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+        <button class="btn btn-secondary" type="button" id="cameraTakeBtn"><i class="bi bi-camera-fill"></i> Capture</button>
+        <button class="btn btn-success" type="button" id="cameraUseBtn" disabled><i class="bi bi-check2-circle"></i> Use This Photo</button>
+      </div>
+      <div class="camera-help">Tip: After first permission, the camera stream is reused in this page session. Some phones may still prompt again due to browser policy.</div>
     </div>
   </div>
 </div>
@@ -1396,6 +1481,170 @@ if (!$isEmbedded) {
     var modal = document.getElementById('detailRecordModal');
     if (modal) modal.style.display = 'none';
   };
+
+  var cameraState = {
+    modal: document.getElementById('cameraCaptureModal'),
+    video: document.getElementById('cameraCaptureVideo'),
+    canvas: document.getElementById('cameraCaptureCanvas'),
+    closeBtn: document.getElementById('cameraCloseBtn'),
+    takeBtn: document.getElementById('cameraTakeBtn'),
+    useBtn: document.getElementById('cameraUseBtn'),
+    stream: null,
+    blob: null,
+    activeInputId: '',
+    activePreviewId: ''
+  };
+
+  function setInlinePreview(input, previewId, blobUrl) {
+    var preview = document.getElementById(previewId || '');
+    if (!preview) return;
+    var wrap = document.getElementById((previewId || '') + 'Wrap') || preview.parentElement;
+    if (!wrap) return;
+
+    if (blobUrl && blobUrl !== '') {
+      preview.setAttribute('src', blobUrl);
+      wrap.style.display = 'block';
+      return;
+    }
+
+    var file = (input && input.files && input.files[0]) ? input.files[0] : null;
+    if (!file) return;
+    var objectUrl = URL.createObjectURL(file);
+    preview.setAttribute('src', objectUrl);
+    wrap.style.display = 'block';
+  }
+
+  function bindImageInputPreview() {
+    document.querySelectorAll('.js-plate-image-input').forEach(function (input) {
+      var previewId = input.getAttribute('data-preview-id') || '';
+      input.addEventListener('change', function () {
+        setInlinePreview(input, previewId, '');
+      });
+    });
+  }
+
+  async function ensureCameraStream() {
+    if (!cameraState.video) return false;
+    if (cameraState.stream) {
+      cameraState.video.srcObject = cameraState.stream;
+      return true;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return false;
+    }
+    try {
+      cameraState.stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
+      });
+      cameraState.video.srcObject = cameraState.stream;
+      return true;
+    } catch (err) {
+      try {
+        cameraState.stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        cameraState.video.srcObject = cameraState.stream;
+        return true;
+      } catch (fallbackErr) {
+        return false;
+      }
+    }
+  }
+
+  function hideCameraModal() {
+    if (cameraState.modal) cameraState.modal.style.display = 'none';
+    cameraState.blob = null;
+    if (cameraState.useBtn) cameraState.useBtn.disabled = true;
+  }
+
+  async function openCameraModal(inputId, previewId) {
+    var targetInput = document.getElementById(inputId || '');
+    if (!targetInput || !cameraState.modal) return;
+
+    cameraState.activeInputId = inputId;
+    cameraState.activePreviewId = previewId || '';
+    cameraState.blob = null;
+    if (cameraState.useBtn) cameraState.useBtn.disabled = true;
+
+    var ok = await ensureCameraStream();
+    if (!ok) {
+      window.alert('Camera access is unavailable. Please use file picker instead.');
+      targetInput.click();
+      return;
+    }
+    cameraState.modal.style.display = 'block';
+  }
+
+  function captureFromVideo() {
+    if (!cameraState.video || !cameraState.canvas) return;
+    var w = cameraState.video.videoWidth || 0;
+    var h = cameraState.video.videoHeight || 0;
+    if (w <= 0 || h <= 0) return;
+
+    cameraState.canvas.width = w;
+    cameraState.canvas.height = h;
+    var ctx = cameraState.canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(cameraState.video, 0, 0, w, h);
+    cameraState.canvas.toBlob(function (blob) {
+      cameraState.blob = blob || null;
+      if (cameraState.useBtn) cameraState.useBtn.disabled = !cameraState.blob;
+    }, 'image/jpeg', 0.92);
+  }
+
+  function useCapturedPhoto() {
+    if (!cameraState.blob) return;
+    var input = document.getElementById(cameraState.activeInputId || '');
+    if (!input) return;
+
+    var file = new File([cameraState.blob], 'camera_' + Date.now() + '.jpg', { type: 'image/jpeg' });
+    if (typeof DataTransfer === 'undefined') {
+      window.alert('This browser does not support camera file injection. Please use file picker upload.');
+      return;
+    }
+    var dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+
+    var blobUrl = URL.createObjectURL(cameraState.blob);
+    setInlinePreview(input, cameraState.activePreviewId, blobUrl);
+    hideCameraModal();
+  }
+
+  function bindCameraActions() {
+    document.querySelectorAll('.js-open-camera').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var inputId = btn.getAttribute('data-input-id') || '';
+        var previewId = btn.getAttribute('data-preview-id') || '';
+        openCameraModal(inputId, previewId);
+      });
+    });
+
+    if (cameraState.closeBtn) {
+      cameraState.closeBtn.addEventListener('click', hideCameraModal);
+    }
+    if (cameraState.modal) {
+      cameraState.modal.addEventListener('click', function (event) {
+        if (event.target === cameraState.modal) hideCameraModal();
+      });
+    }
+    if (cameraState.takeBtn) {
+      cameraState.takeBtn.addEventListener('click', captureFromVideo);
+    }
+    if (cameraState.useBtn) {
+      cameraState.useBtn.addEventListener('click', useCapturedPhoto);
+    }
+
+    window.addEventListener('beforeunload', function () {
+      if (cameraState.stream) {
+        cameraState.stream.getTracks().forEach(function (track) { track.stop(); });
+        cameraState.stream = null;
+      }
+    });
+  }
+
+  bindImageInputPreview();
+  bindCameraActions();
 
   function escapeHtml(value) {
     return String(value || '')

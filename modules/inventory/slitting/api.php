@@ -331,7 +331,7 @@ try {
             $rows = $db->query("SELECT p.*, so.material_type, so.label_width_mm, so.label_length_mm, so.quantity
                 FROM planning p
                 LEFT JOIN sales_orders so ON p.sales_order_id = so.id
-                WHERE p.status = 'Pending'
+                WHERE p.status IN ('Pending', 'Barcode Ready')
                 ORDER BY p.id ASC
                 LIMIT 100")->fetch_all(MYSQLI_ASSOC);
         }

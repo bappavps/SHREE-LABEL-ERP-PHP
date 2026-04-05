@@ -15,6 +15,19 @@ $logoPath    = $appSettings['logo_path'] ?? '';
 $logoUrl     = $logoPath ? (BASE_URL . '/' . $logoPath) : '';
 $sessionUser = trim((string)($_SESSION['name'] ?? ($_SESSION['user_name'] ?? '')));
 
+if (!function_exists('jobs_printing_table_exists')) {
+  function jobs_printing_table_exists(mysqli $db, string $tableName): bool {
+    $tableName = trim($tableName);
+    if ($tableName === '') return false;
+    $safe = $db->real_escape_string($tableName);
+    $res = @$db->query("SHOW TABLES LIKE '{$safe}'");
+    if (!($res instanceof mysqli_result)) return false;
+    $exists = $res->num_rows > 0;
+    $res->close();
+    return $exists;
+  }
+}
+
 // Fetch Printing job cards with roll, planning and previous slitting job details
 $jobs = $db->query("
     SELECT j.*, ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,
@@ -51,7 +64,11 @@ foreach ($jobs as &$j) {
     $j['planning_material'] = $ped['material'] ?? '';
     $j['planning_paper_size'] = $ped['paper_size'] ?? '';
     $j['planning_remarks'] = $ped['remarks'] ?? '';
-    $j['planning_image_url'] = !empty($ped['image_path']) ? (BASE_URL . '/' . $ped['image_path']) : '';
+    $planningImagePath = trim((string)($ped['image_path'] ?? ''));
+    if ($planningImagePath !== '' && !preg_match('/^https?:\/\//i', $planningImagePath)) {
+      $planningImagePath = BASE_URL . '/' . ltrim(str_replace('\\', '/', $planningImagePath), '/');
+    }
+    $j['planning_image_url'] = $planningImagePath;
     unset($j['planning_extra_data']); // Don't send raw blob to JS
     $planningName = trim((string)($j['planning_job_name'] ?? ''));
     if ($planningName !== '') {
@@ -81,6 +98,64 @@ foreach ($jobs as &$j) {
     }
 }
 unset($j);
+
+// Map plate-data image by plate number and attach preview URLs for all printing job cards.
+$plateImageByPlateNo = [];
+$plateRes = @$db->query("SELECT plate, image_path FROM master_plate_data");
+if ($plateRes instanceof mysqli_result) {
+  while ($row = $plateRes->fetch_assoc()) {
+    $plateNo = trim((string)($row['plate'] ?? ''));
+    $imgPath = trim((string)($row['image_path'] ?? ''));
+    if ($plateNo === '' || $imgPath === '') continue;
+    if (!preg_match('/^https?:\/\//i', $imgPath)) {
+      $imgPath = BASE_URL . '/' . ltrim(str_replace('\\', '/', $imgPath), '/');
+    }
+    if (!isset($plateImageByPlateNo[$plateNo])) {
+      $plateImageByPlateNo[$plateNo] = $imgPath;
+    }
+  }
+  $plateRes->close();
+}
+
+foreach ($jobs as &$j) {
+  $plateNo = trim((string)($j['planning_plate_no'] ?? ''));
+  $plateImageUrl = ($plateNo !== '' && isset($plateImageByPlateNo[$plateNo])) ? (string)$plateImageByPlateNo[$plateNo] : '';
+  $j['plate_image_url'] = $plateImageUrl;
+  $j['job_preview_image_url'] = trim((string)($j['planning_image_url'] ?? '')) !== ''
+    ? (string)$j['planning_image_url']
+    : $plateImageUrl;
+}
+unset($j);
+
+// Fetch Anilox LPI stock (for Color + Anilox dropdown and quantity checks)
+$aniloxStockMap = [];
+foreach (['master_anilox_data', 'anilox_data'] as $aniloxTable) {
+  if (!jobs_printing_table_exists($db, $aniloxTable)) continue;
+  $aniloxRes = @$db->query("SELECT anilox_lpi, stock_qty FROM {$aniloxTable}");
+  if (!($aniloxRes instanceof mysqli_result)) continue;
+  while ($row = $aniloxRes->fetch_assoc()) {
+    $lpi = trim((string)($row['anilox_lpi'] ?? ''));
+    if ($lpi === '') continue;
+    $qtyRaw = trim((string)($row['stock_qty'] ?? '0'));
+    $qty = 0;
+    if (preg_match('/-?\d+(?:\.\d+)?/', $qtyRaw, $m)) {
+      $qty = max(0, (int)floor((float)$m[0]));
+    }
+    if (!isset($aniloxStockMap[$lpi])) $aniloxStockMap[$lpi] = 0;
+    $aniloxStockMap[$lpi] += $qty;
+  }
+  $aniloxRes->close();
+}
+
+$aniloxLpiOptions = array_keys($aniloxStockMap);
+usort($aniloxLpiOptions, static function(string $a, string $b): int {
+  $na = is_numeric($a) ? (float)$a : null;
+  $nb = is_numeric($b) ? (float)$b : null;
+  if ($na !== null && $nb !== null) return $na <=> $nb;
+  if ($na !== null) return -1;
+  if ($nb !== null) return 1;
+  return strcasecmp($a, $b);
+});
 
 // ─── Fetch child rolls from previous slitting jobs for each printing job ───
 $prevJobIds = array_filter(array_unique(array_map(fn($j) => (int)($j['previous_job_id'] ?? 0), $jobs)));
@@ -695,6 +770,8 @@ const IS_ADMIN = <?= $canDeleteJobs ? 'true' : 'false' ?>;
 const CURRENT_USER = <?= json_encode($sessionUser, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const ALL_JOBS = <?= json_encode($jobs, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+const ANILOX_LPI_STOCK = <?= json_encode($aniloxStockMap, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+const ANILOX_LPI_OPTIONS = <?= json_encode($aniloxLpiOptions, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 let activeStatusFilter = 'Pending';
 
 function getFieldVal(form, name) {
@@ -738,7 +815,7 @@ function normalizeCardData(job, extra) {
   out.physical_print_photo_path = String(out.physical_print_photo_path || '').trim();
   out.total_wastage_meters = out.total_wastage_meters ?? out.wastage_meters ?? '';
   const DEFAULT_COLORS = ['Cyan', 'Magenta', 'Yellow', 'Black', 'None', 'None', 'None', 'None'];
-  const DEFAULT_ANILOX = ['700', '600', '800', '550', 'None', 'None', 'None', 'None'];
+  const DEFAULT_ANILOX = ['None', 'None', 'None', 'None', 'None', 'None', 'None', 'None'];
   if (!Array.isArray(out.colour_lanes)) out.colour_lanes = DEFAULT_COLORS.slice();
   if (!Array.isArray(out.anilox_lanes)) out.anilox_lanes = DEFAULT_ANILOX.slice();
   out.colour_lanes = out.colour_lanes
@@ -825,7 +902,7 @@ function normalizeCardData(job, extra) {
     const CMYK_DEFAULTS = ['Cyan','Magenta','Yellow','Black'];
     out.color_anilox_rows = Array.from({ length: 8 }, (_, i) => {
       const colorVal = String(out.colour_lanes[i] || '').trim() || (i < 4 ? CMYK_DEFAULTS[i] : 'None');
-      const anVal = String(out.anilox_lanes[i] || '').trim() || (i < 4 ? ['700','600','800','550'][i] : 'None');
+      const anVal = String(out.anilox_lanes[i] || '').trim() || 'None';
       const colorName = ['Cyan','Magenta','Yellow','Black'].includes(colorVal) ? colorVal : (colorVal === 'None' ? 'None' : '');
       return {
         lane: i + 1,
@@ -853,6 +930,111 @@ function toLocalDateInputValue(value) {
 function toSafeNumber(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+function normalizeAniloxLaneValue(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'None';
+  if (raw.toLowerCase() === 'none') return 'None';
+  return raw;
+}
+
+function collectAniloxLaneSelections(form) {
+  if (!form) return [];
+  const rows = Array.from(form.querySelectorAll('[data-lane-row]'));
+  return rows.map((row, idx) => {
+    const sel = row.querySelector('[data-role="anilox-select"]');
+    return {
+      lane: idx + 1,
+      value: normalizeAniloxLaneValue(sel?.value || 'None'),
+      selectEl: sel || null,
+    };
+  });
+}
+
+function buildAniloxUsageCount(selections) {
+  const used = {};
+  selections.forEach(item => {
+    const v = normalizeAniloxLaneValue(item?.value || 'None');
+    if (v === 'None') return;
+    used[v] = (used[v] || 0) + 1;
+  });
+  return used;
+}
+
+function getAniloxStockForValue(value) {
+  const key = normalizeAniloxLaneValue(value);
+  if (key === 'None') return Number.POSITIVE_INFINITY;
+  return Math.max(0, Number(ANILOX_LPI_STOCK?.[key] || 0));
+}
+
+function renderAniloxOptions(selected) {
+  const normalized = normalizeAniloxLaneValue(selected || 'None');
+  let html = '<option value="None"' + (normalized === 'None' ? ' selected' : '') + '>None</option>';
+
+  const optionSource = (Array.isArray(ANILOX_LPI_OPTIONS) && ANILOX_LPI_OPTIONS.length)
+    ? ANILOX_LPI_OPTIONS
+    : Object.keys(ANILOX_LPI_STOCK || {});
+
+  optionSource.forEach(lpi => {
+    const key = String(lpi || '').trim();
+    if (!key) return;
+    const qty = Math.max(0, Number(ANILOX_LPI_STOCK?.[key] || 0));
+    const isSel = normalized === key;
+    const outTag = qty <= 0 ? ' - Out of stock' : '';
+    html += `<option value="${esc(key)}"${isSel ? ' selected' : ''}>${esc(key)} (Available: ${qty})${outTag}</option>`;
+  });
+
+  if (normalized !== 'None' && !Object.prototype.hasOwnProperty.call(ANILOX_LPI_STOCK || {}, normalized)) {
+    html += `<option value="${esc(normalized)}" selected>${esc(normalized)} (Legacy)</option>`;
+  }
+  return html;
+}
+
+function updateAniloxLaneAvailability(form) {
+  if (!form) return;
+  // Keep all DB suggestions selectable in the UI.
+  // Quantity/availability is still enforced by validateAniloxLaneQuantities() before submit.
+  const selections = collectAniloxLaneSelections(form);
+  selections.forEach(item => {
+    const sel = item.selectEl;
+    if (!sel) return;
+    Array.from(sel.options).forEach(opt => {
+      opt.disabled = false;
+    });
+  });
+}
+
+function validateAniloxLaneQuantities(form) {
+  const selections = collectAniloxLaneSelections(form);
+  const usage = buildAniloxUsageCount(selections);
+  const missingInStock = [];
+  const exceeded = [];
+
+  Object.keys(usage).forEach(lpi => {
+    const used = usage[lpi] || 0;
+    const stock = getAniloxStockForValue(lpi);
+    if (!Number.isFinite(stock)) return;
+    if (stock <= 0) {
+      missingInStock.push(lpi);
+      return;
+    }
+    if (used > stock) {
+      exceeded.push({ lpi, used, stock });
+    }
+  });
+
+  if (!missingInStock.length && !exceeded.length) return true;
+
+  let message = 'Anilox selection exceeds available stock. Please adjust before submit.\n\n';
+  if (missingInStock.length) {
+    message += 'Not available in Anilox Management:\n- ' + missingInStock.join('\n- ') + '\n\n';
+  }
+  if (exceeded.length) {
+    message += 'Quantity mismatch:\n- ' + exceeded.map(e => `${e.lpi}: selected ${e.used}, available ${e.stock}`).join('\n- ');
+  }
+  alert(message.trim());
+  return false;
 }
 
 function secondsToHms(seconds) {
@@ -994,8 +1176,6 @@ function bindFlexoFormBehavior(container) {
   refreshWastage();
 
   const CMYK_COLORS = ['Cyan','Magenta','Yellow','Black'];
-  const cmykAniloxOpts = ['None','250','300','400','500','550','600','700','750','800','850','900','1000','1100','1200','1300','1400','Custom'];
-  const defaultAniloxOpts = ['None','60','80','100','120','140','160','Custom'];
   container.querySelectorAll('[data-lane-row]').forEach(row => {
     const colorSel = row.querySelector('[data-role="color-select"]');
     const colorName = row.querySelector('[data-role="color-name"]');
@@ -1011,12 +1191,15 @@ function bindFlexoFormBehavior(container) {
       if (colorName) colorName.style.display = (c && c !== 'None' && !isCMYK) ? '' : 'none';
       if (colorSel) colorSel.style.background = COLOR_BG[c] || '#fcfdff';
       if (anSel) {
-        const curVal = anSel.value;
-        const opts = isCMYK ? cmykAniloxOpts : defaultAniloxOpts;
-        anSel.innerHTML = opts.map(o => `<option value="${o}"${o===curVal?' selected':''}>${o}</option>`).join('');
-        if (!opts.includes(curVal)) anSel.value = 'None';
+        const curVal = normalizeAniloxLaneValue(anSel.value || 'None');
+        anSel.innerHTML = renderAniloxOptions(curVal);
+        anSel.value = curVal;
       }
-      if (anCustom) anCustom.style.display = String(anSel?.value || '') === 'Custom' ? '' : 'none';
+      if (anCustom) {
+        anCustom.value = '';
+        anCustom.style.display = 'none';
+      }
+      updateAniloxLaneAvailability(container);
     };
     if (colorSel) colorSel.addEventListener('change', sync);
     if (anSel) anSel.addEventListener('change', sync);
@@ -1724,8 +1907,8 @@ function buildPrintingExtraDataFromForm(job, form) {
     lane: idx + 1,
     color_code: getFieldVal(row, 'color_lane_code_' + idx),
     color_name: getFieldVal(row, 'color_lane_name_' + idx),
-    anilox_value: getFieldVal(row, 'anilox_lane_value_' + idx),
-    anilox_custom: getFieldVal(row, 'anilox_lane_custom_' + idx),
+    anilox_value: normalizeAniloxLaneValue(getFieldVal(row, 'anilox_lane_value_' + idx)),
+    anilox_custom: '',
   }));
 
   const startedTs = job.started_at ? new Date(job.started_at).getTime() : 0;
@@ -1770,7 +1953,7 @@ function buildPrintingExtraDataFromForm(job, form) {
     prepared_by: getFieldVal(form, 'prepared_by') || CURRENT_USER,
     filled_by: getFieldVal(form, 'filled_by') || CURRENT_USER,
     colour_lanes: laneRows.map(r => String(r.color_code || '').trim()),
-    anilox_lanes: laneRows.map(r => String(r.anilox_value === 'Custom' ? r.anilox_custom : r.anilox_value || '').trim()),
+    anilox_lanes: laneRows.map(r => String(normalizeAniloxLaneValue(r.anilox_value || 'None')).trim()),
     color_anilox_rows: laneRows,
     physical_print_photo_url: getFieldVal(form, 'physical_print_photo_url'),
     physical_print_photo_path: getFieldVal(form, 'physical_print_photo_path')
@@ -1788,6 +1971,7 @@ async function submitAndComplete(id) {
   }
   const form = document.getElementById('dm-operator-form');
   if (!form) return updateFPStatus(id, 'Completed');
+  if (!validateAniloxLaneQuantities(form)) return;
   const extraData = buildPrintingExtraDataFromForm(job, form);
   if (!extraData) return updateFPStatus(id, 'Completed');
 
@@ -1861,11 +2045,8 @@ function renderLaneSelectOptions(selected) {
   return opts.map(o => `<option value="${o}"${String(selected||'')===o?' selected':''}>${o}</option>`).join('');
 }
 
-function renderAniloxOptions(selected, forCMYK) {
-  const cmykOpts = ['None','250','300','400','500','550','600','700','750','800','850','900','1000','1100','1200','1300','1400','Custom'];
-  const defaultOpts = ['None','60','80','100','120','140','160','Custom'];
-  const opts = forCMYK ? cmykOpts : defaultOpts;
-  return opts.map(o => `<option value="${o}"${String(selected||'')===o?' selected':''}>${o}</option>`).join('');
+function renderAniloxOptionsLegacyCompat(selected) {
+  return renderAniloxOptions(selected);
 }
 
 async function handlePrintingPhotoUpload(input, jobId) {
@@ -1982,19 +2163,20 @@ async function openPrintDetail(id, mode) {
   const laneRows = Array.from({ length: 8 }, (_, i) => {
     const lr = Array.isArray(card.color_anilox_rows) ? (card.color_anilox_rows[i] || {}) : {};
     const colorCode = String(lr.color_code || card.colour_lanes[i] || 'None').trim() || 'None';
-    const anValRaw = String(lr.anilox_value || card.anilox_lanes[i] || 'None').trim() || 'None';
-    const ALL_ANILOX = ['None','60','80','100','120','140','160','250','300','400','500','550','600','700','750','800','850','900','1000','1100','1200','1300','1400','Custom'];
+    const anValRaw = normalizeAniloxLaneValue(String(lr.anilox_value || card.anilox_lanes[i] || 'None').trim() || 'None');
     const fallbackColorName = ['Cyan','Magenta','Yellow','Black'].includes(colorCode) ? colorCode : (colorCode === 'None' ? 'None' : '');
     return {
       lane: i + 1,
       color_code: colorCode,
       color_name: String(lr.color_name || fallbackColorName).trim(),
-      anilox_value: ALL_ANILOX.includes(anValRaw) ? anValRaw : 'Custom',
-      anilox_custom: ALL_ANILOX.includes(anValRaw) ? String(lr.anilox_custom || '').trim() : anValRaw,
+      anilox_value: anValRaw,
+      anilox_custom: '',
     };
   });
 
   const planningImage = String(job.planning_image_url || '').trim();
+  const plateImage = String(job.plate_image_url || '').trim();
+  const referenceImage = String(job.job_preview_image_url || planningImage || plateImage || '').trim();
   const physicalImage = String(card.physical_print_photo_url || '').trim();
 
   document.getElementById('dm-jobno').textContent = job.job_no;
@@ -2100,10 +2282,10 @@ async function openPrintDetail(id, mode) {
       </div></div>
 
       <div class="fp-op-section"><div class="fp-op-h">Color + Anilox (Color 1-8)</div><div class="fp-op-b" style="gap:10px">
-        ${laneRows.map((r, idx) => `<div class="fp-op-lane-row" data-lane-row><div class="fp-op-mini"><strong>Color ${idx+1}</strong></div><div style="display:grid;gap:6px"><select data-role="color-select" name="color_lane_code_${idx}">${renderLaneSelectOptions(r.color_code)}</select><input data-role="color-name" type="text" name="color_lane_name_${idx}" value="${esc(r.color_name||'')}" placeholder="Color name" style="display:none"></div><div style="display:grid;gap:6px"><select data-role="anilox-select" name="anilox_lane_value_${idx}">${renderAniloxOptions(r.anilox_value, ['Cyan','Magenta','Yellow','Black'].includes(r.color_code))}</select><input data-role="anilox-custom" type="text" name="anilox_lane_custom_${idx}" value="${esc(r.anilox_custom||'')}" placeholder="Custom anilox" style="display:none"></div></div>`).join('')}
+        ${laneRows.map((r, idx) => `<div class="fp-op-lane-row" data-lane-row><div class="fp-op-mini"><strong>Color ${idx+1}</strong></div><div style="display:grid;gap:6px"><select data-role="color-select" name="color_lane_code_${idx}">${renderLaneSelectOptions(r.color_code)}</select><input data-role="color-name" type="text" name="color_lane_name_${idx}" value="${esc(r.color_name||'')}" placeholder="Color name" style="display:none"></div><div style="display:grid;gap:6px"><select data-role="anilox-select" name="anilox_lane_value_${idx}">${renderAniloxOptions(r.anilox_value)}</select><input data-role="anilox-custom" type="text" name="anilox_lane_custom_${idx}" value="" placeholder="Custom anilox" style="display:none"></div></div>`).join('')}
       </div></div>
 
-      <div class="fp-op-section"><div class="fp-op-h">Planning vs Physical Print Image</div><div class="fp-op-b"><div class="fp-photo-grid"><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Planning Image</strong></div><img class="fp-photo-preview" src="${esc(planningImage || '')}" alt="Planning image" onerror="this.style.opacity='0.4';this.alt='Planning image not available'"></div><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Physical Image</strong></div><img id="physical-photo-preview" class="fp-photo-preview" src="${esc(physicalImage || '')}" alt="Physical image" onerror="this.style.opacity='0.4';this.alt='Physical image not available'"><input type="hidden" name="physical_print_photo_url" value="${esc(physicalImage || '')}"><input type="hidden" name="physical_print_photo_path" value="${esc(card.physical_print_photo_path || '')}"><input type="file" id="fp-camera-input" accept="image/*" capture="environment" style="display:none" onchange="handlePrintingPhotoUpload(this, ${job.id})"></div></div></div></div>
+      <div class="fp-op-section"><div class="fp-op-h">Planning / Plate vs Physical Print Image</div><div class="fp-op-b"><div class="fp-photo-grid"><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Reference Image</strong></div><img class="fp-photo-preview" src="${esc(referenceImage || '')}" alt="Reference image" onerror="this.style.opacity='0.4';this.alt='Reference image not available'"></div><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Physical Image</strong></div><img id="physical-photo-preview" class="fp-photo-preview" src="${esc(physicalImage || '')}" alt="Physical image" onerror="this.style.opacity='0.4';this.alt='Physical image not available'"><input type="hidden" name="physical_print_photo_url" value="${esc(physicalImage || '')}"><input type="hidden" name="physical_print_photo_path" value="${esc(card.physical_print_photo_path || '')}"><input type="file" id="fp-camera-input" accept="image/*" capture="environment" style="display:none" onchange="handlePrintingPhotoUpload(this, ${job.id})"></div></div></div></div>
 
       <div class="fp-op-section"><div class="fp-op-h">Production and Signoff</div><div class="fp-op-b fp-op-grid-2">
         <div class="fp-op-field"><label>Production Total Quantity</label><input type="number" step="1" name="actual_qty" value="${esc(card.actual_qty||'')}"></div>
@@ -2141,10 +2323,10 @@ async function openPrintDetail(id, mode) {
       </div></div>
 
       <div class="fp-op-section"><div class="fp-op-h">Color + Anilox (Color 1-8)</div><div class="fp-op-b" style="gap:10px">
-        ${laneRows.map((r, idx) => `<div class="fp-op-lane-row"><div class="fp-op-mini"><strong>Color ${idx+1}</strong></div><div><input type="text" value="${esc(r.color_code||'—')}" readonly style="width:100%"></div><div><input type="text" value="${esc((r.anilox_value==='Custom'?r.anilox_custom:r.anilox_value)||'—')}" readonly style="width:100%"></div></div>`).join('')}
+        ${laneRows.map((r, idx) => `<div class="fp-op-lane-row"><div class="fp-op-mini"><strong>Color ${idx+1}</strong></div><div><input type="text" value="${esc(r.color_code||'—')}" readonly style="width:100%"></div><div><input type="text" value="${esc(r.anilox_value||'—')}" readonly style="width:100%"></div></div>`).join('')}
       </div></div>
 
-      <div class="fp-op-section"><div class="fp-op-h">Planning vs Physical Print Image</div><div class="fp-op-b"><div class="fp-photo-grid"><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Planning Image</strong></div><img class="fp-photo-preview" src="${esc(planningImage || '')}" alt="Planning image" onerror="this.style.opacity='0.4';this.alt='Not available'"></div><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Physical Image</strong></div><img class="fp-photo-preview" src="${esc(physicalImage || '')}" alt="Physical image" onerror="this.style.opacity='0.4';this.alt='Not available'"></div></div></div></div>
+      <div class="fp-op-section"><div class="fp-op-h">Planning / Plate vs Physical Print Image</div><div class="fp-op-b"><div class="fp-photo-grid"><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Reference Image</strong></div><img class="fp-photo-preview" src="${esc(referenceImage || '')}" alt="Reference image" onerror="this.style.opacity='0.4';this.alt='Not available'"></div><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Physical Image</strong></div><img class="fp-photo-preview" src="${esc(physicalImage || '')}" alt="Physical image" onerror="this.style.opacity='0.4';this.alt='Not available'"></div></div></div></div>
 
       <div class="fp-op-section"><div class="fp-op-h">Production and Signoff</div><div class="fp-op-b fp-op-grid-2">
         <div class="fp-op-field"><label>Production Total Quantity</label><input type="text" value="${esc(card.actual_qty||'—')}" readonly></div>
@@ -2300,7 +2482,7 @@ function renderPrintCardHtml(job, card, extra, qrDataUrl) {
     lane: i + 1,
     color_code: card.colour_lanes[i] || ['Cyan', 'Magenta', 'Yellow', 'Black', 'None', 'None', 'None', 'None'][i],
     color_name: card.colour_lanes[i] || ['Cyan', 'Magenta', 'Yellow', 'Black', 'None', 'None', 'None', 'None'][i],
-    anilox_value: card.anilox_lanes[i] || ['700', '600', '800', '550', 'None', 'None', 'None', 'None'][i],
+    anilox_value: normalizeAniloxLaneValue(card.anilox_lanes[i] || 'None'),
     anilox_custom: '',
   }));
   const laneColorStyle = (v) => {
@@ -2319,6 +2501,8 @@ function renderPrintCardHtml(job, card, extra, qrDataUrl) {
     return '—';
   };
   const planningImage = String(job.planning_image_url || '').trim();
+  const plateImage = String(job.plate_image_url || '').trim();
+  const referenceImage = String(job.job_preview_image_url || planningImage || plateImage || '').trim();
   const physicalImage = String(card.physical_print_photo_url || '').trim();
 
   const qrHtml = qrDataUrl
@@ -2416,7 +2600,7 @@ function renderPrintCardHtml(job, card, extra, qrDataUrl) {
               <td style="padding:5px 6px;border:1px solid #cbd5e1;font-weight:700">Color ${i + 1}</td>
               <td style="padding:5px 6px;border:1px solid #cbd5e1;${laneColorStyle(r.color_code)}">${esc(r.color_code || 'None')}</td>
               <td style="padding:5px 6px;border:1px solid #cbd5e1;${laneColorStyle(laneColorName(r))}">${esc(laneColorName(r))}</td>
-              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc((r.anilox_value === 'Custom' ? r.anilox_custom : r.anilox_value) || 'None')}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.anilox_value || 'None')}</td>
             </tr>`).join('')}
           </tbody>
         </table>
@@ -2424,15 +2608,14 @@ function renderPrintCardHtml(job, card, extra, qrDataUrl) {
         <!-- IMAGES -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
           <div style="border:1px solid #cbd5e1;border-radius:8px;padding:8px">
-            <div style="font-size:.62rem;font-weight:800;text-transform:uppercase;color:#5b21b6;margin-bottom:6px">Planning Image</div>
-            ${planningImage ? `<img src="${esc(planningImage)}" style="width:100%;height:130px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0">` : `<div style="height:130px;border:1px dashed #cbd5e1;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.68rem;color:#94a3b8">Not available</div>`}
+            <div style="font-size:.62rem;font-weight:800;text-transform:uppercase;color:#5b21b6;margin-bottom:6px">Reference Image (Planning/Plate)</div>
+            ${referenceImage ? `<img src="${esc(referenceImage)}" style="width:100%;height:130px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0">` : `<div style="height:130px;border:1px dashed #cbd5e1;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.68rem;color:#94a3b8">Not available</div>`}
           </div>
           <div style="border:1px solid #cbd5e1;border-radius:8px;padding:8px">
             <div style="font-size:.62rem;font-weight:800;text-transform:uppercase;color:#5b21b6;margin-bottom:6px">Physical Image</div>
             ${physicalImage ? `<img src="${esc(physicalImage)}" style="width:100%;height:130px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0">` : `<div style="height:130px;border:1px dashed #cbd5e1;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.68rem;color:#94a3b8">Not available</div>`}
           </div>
         </div>
-
         <!-- EXECUTION SUMMARY -->
         <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#5b21b6;background:#ede9fe;padding:5px 8px;border-radius:4px">Execution Summary</div>
         <table style="width:100%;border-collapse:collapse;font-size:.72rem">

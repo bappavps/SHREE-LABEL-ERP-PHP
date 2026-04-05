@@ -23,6 +23,17 @@ $dcWeightLabel = trim((string)($dcWeightLabel ?? '')) ?: 'Weight';
 $dcHeightLabel = trim((string)($dcHeightLabel ?? '')) ?: 'Height';
 $dcPaperWidthLabel = trim((string)($dcPaperWidthLabel ?? '')) ?: 'Width (mm)';
 $dcAutoFallbackToAllOnEmptyDefault = isset($dcAutoFallbackToAllOnEmptyDefault) ? (bool)$dcAutoFallbackToAllOnEmptyDefault : true;
+$dcDefaultVoiceLanguage = trim((string)($dcDefaultVoiceLanguage ?? '')) ?: 'en-IN';
+$dcBrand = trim((string)($dcBrand ?? '')) ?: '#0ea5a4';
+$dcBrandLight = trim((string)($dcBrandLight ?? '')) ?: '#ccfbf1';
+$dcBrandDark = trim((string)($dcBrandDark ?? '')) ?: '#0f766e';
+if (!preg_match('/^#[0-9a-fA-F]{6}$/', $dcBrand)) $dcBrand = '#0ea5a4';
+if (!preg_match('/^#[0-9a-fA-F]{6}$/', $dcBrandLight)) $dcBrandLight = '#ccfbf1';
+if (!preg_match('/^#[0-9a-fA-F]{6}$/', $dcBrandDark)) $dcBrandDark = '#0f766e';
+$allowedDCVoiceLangs = ['en-IN', 'hi-IN', 'bn-IN', 'gu-IN', 'mr-IN'];
+if (!in_array($dcDefaultVoiceLanguage, $allowedDCVoiceLangs, true)) {
+  $dcDefaultVoiceLanguage = 'en-IN';
+}
 
 $pageTitle = $isOperatorView ? $dcPageTitleOperator : $dcPageTitleProduction;
 $db = getDB();
@@ -47,6 +58,24 @@ function dcDisplayJobName($j) {
     if ($d !== '') return $d;
     $jn = trim((string)($j['job_no'] ?? ''));
     return $jn !== '' ? $jn : '—';
+}
+
+function dcCanonicalStatus($status) {
+  $raw = trim((string)$status);
+  $lower = strtolower($raw);
+  return match ($lower) {
+    'queued' => 'Queued',
+    'pending' => 'Pending',
+    'running' => 'Running',
+    'closed' => 'Closed',
+    'finalized' => 'Finalized',
+    'completed' => 'Completed',
+    'qc passed' => 'QC Passed',
+    'hold' => 'Hold',
+    'hold for payment' => 'Hold for Payment',
+    'hold for approval' => 'Hold for Approval',
+    default => $raw !== '' ? $raw : 'Pending',
+  };
 }
 
 // ── Department filter clause (reusable) ──
@@ -83,6 +112,7 @@ $jobs = $jobsRes instanceof mysqli_result ? $jobsRes->fetch_all(MYSQLI_ASSOC) : 
 // ── Process jobs ──────────────────────────────────────────
 $finishStates = ['Closed', 'Finalized', 'Completed', 'QC Passed'];
 foreach ($jobs as &$job) {
+  $job['status'] = dcCanonicalStatus($job['status'] ?? '');
     $job['extra_data_parsed'] = json_decode((string)($job['extra_data'] ?? '{}'), true) ?: [];
     $planningExtra = json_decode((string)($job['planning_extra_data'] ?? '{}'), true) ?: [];
   if ((float)($job['gsm'] ?? 0) <= 0) {
@@ -116,6 +146,7 @@ foreach ($jobs as &$job) {
   $job['planning_repeat'] = (string)($planningExtra['repeat'] ?? ($planningExtra['barcode_repeat'] ?? ($planningExtra['cylinder_repeat'] ?? ($planningExtra['pitch'] ?? ''))));
   $job['planning_order_qty'] = (string)($planningExtra['order_quantity_user'] ?? ($planningExtra['order_quantity'] ?? ($planningExtra['qty_pcs'] ?? '')));
   $job['planning_material'] = (string)($planningExtra['material_type'] ?? ($planningExtra['material'] ?? ($job['paper_type'] ?? '')));
+  $job['planning_plate_no'] = (string)($planningExtra['plate_no'] ?? '');
   $job['planning_client_name'] = (string)($planningExtra['client_name'] ?? ($planningExtra['customer_name'] ?? ($planningExtra['party_name'] ?? '')));
     $imagePath = trim((string)($planningExtra['image_path'] ?? ($planningExtra['planning_image_path'] ?? '')));
     if ($imagePath !== '' && !preg_match('/^https?:\/\//i', $imagePath)) {
@@ -126,6 +157,18 @@ foreach ($jobs as &$job) {
     $prevStatus = trim((string)($job['prev_job_status'] ?? ''));
     $hasPrev = (int)($job['previous_job_id'] ?? 0) > 0;
     $job['upstream_ready'] = !$hasPrev || in_array($prevStatus, $finishStates, true);
+
+    // UI state rule:
+    // - Locked cards must stay Queued.
+    // - Unlocked cards should move to Pending so operator can Start.
+    $normalizedStatus = dcCanonicalStatus($job['status'] ?? '');
+    if (!$job['upstream_ready']) {
+      $job['status'] = 'Queued';
+    } elseif ($normalizedStatus === 'Queued') {
+      $job['status'] = 'Pending';
+    } else {
+      $job['status'] = $normalizedStatus;
+    }
 
     // ── Parse previous job extra_data (printing production qty) ──
     $prevExtra = json_decode((string)($job['prev_extra_data'] ?? '{}'), true) ?: [];
@@ -165,6 +208,34 @@ foreach ($jobs as &$job) {
 }
 unset($job);
 
+// Attach plate-data image and a shared preview URL (planning first, then plate) for all flatbed-based job cards.
+$plateImageByPlateNo = [];
+$plateRes = @$db->query("SELECT plate, image_path FROM master_plate_data");
+if ($plateRes instanceof mysqli_result) {
+  while ($row = $plateRes->fetch_assoc()) {
+    $plateNo = trim((string)($row['plate'] ?? ''));
+    $imgPath = trim((string)($row['image_path'] ?? ''));
+    if ($plateNo === '' || $imgPath === '') continue;
+    if (!preg_match('/^https?:\/\//i', $imgPath)) {
+      $imgPath = BASE_URL . '/' . ltrim(str_replace('\\', '/', $imgPath), '/');
+    }
+    if (!isset($plateImageByPlateNo[$plateNo])) {
+      $plateImageByPlateNo[$plateNo] = $imgPath;
+    }
+  }
+  $plateRes->close();
+}
+
+foreach ($jobs as &$job) {
+  $plateNo = trim((string)($job['planning_plate_no'] ?? ''));
+  $plateImageUrl = ($plateNo !== '' && isset($plateImageByPlateNo[$plateNo])) ? (string)$plateImageByPlateNo[$plateNo] : '';
+  $job['plate_image_url'] = $plateImageUrl;
+  $job['job_preview_image_url'] = trim((string)($job['planning_image_url'] ?? '')) !== ''
+    ? (string)$job['planning_image_url']
+    : $plateImageUrl;
+}
+unset($job);
+
 $activeJobs = array_values(array_filter($jobs, function ($j) use ($finishStates) {
     return !in_array((string)($j['status'] ?? ''), $finishStates, true);
 }));
@@ -174,14 +245,23 @@ $historyJobs = array_values(array_filter($jobs, function ($j) use ($finishStates
 $activeCount = count($activeJobs);
 $historyCount = count($historyJobs);
 
-// ── Stat counts ───────────────────────────────────────────
-$dcCountBase = "SELECT COUNT(*) FROM jobs j WHERE {$dcWhereClause} AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')";
-$totalCount   = safeCountQueryDC($db, $dcCountBase);
-$queuedCount  = safeCountQueryDC($db, $dcCountBase . " AND j.status = 'Queued'");
-$pendingCount = safeCountQueryDC($db, $dcCountBase . " AND j.status = 'Pending'");
-$runningCount = safeCountQueryDC($db, $dcCountBase . " AND j.status = 'Running'");
-$holdCount    = safeCountQueryDC($db, $dcCountBase . " AND j.status IN ('Hold','Hold for Payment','Hold for Approval')");
-$finishedCount = safeCountQueryDC($db, $dcCountBase . " AND j.status IN ('Closed','Finalized','Completed','QC Passed')");
+// ── Stat counts (must follow UI-normalized status mapping) ─────────────────
+$totalCount = count($jobs);
+$queuedCount = count(array_filter($jobs, static function (array $j): bool {
+  return (string)($j['status'] ?? '') === 'Queued';
+}));
+$pendingCount = count(array_filter($jobs, static function (array $j): bool {
+  return (string)($j['status'] ?? '') === 'Pending';
+}));
+$runningCount = count(array_filter($jobs, static function (array $j): bool {
+  return (string)($j['status'] ?? '') === 'Running';
+}));
+$holdCount = count(array_filter($jobs, static function (array $j): bool {
+  return in_array((string)($j['status'] ?? ''), ['Hold', 'Hold for Payment', 'Hold for Approval'], true);
+}));
+$finishedCount = count(array_filter($jobs, static function (array $j): bool {
+  return in_array((string)($j['status'] ?? ''), ['Closed', 'Finalized', 'Completed', 'QC Passed'], true);
+}));
 
 $csrf = generateCSRF();
 include __DIR__ . '/../../../includes/header.php';
@@ -202,7 +282,7 @@ include __DIR__ . '/../../../includes/header.php';
 </div>
 
 <style>
-:root { --dc-brand: #0ea5a4; --dc-brand-light: #ccfbf1; --dc-brand-dark: #0f766e; --dc-blue: #3b82f6; }
+:root { --dc-brand: <?= e($dcBrand) ?>; --dc-brand-light: <?= e($dcBrandLight) ?>; --dc-brand-dark: <?= e($dcBrandDark) ?>; --dc-blue: #3b82f6; }
 
 /* ── Stats Grid ── */
 .dc-stats{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px}
@@ -304,9 +384,19 @@ include __DIR__ . '/../../../includes/header.php';
 .dc-op-field input,.dc-op-field select,.dc-op-field textarea{width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:.82rem;outline:none;transition:border .15s}
 .dc-op-field input:focus,.dc-op-field select:focus,.dc-op-field textarea:focus{border-color:var(--dc-brand)}
 .dc-op-field textarea{min-height:80px;resize:vertical}
+.dc-voice-btn{padding:8px 12px;border:1px solid #99f6e4;background:#ecfeff;color:#0f766e;border-radius:8px;font-size:.74rem;font-weight:800;display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.dc-voice-btn:hover{background:#ccfbf1}
+.dc-voice-btn.active{background:#0ea5a4;color:#fff;border-color:#0ea5a4}
+.dc-op-field.dc-required-pulse{border:1px solid #f59e0b;background:#fffbeb;border-radius:10px;padding:8px;animation:dcReqPulse 1.2s ease-in-out infinite}
+.dc-op-field.dc-required-pulse label{color:#b45309}
+.dc-op-field.dc-required-pulse label::after{content:' Required';margin-left:6px;font-size:.56rem;color:#b45309;background:#fde68a;border-radius:999px;padding:1px 6px;font-weight:900;letter-spacing:.03em}
+.dc-op-field.dc-required-done{border:1px solid #22c55e;background:#f0fdf4;border-radius:10px;padding:8px;animation:none}
+.dc-op-field.dc-required-done label{color:#166534}
+.dc-op-field.dc-required-done label::after{content:'\2713';display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-left:6px;border-radius:999px;background:#16a34a;color:#fff;font-size:11px;font-weight:900;line-height:1}
+@keyframes dcReqPulse{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.28)}50%{box-shadow:0 0 0 6px rgba(245,158,11,.08)}}
 
 /* ── Timer Overlay ── */
-.dc-timer-overlay{position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#042f2e,#134e4a 30%,#0f766e 60%,#14b8a6);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;color:#fff;font-family:'Segoe UI',Arial,sans-serif;padding:24px 16px calc(24px + env(safe-area-inset-bottom));overflow:auto}
+.dc-timer-overlay{position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,var(--dc-timer-grad-start,#042f2e),var(--dc-timer-grad-mid,#0f766e) 56%,var(--dc-timer-grad-end,#14b8a6));display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;color:#fff;font-family:'Segoe UI',Arial,sans-serif;padding:24px 16px calc(24px + env(safe-area-inset-bottom));overflow:auto}
 .dc-timer-jobinfo{text-align:center;opacity:.9}
 .dc-timer-display{font-size:clamp(2.1rem,10vw,4.5rem);font-weight:900;letter-spacing:.12em;font-family:Consolas,'Courier New',monospace;text-shadow:0 4px 20px rgba(0,0,0,.3);text-align:center;line-height:1.1;word-break:break-word}
 .dc-timer-actions{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;width:100%;max-width:760px}
@@ -741,12 +831,14 @@ const DC_WEIGHT_LABEL = <?= json_encode($dcWeightLabel, JSON_HEX_TAG|JSON_HEX_AP
 const DC_HEIGHT_LABEL = <?= json_encode($dcHeightLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const DC_PAPER_WIDTH_LABEL = <?= json_encode($dcPaperWidthLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const DC_AUTO_FALLBACK_TO_ALL_ON_EMPTY_DEFAULT = <?= $dcAutoFallbackToAllOnEmptyDefault ? 'true' : 'false' ?>;
+const DC_DEFAULT_VOICE_LANGUAGE = <?= json_encode($dcDefaultVoiceLanguage, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 
 // ── Voice recording state ──
 let _voiceRecorder = null;
 let _voiceChunks = [];
 let _lastPhotoPath = '';
 let _lastVoicePath = '';
+let _speechVoiceRec = null;
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
 
@@ -755,6 +847,99 @@ function resolveJobDisplayName(job) {
   if (job && String(job.planning_job_name || '').trim() !== '') return String(job.planning_job_name).trim();
   const jobNo = String(job?.job_no || '').trim();
   return jobNo || '—';
+}
+
+function isDCSpeechSupported() {
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+function normalizeDCVoiceLanguage(lang) {
+  const allowed = ['en-IN', 'hi-IN', 'bn-IN', 'gu-IN', 'mr-IN'];
+  return allowed.includes(String(lang || '')) ? String(lang) : String(DC_DEFAULT_VOICE_LANGUAGE || 'en-IN');
+}
+
+function dcVoiceLanguageLabel(lang) {
+  const code = normalizeDCVoiceLanguage(lang);
+  const map = {
+    'en-IN': 'English (India)',
+    'hi-IN': 'Hindi',
+    'bn-IN': 'Bengali',
+    'gu-IN': 'Gujarati',
+    'mr-IN': 'Marathi'
+  };
+  return map[code] || code;
+}
+
+function setDCVoiceFallbackMessage(btn, message) {
+  const fallbackId = String(btn?.getAttribute('data-voice-fallback-id') || '').trim();
+  if (!fallbackId) return;
+  const fallbackEl = document.getElementById(fallbackId);
+  if (fallbackEl) fallbackEl.textContent = String(message || '').trim();
+}
+
+function startVoiceToField(fieldName, btn, languageFieldName) {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    setDCVoiceFallbackMessage(btn, 'Voice input is not supported in this browser. Type notes manually.');
+    return;
+  }
+  if (_speechVoiceRec) {
+    try { _speechVoiceRec.stop(); } catch (_) {}
+    _speechVoiceRec = null;
+  }
+
+  const input = document.querySelector('[name="' + fieldName + '"]');
+  if (!input) return;
+
+  const form = input.closest('form');
+  const langField = String(languageFieldName || '').trim();
+  let language = String(DC_DEFAULT_VOICE_LANGUAGE || 'en-IN');
+  if (langField && form) {
+    const langInput = form.querySelector('[name="' + langField + '"]');
+    language = String(langInput?.value || language);
+  }
+  language = normalizeDCVoiceLanguage(language);
+
+  const rec = new SpeechRecognition();
+  rec.lang = language;
+  rec.interimResults = true;
+  rec.continuous = false;
+  const initialValue = String(input.value || '').trim();
+  let finalText = '';
+
+  if (btn) {
+    btn.classList.add('active');
+    setDCVoiceFallbackMessage(btn, '');
+  }
+
+  rec.onresult = function(event) {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      const text = String(event.results[i][0]?.transcript || '');
+      if (event.results[i].isFinal) finalText += text + ' ';
+      else interim += text;
+    }
+    const voiceText = (finalText + interim).trim();
+    input.value = (initialValue ? (initialValue + ' ') : '') + voiceText;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  rec.onerror = function(event) {
+    if (btn) btn.classList.remove('active');
+    const reason = String(event?.error || 'error').replace(/-/g, ' ');
+    setDCVoiceFallbackMessage(btn, 'Voice input failed (' + reason + '). You can type notes manually.');
+  };
+
+  rec.onend = function() {
+    if (btn) btn.classList.remove('active');
+    if (String(input.value || '').trim() !== initialValue) {
+      setDCVoiceFallbackMessage(btn, 'Voice text captured. You can edit before submit.');
+    }
+    _speechVoiceRec = null;
+  };
+
+  _speechVoiceRec = rec;
+  rec.start();
 }
 
 function normalizeDimensionValue(value) {
@@ -1297,6 +1482,31 @@ function dcTimerStartMs(job) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : Date.now();
 }
 
+function dcNormalizeHexColor(value, fallback) {
+  const raw = String(value || '').trim();
+  return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : fallback;
+}
+
+function dcShiftHexColor(hexColor, shift) {
+  const hex = dcNormalizeHexColor(hexColor, '#0ea5a4').slice(1);
+  const amount = Number(shift || 0);
+  const clamp = (n) => Math.max(0, Math.min(255, n));
+  const r = clamp(parseInt(hex.slice(0, 2), 16) + amount);
+  const g = clamp(parseInt(hex.slice(2, 4), 16) + amount);
+  const b = clamp(parseInt(hex.slice(4, 6), 16) + amount);
+  return '#' + [r, g, b].map(function(v) { return v.toString(16).padStart(2, '0'); }).join('');
+}
+
+function resolveDCTimerOverlayPalette() {
+  const rootStyle = getComputedStyle(document.documentElement);
+  const baseBrand = dcNormalizeHexColor(rootStyle.getPropertyValue('--dc-brand').trim(), '#0ea5a4');
+  return {
+    start: dcShiftHexColor(baseBrand, -70),
+    mid: dcShiftHexColor(baseBrand, -25),
+    end: dcShiftHexColor(baseBrand, 20)
+  };
+}
+
 function showDCTimerOverlay(job) {
   if (!job) return;
   const existing = document.getElementById('dcTimerOverlay');
@@ -1311,6 +1521,10 @@ function showDCTimerOverlay(job) {
   const overlay = document.createElement('div');
   overlay.className = 'dc-timer-overlay';
   overlay.id = 'dcTimerOverlay';
+  const palette = resolveDCTimerOverlayPalette();
+  overlay.style.setProperty('--dc-timer-grad-start', palette.start);
+  overlay.style.setProperty('--dc-timer-grad-mid', palette.mid);
+  overlay.style.setProperty('--dc-timer-grad-end', palette.end);
   overlay.innerHTML = `
     <div class="dc-timer-jobinfo">
       <div style="font-size:1.3rem;font-weight:900;letter-spacing:.03em">${esc(jobNo)}</div>
@@ -1490,11 +1704,75 @@ function buildDCExtraDataFromForm(form) {
     die_cutting_wastage_pcs: form.querySelector('[name=die_cutting_wastage_pcs]')?.value || '',
     die_cutting_wastage_mtr: form.querySelector('[name=die_cutting_wastage_mtr]')?.value || '',
     die_cutting_notes_text: form.querySelector('[name=die_cutting_notes_text]')?.value || '',
+    voice_language: normalizeDCVoiceLanguage(form.querySelector('[name=voice_language]')?.value || DC_DEFAULT_VOICE_LANGUAGE),
     die_cutting_printed_roll_length_mtr: form.querySelector('[name=die_cutting_printed_roll_length_mtr]')?.value || '',
     die_cutting_photo_path: _lastPhotoPath,
     die_cutting_voice_note_path: _lastVoicePath,
     die_cutting_submitted_at: new Date().toISOString()
   };
+}
+
+function isDCRequiredValueFilled(input) {
+  if (!input) return false;
+  const value = String(input.value || '').trim();
+  return value !== '';
+}
+
+function collectDCMissingRequiredFields(form) {
+  if (!form) return [];
+  const missing = [];
+  const wrappers = form.querySelectorAll('[data-required-field="1"]');
+  wrappers.forEach(wrapper => {
+    const input = wrapper.querySelector('input, select, textarea');
+    if (input && !isDCRequiredValueFilled(input)) {
+      const label = String(wrapper.getAttribute('data-required-label') || input.name || 'Required field').trim();
+      missing.push(label);
+    }
+  });
+  return missing;
+}
+
+function updateDCRequiredFieldAnimations(form) {
+  if (!form) return;
+  const wrappers = form.querySelectorAll('[data-required-field="1"]');
+  wrappers.forEach(wrapper => {
+    const input = wrapper.querySelector('input, select, textarea');
+    const filled = !!(input && isDCRequiredValueFilled(input));
+    wrapper.classList.toggle('dc-required-pulse', !filled);
+    wrapper.classList.toggle('dc-required-done', filled);
+  });
+}
+
+function bindDCRequiredFieldAnimations(form) {
+  if (!form || form.dataset.reqBindDone === '1') return;
+  form.dataset.reqBindDone = '1';
+  updateDCRequiredFieldAnimations(form);
+  form.querySelectorAll('[data-required-field="1"] input, [data-required-field="1"] select, [data-required-field="1"] textarea').forEach(input => {
+    input.addEventListener('input', function() { updateDCRequiredFieldAnimations(form); });
+    input.addEventListener('change', function() { updateDCRequiredFieldAnimations(form); });
+    input.addEventListener('blur', function() { updateDCRequiredFieldAnimations(form); });
+  });
+}
+
+function setupDCVoiceInputUI(form) {
+  if (!form) return;
+  const supported = isDCSpeechSupported();
+  const defaultLang = normalizeDCVoiceLanguage(form.querySelector('[name=voice_language]')?.value || DC_DEFAULT_VOICE_LANGUAGE);
+  const langSelect = form.querySelector('[name=voice_language]');
+  if (langSelect) langSelect.value = defaultLang;
+
+  const voiceButtons = form.querySelectorAll('[data-voice-target-field]');
+  voiceButtons.forEach(btn => {
+    const fallbackText = supported
+      ? 'Select language and tap Speak Notes.'
+      : 'Voice input is not supported in this browser. Type notes manually.';
+    setDCVoiceFallbackMessage(btn, fallbackText);
+    if (!supported) {
+      btn.disabled = true;
+      btn.classList.remove('active');
+      btn.title = 'Voice input unavailable in this browser';
+    }
+  });
 }
 
 // ═══ SUBMIT & CLOSE ═══
@@ -1510,8 +1788,15 @@ async function submitAndClose(id) {
   if (!extraData) return updateJobStatus(id, 'Completed');
 
   // Validate required fields
-  if (!extraData.die_cutting_total_qty_pcs || !extraData.die_cutting_wastage_pcs || !extraData.die_cutting_wastage_mtr) {
-    alert('Total Qty, Wastage Pcs and Wastage Mtr are required.');
+  const missingRequired = collectDCMissingRequiredFields(form);
+  if (missingRequired.length) {
+    updateDCRequiredFieldAnimations(form);
+    alert('Please fill the required fields before submitting:\n\n- ' + missingRequired.join('\n- '));
+    const firstMissing = form.querySelector('[data-required-field="1"].dc-required-pulse input, [data-required-field="1"].dc-required-pulse select, [data-required-field="1"].dc-required-pulse textarea');
+    if (firstMissing) {
+      firstMissing.focus();
+      firstMissing.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
     return;
   }
 
@@ -1686,7 +1971,7 @@ async function openJobDetail(id, mode) {
   </div></div>`;
 
   // ── Job Preview Image ──
-  const previewUrl = job.planning_image_url || '';
+  const previewUrl = job.job_preview_image_url || job.planning_image_url || job.plate_image_url || '';
   if (previewUrl) {
     html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-image"></i> Job Preview</div><div class="dc-op-b" style="text-align:center">
       <img src="${esc(previewUrl)}" class="dc-preview" alt="Job Preview">
@@ -1699,6 +1984,7 @@ async function openJobDetail(id, mode) {
     const wastagePcs = extra.die_cutting_wastage_pcs || '';
     const wastageMtr = extra.die_cutting_wastage_mtr || '';
     const dcNotes = extra.die_cutting_notes_text || '';
+    const voiceLanguage = extra.voice_language || '';
     const voiceOriginal = extra.voice_input_original || '';
     const voiceEnglish = extra.voice_input_english || '';
 
@@ -1707,6 +1993,7 @@ async function openJobDetail(id, mode) {
       <div class="dc-op-field"><label>Wastage (Pcs)</label><div class="fv">${esc(wastagePcs || '—')}</div></div>
       <div class="dc-op-field"><label>Wastage (Mtr)</label><div class="fv">${esc(wastageMtr || '—')}</div></div>
       <div class="dc-op-field"><label>Notes</label><div class="fv">${esc(dcNotes || '—')}</div></div>
+      <div class="dc-op-field"><label>Voice Language</label><div class="fv">${esc(voiceLanguage ? dcVoiceLanguageLabel(voiceLanguage) : '—')}</div></div>
     </div>`;
 
     if (voiceOriginal || voiceEnglish) {
@@ -1723,15 +2010,17 @@ async function openJobDetail(id, mode) {
 
   // ── Editable Operator Form (complete mode) ──
   if (mode === 'complete' && IS_OPERATOR_VIEW && sts === 'Running') {
+    const selectedVoiceLang = normalizeDCVoiceLanguage(extra.voice_language || DC_DEFAULT_VOICE_LANGUAGE);
     html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-pencil-square"></i> Operator Data — Fill Before Completing</div>
     <form id="dm-operator-form" class="dc-op-b" style="display:grid;gap:10px">
       <div class="dc-op-grid-2">
-        <div class="dc-op-field"><label>Total Qty (Pcs)</label><input type="number" min="0" step="1" name="die_cutting_total_qty_pcs" value="${esc(extra.die_cutting_total_qty_pcs || '')}"></div>
-        <div class="dc-op-field"><label>Wastage (Pcs)</label><input type="number" min="0" step="1" name="die_cutting_wastage_pcs" value="${esc(extra.die_cutting_wastage_pcs || '')}"></div>
-        <div class="dc-op-field"><label>Wastage (Mtr)</label><input type="number" min="0" step="0.01" name="die_cutting_wastage_mtr" value="${esc(extra.die_cutting_wastage_mtr || '')}"></div>
+        <div class="dc-op-field" data-required-field="1" data-required-label="Total Qty (Pcs)"><label>Total Qty (Pcs)</label><input type="number" min="0" step="1" name="die_cutting_total_qty_pcs" required value="${esc(extra.die_cutting_total_qty_pcs || '')}"></div>
+        <div class="dc-op-field" data-required-field="1" data-required-label="Wastage (Pcs)"><label>Wastage (Pcs)</label><input type="number" min="0" step="1" name="die_cutting_wastage_pcs" required value="${esc(extra.die_cutting_wastage_pcs || '')}"></div>
+        <div class="dc-op-field" data-required-field="1" data-required-label="Wastage (Mtr)"><label>Wastage (Mtr)</label><input type="number" min="0" step="0.01" name="die_cutting_wastage_mtr" required value="${esc(extra.die_cutting_wastage_mtr || '')}"></div>
         <div class="dc-op-field"><label>Printed Roll Length (Mtr)</label><input type="text" name="die_cutting_printed_roll_length_mtr" value="${esc(job.length_mtr || '')}" readonly></div>
       </div>
-      <div class="dc-op-field"><label>Notes</label><textarea name="die_cutting_notes_text">${esc(extra.die_cutting_notes_text || '')}</textarea></div>
+      <div class="dc-op-field"><label>Notes</label><textarea name="die_cutting_notes_text" data-voice-target="1">${esc(extra.die_cutting_notes_text || '')}</textarea></div>
+      <div class="dc-op-field" data-voice-control="1"><label>Voice Notes</label><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><select name="voice_language" data-voice-language="1" style="padding:7px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:.74rem;font-weight:700;color:#334155"><option value="en-IN"${selectedVoiceLang === 'en-IN' ? ' selected' : ''}>English (India)</option><option value="hi-IN"${selectedVoiceLang === 'hi-IN' ? ' selected' : ''}>Hindi</option><option value="bn-IN"${selectedVoiceLang === 'bn-IN' ? ' selected' : ''}>Bengali</option><option value="gu-IN"${selectedVoiceLang === 'gu-IN' ? ' selected' : ''}>Gujarati</option><option value="mr-IN"${selectedVoiceLang === 'mr-IN' ? ' selected' : ''}>Marathi</option></select><button type="button" class="dc-voice-btn" data-voice-target-field="die_cutting_notes_text" data-voice-fallback-id="dc-voice-fallback-${job.id}" onclick="startVoiceToField('die_cutting_notes_text', this, 'voice_language')"><i class="bi bi-mic"></i> Speak Notes</button></div><div id="dc-voice-fallback-${job.id}" style="margin-top:8px;font-size:.7rem;color:#64748b;font-weight:700"></div></div>
     </form></div>`;
   }
 
@@ -1747,12 +2036,6 @@ async function openJobDetail(id, mode) {
       <div id="dc-photo-preview-${job.id}" class="dc-upload-preview">${existingPhoto ? `<img src="${existingPhoto}" alt="Job Photo">` : ''}</div>
     </div></div>`;
   }
-
-  // ── Voice Recording ──
-  html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-mic"></i> Voice Note</div><div class="dc-op-b" style="display:flex;align-items:center;gap:12px">
-    <button type="button" id="dc-voice-btn-${job.id}" class="dc-action-btn dc-btn-start" onclick="toggleVoiceRecord(${job.id})"><i class="bi bi-mic"></i> Record Voice</button>
-    <span id="dc-voice-status-${job.id}" style="font-size:.72rem;color:#64748b">${_lastVoicePath ? '<i class="bi bi-check-circle" style="color:#16a34a"></i> Voice recorded' : 'No voice note'}</span>
-  </div></div>`;
 
   // ── Company Footer ──
   html += `<div style="display:flex;justify-content:space-between;gap:10px;border-top:1px solid #99f6e4;padding-top:8px;margin-top:4px;font-size:.62rem;color:#64748b">
@@ -1807,6 +2090,10 @@ async function openJobDetail(id, mode) {
       form.querySelectorAll('input, select, textarea').forEach(el => {
         el.disabled = !(mode === 'complete' && sts === 'Running');
       });
+      if (mode === 'complete' && sts === 'Running') {
+        bindDCRequiredFieldAnimations(form);
+        setupDCVoiceInputUI(form);
+      }
     }
   }, 50);
 
@@ -1936,7 +2223,7 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
     ? `<tr><td colspan="4" style="padding:0"><div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#a16207;background:#fef3c7;padding:6px 8px;border-radius:4px;margin:8px 0 4px">Job Photo</div><div style="margin-bottom:6px"><img src="${esc(existingPhoto)}" style="max-width:300px;max-height:180px;border-radius:8px;border:1px solid #e2e8f0"></div></td></tr>`
     : '';
 
-  const previewUrl = job.planning_image_url || '';
+  const previewUrl = job.job_preview_image_url || job.planning_image_url || job.plate_image_url || '';
   const previewHtml = previewUrl
     ? `<tr><td colspan="4" style="padding:0"><div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#0f766e;background:#ccfbf1;padding:6px 8px;border-radius:4px;margin:8px 0 4px">Job Preview</div><div style="margin-bottom:6px"><img src="${esc(previewUrl)}" style="max-width:300px;max-height:180px;border-radius:8px;border:1px solid #e2e8f0"></div></td></tr>`
     : '';
