@@ -306,6 +306,14 @@ function barcodePlanningFetchRows(mysqli $db): array {
         if (!is_array($extra)) {
             $extra = [];
         }
+        $orderQtyDisplay = trim((string)($extra['order_quantity_user'] ?? ''));
+        if ($orderQtyDisplay === '') {
+            $orderQtyDisplay = barcodePlanningFormatNumber($extra['order_quantity'] ?? '', 0);
+        }
+        $orderMeterDisplay = trim((string)($extra['order_meter_user'] ?? ''));
+        if ($orderMeterDisplay === '') {
+            $orderMeterDisplay = barcodePlanningFormatNumber($extra['order_meter'] ?? '');
+        }
         $barcodeSize = trim((string)($extra['barcode_size'] ?? ''));
         if ($barcodeSize === '') {
             $width = trim((string)($extra['width_mm'] ?? ''));
@@ -323,8 +331,8 @@ function barcodePlanningFetchRows(mysqli $db): array {
             'planning_date' => trim((string)($extra['planning_date'] ?? '')),
             'dispatch_date' => trim((string)($extra['dispatch_date'] ?? ($row['scheduled_date'] ?? ''))),
             'material_type' => trim((string)($extra['material_type'] ?? '')),
-            'order_quantity' => barcodePlanningFormatNumber($extra['order_quantity'] ?? '', 0),
-            'order_meter' => barcodePlanningFormatNumber($extra['order_meter'] ?? ''),
+            'order_quantity' => $orderQtyDisplay,
+            'order_meter' => $orderMeterDisplay,
             'pcs_per_roll' => barcodePlanningFormatNumber($extra['pcs_per_roll'] ?? ''),
             'barcode_size' => $barcodeSize,
             'up_in_roll' => barcodePlanningFormatNumber($extra['up_in_roll'] ?? ''),
@@ -490,6 +498,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $materialType = trim((string)($_POST['material_type'] ?? ''));
                 $orderQtyInput = $_POST['order_quantity'] ?? '';
                 $orderMeterInput = $_POST['order_meter'] ?? '';
+                $orderQtyInputRaw = trim((string)$orderQtyInput);
+                $orderMeterInputRaw = trim((string)$orderMeterInput);
                 $pcsPerRoll = trim((string)($_POST['pcs_per_roll'] ?? ''));
                 $barcodeSize = trim((string)($_POST['barcode_size'] ?? ''));
                 $upInRoll = trim((string)($_POST['up_in_roll'] ?? ''));
@@ -536,8 +546,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($dieType === '') $errors[] = 'Die Type is required.';
                 if ($core === '') $errors[] = 'CORE is required.';
 
+                $enteredQty = barcodePlanningNumber($orderQtyInput);
+                $enteredMeter = barcodePlanningNumber($orderMeterInput);
                 $calculated = barcodePlanningCalcPair($orderQtyInput, $orderMeterInput, $pcsPerRoll, $upInProduction, $repeat);
-                if ($calculated['qty'] <= 0 && $calculated['meter'] <= 0) {
+                $finalQty = $enteredQty > 0 ? round($enteredQty) : (int)$calculated['qty'];
+                $finalMeter = $enteredMeter > 0 ? round($enteredMeter, 2) : (float)$calculated['meter'];
+                if ($finalQty <= 0 && $finalMeter <= 0) {
                     $errors[] = 'Enter Order Quantity or Order Meter to calculate planning values.';
                 }
 
@@ -564,8 +578,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'planning_date' => $planningDate,
                         'dispatch_date' => $dispatchDate,
                         'material_type' => $materialType,
-                        'order_quantity' => barcodePlanningFormatNumber($calculated['qty'], 0),
-                        'order_meter' => barcodePlanningFormatNumber($calculated['meter']),
+                        'order_quantity' => barcodePlanningFormatNumber($finalQty, 0),
+                        'order_meter' => barcodePlanningFormatNumber($finalMeter),
+                        'order_quantity_user' => $orderQtyInputRaw,
+                        'order_meter_user' => $orderMeterInputRaw,
                         'pcs_per_roll' => barcodePlanningFormatNumber($pcsPerRoll),
                         'barcode_size' => $barcodeSize,
                         'up_in_roll' => barcodePlanningFormatNumber($upInRoll),

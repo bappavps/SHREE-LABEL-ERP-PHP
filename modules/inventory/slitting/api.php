@@ -340,27 +340,45 @@ try {
         foreach ($rows as &$row) {
             $extra = json_decode($row['extra_data'] ?? '{}', true);
             if (is_array($extra)) {
+                $department = strtolower(trim((string)($row['department'] ?? '')));
+                $jobNoUpper = strtoupper(trim((string)($row['job_no'] ?? '')));
+                $isBarcodePlanning = in_array($department, ['barcode', 'rotery', 'rotary'], true) || strpos($jobNoUpper, 'PLN-BAR/') === 0;
+
                 // Provide fallback values from extra_data when sales_order fields are empty
-                if (empty($row['material_type']) && !empty($extra['material'])) {
-                    $row['material_type'] = $extra['material'];
+                if (empty($row['material_type'])) {
+                    $row['material_type'] = (string)($extra['material_type'] ?? $extra['material'] ?? '');
                 }
                 if (empty($row['label_width_mm']) && !empty($extra['paper_size'])) {
                     $row['label_width_mm'] = $extra['paper_size'];
                 }
-                if (empty($row['label_length_mm']) && !empty($extra['size'])) {
-                    $row['label_length_mm'] = $extra['size'];
+                if (empty($row['label_length_mm'])) {
+                    if (!empty($extra['size'])) {
+                        $row['label_length_mm'] = $extra['size'];
+                    } elseif ($isBarcodePlanning && !empty($extra['barcode_size'])) {
+                        $row['label_length_mm'] = $extra['barcode_size'];
+                    }
                 }
-                if (empty($row['quantity']) && !empty($extra['qty_pcs'])) {
-                    $row['quantity'] = $extra['qty_pcs'];
+                if ($isBarcodePlanning) {
+                    $barcodeQty = (string)($extra['order_quantity_user'] ?? $extra['order_quantity'] ?? $extra['quantity'] ?? $extra['qty_pcs'] ?? '');
+                    if ($barcodeQty !== '') {
+                        $row['quantity'] = $barcodeQty;
+                    }
+                } elseif (empty($row['quantity'])) {
+                    $row['quantity'] = (string)($extra['qty_pcs'] ?? $extra['order_quantity'] ?? $extra['quantity'] ?? '');
                 }
+
+                if (empty($row['paper_size']) && !empty($extra['paper_size'])) {
+                    $row['paper_size'] = $extra['paper_size'];
+                }
+
                 // Expose extra planning fields
-                $row['allocate_mtrs'] = $extra['allocate_mtrs'] ?? '';
-                $row['die_type'] = $extra['die'] ?? '';
-                $row['core_size'] = $extra['core_size'] ?? '';
+                $row['allocate_mtrs'] = (string)($extra['allocate_mtrs'] ?? $extra['order_meter'] ?? $extra['meter'] ?? '');
+                $row['die_type'] = (string)($extra['die'] ?? $extra['die_type'] ?? '');
+                $row['core_size'] = (string)($extra['core_size'] ?? $extra['core'] ?? '');
                 $row['dispatch_date'] = $extra['dispatch_date'] ?? ($row['scheduled_date'] ?? '');
                 $row['printing_planning'] = $extra['printing_planning'] ?? '';
-                $row['roll_direction'] = $extra['roll_direction'] ?? '';
-                $row['repeat_val'] = $extra['repeat'] ?? '';
+                $row['roll_direction'] = (string)($extra['roll_direction'] ?? $extra['direction'] ?? $extra['use'] ?? '');
+                $row['repeat_val'] = (string)($extra['repeat'] ?? $extra['repeat_val'] ?? '');
                 $row['department_route'] = erp_normalize_department_selection(
                     $extra['department_route'] ?? '',
                     erp_get_machine_departments($db),
@@ -571,6 +589,13 @@ try {
             $allowPrintingJob = erp_department_selection_contains($selectedDepartments, 'Printing', $departmentChoices, []);
             $allowDieCuttingJob = erp_department_selection_contains($selectedDepartments, 'Die-Cutting', $departmentChoices, []);
             $allowLabelSlittingJob = erp_department_selection_contains($selectedDepartments, 'Label Slitting', $departmentChoices, []);
+            $allowBarcodeJob = erp_department_selection_contains($selectedDepartments, 'BarCode', $departmentChoices, []);
+
+            // Barcode downstream card creation is reserved for PLN-BAR plans.
+            $isBarcodePlanPrefix = stripos((string)$planNo, 'PLN-BAR/') === 0;
+            if (!$isBarcodePlanPrefix) {
+                $allowBarcodeJob = false;
+            }
 
             $directFlexoBypass = $allowPrintingJob && !$allowJumboJob;
 
@@ -963,7 +988,7 @@ try {
                 $jcNoDct = '';
 
                 // Keep one downstream printing job per plan as queued.
-                if ($planningId > 0 && ($allowPrintingJob || $allowDieCuttingJob)) {
+                if ($planningId > 0 && ($allowPrintingJob || $allowDieCuttingJob || $allowBarcodeJob)) {
                     $chkP = $db->prepare("SELECT id, job_no FROM jobs WHERE job_type = 'Printing' AND planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
                     $chkP->bind_param('i', $planningId);
                     $chkP->execute();
@@ -1030,6 +1055,101 @@ try {
                             $updFlexNotes = $db->prepare("UPDATE jobs SET notes = ? WHERE id = ?");
                             $updFlexNotes->bind_param('si', $notesF, $existingPrintId);
                             $updFlexNotes->execute();
+                        }
+                    }
+                }
+
+                // Keep one downstream barcode job per PLN-BAR plan as queued.
+                if ($planningId > 0 && $allowBarcodeJob) {
+                    $barcodePrevId = 0;
+                    $barcodeFromRef = $parentRollNo;
+
+                    if ($newFlexJobId > 0 || $existingPrintId > 0) {
+                        $barcodePrevId = $newFlexJobId > 0 ? $newFlexJobId : $existingPrintId;
+                        $barcodeFromRef = $jcNoFlex !== '' ? $jcNoFlex : ($existingFlexNo !== '' ? $existingFlexNo : 'N/A');
+                    } elseif ($jumboJobId > 0) {
+                        $barcodePrevId = $jumboJobId;
+                        $barcodeFromRef = $jumboRefNo !== '' ? $jumboRefNo : 'N/A';
+                    }
+
+                    $chkB = $db->prepare("SELECT id, job_no FROM jobs WHERE department = 'barcode' AND planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
+                    $chkB->bind_param('i', $planningId);
+                    $chkB->execute();
+                    $existingBarcode = $chkB->get_result()->fetch_assoc();
+
+                    $barcodeChainRef = trim((string)($existingBarcode['job_no'] ?? ''));
+                    $barcodeNotes = 'Barcode job queued from upstream'
+                        . ' | Plan: ' . ($planNo ?: 'N/A')
+                        . ' | From: ' . $barcodeFromRef
+                        . ' | Barcode: ' . ($barcodeChainRef !== '' ? $barcodeChainRef : 'N/A');
+                    if ($displayJobName !== '') {
+                        $barcodeNotes .= ' | Job name: ' . $displayJobName;
+                    }
+
+                    if ($existingBarcode) {
+                        $barcodeId = (int)$existingBarcode['id'];
+                        if ($barcodePrevId > 0) {
+                            $updBarcode = $db->prepare("UPDATE jobs SET previous_job_id = ?, notes = ? WHERE id = ?");
+                            $updBarcode->bind_param('isi', $barcodePrevId, $barcodeNotes, $barcodeId);
+                        } else {
+                            $updBarcode = $db->prepare("UPDATE jobs SET previous_job_id = NULL, notes = ? WHERE id = ?");
+                            $updBarcode->bind_param('si', $barcodeNotes, $barcodeId);
+                        }
+                        $updBarcode->execute();
+                    } else {
+                        $jcNoBarcode = '';
+                        for ($barcodeAttempt = 0; $barcodeAttempt < 30; $barcodeAttempt++) {
+                            $jcNoBarcode = (string)(generateUniqueIdForTable($db, 'barcode_job', 'jobs', 'job_no') ?? '');
+                            if ($jcNoBarcode === '') {
+                                $jcNoBarcode = deriveStageJobNo($planNo, 'BRC');
+                            }
+                            if ($jcNoBarcode === '') {
+                                $jcNoBarcode = 'BRC/' . date('Y') . '/' . str_pad((string)($batchId + $barcodeAttempt), 4, '0', STR_PAD_LEFT);
+                            }
+
+                            $barcodeNotesForInsert = 'Barcode job queued from upstream'
+                                . ' | Plan: ' . ($planNo ?: 'N/A')
+                                . ' | From: ' . $barcodeFromRef
+                                . ' | Barcode: ' . $jcNoBarcode;
+                            if ($displayJobName !== '') {
+                                $barcodeNotesForInsert .= ' | Job name: ' . $displayJobName;
+                            }
+
+                            if ($barcodePrevId > 0) {
+                                $insBarcode = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Finishing', 'barcode', 'Queued', 3, ?, ?)");
+                                $insBarcode->bind_param('sisis', $jcNoBarcode, $planningId, $parentRollNo, $barcodePrevId, $barcodeNotesForInsert);
+                            } else {
+                                $insBarcode = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Finishing', 'barcode', 'Queued', 3, NULL, ?)");
+                                $insBarcode->bind_param('siss', $jcNoBarcode, $planningId, $parentRollNo, $barcodeNotesForInsert);
+                            }
+
+                            $okBarcode = false;
+                            try {
+                                $okBarcode = $insBarcode->execute();
+                            } catch (Throwable $insertErr) {
+                                if ((int)($insBarcode->errno ?? 0) === 1062 || stripos((string)$insertErr->getMessage(), 'Duplicate entry') !== false) {
+                                    $okBarcode = false;
+                                } else {
+                                    throw $insertErr;
+                                }
+                            }
+
+                            if ($okBarcode) {
+                                $barcodeId = (int)$db->insert_id;
+                                $createdJobCards[] = ['job_no' => $jcNoBarcode, 'type' => 'Barcode', 'roll' => $parentRollNo, 'id' => $barcodeId];
+                                $nMsgB = 'New Barcode job card queued: ' . $jcNoBarcode . ' | From: ' . $barcodeFromRef;
+                                $nInsB = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, 'barcode', ?, 'info')");
+                                if ($nInsB) {
+                                    $nInsB->bind_param('is', $barcodeId, $nMsgB);
+                                    $nInsB->execute();
+                                }
+                                break;
+                            }
+
+                            if ((int)$insBarcode->errno === 1062) continue;
+                            if ($barcodeAttempt >= 29) {
+                                throw new Exception('Unable to generate unique barcode job number. Please try again.');
+                            }
                         }
                     }
                 }

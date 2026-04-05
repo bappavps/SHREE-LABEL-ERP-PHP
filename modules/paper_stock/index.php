@@ -710,6 +710,7 @@ include __DIR__ . '/../../includes/header.php';
   var recordBadge = document.getElementById('grid-record-badge');
   var isAllRowsMode = <?= $isAllRows ? 'true' : 'false' ?>;
   var IS_SYS_ADMIN = <?= $isSysAdmin ? 'true' : 'false' ?>;
+  var INITIAL_SERVER_SEARCH = <?= json_encode($searchTerm, JSON_UNESCAPED_UNICODE) ?>;
 
   var qf = {
     search: document.getElementById('qf-search'),
@@ -967,10 +968,14 @@ include __DIR__ . '/../../includes/header.php';
 
   // Quick-filter input — filter rows immediately, NO page redirect (no jerk)
   var qfDebounceTimer = null;
+  var serverSearchTimer = null;
 
   function runServerSearch(){
     var term = (qf.search && qf.search.value ? qf.search.value : '').trim();
     var u = new URL(window.location.href);
+    var existing = (u.searchParams.get('search') || '').trim();
+    var currentPage = (u.searchParams.get('page') || '1');
+    if (existing === term && currentPage === '1') return;
     if (term) {
       u.searchParams.set('search', term);
     } else {
@@ -980,12 +985,30 @@ include __DIR__ . '/../../includes/header.php';
     window.location.href = u.toString();
   }
 
-  // Global search triggers server-side reload on Enter only.
-  // Avoid auto-reload on every keystroke to prevent layout/sidebar blink.
+  // Global search triggers server-side reload on Enter and debounced typing.
   if (qf.search) {
+    qf.search.addEventListener('input', function(){
+      if (serverSearchTimer) clearTimeout(serverSearchTimer);
+      serverSearchTimer = setTimeout(function(){
+        runServerSearch();
+      }, 450);
+    });
     qf.search.addEventListener('keydown', function(e){
       if (e.key === 'Enter') {
         e.preventDefault();
+        if (serverSearchTimer) {
+          clearTimeout(serverSearchTimer);
+          serverSearchTimer = null;
+        }
+        runServerSearch();
+      }
+    });
+    qf.search.addEventListener('blur', function(){
+      if (serverSearchTimer) {
+        clearTimeout(serverSearchTimer);
+        serverSearchTimer = null;
+      }
+      if ((qf.search.value || '').trim() !== INITIAL_SERVER_SEARCH) {
         runServerSearch();
       }
     });

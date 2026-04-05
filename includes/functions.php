@@ -696,6 +696,7 @@ function rbacPageCatalog() {
         '/modules/operators/oneply/index.php' => 'Machine Operator - One Ply',
         '/modules/operators/printing/index.php' => 'Machine Operator - Flexo Printing',
         '/modules/operators/flatbed/index.php' => 'Machine Operator - Die-Cutting',
+        '/modules/operators/barcode/index.php' => 'Machine Operator - Barcode',
         '/modules/operators/rotery/index.php' => 'Machine Operator - Rotery Die',
         '/modules/operators/label-slitting/index.php' => 'Machine Operator - Label Slitting',
         '/modules/operators/packing/index.php' => 'Machine Operator - Packing',
@@ -728,6 +729,7 @@ function rbacPageCatalog() {
         '/modules/jobs/oneply/index.php' => 'Job Card - One Ply',
         '/modules/jobs/printing/index.php' => 'Job Card - Flexo Printing',
         '/modules/jobs/flatbed/index.php' => 'Job Card - Die-Cutting',
+        '/modules/jobs/barcode/index.php' => 'Job Card - Barcode',
         '/modules/jobs/rotery/index.php' => 'Job Card - Rotery Die',
         '/modules/jobs/label-slitting/index.php' => 'Job Card - Label Slitting',
         '/modules/jobs/packing/index.php' => 'Job Card - Packing Slip',
@@ -875,6 +877,10 @@ function canAccessPath($path) {
     $aliases = [];
     if ($path === '/modules/planning/barcode/index.php') $aliases[] = '/modules/planning/rotery/index.php';
     if ($path === '/modules/planning/rotery/index.php') $aliases[] = '/modules/planning/barcode/index.php';
+    if ($path === '/modules/jobs/barcode/index.php') $aliases[] = '/modules/jobs/rotery/index.php';
+    if ($path === '/modules/jobs/rotery/index.php') $aliases[] = '/modules/jobs/barcode/index.php';
+    if ($path === '/modules/operators/barcode/index.php') $aliases[] = '/modules/operators/rotery/index.php';
+    if ($path === '/modules/operators/rotery/index.php') $aliases[] = '/modules/operators/barcode/index.php';
     if ($path === '/modules/plate-tools/die-management/barcode/index.php') {
         $aliases[] = '/modules/plate-tools/die-management/barcode/flatbed-barcode-die.php';
         $aliases[] = '/modules/plate-tools/die-management/barcode/rotary-barcode-die.php';
@@ -946,6 +952,10 @@ function hasPageAction($path, $action) {
     $pathsToCheck = [$path];
     if ($path === '/modules/planning/barcode/index.php') $pathsToCheck[] = '/modules/planning/rotery/index.php';
     if ($path === '/modules/planning/rotery/index.php') $pathsToCheck[] = '/modules/planning/barcode/index.php';
+    if ($path === '/modules/jobs/barcode/index.php') $pathsToCheck[] = '/modules/jobs/rotery/index.php';
+    if ($path === '/modules/jobs/rotery/index.php') $pathsToCheck[] = '/modules/jobs/barcode/index.php';
+    if ($path === '/modules/operators/barcode/index.php') $pathsToCheck[] = '/modules/operators/rotery/index.php';
+    if ($path === '/modules/operators/rotery/index.php') $pathsToCheck[] = '/modules/operators/barcode/index.php';
     if ($path === '/modules/plate-tools/die-management/barcode/index.php') {
         $pathsToCheck[] = '/modules/plate-tools/die-management/barcode/flatbed-barcode-die.php';
         $pathsToCheck[] = '/modules/plate-tools/die-management/barcode/rotary-barcode-die.php';

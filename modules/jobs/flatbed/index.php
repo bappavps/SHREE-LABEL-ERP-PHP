@@ -5,7 +5,22 @@ require_once __DIR__ . '/../../../includes/auth_check.php';
 
 $isOperatorView = (string)($_GET['view'] ?? '') === 'operator';
 $canDeleteJobs = isAdmin() && !$isOperatorView;
-$pageTitle = $isOperatorView ? 'Die-Cutting Operator' : 'Die-Cutting Job Cards';
+$dcPageTitleOperator = trim((string)($dcPageTitleOperator ?? '')) ?: 'Die-Cutting Operator';
+$dcPageTitleProduction = trim((string)($dcPageTitleProduction ?? '')) ?: 'Die-Cutting Job Cards';
+$dcOperatorBreadcrumb = trim((string)($dcOperatorBreadcrumb ?? '')) ?: $dcPageTitleOperator;
+$dcProductionBreadcrumb = trim((string)($dcProductionBreadcrumb ?? '')) ?: 'Die-Cutting';
+$dcHeaderIcon = trim((string)($dcHeaderIcon ?? '')) ?: 'bi-scissors';
+$dcHeaderSubtitle = trim((string)($dcHeaderSubtitle ?? '')) ?: 'Auto-generated for die-cutting after flexo printing &middot; Sequential gating from Flexo Printing';
+$dcDocumentTitle = trim((string)($dcDocumentTitle ?? '')) ?: 'Die-Cutting Job Card';
+$dcBulkPrintTitle = trim((string)($dcBulkPrintTitle ?? '')) ?: $dcPageTitleProduction;
+$dcDetailsSectionLabel = trim((string)($dcDetailsSectionLabel ?? '')) ?: 'Die-Cutting Details';
+$dcDefaultFilter = trim((string)($dcDefaultFilter ?? '')) ?: 'Pending';
+$dcCompareSectionTitle = trim((string)($dcCompareSectionTitle ?? '')) ?: 'Printing Production vs Plan';
+$dcProducedQtyLabel = trim((string)($dcProducedQtyLabel ?? '')) ?: 'Printing Produced';
+$dcProducedQtySource = trim((string)($dcProducedQtySource ?? '')) ?: 'previous';
+$dcAutoFallbackToAllOnEmptyDefault = isset($dcAutoFallbackToAllOnEmptyDefault) ? (bool)$dcAutoFallbackToAllOnEmptyDefault : true;
+
+$pageTitle = $isOperatorView ? $dcPageTitleOperator : $dcPageTitleProduction;
 $db = getDB();
 
 // ── Company info ──────────────────────────────────────────
@@ -31,11 +46,14 @@ function dcDisplayJobName($j) {
 }
 
 // ── Department filter clause (reusable) ──
-$dcWhereClause = "(
+$dcWhereClause = trim((string)($dcWhereClauseOverride ?? ''));
+if ($dcWhereClause === '') {
+  $dcWhereClause = "(
     LOWER(COALESCE(j.department, '')) IN ('flatbed', 'die-cutting', 'die_cutting')
     OR LOWER(COALESCE(j.job_type, '')) IN ('die-cutting', 'diecutting')
     OR (LOWER(COALESCE(j.job_type, '')) = 'finishing' AND LOWER(COALESCE(j.department, '')) IN ('flatbed', 'die-cutting', 'die_cutting'))
-)";
+  )";
+}
 
 // ── Main SQL ──────────────────────────────────────────────
 $jobsSql = "
@@ -63,10 +81,26 @@ $finishStates = ['Closed', 'Finalized', 'Completed', 'QC Passed'];
 foreach ($jobs as &$job) {
     $job['extra_data_parsed'] = json_decode((string)($job['extra_data'] ?? '{}'), true) ?: [];
     $planningExtra = json_decode((string)($job['planning_extra_data'] ?? '{}'), true) ?: [];
-    $job['planning_die_size'] = (string)($planningExtra['size'] ?? ($planningExtra['die_size'] ?? ''));
-    $job['planning_repeat'] = (string)($planningExtra['repeat'] ?? '');
-    $job['planning_order_qty'] = (string)($planningExtra['qty_pcs'] ?? '');
-    $job['planning_material'] = (string)($planningExtra['material'] ?? ($job['paper_type'] ?? ''));
+  if ((float)($job['gsm'] ?? 0) <= 0) {
+    $parentDetails = is_array($planningExtra['parent_details'] ?? null) ? $planningExtra['parent_details'] : [];
+    $parentGsm = (float)($parentDetails['gsm'] ?? 0);
+    if ($parentGsm > 0) {
+      $job['gsm'] = $parentGsm;
+    }
+  }
+  if ((float)($job['gsm'] ?? 0) <= 0 && !empty($planningExtra['child_rolls']) && is_array($planningExtra['child_rolls'])) {
+    foreach ($planningExtra['child_rolls'] as $childRoll) {
+      $childGsm = (float)($childRoll['gsm'] ?? 0);
+      if ($childGsm > 0) {
+        $job['gsm'] = $childGsm;
+        break;
+      }
+    }
+  }
+  $job['planning_die_size'] = (string)($planningExtra['barcode_size'] ?? ($planningExtra['size'] ?? ($planningExtra['die_size'] ?? '')));
+  $job['planning_repeat'] = (string)($planningExtra['repeat'] ?? ($planningExtra['barcode_repeat'] ?? ($planningExtra['cylinder_repeat'] ?? ($planningExtra['pitch'] ?? ''))));
+  $job['planning_order_qty'] = (string)($planningExtra['order_quantity_user'] ?? ($planningExtra['order_quantity'] ?? ($planningExtra['qty_pcs'] ?? '')));
+  $job['planning_material'] = (string)($planningExtra['material_type'] ?? ($planningExtra['material'] ?? ($job['paper_type'] ?? '')));
     $imagePath = trim((string)($planningExtra['image_path'] ?? ($planningExtra['planning_image_path'] ?? '')));
     if ($imagePath !== '' && !preg_match('/^https?:\/\//i', $imagePath)) {
         $imagePath = BASE_URL . '/' . ltrim($imagePath, '/');
@@ -79,7 +113,16 @@ foreach ($jobs as &$job) {
 
     // ── Parse previous job extra_data (printing production qty) ──
     $prevExtra = json_decode((string)($job['prev_extra_data'] ?? '{}'), true) ?: [];
-    $job['prev_actual_qty'] = (string)($prevExtra['actual_qty'] ?? '');
+    $job['prev_actual_qty'] = (string)(
+      $prevExtra['actual_qty']
+      ?? $prevExtra['production_total_qty']
+      ?? $prevExtra['printed_qty']
+      ?? $prevExtra['print_qty']
+      ?? $prevExtra['total_qty_pcs']
+      ?? $prevExtra['die_cutting_total_qty_pcs']
+      ?? $prevExtra['dc_total_qty']
+      ?? ''
+    );
     unset($job['prev_extra_data']); // Don't send raw blob to JS
 
     // ── Normalize notes_display ──
@@ -134,11 +177,11 @@ include __DIR__ . '/../../../includes/header.php';
   <?php if ($isOperatorView): ?>
     <span>Operator</span><span class="breadcrumb-sep">&#8250;</span>
     <span>Machine Operators</span><span class="breadcrumb-sep">&#8250;</span>
-    <span>Die-Cutting Operator</span>
+    <span><?= e($dcOperatorBreadcrumb) ?></span>
   <?php else: ?>
     <span>Production</span><span class="breadcrumb-sep">&#8250;</span>
     <span>Job Cards</span><span class="breadcrumb-sep">&#8250;</span>
-    <span>Die-Cutting</span>
+    <span><?= e($dcProductionBreadcrumb) ?></span>
   <?php endif; ?>
 </div>
 
@@ -247,10 +290,10 @@ include __DIR__ . '/../../../includes/header.php';
 .dc-op-field textarea{min-height:80px;resize:vertical}
 
 /* ── Timer Overlay ── */
-.dc-timer-overlay{position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#042f2e,#134e4a 30%,#0f766e 60%,#14b8a6);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;color:#fff;font-family:'Segoe UI',Arial,sans-serif}
+.dc-timer-overlay{position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#042f2e,#134e4a 30%,#0f766e 60%,#14b8a6);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;color:#fff;font-family:'Segoe UI',Arial,sans-serif;padding:24px 16px calc(24px + env(safe-area-inset-bottom));overflow:auto}
 .dc-timer-jobinfo{text-align:center;opacity:.9}
-.dc-timer-display{font-size:4.5rem;font-weight:900;letter-spacing:.12em;font-family:Consolas,'Courier New',monospace;text-shadow:0 4px 20px rgba(0,0,0,.3)}
-.dc-timer-actions{display:flex;gap:16px}
+.dc-timer-display{font-size:clamp(2.1rem,10vw,4.5rem);font-weight:900;letter-spacing:.12em;font-family:Consolas,'Courier New',monospace;text-shadow:0 4px 20px rgba(0,0,0,.3);text-align:center;line-height:1.1;word-break:break-word}
+.dc-timer-actions{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;width:100%;max-width:760px}
 .dc-timer-btn-cancel{padding:14px 32px;font-size:1rem;font-weight:800;border:2px solid rgba(255,255,255,.3);background:rgba(255,255,255,.08);color:#fff;border-radius:14px;cursor:pointer;transition:all .15s}
 .dc-timer-btn-cancel:hover{background:rgba(255,255,255,.15)}
 .dc-timer-btn-pause{padding:14px 32px;font-size:1rem;font-weight:800;border:none;background:#f59e0b;color:#fff;border-radius:14px;cursor:pointer;transition:all .15s;box-shadow:0 4px 16px rgba(245,158,11,.4)}
@@ -285,6 +328,7 @@ include __DIR__ . '/../../../includes/header.php';
 /* ── Responsive ── */
 @media(max-width:900px){.dc-stats{grid-template-columns:repeat(3,1fr)}.dc-op-grid-2{grid-template-columns:1fr}.dc-timer-history{grid-template-columns:1fr}}
 @media(max-width:640px){.dc-stats{grid-template-columns:repeat(2,1fr)}.dc-grid{grid-template-columns:1fr}}
+@media(max-width:640px){.dc-timer-overlay{justify-content:flex-start;gap:16px;padding:max(16px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom))}.dc-timer-jobinfo{max-width:100%}.dc-timer-display{letter-spacing:.06em}.dc-timer-actions{flex-direction:column;gap:10px;max-width:420px}.dc-timer-btn-cancel,.dc-timer-btn-pause,.dc-timer-btn-end{width:100%;padding:12px 14px;font-size:.95rem}}
 
 /* ── History Table Styles ── */
 .ht-filter-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
@@ -344,10 +388,10 @@ include __DIR__ . '/../../../includes/header.php';
 <div class="dc-header no-print" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
   <div>
     <h1 style="margin:0;font-size:1.3rem;font-weight:900;color:#0f172a;display:flex;align-items:center;gap:8px">
-      <i class="bi bi-scissors"></i> <?= $isOperatorView ? 'Die-Cutting Operator' : 'Die-Cutting Job Cards' ?>
+      <i class="bi <?= e($dcHeaderIcon) ?>"></i> <?= e($isOperatorView ? $dcPageTitleOperator : $dcPageTitleProduction) ?>
     </h1>
     <div style="font-size:.72rem;color:#94a3b8;margin-top:4px;font-weight:600">
-      Auto-generated for die-cutting after flexo printing &middot; Sequential gating from Flexo Printing
+      <?= $dcHeaderSubtitle ?>
     </div>
   </div>
   <div style="display:flex;gap:8px">
@@ -479,7 +523,7 @@ include __DIR__ . '/../../../includes/header.php';
           <?php else: ?>
             <button class="dc-action-btn dc-btn-complete" onclick="openJobDetail(<?= $job['id'] ?>,'complete');event.stopPropagation()"><i class="bi bi-check-lg"></i> Complete</button>
           <?php endif; ?>
-        <?php else: ?>
+        <?php elseif (!$isOperatorView): ?>
           <button class="dc-action-btn dc-btn-view" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-folder2-open"></i> Open</button>
         <?php endif; ?>
         <button class="dc-action-btn dc-btn-view" onclick="printJobCard(<?= $job['id'] ?>)" title="Print"><i class="bi bi-printer"></i></button>
@@ -520,7 +564,9 @@ include __DIR__ . '/../../../includes/header.php';
     <div class="dc-card-foot">
       <div class="dc-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
       <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
+        <?php if (!$isOperatorView): ?>
         <button class="dc-action-btn dc-btn-view" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-folder2-open"></i> Open</button>
+        <?php endif; ?>
         <button class="dc-action-btn dc-btn-view" onclick="printJobCard(<?= $job['id'] ?>)" title="Print"><i class="bi bi-printer"></i></button>
       </div>
     </div>
@@ -669,6 +715,12 @@ const ALL_JOBS = <?= json_encode(array_values(array_merge($activeJobs, $historyJ
 const IS_OPERATOR_VIEW = <?= $isOperatorView ? 'true' : 'false' ?>;
 const IS_ADMIN = <?= $canDeleteJobs ? 'true' : 'false' ?>;
 const DC_AUTO_REFRESH_MS = 45000;
+const DC_DETAILS_SECTION_LABEL = <?= json_encode($dcDetailsSectionLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+const DC_DEFAULT_FILTER_RAW = <?= json_encode($dcDefaultFilter, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+const DC_COMPARE_SECTION_TITLE = <?= json_encode($dcCompareSectionTitle, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+const DC_PRODUCED_QTY_LABEL = <?= json_encode($dcProducedQtyLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+const DC_PRODUCED_QTY_SOURCE = <?= json_encode($dcProducedQtySource, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+const DC_AUTO_FALLBACK_TO_ALL_ON_EMPTY_DEFAULT = <?= $dcAutoFallbackToAllOnEmptyDefault ? 'true' : 'false' ?>;
 
 // ── Voice recording state ──
 let _voiceRecorder = null;
@@ -697,7 +749,32 @@ function switchDCTab(tab) {
 }
 
 // ═══ FILTERS ═══
-let ACTIVE_DC_FILTER = 'Pending';
+let ACTIVE_DC_FILTER = (DC_DEFAULT_FILTER_RAW || 'Pending');
+
+function normalizeFilterStatus(status) {
+  const s = String(status || '').trim().toLowerCase();
+  if (!s) return 'Pending';
+  if (s === 'all') return 'all';
+  if (s === 'pending') return 'Pending';
+  if (s === 'queued') return 'Queued';
+  if (s === 'running') return 'Running';
+  if (s === 'hold') return 'Hold';
+  if (s === 'finished' || s === 'completed' || s === 'closed' || s === 'finalized' || s === 'qc passed') return 'Finished';
+  return status;
+}
+
+function findFilterButton(status) {
+  const normalized = normalizeFilterStatus(status);
+  return Array.from(document.querySelectorAll('.dc-filter-btn')).find(function(btn) {
+    return btn.textContent.trim().toLowerCase() === String(normalized).toLowerCase();
+  }) || null;
+}
+
+function getVisibleActiveCardCount() {
+  return Array.from(document.querySelectorAll('.dc-card:not([data-finished-only="1"])')).filter(function(card) {
+    return card.style.display !== 'none';
+  }).length;
+}
 
 function dcCardMatchesFilter(card, status) {
   const cardStatus = (card.dataset.status || '').toLowerCase();
@@ -708,7 +785,7 @@ function dcCardMatchesFilter(card, status) {
   if (status === 'Finished') return ['finished', 'completed', 'closed', 'finalized', 'qc passed'].includes(cardStatus);
   if (finishedOnly) return false;
   if (status === 'Hold') return cardStatus === 'hold' || cardStatus === 'hold for payment' || cardStatus === 'hold for approval';
-  if (status === 'Queued') return lockState === 'locked';
+  if (status === 'Queued') return cardStatus === 'queued' || lockState === 'locked';
   if (status === 'Pending') return cardStatus === 'pending';
   return cardStatus === status.toLowerCase();
 }
@@ -723,18 +800,20 @@ function applyDCFilters() {
 }
 
 function filterJobs(status, btn) {
-  ACTIVE_DC_FILTER = status;
+  ACTIVE_DC_FILTER = normalizeFilterStatus(status);
   document.querySelectorAll('.dc-filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  updateStatBoxes(status);
+  if (btn) btn.classList.add('active');
+  updateStatBoxes(ACTIVE_DC_FILTER);
   applyDCFilters();
 }
 
 function filterFromStat(status) {
-  const filterBtns = document.querySelectorAll('.dc-filter-btn');
   let targetBtn = null;
-  if (status === 'all') { targetBtn = filterBtns[0]; }
-  else { targetBtn = Array.from(filterBtns).find(btn => btn.textContent.trim().split('\n')[0] === status); }
+  if (status === 'all') {
+    targetBtn = findFilterButton('all');
+  } else {
+    targetBtn = findFilterButton(status);
+  }
   if (targetBtn) targetBtn.click();
 }
 
@@ -906,7 +985,7 @@ function htBulkPrint() {
       pages += `<div style="${pb}">${cardHtml}</div>`;
     }
     const w = window.open('', '_blank', 'width=820,height=920');
-    w.document.write('<!DOCTYPE html><html><head><title>History Bulk Print - ' + jobs.length + ' Die-Cutting Job Cards</title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>' + pages + '</body></html>');
+    w.document.write('<!DOCTYPE html><html><head><title>History Bulk Print - ' + jobs.length + ' <?= addslashes($dcBulkPrintTitle) ?></title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>' + pages + '</body></html>');
     w.document.close(); w.focus(); setTimeout(() => w.print(), 400);
   })();
 }
@@ -1453,7 +1532,7 @@ async function openJobDetail(id, mode) {
       </div>
     </div>
     <div style="text-align:right">
-      <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:#334155">Die-Cutting Job Card</div>
+      <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:#334155"><?= e($dcDocumentTitle) ?></div>
       <div style="font-size:.92rem;font-weight:900;color:var(--dc-brand)">${esc(job.job_no || '—')}</div>
       <div style="font-size:.58rem;color:#64748b">${esc(nowText)}</div>
     </div>
@@ -1475,14 +1554,18 @@ async function openJobDetail(id, mode) {
   // ── Printing Production vs Planning Quantity ──
   {
     const rawPlanQty = String(job.planning_order_qty || '').trim();
-    const rawPrintQty = String(job.prev_actual_qty || '').trim();
+    const rawProducedQty = String(
+      String(DC_PRODUCED_QTY_SOURCE || '').toLowerCase() === 'current'
+        ? (extra.barcode_total_qty_pcs ?? extra.total_qty_pcs ?? extra.die_cutting_total_qty_pcs ?? extra.actual_qty ?? '')
+        : (job.prev_actual_qty || '')
+    ).trim();
     const hasPlanQty = rawPlanQty !== '';
-    const hasPrintQty = rawPrintQty !== '';
+    const hasProducedQty = rawProducedQty !== '';
     const planQty = Number(rawPlanQty || 0);
-    const printQty = Number(rawPrintQty || 0);
-    if (hasPlanQty || hasPrintQty) {
-      const canCompare = hasPlanQty && hasPrintQty;
-      const diff = canCompare ? (printQty - planQty) : 0;
+    const producedQty = Number(rawProducedQty || 0);
+    if (hasPlanQty || hasProducedQty) {
+      const canCompare = hasPlanQty && hasProducedQty;
+      const diff = canCompare ? (producedQty - planQty) : 0;
       const pctText = canCompare && planQty > 0
         ? (((diff / planQty) * 100) > 0 ? '+' : '') + ((diff / planQty) * 100).toFixed(1) + '%'
         : '';
@@ -1492,7 +1575,7 @@ async function openJobDetail(id, mode) {
       const diffLabel = canCompare ? (isExtra ? 'Extra' : (isShort ? 'Shortage' : 'Matched')) : 'Difference';
       const diffIcon = canCompare ? (isExtra ? 'bi-arrow-up-circle-fill' : (isShort ? 'bi-arrow-down-circle-fill' : 'bi-check-circle-fill')) : 'bi-dash-circle';
       html += `<div class="dc-op-section" style="border-color:#e0e7ff">
-        <div class="dc-op-h" style="background:#eef2ff;color:#4338ca"><i class="bi bi-bar-chart-line"></i> Printing Production vs Plan</div>
+        <div class="dc-op-h" style="background:#eef2ff;color:#4338ca"><i class="bi bi-bar-chart-line"></i> ${esc(DC_COMPARE_SECTION_TITLE || 'Printing Production vs Plan')}</div>
         <div class="dc-op-b">
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;text-align:center">
             <div style="background:#f8fafc;border-radius:10px;padding:10px 8px">
@@ -1501,14 +1584,14 @@ async function openJobDetail(id, mode) {
               <div style="font-size:.58rem;color:#64748b">Pcs</div>
             </div>
             <div style="background:#f8fafc;border-radius:10px;padding:10px 8px">
-              <div style="font-size:.58rem;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:.06em">Printing Produced</div>
-              <div style="font-size:1.2rem;font-weight:900;color:#3b82f6;margin-top:4px">${hasPrintQty ? printQty.toLocaleString() : '—'}</div>
+              <div style="font-size:.58rem;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:.06em">${esc(DC_PRODUCED_QTY_LABEL || 'Printing Produced')}</div>
+              <div style="font-size:1.2rem;font-weight:900;color:#3b82f6;margin-top:4px">${hasProducedQty ? producedQty.toLocaleString() : '—'}</div>
               <div style="font-size:.58rem;color:#64748b">Pcs</div>
             </div>
             <div style="background:${canCompare ? (isExtra?'#f0fdf4':(isShort?'#fef2f2':'#f8fafc')) : '#f8fafc'};border-radius:10px;padding:10px 8px">
               <div style="font-size:.58rem;font-weight:800;text-transform:uppercase;color:${diffColor};letter-spacing:.06em"><i class="bi ${diffIcon}"></i> ${diffLabel}</div>
-              <div style="font-size:1.2rem;font-weight:900;color:${diffColor};margin-top:4px">${canCompare ? Math.abs(diff).toLocaleString() : ''}</div>
-              <div style="font-size:.62rem;font-weight:800;color:${diffColor};min-height:1em">${pctText}</div>
+              <div style="font-size:1.2rem;font-weight:900;color:${diffColor};margin-top:4px">${canCompare ? Math.abs(diff).toLocaleString() : '—'}</div>
+              <div style="font-size:.62rem;font-weight:800;color:${diffColor};min-height:1em">${canCompare ? pctText : '—'}</div>
             </div>
           </div>
         </div>
@@ -1539,7 +1622,7 @@ async function openJobDetail(id, mode) {
   </div></div>`;
 
   // ── Die-Cutting Details ──
-  html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-scissors"></i> Die-Cutting Details</div><div class="dc-op-b dc-op-grid-2">
+  html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-scissors"></i> ${esc(DC_DETAILS_SECTION_LABEL || 'Die-Cutting Details')}</div><div class="dc-op-b dc-op-grid-2">
     <div class="dc-op-field"><label>Material</label><div class="fv">${esc(job.planning_material || job.paper_type || '—')}</div></div>
     <div class="dc-op-field"><label>Die Size</label><div class="fv" style="color:var(--dc-brand);font-weight:900">${esc(job.planning_die_size || '—')}</div></div>
     <div class="dc-op-field"><label>Repeat</label><div class="fv">${esc(job.planning_repeat || '—')}</div></div>
@@ -1836,7 +1919,7 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
         <div><div style="color:#64748b;text-transform:uppercase;font-weight:800;font-size:.58rem">Duration</div><div style="font-weight:700">${esc(durText)}</div></div>
       </div>
       <div style="padding:10px 12px">
-        <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#0f766e;background:#ccfbf1;padding:5px 8px;border-radius:4px">Die-Cutting Details</div>
+        <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#0f766e;background:#ccfbf1;padding:5px 8px;border-radius:4px">${esc(DC_DETAILS_SECTION_LABEL || 'Die-Cutting Details')}</div>
         <table style="width:100%;border-collapse:collapse;font-size:.72rem;margin-bottom:10px">
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_job_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job No</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#0f766e">${esc(job.job_no || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Material</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_material || job.paper_type || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Die Size</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#0f766e">${esc(job.planning_die_size || '—')}</td></tr>
@@ -1847,14 +1930,18 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
         ${previewHtml ? `<table style="width:100%">${previewHtml}</table>` : ''}
         ${(() => {
           const rawPlanQty = String(job.planning_order_qty || '').trim();
-          const rawPrintQty = String(job.prev_actual_qty || '').trim();
+          const rawProducedQty = String(
+            String(DC_PRODUCED_QTY_SOURCE || '').toLowerCase() === 'current'
+              ? (extra.barcode_total_qty_pcs ?? extra.total_qty_pcs ?? extra.die_cutting_total_qty_pcs ?? extra.actual_qty ?? '')
+              : (job.prev_actual_qty || '')
+          ).trim();
           const hasPlanQty = rawPlanQty !== '';
-          const hasPrintQty = rawPrintQty !== '';
+          const hasProducedQty = rawProducedQty !== '';
           const planQty = Number(rawPlanQty || 0);
-          const printQty = Number(rawPrintQty || 0);
-          if (!hasPlanQty && !hasPrintQty) return '';
-          const canCompare = hasPlanQty && hasPrintQty;
-          const diff = canCompare ? (printQty - planQty) : 0;
+          const producedQty = Number(rawProducedQty || 0);
+          if (!hasPlanQty && !hasProducedQty) return '';
+          const canCompare = hasPlanQty && hasProducedQty;
+          const diff = canCompare ? (producedQty - planQty) : 0;
           const isExtra = canCompare && diff > 0;
           const isShort = canCompare && diff < 0;
           const diffLabel = canCompare ? (isExtra ? 'Extra' : (isShort ? 'Shortage' : 'Matched')) : 'Difference';
@@ -1862,15 +1949,15 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
           const pctText = canCompare && planQty > 0
             ? (((diff / planQty) * 100) > 0 ? '+' : '') + ((diff / planQty) * 100).toFixed(1) + '%'
             : '';
-          return `<div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#4338ca;background:#eef2ff;padding:5px 8px;border-radius:4px;margin-top:8px">Printing Production vs Plan</div>
+          return `<div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#4338ca;background:#eef2ff;padding:5px 8px;border-radius:4px;margin-top:8px">${esc(DC_COMPARE_SECTION_TITLE || 'Printing Production vs Plan')}</div>
           <table style="width:100%;border-collapse:collapse;font-size:.72rem;margin-bottom:10px">
             <tr>
               <td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:16%">Planning Qty</td>
               <td style="padding:5px 7px;border:1px solid #cbd5e1;width:17%;font-weight:700">${hasPlanQty ? planQty.toLocaleString() + ' Pcs' : '—'}</td>
-              <td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:16%">Printing Produced</td>
-              <td style="padding:5px 7px;border:1px solid #cbd5e1;width:17%;font-weight:700;color:#3b82f6">${hasPrintQty ? printQty.toLocaleString() + ' Pcs' : '—'}</td>
+              <td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:16%">${esc(DC_PRODUCED_QTY_LABEL || 'Printing Produced')}</td>
+              <td style="padding:5px 7px;border:1px solid #cbd5e1;width:17%;font-weight:700;color:#3b82f6">${hasProducedQty ? producedQty.toLocaleString() + ' Pcs' : '—'}</td>
               <td style="padding:5px 7px;border:1px solid #cbd5e1;background:${canCompare ? (isExtra?'#f0fdf4':(isShort?'#fef2f2':'#f8fafc')) : '#f8fafc'};font-weight:800;width:16%;color:${diffColor}">${diffLabel}</td>
-              <td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:900;color:${diffColor};width:18%">${canCompare ? (Math.abs(diff).toLocaleString() + ' Pcs' + (pctText ? ' (' + pctText + ')' : '')) : ''}</td>
+              <td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:900;color:${diffColor};width:18%">${canCompare ? (Math.abs(diff).toLocaleString() + ' Pcs' + (pctText ? ' (' + pctText + ')' : '')) : '—'}</td>
             </tr>
           </table>`;
         })()}
@@ -1886,7 +1973,7 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
         <div style="font-size:.68rem;color:#475569">Supervisor Signature: _____________________</div>
       </div>
       <div style="padding:6px 12px;font-size:.58rem;color:#64748b;display:flex;justify-content:space-between;border-top:1px solid #99f6e4">
-        <span>Document: Die-Cutting Job Card | ${esc(COMPANY.name || '')}</span>
+        <span>Document: <?= addslashes($dcDocumentTitle) ?> | ${esc(COMPANY.name || '')}</span>
         <span>Printed at ${esc(new Date().toLocaleString())}</span>
       </div>
     </div>
@@ -1947,7 +2034,7 @@ function dcBulkPrint() {
       pages += `<div style="${pb}">${cardHtml}</div>`;
     }
     const w = window.open('', '_blank', 'width=820,height=920');
-    w.document.write('<!DOCTYPE html><html><head><title>Bulk Print - ' + jobs.length + ' Die-Cutting Job Cards</title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>' + pages + '</body></html>');
+    w.document.write('<!DOCTYPE html><html><head><title>Bulk Print - ' + jobs.length + ' <?= addslashes($dcBulkPrintTitle) ?></title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>' + pages + '</body></html>');
     w.document.close(); w.focus(); setTimeout(() => w.print(), 400);
   })();
 }
@@ -1981,10 +2068,20 @@ function generateQR(text) {
   if (autoId) setTimeout(function(){ try { openJobDetail(parseInt(autoId)); } catch(e){} }, 600);
 })();
 
-// Default to Pending filter on page load.
+// Default filter on page load can be overridden by wrapper modules.
 (function(){
-  const pendingBtn = Array.from(document.querySelectorAll('.dc-filter-btn')).find(b => b.textContent.trim() === 'Pending');
-  if (pendingBtn) filterJobs('Pending', pendingBtn);
+  const defaultFilter = normalizeFilterStatus(DC_DEFAULT_FILTER_RAW || 'Pending');
+  const targetBtn = findFilterButton(defaultFilter);
+  if (targetBtn) {
+    filterJobs(defaultFilter, targetBtn);
+    if (DC_AUTO_FALLBACK_TO_ALL_ON_EMPTY_DEFAULT && String(defaultFilter).toLowerCase() !== 'all' && getVisibleActiveCardCount() === 0) {
+      const allBtn = findFilterButton('all');
+      if (allBtn) filterJobs('all', allBtn);
+    }
+    return;
+  }
+  const allBtn = findFilterButton('all');
+  if (allBtn) filterJobs('all', allBtn);
 })();
 </script>
 

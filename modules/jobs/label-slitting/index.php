@@ -295,10 +295,10 @@ include __DIR__ . '/../../../includes/header.php';
 .dc-op-field textarea{min-height:80px;resize:vertical}
 
 /* ── Timer Overlay ── */
-.dc-timer-overlay{position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#7c2d12,#c2410c 35%,#ea580c 65%,#fb923c);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;color:#fff;font-family:'Segoe UI',Arial,sans-serif}
+.dc-timer-overlay{position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#7c2d12,#c2410c 35%,#ea580c 65%,#fb923c);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;color:#fff;font-family:'Segoe UI',Arial,sans-serif;padding:24px 16px calc(24px + env(safe-area-inset-bottom));overflow:auto}
 .dc-timer-jobinfo{text-align:center;opacity:.9}
-.dc-timer-display{font-size:4.5rem;font-weight:900;letter-spacing:.12em;font-family:Consolas,'Courier New',monospace;text-shadow:0 4px 20px rgba(0,0,0,.3)}
-.dc-timer-actions{display:flex;gap:16px}
+.dc-timer-display{font-size:clamp(2.1rem,10vw,4.5rem);font-weight:900;letter-spacing:.12em;font-family:Consolas,'Courier New',monospace;text-shadow:0 4px 20px rgba(0,0,0,.3);text-align:center;line-height:1.1;word-break:break-word}
+.dc-timer-actions{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;width:100%;max-width:760px}
 .dc-timer-btn-cancel{padding:14px 32px;font-size:1rem;font-weight:800;border:2px solid rgba(255,255,255,.3);background:rgba(255,255,255,.08);color:#fff;border-radius:14px;cursor:pointer;transition:all .15s}
 .dc-timer-btn-cancel:hover{background:rgba(255,255,255,.15)}
 .dc-timer-btn-pause{padding:14px 32px;font-size:1rem;font-weight:800;border:none;background:#f59e0b;color:#fff;border-radius:14px;cursor:pointer;transition:all .15s;box-shadow:0 4px 16px rgba(245,158,11,.4)}
@@ -333,6 +333,7 @@ include __DIR__ . '/../../../includes/header.php';
 /* ── Responsive ── */
 @media(max-width:900px){.dc-stats{grid-template-columns:repeat(3,1fr)}.dc-op-grid-2{grid-template-columns:1fr}.dc-timer-history{grid-template-columns:1fr}}
 @media(max-width:640px){.dc-stats{grid-template-columns:repeat(2,1fr)}.dc-grid{grid-template-columns:1fr}}
+@media(max-width:640px){.dc-timer-overlay{justify-content:flex-start;gap:16px;padding:max(16px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom))}.dc-timer-jobinfo{max-width:100%}.dc-timer-display{letter-spacing:.06em}.dc-timer-actions{flex-direction:column;gap:10px;max-width:420px}.dc-timer-btn-cancel,.dc-timer-btn-pause,.dc-timer-btn-end{width:100%;padding:12px 14px;font-size:.95rem}}
 
 /* ── History Table Styles ── */
 .ht-filter-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}

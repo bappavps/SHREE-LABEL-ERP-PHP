@@ -175,7 +175,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
         <?= navSubItem('/modules/operators/oneply/index.php',         'Only Ply Operator',        $currentFile, [], 'nav-sub-item-nested', 'layers') ?>
         <?= navSubItem('/modules/operators/printing/index.php',       'Flexo Operator',           $currentFile, [], 'nav-sub-item-nested', 'printer') ?>
         <?= navSubItem('/modules/operators/flatbed/index.php',        'Die-Cutting Operator',     $currentFile, [], 'nav-sub-item-nested', 'layout-wtf') ?>
-        <?= navSubItem('/modules/operators/rotery/index.php',         'Rotery Die Operator',      $currentFile, [], 'nav-sub-item-nested', 'gear-wide-connected') ?>
+        <?= navSubItem('/modules/operators/barcode/index.php',        'Barcode Operator',         $currentFile, ['/modules/operators/rotery/index.php'], 'nav-sub-item-nested', 'upc-scan') ?>
         <?= navSubItem('/modules/operators/label-slitting/index.php', 'Label Slitting Operator',  $currentFile, [], 'nav-sub-item-nested', 'layout-split') ?>
         <?= navSubItem('/modules/operators/packing/index.php',        'Packing Operator',         $currentFile, [], 'nav-sub-item-nested', 'box-seam') ?>
       </div>
@@ -220,7 +220,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
             <?= navSubItem('/modules/jobs/oneply/index.php',         'One Ply',         $currentFile, [], 'nav-sub-item-nested', 'layers') ?>
             <?= navSubItem('/modules/jobs/printing/index.php',       'Flexo Printing',  $currentFile, [], 'nav-sub-item-nested', 'printer') ?>
             <?= navSubItem('/modules/jobs/flatbed/index.php',        'Die-Cutting',     $currentFile, [], 'nav-sub-item-nested', 'layout-wtf') ?>
-            <?= navSubItem('/modules/jobs/rotery/index.php',         'Rotery Die',      $currentFile, [], 'nav-sub-item-nested', 'gear-wide-connected') ?>
+            <?= navSubItem('/modules/jobs/barcode/index.php',        'Barcode',         $currentFile, ['/modules/jobs/rotery/index.php'], 'nav-sub-item-nested', 'upc-scan') ?>
             <?= navSubItem('/modules/jobs/label-slitting/index.php', 'Label Slitting',  $currentFile, [], 'nav-sub-item-nested', 'layout-split') ?>
             <?= navSubItem('/modules/jobs/packing/index.php',        'Packing Slip',    $currentFile, [], 'nav-sub-item-nested', 'box-seam') ?>
           </div>

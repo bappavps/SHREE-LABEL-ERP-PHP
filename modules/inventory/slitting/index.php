@@ -843,7 +843,7 @@ const SLT = (() => {
 
   function looksLikePlanNo(v) {
     const s = String(v || '').trim().toUpperCase();
-    return s.startsWith('PLN/');
+    return s.startsWith('PLN/') || s.startsWith('PLN-BAR/');
   }
 
   function findPlannerJobByPlanNo(planNo) {

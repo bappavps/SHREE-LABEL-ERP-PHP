@@ -46,6 +46,9 @@ if (strpos($currentPath, '/modules/operators/flatbed/') === 0 || strpos($current
 if (strpos($currentPath, '/modules/operators/rotery/') === 0 || strpos($currentPath, '/modules/jobs/rotery/') === 0) {
   $notificationDepartments[] = 'rotery';
 }
+if (strpos($currentPath, '/modules/operators/barcode/') === 0 || strpos($currentPath, '/modules/jobs/barcode/') === 0) {
+  $notificationDepartments[] = 'barcode';
+}
 if (strpos($currentPath, '/modules/operators/label-slitting/') === 0 || strpos($currentPath, '/modules/jobs/label-slitting/') === 0) {
   $notificationDepartments[] = 'label_slitting';
 }
