@@ -1443,14 +1443,14 @@ function dos_stepState(string $sts): string {
       <?php endif; ?>
 
       <!-- Planning info inside card -->
-      <?php if ($job['planning_job_name'] || $job['machine'] || $job['operator_name'] || $job['scheduled_date']): ?>
+      <?php if (($job['planning_job_name'] ?? '') || ($job['machine'] ?? '') || ($job['operator_name'] ?? '') || ($job['scheduled_date'] ?? '')): ?>
       <div class="jc-section">
         <div class="jc-section-title"><i class="bi bi-clipboard2-check"></i> Planning</div>
         <div class="jc-grid">
-          <?php if ($job['planning_job_name']): ?><div class="jc-field" style="grid-column:1/-1"><span class="jf-lbl">Job Name</span><span class="jf-val"><?= htmlspecialchars($job['planning_job_name']) ?></span></div><?php endif; ?>
-          <?php if ($job['machine']): ?><div class="jc-field"><span class="jf-lbl">Machine</span><span class="jf-val"><?= htmlspecialchars($job['machine']) ?></span></div><?php endif; ?>
-          <?php if ($job['operator_name']): ?><div class="jc-field"><span class="jf-lbl">Operator</span><span class="jf-val"><?= htmlspecialchars($job['operator_name']) ?></span></div><?php endif; ?>
-          <?php if ($job['scheduled_date']): ?><div class="jc-field"><span class="jf-lbl">Scheduled</span><span class="jf-val"><?= dos_fmtDate($job['scheduled_date']) ?></span></div><?php endif; ?>
+          <?php if ($job['planning_job_name'] ?? ''): ?><div class="jc-field" style="grid-column:1/-1"><span class="jf-lbl">Job Name</span><span class="jf-val"><?= htmlspecialchars($job['planning_job_name'] ?? '') ?></span></div><?php endif; ?>
+          <?php if ($job['machine'] ?? ''): ?><div class="jc-field"><span class="jf-lbl">Machine</span><span class="jf-val"><?= htmlspecialchars($job['machine'] ?? '') ?></span></div><?php endif; ?>
+          <?php if ($job['operator_name'] ?? ''): ?><div class="jc-field"><span class="jf-lbl">Operator</span><span class="jf-val"><?= htmlspecialchars($job['operator_name'] ?? '') ?></span></div><?php endif; ?>
+          <?php if ($job['scheduled_date'] ?? ''): ?><div class="jc-field"><span class="jf-lbl">Scheduled</span><span class="jf-val"><?= dos_fmtDate($job['scheduled_date'] ?? '') ?></span></div><?php endif; ?>
           <div class="jc-field"><span class="jf-lbl">Priority</span><span class="jf-val"><?= htmlspecialchars($job['planning_priority'] ?? 'Normal') ?></span></div>
         </div>
       </div>

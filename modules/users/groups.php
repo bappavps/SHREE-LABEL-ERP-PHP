@@ -130,7 +130,7 @@ function rbac_default_group_blueprints() {
                 '/modules/planning/slitting/index.php',
                 '/modules/planning/printing/index.php',
                 '/modules/planning/flatbed/index.php',
-                '/modules/planning/rotery/index.php',
+                '/modules/planning/barcode/index.php',
                 '/modules/planning/label-slitting/index.php',
                 '/modules/planning/batch/index.php',
                 '/modules/planning/packing/index.php',

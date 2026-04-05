@@ -87,6 +87,73 @@ if (!function_exists('dieToolingRedirectUrl')) {
   }
 }
 
+if (!function_exists('dieToolingBuildUrl')) {
+  function dieToolingBuildUrl($mode = 'master', array $params = []) {
+    $url = dieToolingRedirectUrl($mode);
+    if (empty($params)) {
+      return $url;
+    }
+    $separator = (strpos($url, '?') === false) ? '?' : '&';
+    return $url . $separator . http_build_query($params);
+  }
+}
+
+if (!function_exists('dieToolingNormalizeTypeList')) {
+  function dieToolingCanonicalTypeKey($value) {
+    $item = mb_strtolower(trim((string)$value), 'UTF-8');
+    if ($item === '') return '';
+    if (strpos($item, 'flat') !== false) return 'flatbed';
+    if (strpos($item, 'rotary') !== false || strpos($item, 'rotery') !== false) return 'rotary';
+    return $item;
+  }
+
+  function dieToolingCanonicalTypeLabel($value) {
+    $key = dieToolingCanonicalTypeKey($value);
+    if ($key === 'flatbed') return 'Flatbed';
+    if ($key === 'rotary') return 'Rotary';
+    return trim((string)$value);
+  }
+
+  function dieToolingNormalizeTypeList($values) {
+    $list = is_array($values) ? $values : [$values];
+    $normalized = [];
+    foreach ($list as $value) {
+      $item = dieToolingCanonicalTypeKey($value);
+      if ($item === '') continue;
+      $normalized[$item] = $item;
+    }
+    return array_values($normalized);
+  }
+}
+
+if (!function_exists('dieToolingTypeMatchesAllowed')) {
+  function dieToolingTypeMatchesAllowed($value, array $allowedTypes) {
+    if (!$allowedTypes) return true;
+    $normalized = dieToolingCanonicalTypeKey($value);
+    return $normalized !== '' && in_array($normalized, $allowedTypes, true);
+  }
+}
+
+if (!function_exists('dieToolingBuildAllowedTypeWhere')) {
+  function dieToolingBuildAllowedTypeWhere(mysqli $db, array $allowedTypes, $column = 'die_type') {
+    $normalized = dieToolingNormalizeTypeList($allowedTypes);
+    if (!$normalized) return '';
+    $clauses = [];
+    foreach ($normalized as $value) {
+      if ($value === 'flatbed') {
+        $clauses[] = "LOWER(COALESCE({$column}, '')) LIKE '%flat%'";
+      } elseif ($value === 'rotary') {
+        $clauses[] = "(LOWER(COALESCE({$column}, '')) LIKE '%rotary%' OR LOWER(COALESCE({$column}, '')) LIKE '%rotery%')";
+      } else {
+        $quoted = "'" . $db->real_escape_string($value) . "'";
+        $clauses[] = "LOWER(COALESCE({$column}, '')) = {$quoted}";
+      }
+    }
+    if (!$clauses) return '';
+    return ' WHERE (' . implode(' OR ', $clauses) . ')';
+  }
+}
+
 function dieToolingParseCsv($filePath) {
   $rows = [];
   $file = new SplFileObject($filePath);

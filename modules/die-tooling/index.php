@@ -29,9 +29,14 @@ $dieTypeScope = isset($dieToolingDieTypeScope) ? mb_strtolower(trim((string)$die
 $dieTypeScopeLabel = isset($dieToolingDieTypeScopeLabel) && trim((string)$dieToolingDieTypeScopeLabel) !== ''
   ? trim((string)$dieToolingDieTypeScopeLabel)
   : '';
+$dieTypeAllowedValues = dieToolingNormalizeTypeList($dieToolingAllowedDieTypesOverride ?? []);
 $columns = dieToolingColumns();
 $importColumns = dieToolingImportColumns();
 $csrf = generateCSRF();
+$addFormValues = [];
+$editFormValues = [];
+$addModalErrors = [];
+$editModalErrors = [];
 
 function dieToolingNormalizeHeaderKey($value) {
   $value = mb_strtolower(trim((string)$value), 'UTF-8');
@@ -90,6 +95,16 @@ function dieToolingAutoMapHeaders(array $headers) {
   return $mapping;
 }
 
+function dieToolingMissingRequiredLabels(array $data, array $columns) {
+  $missing = [];
+  foreach ($columns as $key => $label) {
+    if (trim((string)($data[$key] ?? '')) === '') {
+      $missing[] = (string)$label;
+    }
+  }
+  return $missing;
+}
+
 function dieToolingRowMatchesScope($dieTypeValue, $scope) {
   $scope = mb_strtolower(trim((string)$scope), 'UTF-8');
   if ($scope === '') {
@@ -126,36 +141,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $data = dieToolingNormalizePayload($_POST);
+    $addFormValues = $data;
     if ($dieTypeScope !== '') {
       $data['die_type'] = $dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope);
-    }
-    $stmt = $db->prepare('INSERT INTO master_die_tooling (barcode_size, ups_in_roll, up_in_die, label_gap, paper_size, cylender, repeat_size, used_for, die_type, core, pices_per_roll) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    if ($stmt) {
-      $stmt->bind_param(
-        'sssssssssss',
-        $data['barcode_size'],
-        $data['ups_in_roll'],
-        $data['up_in_die'],
-        $data['label_gap'],
-        $data['paper_size'],
-        $data['cylender'],
-        $data['repeat_size'],
-        $data['used_for'],
-        $data['die_type'],
-        $data['core'],
-        $data['pices_per_roll']
-      );
-      if ($stmt->execute()) {
-        setFlash('success', 'Barcode die entry added successfully.');
-      } else {
-        setFlash('error', 'Unable to add entry.');
-      }
-      $stmt->close();
+      $addFormValues['die_type'] = $data['die_type'];
     } else {
-      setFlash('error', 'Unable to prepare insert query.');
+      $data['die_type'] = dieToolingCanonicalTypeLabel($data['die_type'] ?? '');
+      $addFormValues['die_type'] = $data['die_type'];
     }
 
-    redirect(dieToolingRedirectUrl($mode));
+    if ($dieTypeAllowedValues && !dieToolingTypeMatchesAllowed($data['die_type'] ?? '', $dieTypeAllowedValues)) {
+      $addModalErrors[] = 'Die Type must be Flatbed or Rotary for this Barcode Die page.';
+    }
+
+    if ($dieTypeScope === '' && !dieToolingTypeMatchesAllowed($data['die_type'] ?? '', ['flatbed', 'rotary'])) {
+      $addModalErrors[] = 'Die Type must be Flatbed or Rotary for this Barcode Die page.';
+    }
+    $missingLabels = dieToolingMissingRequiredLabels($data, $columns);
+    if ($missingLabels) {
+      $addModalErrors[] = 'Please fill all fields. Missing: ' . implode(', ', $missingLabels) . '.';
+    }
+    if (!$addModalErrors) {
+      $stmt = $db->prepare('INSERT INTO master_die_tooling (barcode_size, ups_in_roll, up_in_die, label_gap, paper_size, cylender, repeat_size, used_for, die_type, core, pices_per_roll) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      if ($stmt) {
+        $stmt->bind_param(
+          'sssssssssss',
+          $data['barcode_size'],
+          $data['ups_in_roll'],
+          $data['up_in_die'],
+          $data['label_gap'],
+          $data['paper_size'],
+          $data['cylender'],
+          $data['repeat_size'],
+          $data['used_for'],
+          $data['die_type'],
+          $data['core'],
+          $data['pices_per_roll']
+        );
+        if ($stmt->execute()) {
+          setFlash('success', 'Barcode die entry added successfully.');
+          $stmt->close();
+          redirect(dieToolingRedirectUrl($mode));
+        }
+        $addModalErrors[] = 'Unable to add entry.';
+        $stmt->close();
+      } else {
+        $addModalErrors[] = 'Unable to prepare insert query.';
+      }
+    }
   }
 
   if ($action === 'update_die_tool') {
@@ -166,37 +199,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $data = dieToolingNormalizePayload($_POST);
+    $editFormValues = $data;
     if ($dieTypeScope !== '') {
       $data['die_type'] = $dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope);
-    }
-    $stmt = $db->prepare('UPDATE master_die_tooling SET barcode_size=?, ups_in_roll=?, up_in_die=?, label_gap=?, paper_size=?, cylender=?, repeat_size=?, used_for=?, die_type=?, core=?, pices_per_roll=? WHERE id=?');
-    if ($stmt) {
-      $stmt->bind_param(
-        'sssssssssssi',
-        $data['barcode_size'],
-        $data['ups_in_roll'],
-        $data['up_in_die'],
-        $data['label_gap'],
-        $data['paper_size'],
-        $data['cylender'],
-        $data['repeat_size'],
-        $data['used_for'],
-        $data['die_type'],
-        $data['core'],
-        $data['pices_per_roll'],
-        $id
-      );
-      if ($stmt->execute()) {
-        setFlash('success', 'Barcode die entry updated successfully.');
-      } else {
-        setFlash('error', 'Unable to update entry.');
-      }
-      $stmt->close();
+      $editFormValues['die_type'] = $data['die_type'];
     } else {
-      setFlash('error', 'Unable to prepare update query.');
+      $data['die_type'] = dieToolingCanonicalTypeLabel($data['die_type'] ?? '');
+      $editFormValues['die_type'] = $data['die_type'];
     }
 
-    redirect(dieToolingRedirectUrl($mode));
+    if ($dieTypeAllowedValues && !dieToolingTypeMatchesAllowed($data['die_type'] ?? '', $dieTypeAllowedValues)) {
+      $editModalErrors[] = 'Die Type must be Flatbed or Rotary for this Barcode Die page.';
+    }
+
+    if ($dieTypeScope === '' && !dieToolingTypeMatchesAllowed($data['die_type'] ?? '', ['flatbed', 'rotary'])) {
+      $editModalErrors[] = 'Die Type must be Flatbed or Rotary for this Barcode Die page.';
+    }
+    $missingLabels = dieToolingMissingRequiredLabels($data, $columns);
+    if ($missingLabels) {
+      $editModalErrors[] = 'Please fill all fields. Missing: ' . implode(', ', $missingLabels) . '.';
+    }
+    if (!$editModalErrors) {
+      $stmt = $db->prepare('UPDATE master_die_tooling SET barcode_size=?, ups_in_roll=?, up_in_die=?, label_gap=?, paper_size=?, cylender=?, repeat_size=?, used_for=?, die_type=?, core=?, pices_per_roll=? WHERE id=?');
+      if ($stmt) {
+        $stmt->bind_param(
+          'sssssssssssi',
+          $data['barcode_size'],
+          $data['ups_in_roll'],
+          $data['up_in_die'],
+          $data['label_gap'],
+          $data['paper_size'],
+          $data['cylender'],
+          $data['repeat_size'],
+          $data['used_for'],
+          $data['die_type'],
+          $data['core'],
+          $data['pices_per_roll'],
+          $id
+        );
+        if ($stmt->execute()) {
+          setFlash('success', 'Barcode die entry updated successfully.');
+          $stmt->close();
+          redirect(dieToolingRedirectUrl($mode));
+        }
+        $editModalErrors[] = 'Unable to update entry.';
+        $stmt->close();
+      } else {
+        $editModalErrors[] = 'Unable to prepare update query.';
+      }
+    }
   }
 
   if ($action === 'delete_die_tool') {
@@ -256,6 +307,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if ($action === 'import_preview') {
     if ($isDesignMode) {
       setFlash('error', 'Import is disabled in Design Barcode Die.');
+      redirect(dieToolingRedirectUrl($mode));
+    }
+
+    $uploadError = (int)($_FILES['import_file']['error'] ?? UPLOAD_ERR_NO_FILE);
+    if ($uploadError !== UPLOAD_ERR_OK) {
+      $uploadMessage = 'Please choose a file to upload.';
+      if ($uploadError === UPLOAD_ERR_INI_SIZE || $uploadError === UPLOAD_ERR_FORM_SIZE) {
+        $uploadMessage = 'Upload failed. File size exceeds the server limit of ' . ini_get('upload_max_filesize') . '.';
+      } elseif ($uploadError === UPLOAD_ERR_PARTIAL) {
+        $uploadMessage = 'Upload failed. The file was only partially uploaded.';
+      } elseif ($uploadError === UPLOAD_ERR_NO_TMP_DIR) {
+        $uploadMessage = 'Upload failed. Temporary upload directory is missing.';
+      } elseif ($uploadError === UPLOAD_ERR_CANT_WRITE) {
+        $uploadMessage = 'Upload failed. Server could not write the file.';
+      } elseif ($uploadError === UPLOAD_ERR_EXTENSION) {
+        $uploadMessage = 'Upload failed. A PHP extension stopped the upload.';
+      }
+      setFlash('error', $uploadMessage);
       redirect(dieToolingRedirectUrl($mode));
     }
 
@@ -335,6 +404,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $rows = (array)($preview['rows'] ?? []);
     $clearExisting = !empty($_POST['clear_existing']);
 
+    if ($dieTypeAllowedValues && $dieTypeScope === '' && $dieTypeScopeLabel === '') {
+      $mappedDieTypeHeader = trim((string)($mapping['die_type'] ?? ''));
+      if ($mappedDieTypeHeader === '') {
+        $mappedDieTypeHeader = trim((string)($autoMapping['die_type'] ?? ''));
+      }
+      if ($mappedDieTypeHeader === '') {
+        setFlash('error', 'Please map the Die Type column. Only Flatbed and Rotary values are allowed here.');
+        redirect(dieToolingRedirectUrl($mode));
+      }
+    }
+
     if ($clearExisting) {
       if ($dieTypeScopeLabel !== '') {
         $safeLabel = $db->real_escape_string(mb_strtolower(trim($dieTypeScopeLabel), 'UTF-8'));
@@ -342,12 +422,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       } elseif ($dieTypeScope !== '') {
         $safeScope = $db->real_escape_string($dieTypeScope);
         $db->query("DELETE FROM master_die_tooling WHERE LOWER(COALESCE(die_type, '')) LIKE '%{$safeScope}%'");
+      } elseif ($dieTypeAllowedValues) {
+        $deleteWhere = dieToolingBuildAllowedTypeWhere($db, $dieTypeAllowedValues, 'die_type');
+        if ($deleteWhere !== '') {
+          $db->query('DELETE FROM master_die_tooling' . $deleteWhere);
+        }
       } else {
         $db->query('DELETE FROM master_die_tooling');
       }
     }
 
     $inserted = 0;
+    $skippedInvalidType = 0;
     $stmt = $db->prepare('INSERT INTO master_die_tooling (sl_no, barcode_size, ups_in_roll, up_in_die, label_gap, paper_size, cylender, repeat_size, used_for, die_type, core, pices_per_roll) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     if (!$stmt) {
       setFlash('error', 'Unable to prepare import insert statement.');
@@ -386,6 +472,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       if ($dieTypeScope !== '') {
         $payload['die_type'] = $dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope);
+      } else {
+        $payload['die_type'] = dieToolingCanonicalTypeLabel($payload['die_type'] ?? '');
+      }
+
+      if (!dieToolingTypeMatchesAllowed($payload['die_type'] ?? '', $dieTypeAllowedValues)) {
+        $skippedInvalidType++;
+        continue;
       }
 
       $stmt->bind_param(
@@ -409,9 +502,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $stmt->close();
+
+    if ($inserted === 0 && $skippedInvalidType > 0) {
+      setFlash('error', 'Import blocked. Only Flatbed and Rotary Die Type values are allowed in this Barcode Die import.');
+      redirect(dieToolingRedirectUrl($mode));
+    }
+
     unset($_SESSION['die_tooling_import_preview']);
 
-    setFlash('success', 'Import complete. Total inserted: ' . $inserted);
+    $importMessage = 'Import complete. Total inserted: ' . $inserted;
+    if ($skippedInvalidType > 0) {
+      $importMessage .= ' | Skipped invalid Die Type rows: ' . $skippedInvalidType;
+    }
+    setFlash('success', $importMessage);
     redirect(dieToolingRedirectUrl($mode));
   }
 }
@@ -434,7 +537,14 @@ if ($editingId > 0) {
     if ($editingRow && !dieToolingRowMatchesScope($editingRow['die_type'] ?? '', $dieTypeScope)) {
       $editingRow = null;
     }
+    if ($editingRow && !dieToolingTypeMatchesAllowed($editingRow['die_type'] ?? '', $dieTypeAllowedValues)) {
+      $editingRow = null;
+    }
   }
+}
+
+if ($editFormValues) {
+  $editingRow = array_merge((array)$editingRow, $editFormValues, ['id' => $editingId]);
 }
 
 $scopeWhere = '';
@@ -444,6 +554,17 @@ if ($dieTypeScopeLabel !== '') {
 } elseif ($dieTypeScope !== '') {
   $safeScope = $db->real_escape_string($dieTypeScope);
   $scopeWhere = " WHERE LOWER(COALESCE(die_type, '')) LIKE '%{$safeScope}%'";
+} elseif ($dieTypeAllowedValues) {
+  $scopeWhere = dieToolingBuildAllowedTypeWhere($db, $dieTypeAllowedValues, 'die_type');
+}
+
+$exportQuery = 'mode=' . urlencode($mode) . '&format=';
+if ($dieTypeAllowedValues) {
+  $exportQuery .= '{format}&allowed_types=' . urlencode(implode(',', $dieTypeAllowedValues)) . '&entity_label=' . urlencode($entityLabel);
+} elseif ($dieTypeScope !== '') {
+  $exportQuery .= '{format}&scope=' . urlencode($dieTypeScope) . '&scope_label=' . urlencode($dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope));
+} else {
+  $exportQuery .= '{format}';
 }
 
 $rows = [];
@@ -504,6 +625,7 @@ if (!$isEmbedded) {
 ?>
 
 <style>
+.die-tooling-shell{max-width:min(1640px,calc(100vw - 28px));margin:0 auto}
 .barcode-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
 .barcode-btn { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); border-radius:10px; padding:8px 12px; font-size:.78rem; font-weight:700; text-decoration:none; background:#fff; color:var(--text-main); }
 .barcode-btn.green { color:#15803d; border-color:#86efac; }
@@ -520,6 +642,7 @@ if (!$isEmbedded) {
 .ps-qf-item label{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8}
 .ps-qf-item input,.ps-qf-item select{height:36px;border:1px solid var(--border);border-radius:8px;padding:0 10px;font-size:.8rem;background:#fff}
 .ps-qf-item input:focus,.ps-qf-item select:focus{outline:none;border-color:#86efac;box-shadow:0 0 0 3px rgba(34,197,94,.1)}
+.barcode-sort-select{min-width:160px}
 .ps-qf-actions{display:flex;align-items:center;gap:8px;min-width:max-content;padding-top:18px}
 .ps-qf-reset{height:36px;display:inline-flex;align-items:center;justify-content:center;padding:0 14px;border-radius:8px;background:#f97316;color:#fff;border:none;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap}
 .ps-qf-picker{position:relative}
@@ -552,8 +675,8 @@ if (!$isEmbedded) {
 .cfp-foot .ok{background:#16a34a;color:#fff}
 .cfp-foot .apply{background:#0f172a;color:#fff}
 
-.table-responsive{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0}
-.barcode-die-table{min-width:980px;width:max-content}
+.table-responsive{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 auto}
+.barcode-die-table{min-width:980px;width:max-content;margin:0 auto}
 .barcode-die-table thead th { background:#dbeafe; color:#1e3a8a; border-color:#bfdbfe; font-weight:700; white-space:nowrap; }
 .barcode-die-table tbody td { border-color:#e2e8f0; }
 .die-calc-box{margin-top:10px;border:1px solid #fdba74;border-radius:12px;background:#fff7ed;padding:12px}
@@ -579,8 +702,13 @@ if (!$isEmbedded) {
 .modal-form-input { width:100%; height:40px; border:1px solid #cbd5e1; border-radius:10px; padding:0 12px; font-size:.85rem; background:#fff; color:#0f172a; transition:border-color .15s,box-shadow .15s; }
 .modal-form-input:focus { outline:none; border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,.15); }
 .modal-form-input[readonly] { background:#f8fafc; color:#94a3b8; cursor:not-allowed; }
+.modal-inline-error{margin-bottom:14px;padding:10px 12px;border:1px solid #fecaca;border-radius:10px;background:#fff1f2;color:#991b1b;font-size:.82rem;font-weight:700}
+.modal-inline-error ul{margin:8px 0 0 18px;padding:0;font-weight:600}
+.modal-form-input.has-error{border-color:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.12)}
+@media (max-width:768px){.die-tooling-shell{max-width:100%;padding:0 2px}}
 </style>
 
+<div class="die-tooling-shell">
 <div class="card">
   <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
     <span class="card-title"><?= e($pageTitle) ?></span>
@@ -590,11 +718,11 @@ if (!$isEmbedded) {
       <?php endif; ?>
       <?php if (!$isDesignMode): ?>
         <button type="button" class="barcode-btn red" id="bulkDeleteTrigger" disabled><i class="bi bi-trash3"></i> Bulk Delete</button>
-        <a class="barcode-btn blue" href="<?= BASE_URL ?>/modules/die-tooling/export.php?mode=<?= e($mode) ?>&format=excel<?= $dieTypeScope !== '' ? '&scope=' . urlencode($dieTypeScope) . '&scope_label=' . urlencode($dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope)) : '' ?>"><i class="bi bi-file-earmark-excel"></i> Export Excel</a>
-        <a class="barcode-btn orange" target="_blank" href="<?= BASE_URL ?>/modules/die-tooling/export.php?mode=<?= e($mode) ?>&format=pdf<?= $dieTypeScope !== '' ? '&scope=' . urlencode($dieTypeScope) . '&scope_label=' . urlencode($dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope)) : '' ?>"><i class="bi bi-printer"></i> Print / PDF</a>
+        <a class="barcode-btn blue" href="<?= BASE_URL ?>/modules/die-tooling/export.php?<?= e(str_replace('{format}', 'excel', $exportQuery)) ?>"><i class="bi bi-file-earmark-excel"></i> Export Excel</a>
+        <a class="barcode-btn orange" target="_blank" href="<?= BASE_URL ?>/modules/die-tooling/export.php?<?= e(str_replace('{format}', 'pdf', $exportQuery)) ?>"><i class="bi bi-printer"></i> Print / PDF</a>
       <?php else: ?>
-        <a class="barcode-btn blue" href="<?= BASE_URL ?>/modules/die-tooling/export.php?mode=<?= e($mode) ?>&format=excel<?= $dieTypeScope !== '' ? '&scope=' . urlencode($dieTypeScope) . '&scope_label=' . urlencode($dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope)) : '' ?>"><i class="bi bi-file-earmark-excel"></i> Export Excel</a>
-        <a class="barcode-btn orange" target="_blank" href="<?= BASE_URL ?>/modules/die-tooling/export.php?mode=<?= e($mode) ?>&format=pdf<?= $dieTypeScope !== '' ? '&scope=' . urlencode($dieTypeScope) . '&scope_label=' . urlencode($dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope)) : '' ?>"><i class="bi bi-printer"></i> Print / PDF</a>
+        <a class="barcode-btn blue" href="<?= BASE_URL ?>/modules/die-tooling/export.php?<?= e(str_replace('{format}', 'excel', $exportQuery)) ?>"><i class="bi bi-file-earmark-excel"></i> Export Excel</a>
+        <a class="barcode-btn orange" target="_blank" href="<?= BASE_URL ?>/modules/die-tooling/export.php?<?= e(str_replace('{format}', 'pdf', $exportQuery)) ?>"><i class="bi bi-printer"></i> Print / PDF</a>
       <?php endif; ?>
     </div>
   </div>
@@ -605,20 +733,21 @@ if (!$isEmbedded) {
 
   <?php if (!$isDesignMode): ?>
     <div style="border:1px solid var(--border);border-radius:10px;padding:12px;background:#f8fafc;margin-bottom:10px;">
-      <form method="POST" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <form method="POST" action="<?= e(dieToolingRedirectUrl($mode)) ?>" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
         <input type="hidden" name="action" value="import_preview">
         <input type="file" name="import_file" accept=".csv,.xlsx" required>
         <button class="btn btn-primary" type="submit"><i class="bi bi-upload"></i> Upload &amp; Preview Mapping</button>
         <?php if ($importPreview): ?>
-          <a class="btn btn-ghost" href="<?= dieToolingRedirectUrl($mode) ?>?clear_import=1"><i class="bi bi-x-lg"></i> Clear Preview</a>
+          <a class="btn btn-ghost" href="<?= e(dieToolingBuildUrl($mode, ['clear_import' => 1])) ?>"><i class="bi bi-x-lg"></i> Clear Preview</a>
         <?php endif; ?>
       </form>
+      <div style="margin-top:8px;font-size:.76rem;color:#64748b;">Supported: CSV, XLSX | Current upload limit: <?= e((string)ini_get('upload_max_filesize')) ?></div>
 
       <?php if ($importPreview): ?>
         <div style="margin-top:10px;padding:10px;border:1px solid #bfdbfe;border-radius:8px;background:#eff6ff;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
           <div style="font-weight:600;">File: <?= e((string)$importPreview['source_name']) ?> | Rows: <?= count((array)$importPreview['rows']) ?></div>
-          <button class="btn btn-primary btn-sm" type="button" onclick="openImportMapModal()"><i class="bi bi-diagram-3"></i> Open Mapping Window</button>
+          <div style="font-size:.82rem;color:#1d4ed8;font-weight:700;">Preview is ready below. Review mapping and apply import.</div>
         </div>
       <?php endif; ?>
     </div>
@@ -676,13 +805,14 @@ foreach ($rows as $rowItem) {
           <input type="number" id="dieCalcMeter" min="0" step="0.01" placeholder="Enter meter">
         </div>
       </div>
-      <div style="font-size:.74rem;color:#9a3412;margin-top:8px;">Enter Quantity to get Meter, or enter Meter to get Quantity. Formula: If Pcs/Roll available → Meter = Qty / Pcs/Roll; else → Meter = (Qty / UPS) × (Repeat / 1000)</div>
+      <div style="font-size:.74rem;color:#9a3412;margin-top:8px;">Enter Quantity to get Meter, or enter Meter to get Quantity. Formula: Meter = (Qty / UPS in Die) × (Repeat / 1000). If UPS in Die or Repeat is missing, calculator falls back to Qty / Pcs per Roll.</div>
     </div>
   <?php endif; ?>
 
   <div class="ps-quick-filter no-print" id="ps-quick-filter">
     <div class="ps-qf-item"><label>Global Search</label><input type="text" id="qf-search" placeholder="Search everything..."></div>
     <div class="ps-qf-item"><label>Barcode Size</label><input type="text" id="qf-barcode" placeholder="e.g. 33mm X 15mm"></div>
+    <div class="ps-qf-item"><label>Barcode Order</label><select id="qf-barcode-sort" class="barcode-sort-select"><option value="">Default</option><option value="asc">Ascending (A-Z)</option><option value="desc">Descending (Z-A)</option></select></div>
     <div class="ps-qf-item">
       <label>Used IN</label>
       <div class="ps-qf-picker">
@@ -764,7 +894,7 @@ foreach ($rows as $rowItem) {
             <td><?= e((string)$row['core']) ?></td>
             <td><?= e((string)$row['pices_per_roll']) ?></td>
             <td>
-              <a class="btn btn-sm btn-primary" href="<?= dieToolingRedirectUrl($mode) ?>?edit_id=<?= (int)$row['id'] ?>"><i class="bi bi-pencil"></i></a>
+              <a class="btn btn-sm btn-primary" href="<?= e(dieToolingBuildUrl($mode, ['edit_id' => (int)$row['id']])) ?>"><i class="bi bi-pencil"></i></a>
               <?php if (!$isDesignMode): ?>
                 <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this row?');">
                   <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
@@ -790,15 +920,19 @@ foreach ($rows as $rowItem) {
       <button class="btn btn-sm btn-ghost" type="button" onclick="closeAddModal()"><i class="bi bi-x-lg"></i></button>
     </div>
     <div class="modal-body-pad">
-      <form method="POST">
+      <form method="POST" id="addDieForm" novalidate>
         <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
         <input type="hidden" name="action" value="add_die_tool">
+        <div class="modal-inline-error" id="addDieModalError" style="display:<?= $addModalErrors ? 'block' : 'none' ?>;">
+          <div>Please fix the following before saving.</div>
+          <ul><?php foreach ($addModalErrors as $modalError): ?><li><?= e((string)$modalError) ?></li><?php endforeach; ?></ul>
+        </div>
         <div class="modal-form-section">
         <?php foreach ($columns as $key => $label): ?>
           <?php $isScopedDieType = ($key === 'die_type' && $dieTypeScope !== ''); ?>
           <div>
             <label class="modal-form-label"><?= e($label) ?></label>
-            <input type="text" name="<?= e($key) ?>" class="modal-form-input" value="<?= e($isScopedDieType ? ($dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope)) : '') ?>" list="barcode-die-suggestions-<?= e($key) ?>" autocomplete="off" <?= $isScopedDieType ? 'readonly' : '' ?>>
+            <input type="text" name="<?= e($key) ?>" class="modal-form-input" data-label="<?= e($label) ?>" value="<?= e($isScopedDieType ? ($dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope)) : (string)($addFormValues[$key] ?? '')) ?>" list="barcode-die-suggestions-<?= e($key) ?>" autocomplete="off" <?= $isScopedDieType ? 'readonly' : '' ?>>
           </div>
         <?php endforeach; ?>
         </div>
@@ -820,16 +954,20 @@ foreach ($rows as $rowItem) {
       <a class="btn btn-sm btn-ghost" href="<?= dieToolingRedirectUrl($mode) ?>"><i class="bi bi-x-lg"></i></a>
     </div>
     <div class="modal-body-pad">
-      <form method="POST">
+      <form method="POST" id="editDieForm" novalidate>
         <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
         <input type="hidden" name="action" value="update_die_tool">
         <input type="hidden" name="id" value="<?= (int)$editingRow['id'] ?>">
+        <div class="modal-inline-error" id="editDieModalError" style="display:<?= $editModalErrors ? 'block' : 'none' ?>;">
+          <div>Please fix the following before updating.</div>
+          <ul><?php foreach ($editModalErrors as $modalError): ?><li><?= e((string)$modalError) ?></li><?php endforeach; ?></ul>
+        </div>
         <div class="modal-form-section">
         <?php foreach ($columns as $key => $label): ?>
           <?php $isScopedDieType = ($key === 'die_type' && $dieTypeScope !== ''); ?>
           <div>
             <label class="modal-form-label"><?= e($label) ?></label>
-            <input type="text" name="<?= e($key) ?>" class="modal-form-input" value="<?= e($isScopedDieType ? ($dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope)) : (string)($editingRow[$key] ?? '')) ?>" list="barcode-die-suggestions-<?= e($key) ?>" autocomplete="off" <?= $isScopedDieType ? 'readonly' : '' ?>>
+            <input type="text" name="<?= e($key) ?>" class="modal-form-input" data-label="<?= e($label) ?>" value="<?= e($isScopedDieType ? ($dieTypeScopeLabel !== '' ? $dieTypeScopeLabel : ucfirst($dieTypeScope)) : (string)($editingRow[$key] ?? '')) ?>" list="barcode-die-suggestions-<?= e($key) ?>" autocomplete="off" <?= $isScopedDieType ? 'readonly' : '' ?>>
           </div>
         <?php endforeach; ?>
         </div>
@@ -842,6 +980,7 @@ foreach ($rows as $rowItem) {
   </div>
 </div>
 <?php endif; ?>
+</div>
 
 <?php foreach ($columns as $key => $label): ?>
   <datalist id="barcode-die-suggestions-<?= e($key) ?>">
@@ -852,13 +991,12 @@ foreach ($rows as $rowItem) {
 <?php endforeach; ?>
 
 <?php if (!$isDesignMode && $importPreview): ?>
-<div id="importMapModal" class="modal-overlay">
-  <div class="modal-card">
-    <div class="modal-head">
-      <strong>Import Mapping - <?= e($entityLabel) ?></strong>
-      <button class="btn btn-sm btn-ghost" type="button" onclick="closeImportMapModal()"><i class="bi bi-x-lg"></i></button>
-    </div>
-    <div style="padding:14px;">
+<div class="card" id="importMapInlineCard" style="margin-top:12px;">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+    <span class="card-title">Import Mapping - <?= e($entityLabel) ?></span>
+    <a class="btn btn-sm btn-ghost" href="<?= e(dieToolingRedirectUrl($mode)) ?>"><i class="bi bi-x-lg"></i> Close Preview</a>
+  </div>
+  <div style="padding:14px;">
       <div style="margin-bottom:10px;padding:8px 10px;border:1px solid #dbeafe;background:#eff6ff;border-radius:8px;font-size:.86rem;color:#1e3a8a;">
         Auto-matched columns are pre-selected. Green tick means mapped.
       </div>
@@ -890,7 +1028,7 @@ foreach ($rows as $rowItem) {
         </div>
       </details>
 
-      <form method="POST" class="form-grid-2" id="importMapForm">
+      <form method="POST" action="<?= e(dieToolingRedirectUrl($mode)) ?>" class="form-grid-2" id="importMapForm">
         <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
         <input type="hidden" name="action" value="import_apply">
 
@@ -914,15 +1052,14 @@ foreach ($rows as $rowItem) {
         <div class="col-span-2" style="padding:10px 0 2px;">
           <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:.88rem;padding:8px 12px;border-radius:8px;border:1px solid #fca5a5;background:#fff1f2;color:#b91c1c;font-weight:600;">
             <input type="checkbox" name="clear_existing" value="1" style="width:16px;height:16px;accent-color:#dc2626;">
-            Clear all existing data before importing
+            Clear existing Flatbed and Rotary barcode data before importing
           </label>
         </div>
         <div class="form-actions col-span-2" style="display:flex;justify-content:flex-end;gap:8px;">
-          <button type="button" class="btn btn-secondary" onclick="closeImportMapModal()">Cancel</button>
+          <a class="btn btn-secondary" href="<?= e(dieToolingRedirectUrl($mode)) ?>">Cancel</a>
           <button type="submit" class="btn btn-success">Apply Import</button>
         </div>
       </form>
-    </div>
   </div>
 </div>
 <?php endif; ?>
@@ -933,6 +1070,7 @@ foreach ($rows as $rowItem) {
   var dieCalcQty = document.getElementById('dieCalcQty');
   var dieCalcMeter = document.getElementById('dieCalcMeter');
   if (dieCalcSelect && dieCalcQty && dieCalcMeter) {
+    var calculatorSyncing = false;
     function parseNum(raw) {
       var cleaned = String(raw || '').trim().replace(/,/g, '').replace(/[^0-9.\-]/g, '');
       var n = parseFloat(cleaned);
@@ -947,28 +1085,34 @@ foreach ($rows as $rowItem) {
       };
     }
     function recalcFromQty() {
+      if (calculatorSyncing) return;
+      calculatorSyncing = true;
       var p = getDieParams();
       var qty = parseNum(dieCalcQty.value || 0);
-      if (qty <= 0) { dieCalcMeter.value = ''; return; }
+      if (qty <= 0) { dieCalcMeter.value = ''; calculatorSyncing = false; return; }
       var meter = 0;
-      if (p.picesPerRoll > 0) {
-        meter = qty / p.picesPerRoll;
-      } else if (p.ups > 0 && p.repeatValue > 0) {
+      if (p.ups > 0 && p.repeatValue > 0) {
         meter = (qty / p.ups) * (p.repeatValue / 1000);
+      } else if (p.picesPerRoll > 0) {
+        meter = qty / p.picesPerRoll;
       }
       dieCalcMeter.value = meter > 0 ? meter.toFixed(2) : '';
+      calculatorSyncing = false;
     }
     function recalcFromMeter() {
+      if (calculatorSyncing) return;
+      calculatorSyncing = true;
       var p = getDieParams();
       var meter = parseNum(dieCalcMeter.value || 0);
-      if (meter <= 0) { dieCalcQty.value = ''; return; }
+      if (meter <= 0) { dieCalcQty.value = ''; calculatorSyncing = false; return; }
       var qty = 0;
-      if (p.picesPerRoll > 0) {
-        qty = meter * p.picesPerRoll;
-      } else if (p.ups > 0 && p.repeatValue > 0) {
+      if (p.ups > 0 && p.repeatValue > 0) {
         qty = (meter / (p.repeatValue / 1000)) * p.ups;
+      } else if (p.picesPerRoll > 0) {
+        qty = meter * p.picesPerRoll;
       }
       dieCalcQty.value = qty > 0 ? Math.round(qty) : '';
+      calculatorSyncing = false;
     }
     dieCalcQty.addEventListener('input', function () { recalcFromQty(); });
     dieCalcMeter.addEventListener('input', function () { recalcFromMeter(); });
@@ -1046,20 +1190,62 @@ foreach ($rows as $rowItem) {
   };
 
   window.openImportMapModal = function () {
-    var modal = document.getElementById('importMapModal');
-    if (modal) modal.style.display = 'block';
+    var inlineCard = document.getElementById('importMapInlineCard');
+    if (inlineCard) {
+      inlineCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   };
-  window.closeImportMapModal = function () {
-    var modal = document.getElementById('importMapModal');
-    if (modal) modal.style.display = 'none';
-  };
+  window.closeImportMapModal = function () {};
 
   document.addEventListener('click', function (e) {
     var addModal = document.getElementById('addDieModal');
     if (addModal && e.target === addModal) closeAddModal();
-    var importModal = document.getElementById('importMapModal');
-    if (importModal && e.target === importModal) closeImportMapModal();
   });
+
+  function validateDieForm(formId, errorId) {
+    var form = document.getElementById(formId);
+    var errorBox = document.getElementById(errorId);
+    if (!form || !errorBox) return;
+
+    form.addEventListener('submit', function (event) {
+      var missing = [];
+      form.querySelectorAll('.modal-form-input').forEach(function (input) {
+        var value = String(input.value || '').trim();
+        var label = input.getAttribute('data-label') || 'Field';
+        var isReadonly = input.hasAttribute('readonly');
+        if (!isReadonly && value === '') {
+          missing.push(label);
+          input.classList.add('has-error');
+        } else {
+          input.classList.remove('has-error');
+        }
+      });
+
+      if (missing.length > 0) {
+        event.preventDefault();
+        errorBox.style.display = 'block';
+        errorBox.innerHTML = '<div>Please fill the missing fields.</div><ul><li>' + missing.join('</li><li>') + '</li></ul>';
+      } else {
+        errorBox.style.display = 'none';
+      }
+    });
+
+    form.querySelectorAll('.modal-form-input').forEach(function (input) {
+      input.addEventListener('input', function () {
+        if (String(input.value || '').trim() !== '') {
+          input.classList.remove('has-error');
+        }
+      });
+    });
+  }
+
+  validateDieForm('addDieForm', 'addDieModalError');
+  validateDieForm('editDieForm', 'editDieModalError');
+
+  var addErrorBox = document.getElementById('addDieModalError');
+  if (addErrorBox && addErrorBox.style.display !== 'none') {
+    openAddModal();
+  }
 
   document.querySelectorAll('[data-map-select]').forEach(function (select) {
     var key = select.getAttribute('data-map-select') || '';
@@ -1082,7 +1268,7 @@ foreach ($rows as $rowItem) {
     select.addEventListener('change', updateTick);
   });
 
-  if (document.getElementById('importMapModal')) {
+  if (document.getElementById('importMapInlineCard')) {
     openImportMapModal();
   }
 })();
@@ -1101,6 +1287,7 @@ foreach ($rows as $rowItem) {
   var qf = {
     search: document.getElementById('qf-search'),
     barcode: document.getElementById('qf-barcode'),
+    barcodeSort: document.getElementById('qf-barcode-sort'),
     used: document.getElementById('qf-used'),
     dietype: document.getElementById('qf-dietype'),
     core: document.getElementById('qf-core'),
@@ -1209,7 +1396,34 @@ foreach ($rows as $rowItem) {
     return true;
   }
 
+  function barcodeColIndex() {
+    var heads = Array.prototype.slice.call(table.querySelectorAll('thead th'));
+    for (var i = 0; i < heads.length; i++) {
+      var t = norm(heads[i].textContent || '');
+      if (t.indexOf('barcode size') !== -1 || t.indexOf('barcode') !== -1) {
+        return i;
+      }
+    }
+    return 1;
+  }
+
+  function sortRowsByBarcode() {
+    var dir = String((qf.barcodeSort && qf.barcodeSort.value) || '').trim();
+    if (dir !== 'asc' && dir !== 'desc') return;
+    var tbody = table.querySelector('tbody');
+    if (!tbody) return;
+    var colIdx = barcodeColIndex();
+    rows.sort(function (a, b) {
+      var av = norm(cell(a, colIdx));
+      var bv = norm(cell(b, colIdx));
+      var cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' });
+      return dir === 'asc' ? cmp : -cmp;
+    });
+    rows.forEach(function (row) { tbody.appendChild(row); });
+  }
+
   function applyAllFilters() {
+    sortRowsByBarcode();
     rows.forEach(function (row) {
       row.style.display = (quickPass(row) && colPass(row)) ? '' : 'none';
     });
@@ -1321,6 +1535,9 @@ foreach ($rows as $rowItem) {
     if (!el) return;
     el.addEventListener('input', applyAllFilters);
   });
+  if (qf.barcodeSort) {
+    qf.barcodeSort.addEventListener('change', applyAllFilters);
+  }
 
   ['used', 'dietype', 'core'].forEach(updatePickerLabel);
 

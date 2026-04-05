@@ -11,6 +11,8 @@ $mode = (($_GET['mode'] ?? 'master') === 'design') ? 'design' : 'master';
 $format = strtolower(trim((string)($_GET['format'] ?? 'excel')));
 $scope = mb_strtolower(trim((string)($_GET['scope'] ?? '')), 'UTF-8');
 $scopeLabel = trim((string)($_GET['scope_label'] ?? ''));
+$allowedTypes = dieToolingNormalizeTypeList(array_filter(array_map('trim', explode(',', (string)($_GET['allowed_types'] ?? '')))));
+$entityLabelOverride = trim((string)($_GET['entity_label'] ?? ''));
 if (!in_array($format, ['excel', 'pdf'], true)) {
   $format = 'excel';
 }
@@ -22,6 +24,8 @@ if ($scopeLabel !== '') {
 } elseif ($scope !== '') {
   $safeScope = $db->real_escape_string($scope);
   $scopeWhere = " WHERE LOWER(COALESCE(die_type, '')) LIKE '%{$safeScope}%'";
+} elseif ($allowedTypes) {
+  $scopeWhere = dieToolingBuildAllowedTypeWhere($db, $allowedTypes, 'die_type');
 }
 
 $rows = [];
@@ -30,7 +34,7 @@ if ($res) {
   $rows = $res->fetch_all(MYSQLI_ASSOC);
 }
 
-$entityLabel = $scopeLabel !== '' ? ($scopeLabel . ' Barcode Die') : 'Barcode Die';
+$entityLabel = $entityLabelOverride !== '' ? $entityLabelOverride : ($scopeLabel !== '' ? ($scopeLabel . ' Barcode Die') : 'Barcode Die');
 $title = $mode === 'design' ? ('Design ' . $entityLabel) : ('Master ' . $entityLabel);
 $dateNow = date('d M Y h:i A');
 $appSettings = getAppSettings();

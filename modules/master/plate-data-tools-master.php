@@ -9,8 +9,7 @@ $tabItems = [
 	['key' => 'plate_management_master', 'label' => 'Plate Management Master', 'icon' => 'grid'],
 	['key' => 'flatbed_printing_die_master', 'label' => 'Flatbed Printing Die Master', 'icon' => 'layout-wtf'],
 	['key' => 'rotary_printing_die_master', 'label' => 'Rotary Printing Die Master', 'icon' => 'gear-wide-connected'],
-	['key' => 'flatbed_barcode_die_master', 'label' => 'Flatbed Barcode Die Master', 'icon' => 'layout-split'],
-	['key' => 'rotary_barcode_die_master', 'label' => 'Rotary Barcode Die Master', 'icon' => 'qr-code-scan'],
+	['key' => 'barcode_die_master', 'label' => 'Barcode Die Master', 'icon' => 'upc-scan'],
 	['key' => 'magnetic_printing_cylinder_master', 'label' => 'Magnetic Printing Cylinder Master', 'icon' => 'circle-square'],
 	['key' => 'sheeter_printing_cylinder_master', 'label' => 'Sheeter Printing Cylinder Master', 'icon' => 'layers-half'],
 	['key' => 'magnetic_barcode_cylinder_master', 'label' => 'Magnetic Barcode Cylinder Master', 'icon' => 'bullseye'],
@@ -35,24 +34,21 @@ $moduleTabKeys = [
 	'plate_management_master',
 	'flatbed_printing_die_master',
 	'rotary_printing_die_master',
-	'flatbed_barcode_die_master',
-	'rotary_barcode_die_master',
+	'barcode_die_master',
 	'anilox_master',
 ];
 
 $dieManagementTabs = [
 	'flatbed_printing_die_master',
 	'rotary_printing_die_master',
-	'flatbed_barcode_die_master',
-	'rotary_barcode_die_master',
+	'barcode_die_master',
 ];
 $printingDieTabs = [
 	'flatbed_printing_die_master',
 	'rotary_printing_die_master',
 ];
 $barcodeDieTabs = [
-	'flatbed_barcode_die_master',
-	'rotary_barcode_die_master',
+	'barcode_die_master',
 ];
 $activeModuleHtml = '';
 if (in_array($activeTab, $moduleTabKeys, true)) {
@@ -80,22 +76,11 @@ if (in_array($activeTab, $moduleTabKeys, true)) {
 		$dieToolingDieTypeScope = 'rotary';
 		$dieToolingDieTypeScopeLabel = 'Rotary';
 		require __DIR__ . '/../die-tooling/index.php';
-	} elseif ($activeTab === 'flatbed_barcode_die_master') {
-		$dieToolingEmbedded = true;
-		$dieToolingRedirectUrlOverride = $tabBasePath . '?tab=flatbed_barcode_die_master';
-		$dieToolingPageTitleOverride = 'Flatbed Barcode Die Master';
-		$dieToolingEntityLabelOverride = 'Flatbed Barcode Die';
-		$dieToolingDieTypeScope = 'flatbed';
-		$dieToolingDieTypeScopeLabel = 'Flatbed';
-		require __DIR__ . '/../die-tooling/index.php';
-	} elseif ($activeTab === 'rotary_barcode_die_master') {
-		$dieToolingEmbedded = true;
-		$dieToolingRedirectUrlOverride = $tabBasePath . '?tab=rotary_barcode_die_master';
-		$dieToolingPageTitleOverride = 'Rotary Barcode Die Master';
-		$dieToolingEntityLabelOverride = 'Rotary Barcode Die';
-		$dieToolingDieTypeScope = 'rotary';
-		$dieToolingDieTypeScopeLabel = 'Rotary';
-		require __DIR__ . '/../die-tooling/index.php';
+	} elseif ($activeTab === 'barcode_die_master') {
+		$barcodeDieWorkspaceEmbedded = true;
+		$barcodeDieWorkspaceModeOverride = 'master';
+		$barcodeDieWorkspaceBasePathOverride = $tabBasePath . '?tab=barcode_die_master&mode=master';
+		require __DIR__ . '/../plate-tools/die-management/barcode/index.php';
 	} elseif ($activeTab === 'anilox_master') {
 		$aniloxDataEmbedded = true;
 		$dieToolingRedirectUrlOverride = $tabBasePath . '?tab=anilox_master';

@@ -684,7 +684,8 @@ function rbacPageCatalog() {
         '/modules/planning/slitting/index.php' => 'Planning - Jumbo Slitting',
         '/modules/planning/printing/index.php' => 'Planning - Printing',
         '/modules/planning/flatbed/index.php' => 'Planning - Die-Cutting',
-        '/modules/planning/rotery/index.php' => 'Planning - Rotery Die',
+        '/modules/planning/barcode/index.php' => 'Planning - Barcode',
+        '/modules/planning/rotery/index.php' => 'Planning - Barcode (Legacy URL)',
         '/modules/planning/label-slitting/index.php' => 'Planning - Label Slitting',
         '/modules/planning/batch/index.php' => 'Planning - Batch Printing',
         '/modules/planning/packing/index.php' => 'Planning - Packaging',
@@ -715,6 +716,7 @@ function rbacPageCatalog() {
         '/modules/plate-tools/anilox-management/index.php' => 'Plate Data & Tools - Anilox Management',
         '/modules/plate-tools/die-management/printing/flatbed-printing-die.php' => 'Plate Data & Tools - Flatbed Printing Die',
         '/modules/plate-tools/die-management/printing/rotary-printing-die.php' => 'Plate Data & Tools - Rotary Printing Die',
+        '/modules/plate-tools/die-management/barcode/index.php' => 'Plate Data & Tools - Barcode Die',
         '/modules/plate-tools/die-management/barcode/flatbed-barcode-die.php' => 'Plate Data & Tools - Flatbed Barcode Die',
         '/modules/plate-tools/die-management/barcode/rotary-barcode-die.php' => 'Plate Data & Tools - Rotary Barcode Die',
         '/modules/plate-tools/cylinder-management/printing/magnetic-printing-cylinder.php' => 'Plate Data & Tools - Magnetic Printing Cylinder',
@@ -870,6 +872,18 @@ function rbacUserAllowedPaths($userId = null) {
  */
 function canAccessPath($path) {
     $path = rbacNormalizePath($path);
+    $aliases = [];
+    if ($path === '/modules/planning/barcode/index.php') $aliases[] = '/modules/planning/rotery/index.php';
+    if ($path === '/modules/planning/rotery/index.php') $aliases[] = '/modules/planning/barcode/index.php';
+    if ($path === '/modules/plate-tools/die-management/barcode/index.php') {
+        $aliases[] = '/modules/plate-tools/die-management/barcode/flatbed-barcode-die.php';
+        $aliases[] = '/modules/plate-tools/die-management/barcode/rotary-barcode-die.php';
+    }
+    if ($path === '/modules/plate-tools/die-management/barcode/flatbed-barcode-die.php' || $path === '/modules/plate-tools/die-management/barcode/rotary-barcode-die.php') {
+        $aliases[] = '/modules/plate-tools/die-management/barcode/index.php';
+        $aliases[] = '/modules/plate-tools/die-management/barcode/flatbed-barcode-die.php';
+        $aliases[] = '/modules/plate-tools/die-management/barcode/rotary-barcode-die.php';
+    }
 
     // Public or always-allowed authenticated routes.
     if ($path === '/auth/logout.php') return true;
@@ -896,7 +910,11 @@ function canAccessPath($path) {
     }
 
     $allowed = rbacUserAllowedPaths();
-    return in_array($path, $allowed, true);
+    if (in_array($path, $allowed, true)) return true;
+    foreach ($aliases as $alias) {
+        if (in_array($alias, $allowed, true)) return true;
+    }
+    return false;
 }
 
 /**
@@ -925,16 +943,36 @@ function hasPageAction($path, $action) {
     $cacheKey = $userId . ':' . $path . ':' . $column;
     if (isset($cache[$cacheKey])) return $cache[$cacheKey];
 
+    $pathsToCheck = [$path];
+    if ($path === '/modules/planning/barcode/index.php') $pathsToCheck[] = '/modules/planning/rotery/index.php';
+    if ($path === '/modules/planning/rotery/index.php') $pathsToCheck[] = '/modules/planning/barcode/index.php';
+    if ($path === '/modules/plate-tools/die-management/barcode/index.php') {
+        $pathsToCheck[] = '/modules/plate-tools/die-management/barcode/flatbed-barcode-die.php';
+        $pathsToCheck[] = '/modules/plate-tools/die-management/barcode/rotary-barcode-die.php';
+    }
+    if ($path === '/modules/plate-tools/die-management/barcode/flatbed-barcode-die.php' || $path === '/modules/plate-tools/die-management/barcode/rotary-barcode-die.php') {
+        $pathsToCheck[] = '/modules/plate-tools/die-management/barcode/index.php';
+        $pathsToCheck[] = '/modules/plate-tools/die-management/barcode/flatbed-barcode-die.php';
+        $pathsToCheck[] = '/modules/plate-tools/die-management/barcode/rotary-barcode-die.php';
+    }
+
     $db = getDB();
-    $q = $db->prepare("SELECT gpp.{$column}
-        FROM users u
-        INNER JOIN user_groups ug ON ug.id = u.group_id AND ug.is_active = 1
-        INNER JOIN group_page_permissions gpp ON gpp.group_id = ug.id AND gpp.page_path = ?
-        WHERE u.id = ? LIMIT 1");
-    $q->bind_param('si', $path, $userId);
-    $q->execute();
-    $row = $q->get_result()->fetch_assoc();
-    $cache[$cacheKey] = $row ? (bool)(int)$row[$column] : false;
+    $granted = false;
+    foreach ($pathsToCheck as $pathOption) {
+        $q = $db->prepare("SELECT gpp.{$column}
+            FROM users u
+            INNER JOIN user_groups ug ON ug.id = u.group_id AND ug.is_active = 1
+            INNER JOIN group_page_permissions gpp ON gpp.group_id = ug.id AND gpp.page_path = ?
+            WHERE u.id = ? LIMIT 1");
+        $q->bind_param('si', $pathOption, $userId);
+        $q->execute();
+        $row = $q->get_result()->fetch_assoc();
+        if ($row && (bool)(int)$row[$column]) {
+            $granted = true;
+            break;
+        }
+    }
+    $cache[$cacheKey] = $granted;
     return $cache[$cacheKey];
 }
 

@@ -75,6 +75,7 @@ $hold      = count(array_filter($rows, fn($r) => str_contains(strtolower($r['sta
 
 $dateLabels = ['all'=>'All Time','day'=>'Today','week'=>'This Week','month'=>'This Month','year'=>'This Year'];
 $currentUrl = BASE_URL . '/modules/planning/flatbed/index.php';
+$planningPageKey = 'die-cutting';
 include __DIR__ . '/../../../includes/header.php';
 ?>
 
@@ -85,6 +86,8 @@ include __DIR__ . '/../../../includes/header.php';
   <span class="breadcrumb-sep">&#8250;</span>
   <span>Die-Cutting</span>
 </div>
+
+<?php include __DIR__ . '/../_page_switcher.php'; ?>
 
 <style>
 :root{--dc-brand:#0ea5a4}

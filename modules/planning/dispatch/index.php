@@ -4,6 +4,7 @@ require_once __DIR__ . '/../../../includes/functions.php';
 require_once __DIR__ . '/../../../includes/auth_check.php';
 
 $pageTitle = 'Dispatch Planning';
+$planningPageKey = 'dispatch';
 include __DIR__ . '/../../../includes/header.php';
 ?>
 
@@ -16,6 +17,8 @@ include __DIR__ . '/../../../includes/header.php';
   <span class="breadcrumb-sep">&#8250;</span>
   <span>Dispatch</span>
 </div>
+
+<?php include __DIR__ . '/../_page_switcher.php'; ?>
 
 <div class="page-header">
   <div>

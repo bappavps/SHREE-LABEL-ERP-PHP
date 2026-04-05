@@ -86,7 +86,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
             <?= navSubItem('/modules/planning/slitting/index.php',       'Jumbo Slitting',  $currentFile, [], 'nav-sub-item-nested', 'scissors') ?>
             <?= navSubItem('/modules/planning/printing/index.php',       'Printing',        $currentFile, [], 'nav-sub-item-nested', 'printer') ?>
             <?= navSubItem('/modules/planning/flatbed/index.php',        'Die-Cutting',     $currentFile, [], 'nav-sub-item-nested', 'layout-wtf') ?>
-            <?= navSubItem('/modules/planning/rotery/index.php',         'BarCode',         $currentFile, [], 'nav-sub-item-nested', 'upc-scan') ?>
+            <?= navSubItem('/modules/planning/barcode/index.php',        'Barcode',         $currentFile, ['/modules/planning/rotery/index.php'], 'nav-sub-item-nested', 'upc-scan') ?>
             <?= navSubItem('/modules/planning/label-slitting/index.php', 'Label Slitting',  $currentFile, [], 'nav-sub-item-nested', 'layout-split') ?>
             <?= navSubItem('/modules/planning/batch/index.php',          'Batch Printing',  $currentFile, [], 'nav-sub-item-nested', 'stack') ?>
             <?= navSubItem('/modules/planning/packing/index.php',        'Packaging',       $currentFile, [], 'nav-sub-item-nested', 'box') ?>
@@ -126,8 +126,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
                 <i class="bi bi-chevron-down"></i>
               </a>
               <div class="nav-sub-children">
-                <?= navSubItem('/modules/plate-tools/die-management/barcode/flatbed-barcode-die.php', 'Flatbed Barcode Die', $currentFile, [], 'nav-sub-item-nested', 'upc-scan') ?>
-                <?= navSubItem('/modules/plate-tools/die-management/barcode/rotary-barcode-die.php', 'Rotary Barcode Die', $currentFile, [], 'nav-sub-item-nested', 'qr-code-scan') ?>
+                <?= navSubItem('/modules/plate-tools/die-management/barcode/index.php', 'Barcode Die', $currentFile, ['/modules/plate-tools/die-management/barcode/flatbed-barcode-die.php', '/modules/plate-tools/die-management/barcode/rotary-barcode-die.php'], 'nav-sub-item-nested', 'upc-scan') ?>
               </div>
             </div>
           </div>

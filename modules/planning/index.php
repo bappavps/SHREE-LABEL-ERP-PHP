@@ -121,12 +121,34 @@ function planning_default_route_departments($dieValue = '') {
 }
 
 function planning_department_options() {
-  return ['label-printing', 'printing', 'slitting', 'packing', 'dispatch', 'general'];
+  return [
+    'label-printing',
+    'jumbo-slitting',
+    'printing',
+    'die-cutting',
+    'barcode',
+    'label-slitting',
+    'batch-printing',
+    'packaging',
+    'dispatch',
+  ];
 }
 
 function planning_department_label($department) {
   $department = trim((string)$department);
-  if ($department === '') return 'General';
+  $labels = [
+    'label-printing' => 'Label Printing',
+    'jumbo-slitting' => 'Jumbo Slitting',
+    'printing' => 'Printing',
+    'die-cutting' => 'Die-Cutting',
+    'barcode' => 'Barcode',
+    'label-slitting' => 'Label Slitting',
+    'batch-printing' => 'Batch Printing',
+    'packaging' => 'Packaging',
+    'dispatch' => 'Dispatch',
+  ];
+  if ($department === '') return 'Label Printing';
+  if (isset($labels[$department])) return $labels[$department];
   return ucwords(str_replace('-', ' ', $department));
 }
 
@@ -2464,9 +2486,26 @@ include __DIR__ . '/../../includes/header.php';
     });
   }
 
+  var planningRouteMap = {
+    'label-printing': <?= json_encode(appUrl('/modules/planning/label/index.php')) ?>,
+    'jumbo-slitting': <?= json_encode(appUrl('/modules/planning/slitting/index.php')) ?>,
+    'printing': <?= json_encode(appUrl('/modules/planning/printing/index.php')) ?>,
+    'die-cutting': <?= json_encode(appUrl('/modules/planning/flatbed/index.php')) ?>,
+    'barcode': <?= json_encode(appUrl('/modules/planning/barcode/index.php')) ?>,
+    'label-slitting': <?= json_encode(appUrl('/modules/planning/label-slitting/index.php')) ?>,
+    'batch-printing': <?= json_encode(appUrl('/modules/planning/batch/index.php')) ?>,
+    'packaging': <?= json_encode(appUrl('/modules/planning/packing/index.php')) ?>,
+    'dispatch': <?= json_encode(appUrl('/modules/planning/dispatch/index.php')) ?>
+  };
+
   deptSwitch.addEventListener('change', function(){
+    var selected = String(deptSwitch.value || '').trim();
+    if (planningRouteMap[selected]) {
+      window.location.href = planningRouteMap[selected];
+      return;
+    }
     var url = new URL(window.location.href);
-    url.searchParams.set('department', deptSwitch.value);
+    url.searchParams.set('department', selected);
     window.location.href = url.toString();
   });
 
