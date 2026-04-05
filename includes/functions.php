@@ -1245,8 +1245,12 @@ function prefixSettingsDefaults() {
                 'batch' => ['prefix' => 'BAT', 'counter' => 0],
                 'sales_order' => ['prefix' => 'SO', 'counter' => 0],
                 'planning' => ['prefix' => 'PLN', 'counter' => 0],
+                'planning_barcode' => ['prefix' => 'PLN-BAR', 'counter' => 0],
                 'jumbo_job' => ['prefix' => 'SLT', 'counter' => 0],
                 'printing_job' => ['prefix' => 'FLX', 'counter' => 0],
+                'die_cutting_job' => ['prefix' => 'DCT', 'counter' => 0],
+                'label_slitting_job' => ['prefix' => 'LSL', 'counter' => 0],
+                'barcode_job' => ['prefix' => 'BRC-BAR', 'counter' => 0],
             ],
         ],
     ];

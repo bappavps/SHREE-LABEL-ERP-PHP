@@ -293,8 +293,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $errors[] = 'Enter Quantity or Meter to calculate the planning quantity.';
                 }
                 if (empty($errors)) {
-                    $planJobNo = previewNextId('planning') ?: 'Auto-generated';
-                    $planJobNo = getNextId('planning') ?: $planJobNo;
+                    $planJobNo = previewNextId('planning_barcode') ?: 'Auto-generated';
+                    $planJobNo = getNextId('planning_barcode') ?: $planJobNo;
                     $sequenceOrder = barcodePlanningNextSerial($db);
                     $payload = [
                         'planning_date' => $planningDate,
@@ -353,7 +353,7 @@ $rows = barcodePlanningFetchRows($db);
 $flash = getFlash();
 $materialSuggestions = barcodePlanningMaterialSuggestions($db);
 $coreSuggestions = barcodePlanningCoreSuggestions($db);
-$previewPlanningId = previewNextId('planning') ?: 'Auto-generated on save';
+$previewPlanningId = previewNextId('planning_barcode') ?: 'Auto-generated on save';
 $previewSerial = barcodePlanningNextSerial($db);
 $previewRecordId = barcodePlanningNextRecordId($db);
 $totalEntries = count($rows);

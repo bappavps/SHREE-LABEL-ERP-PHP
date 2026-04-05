@@ -864,6 +864,14 @@ try {
                 $prefixSettings = getPrefixSettings();
                 $jumboPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['jumbo_job']['prefix'] ?? 'JMB')));
                 if ($jumboPrefix === '') $jumboPrefix = 'JMB';
+                    $printingPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['printing_job']['prefix'] ?? 'FLX')));
+                    if ($printingPrefix === '') $printingPrefix = 'FLX';
+                    $dieCutPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['die_cutting_job']['prefix'] ?? 'DCT')));
+                    if ($dieCutPrefix === '') $dieCutPrefix = 'DCT';
+                    $labelSlittingPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['label_slitting_job']['prefix'] ?? 'LSL')));
+                    if ($labelSlittingPrefix === '') $labelSlittingPrefix = 'LSL';
+                    $barcodePrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['barcode_job']['prefix'] ?? 'BRC-BAR')));
+                    if ($barcodePrefix === '') $barcodePrefix = 'BRC-BAR';
 
                 $jumboRefNo = '';
                 if ($allowJumboJob) {
@@ -1002,10 +1010,10 @@ try {
                         for ($flexAttempt = 0; $flexAttempt < 30; $flexAttempt++) {
                             $jcNoFlex = (string)(generateUniqueIdForTable($db, 'printing_job', 'jobs', 'job_no') ?? '');
                             if ($jcNoFlex === '') {
-                                $jcNoFlex = deriveStageJobNo($planNo, 'FLX');
+                                $jcNoFlex = deriveStageJobNo($planNo, $printingPrefix);
                             }
                             if ($jcNoFlex === '') {
-                                $jcNoFlex = 'FLX/' . date('Y') . '/' . str_pad((string)($batchId + $flexAttempt), 4, '0', STR_PAD_LEFT);
+                                $jcNoFlex = $printingPrefix . '/' . date('Y') . '/' . str_pad((string)($batchId + $flexAttempt), 4, '0', STR_PAD_LEFT);
                             }
                             if ($jcNoFlex === '') continue;
 
@@ -1101,10 +1109,10 @@ try {
                         for ($barcodeAttempt = 0; $barcodeAttempt < 30; $barcodeAttempt++) {
                             $jcNoBarcode = (string)(generateUniqueIdForTable($db, 'barcode_job', 'jobs', 'job_no') ?? '');
                             if ($jcNoBarcode === '') {
-                                $jcNoBarcode = deriveStageJobNo($planNo, 'BRC');
+                                $jcNoBarcode = deriveStageJobNo($planNo, $barcodePrefix);
                             }
                             if ($jcNoBarcode === '') {
-                                $jcNoBarcode = 'BRC/' . date('Y') . '/' . str_pad((string)($batchId + $barcodeAttempt), 4, '0', STR_PAD_LEFT);
+                                $jcNoBarcode = $barcodePrefix . '/' . date('Y') . '/' . str_pad((string)($batchId + $barcodeAttempt), 4, '0', STR_PAD_LEFT);
                             }
 
                             $barcodeNotesForInsert = 'Barcode job queued from upstream'
@@ -1171,10 +1179,10 @@ try {
                         for ($dctAttempt = 0; $dctAttempt < 30; $dctAttempt++) {
                             $jcNoDct = (string)(generateUniqueIdForTable($db, 'die_cutting_job', 'jobs', 'job_no') ?? '');
                             if ($jcNoDct === '') {
-                                $jcNoDct = deriveStageJobNo($planNo, 'DCT');
+                                $jcNoDct = deriveStageJobNo($planNo, $dieCutPrefix);
                             }
                             if ($jcNoDct === '') {
-                                $jcNoDct = 'DCT/' . date('Y') . '/' . str_pad((string)($batchId + $dctAttempt), 4, '0', STR_PAD_LEFT);
+                                $jcNoDct = $dieCutPrefix . '/' . date('Y') . '/' . str_pad((string)($batchId + $dctAttempt), 4, '0', STR_PAD_LEFT);
                             }
                             if ($jcNoDct === '') continue;
 
@@ -1264,10 +1272,10 @@ try {
                         for ($labelAttempt = 0; $labelAttempt < 30; $labelAttempt++) {
                             $jcNoLabel = (string)(generateUniqueIdForTable($db, 'label_slitting_job', 'jobs', 'job_no') ?? '');
                             if ($jcNoLabel === '') {
-                                $jcNoLabel = deriveStageJobNo($planNo, 'LSL');
+                                $jcNoLabel = deriveStageJobNo($planNo, $labelSlittingPrefix);
                             }
                             if ($jcNoLabel === '') {
-                                $jcNoLabel = 'LSL/' . date('Y') . '/' . str_pad((string)($batchId + $labelAttempt), 4, '0', STR_PAD_LEFT);
+                                $jcNoLabel = $labelSlittingPrefix . '/' . date('Y') . '/' . str_pad((string)($batchId + $labelAttempt), 4, '0', STR_PAD_LEFT);
                             }
 
                             $labelNotesForInsert = 'Label slitting queued from upstream'

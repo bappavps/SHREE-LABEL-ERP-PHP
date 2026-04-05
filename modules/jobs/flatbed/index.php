@@ -18,6 +18,10 @@ $dcDefaultFilter = trim((string)($dcDefaultFilter ?? '')) ?: 'Pending';
 $dcCompareSectionTitle = trim((string)($dcCompareSectionTitle ?? '')) ?: 'Printing Production vs Plan';
 $dcProducedQtyLabel = trim((string)($dcProducedQtyLabel ?? '')) ?: 'Printing Produced';
 $dcProducedQtySource = trim((string)($dcProducedQtySource ?? '')) ?: 'previous';
+$dcShowWeightHeightFields = isset($dcShowWeightHeightFields) ? (bool)$dcShowWeightHeightFields : false;
+$dcWeightLabel = trim((string)($dcWeightLabel ?? '')) ?: 'Weight';
+$dcHeightLabel = trim((string)($dcHeightLabel ?? '')) ?: 'Height';
+$dcPaperWidthLabel = trim((string)($dcPaperWidthLabel ?? '')) ?: 'Width (mm)';
 $dcAutoFallbackToAllOnEmptyDefault = isset($dcAutoFallbackToAllOnEmptyDefault) ? (bool)$dcAutoFallbackToAllOnEmptyDefault : true;
 
 $pageTitle = $isOperatorView ? $dcPageTitleOperator : $dcPageTitleProduction;
@@ -98,9 +102,21 @@ foreach ($jobs as &$job) {
     }
   }
   $job['planning_die_size'] = (string)($planningExtra['barcode_size'] ?? ($planningExtra['size'] ?? ($planningExtra['die_size'] ?? '')));
+  $sizeWidth = (string)($planningExtra['width_mm'] ?? ($planningExtra['barcode_width'] ?? ($planningExtra['width'] ?? '')));
+  $sizeHeight = (string)($planningExtra['height_mm'] ?? ($planningExtra['barcode_height'] ?? ($planningExtra['height'] ?? '')));
+  if ($sizeWidth === '' || $sizeHeight === '') {
+    $dieSize = (string)$job['planning_die_size'];
+    if ($dieSize !== '' && preg_match('/([0-9]+(?:\.[0-9]+)?)\s*mm?\s*[xX×]\s*([0-9]+(?:\.[0-9]+)?)/i', $dieSize, $m)) {
+      if ($sizeWidth === '') $sizeWidth = (string)$m[1];
+      if ($sizeHeight === '') $sizeHeight = (string)$m[2];
+    }
+  }
+  $job['planning_size_width_mm'] = $sizeWidth;
+  $job['planning_size_height_mm'] = $sizeHeight;
   $job['planning_repeat'] = (string)($planningExtra['repeat'] ?? ($planningExtra['barcode_repeat'] ?? ($planningExtra['cylinder_repeat'] ?? ($planningExtra['pitch'] ?? ''))));
   $job['planning_order_qty'] = (string)($planningExtra['order_quantity_user'] ?? ($planningExtra['order_quantity'] ?? ($planningExtra['qty_pcs'] ?? '')));
   $job['planning_material'] = (string)($planningExtra['material_type'] ?? ($planningExtra['material'] ?? ($job['paper_type'] ?? '')));
+  $job['planning_client_name'] = (string)($planningExtra['client_name'] ?? ($planningExtra['customer_name'] ?? ($planningExtra['party_name'] ?? '')));
     $imagePath = trim((string)($planningExtra['image_path'] ?? ($planningExtra['planning_image_path'] ?? '')));
     if ($imagePath !== '' && !preg_match('/^https?:\/\//i', $imagePath)) {
         $imagePath = BASE_URL . '/' . ltrim($imagePath, '/');
@@ -720,6 +736,10 @@ const DC_DEFAULT_FILTER_RAW = <?= json_encode($dcDefaultFilter, JSON_HEX_TAG|JSO
 const DC_COMPARE_SECTION_TITLE = <?= json_encode($dcCompareSectionTitle, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const DC_PRODUCED_QTY_LABEL = <?= json_encode($dcProducedQtyLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const DC_PRODUCED_QTY_SOURCE = <?= json_encode($dcProducedQtySource, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+const DC_SHOW_WEIGHT_HEIGHT_FIELDS = <?= $dcShowWeightHeightFields ? 'true' : 'false' ?>;
+const DC_WEIGHT_LABEL = <?= json_encode($dcWeightLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+const DC_HEIGHT_LABEL = <?= json_encode($dcHeightLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+const DC_PAPER_WIDTH_LABEL = <?= json_encode($dcPaperWidthLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const DC_AUTO_FALLBACK_TO_ALL_ON_EMPTY_DEFAULT = <?= $dcAutoFallbackToAllOnEmptyDefault ? 'true' : 'false' ?>;
 
 // ── Voice recording state ──
@@ -735,6 +755,28 @@ function resolveJobDisplayName(job) {
   if (job && String(job.planning_job_name || '').trim() !== '') return String(job.planning_job_name).trim();
   const jobNo = String(job?.job_no || '').trim();
   return jobNo || '—';
+}
+
+function normalizeDimensionValue(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const num = raw.match(/^([0-9]+(?:\.[0-9]+)?)/);
+  if (num) return num[1];
+  return raw.replace(/mm/ig, '').trim();
+}
+
+function getJobSizeDimensions(job) {
+  let weight = normalizeDimensionValue(job?.planning_size_width_mm ?? job?.planning_width_mm ?? '');
+  let height = normalizeDimensionValue(job?.planning_size_height_mm ?? job?.planning_height_mm ?? '');
+  if (!weight || !height) {
+    const dieSize = String(job?.planning_die_size || '').trim();
+    const m = dieSize.match(/([0-9]+(?:\.[0-9]+)?)\s*mm?\s*[xX×]\s*([0-9]+(?:\.[0-9]+)?)/i);
+    if (m) {
+      if (!weight) weight = m[1];
+      if (!height) height = m[2];
+    }
+  }
+  return { weight, height };
 }
 
 // ═══ TAB SWITCHING ═══
@@ -1617,6 +1659,7 @@ async function openJobDetail(id, mode) {
   html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-info-circle"></i> Job Information</div><div class="dc-op-b dc-op-grid-2">
     <div class="dc-op-field"><label>Job No</label><div class="fv" style="color:var(--dc-brand)">${esc(job.job_no)}</div></div>
     <div class="dc-op-field"><label>Job Name</label><div class="fv">${esc(resolveJobDisplayName(job))}</div></div>
+    <div class="dc-op-field"><label>Client Name</label><div class="fv">${esc(job.planning_client_name || '—')}</div></div>
     <div class="dc-op-field"><label>Priority</label><div class="fv">${esc(job.planning_priority||'Normal')}</div></div>
     <div class="dc-op-field"><label>Sequence</label><div class="fv">#${job.sequence_order||1}</div></div>
   </div></div>`;
@@ -1629,7 +1672,16 @@ async function openJobDetail(id, mode) {
     <div class="dc-op-field"><label>Order Quantity (Pcs)</label><div class="fv">${esc(job.planning_order_qty || '—')}</div></div>
     <div class="dc-op-field"><label>Total Length (Mtr)</label><div class="fv">${esc((job.length_mtr ?? '—') + '')}</div></div>
     <div class="dc-op-field"><label>Roll No</label><div class="fv">${esc(job.roll_no || '—')}</div></div>
-    <div class="dc-op-field"><label>Width (mm)</label><div class="fv">${esc((job.width_mm ?? '—') + '')}</div></div>
+    ${(() => {
+      if (!DC_SHOW_WEIGHT_HEIGHT_FIELDS) return '';
+      const dim = getJobSizeDimensions(job);
+      const weightValue = dim.weight ? `${dim.weight} mm` : '—';
+      const heightValue = dim.height ? `${dim.height} mm` : '—';
+      return `
+    <div class="dc-op-field"><label>${esc(DC_WEIGHT_LABEL || 'Weight')}</label><div class="fv">${esc(weightValue)}</div></div>
+    <div class="dc-op-field"><label>${esc(DC_HEIGHT_LABEL || 'Height')}</label><div class="fv">${esc(heightValue)}</div></div>`;
+    })()}
+    <div class="dc-op-field"><label>${esc(DC_PAPER_WIDTH_LABEL || 'Width (mm)')}</label><div class="fv">${esc((job.width_mm ?? '—') + '')}</div></div>
     <div class="dc-op-field"><label>GSM</label><div class="fv">${esc((job.gsm ?? '—') + '')}</div></div>
   </div></div>`;
 
@@ -1888,6 +1940,12 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
   const previewHtml = previewUrl
     ? `<tr><td colspan="4" style="padding:0"><div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#0f766e;background:#ccfbf1;padding:6px 8px;border-radius:4px;margin:8px 0 4px">Job Preview</div><div style="margin-bottom:6px"><img src="${esc(previewUrl)}" style="max-width:300px;max-height:180px;border-radius:8px;border:1px solid #e2e8f0"></div></td></tr>`
     : '';
+  const dimensions = getJobSizeDimensions(job);
+  const weightText = dimensions.weight ? `${dimensions.weight} mm` : '—';
+  const heightText = dimensions.height ? `${dimensions.height} mm` : '—';
+  const weightHeightRow = DC_SHOW_WEIGHT_HEIGHT_FIELDS
+    ? `<tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">${esc(DC_WEIGHT_LABEL || 'Weight')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(weightText)}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">${esc(DC_HEIGHT_LABEL || 'Height')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(heightText)}</td></tr>`
+    : '';
 
   return `<div style="font-family:'Segoe UI',Arial,sans-serif;padding:20px;max-width:760px;margin:0 auto;color:#0f172a">
     <div style="border:2px solid #0f766e;border-radius:12px;overflow:hidden">
@@ -1922,10 +1980,12 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
         <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#0f766e;background:#ccfbf1;padding:5px 8px;border-radius:4px">${esc(DC_DETAILS_SECTION_LABEL || 'Die-Cutting Details')}</div>
         <table style="width:100%;border-collapse:collapse;font-size:.72rem;margin-bottom:10px">
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_job_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job No</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#0f766e">${esc(job.job_no || '—')}</td></tr>
-          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Material</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_material || job.paper_type || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Die Size</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#0f766e">${esc(job.planning_die_size || '—')}</td></tr>
-          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Repeat</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_repeat || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Order Qty</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_order_qty || '—')}</td></tr>
-          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Roll No</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.roll_no || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Total Length</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.length_mtr || '—') + ' m')}</td></tr>
-          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Width</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.width_mm || '—') + ' mm')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">GSM</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.gsm || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Client Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_client_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Material</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_material || job.paper_type || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Die Size</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#0f766e">${esc(job.planning_die_size || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Repeat</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_repeat || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Order Qty</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_order_qty || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Roll No</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.roll_no || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Total Length</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.length_mtr || '—') + ' m')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">GSM</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.gsm || '—')}</td></tr>
+          ${weightHeightRow}
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">${esc(DC_PAPER_WIDTH_LABEL || 'Width (mm)')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.width_mm || '—') + ' mm')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800"></td><td style="padding:5px 7px;border:1px solid #cbd5e1"></td></tr>
         </table>
         ${previewHtml ? `<table style="width:100%">${previewHtml}</table>` : ''}
         ${(() => {

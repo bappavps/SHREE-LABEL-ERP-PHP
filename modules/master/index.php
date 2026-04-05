@@ -741,8 +741,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       'batch' => 'prefix_batch',
       'sales_order' => 'prefix_sales_order',
       'planning' => 'prefix_planning',
+      'planning_barcode' => 'prefix_planning_barcode',
       'jumbo_job' => 'prefix_jumbo_job',
       'printing_job' => 'prefix_printing_job',
+      'die_cutting_job' => 'prefix_die_cutting_job',
+      'label_slitting_job' => 'prefix_label_slitting_job',
+      'barcode_job' => 'prefix_barcode_job',
     ];
 
     foreach ($moduleFieldMap as $type => $field) {
@@ -996,8 +1000,12 @@ $prefixModules = [
   'batch' => 'Batch Prefix',
   'sales_order' => 'Sales Order Prefix',
   'planning' => 'Planning Job Prefix',
+  'planning_barcode' => 'Barcode Planning Job Prefix',
   'jumbo_job' => 'Jumbo Slitting Job Prefix',
   'printing_job' => 'Flexo Printing Job Prefix',
+  'die_cutting_job' => 'Die Cutting Job Prefix',
+  'label_slitting_job' => 'Label Slitting Job Prefix',
+  'barcode_job' => 'Barcode Production Job Prefix',
 ];
 
 $sampleSuppliers = [

@@ -11,6 +11,10 @@ $dcDetailsSectionLabel = 'Barcode Details';
 $dcCompareSectionTitle = 'Barcode Production vs Plan';
 $dcProducedQtyLabel = 'Barcode Production';
 $dcProducedQtySource = 'current';
+$dcShowWeightHeightFields = true;
+$dcWeightLabel = 'Width';
+$dcHeightLabel = 'Height';
+$dcPaperWidthLabel = 'Paper Width (mm)';
 $dcDefaultFilter = 'Pending';
 $dcWhereClauseOverride = "(
     LOWER(COALESCE(j.department, '')) IN ('barcode')
