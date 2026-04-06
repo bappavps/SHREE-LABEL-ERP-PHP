@@ -113,6 +113,7 @@ function dieToolingColumnSynonyms() {
 
 function dieToolingQuickFilters() {
   return [
+    ['type' => 'text', 'key' => 'plate', 'label' => 'Plate Number', 'placeholder' => 'Enter plate number...'],
     ['type' => 'text', 'key' => 'name', 'label' => 'Name', 'placeholder' => 'Search name...'],
     ['type' => 'pick', 'key' => 'paper_type', 'label' => 'Paper Type', 'allLabel' => 'All Paper Type'],
     ['type' => 'pick', 'key' => 'cylinder', 'label' => 'Cylinder', 'allLabel' => 'All Cylinder'],

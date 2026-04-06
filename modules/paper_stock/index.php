@@ -970,6 +970,10 @@ include __DIR__ . '/../../includes/header.php';
   var qfDebounceTimer = null;
   var serverSearchTimer = null;
 
+  function isCompactFilterViewport(){
+    return window.innerWidth <= 900 || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  }
+
   function runServerSearch(){
     var term = (qf.search && qf.search.value ? qf.search.value : '').trim();
     var u = new URL(window.location.href);
@@ -988,10 +992,10 @@ include __DIR__ . '/../../includes/header.php';
   // Global search triggers server-side reload on Enter and debounced typing.
   if (qf.search) {
     qf.search.addEventListener('input', function(){
-      if (serverSearchTimer) clearTimeout(serverSearchTimer);
-      serverSearchTimer = setTimeout(function(){
-        runServerSearch();
-      }, 450);
+      if (serverSearchTimer) {
+        clearTimeout(serverSearchTimer);
+        serverSearchTimer = null;
+      }
     });
     qf.search.addEventListener('keydown', function(e){
       if (e.key === 'Enter') {
@@ -1008,9 +1012,7 @@ include __DIR__ . '/../../includes/header.php';
         clearTimeout(serverSearchTimer);
         serverSearchTimer = null;
       }
-      if ((qf.search.value || '').trim() !== INITIAL_SERVER_SEARCH) {
-        runServerSearch();
-      }
+      // Avoid automatic blur-triggered reload to keep typing smooth on all devices.
     });
   }
 

@@ -897,6 +897,11 @@ function canAccessPath($path) {
 
     if (isAdmin()) return true;
 
+    // Slitting API should follow the same page permission as slitting index.
+    if ($path === '/modules/inventory/slitting/api.php') {
+        return canAccessPath('/modules/inventory/slitting/index.php');
+    }
+
     // Jobs API is used by Live Floor / Job Card pages for data fetch.
     if ($path === '/modules/jobs/api.php') {
         $allowed = rbacUserAllowedPaths();

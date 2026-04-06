@@ -603,7 +603,11 @@ foreach ($quickFilters as $filter) {
     if ($value !== '') {
       $valueEsc = $db->real_escape_string($value);
       if ($filterType === 'text') {
-        $condition = "COALESCE(`{$filterKey}`, '') LIKE '%{$valueEsc}%'";
+        if ($filterKey === 'plate') {
+          $condition = "TRIM(COALESCE(`{$filterKey}`, '')) = '{$valueEsc}'";
+        } else {
+          $condition = "COALESCE(`{$filterKey}`, '') LIKE '%{$valueEsc}%'";
+        }
       } else {
         $condition = "TRIM(COALESCE(`{$filterKey}`, '')) = '{$valueEsc}'";
       }
@@ -785,6 +789,18 @@ foreach ($columns as $key => $label) {
     $nameColumnKey = (string)$key;
   }
 }
+
+$hasActiveServerFilter = ($searchQuery !== '');
+if (!$hasActiveServerFilter) {
+  foreach ($activeQuickFilters as $filterVal) {
+    if (trim((string)$filterVal) !== '') {
+      $hasActiveServerFilter = true;
+      break;
+    }
+  }
+}
+$showNoResultModal = $hasActiveServerFilter && $totalRows === 0;
+$noResultContext = $searchQuery !== '' ? ('Search: ' . $searchQuery) : 'Applied filter(s)';
 
 if (!$isEmbedded) {
   include __DIR__ . '/../../includes/header.php';
@@ -1003,7 +1019,7 @@ if (!$isEmbedded) {
                 </td>
               <?php elseif ($nameColumnKey !== '' && $key === $nameColumnKey): ?>
                 <td data-field="<?= e($key) ?>">
-                  <button type="button" class="name-link-btn" data-detail-id="<?= (int)$row['id'] ?>"><?= e($displayValue) ?></button>
+                  <a class="name-link-btn" href="<?= dieToolingRedirectUrl($mode) ?>?edit_id=<?= (int)$row['id'] ?>"><?= e($displayValue) ?></a>
                 </td>
               <?php else: ?>
                 <td data-field="<?= e($key) ?>"><?= e($displayValue) ?></td>
@@ -1111,6 +1127,31 @@ if (!$isEmbedded) {
       <strong>Edit <?= e($moduleLabel) ?></strong>
       <a class="btn btn-sm btn-ghost" href="<?= dieToolingRedirectUrl($mode) ?>"><i class="bi bi-x-lg"></i></a>
     </div>
+    <?php
+      $editImageSrc = dieToolingImageSrc((string)($editingRow['image_path'] ?? ''));
+      $editSlNo = trim((string)($editingRow['sl_no'] ?? ''));
+      $editPlateNo = trim((string)($editingRow['plate'] ?? ''));
+    ?>
+    <div style="padding:12px 14px 4px;display:flex;flex-direction:column;gap:10px;">
+      <div style="font-size:.78rem;font-weight:700;color:#334155;text-transform:uppercase;letter-spacing:.06em;">View Summary</div>
+      <?php if ($editImageSrc !== ''): ?>
+        <div>
+          <img src="<?= e($editImageSrc) ?>" alt="Record image" style="max-width:220px;max-height:220px;border:1px solid #cbd5e1;border-radius:10px;object-fit:cover;">
+        </div>
+      <?php endif; ?>
+      <div class="detail-grid">
+        <div class="detail-item"><div class="detail-key">SL No.</div><div class="detail-val"><?= e($editSlNo !== '' ? $editSlNo : '-') ?></div></div>
+        <div class="detail-item"><div class="detail-key">Plate Number</div><div class="detail-val"><?= e($editPlateNo !== '' ? $editPlateNo : '-') ?></div></div>
+        <?php foreach ($columns as $key => $label): ?>
+          <?php if ($key === 'image_path' || $key === 'plate'): continue; endif; ?>
+          <?php
+            $summaryRaw = (string)($editingRow[$key] ?? '');
+            $summaryVal = dieToolingDisplayValue($summaryRaw);
+          ?>
+          <div class="detail-item"><div class="detail-key"><?= e($label) ?></div><div class="detail-val"><?= e($summaryVal !== '' ? $summaryVal : '-') ?></div></div>
+        <?php endforeach; ?>
+      </div>
+    </div>
     <form method="POST" class="form-grid-2" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
       <input type="hidden" name="action" value="update_record">
@@ -1165,6 +1206,24 @@ if (!$isEmbedded) {
     </div>
   </div>
 </div>
+
+<?php if ($showNoResultModal): ?>
+<div class="modal-overlay" id="noResultModal" style="display:block;">
+  <div class="modal-card" style="max-width:460px;">
+    <div class="modal-head">
+      <strong>No Data Found</strong>
+      <button class="btn btn-sm btn-ghost" type="button" onclick="closeNoResultModal()"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div style="padding:16px;display:flex;flex-direction:column;gap:10px;">
+      <div style="font-size:.9rem;color:#334155;">No records matched your input.</div>
+      <div style="font-size:.78rem;color:#64748b;">Context: <?= e($noResultContext) ?></div>
+      <div style="display:flex;justify-content:flex-end;">
+        <button class="btn btn-primary" type="button" onclick="closeNoResultModal()">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+<?php endif; ?>
 
 <div class="modal-overlay" id="cameraCaptureModal">
   <div class="modal-card camera-modal-card">
@@ -1481,6 +1540,10 @@ if (!$isEmbedded) {
     var modal = document.getElementById('detailRecordModal');
     if (modal) modal.style.display = 'none';
   };
+  window.closeNoResultModal = function () {
+    var modal = document.getElementById('noResultModal');
+    if (modal) modal.style.display = 'none';
+  };
 
   var cameraState = {
     modal: document.getElementById('cameraCaptureModal'),
@@ -1694,7 +1757,7 @@ if (!$isEmbedded) {
 
   document.addEventListener('click', function (event) {
     var detailBtn = event.target.closest('.name-link-btn');
-    if (detailBtn) {
+    if (detailBtn && detailBtn.hasAttribute('data-detail-id')) {
       openDetailFromButton(detailBtn);
     }
   });
@@ -1706,6 +1769,8 @@ if (!$isEmbedded) {
     if (importModal && event.target === importModal) closeImportMapModal();
     var detailModal = document.getElementById('detailRecordModal');
     if (detailModal && event.target === detailModal) closeDetailModal();
+    var noResultModal = document.getElementById('noResultModal');
+    if (noResultModal && event.target === noResultModal) closeNoResultModal();
   });
 
   document.querySelectorAll('[data-map-select]').forEach(function (select) {
@@ -1805,6 +1870,10 @@ if (!$isEmbedded) {
   });
 
   var serverFilterTimer = null;
+  function isCompactFilterViewport() {
+    return window.innerWidth <= 900 || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  }
+
   function applyServerFiltersNow() {
     var url = new URL(window.location.href);
 
@@ -1844,10 +1913,19 @@ if (!$isEmbedded) {
     });
 
     url.searchParams.set('page', '1');
-    window.location.href = url.toString();
+    var nextUrl = url.toString();
+    if (nextUrl === window.location.href) return;
+    window.location.href = nextUrl;
   }
 
   function applyServerFiltersDebounced() {
+    if (isCompactFilterViewport()) {
+      if (serverFilterTimer) {
+        window.clearTimeout(serverFilterTimer);
+        serverFilterTimer = null;
+      }
+      return;
+    }
     if (serverFilterTimer) {
       window.clearTimeout(serverFilterTimer);
     }
@@ -2063,14 +2141,40 @@ if (!$isEmbedded) {
     window.location.href = url.toString();
   };
 
-  if (qf.search) qf.search.addEventListener('input', applyServerFiltersDebounced);
+  function bindServerFilterInput(el) {
+    if (!el) return;
+    el.addEventListener('input', function () {
+      if (serverFilterTimer) {
+        window.clearTimeout(serverFilterTimer);
+        serverFilterTimer = null;
+      }
+    });
+    el.addEventListener('change', function () {
+      if (serverFilterTimer) {
+        window.clearTimeout(serverFilterTimer);
+        serverFilterTimer = null;
+      }
+      applyServerFiltersNow();
+    });
+    el.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      if (serverFilterTimer) {
+        window.clearTimeout(serverFilterTimer);
+        serverFilterTimer = null;
+      }
+      applyServerFiltersNow();
+    });
+  }
+
+  bindServerFilterInput(qf.search);
   qfConfig.forEach(function (filter) {
     if (filter.type === 'text' && qf[filter.key]) {
-      qf[filter.key].addEventListener('input', applyServerFiltersDebounced);
+      bindServerFilterInput(qf[filter.key]);
     }
     if (filter.type === 'number_range') {
-      if (qf[filter.key + '_min']) qf[filter.key + '_min'].addEventListener('input', applyServerFiltersDebounced);
-      if (qf[filter.key + '_max']) qf[filter.key + '_max'].addEventListener('input', applyServerFiltersDebounced);
+      bindServerFilterInput(qf[filter.key + '_min']);
+      bindServerFilterInput(qf[filter.key + '_max']);
     }
     if (filter.type === 'pick') {
       updatePickerLabel(filter);

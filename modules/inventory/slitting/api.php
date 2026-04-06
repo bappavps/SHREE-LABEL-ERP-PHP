@@ -331,8 +331,12 @@ try {
             $rows = $db->query("SELECT p.*, so.material_type, so.label_width_mm, so.label_length_mm, so.quantity
                 FROM planning p
                 LEFT JOIN sales_orders so ON p.sales_order_id = so.id
-                WHERE p.status IN ('Pending', 'Barcode Ready')
-                ORDER BY p.id ASC
+                WHERE LOWER(TRIM(COALESCE(
+                    NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.extra_data, '$.printing_planning')), ''),
+                    NULLIF(p.status, ''),
+                    'Pending'
+                ))) IN ('pending', 'barcode ready', 'barcode_ready', 'preparing slitting', 'slitting', 'queued', 'running', 'in progress', 'printing done')
+                ORDER BY p.id DESC
                 LIMIT 100")->fetch_all(MYSQLI_ASSOC);
         }
 

@@ -53,6 +53,24 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             return window.innerWidth > 900;
         }
 
+        function isTypingTarget(el) {
+            if (!el) return false;
+            var tag = String(el.tagName || '').toLowerCase();
+            if (tag === 'textarea' || tag === 'select') return true;
+            if (tag === 'input') {
+                var type = String(el.type || '').toLowerCase();
+                return ['text', 'search', 'number', 'email', 'url', 'tel', 'password'].indexOf(type) !== -1;
+            }
+            return !!el.closest('[contenteditable="true"]');
+        }
+
+        function shouldPauseSidebarAutoCollapse() {
+            if (!isDesktopSidebar()) return true;
+            return isTypingTarget(document.activeElement);
+        }
+
+        var lastSidebarDesktopMode = isDesktopSidebar();
+
         function cancelDesktopAutoCollapse() {
             if (hoverCollapseTimer) {
                 clearTimeout(hoverCollapseTimer);
@@ -63,6 +81,7 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
         function scheduleDesktopAutoCollapse() {
             if (!isDesktopSidebar()) return;
             if (appShell.classList.contains('sidebar-collapsed')) return;
+            if (shouldPauseSidebarAutoCollapse()) return;
 
             cancelDesktopAutoCollapse();
             var delayMs = parseInt(appShell.getAttribute('data-sidebar-collapse-delay-ms') || '1000', 10);
@@ -111,6 +130,21 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             scheduleDesktopAutoCollapse();
         });
 
+        document.addEventListener('focusin', function () {
+            if (shouldPauseSidebarAutoCollapse()) {
+                cancelDesktopAutoCollapse();
+            }
+        });
+
+        document.addEventListener('focusout', function () {
+            // Delay a tick so document.activeElement is updated after blur.
+            setTimeout(function () {
+                if (!shouldPauseSidebarAutoCollapse()) {
+                    scheduleDesktopAutoCollapse();
+                }
+            }, 0);
+        });
+
         document.addEventListener('click', function (e) {
             if (window.innerWidth <= 900
                 && sidebar.classList.contains('is-open')
@@ -121,10 +155,19 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
         });
         window.addEventListener('resize', function () {
             cancelDesktopAutoCollapse();
-            if (isDesktopSidebar()) {
+
+            var desktopNow = isDesktopSidebar();
+            if (desktopNow === lastSidebarDesktopMode) {
+                return;
+            }
+            lastSidebarDesktopMode = desktopNow;
+
+            if (desktopNow) {
                 sidebar.classList.remove('is-open');
-                appShell.classList.add('sidebar-collapsed');
-                localStorage.setItem('erp_sidebar_collapsed', '1');
+                if (localStorage.getItem('erp_sidebar_collapsed') === null) {
+                    appShell.classList.add('sidebar-collapsed');
+                    localStorage.setItem('erp_sidebar_collapsed', '1');
+                }
                 closeAllSidebarTabs();
             }
         });
