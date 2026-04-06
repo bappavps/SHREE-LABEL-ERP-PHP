@@ -483,6 +483,83 @@ function jobs_is_operator_media_upload_job(array $job): bool {
     return $jobType === 'finishing' && in_array($department, ['barcode', 'label-slitting', 'label_slitting', 'label slitting', 'slitting'], true);
 }
 
+function jobs_is_barcode_job(array $job): bool {
+    $department = strtolower(trim((string)($job['department'] ?? '')));
+    $jobType = strtolower(trim((string)($job['job_type'] ?? '')));
+    if ($department === 'barcode') return true;
+    if ($jobType === 'barcode') return true;
+    return $jobType === 'finishing' && $department === 'barcode';
+}
+
+function jobs_is_label_slitting_job(array $job): bool {
+    $department = strtolower(trim((string)($job['department'] ?? '')));
+    $jobType = strtolower(trim((string)($job['job_type'] ?? '')));
+    if (in_array($department, ['label-slitting', 'label_slitting', 'label slitting'], true)) return true;
+    if (in_array($jobType, ['label-slitting', 'label_slitting', 'label slitting'], true)) return true;
+    return $jobType === 'finishing' && in_array($department, ['label-slitting', 'label_slitting', 'label slitting'], true);
+}
+
+function jobs_is_packing_job(array $job): bool {
+    $department = strtolower(trim((string)($job['department'] ?? '')));
+    $jobType = strtolower(trim((string)($job['job_type'] ?? '')));
+    if ($department === 'packing') return true;
+    if ($jobType === 'packing') return true;
+    return $jobType === 'finishing' && $department === 'packing';
+}
+
+function jobs_stage_status_for_event(array $job, string $event): string {
+    $evt = strtolower(trim($event));
+
+    if (($job['job_type'] ?? '') === 'Slitting') {
+        if ($evt === 'running') return 'Slitting';
+        if ($evt === 'pause') return 'Slitting Pause';
+        if ($evt === 'end' || $evt === 'complete') return 'Slitted';
+        if ($evt === 'reset') return 'Preparing Slitting';
+        return '';
+    }
+
+    $jobType = strtolower(trim((string)($job['job_type'] ?? '')));
+    $department = strtolower(trim((string)($job['department'] ?? '')));
+    $isPrinting = in_array($jobType, ['printing', 'flexo'], true) || $department === 'flexo_printing';
+
+    if ($isPrinting) {
+        if ($evt === 'running') return 'Printing';
+        if ($evt === 'pause') return 'Printing Pause';
+        if ($evt === 'end' || $evt === 'complete') return 'Printed';
+        return '';
+    }
+
+    if (jobs_is_die_cutting_job($job)) {
+        if ($evt === 'running') return 'Die Cutting';
+        if ($evt === 'pause') return 'Die Cutting Pause';
+        if ($evt === 'end' || $evt === 'complete') return 'Die Cut';
+        return '';
+    }
+
+    if (jobs_is_barcode_job($job)) {
+        if ($evt === 'running') return 'Barcode';
+        if ($evt === 'pause') return 'Barcode Pause';
+        if ($evt === 'end' || $evt === 'complete') return 'Barcoded';
+        return '';
+    }
+
+    if (jobs_is_label_slitting_job($job)) {
+        if ($evt === 'running') return 'Label Slitting';
+        if ($evt === 'pause') return 'Label Slitting Pause';
+        if ($evt === 'end' || $evt === 'complete') return 'Label Slitted';
+        return '';
+    }
+
+    if (jobs_is_packing_job($job)) {
+        if ($evt === 'running') return 'Packing';
+        if ($evt === 'pause') return 'Packing Pause';
+        if ($evt === 'end' || $evt === 'complete') return 'Packed';
+        return '';
+    }
+
+    return '';
+}
+
 function jobs_is_flatbed_like_die(string $dieValue): bool {
     $die = strtolower(trim($dieValue));
     if ($die === '') return false;
@@ -665,6 +742,119 @@ function jobs_pick_planning_image(array $planningExtra): string {
     return jobs_first_non_empty($planningExtra, $candidates, '');
 }
 
+function jobs_set_planning_stage_status(mysqli $db, int $planId, string $stageStatus): void {
+    if ($planId <= 0) {
+        return;
+    }
+
+    $sel = $db->prepare("SELECT extra_data FROM planning WHERE id = ? LIMIT 1");
+    if (!$sel) {
+        return;
+    }
+    $sel->bind_param('i', $planId);
+    $sel->execute();
+    $row = $sel->get_result()->fetch_assoc();
+    $extra = json_decode((string)($row['extra_data'] ?? '{}'), true);
+    if (!is_array($extra)) {
+        $extra = [];
+    }
+    $extra['printing_planning'] = $stageStatus;
+    $extraJson = json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $upd = $db->prepare("UPDATE planning SET extra_data = ? WHERE id = ?");
+    if ($upd) {
+        $upd->bind_param('si', $extraJson, $planId);
+        $upd->execute();
+    }
+}
+
+function jobs_set_planning_status_and_stage(mysqli $db, int $planId, string $stageStatus): void {
+    if ($planId <= 0 || trim($stageStatus) === '') return;
+
+    $updStatus = $db->prepare("UPDATE planning SET status = ? WHERE id = ?");
+    if ($updStatus) {
+        $updStatus->bind_param('si', $stageStatus, $planId);
+        $updStatus->execute();
+    }
+
+    jobs_set_planning_stage_status($db, $planId, $stageStatus);
+}
+
+function jobs_set_planning_status_and_stage_for_job(mysqli $db, array $job, string $stageStatus): void {
+    $stageStatus = trim($stageStatus);
+    if ($stageStatus === '') return;
+
+    $planId = (int)($job['planning_id'] ?? 0);
+    if ($planId > 0) {
+        jobs_set_planning_status_and_stage($db, $planId, $stageStatus);
+        return;
+    }
+
+    $extra = jobs_decode_extra_data((string)($job['extra_data'] ?? '{}'));
+    $planNo = trim((string)($extra['plan_no'] ?? ''));
+    if ($planNo === '') {
+        $notes = trim((string)($job['notes'] ?? ''));
+        if ($notes !== '' && preg_match('/\|\s*Plan:\s*([^|\n]+)/i', $notes, $m)) {
+            $planNo = trim((string)($m[1] ?? ''));
+        }
+    }
+
+    if ($planId <= 0 && $planNo === '') {
+        $prevId = (int)($job['previous_job_id'] ?? 0);
+        $guard = 0;
+        while ($prevId > 0 && $guard < 8) {
+            $guard++;
+            $prevStmt = $db->prepare("SELECT id, planning_id, previous_job_id, extra_data, notes FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+            if (!$prevStmt) {
+                break;
+            }
+            $prevStmt->bind_param('i', $prevId);
+            $prevStmt->execute();
+            $prev = $prevStmt->get_result()->fetch_assoc();
+            if (!$prev) {
+                break;
+            }
+
+            $prevPlanId = (int)($prev['planning_id'] ?? 0);
+            if ($prevPlanId > 0) {
+                $planId = $prevPlanId;
+                break;
+            }
+
+            $prevExtra = jobs_decode_extra_data((string)($prev['extra_data'] ?? '{}'));
+            $prevPlanNo = trim((string)($prevExtra['plan_no'] ?? ''));
+            if ($prevPlanNo === '') {
+                $prevNotes = trim((string)($prev['notes'] ?? ''));
+                if ($prevNotes !== '' && preg_match('/\|\s*Plan:\s*([^|\n]+)/i', $prevNotes, $mPrev)) {
+                    $prevPlanNo = trim((string)($mPrev[1] ?? ''));
+                }
+            }
+            if ($prevPlanNo !== '') {
+                $planNo = $prevPlanNo;
+                break;
+            }
+
+            $prevId = (int)($prev['previous_job_id'] ?? 0);
+        }
+    }
+
+    if ($planId > 0) {
+        jobs_set_planning_status_and_stage($db, $planId, $stageStatus);
+        return;
+    }
+
+    if ($planNo === '') return;
+
+    $find = $db->prepare("SELECT id FROM planning WHERE job_no = ? LIMIT 1");
+    if (!$find) return;
+    $find->bind_param('s', $planNo);
+    $find->execute();
+    $row = $find->get_result()->fetch_assoc();
+    $resolvedPlanId = (int)($row['id'] ?? 0);
+    if ($resolvedPlanId > 0) {
+        jobs_set_planning_status_and_stage($db, $resolvedPlanId, $stageStatus);
+    }
+}
+
 function jobs_get_chain_jobs(mysqli $db, int $rootJobId): array {
     $chain = [];
     $seen = [];
@@ -790,13 +980,14 @@ try {
         }
         $upd->execute();
 
-        // Jumbo start should immediately move planning into Slitting stage color flow.
+        // Jumbo start should immediately move planning into active slitting stage.
         if ($newStatus === 'Running' && ($job['job_type'] ?? '') === 'Slitting') {
             $planId = (int)($job['planning_id'] ?? 0);
             if ($planId > 0) {
                 $updPlan = $db->prepare("UPDATE planning SET status = 'Preparing Slitting' WHERE id = ?");
                 $updPlan->bind_param('i', $planId);
                 $updPlan->execute();
+                jobs_set_planning_stage_status($db, $planId, 'Slitting');
             }
             // Update primary roll
             if (!empty($job['roll_no'])) {
@@ -819,6 +1010,15 @@ try {
                         $updPr->execute();
                     }
                 }
+            }
+        }
+
+        // Start event should immediately reflect active stage in planning for all departments.
+        if ($newStatus === 'Running') {
+            $runningStage = jobs_stage_status_for_event($job, 'running');
+            $planId = (int)($job['planning_id'] ?? 0);
+            if ($runningStage !== '') {
+                jobs_set_planning_status_and_stage_for_job($db, $job, $runningStage);
             }
         }
 
@@ -883,7 +1083,13 @@ try {
                 $nIns->execute();
             }
 
-            // Printing completion should reflect in planning board as Printing Done.
+            // Completion should reflect in planning board for all departments.
+            $completeStage = jobs_stage_status_for_event($job, 'complete');
+            if ($completeStage !== '') {
+                jobs_set_planning_status_and_stage_for_job($db, $job, $completeStage);
+            }
+
+            // Printing completion should reflect in planning board as Printed.
             $jobTypeNow = strtolower(trim((string)($job['job_type'] ?? '')));
             if (in_array($jobTypeNow, ['printing', 'flexo'], true)) {
                 $planId = (int)($job['planning_id'] ?? 0);
@@ -897,7 +1103,7 @@ try {
                             $planNoForStage = trim((string)($planRow['job_no'] ?? ''));
                             $pExtra = json_decode((string)($planRow['extra_data'] ?? '{}'), true) ?: [];
                             $planningExtraForNotifications = $pExtra;
-                            $pExtra['printing_planning'] = 'Printing Done';
+                            $pExtra['printing_planning'] = 'Printed';
                             $pExtraJson = json_encode($pExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                             $upPlanExtra = $db->prepare("UPDATE planning SET extra_data = ? WHERE id = ?");
                             if ($upPlanExtra) {
@@ -929,7 +1135,7 @@ try {
                 }
             }
 
-            // Die-Cutting completion should reflect in planning board as Die-Cutting Done.
+            // Die-Cutting completion should reflect in planning board as Die Cut.
             if (jobs_is_die_cutting_job($job)) {
                 $planId = (int)($job['planning_id'] ?? 0);
                 if ($planId > 0) {
@@ -942,7 +1148,7 @@ try {
                             $planNoForStageD = trim((string)($planRowD['job_no'] ?? ''));
                             $pExtraD = json_decode((string)($planRowD['extra_data'] ?? '{}'), true) ?: [];
                             $planningExtraForNotifications = $pExtraD;
-                            $pExtraD['printing_planning'] = 'Die-Cutting Done';
+                            $pExtraD['printing_planning'] = 'Die Cut';
                             $pExtraDJson = json_encode($pExtraD, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                             $upPlanExtraD = $db->prepare("UPDATE planning SET extra_data = ? WHERE id = ?");
                             if ($upPlanExtraD) {
@@ -990,6 +1196,7 @@ try {
                     $updPlan->bind_param('i', $planId);
                     $updPlan->execute();
                 }
+                jobs_set_planning_stage_status($db, $planId, 'Slitted');
             } else {
                 $extra = json_decode((string)($job['extra_data'] ?? '{}'), true);
                 $planNo = trim((string)($extra['plan_no'] ?? ''));
@@ -1034,7 +1241,7 @@ try {
             break;
         }
 
-        $stmt = $db->prepare("SELECT id, status, extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $stmt = $db->prepare("SELECT id, status, planning_id, department, job_type, extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
         $stmt->bind_param('i', $jobId);
         $stmt->execute();
         $job = $stmt->get_result()->fetch_assoc();
@@ -1069,6 +1276,18 @@ try {
         $upd->bind_param('si', $safeExtraJson, $jobId);
         $upd->execute();
 
+        $jobTypeEnd = strtolower(trim((string)($job['job_type'] ?? '')));
+        if (($job['job_type'] ?? '') === 'Slitting') {
+            jobs_set_planning_status_and_stage_for_job($db, $job, 'Slitting Pause');
+        } elseif (in_array($jobTypeEnd, ['printing', 'flexo'], true)) {
+            jobs_set_planning_status_and_stage_for_job($db, $job, 'Printed');
+        } else {
+            $endStage = jobs_stage_status_for_event($job, 'end');
+            if ($endStage !== '') {
+                jobs_set_planning_status_and_stage_for_job($db, $job, $endStage);
+            }
+        }
+
         echo json_encode([
             'ok' => true,
             'job_id' => $jobId,
@@ -1092,7 +1311,7 @@ try {
             break;
         }
 
-        $stmt = $db->prepare("SELECT id, status, extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $stmt = $db->prepare("SELECT id, status, planning_id, department, job_type, extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
         $stmt->bind_param('i', $jobId);
         $stmt->execute();
         $job = $stmt->get_result()->fetch_assoc();
@@ -1131,6 +1350,18 @@ try {
         $upd->bind_param('si', $safeExtraJson, $jobId);
         $upd->execute();
 
+        $jobTypePause = strtolower(trim((string)($job['job_type'] ?? '')));
+        if (($job['job_type'] ?? '') === 'Slitting') {
+            jobs_set_planning_status_and_stage_for_job($db, $job, 'Slitting Pause');
+        } elseif (in_array($jobTypePause, ['printing', 'flexo'], true)) {
+            jobs_set_planning_status_and_stage_for_job($db, $job, 'Printing Pause');
+        } else {
+            $pauseStage = jobs_stage_status_for_event($job, 'pause');
+            if ($pauseStage !== '') {
+                jobs_set_planning_status_and_stage_for_job($db, $job, $pauseStage);
+            }
+        }
+
         echo json_encode([
             'ok' => true,
             'job_id' => $jobId,
@@ -1154,7 +1385,7 @@ try {
             break;
         }
 
-        $stmt = $db->prepare("SELECT id, extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $stmt = $db->prepare("SELECT id, planning_id, job_type, extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
         $stmt->bind_param('i', $jobId);
         $stmt->execute();
         $job = $stmt->get_result()->fetch_assoc();
@@ -1180,6 +1411,13 @@ try {
         $upd = $db->prepare("UPDATE jobs SET status = 'Pending', started_at = NULL, completed_at = NULL, duration_minutes = NULL, extra_data = ? WHERE id = ?");
         $upd->bind_param('si', $safeExtraJson, $jobId);
         $upd->execute();
+
+        if (($job['job_type'] ?? '') === 'Slitting') {
+            $planId = (int)($job['planning_id'] ?? 0);
+            if ($planId > 0) {
+                jobs_set_planning_stage_status($db, $planId, 'Preparing Slitting');
+            }
+        }
 
         echo json_encode([
             'ok' => true,

@@ -1002,6 +1002,7 @@ try {
                 $existingDieNo = '';
                 $newDctJobId = 0;
                 $jcNoDct = '';
+                $barcodeDirectStart = false;
 
                 // Keep one downstream printing job per plan as queued.
                 if ($planningId > 0 && ($allowPrintingJob || $allowDieCuttingJob || $allowBarcodeJob)) {
@@ -1137,6 +1138,8 @@ try {
                         $barcodePrevId = $jumboJobId;
                         $barcodeFromRef = $jumboRefNo !== '' ? $jumboRefNo : 'N/A';
                     }
+
+                    $barcodeDirectStart = ($barcodePrevId <= 0);
 
                     $chkB = $db->prepare("SELECT id, job_no, extra_data FROM jobs WHERE department = 'barcode' AND planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
                     $chkB->bind_param('i', $planningId);
@@ -1404,6 +1407,9 @@ try {
 
             // 9. Update planning status to a valid planning enum state.
             $planningStatusTarget = $directFlexoBypass ? 'Queued' : 'Preparing Slitting';
+            if (!empty($allowBarcodeJob) && $barcodeDirectStart) {
+                $planningStatusTarget = 'Pending - Barcode';
+            }
             if ($planNo !== '') {
                 $updPlanNo = $db->prepare("UPDATE planning SET status = ? WHERE job_no = ?");
                 $updPlanNo->bind_param('ss', $planningStatusTarget, $planNo);

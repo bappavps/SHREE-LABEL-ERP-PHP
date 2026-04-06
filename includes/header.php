@@ -164,7 +164,7 @@ $notificationDeptCsv = implode(',', $notificationDepartments);
 </style>
 </head>
 <body class="theme-<?= e($themeMode) ?>">
-<div class="app-shell" data-sidebar-collapse-delay-ms="<?= $sidebarCollapseDelayMs ?>">
+<div class="app-shell sidebar-collapsed" data-sidebar-collapse-delay-ms="<?= $sidebarCollapseDelayMs ?>">
 <?php include __DIR__ . '/sidebar.php'; ?>
 <div class="main-wrapper">
   <div class="app-top-strip" aria-hidden="true"><span class="app-top-dot"></span></div>

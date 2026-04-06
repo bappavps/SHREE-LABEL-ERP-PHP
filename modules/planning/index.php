@@ -55,7 +55,8 @@ $defaultColumns = [
 ];
 
 $allowedTypes = ['Text', 'Number', 'Date', 'Status', 'Priority', 'Department'];
-$statusList = ['Pending', 'Preparing Slitting', 'Slitting Completed', 'Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval'];
+$statusList = erp_status_page_options('planning.label-printing');
+$defaultStatus = erp_status_page_default('planning.label-printing');
 $priorityList = ['Low', 'Normal', 'High', 'Urgent'];
 
 function planning_route_department_choices() {
@@ -406,75 +407,42 @@ function planning_get_rows(mysqli $db, $department) {
 }
 
 function planning_normalize_status($status) {
-  $s = trim((string)$status);
-  if ($s === '') return 'Pending';
-
-  $sLower = strtolower($s);
-  if (strpos($sLower, 'printing') !== false && (strpos($sLower, 'done') !== false || strpos($sLower, 'completed') !== false)) {
-    return 'Printing Done';
-  }
-  // Any slitting-stage text should stay in the slitting lane.
-  if (strpos($sLower, 'slitting') !== false || strpos($sLower, 'sliting') !== false) {
-    if (strpos($sLower, 'completed') !== false || strpos($sLower, 'done') !== false) return 'Slitting Completed';
-    return 'Preparing Slitting';
-  }
-
-  // Normalize legacy and typo values to the canonical status.
-  if (strcasecmp($s, 'Slitting') === 0
-      || strcasecmp($s, 'Prepared Slitting') === 0
-      || strcasecmp($s, 'Prepared Sliting') === 0
-      || strcasecmp($s, 'Preparing Sliting') === 0) {
-    return 'Preparing Slitting';
-  }
-
-  if (strcasecmp($s, 'Slitting Done') === 0 || strcasecmp($s, 'Sliting Done') === 0 || strcasecmp($s, 'Slitting Completed') === 0) {
-    return 'Slitting Completed';
-  }
-
-  $allowed = ['Pending', 'Running', 'Completed', 'Printing Done', 'Hold', 'Hold for Payment', 'Hold for Approval', 'Preparing Slitting', 'Slitting', 'Slitting Completed'];
-  foreach ($allowed as $v) {
-    if (strcasecmp($s, $v) === 0) return $v;
-  }
-  return 'Pending';
+  return erp_status_page_normalize($status, 'planning.label-printing');
 }
 
 function planning_status_badge($status) {
-    $s = (string)$status;
-    $class = 'pending';
-    if (strcasecmp($s, 'Completed') === 0) $class = 'completed';
-  elseif (strcasecmp($s, 'Printing Done') === 0) $class = 'completed';
-    elseif (strcasecmp($s, 'Running') === 0) $class = 'in-progress';
-    elseif (stripos($s, 'Hold') === 0 || strcasecmp($s, 'On Hold') === 0) $class = 'on-hold';
-    elseif (strcasecmp($s, 'Slitting') === 0 || strcasecmp($s, 'Preparing Slitting') === 0) $class = 'slitting';
-    elseif (strcasecmp($s, 'Slitting Completed') === 0 || strcasecmp($s, 'Sliting Done') === 0 || strcasecmp($s, 'Slitting Done') === 0) $class = 'completed';
-    elseif ($s === 'Queued') $class = 'consumed';
+    $s = trim((string)$status);
+  if ($s === '') $s = erp_status_page_default('planning.label-printing');
+    $class = erp_status_badge_class(planning_normalize_status($s));
     return '<span class="badge badge-' . $class . '">' . e($s) . '</span>';
 }
 
   function planning_status_pill_class($status) {
-    $v = strtolower(preg_replace('/[^a-z]/', '', trim((string)$status)));
-    if (strpos($v, 'printing') !== false && (strpos($v, 'done') !== false || strpos($v, 'completed') !== false)) return 'printingdone';
-    if (strpos($v, 'slitting') !== false || strpos($v, 'sliting') !== false) {
-      if (strpos($v, 'completed') !== false || strpos($v, 'done') !== false) return 'completed';
-      return 'slitting';
-    }
-    if ($v === 'running' || $v === 'inprogress') return 'running';
-    if ($v === 'completed' || $v === 'slittingcompleted') return 'completed';
-    if (strpos($v, 'hold') === 0) return 'hold';
-    if ($v === 'preparingslitting' || $v === 'preparingsliting' || $v === 'preparedslitting' || $v === 'preparedsliting' || $v === 'slitting') return 'slitting';
+    $badgeClass = erp_status_badge_class(planning_normalize_status($status));
+    if (in_array($badgeClass, ['completed', 'dispatched', 'approved'], true)) return 'completed';
+    if (in_array($badgeClass, ['on-hold', 'rejected', 'cancelled'], true)) return 'hold';
+    if ($badgeClass === 'slitting') return 'slitting';
+    if (in_array($badgeClass, ['in-progress', 'in-production'], true)) return 'running';
     return 'pending';
+  }
+
+  function planning_status_inline_style($status) {
+    return erp_status_inline_style(planning_normalize_status($status));
+  }
+
+  function planning_status_style_map_data() {
+    $labels = erp_status_page_options('planning.label-printing');
+    $map = [];
+    foreach ($labels as $label) {
+      $map[strtolower(trim((string)$label))] = planning_status_inline_style($label);
+    }
+    return $map;
   }
 
   function planning_board_status_badge($status) {
     $s = trim((string)$status);
-    if ($s === '') $s = 'Pending';
-    $class = 'pending';
-    if (strcasecmp($s, 'Running') === 0) $class = 'in-progress';
-    elseif (strcasecmp($s, 'Completed') === 0) $class = 'completed';
-    elseif (strcasecmp($s, 'Printing Done') === 0) $class = 'completed';
-    elseif (strcasecmp($s, 'Preparing Slitting') === 0 || strcasecmp($s, 'Slitting') === 0) $class = 'slitting';
-    elseif (strcasecmp($s, 'Slitting Completed') === 0 || strcasecmp($s, 'Sliting Done') === 0 || strcasecmp($s, 'Slitting Done') === 0) $class = 'completed';
-    elseif (stripos($s, 'Hold') === 0) $class = 'on-hold';
+    if ($s === '') $s = erp_status_page_default('planning.label-printing');
+    $class = erp_status_badge_class(planning_normalize_status($s));
     return '<span class="badge badge-' . $class . '">' . e($s) . '</span>';
   }
 
@@ -521,13 +489,22 @@ function planning_status_badge($status) {
         continue;
       }
       if ($k === 'printing_planning') {
+        $default = erp_status_page_default('planning.label-printing');
         $liveStatus = planning_normalize_status((string)($row['status'] ?? ''));
         $extraStatus = planning_normalize_status((string)($extra['printing_planning'] ?? ''));
-        if ($extraStatus === 'Printing Done') {
-          $vals[$k] = 'Printing Done';
-        } else {
-          $vals[$k] = $liveStatus !== 'Pending' ? $liveStatus : ($extraStatus !== 'Pending' ? $extraStatus : 'Pending');
+        $stageLifecycle = [
+          'Preparing Slitting', 'Slitting', 'Slitting Pause', 'Slitted',
+          'Printing', 'Printing Pause', 'Printed',
+          'Die Cutting', 'Die Cutting Pause', 'Die Cut',
+          'Barcode', 'Barcode Pause', 'Barcoded',
+          'Label Slitting', 'Label Slitting Pause', 'Label Slitted',
+          'Packing', 'Packing Pause', 'Packed'
+        ];
+        if (in_array($extraStatus, $stageLifecycle, true)) {
+          $vals[$k] = $extraStatus;
+          continue;
         }
+        $vals[$k] = $liveStatus !== $default ? $liveStatus : ($extraStatus !== $default ? $extraStatus : $default);
         continue;
       }
       if ($k === 'priority') {
@@ -682,8 +659,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
       $jobName = trim((string)($rowValues['name'] ?? $rowValues['job_name'] ?? ''));
         if ($jobName === '') planning_json_response(['ok' => false, 'message' => 'Job name is required.'], 400);
 
-      $statusRaw = trim((string)($rowValues['printing_planning'] ?? $rowValues['status'] ?? 'Pending'));
-      if ($statusRaw === '') $statusRaw = 'Pending';
+      $statusRaw = trim((string)($rowValues['printing_planning'] ?? $rowValues['status'] ?? $defaultStatus));
+      if ($statusRaw === '') $statusRaw = $defaultStatus;
       $status = planning_normalize_status($statusRaw);
       // Persist canonical status token in extra_data so reload keeps correct color class.
       $rowValues['printing_planning'] = $status;
@@ -838,13 +815,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
       $jobName = trim((string)($rowValues['name'] ?? $_POST['job_name'] ?? ''));
         if ($jobName === '') planning_json_response(['ok' => false, 'message' => 'Job name is required.'], 400);
 
-      $statusRaw = 'Pending';
-      $rowValues['printing_planning'] = 'Pending';
+      $statusRaw = $defaultStatus;
+      $rowValues['printing_planning'] = $defaultStatus;
       $rowValues = planning_apply_plate_defaults($rowValues, planning_find_plate_autofill_data($db, $rowValues['plate_no'] ?? $_POST['plate_no'] ?? ''));
       $rowValues['die'] = planning_normalize_die_value($rowValues['die'] ?? $_POST['die'] ?? '');
       $rowValues['department_route'] = planning_normalize_route_departments_by_die($rowValues['department_route'] ?? '', $rowValues['die'] ?? '');
 
-      $status = 'Pending';
+      $status = $defaultStatus;
       $priority = (string)($rowValues['priority'] ?? $_POST['priority'] ?? 'Normal');
         if (!in_array($priority, $priorityList, true)) $priority = 'Normal';
 
@@ -978,8 +955,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             );
             $rowValues['dispatch_date'] = $scheduled;
 
-            $status = 'Pending';
-            $rowValues['printing_planning'] = 'Pending';
+            $status = $defaultStatus;
+            $rowValues['printing_planning'] = $defaultStatus;
 
             $priority = (string)(planning_get_any_key($normRow, ['priority']) ?? 'Normal');
             if (!in_array($priority, $priorityList, true)) $priority = 'Normal';
@@ -1157,8 +1134,8 @@ include __DIR__ . '/../../includes/header.php';
         <?php foreach ($rows as $idx => $r): ?>
           <?php
             $rowVals = planning_extract_row_values($r, $columns, $idx);
-            $rowStatusVal = 'Pending';
-            foreach ($columns as $_sc) { if ($_sc['type'] === 'Status') { $rowStatusVal = (string)($rowVals[$_sc['key']] ?? 'Pending'); break; } }
+            $rowStatusVal = $defaultStatus;
+            foreach ($columns as $_sc) { if ($_sc['type'] === 'Status') { $rowStatusVal = (string)($rowVals[$_sc['key']] ?? $defaultStatus); break; } }
             $rowSCls = planning_status_pill_class($rowStatusVal);
             $rowExtra = json_decode((string)($r['extra_data'] ?? '{}'), true);
             if (!is_array($rowExtra)) $rowExtra = [];
@@ -1207,17 +1184,14 @@ include __DIR__ . '/../../includes/header.php';
               <?php
                 $k = $c['key'];
                 $v = (string)($rowVals[$k] ?? '');
+                if ($c['type'] === 'Status') {
+                  $v = planning_normalize_status($v);
+                }
               ?>
               <td data-key="<?= e($k) ?>" data-type="<?= e($c['type']) ?>" data-raw="<?= e($v) ?>">
                 <?php if ($c['type'] === 'Status'): ?>
-                  <span class="cell-display status-pill status-pill-<?= e(planning_status_pill_class($v ?: 'Pending')) ?>"><?= e($v ?: 'Pending') ?></span>
-                  <?php
-                    $statusOptions = array_values(array_unique(array_merge(
-                      ['Pending', 'Preparing Slitting', 'Slitting Completed', 'Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval'],
-                      $statusList,
-                      [$v ?: 'Pending']
-                    )));
-                  ?>
+                  <span class="cell-display status-pill" style="<?= e(planning_status_inline_style($v ?: $defaultStatus)) ?>"><?= e($v ?: $defaultStatus) ?></span>
+                  <?php $statusOptions = $statusList; ?>
                   <select class="cell-input cell-select-status form-control" style="display:none">
                     <?php foreach ($statusOptions as $s): ?><option value="<?= e($s) ?>"<?= $v === $s ? ' selected' : '' ?>><?= e($s) ?></option><?php endforeach; ?>
                   </select>
@@ -1312,8 +1286,8 @@ include __DIR__ . '/../../includes/header.php';
           <div<?= in_array($c['key'], ['department_route', 'remarks'], true) ? ' style="grid-column:1 / -1"' : '' ?>>
             <label><?= e($c['label']) ?><?= $c['key'] === 'name' ? ' *' : '' ?></label>
             <?php if ($c['type'] === 'Status'): ?>
-              <input class="form-control" type="text" value="Pending" readonly>
-              <input type="hidden" name="<?= e($c['key']) ?>" value="Pending">
+              <input class="form-control" type="text" value="<?= e($defaultStatus) ?>" readonly>
+              <input type="hidden" name="<?= e($c['key']) ?>" value="<?= e($defaultStatus) ?>">
             <?php elseif ($c['type'] === 'Priority'): ?>
               <select class="form-control" name="<?= e($c['key']) ?>">
                 <?php foreach ($priorityList as $p): ?><option value="<?= e($p) ?>"<?= $p === 'Normal' ? ' selected' : '' ?>><?= e($p) ?></option><?php endforeach; ?>
@@ -1504,6 +1478,9 @@ include __DIR__ . '/../../includes/header.php';
   var plateAutofillMap = <?= json_encode($planningPlateAutofillMap, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
   var planningPickerItems = <?= json_encode($planningPickerItems, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
   var materialSuggestions = <?= json_encode($planningMaterialSuggestions, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+  var planningStatusStyleMap = <?= json_encode(planning_status_style_map_data(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+  var defaultPlanningStatus = <?= json_encode($defaultStatus, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+  var defaultPlanningStatusKey = String(defaultPlanningStatus || '').trim().toLowerCase();
   var csrfToken = document.querySelector('#csrf-form [name="csrf_token"]').value;
   var currentDepartment = <?= json_encode($department, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
   var CAN_ADD = <?= $canAdd ? 'true' : 'false' ?>;
@@ -2367,54 +2344,46 @@ include __DIR__ . '/../../includes/header.php';
     var vl = String(val || '').trim().toLowerCase();
     var norm = vl.replace(/[^a-z]/g, '');
     var allRowCls = ['row-s-running','row-s-completed','row-s-hold','row-s-slitting','row-s-pending','row-s-printingdone'];
-    if (norm.indexOf('printing') !== -1 && (norm.indexOf('done') !== -1 || norm.indexOf('completed') !== -1)) {
-      tr.classList.remove.apply(tr.classList, allRowCls);
-      tr.classList.add('row-s-printingdone');
-      return;
+    var cls = 'row-s-pending';
+    if (norm.indexOf('hold') === 0 || norm.indexOf('pause') !== -1) {
+      cls = 'row-s-hold';
+    } else if (norm.indexOf('pending') === 0) {
+      cls = 'row-s-pending';
+    } else if (
+      norm === 'running' ||
+      norm === 'inprogress' ||
+      norm === 'printing' ||
+      norm === 'diecutting' ||
+      norm === 'barcode' ||
+      norm === 'labelslitting' ||
+      norm === 'packing' ||
+      norm === 'slitting'
+    ) {
+      cls = (norm === 'slitting') ? 'row-s-slitting' : 'row-s-running';
+    } else if (norm.indexOf('preparing') === 0) {
+      cls = (norm.indexOf('slitting') !== -1 || norm.indexOf('jumbo') !== -1) ? 'row-s-slitting' : 'row-s-running';
+    } else if (
+      norm.indexOf('slitted') !== -1 ||
+      norm.indexOf('printed') !== -1 ||
+      norm.indexOf('diecut') !== -1 ||
+      norm.indexOf('barcoded') !== -1 ||
+      norm.indexOf('labelslitted') !== -1 ||
+      norm.indexOf('packed') !== -1 ||
+      norm.indexOf('dispatched') !== -1 ||
+      norm === 'complete' ||
+      norm === 'completed'
+    ) {
+      cls = 'row-s-completed';
     }
-    if (norm.indexOf('slitting') !== -1 || norm.indexOf('sliting') !== -1) {
-      tr.classList.remove.apply(tr.classList, allRowCls);
-      tr.classList.add(norm.indexOf('completed') !== -1 ? 'row-s-completed' : 'row-s-slitting');
-      return;
-    }
-    var cls = (norm === 'running' || norm === 'inprogress')
-      ? 'row-s-running'
-      : (norm === 'completed' || norm === 'slittingcompleted')
-        ? 'row-s-completed'
-        : (norm.indexOf('hold') === 0)
-          ? 'row-s-hold'
-          : (norm === 'preparingslitting' || norm === 'preparingsliting' || norm === 'preparedslitting' || norm === 'preparedsliting' || norm === 'slitting')
-            ? 'row-s-slitting'
-            : 'row-s-pending';
     tr.classList.remove.apply(tr.classList, allRowCls);
     tr.classList.add(cls);
   }
 
   function applyStatusStyle(sel) {
-    var v = String(sel.value || '').trim().toLowerCase();
-    var norm = v.replace(/[^a-z]/g, '');
-    if (norm.indexOf('printing') !== -1 && (norm.indexOf('done') !== -1 || norm.indexOf('completed') !== -1)) {
-      sel.className = 'cell-input cell-select-status form-control ssel-printingdone';
-      var trPD = sel.closest('tr[data-id]');
-      if (trPD) applyRowStatus(trPD, sel.value);
-      return;
-    }
-    if (norm.indexOf('slitting') !== -1 || norm.indexOf('sliting') !== -1) {
-      sel.className = 'cell-input cell-select-status form-control ' + ((norm.indexOf('completed') !== -1 || norm.indexOf('done') !== -1) ? 'ssel-completed' : 'ssel-slitting');
-      var tr2 = sel.closest('tr[data-id]');
-      if (tr2) applyRowStatus(tr2, sel.value);
-      return;
-    }
-    var cls = (norm === 'running' || norm === 'inprogress')
-      ? 'ssel-running'
-      : (norm === 'completed' || norm === 'slittingcompleted')
-        ? 'ssel-completed'
-        : (norm.indexOf('hold') === 0)
-          ? 'ssel-hold'
-          : (norm === 'preparingslitting' || norm === 'preparingsliting' || norm === 'preparedslitting' || norm === 'preparedsliting' || norm === 'slitting')
-            ? 'ssel-slitting'
-            : 'ssel-pending';
-    sel.className = 'cell-input cell-select-status form-control ' + cls;
+    var displayState = sel.style.display;
+    sel.className = 'cell-input cell-select-status form-control';
+    sel.style.cssText = statusStyleFromText(sel.value || defaultPlanningStatus);
+    if (displayState !== '') sel.style.display = displayState;
     var tr = sel.closest('tr[data-id]');
     if (tr) applyRowStatus(tr, sel.value);
   }
@@ -2422,14 +2391,38 @@ include __DIR__ . '/../../includes/header.php';
   function statusClassFromText(txt) {
     var s = String(txt || '').trim().toLowerCase();
     var n = s.replace(/[^a-z]/g, '');
-    if (n.indexOf('printing') !== -1 && (n.indexOf('done') !== -1 || n.indexOf('completed') !== -1)) return 'printingdone';
-    if (n.indexOf('slitting') !== -1 || n.indexOf('sliting') !== -1) {
-      return (n.indexOf('completed') !== -1 || n.indexOf('done') !== -1) ? 'completed' : 'slitting';
+    if (n.indexOf('hold') === 0 || n.indexOf('pause') !== -1) return 'hold';
+    if (n.indexOf('pending') === 0) return 'pending';
+    if (n.indexOf('preparing') === 0) {
+      return (n.indexOf('slitting') !== -1 || n.indexOf('jumbo') !== -1) ? 'slitting' : 'running';
     }
-    if (n === 'running' || n === 'inprogress') return 'running';
-    if (n === 'completed') return 'completed';
-    if (n.indexOf('hold') === 0) return 'hold';
+    if (
+      n.indexOf('slitted') !== -1 ||
+      n.indexOf('printed') !== -1 ||
+      n.indexOf('diecut') !== -1 ||
+      n.indexOf('barcoded') !== -1 ||
+      n.indexOf('labelslitted') !== -1 ||
+      n.indexOf('packed') !== -1 ||
+      n.indexOf('dispatched') !== -1 ||
+      n === 'complete' ||
+      n === 'completed'
+    ) return 'completed';
+    if (
+      n === 'running' ||
+      n === 'inprogress' ||
+      n === 'printing' ||
+      n === 'diecutting' ||
+      n === 'barcode' ||
+      n === 'labelslitting' ||
+      n === 'packing'
+    ) return 'running';
+    if (n === 'slitting') return 'slitting';
     return 'pending';
+  }
+
+  function statusStyleFromText(txt) {
+    var key = String(txt || defaultPlanningStatus).trim().toLowerCase();
+    return planningStatusStyleMap[key] || planningStatusStyleMap[defaultPlanningStatusKey] || '';
   }
 
   function applyPriorityStyle(sel) {
@@ -2441,13 +2434,9 @@ include __DIR__ . '/../../includes/header.php';
     boardTable.querySelectorAll('tr[data-id]').forEach(function(tr){
       var statusCell = tr.querySelector('td[data-type="Status"] .cell-display.status-pill');
       if (!statusCell) return;
-      var cls = statusClassFromText(statusCell.textContent || 'Pending');
-      statusCell.className = 'cell-display status-pill status-pill-' + cls;
-      var currentText = String(statusCell.textContent || '').trim();
-      var logicalStatus = (cls === 'slitting') ? 'Preparing Slitting' : (cls === 'printingdone') ? 'Printing Done' : currentText;
-      if (cls === 'completed' && /slit+ing?\s*done/i.test(currentText)) {
-        logicalStatus = 'Slitting Completed';
-      }
+      statusCell.className = 'cell-display status-pill';
+      statusCell.style.cssText = statusStyleFromText(statusCell.textContent || defaultPlanningStatus);
+      var logicalStatus = String(statusCell.textContent || '').trim();
       applyRowStatus(tr, logicalStatus);
     });
   }
@@ -2832,20 +2821,9 @@ include __DIR__ . '/../../includes/header.php';
 
           var v = getCellInputValue(td);
           if (type === 'Status') {
-            var vl = String(v || 'Pending').trim().toLowerCase().replace(/[^a-z]/g,'');
-            var pilClass = (vl.indexOf('slitting') !== -1 || vl.indexOf('sliting') !== -1)
-              ? (vl.indexOf('completed') !== -1 ? 'completed' : 'slitting')
-              : (vl === 'running' || vl === 'inprogress')
-              ? 'running'
-              : (vl === 'completed' || vl === 'slittingcompleted')
-                ? 'completed'
-                : (vl.indexOf('hold') === 0)
-                  ? 'hold'
-                  : (vl === 'preparingslitting' || vl === 'preparingsliting' || vl === 'preparedslitting' || vl === 'preparedsliting' || vl === 'slitting')
-                    ? 'slitting'
-                    : 'pending';
-            disp.className = 'cell-display status-pill status-pill-' + pilClass;
-            disp.textContent = v || 'Pending';
+            disp.className = 'cell-display status-pill';
+            disp.style.cssText = statusStyleFromText(v || defaultPlanningStatus);
+            disp.textContent = v || defaultPlanningStatus;
             applyRowStatus(tr, v);
           } else if (type === 'Priority') {
             var pCls = String(v || 'Normal').trim().toLowerCase();
@@ -3842,12 +3820,6 @@ include __DIR__ . '/../../includes/header.php';
 .erp-confirm-yes, .erp-confirm-no { flex-shrink: 0; font-size: .78rem !important; padding: 4px 12px !important; }
 /* ── Status select inline edit ── */
 .cell-select-status { -webkit-appearance: none; appearance: none; font-size: .78rem; font-weight: 700; text-align: center; border-radius: 4px !important; padding: 3px 14px !important; cursor: pointer; min-width: 130px; border-width: 0 !important; }
-.ssel-running  { background: #3b82f6 !important; color: #fff !important; }
-.ssel-completed{ background: #22c55e !important; color: #fff !important; }
-.ssel-hold     { background: #ef4444 !important; color: #fff !important; }
-.ssel-slitting { background: #f97316 !important; color: #fff !important; }
-.ssel-pending  { background: #94a3b8 !important; color: #fff !important; }
-.ssel-printingdone { background: #0d9488 !important; color: #fff !important; }
 /* ── Column header drag ── */
 .planning-board-table th[data-col-key] { cursor: grab; user-select: none; }
 .planning-board-table th[data-col-key].col-drag-over { background: #dbeafe; outline: 2px dashed #3b82f6; outline-offset: -2px; }
@@ -3861,15 +3833,6 @@ include __DIR__ . '/../../includes/header.php';
 .row-s-printingdone td, .row-s-printingdone .sticky-col { background: #f0fdfa !important; }
 /* ── Status pill badge ── */
 .status-pill { display: inline-block; font-size: .75rem; font-weight: 700; padding: 3px 14px; border-radius: 4px; letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; color: #fff; }
-.status-pill-running          { background: #3b82f6; }
-.status-pill-completed        { background: #22c55e; }
-.status-pill-hold,
-.status-pill-holdforpayment,
-.status-pill-holdforapproval  { background: #ef4444; }
-.status-pill-slitting,
-.status-pill-preparingslitting { background: #f97316; }
-.status-pill-pending          { background: #94a3b8; }
-.status-pill-printingdone     { background: #0d9488; }
 /* Double-click hint cursor on data cells */
 .planning-board-table tbody tr[data-id]:not(.is-editing) td:not(.sticky-col):not(.seq-drag-col) { cursor: pointer; }
 /* ── Priority pill badge ── */

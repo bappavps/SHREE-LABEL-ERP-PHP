@@ -23,27 +23,133 @@ $allowedSort = ['roll_no','status','company','paper_type','width_mm','length_mtr
 $sortCol = in_array($_GET['sort'] ?? '', $allowedSort) ? $_GET['sort'] : 'id';
 $sortDir = (strtolower($_GET['dir'] ?? '') === 'asc') ? 'ASC' : 'DESC';
 
+$orderBySql = "`{$sortCol}` {$sortDir}";
+if ($sortCol === 'roll_no') {
+  // Natural roll sort: compare trailing numeric token first, then full roll_no.
+  $orderBySql = "CAST(SUBSTRING_INDEX(REPLACE(REPLACE(REPLACE(`roll_no`,'-','/'),' ','/'),'_','/'), '/', -1) AS UNSIGNED) {$sortDir}, `roll_no` {$sortDir}";
+}
+
 // Server-side global search
 $searchTerm = trim((string)($_GET['search'] ?? ''));
-$searchWhere = '';
-$searchParams = [];
-$searchTypes = '';
+$quickFilters = [
+  'lot' => trim((string)($_GET['lot'] ?? '')),
+  'roll' => trim((string)($_GET['roll'] ?? '')),
+  'company' => trim((string)($_GET['company'] ?? '')),
+  'type' => trim((string)($_GET['type'] ?? '')),
+  'gsm' => trim((string)($_GET['gsm'] ?? '')),
+  'status' => trim((string)($_GET['status'] ?? '')),
+  'width' => trim((string)($_GET['width'] ?? '')),
+  'date_from' => trim((string)($_GET['date_from'] ?? '')),
+  'date_to' => trim((string)($_GET['date_to'] ?? '')),
+];
+
+$whereParts = [];
+$whereParams = [];
+$whereTypes = '';
+
 if ($searchTerm !== '') {
-    $searchCols = ['roll_no','company','paper_type','lot_batch_no','company_roll_no','job_no','job_name','remarks','status','gsm','width_mm','weight_kg','length_mtr'];
+  // Keep global search aligned with table columns so terms like "2025" match date/year cells too.
+  $searchCols = [
+    'roll_no','status','company','paper_type','width_mm','length_mtr','gsm','weight_kg','purchase_rate',
+    'date_received','date_used','job_no','job_size','job_name','lot_batch_no','company_roll_no','remarks','id'
+  ];
     $likeClauses = [];
     $likeTerm = '%' . $searchTerm . '%';
     foreach ($searchCols as $sc) {
-        $likeClauses[] = "COALESCE(`{$sc}`,'') LIKE ?";
-        $searchParams[] = $likeTerm;
-        $searchTypes .= 's';
+    $likeClauses[] = "COALESCE(CAST(`{$sc}` AS CHAR),'') LIKE ?";
+    $whereParams[] = $likeTerm;
+    $whereTypes .= 's';
     }
-    $searchWhere = ' WHERE (' . implode(' OR ', $likeClauses) . ')';
+  $whereParts[] = '(' . implode(' OR ', $likeClauses) . ')';
 }
 
+if ($quickFilters['lot'] !== '') {
+  $whereParts[] = "COALESCE(`lot_batch_no`, '') LIKE ?";
+  $whereParams[] = '%' . $quickFilters['lot'] . '%';
+  $whereTypes .= 's';
+}
+if ($quickFilters['roll'] !== '') {
+  $whereParts[] = "COALESCE(`roll_no`, '') LIKE ?";
+  $whereParams[] = '%' . $quickFilters['roll'] . '%';
+  $whereTypes .= 's';
+}
+if ($quickFilters['company'] !== '') {
+  $whereParts[] = "LOWER(COALESCE(`company`, '')) = ?";
+  $whereParams[] = strtolower($quickFilters['company']);
+  $whereTypes .= 's';
+}
+if ($quickFilters['type'] !== '') {
+  $whereParts[] = "LOWER(COALESCE(`paper_type`, '')) = ?";
+  $whereParams[] = strtolower($quickFilters['type']);
+  $whereTypes .= 's';
+}
+if ($quickFilters['gsm'] !== '') {
+  $whereParts[] = "CAST(COALESCE(`gsm`, '') AS CHAR) = ?";
+  $whereParams[] = $quickFilters['gsm'];
+  $whereTypes .= 's';
+}
+if ($quickFilters['status'] !== '') {
+  $whereParts[] = "LOWER(COALESCE(`status`, '')) = ?";
+  $whereParams[] = strtolower($quickFilters['status']);
+  $whereTypes .= 's';
+}
+if ($quickFilters['width'] !== '') {
+  $rangeParts = preg_split('/\s*-\s*/', $quickFilters['width']);
+  if (count($rangeParts) === 2) {
+    $minW = (float)preg_replace('/[^0-9.]/', '', $rangeParts[0]);
+    $maxW = (float)preg_replace('/[^0-9.]/', '', $rangeParts[1]);
+    if ($minW > 0 || $maxW > 0) {
+      if ($minW > $maxW) {
+        $tmp = $minW;
+        $minW = $maxW;
+        $maxW = $tmp;
+      }
+      $whereParts[] = "COALESCE(`width_mm`, 0) BETWEEN ? AND ?";
+      $whereParams[] = $minW;
+      $whereParams[] = $maxW;
+      $whereTypes .= 'dd';
+    }
+  }
+}
+if ($quickFilters['date_from'] !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $quickFilters['date_from'])) {
+  $whereParts[] = "DATE(`date_received`) >= ?";
+  $whereParams[] = $quickFilters['date_from'];
+  $whereTypes .= 's';
+}
+if ($quickFilters['date_to'] !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $quickFilters['date_to'])) {
+  $whereParts[] = "DATE(`date_received`) <= ?";
+  $whereParams[] = $quickFilters['date_to'];
+  $whereTypes .= 's';
+}
+
+$searchWhere = !empty($whereParts) ? (' WHERE ' . implode(' AND ', $whereParts)) : '';
+
+function activeFilterParams($searchTerm, array $quickFilters) {
+  $out = [];
+  if ($searchTerm !== '') {
+    $out['search'] = $searchTerm;
+  }
+  foreach (['lot','roll','company','type','gsm','status','width','date_from','date_to'] as $k) {
+    $v = trim((string)($quickFilters[$k] ?? ''));
+    if ($v !== '') {
+      $out[$k] = $v;
+    }
+  }
+  return $out;
+}
+
+function renderHiddenFilterInputs(array $filterParams) {
+  foreach ($filterParams as $k => $v) {
+    echo '<input type="hidden" name="' . e($k) . '" value="' . e($v) . '">';
+  }
+}
+
+$activeFilterParams = activeFilterParams($searchTerm, $quickFilters);
+
 $countSql = 'SELECT COUNT(*) AS c FROM paper_stock' . $searchWhere;
-if ($searchTerm !== '') {
+if ($whereTypes !== '') {
     $cntStmt = $db->prepare($countSql);
-    $cntStmt->bind_param($searchTypes, ...$searchParams);
+  $cntStmt->bind_param($whereTypes, ...$whereParams);
     $cntStmt->execute();
     $total = (int)$cntStmt->get_result()->fetch_assoc()['c'];
 } else {
@@ -57,10 +163,10 @@ if ($page > $totalPages) {
 }
 
 if ($isAllRows) {
-  $sql = "SELECT * FROM paper_stock{$searchWhere} ORDER BY `{$sortCol}` {$sortDir}";
-  if ($searchTerm !== '') {
+  $sql = "SELECT * FROM paper_stock{$searchWhere} ORDER BY {$orderBySql}";
+  if ($whereTypes !== '') {
       $stmt = $db->prepare($sql);
-      $stmt->bind_param($searchTypes, ...$searchParams);
+    $stmt->bind_param($whereTypes, ...$whereParams);
   } else {
       $stmt = $db->prepare($sql);
   }
@@ -70,11 +176,11 @@ if ($isAllRows) {
   $totalPages = 1;
   $offset = 0;
 } else {
-  $sql = "SELECT * FROM paper_stock{$searchWhere} ORDER BY `{$sortCol}` {$sortDir} LIMIT ? OFFSET ?";
-  if ($searchTerm !== '') {
+  $sql = "SELECT * FROM paper_stock{$searchWhere} ORDER BY {$orderBySql} LIMIT ? OFFSET ?";
+  if ($whereTypes !== '') {
       $stmt = $db->prepare($sql);
-      $types = $searchTypes . 'ii';
-      $params = array_merge($searchParams, [$perPage, $offset]);
+      $types = $whereTypes . 'ii';
+      $params = array_merge($whereParams, [$perPage, $offset]);
       $stmt->bind_param($types, ...$params);
   } else {
       $stmt = $db->prepare($sql);
@@ -87,10 +193,7 @@ if ($isAllRows) {
 $companies  = $db->query("SELECT DISTINCT company FROM paper_stock WHERE company IS NOT NULL AND company <> '' ORDER BY company")->fetch_all(MYSQLI_ASSOC);
 $paperTypes = $db->query("SELECT DISTINCT paper_type FROM paper_stock WHERE paper_type IS NOT NULL AND paper_type <> '' ORDER BY paper_type")->fetch_all(MYSQLI_ASSOC);
 $gsmValues  = $db->query("SELECT DISTINCT gsm FROM paper_stock WHERE gsm IS NOT NULL ORDER BY gsm")->fetch_all(MYSQLI_ASSOC);
-$statusValues = ['Available', 'Assigned', 'Consumed', 'Main', 'Stock', 'Slitting', 'Job Assign', 'In Production'];
-// Append any custom statuses from DB not in the preset list
-$customStatusRes = $db->query("SELECT DISTINCT status FROM paper_stock WHERE status IS NOT NULL AND TRIM(status) <> '' AND status NOT IN ('Available','Assigned','Consumed','Main','Stock','Slitting','Job Assign','In Production') ORDER BY status");
-if ($customStatusRes) { while ($csRow = $customStatusRes->fetch_assoc()) { $statusValues[] = trim($csRow['status']); } }
+$statusValues = erp_paper_stock_status_options();
 
 $sumStmt = $db->query("SELECT company, paper_type, COUNT(*) AS total_rolls,
     IFNULL(SUM(length_mtr),0) AS total_mtr,
@@ -126,6 +229,14 @@ $allColumns = [
   // Distinct values for Excel-style column filters from full table (not current page)
   $colFilterData = [];
   foreach (array_keys($allColumns) as $colKey) {
+    if ($colKey === 'status') {
+      $colFilterData[$colKey] = [
+        'values' => erp_paper_stock_status_options(),
+        'hasBlank' => false,
+      ];
+      continue;
+    }
+
     $sql = "SELECT DISTINCT `{$colKey}` AS v
         FROM paper_stock
         WHERE `{$colKey}` IS NOT NULL
@@ -162,10 +273,12 @@ $allColumns = [
     ];
   }
 
-function sortUrl($col, $curSort, $curDir, $perPageRaw, $searchTerm = '') {
+function sortUrl($col, $curSort, $curDir, $perPageRaw, array $filterParams = []) {
     $dir = ($curSort === $col && $curDir === 'ASC') ? 'desc' : 'asc';
     $params = ['sort'=>$col,'dir'=>$dir,'per_page'=>$perPageRaw,'page'=>1];
-    if ($searchTerm !== '') $params['search'] = $searchTerm;
+    foreach ($filterParams as $k => $v) {
+      $params[$k] = $v;
+    }
   return '?' . http_build_query($params);
 }
 function sortIcon($col, $curSort, $curDir) {
@@ -200,6 +313,7 @@ include __DIR__ . '/../../includes/header.php';
 .ps-qf-item input:focus,.ps-qf-item select:focus{outline:none;border-color:#86efac;box-shadow:0 0 0 3px rgba(34,197,94,.1)}
 .ps-qf-actions{display:flex;align-items:center;gap:8px;min-width:max-content;padding-top:18px}
 .ps-qf-reset{height:36px;display:inline-flex;align-items:center;justify-content:center;padding:0 14px;border-radius:8px;background:#f97316;color:#fff;border:none;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap}
+.ps-qf-apply{height:36px;display:inline-flex;align-items:center;justify-content:center;padding:0 14px;border-radius:8px;background:#16a34a;color:#fff;border:none;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap}
 
 .ps-qf-picker{position:relative}
 .ps-qf-picker-btn{height:36px;width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--border);border-radius:8px;padding:0 10px;background:#fff;font-size:.8rem;color:var(--text-main);cursor:pointer;text-align:left}
@@ -410,23 +524,23 @@ include __DIR__ . '/../../includes/header.php';
   </div><!-- /ps-summary-body -->
 </div>
 
-<div class="ps-quick-filter no-print" id="ps-quick-filter">
+<form class="ps-quick-filter no-print" id="ps-quick-filter" onsubmit="return false;">
   <div class="ps-qf-item">
     <label>Global Search</label>
-    <input type="text" id="qf-search" placeholder="Search everything..." value="<?= e($searchTerm) ?>">
+    <input type="search" id="qf-search" placeholder="Search everything..." value="<?= e($searchTerm) ?>" enterkeyhint="search" inputmode="search">
   </div>
   <div class="ps-qf-item">
     <label>Lot / Batch No</label>
-    <input type="text" id="qf-lot" placeholder="Enter Lot ID...">
+    <input type="text" id="qf-lot" placeholder="Enter Lot ID..." value="<?= e($quickFilters['lot']) ?>">
   </div>
   <div class="ps-qf-item">
     <label>Roll No</label>
-    <input type="text" id="qf-roll" placeholder="Enter Roll ID...">
+    <input type="text" id="qf-roll" placeholder="Enter Roll ID..." value="<?= e($quickFilters['roll']) ?>">
   </div>
   <div class="ps-qf-item">
     <label>Company</label>
     <div class="ps-qf-picker">
-      <input type="hidden" id="qf-company" value="">
+      <input type="hidden" id="qf-company" value="<?= e($quickFilters['company']) ?>">
       <button type="button" class="ps-qf-picker-btn" data-qf-picker="company"><span class="muted">All Companies</span><i class="bi bi-chevron-down"></i></button>
       <div class="ps-qf-popup" id="qf-popup-company"></div>
     </div>
@@ -434,7 +548,7 @@ include __DIR__ . '/../../includes/header.php';
   <div class="ps-qf-item">
     <label>Paper Type</label>
     <div class="ps-qf-picker">
-      <input type="hidden" id="qf-type" value="">
+      <input type="hidden" id="qf-type" value="<?= e($quickFilters['type']) ?>">
       <button type="button" class="ps-qf-picker-btn" data-qf-picker="type"><span class="muted">All Types</span><i class="bi bi-chevron-down"></i></button>
       <div class="ps-qf-popup" id="qf-popup-type"></div>
     </div>
@@ -442,7 +556,7 @@ include __DIR__ . '/../../includes/header.php';
   <div class="ps-qf-item">
     <label>GSM</label>
     <div class="ps-qf-picker">
-      <input type="hidden" id="qf-gsm" value="">
+      <input type="hidden" id="qf-gsm" value="<?= e($quickFilters['gsm']) ?>">
       <button type="button" class="ps-qf-picker-btn" data-qf-picker="gsm"><span class="muted">All GSM</span><i class="bi bi-chevron-down"></i></button>
       <div class="ps-qf-popup" id="qf-popup-gsm"></div>
     </div>
@@ -450,27 +564,28 @@ include __DIR__ . '/../../includes/header.php';
   <div class="ps-qf-item">
     <label>Status</label>
     <div class="ps-qf-picker">
-      <input type="hidden" id="qf-status" value="">
+      <input type="hidden" id="qf-status" value="<?= e($quickFilters['status']) ?>">
       <button type="button" class="ps-qf-picker-btn" data-qf-picker="status"><span class="muted">All Status</span><i class="bi bi-chevron-down"></i></button>
       <div class="ps-qf-popup" id="qf-popup-status"></div>
     </div>
   </div>
   <div class="ps-qf-item">
     <label>Width Range (MM)</label>
-    <input type="text" id="qf-width-range" placeholder="e.g. 150 - 300">
+    <input type="text" id="qf-width-range" placeholder="e.g. 150 - 300" value="<?= e($quickFilters['width']) ?>">
   </div>
   <div class="ps-qf-item">
     <label>Received From</label>
-    <input type="date" id="qf-date-from">
+    <input type="date" id="qf-date-from" value="<?= e($quickFilters['date_from']) ?>">
   </div>
   <div class="ps-qf-item">
     <label>Received To</label>
-    <input type="date" id="qf-date-to">
+    <input type="date" id="qf-date-to" value="<?= e($quickFilters['date_to']) ?>">
   </div>
   <div class="ps-qf-actions">
+    <button type="submit" class="ps-qf-apply">Search</button>
     <button type="button" class="ps-qf-reset" onclick="resetQuickFilters()">Reset</button>
   </div>
-</div>
+</form>
 
 <div id="ps-selected-summary" class="ps-selected-summary no-print">
   <div class="ps-selected-meta">
@@ -491,7 +606,7 @@ include __DIR__ . '/../../includes/header.php';
   <form method="GET" style="display:flex;align-items:center;gap:8px">
     <input type="hidden" name="sort" value="<?= e($sortCol) ?>">
     <input type="hidden" name="dir" value="<?= e(strtolower($sortDir)) ?>">
-    <?php if ($searchTerm !== ''): ?><input type="hidden" name="search" value="<?= e($searchTerm) ?>"><?php endif; ?>
+    <?php renderHiddenFilterInputs($activeFilterParams); ?>
     <label style="font-size:12px;font-weight:600;color:#64748b">Rows:</label>
     <select name="per_page" onchange="this.form.submit()" style="height:32px;padding:0 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;font-weight:600;background:#fff">
       <?php foreach ($allowedPerPage as $rp): ?>
@@ -535,7 +650,7 @@ include __DIR__ . '/../../includes/header.php';
           <?php foreach ($allColumns as $colKey => [$colLabel, $colStyle, $colAlign]): ?>
           <th class="ps-col ps-col-<?= $colKey ?> <?= $colKey === 'roll_no' ? 'sticky-roll' : '' ?>" data-col-key="<?= $colKey ?>" style="<?= $colStyle ?>;text-align:<?= $colAlign ?>">
             <span class="col-filter-wrap">
-              <a href="<?= sortUrl($colKey, $sortCol, $sortDir, $perPageRaw, $searchTerm) ?>" style="color:inherit;text-decoration:none">
+              <a href="<?= sortUrl($colKey, $sortCol, $sortDir, $perPageRaw, $activeFilterParams) ?>" style="color:inherit;text-decoration:none">
                 <?= e($colLabel) ?> <?= sortIcon($colKey, $sortCol, $sortDir) ?>
               </a>
               <button type="button" class="col-filter-btn no-print" data-filter-col="<?= $colKey ?>" title="Filter <?= e($colLabel) ?>">
@@ -591,8 +706,9 @@ include __DIR__ . '/../../includes/header.php';
           $count = count($nodes);
           foreach ($nodes as $idx => $r) {
             $sqm = calcSQM($r['width_mm'], $r['length_mtr']);
-            $statusSlug = strtolower(str_replace(' ', '-', trim($r['status'] ?? '')));
-            echo '<tr class="ps-data-row ps-row-'.e($statusSlug).'" data-id="'.e($r['id']).'" data-mtr="'.(float)$r['length_mtr'].'" data-sqm="'.round($sqm,2).'" data-status="'.e($r['status'] ?? '').'" data-date-received="'.e($r['date_received'] ?? '').'">';
+            $displayStatus = erp_paper_stock_normalize_status((string)($r['status'] ?? ''));
+            $statusSlug = strtolower(str_replace(' ', '-', trim($displayStatus)));
+            echo '<tr class="ps-data-row ps-row-'.e($statusSlug).'" data-id="'.e($r['id']).'" data-mtr="'.(float)$r['length_mtr'].'" data-sqm="'.round($sqm,2).'" data-status="'.e($displayStatus).'" data-date-received="'.e($r['date_received'] ?? '').'">';
             echo '<td class="sticky-check" style="text-align:center"><input type="checkbox" class="ps-row-cb" value="'.e($r['id']).'" style="cursor:pointer;width:16px;height:16px"></td>';
             echo '<td class="sticky-sl" style="text-align:center;font-size:.75rem" data-sl="'.($offset + $slNo).'">'.($offset + $slNo).'</td>';
             // Roll No column with indentation and tree lines
@@ -611,7 +727,7 @@ include __DIR__ . '/../../includes/header.php';
             echo '<a href="view.php?id='.e($r['id']).'" style="color:#f97316;text-decoration:none">'.e($r['roll_no']).'</a>';
             echo '</td>';
             // Other columns
-            echo '<td class="ps-col ps-col-status">'.statusBadge($r['status']).'</td>';
+            echo '<td class="ps-col ps-col-status">'.statusBadge($displayStatus).'</td>';
             echo '<td class="ps-col ps-col-company">'.e($r['company']).'</td>';
             echo '<td class="ps-col ps-col-paper_type">'.e($r['paper_type']).'</td>';
             echo '<td class="ps-col ps-col-width_mm" style="font-family:monospace;text-align:right">'.($r['width_mm'] !== null ? (int)$r['width_mm'] : '-').'</td>';
@@ -665,7 +781,9 @@ include __DIR__ . '/../../includes/header.php';
   <?php
   if (!$isAllRows) {
       $paginParams = ['sort'=>$sortCol,'dir'=>strtolower($sortDir),'per_page'=>$perPageRaw,'page'=>'{page}'];
-      if ($searchTerm !== '') $paginParams['search'] = $searchTerm;
+      foreach ($activeFilterParams as $k => $v) {
+        $paginParams[$k] = $v;
+      }
       $qStr = http_build_query($paginParams);
       echo paginationBar($total, $perPage, $page, BASE_URL . '/modules/paper_stock/index.php?' . $qStr);
   }
@@ -678,7 +796,7 @@ include __DIR__ . '/../../includes/header.php';
         <input type="hidden" name="per_page" value="<?= e($perPageRaw) ?>">
         <input type="hidden" name="sort" value="<?= e($sortCol) ?>">
         <input type="hidden" name="dir" value="<?= e(strtolower($sortDir)) ?>">
-        <?php if ($searchTerm !== ''): ?><input type="hidden" name="search" value="<?= e($searchTerm) ?>"><?php endif; ?>
+        <?php renderHiddenFilterInputs($activeFilterParams); ?>
         <label>Go to page</label>
         <input type="number" min="1" max="<?= $totalPages ?>" name="page" value="<?= $page ?>">
         <button type="submit" class="btn btn-sm btn-secondary">Go</button>
@@ -703,6 +821,7 @@ include __DIR__ . '/../../includes/header.php';
   'use strict';
 
   var table = document.getElementById('ps-table');
+  var quickFilterForm = document.getElementById('ps-quick-filter');
   var selectAll = document.getElementById('ps-select-all');
   var selSummary = document.getElementById('ps-selected-summary');
   var topPrintLabelBtn = document.getElementById('top-print-label-btn');
@@ -739,12 +858,8 @@ include __DIR__ . '/../../includes/header.php';
   var activeQuickPopup = null;
 
   function ensureAllRowsMode(){
-    if (isAllRowsMode) return true;
-    var u = new URL(window.location.href);
-    u.searchParams.set('per_page', 'all');
-    u.searchParams.set('page', '1');
-    window.location.href = u.toString();
-    return false;
+    // Keep interactions smooth: never force a page reload while opening filters.
+    return true;
   }
 
   function dataRows(){ return table.querySelectorAll('tbody tr.ps-data-row'); }
@@ -757,44 +872,7 @@ include __DIR__ . '/../../includes/header.php';
   }
 
   function quickMatches(tr){
-    // Global search is handled server-side; skip client-side search check
-    var lot = (qf.lot.value || '').toLowerCase().trim();
-    var roll = (qf.roll.value || '').toLowerCase().trim();
-    var company = (qf.company.value || '').toLowerCase().trim();
-    var type = (qf.type.value || '').toLowerCase().trim();
-    var gsm = (qf.gsm.value || '').toLowerCase().trim();
-    var status = (qf.status.value || '').toLowerCase().trim();
-    var widthRange = (qf.widthRange.value || '').trim();
-
-    if (widthRange) {
-      var parts = widthRange.split('-');
-      if (parts.length === 2) {
-        var minW = parseFloat(parts[0].replace(/[^0-9.]/g, ''));
-        var maxW = parseFloat(parts[1].replace(/[^0-9.]/g, ''));
-        if (!isNaN(minW) && !isNaN(maxW)) {
-          if (minW > maxW) { var t = minW; minW = maxW; maxW = t; }
-          var rowW = parseFloat(cellText(tr, 'width_mm').replace(/[^0-9.]/g, ''));
-          if (isNaN(rowW) || rowW < minW || rowW > maxW) return false;
-        }
-      }
-    }
-
-    if (lot && cellText(tr, 'lot_batch_no').toLowerCase().indexOf(lot) === -1) return false;
-    if (roll && cellText(tr, 'roll_no').toLowerCase().indexOf(roll) === -1) return false;
-    if (company && cellText(tr, 'company').toLowerCase() !== company) return false;
-    if (type && cellText(tr, 'paper_type').toLowerCase() !== type) return false;
-    if (gsm && cellText(tr, 'gsm').toLowerCase() !== gsm) return false;
-    if (status && cellText(tr, 'status').toLowerCase().indexOf(status) === -1) return false;
-
-    var dateFrom = (qf.dateFrom.value || '');
-    var dateTo = (qf.dateTo.value || '');
-    if (dateFrom || dateTo) {
-      var rd = (tr.dataset.dateReceived || '').substring(0, 10);
-      if (!rd) return false;
-      if (dateFrom && rd < dateFrom) return false;
-      if (dateTo && rd > dateTo) return false;
-    }
-
+    // Quick filters are server-side (full dataset), keep client pass-through.
     return true;
   }
 
@@ -828,7 +906,7 @@ include __DIR__ . '/../../includes/header.php';
     });
     showingCount.textContent = visible;
     recordBadge.textContent = visible + ' visible';
-    applyHierarchy();
+    // Avoid expensive DOM re-parenting on every filter keypress to prevent UI jerk.
     updateSelectionUI();
   }
 
@@ -966,45 +1044,81 @@ include __DIR__ . '/../../includes/header.php';
     }
   });
 
-  // Quick-filter input — filter rows immediately, NO page redirect (no jerk)
-  var qfDebounceTimer = null;
+  // Quick filters are explicit-submit only to avoid reload jerk while editing.
   var serverSearchTimer = null;
 
   function isCompactFilterViewport(){
     return window.innerWidth <= 900 || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
   }
 
+  function closeMobileSidebarIfOpen(){
+    if (!isCompactFilterViewport()) return;
+    var sidebar = document.querySelector('.sidebar');
+    if (sidebar && sidebar.classList.contains('is-open')) {
+      sidebar.classList.remove('is-open');
+    }
+  }
+
   function runServerSearch(){
     var term = (qf.search && qf.search.value ? qf.search.value : '').trim();
     var u = new URL(window.location.href);
-    var existing = (u.searchParams.get('search') || '').trim();
-    var currentPage = (u.searchParams.get('page') || '1');
-    if (existing === term && currentPage === '1') return;
+    var before = u.search;
+
+    var quickMap = {
+      lot: (qf.lot && qf.lot.value ? qf.lot.value : '').trim(),
+      roll: (qf.roll && qf.roll.value ? qf.roll.value : '').trim(),
+      company: (qf.company && qf.company.value ? qf.company.value : '').trim(),
+      type: (qf.type && qf.type.value ? qf.type.value : '').trim(),
+      gsm: (qf.gsm && qf.gsm.value ? qf.gsm.value : '').trim(),
+      status: (qf.status && qf.status.value ? qf.status.value : '').trim(),
+      width: (qf.widthRange && qf.widthRange.value ? qf.widthRange.value : '').trim(),
+      date_from: (qf.dateFrom && qf.dateFrom.value ? qf.dateFrom.value : '').trim(),
+      date_to: (qf.dateTo && qf.dateTo.value ? qf.dateTo.value : '').trim()
+    };
+
     if (term) {
       u.searchParams.set('search', term);
     } else {
       u.searchParams.delete('search');
     }
+
+    Object.keys(quickMap).forEach(function(key){
+      var val = quickMap[key];
+      if (val) u.searchParams.set(key, val);
+      else u.searchParams.delete(key);
+    });
+
     u.searchParams.set('page', '1');
+    if (u.search === before) return;
     window.location.href = u.toString();
   }
 
-  // Global search triggers server-side reload on Enter and debounced typing.
-  if (qf.search) {
-    qf.search.addEventListener('input', function(){
-      if (serverSearchTimer) {
-        clearTimeout(serverSearchTimer);
-        serverSearchTimer = null;
-      }
+  function isSearchSubmitKey(e){
+    var key = String(e.key || '').toLowerCase();
+    return key === 'enter' || key === 'go' || key === 'search' || key === 'done' || e.keyCode === 13 || e.which === 13;
+  }
+
+  window.applyGlobalSearch = function(){
+    if (serverSearchTimer) {
+      clearTimeout(serverSearchTimer);
+      serverSearchTimer = null;
+    }
+    runServerSearch();
+  };
+
+  if (quickFilterForm) {
+    quickFilterForm.addEventListener('submit', function(e){
+      e.preventDefault();
+      window.applyGlobalSearch();
     });
+  }
+
+  // Global search applies only on explicit submit to keep typing smooth.
+  if (qf.search) {
     qf.search.addEventListener('keydown', function(e){
-      if (e.key === 'Enter') {
+      if (isSearchSubmitKey(e)) {
         e.preventDefault();
-        if (serverSearchTimer) {
-          clearTimeout(serverSearchTimer);
-          serverSearchTimer = null;
-        }
-        runServerSearch();
+        window.applyGlobalSearch();
       }
     });
     qf.search.addEventListener('blur', function(){
@@ -1014,28 +1128,28 @@ include __DIR__ . '/../../includes/header.php';
       }
       // Avoid automatic blur-triggered reload to keep typing smooth on all devices.
     });
+    qf.search.addEventListener('focus', function(){
+      closeMobileSidebarIfOpen();
+    });
   }
 
-  // Other quick filters remain client-side
+  // Other quick filters wait for explicit Search / Enter submit.
   Object.keys(qf).forEach(function(k){
     if (!qf[k] || k === 'search') return;
-    qf[k].addEventListener('input', function(){
-      if (qfDebounceTimer) clearTimeout(qfDebounceTimer);
-      qfDebounceTimer = setTimeout(function(){
-        applyAllFilters();
-        qfDebounceTimer = null;
-      }, 250);
-    });
-    qf[k].addEventListener('change', function(){
-      if (qfDebounceTimer) { clearTimeout(qfDebounceTimer); qfDebounceTimer = null; }
-      applyAllFilters();
+    qf[k].addEventListener('keydown', function(e){
+      if (isSearchSubmitKey(e)) {
+        e.preventDefault();
+        window.applyGlobalSearch();
+      }
     });
   });
 
   window.resetQuickFilters = function(){
-    // If server-side search is active, clear and reload
+    // If any server-side quick/global filter is active, clear and reload
     var u = new URL(window.location.href);
-    var hadSearch = u.searchParams.has('search');
+    var hadServerFilters = ['search','lot','roll','company','type','gsm','status','width','date_from','date_to'].some(function(k){
+      return u.searchParams.has(k);
+    });
     Object.keys(qf).forEach(function(k){ qf[k].value = ''; });
     document.querySelectorAll('.ps-qf-picker-btn').forEach(function(btn){
       var label = btn.querySelector('span');
@@ -1049,8 +1163,10 @@ include __DIR__ . '/../../includes/header.php';
     });
     if (qf.dateFrom) qf.dateFrom.value = '';
     if (qf.dateTo) qf.dateTo.value = '';
-    if (hadSearch) {
-      u.searchParams.delete('search');
+    if (hadServerFilters) {
+      ['search','lot','roll','company','type','gsm','status','width','date_from','date_to'].forEach(function(k){
+        u.searchParams.delete(k);
+      });
       u.searchParams.set('page', '1');
       window.location.href = u.toString();
       return;
@@ -1230,7 +1346,6 @@ include __DIR__ . '/../../includes/header.php';
       qf[key].value = qfItem.dataset.qfValue || '';
       updateQuickPickerLabel(key);
       closeQuickPopup();
-      applyAllFilters();
       return;
     }
 

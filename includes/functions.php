@@ -10,6 +10,8 @@ function e($str) {
     return htmlspecialchars((string)$str, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 }
 
+require_once __DIR__ . '/status_module.php';
+
 /**
  * HTTP redirect and exit.
  */
@@ -1017,43 +1019,8 @@ function calcSQM($width_mm, $length_mtr) {
  * Return an HTML badge for a status string.
  */
 function statusBadge($status) {
-    $displayStatus = (string)$status;
-    if ($displayStatus === 'Slitting') {
-        $displayStatus = 'Preparing Slitting';
-    }
-
-    $map = [
-        // Paper stock
-        'Main'           => 'main',
-        'Stock'          => 'stock',
-        'Slitting'       => 'slitting',
-        'Preparing Slitting' => 'slitting',
-        'Job Assign'     => 'job-assign',
-        'In Production'  => 'in-production',
-        'Available'      => 'available',
-        'Assigned'       => 'assigned',
-        'Consumed'       => 'consumed',
-        // Estimates
-        'Draft'          => 'draft',
-        'Sent'           => 'sent',
-        'Approved'       => 'approved',
-        'Rejected'       => 'rejected',
-        'Converted'      => 'converted',
-        // Sales orders
-        'Pending'        => 'pending',
-        'In Production'  => 'in-production',
-        'Completed'      => 'completed',
-        'Dispatched'     => 'dispatched',
-        'Cancelled'      => 'cancelled',
-        // Planning / jobs
-        'Queued'         => 'queued',
-        'In Progress'    => 'in-progress',
-        'On Hold'        => 'on-hold',
-        'Running'        => 'in-progress',
-        'QC Passed'      => 'completed',
-        'QC Failed'      => 'rejected',
-    ];
-    $cls = $map[$status] ?? ($map[$displayStatus] ?? 'draft');
+    $displayStatus = erp_status_display_label($status);
+    $cls = erp_status_badge_class($status);
     return '<span class="badge badge-' . $cls . '">' . e($displayStatus) . '</span>';
 }
 

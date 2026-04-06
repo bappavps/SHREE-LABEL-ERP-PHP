@@ -8,7 +8,8 @@ require_once __DIR__ . '/../../includes/auth_check.php';
 
 $db = getDB();
 $errors = [];
-$statuses   = ['Running', 'Completed', 'Hold', 'Hold for Payment', 'Hold for Approval', 'Pending'];
+$statuses   = erp_status_page_options('planning.label-printing');
+$defaultStatus = erp_status_page_default('planning.label-printing');
 $priorities = ['Low','Normal','High','Urgent'];
 $planningJobPreview = previewNextId('planning') ?: 'Auto-generated on save';
 
@@ -29,12 +30,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $operatorName = trim($_POST['operator_name'] ?? '');
         $scheduledDate= trim($_POST['scheduled_date'] ?? '');
         $priority     = $_POST['priority']           ?? 'Normal';
-        $status       = 'Pending';
+        $status       = erp_status_page_normalize($_POST['status'] ?? $defaultStatus, 'planning.label-printing');
         $notes        = trim($_POST['notes']         ?? '');
 
         if ($jobName === '')             $errors[] = 'Job name is required.';
-        if (!in_array($priority,$priorities)) $errors[] = 'Invalid priority.';
-        if (!in_array($status,$statuses))     $errors[] = 'Invalid status.';
+        if (!in_array($priority, $priorities, true)) $errors[] = 'Invalid priority.';
+        if (!in_array($status, $statuses, true))     $errors[] = 'Invalid status.';
 
         if (empty($errors)) {
             $soIdVal = $soId > 0 ? $soId : null;
@@ -134,8 +135,8 @@ include __DIR__ . '/../../includes/header.php';
         </div>
         <div class="form-group">
           <label class="form-label">Status</label>
-          <input type="text" class="form-control" value="Pending" readonly>
-          <input type="hidden" name="status" value="Pending">
+          <input type="text" class="form-control" value="<?= e($defaultStatus) ?>" readonly>
+          <input type="hidden" name="status" value="<?= e($defaultStatus) ?>">
         </div>
         <div class="form-group" style="grid-column:1/-1">
           <label class="form-label">Notes</label>

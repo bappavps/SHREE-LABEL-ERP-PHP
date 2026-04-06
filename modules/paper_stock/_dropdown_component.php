@@ -135,12 +135,21 @@
 
 var statusColors = {
   'Main':          '#9333ea',
-  'Stock':         '#16a34a',
-  'Slitting':      '#f97316',
   'Job Assign':    '#ef4444',
-  'In Production': '#06b6d4',
-  'Consumed':      '#94a3b8'
+  'Stock':         '#16a34a',
+  'Consume':       '#94a3b8'
 };
+
+function getStatusColor(label){
+  if (statusColors[label]) return statusColors[label];
+  var n = String(label || '').toLowerCase();
+  if (n.indexOf('slit') !== -1 || n.indexOf('jumbo') !== -1) return '#f97316';
+  if (n.indexOf('print') !== -1) return '#06b6d4';
+  if (n.indexOf('die') !== -1) return '#0ea5a4';
+  if (n.indexOf('bar') !== -1 || n.indexOf('label') !== -1) return '#7c3aed';
+  if (n.indexOf('pack') !== -1 || n.indexOf('dispatch') !== -1) return '#0f766e';
+  return '#6b7280';
+}
 
 var svgArrow = '<svg class="dd-arrow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>';
 var svgCheck = '<svg class="dd-check" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"/></svg>';
@@ -169,12 +178,19 @@ document.addEventListener('keydown', function(e){
 });
 
 /* ──────────────────────────────────────────────────────────────
-   initStatusDropdown(container, hiddenInput, customInput, initialValue)
+   initStatusDropdown(container, hiddenInput, customInput, initialValue, presetList, allowCustom)
    ────────────────────────────────────────────────────────────── */
-window.initStatusDropdown = function(container, hiddenInput, customInput, initialVal){
-  var presets = ['Main','Stock','Slitting','Job Assign','In Production','Consumed'];
-  var current = initialVal || 'Main';
+window.initStatusDropdown = function(container, hiddenInput, customInput, initialVal, presetList, allowCustom){
+  var presets = Array.isArray(presetList) && presetList.length
+    ? presetList.slice()
+    : ['Main','Job Assign','Stock','Consume'];
+  var customAllowed = (typeof allowCustom === 'boolean') ? allowCustom : true;
+  var current = initialVal || (presets[0] || 'Main');
   var isCustom = presets.indexOf(current) === -1 && current !== '';
+  if (isCustom && !customAllowed) {
+    current = presets[0] || 'Main';
+    isCustom = false;
+  }
 
   var trigger = document.createElement('div');
   trigger.className = 'erp-dd-trigger';
@@ -191,7 +207,7 @@ window.initStatusDropdown = function(container, hiddenInput, customInput, initia
   panel.className = 'erp-dd-panel';
   var listHtml = '<div class="erp-dd-list">';
   presets.forEach(function(s){
-    var c = statusColors[s]||'#999';
+    var c = getStatusColor(s);
     listHtml += '<div class="erp-dd-item'+((!isCustom && current===s)?' active':'')+'" data-value="'+s+'">';
     listHtml += '<span class="dd-dot" style="background:'+c+'"></span>';
     listHtml += '<span class="dd-label">'+s+'</span>';
@@ -199,9 +215,11 @@ window.initStatusDropdown = function(container, hiddenInput, customInput, initia
     listHtml += '</div>';
   });
   listHtml += '</div>';
-  listHtml += '<div class="erp-dd-sep"></div>';
-  listHtml += '<div class="erp-dd-custom" data-action="custom">'+svgPlus+' Add Custom Stage...</div>';
-  listHtml += '<div class="erp-dd-custom-input-wrap'+(isCustom?' visible':'')+'"><input class="erp-dd-custom-input" placeholder="Type custom stage name…" value="'+(isCustom?current.replace(/"/g,'&quot;'):'')+'" /></div>';
+  if (customAllowed) {
+    listHtml += '<div class="erp-dd-sep"></div>';
+    listHtml += '<div class="erp-dd-custom" data-action="custom">'+svgPlus+' Add Custom Stage...</div>';
+    listHtml += '<div class="erp-dd-custom-input-wrap'+(isCustom?' visible':'')+'"><input class="erp-dd-custom-input" placeholder="Type custom stage name…" value="'+(isCustom?current.replace(/"/g,'&quot;'):'')+'" /></div>';
+  }
   panel.innerHTML = listHtml;
 
   container.innerHTML = '';
@@ -209,12 +227,12 @@ window.initStatusDropdown = function(container, hiddenInput, customInput, initia
   container.appendChild(trigger);
   container.appendChild(panel);
 
-  if(isCustom){
+  if(isCustom && customAllowed){
     setTriggerDisplay(current, '#f97316');
     hiddenInput.value = '__custom__';
     customInput.value = current;
   } else {
-    setTriggerDisplay(current, statusColors[current]);
+    setTriggerDisplay(current, getStatusColor(current));
     hiddenInput.value = current;
     customInput.value = '';
   }
@@ -235,36 +253,39 @@ window.initStatusDropdown = function(container, hiddenInput, customInput, initia
       item.classList.add('active');
       hiddenInput.value = val;
       customInput.value = '';
-      setTriggerDisplay(val, statusColors[val]);
-      panel.querySelector('.erp-dd-custom-input-wrap').classList.remove('visible');
+      setTriggerDisplay(val, getStatusColor(val));
+      var customWrap = panel.querySelector('.erp-dd-custom-input-wrap');
+      if (customWrap) customWrap.classList.remove('visible');
       panel.classList.remove('open');
       trigger.classList.remove('open');
     });
   });
 
-  panel.querySelector('[data-action="custom"]').addEventListener('click', function(){
-    var wrap = panel.querySelector('.erp-dd-custom-input-wrap');
-    wrap.classList.add('visible');
-    var inp = wrap.querySelector('.erp-dd-custom-input');
-    inp.focus();
-    panel.querySelectorAll('.erp-dd-item').forEach(function(i){i.classList.remove('active')});
-    hiddenInput.value = '__custom__';
-  });
+  if (customAllowed) {
+    panel.querySelector('[data-action="custom"]').addEventListener('click', function(){
+      var wrap = panel.querySelector('.erp-dd-custom-input-wrap');
+      wrap.classList.add('visible');
+      var inp = wrap.querySelector('.erp-dd-custom-input');
+      inp.focus();
+      panel.querySelectorAll('.erp-dd-item').forEach(function(i){i.classList.remove('active')});
+      hiddenInput.value = '__custom__';
+    });
 
-  var cInput = panel.querySelector('.erp-dd-custom-input');
-  cInput.addEventListener('input', function(){
-    customInput.value = this.value;
-    setTriggerDisplay(this.value || 'Custom…', '#f97316');
-  });
-  cInput.addEventListener('keydown', function(e){
-    if(e.key === 'Enter'){
-      e.preventDefault();
-      if(this.value.trim()){
-        panel.classList.remove('open');
-        trigger.classList.remove('open');
+    var cInput = panel.querySelector('.erp-dd-custom-input');
+    cInput.addEventListener('input', function(){
+      customInput.value = this.value;
+      setTriggerDisplay(this.value || 'Custom…', '#f97316');
+    });
+    cInput.addEventListener('keydown', function(e){
+      if(e.key === 'Enter'){
+        e.preventDefault();
+        if(this.value.trim()){
+          panel.classList.remove('open');
+          trigger.classList.remove('open');
+        }
       }
-    }
-  });
+    });
+  }
 
   trigger.addEventListener('keydown', function(e){
     if(e.key === 'Enter' || e.key === ' '){

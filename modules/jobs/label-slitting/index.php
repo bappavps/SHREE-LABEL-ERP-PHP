@@ -84,6 +84,18 @@ foreach ($jobs as &$job) {
     $hasPrev = (int)($job['previous_job_id'] ?? 0) > 0;
     $job['upstream_ready'] = !$hasPrev || in_array($prevStatus, $finishStates, true);
 
+    // UI state rule:
+    // - Locked cards must stay Queued.
+    // - Unlocked queued cards should move to Pending so operator can Start.
+    $normalizedStatus = trim((string)($job['status'] ?? ''));
+    if (!$job['upstream_ready']) {
+      $job['status'] = 'Queued';
+    } elseif (strcasecmp($normalizedStatus, 'Queued') === 0) {
+      $job['status'] = 'Pending';
+    } else {
+      $job['status'] = $normalizedStatus;
+    }
+
     // ── Parse previous job extra_data (printing production qty) ──
     $prevExtra = json_decode((string)($job['prev_extra_data'] ?? '{}'), true) ?: [];
     $job['prev_actual_qty'] = (string)($prevExtra['actual_qty'] ?? ($prevExtra['die_cutting_total_qty_pcs'] ?? ''));

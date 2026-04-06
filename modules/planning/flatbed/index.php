@@ -76,6 +76,7 @@ $hold      = count(array_filter($rows, fn($r) => str_contains(strtolower($r['sta
 $dateLabels = ['all'=>'All Time','day'=>'Today','week'=>'This Week','month'=>'This Month','year'=>'This Year'];
 $currentUrl = BASE_URL . '/modules/planning/flatbed/index.php';
 $planningPageKey = 'die-cutting';
+$defaultStatus = erp_status_page_default('planning.label-printing');
 include __DIR__ . '/../../../includes/header.php';
 ?>
 
@@ -222,17 +223,9 @@ include __DIR__ . '/../../../includes/header.php';
         <tr><td colspan="21" style="padding:24px;text-align:center;color:#94a3b8"><i class="bi bi-inbox" style="font-size:2rem;opacity:.3;display:block;margin-bottom:8px"></i>No Die-Cutting jobs found for this period.</td></tr>
       <?php else: ?>
         <?php foreach ($rows as $i => $r):
-          $sts = (string)($r['status'] ?? 'Pending');
-          $stsCls = match(strtolower($sts)) {
-            'pending'   => 'pending',
-            'queued'    => 'queued',
-            'running'   => 'running',
-            'completed' => 'completed',
-            'qc passed' => 'qc',
-            'closed'    => 'closed',
-            'finalized' => 'finalized',
-            default     => (str_contains(strtolower($sts), 'hold') ? 'hold' : 'queued')
-          };
+          $sts = trim((string)($r['status'] ?? ''));
+          if ($sts === '') $sts = $defaultStatus;
+          $stsStyle = erp_status_inline_style($sts);
           $pri = (string)($r['planning_priority'] ?? 'Normal');
           $priCls = match(strtolower($pri)) { 'urgent'=>'dc-pri-urgent', 'high'=>'dc-pri-high', default=>'dc-pri-normal' };
           $dur = $r['duration_minutes'] ?? null;
@@ -263,7 +256,7 @@ include __DIR__ . '/../../../includes/header.php';
           <td class="dc-num" style="color:#dc2626"><?= htmlspecialchars($r['dc_wastage_pcs'] ?: '—') ?></td>
           <td class="dc-num" style="color:#dc2626"><?= htmlspecialchars($r['dc_wastage_mtr'] ?: '—') ?></td>
           <td class="dc-num"><?= htmlspecialchars($r['dc_roll_length'] ?: '—') ?></td>
-          <td><span class="dc-badge dc-badge-<?= $stsCls ?>"><?= htmlspecialchars($sts) ?></span></td>
+          <td><span class="dc-badge" style="<?= e($stsStyle) ?>"><?= htmlspecialchars($sts) ?></span></td>
           <td><span class="<?= $priCls ?>"><?= htmlspecialchars($pri) ?></span></td>
           <td style="white-space:nowrap"><?= htmlspecialchars($r['operator_name'] ?? '—') ?></td>
           <td style="white-space:nowrap;font-size:.7rem"><?= $started ?></td>

@@ -1655,7 +1655,7 @@ const SLT = (() => {
     const jobsForTabs = getAcceptScopedJobs(plannerJobs);
     const counts = { all: jobsForTabs.length };
     jobsForTabs.forEach(j => {
-      const pp = normalizePlannerStatus(j.status || j.printing_planning || 'Pending');
+      const pp = normalizePlannerStatus(j.printing_planning || j.status || 'Pending');
       counts[pp] = (counts[pp] || 0) + 1;
     });
     const tabs = [
@@ -1663,6 +1663,7 @@ const SLT = (() => {
       { key: 'pending', label: 'Pending', count: counts['pending'] || 0 },
       { key: 'barcode ready', label: 'Barcode Ready', count: counts['barcode ready'] || 0 },
       { key: 'running', label: 'Running', count: (counts['running']||0) + (counts['in progress']||0) },
+      { key: 'slitting pause', label: 'Slitting Pause', count: counts['slitting pause'] || 0 },
       { key: 'completed', label: 'Completed', count: counts['completed'] || 0 },
     ];
     el.innerHTML = tabs.map(t =>
@@ -1688,7 +1689,7 @@ const SLT = (() => {
     // Apply status tab filter
     if (!isAcceptMode() && plannerFilter !== 'all') {
       jobs = jobs.filter(j => {
-        const s = normalizePlannerStatus(j.status || j.printing_planning || '');
+        const s = normalizePlannerStatus(j.printing_planning || j.status || '');
         if (plannerFilter === 'running') return s === 'running' || s === 'in progress';
         return s === plannerFilter;
       });
@@ -1705,7 +1706,7 @@ const SLT = (() => {
 
     el.innerHTML = jobs.map(j => {
       const sel = selectedJob && selectedJob.id === j.id;
-      const ppStatus = j.status || j.printing_planning || 'Pending';
+      const ppStatus = j.printing_planning || j.status || 'Pending';
       return `<div class="slt-job-item${sel?' selected':''}" onclick="SLT.selectJob(${j.id})">
         <div>
           <div class="job-label">${esc(j.job_no || '—')} - ${esc(j.job_name || 'No Name')}</div>
@@ -1761,7 +1762,7 @@ const SLT = (() => {
       <div class="detail-row"><span class="detail-label">Repeat</span><span class="detail-value">${esc(j.repeat_val || '—')}</span></div>
       <div class="detail-row"><span class="detail-label">Dispatch Date</span><span class="detail-value">${esc(j.dispatch_date || '—')}</span></div>
       <div class="detail-row"><span class="detail-label">Priority</span><span class="detail-value">${statusBadge(j.priority || 'Normal')}</span></div>
-      <div class="detail-row"><span class="detail-label">Status</span><span class="detail-value">${statusBadge(j.status)}</span></div>
+      <div class="detail-row"><span class="detail-label">Status</span><span class="detail-value">${statusBadge(j.printing_planning || j.status || 'Pending')}</span></div>
     </div>`;
 
     wrap.style.display = '';
@@ -2529,7 +2530,7 @@ const SLT = (() => {
       'Consumed':'consumed','Available':'available','Assigned':'assigned',
       'Draft':'draft','Executing':'in-progress','Completed':'completed',
       'Queued':'queued','In Progress':'in-progress','On Hold':'on-hold',
-      'Pending':'pending','Barcode Ready':'approved','Preparing Slitting':'in-production','Running':'in-progress','Urgent':'urgent','High':'high','Normal':'normal','Low':'low',
+      'Pending':'pending','Barcode Ready':'approved','Preparing Slitting':'in-production','Running':'in-progress','Slitting Pause':'on-hold','Slitted':'completed','Urgent':'urgent','High':'high','Normal':'normal','Low':'low',
       'Printing':'in-production','Fabrication':'slitting','Packing':'pending',
       'Ready to Dispatch':'approved','Dispatched':'dispatched',
     };
@@ -2540,8 +2541,15 @@ const SLT = (() => {
   function normalizePlannerStatus(status) {
     const s = String(status || '').trim().toLowerCase();
     if (!s) return 'pending';
-    if (s === 'barcode_ready') return 'barcode ready';
-    return s;
+
+    // Normalize separators so old/new payload variants resolve to one UI label.
+    const normalized = s.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+    if (normalized === 'barcode ready') return 'barcode ready';
+    if (normalized === 'inprogress') return 'in progress';
+    if (normalized === 'slitting hold' || normalized === 'slitting pause' || normalized === 'pause') return 'slitting pause';
+    if (normalized === 'slitted' || normalized === 'slitting completed') return 'completed';
+    return normalized;
   }
 
   function formatDate(dt) {

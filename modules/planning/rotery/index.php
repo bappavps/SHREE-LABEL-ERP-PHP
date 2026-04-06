@@ -261,6 +261,7 @@ $csrfToken = generateCSRF();
 $errors = [];
 $today = date('Y-m-d');
 $dispatchDefault = date('Y-m-d', strtotime('+12 days'));
+$defaultStatus = erp_status_page_default('planning.barcode');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = $_POST['csrf_token'] ?? '';
@@ -311,9 +312,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                     $notes = 'Barcode planning entry';
                     $createdBy = (int)($_SESSION['user_id'] ?? 0);
-                    $stmt = $db->prepare("INSERT INTO planning (job_no, sales_order_id, job_name, machine, operator_name, scheduled_date, status, priority, notes, department, extra_data, created_by, sequence_order) VALUES (?, NULL, ?, NULL, NULL, NULLIF(?, ''), 'Pending', 'Normal', ?, 'barcode', ?, ?, ?)");
+                    $stmt = $db->prepare("INSERT INTO planning (job_no, sales_order_id, job_name, machine, operator_name, scheduled_date, status, priority, notes, department, extra_data, created_by, sequence_order) VALUES (?, NULL, ?, NULL, NULL, NULLIF(?, ''), ?, 'Normal', ?, 'barcode', ?, ?, ?)");
                     if ($stmt) {
-                        $stmt->bind_param('sssssii', $planJobNo, $jobName, $dispatchDate, $notes, $payloadJson, $createdBy, $sequenceOrder);
+                      $stmt->bind_param('ssssssii', $planJobNo, $jobName, $dispatchDate, $defaultStatus, $notes, $payloadJson, $createdBy, $sequenceOrder);
                         if ($stmt->execute()) {
                             if (function_exists('planningCreateNotifications')) {
                                 planningCreateNotifications($db, $planJobNo, $jobName, 'barcode', 'added');
@@ -362,7 +363,7 @@ $pendingEntries = 0;
 $meterTotal = 0.0;
 foreach ($rows as $row) {
     if (($row['planning_date'] ?? '') === $today) $todayEntries++;
-    if (strcasecmp((string)($row['status'] ?? ''), 'Pending') === 0) $pendingEntries++;
+  if (strcasecmp(erp_status_page_normalize((string)($row['status'] ?? ''), 'planning.barcode'), $defaultStatus) === 0) $pendingEntries++;
     $meterTotal += barcodePlanningNumber($row['order_meter'] ?? 0);
 }
 
@@ -457,7 +458,7 @@ include __DIR__ . '/../../../includes/header.php';
               <td><?= e((string)($row['core_size'] ?: '—')) ?></td>
               <td class="bc-num"><?= e((string)($row['order_quantity'] ?: '—')) ?></td>
               <td class="bc-num"><?= e((string)($row['order_meter'] ?: '—')) ?></td>
-              <td><span class="bc-status-badge"><?= e((string)($row['status'] ?: 'Pending')) ?></span></td>
+              <td><span class="bc-status-badge"><?= e(erp_status_page_normalize((string)($row['status'] ?? $defaultStatus), 'planning.barcode')) ?></span></td>
               <td class="no-print">
                 <?php if ($canDelete): ?>
                   <form method="post" class="bc-delete-form" onsubmit="return confirm('Delete this barcode planning entry?');"><input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>"><input type="hidden" name="action" value="delete_barcode_planning"><input type="hidden" name="id" value="<?= (int)($row['id'] ?? 0) ?>"><button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-trash"></i></button></form>
@@ -488,7 +489,7 @@ include __DIR__ . '/../../../includes/header.php';
       <div class="planning-grid">
         <div><label for="barcode-planning-date">Date</label><input type="date" class="form-control" id="barcode-planning-date" name="planning_date" value="<?= e($today) ?>" required></div>
         <div><label for="barcode-dispatch-date">Dispatch Date</label><input type="date" class="form-control" id="barcode-dispatch-date" name="dispatch_date" value="<?= e($dispatchDefault) ?>" required><div class="bc-form-hint">Default is 12 days after planning date and remains editable.</div></div>
-        <div><label>Status</label><input type="text" class="form-control" value="Pending" readonly></div>
+        <div><label>Status</label><input type="text" class="form-control" value="<?= e($defaultStatus) ?>" readonly></div>
         <div style="grid-column:1 / -1"><label for="barcode-job-name">Job Name</label><input type="text" class="form-control" id="barcode-job-name" name="job_name" placeholder="Enter barcode job name" required></div>
         <div><label for="barcode-material-type">Material Type</label><input type="text" class="form-control" id="barcode-material-type" name="material_type" list="barcode-material-options" placeholder="e.g. Chromo / PP / PET"></div>
         <div><label for="barcode-width-mm">Width (mm)</label><input type="number" class="form-control" id="barcode-width-mm" name="width_mm" min="0" step="0.01" placeholder="Width" required></div>

@@ -51,13 +51,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!is_numeric($length_mtr) || $length_mtr <= 0) $errors[] = 'Length must be a positive number.';
 
         if (empty($errors)) {
-            $validStatuses = ['Main','Stock','Slitting','Job Assign','In Production','Consumed'];
-            if (($old['status'] ?? '') === '__custom__') {
-                $status = trim($old['custom_status'] ?? '');
-                $status = $status !== '' ? substr($status, 0, 50) : 'Main';
-            } else {
-                $status = in_array($old['status'] ?? '', $validStatuses) ? $old['status'] : 'Main';
-            }
+          $validStatuses = erp_paper_stock_status_options();
+          $status = in_array($old['status'] ?? '', $validStatuses, true) ? (string)$old['status'] : 'Main';
             $gsm           = ($old['gsm']            ?? '') !== '' ? (float)$old['gsm']           : null;
             $weight_kg     = ($old['weight_kg']      ?? '') !== '' ? (float)$old['weight_kg']     : null;
             $purchase_rate = ($old['purchase_rate']  ?? '') !== '' ? (float)$old['purchase_rate'] : null;
@@ -147,9 +142,9 @@ include __DIR__ . '/../../includes/header.php';
         </div>
         <div class="form-group">
           <label>Status</label>
-          <?php $presetStatuses = ['Main','Stock','Slitting','Job Assign','In Production','Consumed']; $curStatus = $old['status'] ?? ''; $isCustom = !in_array($curStatus, $presetStatuses) && $curStatus !== ''; ?>
-          <input type="hidden" name="status" id="status-hidden" value="<?= $isCustom ? '__custom__' : e($curStatus) ?>">
-          <input type="hidden" name="custom_status" id="custom-status-hidden" value="<?= $isCustom ? e($curStatus) : '' ?>">
+          <?php $presetStatuses = erp_paper_stock_status_options(); $curStatus = erp_paper_stock_normalize_status((string)($old['status'] ?? 'Main')); ?>
+          <input type="hidden" name="status" id="status-hidden" value="<?= e($curStatus) ?>">
+          <input type="hidden" name="custom_status" id="custom-status-hidden" value="">
           <div id="status-dd-container"></div>
         </div>
         <div class="form-group">
@@ -273,12 +268,14 @@ include __DIR__ . '/../../includes/header.php';
 <?php include __DIR__ . '/_dropdown_component.php'; ?>
 <script>
 (function(){
-  var statusVal = <?= json_encode($isCustom ? $curStatus : ($old['status'] ?? 'Main')) ?>;
+  var statusVal = <?= json_encode($curStatus) ?>;
   initStatusDropdown(
     document.getElementById('status-dd-container'),
     document.getElementById('status-hidden'),
     document.getElementById('custom-status-hidden'),
-    statusVal
+    statusVal,
+    <?= json_encode(array_values($presetStatuses), JSON_UNESCAPED_UNICODE) ?>,
+    false
   );
 
   // Paper Company typeahead (strict — must select from list)

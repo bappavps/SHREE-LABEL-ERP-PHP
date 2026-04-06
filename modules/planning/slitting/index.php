@@ -44,6 +44,7 @@ $hold      = count(array_filter($rows, fn($r) => str_contains(strtolower($r['sta
 $dateLabels = ['all'=>'All Time','day'=>'Today','week'=>'This Week','month'=>'This Month','year'=>'This Year'];
 $currentUrl = BASE_URL . '/modules/planning/slitting/index.php';
 $planningPageKey = 'jumbo-slitting';
+$defaultStatus = erp_status_page_default('planning.label-printing');
 include __DIR__ . '/../../../includes/header.php';
 ?>
 
@@ -180,15 +181,9 @@ include __DIR__ . '/../../../includes/header.php';
       <?php else: ?>
         <?php foreach ($rows as $i => $r):
           $sts = (string)($r['status'] ?? 'Pending');
-          $stsCls = match(strtolower($sts)) {
-            'pending'   => 'pending',
-            'running'   => 'running',
-            'completed' => 'completed',
-            'qc passed' => 'qc',
-            'closed'    => 'closed',
-            'finalized' => 'finalized',
-            default     => (str_contains(strtolower($sts), 'hold') ? 'hold' : 'queued')
-          };
+          $sts = trim((string)($r['status'] ?? ''));
+          if ($sts === '') $sts = $defaultStatus;
+          $stsStyle = erp_status_inline_style($sts);
           $pri = (string)($r['planning_priority'] ?? 'Normal');
           $priCls = match(strtolower($pri)) { 'urgent'=>'sl-pri-urgent', 'high'=>'sl-pri-high', default=>'sl-pri-normal' };
           $dur = $r['duration_minutes'] ?? null;
@@ -206,7 +201,7 @@ include __DIR__ . '/../../../includes/header.php';
           <td><?= htmlspecialchars($r['supplier'] ?? '—') ?><br><span style="font-size:.65rem;color:#94a3b8"><?= htmlspecialchars($r['paper_type'] ?? '') ?></span></td>
           <td style="white-space:nowrap"><?= htmlspecialchars(($r['width_mm']??'—').'mm × '.($r['length_mtr']??'—').'m') ?></td>
           <td><?= htmlspecialchars($r['gsm'] ?? '—') ?></td>
-          <td><span class="sl-badge sl-badge-<?= $stsCls ?>"><?= htmlspecialchars($sts) ?></span></td>
+          <td><span class="sl-badge" style="<?= e($stsStyle) ?>"><?= htmlspecialchars($sts) ?></span></td>
           <td><span class="<?= $priCls ?>"><?= htmlspecialchars($pri) ?></span></td>
           <td style="white-space:nowrap"><?= htmlspecialchars($r['operator_name'] ?? '—') ?></td>
           <td style="white-space:nowrap"><?= $scheduled ?></td>

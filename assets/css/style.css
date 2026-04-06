@@ -1158,6 +1158,46 @@ textarea.form-control { resize: vertical; min-height: 80px; }
 .badge-normal       { background: #eff6ff; color: #1d4ed8; }
 .badge-low          { background: #f3f4f6; color: #6b7280; }
 
+/* Planning lifecycle: distinct color concept per status */
+.badge-preparing-slitting     { background: #ffedd5; color: #c2410c; }
+.badge-slitting-active        { background: #fff7ed; color: #9a3412; }
+.badge-slitting-pause         { background: #fff1f2; color: #be123c; }
+.badge-slitted                { background: #dcfce7; color: #166534; }
+.badge-jumbo-slitting-preparing { background: #f5f3ff; color: #6d28d9; }
+.badge-jumbo-slitting-active  { background: #ede9fe; color: #5b21b6; }
+.badge-jumbo-slitted          { background: #ecfdf5; color: #047857; }
+.badge-pending-jumbo-slitting { background: #fdf4ff; color: #a21caf; }
+
+.badge-pending-printing       { background: #eff6ff; color: #1d4ed8; }
+.badge-printing-preparing     { background: #dbeafe; color: #1e40af; }
+.badge-printing-active        { background: #bfdbfe; color: #1d4ed8; }
+.badge-printing-pause         { background: #fee2e2; color: #991b1b; }
+.badge-printed                { background: #dcfce7; color: #166534; }
+
+.badge-pending-die-cutting    { background: #fef3c7; color: #92400e; }
+.badge-die-cutting-preparing  { background: #fde68a; color: #92400e; }
+.badge-die-cutting-active     { background: #fcd34d; color: #78350f; }
+.badge-die-cutting-pause      { background: #fee2e2; color: #b91c1c; }
+.badge-die-cutting-done       { background: #ecfccb; color: #3f6212; }
+
+.badge-pending-barcode        { background: #f0fdfa; color: #0f766e; }
+.badge-barcode-preparing      { background: #ccfbf1; color: #0f766e; }
+.badge-barcode-active         { background: #99f6e4; color: #115e59; }
+.badge-barcode-pause          { background: #ffe4e6; color: #be123c; }
+.badge-barcode-done           { background: #a7f3d0; color: #047857; }
+
+.badge-pending-label-slitting { background: #f5f3ff; color: #6d28d9; }
+.badge-label-slitting-preparing { background: #ede9fe; color: #5b21b6; }
+.badge-label-slitting-active  { background: #ddd6fe; color: #6d28d9; }
+.badge-label-slitting-pause   { background: #fce7f3; color: #9d174d; }
+.badge-label-slitting-done    { background: #ddd6fe; color: #6d28d9; }
+
+.badge-pending-packing        { background: #e0f2fe; color: #0369a1; }
+.badge-packing-preparing      { background: #bae6fd; color: #075985; }
+.badge-packing-active         { background: #7dd3fc; color: #0c4a6e; }
+.badge-packing-pause          { background: #fde68a; color: #92400e; }
+.badge-packing-done           { background: #7dd3fc; color: #0c4a6e; }
+
 /* ── Alerts / Flash ─────────────────────────────────────────── */
 .alert {
     padding: 12px 16px;
