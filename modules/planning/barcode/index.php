@@ -1029,7 +1029,7 @@ include __DIR__ . '/../../../includes/header.php';
   if(closeBtn) closeBtn.addEventListener('click', closeModal);
   if(cancelBtn) cancelBtn.addEventListener('click', closeModal);
   if(viewCloseBtn) viewCloseBtn.addEventListener('click', closeViewModal);
-  if(modal) modal.addEventListener('click', function(event){ if(event.target===modal) closeModal(); });
+    // Keep add/edit modal stable while typing in linked fields; close via explicit buttons only.
   if(viewModal) viewModal.addEventListener('click', function(event){ if(event.target===viewModal) closeViewModal(); });
   if(planningDateInput&&dispatchDateInput){ planningDateInput.addEventListener('change', function(){ if(String(editIdInput&&editIdInput.value||'0')==='0'){ dispatchDateInput.value=addDays(planningDateInput.value,12); } }); }
   if(qtyInput) qtyInput.addEventListener('input', syncFromQty);

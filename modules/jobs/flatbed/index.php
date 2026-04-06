@@ -854,8 +854,18 @@ function isDCSpeechSupported() {
 }
 
 function normalizeDCVoiceLanguage(lang) {
-  const allowed = ['en-IN', 'hi-IN', 'bn-IN', 'gu-IN', 'mr-IN'];
-  return allowed.includes(String(lang || '')) ? String(lang) : String(DC_DEFAULT_VOICE_LANGUAGE || 'en-IN');
+  const allowed = ['en-IN', 'hi-IN', 'bn-IN', 'bn-BD', 'gu-IN', 'mr-IN'];
+  const raw = String(lang || '').trim();
+  const aliasMap = {
+    'bn': 'bn-BD',
+    'bengali': 'bn-BD',
+    'bangla': 'bn-BD',
+    'bn_bd': 'bn-BD',
+    'bn-in': 'bn-IN',
+    'bn-bd': 'bn-BD',
+  };
+  const alias = aliasMap[raw.toLowerCase()] || raw;
+  return allowed.includes(alias) ? alias : String(DC_DEFAULT_VOICE_LANGUAGE || 'en-IN');
 }
 
 function dcVoiceLanguageLabel(lang) {
@@ -864,6 +874,7 @@ function dcVoiceLanguageLabel(lang) {
     'en-IN': 'English (India)',
     'hi-IN': 'Hindi',
     'bn-IN': 'Bengali',
+    'bn-BD': 'Bangla (Bangladesh)',
     'gu-IN': 'Gujarati',
     'mr-IN': 'Marathi'
   };
@@ -906,6 +917,7 @@ function startVoiceToField(fieldName, btn, languageFieldName) {
   rec.continuous = false;
   const initialValue = String(input.value || '').trim();
   let finalText = '';
+  let fallbackRetried = false;
 
   if (btn) {
     btn.classList.add('active');
@@ -925,6 +937,19 @@ function startVoiceToField(fieldName, btn, languageFieldName) {
   };
 
   rec.onerror = function(event) {
+    const errCode = String(event?.error || '').trim();
+    if (!fallbackRetried && (errCode === 'language-not-supported' || errCode === 'service-not-allowed')) {
+      const altLang = language === 'bn-IN' ? 'bn-BD' : (language === 'bn-BD' ? 'bn-IN' : '');
+      if (altLang) {
+        fallbackRetried = true;
+        try {
+          rec.lang = altLang;
+          setDCVoiceFallbackMessage(btn, 'Retrying Bengali voice in alternate locale...');
+          rec.start();
+          return;
+        } catch (_) {}
+      }
+    }
     if (btn) btn.classList.remove('active');
     const reason = String(event?.error || 'error').replace(/-/g, ' ');
     setDCVoiceFallbackMessage(btn, 'Voice input failed (' + reason + '). You can type notes manually.');
@@ -1950,13 +1975,17 @@ async function openJobDetail(id, mode) {
   </div></div>`;
 
   // ── Die-Cutting Details ──
+  const assignedChildRolls = Array.isArray(extra.assigned_child_rolls)
+    ? extra.assigned_child_rolls.filter(function(r){ return r && String(r.roll_no || '').trim() !== ''; })
+    : [];
+
   html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-scissors"></i> ${esc(DC_DETAILS_SECTION_LABEL || 'Die-Cutting Details')}</div><div class="dc-op-b dc-op-grid-2">
     <div class="dc-op-field"><label>Material</label><div class="fv">${esc(job.planning_material || job.paper_type || '—')}</div></div>
     <div class="dc-op-field"><label>Die Size</label><div class="fv" style="color:var(--dc-brand);font-weight:900">${esc(job.planning_die_size || '—')}</div></div>
     <div class="dc-op-field"><label>Repeat</label><div class="fv">${esc(job.planning_repeat || '—')}</div></div>
     <div class="dc-op-field"><label>Order Quantity (Pcs)</label><div class="fv">${esc(job.planning_order_qty || '—')}</div></div>
     <div class="dc-op-field"><label>Total Length (Mtr)</label><div class="fv">${esc((job.length_mtr ?? '—') + '')}</div></div>
-    <div class="dc-op-field"><label>Roll No</label><div class="fv">${esc(job.roll_no || '—')}</div></div>
+    <div class="dc-op-field"><label>Parent Roll</label><div class="fv">${esc(job.roll_no || '—')}</div></div>
     ${(() => {
       if (!DC_SHOW_WEIGHT_HEIGHT_FIELDS) return '';
       const dim = getJobSizeDimensions(job);
@@ -1970,8 +1999,35 @@ async function openJobDetail(id, mode) {
     <div class="dc-op-field"><label>GSM</label><div class="fv">${esc((job.gsm ?? '—') + '')}</div></div>
   </div></div>`;
 
+  if (assignedChildRolls.length) {
+    html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-list-check"></i> Assigned Child Rolls (${assignedChildRolls.length})</div><div class="dc-op-b" style="overflow:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:.75rem;min-width:620px">
+        <thead><tr>
+          <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Roll No</th>
+          <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Width (mm)</th>
+          <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Length (m)</th>
+          <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Paper</th>
+          <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">GSM</th>
+          <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Status</th>
+        </tr></thead>
+        <tbody>
+          ${assignedChildRolls.map(function(r){
+            return `<tr>
+              <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-weight:800">${esc(r.roll_no || '—')}</td>
+              <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(((Number(r.width_mm || 0) || 0) > 0 ? Number(r.width_mm).toFixed(2) : '—'))}</td>
+              <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(((Number(r.length_mtr || 0) || 0) > 0 ? Number(r.length_mtr).toFixed(2) : '—'))}</td>
+              <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(r.paper_type || '—')}</td>
+              <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(((Number(r.gsm || 0) || 0) > 0 ? Number(r.gsm).toString() : '—'))}</td>
+              <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(r.status || '—')}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div></div>`;
+  }
+
   // ── Job Preview Image ──
-  const previewUrl = job.job_preview_image_url || job.planning_image_url || job.plate_image_url || '';
+  const previewUrl = job.job_preview_image_url || job.planning_image_url || job.plate_image_url || (extra.die_cutting_photo_url || '') || '';
   if (previewUrl) {
     html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-image"></i> Job Preview</div><div class="dc-op-b" style="text-align:center">
       <img src="${esc(previewUrl)}" class="dc-preview" alt="Job Preview">
@@ -2020,7 +2076,7 @@ async function openJobDetail(id, mode) {
         <div class="dc-op-field"><label>Printed Roll Length (Mtr)</label><input type="text" name="die_cutting_printed_roll_length_mtr" value="${esc(job.length_mtr || '')}" readonly></div>
       </div>
       <div class="dc-op-field"><label>Notes</label><textarea name="die_cutting_notes_text" data-voice-target="1">${esc(extra.die_cutting_notes_text || '')}</textarea></div>
-      <div class="dc-op-field" data-voice-control="1"><label>Voice Notes</label><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><select name="voice_language" data-voice-language="1" style="padding:7px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:.74rem;font-weight:700;color:#334155"><option value="en-IN"${selectedVoiceLang === 'en-IN' ? ' selected' : ''}>English (India)</option><option value="hi-IN"${selectedVoiceLang === 'hi-IN' ? ' selected' : ''}>Hindi</option><option value="bn-IN"${selectedVoiceLang === 'bn-IN' ? ' selected' : ''}>Bengali</option><option value="gu-IN"${selectedVoiceLang === 'gu-IN' ? ' selected' : ''}>Gujarati</option><option value="mr-IN"${selectedVoiceLang === 'mr-IN' ? ' selected' : ''}>Marathi</option></select><button type="button" class="dc-voice-btn" data-voice-target-field="die_cutting_notes_text" data-voice-fallback-id="dc-voice-fallback-${job.id}" onclick="startVoiceToField('die_cutting_notes_text', this, 'voice_language')"><i class="bi bi-mic"></i> Speak Notes</button></div><div id="dc-voice-fallback-${job.id}" style="margin-top:8px;font-size:.7rem;color:#64748b;font-weight:700"></div></div>
+      <div class="dc-op-field" data-voice-control="1"><label>Voice Notes</label><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><select name="voice_language" data-voice-language="1" style="padding:7px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:.74rem;font-weight:700;color:#334155"><option value="en-IN"${selectedVoiceLang === 'en-IN' ? ' selected' : ''}>English (India)</option><option value="hi-IN"${selectedVoiceLang === 'hi-IN' ? ' selected' : ''}>Hindi</option><option value="bn-BD"${selectedVoiceLang === 'bn-BD' ? ' selected' : ''}>Bangla (Bangladesh)</option><option value="bn-IN"${selectedVoiceLang === 'bn-IN' ? ' selected' : ''}>Bengali (India)</option><option value="gu-IN"${selectedVoiceLang === 'gu-IN' ? ' selected' : ''}>Gujarati</option><option value="mr-IN"${selectedVoiceLang === 'mr-IN' ? ' selected' : ''}>Marathi</option></select><button type="button" class="dc-voice-btn" data-voice-target-field="die_cutting_notes_text" data-voice-fallback-id="dc-voice-fallback-${job.id}" onclick="startVoiceToField('die_cutting_notes_text', this, 'voice_language')"><i class="bi bi-mic"></i> Speak Notes</button></div><div id="dc-voice-fallback-${job.id}" style="margin-top:8px;font-size:.7rem;color:#64748b;font-weight:700"></div></div>
     </form></div>`;
   }
 
@@ -2208,6 +2264,9 @@ function printBwTransform(html) {
 // ═══ PRINT CARD HTML ═══
 function renderDCPrintCardHtml(job, qrDataUrl) {
   const extra = job.extra_data_parsed || {};
+  const assignedChildRolls = Array.isArray(extra.assigned_child_rolls)
+    ? extra.assigned_child_rolls.filter(function(r){ return r && String(r.roll_no || '').trim() !== ''; })
+    : [];
   const created = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
   const started = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
   const completed = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
@@ -2223,7 +2282,7 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
     ? `<tr><td colspan="4" style="padding:0"><div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#a16207;background:#fef3c7;padding:6px 8px;border-radius:4px;margin:8px 0 4px">Job Photo</div><div style="margin-bottom:6px"><img src="${esc(existingPhoto)}" style="max-width:300px;max-height:180px;border-radius:8px;border:1px solid #e2e8f0"></div></td></tr>`
     : '';
 
-  const previewUrl = job.job_preview_image_url || job.planning_image_url || job.plate_image_url || '';
+  const previewUrl = job.job_preview_image_url || job.planning_image_url || job.plate_image_url || (extra.die_cutting_photo_url || '') || '';
   const previewHtml = previewUrl
     ? `<tr><td colspan="4" style="padding:0"><div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#0f766e;background:#ccfbf1;padding:6px 8px;border-radius:4px;margin:8px 0 4px">Job Preview</div><div style="margin-bottom:6px"><img src="${esc(previewUrl)}" style="max-width:300px;max-height:180px;border-radius:8px;border:1px solid #e2e8f0"></div></td></tr>`
     : '';
@@ -2232,6 +2291,30 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
   const heightText = dimensions.height ? `${dimensions.height} mm` : '—';
   const weightHeightRow = DC_SHOW_WEIGHT_HEIGHT_FIELDS
     ? `<tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">${esc(DC_WEIGHT_LABEL || 'Weight')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(weightText)}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">${esc(DC_HEIGHT_LABEL || 'Height')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(heightText)}</td></tr>`
+    : '';
+  const assignedRollSummary = assignedChildRolls.length ? (assignedChildRolls.length + ' rolls assigned') : (job.roll_no || '—');
+  const assignedRollRows = assignedChildRolls.length
+    ? `<tr><td colspan="4" style="padding:0"><div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#0f766e;background:#ccfbf1;padding:6px 8px;border-radius:4px;margin:8px 0 4px">Assigned Child Rolls (${assignedChildRolls.length})</div>
+      <table style="width:100%;border-collapse:collapse;font-size:.68rem;margin-bottom:6px">
+        <thead><tr>
+          <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#f8fafc;text-align:left">Roll No</th>
+          <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#f8fafc;text-align:left">Width (mm)</th>
+          <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#f8fafc;text-align:left">Length (m)</th>
+          <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#f8fafc;text-align:left">Status</th>
+        </tr></thead>
+        <tbody>
+          ${assignedChildRolls.map(function(r){
+            const widthText = ((Number(r.width_mm || 0) || 0) > 0) ? Number(r.width_mm).toFixed(2) : '—';
+            const lengthText = ((Number(r.length_mtr || 0) || 0) > 0) ? Number(r.length_mtr).toFixed(2) : '—';
+            return `<tr>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.roll_no || '—')}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(widthText)}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(lengthText)}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.status || '—')}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table></td></tr>`
     : '';
 
   return `<div style="font-family:'Segoe UI',Arial,sans-serif;padding:20px;max-width:760px;margin:0 auto;color:#0f172a">
@@ -2269,8 +2352,9 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_job_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job No</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#0f766e">${esc(job.job_no || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Client Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_client_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Material</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_material || job.paper_type || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Die Size</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#0f766e">${esc(job.planning_die_size || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Repeat</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_repeat || '—')}</td></tr>
-          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Order Qty</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_order_qty || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Roll No</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.roll_no || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Order Qty</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_order_qty || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Roll</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(assignedRollSummary)}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Total Length</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.length_mtr || '—') + ' m')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">GSM</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.gsm || '—')}</td></tr>
+          ${assignedRollRows}
           ${weightHeightRow}
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">${esc(DC_PAPER_WIDTH_LABEL || 'Width (mm)')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.width_mm || '—') + ' mm')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800"></td><td style="padding:5px 7px;border:1px solid #cbd5e1"></td></tr>
         </table>

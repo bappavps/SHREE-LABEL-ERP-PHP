@@ -344,6 +344,10 @@ include __DIR__ . '/../../../includes/header.php';
         <div class="slt-roll-list" id="loadedRollsList">
           <div class="slt-empty"><i class="bi bi-box-seam"></i><p>No rolls loaded</p></div>
         </div>
+        <div id="manualJobProgressCard" style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:10px;background:#f8fafc">
+          <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:#64748b;letter-spacing:.05em;margin-bottom:6px"><i class="bi bi-graph-up"></i> Manual Progress</div>
+          <div style="font-size:.78rem;color:#64748b">Select a planning job to track required vs configured meters.</div>
+        </div>
       </div>
     </div>
 
@@ -506,7 +510,7 @@ const SLT = (() => {
   let selectedMachineDepartments = [];
   let departmentSelectionTouched = false;
   let activePlannerDepartmentSeed = [];
-  let plannerFilter   = 'all'; // status tab filter
+  let plannerFilter   = 'pending'; // status tab filter (default)
   let allStockOptions = [];    // raw options from API (unfiltered)
   let allStockGroups  = [];    // grouped options across all suppliers
   let selectedSupplier = 'all';
@@ -913,6 +917,7 @@ const SLT = (() => {
     const el = document.getElementById('loadedRollsList');
     if (!loadedRolls.length) {
       el.innerHTML = '<div class="slt-empty"><i class="bi bi-box-seam"></i><p>No rolls loaded</p></div>';
+      renderManualJobProgress();
       return;
     }
 
@@ -981,6 +986,80 @@ const SLT = (() => {
     }
 
     el.innerHTML = renderTree(roots, 0);
+    renderManualJobProgress();
+  }
+
+  function renderManualJobProgress() {
+    const card = document.getElementById('manualJobProgressCard');
+    if (!card) return;
+
+    let targetPlanNo = String((selectedJob && selectedJob.job_no) || '').trim();
+    if (!targetPlanNo && activeRollNo && rollConfigs[activeRollNo]) {
+      targetPlanNo = String(rollConfigs[activeRollNo].job_no || '').trim();
+    }
+    if (!targetPlanNo) {
+      const firstCfg = Object.values(rollConfigs).find(cfg => String((cfg && cfg.job_no) || '').trim() !== '');
+      targetPlanNo = firstCfg ? String(firstCfg.job_no || '').trim() : '';
+    }
+
+    if (!targetPlanNo) {
+      card.innerHTML = '<div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:#64748b;letter-spacing:.05em;margin-bottom:6px"><i class="bi bi-graph-up"></i> Manual Progress</div>' +
+        '<div style="font-size:.78rem;color:#64748b">Select a planning job to track required vs configured meters.</div>';
+      return;
+    }
+
+    const plannerRow = (selectedJob && String(selectedJob.job_no || '').trim().toUpperCase() === targetPlanNo.toUpperCase())
+      ? selectedJob
+      : (plannerJobs.find(j => String(j.job_no || '').trim().toUpperCase() === targetPlanNo.toUpperCase()) || null);
+
+    const requiredMtrs = parseFloat((plannerRow && plannerRow.allocate_mtrs) || 0) || 0;
+    const jobName = String((plannerRow && plannerRow.job_name) || '').trim();
+
+    let completedMtrs = 0;
+    Object.keys(rollConfigs).forEach(function(rollNo){
+      const cfg = rollConfigs[rollNo];
+      if (!cfg) return;
+      if (String(cfg.destination || '').toUpperCase() !== 'JOB') return;
+      const cfgPlanNo = String(cfg.job_no || '').trim();
+      if (targetPlanNo && cfgPlanNo.toUpperCase() !== targetPlanNo.toUpperCase()) return;
+
+      const roll = loadedRolls.find(r => String(r.roll_no || '') === rollNo) || null;
+      const parentLength = parseFloat((roll && roll.length_mtr) || 0) || 0;
+      (cfg.runs || []).forEach(function(run){
+        const width = parseFloat((run && run.width) || 0) || 0;
+        if (width <= 0) return;
+        const qty = Math.max(1, parseInt((run && run.qty) || 1, 10) || 1);
+        let length = parseFloat((run && run.length) || 0) || 0;
+        if (length <= 0) length = parentLength;
+        if (length <= 0) return;
+        completedMtrs += (length * qty);
+      });
+    });
+
+    const pct = requiredMtrs > 0 ? Math.min(100, Math.round((completedMtrs / requiredMtrs) * 100)) : 0;
+    const remaining = Math.max(0, requiredMtrs - completedMtrs);
+    const overBy = Math.max(0, completedMtrs - requiredMtrs);
+    const reached = requiredMtrs > 0 && completedMtrs >= requiredMtrs;
+    const statusColor = reached ? '#16a34a' : '#3b82f6';
+    const statusText = requiredMtrs <= 0
+      ? 'Requirement Not Set'
+      : (reached ? 'Target Reached' : 'In Progress');
+
+    card.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
+      '<div style="font-size:.72rem;font-weight:800;text-transform:uppercase;color:#64748b;letter-spacing:.05em"><i class="bi bi-graph-up"></i> Manual Progress</div>' +
+      '<span style="font-size:.6rem;font-weight:800;background:' + (reached ? '#22c55e' : '#3b82f6') + ';color:#fff;padding:3px 8px;border-radius:999px">' + statusText + '</span>' +
+    '</div>' +
+    '<div style="font-size:.76rem;font-weight:800;color:#0f172a;word-break:break-word">' + esc(targetPlanNo) + (jobName ? (' - ' + esc(jobName)) : '') + '</div>' +
+    '<div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">' +
+      '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:8px"><div style="font-size:.58rem;font-weight:800;text-transform:uppercase;color:#94a3b8">Required</div><div style="font-size:.92rem;font-weight:900;color:#0f172a">' + Number(requiredMtrs || 0).toLocaleString() + ' M</div></div>' +
+      '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:8px"><div style="font-size:.58rem;font-weight:800;text-transform:uppercase;color:#94a3b8">Configured</div><div style="font-size:.92rem;font-weight:900;color:' + statusColor + '">' + Number(completedMtrs || 0).toLocaleString() + ' M</div></div>' +
+    '</div>' +
+    '<div style="margin-top:8px;height:8px;background:#e2e8f0;border-radius:999px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:' + statusColor + ';border-radius:999px"></div></div>' +
+    '<div style="margin-top:6px;font-size:.7rem;font-weight:700;color:' + (overBy > 0 ? '#dc2626' : '#64748b') + '">' +
+      (requiredMtrs > 0
+        ? (overBy > 0 ? ('Over by ' + Number(overBy).toLocaleString() + ' M') : ('Remaining ' + Number(remaining).toLocaleString() + ' M'))
+        : 'Allocate MTRS missing in planning data') +
+    '</div>';
   }
 
   // ── Render: Configuration (Col 3) ─────────────────────────
@@ -988,6 +1067,7 @@ const SLT = (() => {
     const el = document.getElementById('configBody');
     if (!activeRollNo) {
       el.innerHTML = '<div class="slt-empty"><i class="bi bi-gear"></i><p>Select a roll to configure slitting</p></div>';
+      renderManualJobProgress();
       return;
     }
 
@@ -1114,6 +1194,7 @@ const SLT = (() => {
     html += renderSlittingDiagram(roll, cfg);
 
     el.innerHTML = html;
+    renderManualJobProgress();
   }
 
   // ── Render: Batch Status (Col 2) ──────────────────────────
@@ -1574,7 +1655,7 @@ const SLT = (() => {
     const jobsForTabs = getAcceptScopedJobs(plannerJobs);
     const counts = { all: jobsForTabs.length };
     jobsForTabs.forEach(j => {
-      const pp = normalizePlannerStatus(j.printing_planning || j.status || 'Pending');
+      const pp = normalizePlannerStatus(j.status || j.printing_planning || 'Pending');
       counts[pp] = (counts[pp] || 0) + 1;
     });
     const tabs = [
@@ -1607,7 +1688,7 @@ const SLT = (() => {
     // Apply status tab filter
     if (!isAcceptMode() && plannerFilter !== 'all') {
       jobs = jobs.filter(j => {
-        const s = normalizePlannerStatus(j.printing_planning || j.status || '');
+        const s = normalizePlannerStatus(j.status || j.printing_planning || '');
         if (plannerFilter === 'running') return s === 'running' || s === 'in progress';
         return s === plannerFilter;
       });
@@ -1624,7 +1705,7 @@ const SLT = (() => {
 
     el.innerHTML = jobs.map(j => {
       const sel = selectedJob && selectedJob.id === j.id;
-      const ppStatus = j.printing_planning || j.status || 'Pending';
+      const ppStatus = j.status || j.printing_planning || 'Pending';
       return `<div class="slt-job-item${sel?' selected':''}" onclick="SLT.selectJob(${j.id})">
         <div>
           <div class="job-label">${esc(j.job_no || '—')} - ${esc(j.job_name || 'No Name')}</div>

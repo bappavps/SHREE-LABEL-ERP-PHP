@@ -1460,7 +1460,7 @@ try {
             break;
         }
 
-        $jobStmt = $db->prepare("SELECT id, job_type, department, extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $jobStmt = $db->prepare("SELECT id, planning_id, job_type, department, extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
         $jobStmt->bind_param('i', $jobId);
         $jobStmt->execute();
         $job = $jobStmt->get_result()->fetch_assoc();
@@ -1533,6 +1533,32 @@ try {
         $upd = $db->prepare("UPDATE jobs SET extra_data = ? WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')");
         $upd->bind_param('si', $safeJson, $jobId);
         $upd->execute();
+
+        $planId = (int)($job['planning_id'] ?? 0);
+        if ($planId > 0) {
+            $planStmt = $db->prepare("SELECT extra_data FROM planning WHERE id = ? LIMIT 1");
+            if ($planStmt) {
+                $planStmt->bind_param('i', $planId);
+                $planStmt->execute();
+                $planRow = $planStmt->get_result()->fetch_assoc();
+                if ($planRow) {
+                    $planExtra = json_decode((string)($planRow['extra_data'] ?? '{}'), true);
+                    if (!is_array($planExtra)) $planExtra = [];
+                    $planExtra['image_path'] = $relPath;
+                    $planExtra['image_url'] = jobs_join_base_url($relPath);
+                    $planExtra['planning_image_path'] = $relPath;
+                    $planExtra['planning_image_url'] = jobs_join_base_url($relPath);
+                    $planExtra['operator_photo_uploaded_at'] = date('c');
+                    $planExtra['operator_photo_uploaded_by'] = trim((string)($_SESSION['name'] ?? ($_SESSION['user_name'] ?? '')));
+                    $planExtraJson = json_encode($planExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    $upPlan = $db->prepare("UPDATE planning SET extra_data = ? WHERE id = ?");
+                    if ($upPlan) {
+                        $upPlan->bind_param('si', $planExtraJson, $planId);
+                        $upPlan->execute();
+                    }
+                }
+            }
+        }
 
         echo json_encode([
             'ok' => true,

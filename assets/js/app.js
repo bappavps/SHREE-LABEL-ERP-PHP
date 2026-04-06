@@ -31,6 +31,7 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
     var appShell  = document.querySelector('.app-shell');
     if (toggleBtn && sidebar && appShell) {
         var hoverCollapseTimer = null;
+        var isSidebarHovered = !!(sidebar.matches && sidebar.matches(':hover'));
 
         function closeAllSidebarTabs() {
             document.querySelectorAll('.nav-group.is-open').forEach(function (node) {
@@ -82,6 +83,7 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             if (!isDesktopSidebar()) return;
             if (appShell.classList.contains('sidebar-collapsed')) return;
             if (shouldPauseSidebarAutoCollapse()) return;
+            if (isSidebarHovered) return;
 
             cancelDesktopAutoCollapse();
             var delayMs = parseInt(appShell.getAttribute('data-sidebar-collapse-delay-ms') || '1000', 10);
@@ -115,18 +117,20 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                 if (appShell.classList.contains('sidebar-collapsed')) {
                     closeAllSidebarTabs();
                 } else {
-                    // When manually expanded from collapsed state, mouse may still be outside sidebar.
-                    // Start delay timer immediately so collapse delay setting is respected.
+                    // Keep expanded while pointer is inside sidebar; when outside, start configured delay.
+                    isSidebarHovered = !!(sidebar.matches && sidebar.matches(':hover'));
                     scheduleDesktopAutoCollapse();
                 }
             }
         });
 
         sidebar.addEventListener('mouseenter', function () {
+            isSidebarHovered = true;
             cancelDesktopAutoCollapse();
         });
 
         sidebar.addEventListener('mouseleave', function () {
+            isSidebarHovered = false;
             scheduleDesktopAutoCollapse();
         });
 
@@ -140,6 +144,7 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             // Delay a tick so document.activeElement is updated after blur.
             setTimeout(function () {
                 if (!shouldPauseSidebarAutoCollapse()) {
+                    isSidebarHovered = !!(sidebar.matches && sidebar.matches(':hover'));
                     scheduleDesktopAutoCollapse();
                 }
             }, 0);

@@ -331,13 +331,17 @@ try {
             $rows = $db->query("SELECT p.*, so.material_type, so.label_width_mm, so.label_length_mm, so.quantity
                 FROM planning p
                 LEFT JOIN sales_orders so ON p.sales_order_id = so.id
-                WHERE LOWER(TRIM(COALESCE(
-                    NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.extra_data, '$.printing_planning')), ''),
-                    NULLIF(p.status, ''),
-                    'Pending'
-                ))) IN ('pending', 'barcode ready', 'barcode_ready', 'preparing slitting', 'slitting', 'queued', 'running', 'in progress', 'printing done')
+                WHERE (
+                    UPPER(TRIM(COALESCE(p.job_no, ''))) LIKE 'PLN/%'
+                    OR UPPER(TRIM(COALESCE(p.job_no, ''))) LIKE 'PLN-BAR/%'
+                    OR LOWER(TRIM(COALESCE(
+                        NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.extra_data, '$.printing_planning')), ''),
+                        NULLIF(p.status, ''),
+                        'Pending'
+                    ))) IN ('pending', 'barcode ready', 'barcode_ready', 'preparing slitting', 'slitting', 'queued', 'running', 'in progress', 'printing done')
+                )
                 ORDER BY p.id DESC
-                LIMIT 100")->fetch_all(MYSQLI_ASSOC);
+                LIMIT 500")->fetch_all(MYSQLI_ASSOC);
         }
 
         // Merge extra_data JSON fields into each row so JS can read them directly
@@ -1073,6 +1077,56 @@ try {
 
                 // Keep one downstream barcode job per PLN-BAR plan as queued.
                 if ($planningId > 0 && $allowBarcodeJob) {
+                    $barcodeAssignedRolls = [];
+                    foreach ($childRolls as $childRow) {
+                        $dest = strtoupper(trim((string)($childRow['dest'] ?? '')));
+                        if ($dest !== 'JOB') continue;
+                        $rollNoItem = trim((string)($childRow['roll_no'] ?? ''));
+                        if ($rollNoItem === '') continue;
+
+                        $barcodeAssignedRolls[] = [
+                            'roll_no' => $rollNoItem,
+                            'parent_roll_no' => trim((string)($childRow['parent_roll_no'] ?? $parentRollNo)),
+                            'width_mm' => (float)($childRow['width'] ?? 0),
+                            'length_mtr' => (float)($childRow['length'] ?? 0),
+                            'paper_type' => trim((string)($childRow['paper_type'] ?? '')),
+                            'company' => trim((string)($childRow['company'] ?? '')),
+                            'gsm' => (float)($childRow['gsm'] ?? 0),
+                            'status' => trim((string)($childRow['status'] ?? 'Slitting')),
+                            'job_no' => trim((string)($childRow['job_no'] ?? $planNo)),
+                            'job_name' => trim((string)($childRow['job_name'] ?? $displayJobName)),
+                        ];
+                    }
+
+                    $barcodeExtraBase = [
+                        'assigned_child_rolls' => $barcodeAssignedRolls,
+                        'assigned_child_roll_count' => count($barcodeAssignedRolls),
+                        'assigned_parent_roll_no' => $parentRollNo,
+                        'assigned_last_batch_no' => $batchNo,
+                        'assigned_updated_at' => date('c'),
+                    ];
+
+                    $mergeBarcodeAssignedRolls = static function(array $existing, array $incoming): array {
+                        $merged = [];
+                        foreach ($existing as $row) {
+                            if (!is_array($row)) continue;
+                            $rn = strtoupper(trim((string)($row['roll_no'] ?? '')));
+                            if ($rn === '') continue;
+                            $merged[$rn] = $row;
+                        }
+                        foreach ($incoming as $row) {
+                            if (!is_array($row)) continue;
+                            $rn = strtoupper(trim((string)($row['roll_no'] ?? '')));
+                            if ($rn === '') continue;
+                            $merged[$rn] = $row;
+                        }
+                        $out = array_values($merged);
+                        usort($out, static function($a, $b) {
+                            return strnatcasecmp((string)($a['roll_no'] ?? ''), (string)($b['roll_no'] ?? ''));
+                        });
+                        return $out;
+                    };
+
                     $barcodePrevId = 0;
                     $barcodeFromRef = $parentRollNo;
 
@@ -1084,7 +1138,7 @@ try {
                         $barcodeFromRef = $jumboRefNo !== '' ? $jumboRefNo : 'N/A';
                     }
 
-                    $chkB = $db->prepare("SELECT id, job_no FROM jobs WHERE department = 'barcode' AND planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
+                    $chkB = $db->prepare("SELECT id, job_no, extra_data FROM jobs WHERE department = 'barcode' AND planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
                     $chkB->bind_param('i', $planningId);
                     $chkB->execute();
                     $existingBarcode = $chkB->get_result()->fetch_assoc();
@@ -1100,12 +1154,23 @@ try {
 
                     if ($existingBarcode) {
                         $barcodeId = (int)$existingBarcode['id'];
+                        $existingBarcodeExtra = json_decode((string)($existingBarcode['extra_data'] ?? '{}'), true);
+                        if (!is_array($existingBarcodeExtra)) $existingBarcodeExtra = [];
+                        $existingAssignedRolls = is_array($existingBarcodeExtra['assigned_child_rolls'] ?? null)
+                            ? $existingBarcodeExtra['assigned_child_rolls']
+                            : [];
+                        $mergedAssignedRolls = $mergeBarcodeAssignedRolls($existingAssignedRolls, $barcodeAssignedRolls);
+                        $existingBarcodeExtra = array_merge($existingBarcodeExtra, $barcodeExtraBase);
+                        $existingBarcodeExtra['assigned_child_rolls'] = $mergedAssignedRolls;
+                        $existingBarcodeExtra['assigned_child_roll_count'] = count($mergedAssignedRolls);
+                        $barcodeExtraJson = json_encode($existingBarcodeExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
                         if ($barcodePrevId > 0) {
-                            $updBarcode = $db->prepare("UPDATE jobs SET previous_job_id = ?, notes = ? WHERE id = ?");
-                            $updBarcode->bind_param('isi', $barcodePrevId, $barcodeNotes, $barcodeId);
+                            $updBarcode = $db->prepare("UPDATE jobs SET previous_job_id = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updBarcode->bind_param('issi', $barcodePrevId, $barcodeNotes, $barcodeExtraJson, $barcodeId);
                         } else {
-                            $updBarcode = $db->prepare("UPDATE jobs SET previous_job_id = NULL, notes = ? WHERE id = ?");
-                            $updBarcode->bind_param('si', $barcodeNotes, $barcodeId);
+                            $updBarcode = $db->prepare("UPDATE jobs SET previous_job_id = NULL, notes = ?, extra_data = ? WHERE id = ?");
+                            $updBarcode->bind_param('ssi', $barcodeNotes, $barcodeExtraJson, $barcodeId);
                         }
                         $updBarcode->execute();
                     } else {
@@ -1127,12 +1192,17 @@ try {
                                 $barcodeNotesForInsert .= ' | Job name: ' . $displayJobName;
                             }
 
+                            $newBarcodeExtra = $barcodeExtraBase;
+                            $newBarcodeExtra['assigned_child_rolls'] = $barcodeAssignedRolls;
+                            $newBarcodeExtra['assigned_child_roll_count'] = count($barcodeAssignedRolls);
+                            $barcodeExtraJson = json_encode($newBarcodeExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
                             if ($barcodePrevId > 0) {
-                                $insBarcode = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Finishing', 'barcode', 'Queued', 3, ?, ?)");
-                                $insBarcode->bind_param('sisis', $jcNoBarcode, $planningId, $parentRollNo, $barcodePrevId, $barcodeNotesForInsert);
+                                $insBarcode = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'barcode', 'Queued', 3, ?, ?, ?)");
+                                $insBarcode->bind_param('sisiss', $jcNoBarcode, $planningId, $parentRollNo, $barcodePrevId, $barcodeNotesForInsert, $barcodeExtraJson);
                             } else {
-                                $insBarcode = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Finishing', 'barcode', 'Queued', 3, NULL, ?)");
-                                $insBarcode->bind_param('siss', $jcNoBarcode, $planningId, $parentRollNo, $barcodeNotesForInsert);
+                                $insBarcode = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'barcode', 'Queued', 3, NULL, ?, ?)");
+                                $insBarcode->bind_param('sisss', $jcNoBarcode, $planningId, $parentRollNo, $barcodeNotesForInsert, $barcodeExtraJson);
                             }
 
                             $okBarcode = false;
