@@ -22,6 +22,7 @@ $dcShowWeightHeightFields = isset($dcShowWeightHeightFields) ? (bool)$dcShowWeig
 $dcWeightLabel = trim((string)($dcWeightLabel ?? '')) ?: 'Weight';
 $dcHeightLabel = trim((string)($dcHeightLabel ?? '')) ?: 'Height';
 $dcPaperWidthLabel = trim((string)($dcPaperWidthLabel ?? '')) ?: 'Width (mm)';
+$dcShowPaperCompanyInDetails = isset($dcShowPaperCompanyInDetails) ? (bool)$dcShowPaperCompanyInDetails : true;
 $dcAutoFallbackToAllOnEmptyDefault = isset($dcAutoFallbackToAllOnEmptyDefault) ? (bool)$dcAutoFallbackToAllOnEmptyDefault : true;
 $dcDefaultVoiceLanguage = trim((string)($dcDefaultVoiceLanguage ?? '')) ?: 'en-IN';
 $dcBrand = trim((string)($dcBrand ?? '')) ?: '#0ea5a4';
@@ -146,6 +147,7 @@ foreach ($jobs as &$job) {
   $job['planning_repeat'] = (string)($planningExtra['repeat'] ?? ($planningExtra['barcode_repeat'] ?? ($planningExtra['cylinder_repeat'] ?? ($planningExtra['pitch'] ?? ''))));
   $job['planning_order_qty'] = (string)($planningExtra['order_quantity_user'] ?? ($planningExtra['order_quantity'] ?? ($planningExtra['qty_pcs'] ?? '')));
   $job['planning_material'] = (string)($planningExtra['material_type'] ?? ($planningExtra['material'] ?? ($job['paper_type'] ?? '')));
+  $job['paper_company_name'] = (string)($planningExtra['paper_company_name'] ?? ($planningExtra['paper_company'] ?? ($planningExtra['company_name'] ?? ($job['company'] ?? ''))));
   $job['planning_plate_no'] = (string)($planningExtra['plate_no'] ?? '');
   $job['planning_client_name'] = (string)($planningExtra['client_name'] ?? ($planningExtra['customer_name'] ?? ($planningExtra['party_name'] ?? '')));
     $imagePath = trim((string)($planningExtra['image_path'] ?? ($planningExtra['planning_image_path'] ?? '')));
@@ -322,6 +324,7 @@ include __DIR__ . '/../../../includes/header.php';
 .dc-card-row{display:flex;justify-content:space-between;gap:8px;font-size:.78rem}
 .dc-label{font-size:.62rem;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:.04em}
 .dc-value{font-weight:700;color:#0f172a;text-align:right}
+.dc-job-name{font-size:1.08rem;line-height:1.25;font-weight:900;color:#0f172a}
 .dc-card-foot{padding:10px 14px;border-top:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center}
 .dc-time{font-size:.68rem;color:#94a3b8}
 
@@ -467,6 +470,7 @@ include __DIR__ . '/../../../includes/header.php';
 .ht-table .ht-cb-cell{width:34px;text-align:center}
 .ht-table .ht-cb-cell input{width:16px;height:16px;accent-color:var(--dc-brand);cursor:pointer}
 .ht-jobno{font-weight:900;color:#0f172a;font-size:.8rem}
+.ht-jobname{font-size:.88rem;font-weight:900;color:#0f172a}
 .ht-dim{color:#94a3b8;font-size:.72rem}
 .ht-badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:.56rem;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
 .ht-badge-completed{background:#dcfce7;color:#166534}
@@ -601,8 +605,9 @@ include __DIR__ . '/../../../includes/header.php';
       </div>
     </div>
     <div class="dc-card-body">
-      <div class="dc-card-row"><span class="dc-label">Job Name</span><span class="dc-value"><?= e($job['display_job_name']) ?></span></div>
+      <div class="dc-card-row"><span class="dc-label">Job Name</span><span class="dc-value dc-job-name"><?= e($job['display_job_name']) ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Material</span><span class="dc-value"><?= e($job['planning_material'] ?: '—') ?></span></div>
+      <div class="dc-card-row"><span class="dc-label">Paper Company</span><span class="dc-value"><?= e($job['paper_company_name'] ?: '—') ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Die Size</span><span class="dc-value" style="color:var(--dc-brand)"><?= e($job['planning_die_size'] ?: '—') ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Order Qty (Pcs)</span><span class="dc-value"><?= e($job['planning_order_qty'] ?: '—') ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Total Length (Mtr)</span><span class="dc-value"><?= e($job['length_mtr'] ?? '—') ?></span></div>
@@ -660,8 +665,9 @@ include __DIR__ . '/../../../includes/header.php';
       </div>
     </div>
     <div class="dc-card-body">
-      <div class="dc-card-row"><span class="dc-label">Job Name</span><span class="dc-value"><?= e($job['display_job_name']) ?></span></div>
+      <div class="dc-card-row"><span class="dc-label">Job Name</span><span class="dc-value dc-job-name"><?= e($job['display_job_name']) ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Material</span><span class="dc-value"><?= e($job['planning_material'] ?: '—') ?></span></div>
+      <div class="dc-card-row"><span class="dc-label">Paper Company</span><span class="dc-value"><?= e($job['paper_company_name'] ?: '—') ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Die Size</span><span class="dc-value" style="color:var(--dc-brand)"><?= e($job['planning_die_size'] ?: '—') ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Order Qty</span><span class="dc-value"><?= e($job['planning_order_qty'] ?: '—') ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Started</span><span class="dc-value"><?= e($startedAt) ?></span></div>
@@ -727,11 +733,12 @@ include __DIR__ . '/../../../includes/header.php';
         <th onclick="htSortCol(1)">Job No<span class="ht-sort">▲▼</span></th>
         <th onclick="htSortCol(2)">Job Name<span class="ht-sort">▲▼</span></th>
         <th onclick="htSortCol(3)">Material<span class="ht-sort">▲▼</span></th>
-        <th onclick="htSortCol(4)">Die Size<span class="ht-sort">▲▼</span></th>
-        <th onclick="htSortCol(5)">Order Qty<span class="ht-sort">▲▼</span></th>
-        <th onclick="htSortCol(6)">Status<span class="ht-sort">▲▼</span></th>
-        <th onclick="htSortCol(7)">Started<span class="ht-sort">▲▼</span></th>
-        <th onclick="htSortCol(8)">Completed<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(4)">Paper Company<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(5)">Die Size<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(6)">Order Qty<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(7)">Status<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(8)">Started<span class="ht-sort">▲▼</span></th>
+        <th onclick="htSortCol(9)">Completed<span class="ht-sort">▲▼</span></th>
         <th class="no-print">Actions</th>
       </tr>
     </thead>
@@ -745,7 +752,7 @@ include __DIR__ . '/../../../includes/header.php';
         $hStsClass = match($hStsLower) { 'closed'=>'closed','finalized'=>'finalized','completed'=>'completed', default=>'default' };
         $hStarted = $h['started_at'] ? date('d M Y, H:i', strtotime($h['started_at'])) : '—';
         $hCompleted = $h['completed_at'] ? date('d M Y, H:i', strtotime($h['completed_at'])) : ($h['updated_at'] ? date('d M Y, H:i', strtotime($h['updated_at'])) : '—');
-        $hSearch = strtolower($h['job_no'] . ' ' . ($h['display_job_name'] ?? '') . ' ' . ($h['planning_material'] ?? '') . ' ' . ($h['planning_die_size'] ?? ''));
+        $hSearch = strtolower($h['job_no'] . ' ' . ($h['display_job_name'] ?? '') . ' ' . ($h['planning_material'] ?? '') . ' ' . ($h['paper_company_name'] ?? '') . ' ' . ($h['planning_die_size'] ?? ''));
       ?>
       <tr data-id="<?= (int)$h['id'] ?>"
           data-completed="<?= e($h['completed_at'] ?? $h['updated_at'] ?? $h['created_at'] ?? '') ?>"
@@ -756,8 +763,9 @@ include __DIR__ . '/../../../includes/header.php';
         </td>
         <td class="ht-dim"><?= $idx + 1 ?></td>
         <td><span class="ht-jobno"><?= e($h['job_no']) ?></span></td>
-        <td><?= e($h['display_job_name'] ?? '—') ?></td>
+        <td><span class="ht-jobname"><?= e($h['display_job_name'] ?? '—') ?></span></td>
         <td><?= e($h['planning_material'] ?? '—') ?></td>
+        <td><?= e($h['paper_company_name'] ?? '—') ?></td>
         <td style="color:var(--dc-brand);font-weight:800"><?= e($h['planning_die_size'] ?? '—') ?></td>
         <td><?= e($h['planning_order_qty'] ?? '—') ?></td>
         <td><span class="ht-badge ht-badge-<?= $hStsClass ?>"><?= e($hSts) ?></span></td>
@@ -830,6 +838,7 @@ const DC_SHOW_WEIGHT_HEIGHT_FIELDS = <?= $dcShowWeightHeightFields ? 'true' : 'f
 const DC_WEIGHT_LABEL = <?= json_encode($dcWeightLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const DC_HEIGHT_LABEL = <?= json_encode($dcHeightLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const DC_PAPER_WIDTH_LABEL = <?= json_encode($dcPaperWidthLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+const DC_SHOW_PAPER_COMPANY_IN_DETAILS = <?= $dcShowPaperCompanyInDetails ? 'true' : 'false' ?>;
 const DC_AUTO_FALLBACK_TO_ALL_ON_EMPTY_DEFAULT = <?= $dcAutoFallbackToAllOnEmptyDefault ? 'true' : 'false' ?>;
 const DC_DEFAULT_VOICE_LANGUAGE = <?= json_encode($dcDefaultVoiceLanguage, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 
@@ -1968,7 +1977,7 @@ async function openJobDetail(id, mode) {
   // ── Job Information ──
   html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-info-circle"></i> Job Information</div><div class="dc-op-b dc-op-grid-2">
     <div class="dc-op-field"><label>Job No</label><div class="fv" style="color:var(--dc-brand)">${esc(job.job_no)}</div></div>
-    <div class="dc-op-field"><label>Job Name</label><div class="fv">${esc(resolveJobDisplayName(job))}</div></div>
+    <div class="dc-op-field"><label>Job Name</label><div class="fv" style="font-size:1.08rem;font-weight:900;line-height:1.35;color:#0f172a">${esc(resolveJobDisplayName(job))}</div></div>
     <div class="dc-op-field"><label>Client Name</label><div class="fv">${esc(job.planning_client_name || '—')}</div></div>
     <div class="dc-op-field"><label>Priority</label><div class="fv">${esc(job.planning_priority||'Normal')}</div></div>
     <div class="dc-op-field"><label>Sequence</label><div class="fv">#${job.sequence_order||1}</div></div>
@@ -1981,6 +1990,7 @@ async function openJobDetail(id, mode) {
 
   html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-scissors"></i> ${esc(DC_DETAILS_SECTION_LABEL || 'Die-Cutting Details')}</div><div class="dc-op-b dc-op-grid-2">
     <div class="dc-op-field"><label>Material</label><div class="fv">${esc(job.planning_material || job.paper_type || '—')}</div></div>
+    ${DC_SHOW_PAPER_COMPANY_IN_DETAILS ? `<div class="dc-op-field"><label>Paper Company</label><div class="fv">${esc(job.paper_company_name || job.company || '—')}</div></div>` : ''}
     <div class="dc-op-field"><label>Die Size</label><div class="fv" style="color:var(--dc-brand);font-weight:900">${esc(job.planning_die_size || '—')}</div></div>
     <div class="dc-op-field"><label>Repeat</label><div class="fv">${esc(job.planning_repeat || '—')}</div></div>
     <div class="dc-op-field"><label>Order Quantity (Pcs)</label><div class="fv">${esc(job.planning_order_qty || '—')}</div></div>
@@ -2007,6 +2017,7 @@ async function openJobDetail(id, mode) {
           <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Width (mm)</th>
           <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Length (m)</th>
           <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Paper</th>
+          <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Company</th>
           <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">GSM</th>
           <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Status</th>
         </tr></thead>
@@ -2017,6 +2028,7 @@ async function openJobDetail(id, mode) {
               <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(((Number(r.width_mm || 0) || 0) > 0 ? Number(r.width_mm).toFixed(2) : '—'))}</td>
               <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(((Number(r.length_mtr || 0) || 0) > 0 ? Number(r.length_mtr).toFixed(2) : '—'))}</td>
               <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(r.paper_type || '—')}</td>
+              <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(r.company || r.company_name || '—')}</td>
               <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(((Number(r.gsm || 0) || 0) > 0 ? Number(r.gsm).toString() : '—'))}</td>
               <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(r.status || '—')}</td>
             </tr>`;
@@ -2300,6 +2312,7 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
           <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#f8fafc;text-align:left">Roll No</th>
           <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#f8fafc;text-align:left">Width (mm)</th>
           <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#f8fafc;text-align:left">Length (m)</th>
+          <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#f8fafc;text-align:left">Company</th>
           <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#f8fafc;text-align:left">Status</th>
         </tr></thead>
         <tbody>
@@ -2310,6 +2323,7 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
               <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.roll_no || '—')}</td>
               <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(widthText)}</td>
               <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(lengthText)}</td>
+              <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.company || r.company_name || '—')}</td>
               <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.status || '—')}</td>
             </tr>`;
           }).join('')}
@@ -2337,7 +2351,7 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
         </div>
       </div>
       <div style="padding:8px 14px;background:#ccfbf1;border-bottom:1px solid #99f6e4;display:flex;justify-content:space-between;align-items:center">
-        <div style="font-size:.76rem;font-weight:900;color:#0f766e">Job: ${esc(job.planning_job_name || '—')}</div>
+        <div style="font-size:1rem;font-weight:900;color:#0f766e;line-height:1.25">Job: ${esc(job.planning_job_name || '—')}</div>
         <div style="font-size:.68rem;font-weight:700;color:#0d9488">Priority: ${esc(job.planning_priority || 'Normal')}</div>
       </div>
       <div style="padding:10px 12px;border-bottom:1px solid #cbd5e1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;font-size:.66rem">
@@ -2349,8 +2363,9 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
       <div style="padding:10px 12px">
         <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#0f766e;background:#ccfbf1;padding:5px 8px;border-radius:4px">${esc(DC_DETAILS_SECTION_LABEL || 'Die-Cutting Details')}</div>
         <table style="width:100%;border-collapse:collapse;font-size:.72rem;margin-bottom:10px">
-          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_job_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job No</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#0f766e">${esc(job.job_no || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-size:.84rem;font-weight:900;color:#0f172a">${esc(job.planning_job_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job No</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#0f766e">${esc(job.job_no || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Client Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_client_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Material</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_material || job.paper_type || '—')}</td></tr>
+          ${DC_SHOW_PAPER_COMPANY_IN_DETAILS ? `<tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Paper Company</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.paper_company_name || job.company || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800"></td><td style="padding:5px 7px;border:1px solid #cbd5e1"></td></tr>` : ''}
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Die Size</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#0f766e">${esc(job.planning_die_size || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Repeat</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_repeat || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Order Qty</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_order_qty || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Roll</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(assignedRollSummary)}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Total Length</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.length_mtr || '—') + ' m')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">GSM</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.gsm || '—')}</td></tr>

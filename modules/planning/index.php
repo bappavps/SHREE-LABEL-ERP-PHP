@@ -56,6 +56,12 @@ $defaultColumns = [
 
 $allowedTypes = ['Text', 'Number', 'Date', 'Status', 'Priority', 'Department'];
 $statusList = erp_status_page_options('planning.label-printing');
+$customDisplayStatuses = ['Hold For Plate', 'Hold For Payment'];
+foreach ($customDisplayStatuses as $customStatus) {
+  if (!in_array($customStatus, $statusList, true)) {
+    $statusList[] = $customStatus;
+  }
+}
 $defaultStatus = erp_status_page_default('planning.label-printing');
 $priorityList = ['Low', 'Normal', 'High', 'Urgent'];
 
@@ -377,6 +383,46 @@ function planning_get_columns(mysqli $db, $department, array $defaultColumns) {
     $rows = $stmt2->get_result()->fetch_all(MYSQLI_ASSOC);
   }
 
+  // Auto-heal board layout so all default columns remain visible even if
+  // older/saved configs accidentally removed some keys.
+  $keys = array_map(function($r){ return (string)$r['col_key']; }, $rows);
+  $maxSort = 0;
+  foreach ($rows as $_r) {
+    $maxSort = max($maxSort, (int)$_r['sort_order']);
+  }
+
+  $missingDefaults = [];
+  foreach ($defaultColumns as $dc) {
+    $dk = (string)($dc['key'] ?? '');
+    if ($dk !== '' && !in_array($dk, $keys, true)) {
+      $missingDefaults[] = $dc;
+    }
+  }
+
+  if (!empty($missingDefaults)) {
+    $insMissing = $db->prepare("INSERT IGNORE INTO planning_board_columns (department, col_key, col_label, col_type, sort_order) VALUES (?,?,?,?,?)");
+    foreach ($missingDefaults as $dc) {
+      $colKey = trim((string)($dc['key'] ?? ''));
+      $colLabel = trim((string)($dc['label'] ?? $colKey));
+      $colType = trim((string)($dc['type'] ?? 'Text'));
+      if ($colKey === '' || $colLabel === '') {
+        continue;
+      }
+      $sort = (int)($dc['sort'] ?? 0);
+      if ($sort <= 0 || $sort <= $maxSort) {
+        $sort = $maxSort + 1;
+      }
+      $insMissing->bind_param('ssssi', $department, $colKey, $colLabel, $colType, $sort);
+      $insMissing->execute();
+      $maxSort = max($maxSort, $sort);
+    }
+
+    $stmt3 = $db->prepare("SELECT col_key, col_label, col_type, sort_order FROM planning_board_columns WHERE department = ? ORDER BY sort_order ASC, id ASC");
+    $stmt3->bind_param('s', $department);
+    $stmt3->execute();
+    $rows = $stmt3->get_result()->fetch_all(MYSQLI_ASSOC);
+  }
+
     $out = [];
     foreach ($rows as $r) {
         $out[] = [
@@ -427,6 +473,10 @@ function planning_status_badge($status) {
   }
 
   function planning_status_inline_style($status) {
+    $s = strtolower(trim((string)$status));
+    if ($s === 'hold for plate' || $s === 'hold for payment') {
+      return 'background:#fee2e2;color:#991b1b;border-color:#fecaca;';
+    }
     return erp_status_inline_style(planning_normalize_status($status));
   }
 
@@ -2963,7 +3013,9 @@ include __DIR__ . '/../../includes/header.php';
   });
 
   [addModal, cfgModal, importMapModal, detailModal, imageViewerModal, pickerModal].forEach(function(m){
-    m.addEventListener('click', function(e){ if (e.target === m) closeModal(m); });
+    m.addEventListener('click', function(e){
+      if (e.target === m && m !== addModal) closeModal(m);
+    });
   });
 
   bindAddFormDepartmentDefaults();

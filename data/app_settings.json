@@ -3,7 +3,7 @@
     "company_legal_name": "Shree Label Creations Pvt. Ltd.",
     "contact_person": "Aditya Sitani",
     "erp_display_name": "e-Flexo Enterprices",
-    "company_tagline": "All types of Label Printing Solutions",
+    "company_tagline": "A Flexo Printing ERP",
     "company_email": "gm.shreelabel@gmail.com",
     "company_mobile": "+917001449757",
     "company_phone": "+917001449757",
@@ -81,7 +81,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 1
+                "counter": 6
             },
             "sales_order": {
                 "prefix": "SO",
@@ -97,11 +97,11 @@
             },
             "printing_job": {
                 "prefix": "FLX",
-                "counter": 0
+                "counter": 1
             },
             "die_cutting_job": {
                 "prefix": "DCT",
-                "counter": 0
+                "counter": 1
             },
             "planning_barcode": {
                 "prefix": "PLN-BAR",
@@ -113,7 +113,7 @@
             },
             "barcode_job": {
                 "prefix": "BRC-BAR",
-                "counter": 1
+                "counter": 0
             }
         }
     },

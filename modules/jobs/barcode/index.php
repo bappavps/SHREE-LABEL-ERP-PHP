@@ -15,6 +15,7 @@ $dcShowWeightHeightFields = true;
 $dcWeightLabel = 'Width';
 $dcHeightLabel = 'Height';
 $dcPaperWidthLabel = 'Paper Width (mm)';
+$dcShowPaperCompanyInDetails = false;
 $dcDefaultFilter = 'Pending';
 $dcWhereClauseOverride = "(
     LOWER(COALESCE(j.department, '')) IN ('barcode')

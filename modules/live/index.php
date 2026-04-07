@@ -220,6 +220,182 @@ include __DIR__ . '/../../includes/header.php';
 @media(max-width:1100px){.fl-stats{grid-template-columns:repeat(3,1fr)!important}}
 @media(max-width:700px){.fl-stats{grid-template-columns:1fr 1fr!important}}
 
+/* ── Mobile hardening ── */
+@media (max-width:900px){
+  .fl-filters{
+    padding:10px 10px;
+    gap:6px;
+  }
+
+/* ── Anti-overflow safety for small devices ── */
+.fl-header,
+.fl-stats,
+.fl-filters,
+.fl-jobs,
+.fl-legend,
+.fl-card,
+.fl-card-head,
+.fl-timeline{
+  max-width:100%;
+  box-sizing:border-box;
+}
+
+@media (max-width:640px){
+  .fl-filters{
+    display:block;
+    overflow:visible;
+  }
+  .fl-filter-label{
+    display:block;
+    margin-bottom:6px;
+  }
+  .fl-filter-sep{display:none}
+
+  /* Keep filter chips usable on tiny screens with horizontal swipe */
+  .fl-filter-chip-row{
+    display:flex;
+    gap:6px;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    padding-bottom:4px;
+  }
+
+  .fl-filter-btn{
+    white-space:nowrap;
+    flex:0 0 auto;
+  }
+
+  .fl-search{
+    display:block;
+    width:100%;
+    margin:8px 0 0 0;
+  }
+
+  .fl-card-head{
+    overflow:hidden;
+    flex-wrap:nowrap;
+  }
+  .fl-card-info{
+    min-width:0;
+    overflow:hidden;
+  }
+  .fl-card-row1,
+  .fl-card-det{
+    min-width:0;
+  }
+  .fl-card-jobno,
+  .fl-card-name,
+  .fl-card-det{
+    word-break:break-word;
+  }
+
+  .fl-legend{
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    flex-wrap:nowrap;
+    white-space:nowrap;
+  }
+}
+  .fl-filter-sep{display:none}
+  .fl-search{
+    margin-left:0;
+    width:100%;
+    min-width:0;
+    order:99;
+  }
+}
+
+@media (max-width:640px){
+  .fl-header{
+    padding:14px;
+    border-radius:12px;
+  }
+  .fl-h-left h1{
+    font-size:1.05rem;
+    gap:7px;
+    flex-wrap:wrap;
+    justify-content:center;
+  }
+  .fl-h-left p{font-size:.72rem}
+  .fl-time{font-size:1.45rem;letter-spacing:1px}
+  .fl-date{font-size:.73rem}
+  .fl-day{font-size:.62rem;letter-spacing:1px}
+
+  .fl-stats{
+    grid-template-columns:1fr 1fr !important;
+    gap:8px;
+    margin-bottom:14px;
+  }
+  .fl-stat{
+    padding:11px 10px;
+    border-radius:10px;
+  }
+  .fl-stat-label{font-size:.6rem}
+  .fl-stat-num{font-size:1.2rem}
+
+  .fl-filters{
+    border-radius:10px;
+  }
+  .fl-filter-label{
+    width:100%;
+    margin-bottom:4px;
+  }
+  .fl-filter-btn{
+    font-size:.66rem;
+    padding:5px 10px;
+  }
+
+  .fl-card{
+    border-radius:12px;
+  }
+  .fl-card-head{
+    padding:9px 10px;
+    gap:8px;
+  }
+  .fl-card-thumb,
+  .fl-card-thumb-ph{
+    width:42px;
+    height:42px;
+    border-radius:7px;
+  }
+  .fl-card-row1{gap:6px}
+  .fl-card-jobno{font-size:.78rem}
+  .fl-card-name{
+    font-size:.7rem;
+    white-space:normal;
+    overflow:visible;
+    text-overflow:clip;
+  }
+  .fl-card-det{font-size:.6rem;gap:6px}
+
+  .fl-timeline{
+    padding:12px 8px 10px;
+  }
+  .fl-track{
+    min-width:460px;
+    padding:0 2px;
+  }
+  .fl-node{min-width:70px}
+  .fl-circle{width:28px;height:28px}
+  .fl-stage-name{font-size:.62rem}
+  .fl-stage-time{font-size:.56rem}
+
+  .fl-legend{
+    gap:10px;
+    padding:10px;
+    font-size:.66rem;
+    border-radius:10px;
+  }
+  .fl-lg-item{gap:6px}
+  .fl-lg-dot{width:14px;height:14px;border-width:2px}
+}
+
+@media (max-width:420px){
+  .fl-stats{grid-template-columns:1fr !important}
+  .fl-filter-btn{padding:5px 8px;font-size:.64rem}
+  .fl-track{min-width:420px}
+}
+
 /* ── Dept Badges ── */
 .fl-dept-badge{font-size:.57rem;font-weight:800;padding:2px 8px;border-radius:10px;display:inline-block;vertical-align:middle;text-transform:uppercase;letter-spacing:.4px}
 .db-plan{background:#ede9fe;color:#7c3aed}

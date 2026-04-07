@@ -301,7 +301,9 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-badge-slitting{background:#ede9fe;color:#6d28d9}
 .jc-badge-urgent{background:#fee2e2;color:#991b1b}
 .jc-badge-high{background:#ffedd5;color:#9a3412}
-.jc-badge-normal{background:#e0f2fe;color:#075985}
+.jc-badge-normal{background:#dcfce7;color:#166534}
+.jc-job-name{font-size:1.2rem;line-height:1.4;font-weight:1000;color:#0f172a}
+.jc-job-name{font-size:1.16rem;line-height:1.25;font-weight:900;color:#0f172a}
 @keyframes pulse-badge{0%,100%{opacity:1}50%{opacity:.6}}
 .jc-action-btn{padding:5px 12px;font-size:.65rem;font-weight:800;text-transform:uppercase;border:none;border-radius:8px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:4px}
 .jc-btn-start{background:var(--jc-brand);color:#fff}
@@ -559,9 +561,7 @@ $historyCount = $finishedCount;
       <div class="jc-jobno"><i class="bi bi-box-seam"></i> <?= e($job['job_no']) ?></div>
       <div style="display:flex;gap:6px;align-items:center">
         <span class="jc-badge jc-badge-<?= $stsClass ?>"><?= e($sts) ?></span>
-        <?php if ($pri !== 'Normal'): ?>
-          <span class="jc-badge jc-badge-<?= $priClass ?>"><?= e($pri) ?></span>
-        <?php endif; ?>
+        <span class="jc-badge jc-badge-<?= $priClass ?>"><?= e($pri) ?></span>
         <?php if ($hasPendingRequest): ?>
           <span class="jc-request-state">Request Pending</span>
         <?php elseif (strtolower(trim((string)($job['latest_request_status'] ?? ''))) === 'rejected'): ?>
@@ -572,7 +572,7 @@ $historyCount = $finishedCount;
       </div>
     </div>
     <div class="jc-card-body">
-      <div class="jc-card-row"><span class="jc-label">Job Name</span><span class="jc-value"><?= e($job['display_job_name'] ?? '—') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Job Name</span><span class="jc-value jc-job-name"><?= e($job['display_job_name'] ?? '—') ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Roll No</span><span class="jc-value" style="color:var(--jc-brand)"><?= e($job['roll_no'] ?? '—') ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Material</span><span class="jc-value"><?= e($job['paper_type'] ?? '—') ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Dimension</span><span class="jc-value"><?= e(($job['width_mm'] ?? '—') . 'mm × ' . ($job['length_mtr'] ?? '—') . 'm') ?></span></div>
@@ -618,13 +618,11 @@ $historyCount = $finishedCount;
       <div class="jc-jobno"><i class="bi bi-box-seam"></i> <?= e($job['job_no']) ?></div>
       <div style="display:flex;gap:6px;align-items:center">
         <span class="jc-badge jc-badge-<?= $stsClass ?>"><?= e($sts) ?></span>
-        <?php if ($pri !== 'Normal'): ?>
-          <span class="jc-badge jc-badge-<?= $priClass ?>"><?= e($pri) ?></span>
-        <?php endif; ?>
+        <span class="jc-badge jc-badge-<?= $priClass ?>"><?= e($pri) ?></span>
       </div>
     </div>
     <div class="jc-card-body">
-      <div class="jc-card-row"><span class="jc-label">Job Name</span><span class="jc-value"><?= e($job['display_job_name'] ?? '—') ?></span></div>
+      <div class="jc-card-row"><span class="jc-label">Job Name</span><span class="jc-value jc-job-name"><?= e($job['display_job_name'] ?? '—') ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Roll No</span><span class="jc-value" style="color:var(--jc-brand)"><?= e($job['roll_no'] ?? '—') ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Material</span><span class="jc-value"><?= e($job['paper_type'] ?? '—') ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Dimension</span><span class="jc-value"><?= e(($job['width_mm'] ?? '—') . 'mm × ' . ($job['length_mtr'] ?? '—') . 'm') ?></span></div>
@@ -679,6 +677,7 @@ $historyCount = $finishedCount;
 .ht-table .ht-cb-cell{width:34px;text-align:center}
 .ht-table .ht-cb-cell input{width:16px;height:16px;accent-color:var(--jc-brand);cursor:pointer}
 .ht-jobno{font-weight:900;color:#0f172a;font-size:.8rem}
+.ht-jobname{font-size:.88rem;font-weight:900;color:#0f172a}
 .ht-dim{color:#94a3b8;font-size:.72rem}
 .ht-badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:.56rem;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
 .ht-badge-completed{background:#dcfce7;color:#166534}
@@ -775,7 +774,7 @@ $historyCount = $finishedCount;
         </td>
         <td class="ht-dim"><?= $idx + 1 ?></td>
         <td><span class="ht-jobno"><?= e($h['job_no']) ?></span></td>
-        <td><?= e($h['display_job_name'] ?? '—') ?></td>
+        <td><span class="ht-jobname"><?= e($h['display_job_name'] ?? '—') ?></span></td>
         <td style="color:var(--jc-brand);font-weight:800"><?= e($h['roll_no'] ?? '—') ?></td>
         <td><?= e($h['paper_type'] ?? '—') ?></td>
         <td class="ht-dim"><?= e($hDim) ?></td>
@@ -1586,7 +1585,7 @@ async function openJobDetail(id, mode) {
   // ── Job Information (no Department, no Planning Status) ──
   html += `<div class="jc-op-section"><div class="jc-op-h"><i class="bi bi-info-circle"></i> Job Information</div><div class="jc-op-b jc-op-grid-2">
     <div class="jc-op-field"><label>Job No</label><div class="fv" style="color:var(--jc-brand)">${esc(job.job_no)}</div></div>
-    <div class="jc-op-field"><label>Job Name</label><div class="fv">${esc(resolveJobDisplayName(job))}</div></div>
+    <div class="jc-op-field"><label>Job Name</label><div class="fv" style="font-size:1.1rem;font-weight:900;line-height:1.35;color:#0f172a">${esc(resolveJobDisplayName(job))}</div></div>
     <div class="jc-op-field"><label>Priority</label><div class="fv">${esc(job.planning_priority||'Normal')}</div></div>
     <div class="jc-op-field"><label>Sequence</label><div class="fv">#${job.sequence_order||1}</div></div>
   </div></div>`;
@@ -2319,6 +2318,10 @@ function renderJumboPrintCardHtml(job, qrDataUrl) {
   const completed = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
   const dur = Number(job.duration_minutes);
   const durText = Number.isFinite(dur) ? `${Math.floor(dur/60)}h ${dur%60}m` : '—';
+  const priRaw = String(job.planning_priority || 'Normal');
+  const priKey = priRaw.trim().toLowerCase();
+  const priColor = priKey === 'urgent' ? '#dc2626' : '#15803d';
+  const printJobName = job.display_job_name || job.planning_job_name || '—';
   const p = extra.parent_details || {};
   const primaryPRN = String((p.roll_no) || extra.parent_roll || job.roll_no || '').trim();
 
@@ -2441,8 +2444,8 @@ function renderJumboPrintCardHtml(job, qrDataUrl) {
         </div>
       </div>
       <div style="padding:8px 14px;background:#dcfce7;border-bottom:1px solid #bbf7d0;display:flex;justify-content:space-between;align-items:center">
-        <div style="font-size:.76rem;font-weight:900;color:#166534">Job: ${esc(job.planning_job_name || '—')}</div>
-        <div style="font-size:.68rem;font-weight:700;color:#15803d">Priority: ${esc(job.planning_priority || 'Normal')}</div>
+        <div style="font-size:1rem;font-weight:900;color:#14532d;line-height:1.25">Job: ${esc(printJobName)}</div>
+        <div style="font-size:.68rem;font-weight:700;color:${priColor}">Priority: ${esc(priRaw)}</div>
       </div>
       <div style="padding:10px 12px;border-bottom:1px solid #cbd5e1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;font-size:.66rem">
         <div><div style="color:#64748b;text-transform:uppercase;font-weight:800;font-size:.58rem">Status</div><div style="font-weight:800">${esc(job.status || '—')}</div></div>
@@ -2453,7 +2456,7 @@ function renderJumboPrintCardHtml(job, qrDataUrl) {
       <div style="padding:10px 12px">
         <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#166534;background:#dcfce7;padding:5px 8px;border-radius:4px">Job Details</div>
         <table style="width:100%;border-collapse:collapse;font-size:.72rem;margin-bottom:10px">
-          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_job_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job No</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#166534">${esc(job.job_no || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-size:.82rem;font-weight:900;color:#0f172a">${esc(printJobName)}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job No</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#166534">${esc(job.job_no || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Roll No</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.roll_no || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Material</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.paper_type || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Width</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.width_mm || '—') + ' mm')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Length</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.length_mtr || '—') + ' m')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">GSM</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.gsm || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Weight</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.weight_kg || '—') + ' kg')}</td></tr>

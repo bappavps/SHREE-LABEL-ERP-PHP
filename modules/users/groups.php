@@ -25,7 +25,7 @@ function rbac_ui_section_for_path($path) {
     if (strpos($path, '/modules/paper_stock/') === 0 || strpos($path, '/modules/audit/') === 0 || strpos($path, '/modules/scan/') === 0 || strpos($path, '/modules/inventory/') === 0) {
         return 'Inventory Hub';
     }
-    if (strpos($path, '/modules/jobs/') === 0 || strpos($path, '/modules/bom/') === 0 || strpos($path, '/modules/live/') === 0 || strpos($path, '/modules/approval/') === 0) {
+    if (strpos($path, '/modules/jobs/') === 0 || strpos($path, '/modules/bom/') === 0 || strpos($path, '/modules/live/') === 0 || strpos($path, '/modules/production-manager/') === 0 || strpos($path, '/modules/approval/') === 0) {
         return 'Production';
     }
     if (strpos($path, '/modules/purchase/') === 0) {
@@ -50,6 +50,7 @@ function rbac_ui_module_blurb($dir, $title) {
         '/modules/scan' => 'Barcode or QR based stock scanning workflow.',
         '/modules/audit' => 'Physical stock check and reconciliation tools.',
         '/modules/live' => 'Live production visibility and floor monitoring.',
+        '/modules/production-manager' => 'Unified Production Summary view across planning and job cards.',
         '/modules/users' => 'Users, access groups, and system-level access control.',
         '/modules/master' => 'Reference masters such as materials, clients, and machines.',
         '/modules/planning' => 'Planning board and department-wise job planning.',
@@ -158,6 +159,7 @@ function rbac_default_group_blueprints() {
             'pages' => [
                 '/modules/dashboard/index.php',
                 '/modules/live/index.php',
+                '/modules/production-manager/index.php',
                 '/modules/performance/index.php',
                 '/modules/reports/index.php',
                 '/modules/reports/jobs.php',

@@ -35,6 +35,7 @@ $periodLabels = [
 $whereRollPeriod = periodWhere('created_at', $period);
 $whereJobPeriod = periodWhere('created_at', $period);
 $whereJobCompletedPeriod = periodWhere('completed_at', $period);
+$whereOrderPeriod = periodWhere('created_at', $period);
 
 function safeQuery(mysqli $db, string $sql) {
   try {
@@ -78,6 +79,9 @@ $kpi['rolls_added_period'] = (int)safeValue($r, 'c', 0);
 
 $r = safeQuery($db, "SELECT COUNT(*) AS c FROM jobs WHERE $whereJobPeriod");
 $kpi['jobs_created_period'] = (int)safeValue($r, 'c', 0);
+
+$r = safeQuery($db, "SELECT COUNT(*) AS c FROM jobs WHERE LOWER(status) IN ('pending','queued') AND $whereJobPeriod");
+$kpi['jobs_pending_period'] = (int)safeValue($r, 'c', 0);
 
 $r = safeQuery($db, "SELECT COUNT(*) AS c FROM jobs WHERE LOWER(status) IN ('closed','finalized','completed','qc passed') AND completed_at IS NOT NULL AND $whereJobCompletedPeriod");
 $kpi['jobs_completed_period'] = (int)safeValue($r, 'c', 0);
@@ -153,6 +157,107 @@ if ($res) {
     while ($row = $res->fetch_assoc()) $recentOrders[] = $row;
 }
 
+// ── Recent Production Jobs ──────────────────────────────────
+$recentProductionJobs = [];
+$res = safeQuery($db, "
+  SELECT
+    j.id,
+    j.job_no,
+    j.department,
+    j.job_type,
+    j.status,
+    j.created_at,
+    j.updated_at,
+    j.completed_at,
+    p.job_name,
+    p.job_no AS planning_no
+  FROM jobs j
+  LEFT JOIN planning p ON p.id = j.planning_id
+  WHERE (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')
+  ORDER BY j.id DESC
+  LIMIT 10
+");
+if ($res) {
+  while ($row = $res->fetch_assoc()) {
+    $recentProductionJobs[] = $row;
+  }
+}
+
+// ── Planning Pipeline by Department ─────────────────────────
+$planningByDepartment = [];
+$res = safeQuery($db, "
+  SELECT
+    COALESCE(NULLIF(TRIM(department), ''), 'unassigned') AS department_name,
+    COUNT(*) AS total_count,
+    SUM(CASE WHEN LOWER(COALESCE(status,'')) IN ('pending','queued','preparing slitting','in progress','on hold') THEN 1 ELSE 0 END) AS open_count,
+    SUM(CASE WHEN LOWER(COALESCE(status,'')) IN ('completed','closed','finalized','done') THEN 1 ELSE 0 END) AS done_count
+  FROM planning
+  WHERE 1=1
+  GROUP BY department_name
+  ORDER BY total_count DESC
+  LIMIT 12
+");
+if ($res) {
+  while ($row = $res->fetch_assoc()) {
+    $planningByDepartment[] = [
+      'department' => (string)$row['department_name'],
+      'total' => (int)$row['total_count'],
+      'open' => (int)$row['open_count'],
+      'done' => (int)$row['done_count'],
+    ];
+  }
+}
+
+// ── Department Workload (jobs) ──────────────────────────────
+$jobWorkloadByDepartment = [];
+$res = safeQuery($db, "
+  SELECT
+    COALESCE(NULLIF(TRIM(department), ''), 'unassigned') AS department_name,
+    COUNT(*) AS total_count,
+    SUM(CASE WHEN LOWER(COALESCE(status,'')) = 'running' THEN 1 ELSE 0 END) AS running_count,
+    SUM(CASE WHEN LOWER(COALESCE(status,'')) IN ('pending','queued') THEN 1 ELSE 0 END) AS pending_count,
+    SUM(CASE WHEN LOWER(COALESCE(status,'')) IN ('completed','closed','finalized','qc passed') THEN 1 ELSE 0 END) AS completed_count
+  FROM jobs
+  WHERE (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
+  GROUP BY department_name
+  ORDER BY running_count DESC, pending_count DESC, total_count DESC
+  LIMIT 10
+");
+if ($res) {
+  while ($row = $res->fetch_assoc()) {
+    $jobWorkloadByDepartment[] = [
+      'department' => (string)$row['department_name'],
+      'total' => (int)$row['total_count'],
+      'running' => (int)$row['running_count'],
+      'pending' => (int)$row['pending_count'],
+      'completed' => (int)$row['completed_count'],
+    ];
+  }
+}
+
+// ── Top Clients by Order Value (period based) ───────────────
+$topClients = [];
+$res = safeQuery($db, "
+  SELECT
+    COALESCE(NULLIF(TRIM(client_name), ''), 'Unknown') AS client_name,
+    COUNT(*) AS total_orders,
+    IFNULL(SUM(selling_price), 0) AS total_value
+  FROM sales_orders
+  WHERE $whereOrderPeriod
+  GROUP BY client_name
+  ORDER BY total_value DESC
+  LIMIT 8
+");
+if ($res) {
+  while ($row = $res->fetch_assoc()) {
+    $topClients[] = [
+      'client_name' => (string)$row['client_name'],
+      'orders' => (int)$row['total_orders'],
+      'value' => (float)$row['total_value'],
+    ];
+  }
+}
+
 // ── Low Stock Alert ──────────────────────────────────────────
 $lowStockCount = 0;
 $r = safeQuery($db, "SELECT COUNT(*) AS c FROM paper_stock WHERE status = 'Available' AND length_mtr < 500");
@@ -206,6 +311,9 @@ $dashboardBrand = function_exists('getErpDisplayName') ? getErpDisplayName() : A
 .db-mini-l{font-size:.62rem;letter-spacing:.04em;text-transform:uppercase;color:#94a3b8;font-weight:800;margin-top:3px}
 .db-grid2{display:grid;grid-template-columns:1.1fr 1.1fr 1.3fr;gap:14px;margin-bottom:20px}
 .db-block{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:14px;padding:14px}
+.db-grid2 .db-block:nth-child(1){background:linear-gradient(145deg,#f0fdf4 0%,#ecfeff 100%);border-color:#bbf7d0}
+.db-grid2 .db-block:nth-child(2){background:linear-gradient(145deg,#eff6ff 0%,#eef2ff 100%);border-color:#bfdbfe}
+.db-grid2 .db-block:nth-child(3){background:linear-gradient(145deg,#fffbeb 0%,#fff7ed 100%);border-color:#fde68a}
 .db-block h3{margin:0 0 10px;font-size:.84rem;font-weight:900;color:#0f172a;display:flex;align-items:center;gap:8px}
 .db-list{display:grid;gap:8px}
 .db-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}
@@ -222,8 +330,75 @@ $dashboardBrand = function_exists('getErpDisplayName') ? getErpDisplayName() : A
 .db-col-l{font-size:.62rem;color:#64748b;font-weight:800;text-transform:uppercase}
 .db-legend{display:flex;gap:12px;margin-top:8px;font-size:.67rem;color:#64748b;font-weight:700;flex-wrap:wrap}
 .db-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:5px}
+.db-detail-grid{display:grid;grid-template-columns:1.2fr .95fr .95fr;gap:14px;margin-bottom:20px}
+.db-detail-block{background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden}
+.db-detail-grid .db-detail-block:nth-child(1){background:linear-gradient(165deg,#f8fafc 0%,#eef2ff 100%);border-color:#c7d2fe}
+.db-detail-grid .db-detail-block:nth-child(2){background:linear-gradient(165deg,#f0fdf4 0%,#ecfeff 100%);border-color:#99f6e4}
+.db-detail-grid .db-detail-block:nth-child(3){background:linear-gradient(165deg,#fff7ed 0%,#fef2f2 100%);border-color:#fdba74}
+.db-detail-head{padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.25);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.db-detail-head h4{margin:0;font-size:.82rem;font-weight:900;color:#0f172a;display:flex;align-items:center;gap:8px}
+.db-detail-body{padding:0 12px 10px}
+.db-mini-table{width:100%;border-collapse:collapse}
+.db-mini-table th,.db-mini-table td{padding:8px 6px;border-bottom:1px solid #f1f5f9;font-size:.74rem;vertical-align:top;text-align:left}
+.db-mini-table th{font-size:.64rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b}
+.db-chip{display:inline-block;padding:2px 7px;border-radius:999px;font-size:.63rem;font-weight:800}
+.db-chip.running{background:#dbeafe;color:#1e3a8a}
+.db-chip.pending{background:#fff7ed;color:#b45309}
+.db-chip.done{background:#dcfce7;color:#166534}
+.db-chip.hold{background:#fee2e2;color:#991b1b}
+.db-subtle{font-size:.67rem;color:#64748b;font-weight:700}
+.db-client-item{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #f1f5f9}
+.db-client-item:last-child{border-bottom:none}
+.db-client-name{font-size:.75rem;color:#0f172a;font-weight:700}
+.db-client-meta{font-size:.67rem;color:#64748b}
+.db-live-lite-card{border:1px solid #bae6fd;background:linear-gradient(150deg,#ecfeff 0%,#f0f9ff 100%)}
+.db-live-lite-link{display:block;padding:14px;text-decoration:none;color:inherit}
+.db-live-lite-link:hover{background:rgba(255,255,255,.42)}
+.db-live-lite-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+.db-live-lite-title{font-size:.83rem;font-weight:900;color:#0f172a;display:flex;align-items:center;gap:8px}
+.db-live-lite-chip{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;background:#0ea5e9;color:#fff;padding:3px 8px;border-radius:999px}
+.db-live-lite-grid{display:grid;grid-template-columns:repeat(4,minmax(70px,1fr));gap:8px;margin-bottom:10px}
+.db-live-lite-kpi{background:#fff;border:1px solid #dbeafe;border-radius:10px;padding:8px 9px}
+.db-live-lite-v{font-size:1rem;font-weight:900;line-height:1;color:#0f172a}
+.db-live-lite-l{font-size:.62rem;color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.04em;margin-top:3px}
+.db-live-lite-list{display:grid;gap:6px}
+.db-live-lite-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;background:rgba(255,255,255,.7);border:1px dashed #cbd5e1;border-radius:8px;padding:6px 8px}
+.db-live-lite-row-job{font-size:.72rem;font-weight:800;color:#0f172a}
+.db-live-lite-row-meta{font-size:.64rem;color:#64748b}
+.db-live-lite-cta{margin-top:10px;font-size:.72rem;font-weight:800;color:#0369a1;display:flex;align-items:center;gap:6px}
+.two-col{display:grid;grid-template-columns:1.35fr 1fr;gap:14px;align-items:start}
+.card-header{flex-wrap:wrap}
+.db-detail-body{overflow-x:auto}
+.db-mini-table{min-width:500px}
+.db-trend{overflow-x:auto;padding-bottom:4px}
+.two-col > .card:first-child{background:linear-gradient(160deg,#f8fafc 0%,#f0f9ff 100%);border-color:#cbd5e1}
+.two-col > div > .card.mb-20:first-child{background:linear-gradient(160deg,#faf5ff 0%,#eef2ff 100%);border-color:#ddd6fe}
+.two-col > div > .card.mb-20:last-child{background:linear-gradient(160deg,#f0fdf4 0%,#ecfccb 100%);border-color:#bef264}
 @media (max-width:1100px){.db-grid2{grid-template-columns:1fr 1fr}.db-grid2 .db-block:last-child{grid-column:1/-1}}
-@media (max-width:760px){.db-focus-kpi{grid-template-columns:repeat(2,minmax(120px,1fr))}.db-grid2{grid-template-columns:1fr}}
+@media (max-width:1100px){.db-detail-grid{grid-template-columns:1fr 1fr}.db-detail-grid .db-detail-block:first-child{grid-column:1/-1}}
+@media (max-width:980px){
+  .two-col{grid-template-columns:1fr}
+}
+@media (max-width:760px){
+  .db-focus-card{padding:14px}
+  .db-focus-top{align-items:flex-start}
+  .db-focus-kpi{grid-template-columns:repeat(2,minmax(120px,1fr))}
+  .db-grid2{grid-template-columns:1fr}
+  .db-detail-grid{grid-template-columns:1fr}
+  .db-live-lite-grid{grid-template-columns:repeat(2,minmax(70px,1fr))}
+  .db-period{display:grid;grid-template-columns:repeat(3,minmax(80px,1fr));width:100%}
+  .db-period-btn{text-align:center;padding:7px 8px;font-size:.64rem}
+  .db-row-top{flex-direction:column;align-items:flex-start}
+  .db-label,.db-num{font-size:.7rem}
+  .db-mini-table{min-width:460px}
+}
+@media (max-width:480px){
+  .db-focus-kpi{grid-template-columns:1fr}
+  .db-live-lite-grid{grid-template-columns:1fr 1fr}
+  .db-mini-table{min-width:420px}
+  .db-live-lite-link{padding:12px}
+  .db-detail-head h4{font-size:.76rem}
+}
 </style>
 
 <?php
@@ -252,6 +427,52 @@ $barPalette = ['#16a34a','#0ea5e9','#f59e0b','#8b5cf6','#ef4444','#14b8a6','#647
     <div class="db-mini"><div class="db-mini-v"><?= $kpi['jobs_completed_period'] ?></div><div class="db-mini-l">Jobs Completed</div></div>
     <div class="db-mini"><div class="db-mini-v"><?= $kpi['jobs_running_now'] ?></div><div class="db-mini-l">Jobs Running</div></div>
     <div class="db-mini"><div class="db-mini-v"><?= $kpi['rolls_low_stock'] ?></div><div class="db-mini-l">Low Stock Rolls</div></div>
+  </div>
+</div>
+
+<!-- KPI Cards -->
+<div class="stat-cards mb-24">
+  <div class="stat-card">
+    <div class="stat-icon green"><i class="bi bi-stack"></i></div>
+    <div>
+      <div class="stat-value"><?= $kpi['stock_available'] ?></div>
+      <div class="stat-label">Rolls Available</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon teal"><i class="bi bi-rulers"></i></div>
+    <div>
+      <div class="stat-value"><?= $kpi['total_stock_mtr'] ?></div>
+      <div class="stat-label">Total Stock Meters</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon blue"><i class="bi bi-calculator"></i></div>
+    <div>
+      <div class="stat-value"><?= $kpi['estimates_active'] ?></div>
+      <div class="stat-label">Active Estimates</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon amber"><i class="bi bi-bag-check"></i></div>
+    <div>
+      <div class="stat-value"><?= $kpi['orders_active'] ?></div>
+      <div class="stat-label">Open Orders</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon purple"><i class="bi bi-kanban"></i></div>
+    <div>
+      <div class="stat-value"><?= $kpi['jobs_pending'] ?></div>
+      <div class="stat-label">Jobs in Planning</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon green"><i class="bi bi-currency-rupee"></i></div>
+    <div>
+      <div class="stat-value">₹<?= $kpi['monthly_estimates_value'] ?></div>
+      <div class="stat-label">Estimates This Month</div>
+    </div>
   </div>
 </div>
 
@@ -323,48 +544,129 @@ $barPalette = ['#16a34a','#0ea5e9','#f59e0b','#8b5cf6','#ef4444','#14b8a6','#647
   </div>
 </div>
 
-<!-- KPI Cards -->
-<div class="stat-cards mb-24">
-  <div class="stat-card">
-    <div class="stat-icon green"><i class="bi bi-stack"></i></div>
-    <div>
-      <div class="stat-value"><?= $kpi['stock_available'] ?></div>
-      <div class="stat-label">Rolls Available</div>
+<div class="db-detail-grid">
+  <div class="db-detail-block">
+    <div class="db-detail-head">
+      <h4><i class="bi bi-list-task"></i> Recent Production Jobs</h4>
+      <a href="<?= BASE_URL ?>/modules/production-manager/index.php" class="btn btn-sm btn-ghost">Open Summary</a>
+    </div>
+    <div class="db-detail-body">
+      <table class="db-mini-table">
+        <thead>
+          <tr>
+            <th>Job No</th>
+            <th>Planning</th>
+            <th>Department</th>
+            <th>Status</th>
+            <th>Updated</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php if (empty($recentProductionJobs)): ?>
+          <tr><td colspan="5" class="text-muted">No production jobs found.</td></tr>
+          <?php else: ?>
+          <?php foreach ($recentProductionJobs as $j): ?>
+          <?php
+            $jobStatus = strtolower(trim((string)($j['status'] ?? '')));
+            $statusClass = 'pending';
+            if ($jobStatus === 'running') $statusClass = 'running';
+            elseif (in_array($jobStatus, ['completed','closed','finalized','qc passed'], true)) $statusClass = 'done';
+            elseif (strpos($jobStatus, 'hold') !== false || strpos($jobStatus, 'pause') !== false) $statusClass = 'hold';
+          ?>
+          <tr>
+            <td><strong><?= e($j['job_no'] ?? '-') ?></strong></td>
+            <td>
+              <?= e((string)($j['planning_no'] ?? '-')) ?>
+              <div class="db-subtle"><?= e((string)($j['job_name'] ?? '-')) ?></div>
+            </td>
+            <td><?= e((string)($j['department'] ?: $j['job_type'] ?: '-')) ?></td>
+            <td><span class="db-chip <?= e($statusClass) ?>"><?= e((string)($j['status'] ?? '-')) ?></span></td>
+            <td><?= e(formatDate((string)($j['updated_at'] ?? $j['created_at'] ?? ''))) ?></td>
+          </tr>
+          <?php endforeach; ?>
+          <?php endif; ?>
+        </tbody>
+      </table>
     </div>
   </div>
-  <div class="stat-card">
-    <div class="stat-icon teal"><i class="bi bi-rulers"></i></div>
-    <div>
-      <div class="stat-value"><?= $kpi['total_stock_mtr'] ?></div>
-      <div class="stat-label">Total Stock Meters</div>
+
+  <div class="db-detail-block">
+    <div class="db-detail-head">
+      <h4><i class="bi bi-diagram-3"></i> Planning by Department</h4>
+    </div>
+    <div class="db-detail-body">
+      <table class="db-mini-table">
+        <thead>
+          <tr>
+            <th>Department</th>
+            <th>Total</th>
+            <th>Open</th>
+            <th>Done</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php if (empty($planningByDepartment)): ?>
+          <tr><td colspan="4" class="text-muted">No planning department data found.</td></tr>
+          <?php else: ?>
+          <?php foreach ($planningByDepartment as $pd): ?>
+          <tr>
+            <td><?= e(ucwords(str_replace(['-', '_'], ' ', (string)$pd['department']))) ?></td>
+            <td><strong><?= (int)$pd['total'] ?></strong></td>
+            <td><?= (int)$pd['open'] ?></td>
+            <td><?= (int)$pd['done'] ?></td>
+          </tr>
+          <?php endforeach; ?>
+          <?php endif; ?>
+        </tbody>
+      </table>
     </div>
   </div>
-  <div class="stat-card">
-    <div class="stat-icon blue"><i class="bi bi-calculator"></i></div>
-    <div>
-      <div class="stat-value"><?= $kpi['estimates_active'] ?></div>
-      <div class="stat-label">Active Estimates</div>
+
+  <div class="db-detail-block">
+    <div class="db-detail-head">
+      <h4><i class="bi bi-people"></i> Top Clients (<?= e($periodLabels[$period] ?? 'Period') ?>)</h4>
     </div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-icon amber"><i class="bi bi-bag-check"></i></div>
-    <div>
-      <div class="stat-value"><?= $kpi['orders_active'] ?></div>
-      <div class="stat-label">Open Orders</div>
-    </div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-icon purple"><i class="bi bi-kanban"></i></div>
-    <div>
-      <div class="stat-value"><?= $kpi['jobs_pending'] ?></div>
-      <div class="stat-label">Jobs in Planning</div>
-    </div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-icon green"><i class="bi bi-currency-rupee"></i></div>
-    <div>
-      <div class="stat-value">₹<?= $kpi['monthly_estimates_value'] ?></div>
-      <div class="stat-label">Estimates This Month</div>
+    <div class="db-detail-body">
+      <?php if (empty($topClients)): ?>
+        <div class="text-muted" style="font-size:.8rem;padding:8px 0">No client order data for selected period.</div>
+      <?php else: ?>
+        <?php foreach ($topClients as $c): ?>
+          <div class="db-client-item">
+            <div>
+              <div class="db-client-name"><?= e($c['client_name']) ?></div>
+              <div class="db-client-meta">Orders: <?= (int)$c['orders'] ?></div>
+            </div>
+            <div class="db-client-name">₹<?= number_format((float)$c['value'], 2) ?></div>
+          </div>
+        <?php endforeach; ?>
+      <?php endif; ?>
+
+      <hr style="border:none;border-top:1px dashed #e2e8f0;margin:10px 0">
+
+      <table class="db-mini-table" style="margin-top:4px">
+        <thead>
+          <tr>
+            <th>Department</th>
+            <th>Run</th>
+            <th>Pend</th>
+            <th>Done</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php if (empty($jobWorkloadByDepartment)): ?>
+          <tr><td colspan="4" class="text-muted">No workload data found.</td></tr>
+          <?php else: ?>
+          <?php foreach ($jobWorkloadByDepartment as $wd): ?>
+          <tr>
+            <td><?= e(ucwords(str_replace(['-', '_'], ' ', (string)$wd['department']))) ?></td>
+            <td><?= (int)$wd['running'] ?></td>
+            <td><?= (int)$wd['pending'] ?></td>
+            <td><?= (int)$wd['completed'] ?></td>
+          </tr>
+          <?php endforeach; ?>
+          <?php endif; ?>
+        </tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -409,6 +711,44 @@ $barPalette = ['#16a34a','#0ea5e9','#f59e0b','#8b5cf6','#ef4444','#14b8a6','#647
 
   <!-- Quick Actions + QR Scanner -->
   <div>
+
+    <!-- Live Floor Lite -->
+    <div class="card mb-20 db-live-lite-card">
+      <a href="<?= BASE_URL ?>/modules/live/index.php" class="db-live-lite-link" title="Open Live Floor details">
+        <div class="db-live-lite-head">
+          <div class="db-live-lite-title"><i class="bi bi-broadcast"></i> Live Floor Lite</div>
+          <span class="db-live-lite-chip">Quick View</span>
+        </div>
+
+        <div class="db-live-lite-grid">
+          <div class="db-live-lite-kpi"><div class="db-live-lite-v"><?= (int)$kpi['jobs_running_now'] ?></div><div class="db-live-lite-l">Running</div></div>
+          <div class="db-live-lite-kpi"><div class="db-live-lite-v"><?= (int)$kpi['jobs_pending_period'] ?></div><div class="db-live-lite-l">Pending</div></div>
+          <div class="db-live-lite-kpi"><div class="db-live-lite-v"><?= (int)$kpi['jobs_completed_period'] ?></div><div class="db-live-lite-l">Completed</div></div>
+          <div class="db-live-lite-kpi"><div class="db-live-lite-v"><?= (int)$kpi['jobs_created_period'] ?></div><div class="db-live-lite-l">Created</div></div>
+        </div>
+
+        <div class="db-live-lite-list">
+          <?php if (empty($recentProductionJobs)): ?>
+            <div class="db-live-lite-row"><div class="db-live-lite-row-job">No active production jobs</div><div class="db-live-lite-row-meta">Live Floor</div></div>
+          <?php else: ?>
+            <?php foreach (array_slice($recentProductionJobs, 0, 3) as $jp): ?>
+              <div class="db-live-lite-row">
+                <div>
+                  <div class="db-live-lite-row-job"><?= e((string)($jp['job_no'] ?? '-')) ?></div>
+                  <div class="db-live-lite-row-meta"><?= e((string)($jp['department'] ?: $jp['job_type'] ?: '-')) ?></div>
+                </div>
+                <div class="db-live-lite-row-meta"><?= e((string)($jp['status'] ?? '-')) ?></div>
+              </div>
+            <?php endforeach; ?>
+          <?php endif; ?>
+        </div>
+
+        <div class="db-live-lite-cta">
+          <i class="bi bi-arrow-right-circle"></i>
+          Click to open full Live Floor details
+        </div>
+      </a>
+    </div>
 
     <!-- ERP QR Scanner -->
     <style>

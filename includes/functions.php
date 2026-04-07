@@ -737,6 +737,7 @@ function rbacPageCatalog() {
         '/modules/jobs/packing/index.php' => 'Job Card - Packing Slip',
         '/modules/bom/index.php' => 'BOM Master',
         '/modules/live/index.php' => 'Live Floor',
+        '/modules/production-manager/index.php' => 'Production Summary',
 
         '/modules/purchase/index.php' => 'Purchase Order',
 

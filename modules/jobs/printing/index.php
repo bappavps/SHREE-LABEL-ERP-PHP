@@ -286,6 +286,7 @@ include __DIR__ . '/../../../includes/header.php';
 .fp-card-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:.78rem}
 .fp-card-row .fp-label{color:#94a3b8;font-weight:700;font-size:.65rem;text-transform:uppercase;letter-spacing:.03em}
 .fp-card-row .fp-value{font-weight:700;color:#1e293b}
+.fp-job-name{font-size:1.1rem;line-height:1.25;font-weight:900;color:#0f172a}
 .fp-card-foot{padding:12px 18px;border-top:1px solid var(--border,#e2e8f0);display:flex;align-items:center;justify-content:space-between;background:#fafbfc}
 .fp-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
 .fp-badge-queued{background:#f1f5f9;color:#64748b}
@@ -517,7 +518,7 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
     </div>
     <div class="fp-card-body">
       <?php if ($job['planning_job_name']): ?>
-      <div class="fp-card-row"><span class="fp-label">Job Name</span><span class="fp-value"><?= e($job['planning_job_name']) ?></span></div>
+      <div class="fp-card-row"><span class="fp-label">Job Name</span><span class="fp-value fp-job-name"><?= e($job['planning_job_name']) ?></span></div>
       <?php endif; ?>
       <div class="fp-card-row"><span class="fp-label">Roll No</span><span class="fp-value" style="color:var(--fp-brand)"><?php
         $slRolls = $job['slitting_rolls'] ?? [];
@@ -614,6 +615,7 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
 .ht-table .ht-cb-cell{width:34px;text-align:center}
 .ht-table .ht-cb-cell input{width:16px;height:16px;accent-color:var(--fp-brand);cursor:pointer}
 .ht-jobno{font-weight:900;color:#0f172a;font-size:.8rem}
+.ht-jobname{font-size:.88rem;font-weight:900;color:#0f172a}
 .ht-dim{color:#94a3b8;font-size:.72rem}
 .ht-badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:.56rem;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
 .ht-badge-completed{background:#dcfce7;color:#166534}
@@ -711,7 +713,7 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
         </td>
         <td class="ht-dim"><?= $idx + 1 ?></td>
         <td><span class="ht-jobno"><?= e($h['job_no']) ?></span></td>
-        <td><?= e($h['planning_job_name'] ?? $h['display_job_name'] ?? '—') ?></td>
+        <td><span class="ht-jobname"><?= e($h['planning_job_name'] ?? $h['display_job_name'] ?? '—') ?></span></td>
         <td style="color:var(--fp-brand);font-weight:800"><?= e($h['roll_no'] ?? '—') ?></td>
         <td><?= e($h['paper_type'] ?? '—') ?></td>
         <td><span class="ht-badge ht-badge-<?= $hStsClass ?>"><?= e($hSts) ?></span></td>
@@ -2239,7 +2241,7 @@ async function openPrintDetail(id, mode) {
   html += `<div class="fp-detail-section fp-op-shell"><div class="fp-op-form">
     <div class="fp-op-section"><div class="fp-op-h">Job Information</div><div class="fp-op-b fp-op-grid-4">
       <div class="fp-op-field"><label>Job No</label><input type="text" value="${esc(job.job_no||'—')}" readonly></div>
-      <div class="fp-op-field"><label>Job Name</label><input type="text" value="${esc(resolvePrintDisplayName(job))}" readonly></div>
+      <div class="fp-op-field"><label>Job Name</label><input type="text" value="${esc(resolvePrintDisplayName(job))}" style="font-size:1.02rem;font-weight:900;color:#0f172a" readonly></div>
       <div class="fp-op-field"><label>Department</label><input type="text" value="Flexo Printing" readonly></div>
       <div class="fp-op-field"><label>Priority / Sequence</label><input type="text" value="${esc((job.planning_priority||'Normal') + ' / #' + (job.sequence_order||2))}" readonly></div>
     </div></div>
@@ -2249,7 +2251,7 @@ async function openPrintDetail(id, mode) {
     html += `<div class="fp-detail-section fp-op-shell"><h3><i class="bi bi-pencil-square"></i> Operator Data — Fill Before Completing</h3>
     <form id="dm-operator-form" class="fp-op-form">
       <div class="fp-op-section"><div class="fp-op-h">Locked Planning Fields</div><div class="fp-op-b fp-op-grid-3">
-        <div class="fp-op-field"><label>Job Name</label><input type="text" name="job_name_locked" value="${esc(card.job_name||resolvePrintDisplayName(job))}" readonly></div>
+        <div class="fp-op-field"><label>Job Name</label><input type="text" name="job_name_locked" value="${esc(card.job_name||resolvePrintDisplayName(job))}" style="font-size:1.02rem;font-weight:900;color:#0f172a" readonly></div>
         <div class="fp-op-field"><label>Die</label><input type="text" name="die_locked" value="${esc(card.die||'')}" readonly></div>
         <div class="fp-op-field"><label>Plate No</label><input type="text" name="plate_no_locked" value="${esc(card.plate_no||'')}" readonly></div>
         <div class="fp-op-field"><label>Material Company</label><input type="text" name="material_company_locked" value="${esc(card.material_company||'')}" readonly></div>
@@ -2299,7 +2301,7 @@ async function openPrintDetail(id, mode) {
     // Production (non-operator) read-only view — same format
     html += `<div class="fp-detail-section fp-op-shell"><div class="fp-op-form">
       <div class="fp-op-section"><div class="fp-op-h">Locked Planning Fields</div><div class="fp-op-b fp-op-grid-3">
-        <div class="fp-op-field"><label>Job Name</label><input type="text" value="${esc(card.job_name||resolvePrintDisplayName(job))}" readonly></div>
+        <div class="fp-op-field"><label>Job Name</label><input type="text" value="${esc(card.job_name||resolvePrintDisplayName(job))}" style="font-size:1.02rem;font-weight:900;color:#0f172a" readonly></div>
         <div class="fp-op-field"><label>Die</label><input type="text" value="${esc(card.die||'')}" readonly></div>
         <div class="fp-op-field"><label>Plate No</label><input type="text" value="${esc(card.plate_no||'')}" readonly></div>
         <div class="fp-op-field"><label>Material Company</label><input type="text" value="${esc(card.material_company||'')}" readonly></div>
@@ -2551,7 +2553,7 @@ function renderPrintCardHtml(job, card, extra, qrDataUrl) {
         <!-- LOCKED PLANNING FIELDS (no MKD, no Date, no Reel/Width/Length) -->
         <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#5b21b6;background:#ede9fe;padding:5px 8px;border-radius:4px">Locked Planning Fields</div>
         <table style="width:100%;border-collapse:collapse;font-size:.72rem;margin-bottom:10px">
-          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(resolvePrintDisplayName(job))}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Die / Plate</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((card.die||'—') + ' / ' + (card.plate_no||'—'))}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-size:.84rem;font-weight:900;color:#0f172a">${esc(resolvePrintDisplayName(job))}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Die / Plate</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((card.die||'—') + ' / ' + (card.plate_no||'—'))}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Material</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((card.material_company||'—') + ' / ' + (card.material_name||'—'))}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Order MTR / QTY</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((card.order_mtr||'—') + ' / ' + (card.order_qty||'—'))}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Label Size</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(card.label_size||'—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Repeat / Direction</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((card.repeat_mm||'—') + ' / ' + (card.direction||'—'))}</td></tr>
         </table>

@@ -243,6 +243,7 @@ include __DIR__ . '/../../../includes/header.php';
 .dc-card-row{display:flex;justify-content:space-between;gap:8px;font-size:.78rem}
 .dc-label{font-size:.62rem;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:.04em}
 .dc-value{font-weight:700;color:#0f172a;text-align:right}
+.dc-job-name{font-size:1.08rem;line-height:1.25;font-weight:900;color:#0f172a}
 .dc-card-foot{padding:10px 14px;border-top:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center}
 .dc-time{font-size:.68rem;color:#94a3b8}
 
@@ -378,6 +379,7 @@ include __DIR__ . '/../../../includes/header.php';
 .ht-table .ht-cb-cell{width:34px;text-align:center}
 .ht-table .ht-cb-cell input{width:16px;height:16px;accent-color:var(--dc-brand);cursor:pointer}
 .ht-jobno{font-weight:900;color:#0f172a;font-size:.8rem}
+.ht-jobname{font-size:.88rem;font-weight:900;color:#0f172a}
 .ht-dim{color:#94a3b8;font-size:.72rem}
 .ht-badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:.56rem;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
 .ht-badge-completed{background:#dcfce7;color:#166534}
@@ -512,7 +514,7 @@ include __DIR__ . '/../../../includes/header.php';
       </div>
     </div>
     <div class="dc-card-body">
-      <div class="dc-card-row"><span class="dc-label">Job Name</span><span class="dc-value"><?= e($job['display_job_name']) ?></span></div>
+      <div class="dc-card-row"><span class="dc-label">Job Name</span><span class="dc-value dc-job-name"><?= e($job['display_job_name']) ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Material</span><span class="dc-value"><?= e($job['planning_material'] ?: '—') ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Label Finish Size</span><span class="dc-value" style="color:var(--dc-brand)"><?= e($job['planning_label_finish_size'] ?: ($job['planning_die_size'] ?: '—')) ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Quantity per roll</span><span class="dc-value"><?= e($job['planning_qty_per_roll'] ?: '—') ?></span></div>
@@ -572,7 +574,7 @@ include __DIR__ . '/../../../includes/header.php';
       </div>
     </div>
     <div class="dc-card-body">
-      <div class="dc-card-row"><span class="dc-label">Job Name</span><span class="dc-value"><?= e($job['display_job_name']) ?></span></div>
+      <div class="dc-card-row"><span class="dc-label">Job Name</span><span class="dc-value dc-job-name"><?= e($job['display_job_name']) ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Material</span><span class="dc-value"><?= e($job['planning_material'] ?: '—') ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Label Finish Size</span><span class="dc-value" style="color:var(--dc-brand)"><?= e($job['planning_label_finish_size'] ?: ($job['planning_die_size'] ?: '—')) ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Order quantiry</span><span class="dc-value"><?= e($job['planning_order_qty'] ?: '—') ?></span></div>
@@ -666,7 +668,7 @@ include __DIR__ . '/../../../includes/header.php';
         </td>
         <td class="ht-dim"><?= $idx + 1 ?></td>
         <td><span class="ht-jobno"><?= e($h['job_no']) ?></span></td>
-        <td><?= e($h['display_job_name'] ?? '—') ?></td>
+        <td><span class="ht-jobname"><?= e($h['display_job_name'] ?? '—') ?></span></td>
         <td><?= e($h['planning_material'] ?? '—') ?></td>
         <td style="color:var(--dc-brand);font-weight:800"><?= e($h['planning_die_size'] ?? '—') ?></td>
         <td><?= e($h['planning_order_qty'] ?? '—') ?></td>
@@ -1609,7 +1611,7 @@ async function openJobDetail(id, mode) {
   // ── Job Information ──
   html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-info-circle"></i> Job Information</div><div class="dc-op-b dc-op-grid-2">
     <div class="dc-op-field"><label>Job No</label><div class="fv" style="color:var(--dc-brand)">${esc(job.job_no)}</div></div>
-    <div class="dc-op-field"><label>Job Name</label><div class="fv">${esc(resolveJobDisplayName(job))}</div></div>
+    <div class="dc-op-field"><label>Job Name</label><div class="fv" style="font-size:1.08rem;font-weight:900;line-height:1.35;color:#0f172a">${esc(resolveJobDisplayName(job))}</div></div>
     <div class="dc-op-field"><label>Priority</label><div class="fv">${esc(job.planning_priority||'Normal')}</div></div>
     <div class="dc-op-field"><label>Sequence</label><div class="fv">#${job.sequence_order||1}</div></div>
   </div></div>`;
@@ -1911,7 +1913,7 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
         </div>
       </div>
       <div style="padding:8px 14px;background:#ffedd5;border-bottom:1px solid #fdba74;display:flex;justify-content:space-between;align-items:center">
-        <div style="font-size:.76rem;font-weight:900;color:#c2410c">Job: ${esc(job.planning_job_name || '—')}</div>
+        <div style="font-size:1rem;font-weight:900;color:#c2410c;line-height:1.25">Job: ${esc(job.planning_job_name || '—')}</div>
         <div style="font-size:.68rem;font-weight:700;color:#ea580c">Priority: ${esc(job.planning_priority || 'Normal')}</div>
       </div>
       <div style="padding:10px 12px;border-bottom:1px solid #cbd5e1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;font-size:.66rem">
@@ -1923,7 +1925,7 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
       <div style="padding:10px 12px">
         <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#c2410c;background:#fff7ed;padding:5px 8px;border-radius:4px">Order Details</div>
         <table style="width:100%;border-collapse:collapse;font-size:.72rem;margin-bottom:10px">
-          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_job_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job No</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#c2410c">${esc(job.job_no || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-size:.84rem;font-weight:900;color:#0f172a">${esc(job.planning_job_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job No</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#c2410c">${esc(job.job_no || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Material</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_material || job.paper_type || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Label Finish Size</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#c2410c">${esc(job.planning_label_finish_size || job.planning_die_size || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Quantity per roll</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_qty_per_roll || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Direction</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_direction || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Core size</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_core_size || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Repeate Gap</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_repeat_gap || job.planning_repeat || '—')}</td></tr>

@@ -225,8 +225,8 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
             <?= navSubItem('/modules/jobs/packing/index.php',        'Packing Slip',    $currentFile, [], 'nav-sub-item-nested', 'box-seam') ?>
           </div>
         </div>
-        <?= navSubItem('/modules/bom/index.php',  'BOM Master', $currentFile, [], '', 'diagram-3') ?>
         <?= navSubItem('/modules/live/index.php', 'Live Floor', $currentFile, [], '', 'broadcast') ?>
+        <?= navSubItem('/modules/production-manager/index.php', 'Production Summary', $currentFile, [], '', 'kanban') ?>
       </div>
     </div>
 
