@@ -24,6 +24,14 @@ $dcHeightLabel = trim((string)($dcHeightLabel ?? '')) ?: 'Height';
 $dcPaperWidthLabel = trim((string)($dcPaperWidthLabel ?? '')) ?: 'Width (mm)';
 $dcShowPaperCompanyInDetails = isset($dcShowPaperCompanyInDetails) ? (bool)$dcShowPaperCompanyInDetails : true;
 $dcAutoFallbackToAllOnEmptyDefault = isset($dcAutoFallbackToAllOnEmptyDefault) ? (bool)$dcAutoFallbackToAllOnEmptyDefault : true;
+$dcCanManualRollEntry = isset($dcCanManualRollEntry)
+  ? (bool)$dcCanManualRollEntry
+  : (
+      hasPageAction('/modules/jobs/flatbed/index.php', 'edit')
+      || hasPageAction('/modules/operators/flatbed/index.php', 'edit')
+      || hasRole('manager', 'system_admin', 'super_admin')
+      || isAdmin()
+    );
 $dcDefaultVoiceLanguage = trim((string)($dcDefaultVoiceLanguage ?? '')) ?: 'en-IN';
 $dcBrand = trim((string)($dcBrand ?? '')) ?: '#0ea5a4';
 $dcBrandLight = trim((string)($dcBrandLight ?? '')) ?: '#ccfbf1';
@@ -841,6 +849,8 @@ const DC_PAPER_WIDTH_LABEL = <?= json_encode($dcPaperWidthLabel, JSON_HEX_TAG|JS
 const DC_SHOW_PAPER_COMPANY_IN_DETAILS = <?= $dcShowPaperCompanyInDetails ? 'true' : 'false' ?>;
 const DC_AUTO_FALLBACK_TO_ALL_ON_EMPTY_DEFAULT = <?= $dcAutoFallbackToAllOnEmptyDefault ? 'true' : 'false' ?>;
 const DC_DEFAULT_VOICE_LANGUAGE = <?= json_encode($dcDefaultVoiceLanguage, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+const CAN_MANUAL_ROLL_ENTRY = <?= $dcCanManualRollEntry ? 'true' : 'false' ?>;
+const DC_REQUIRE_ROLL_SCAN = <?= !empty($dcRequireRollScan) ? 'true' : 'false' ?>;
 
 // ── Voice recording state ──
 let _voiceRecorder = null;
@@ -1596,8 +1606,35 @@ function resumeRunningDCTimer(jobId) {
 
 async function startJobWithTimer(id) {
   if (!confirm('Start this job?')) return;
+  const job = ALL_JOBS.find(j => j.id == id) || null;
+
+  let verifiedRolls = [];
+  if (DC_REQUIRE_ROLL_SCAN && IS_OPERATOR_VIEW) {
+    const verification = await dcOpenRollVerification(job || { id: id, job_no: id, roll_no: '' });
+    if (!verification.ok) {
+      alert(verification.error || 'Assigned roll verification is required before start.');
+      return;
+    }
+    verifiedRolls = Array.isArray(verification.verified_rolls)
+      ? verification.verified_rolls.map(function(v) { return String(v || '').trim(); }).filter(Boolean)
+      : [];
+    if (!verifiedRolls.length) {
+      alert('Roll verification did not capture any required roll. Please verify again.');
+      return;
+    }
+  }
+
   const fd = new FormData();
   fd.append('csrf_token', CSRF); fd.append('action', 'update_status'); fd.append('job_id', id); fd.append('status', 'Running');
+  if (verifiedRolls.length) {
+    fd.append('verified_rolls_json', JSON.stringify(verifiedRolls));
+    fd.append('verified_rolls_csv', verifiedRolls.join(','));
+    fd.append('verified_rolls_count', String(verifiedRolls.length));
+    verifiedRolls.forEach(function(rollNo) {
+      fd.append('verified_rolls[]', rollNo);
+    });
+    fd.append('verified_rolls_mode', 'qr_manual');
+  }
   try {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
@@ -1607,28 +1644,28 @@ async function startJobWithTimer(id) {
   document.getElementById('dcDetailModal').classList.remove('active');
   _timerJobId = id;
   _timerStart = Date.now();
-  const job = ALL_JOBS.find(j => j.id == id) || {};
+  const activeJob = ALL_JOBS.find(j => j.id == id) || {};
   const nowIso = new Date().toISOString();
-  job.status = 'Running';
-  if (!job.started_at) job.started_at = nowIso;
-  job.extra_data_parsed = job.extra_data_parsed || {};
-  if (!job.extra_data_parsed.timer_started_at) {
-    job.extra_data_parsed.timer_started_at = nowIso;
-    pushDCTimerEventLocal(job.extra_data_parsed, 'start', nowIso);
-  } else if (String(job.extra_data_parsed.timer_state || '').toLowerCase() === 'paused') {
-    const pausedAt = job.extra_data_parsed.timer_pause_started_at || job.extra_data_parsed.timer_paused_at || '';
+  activeJob.status = 'Running';
+  if (!activeJob.started_at) activeJob.started_at = nowIso;
+  activeJob.extra_data_parsed = activeJob.extra_data_parsed || {};
+  if (!activeJob.extra_data_parsed.timer_started_at) {
+    activeJob.extra_data_parsed.timer_started_at = nowIso;
+    pushDCTimerEventLocal(activeJob.extra_data_parsed, 'start', nowIso);
+  } else if (String(activeJob.extra_data_parsed.timer_state || '').toLowerCase() === 'paused') {
+    const pausedAt = activeJob.extra_data_parsed.timer_pause_started_at || activeJob.extra_data_parsed.timer_paused_at || '';
     if (pausedAt) {
-      pushDCTimerSegmentLocal(job.extra_data_parsed, 'timer_pause_segments', pausedAt, nowIso);
+      pushDCTimerSegmentLocal(activeJob.extra_data_parsed, 'timer_pause_segments', pausedAt, nowIso);
     }
-    pushDCTimerEventLocal(job.extra_data_parsed, 'resume', nowIso);
+    pushDCTimerEventLocal(activeJob.extra_data_parsed, 'resume', nowIso);
   }
-  job.extra_data_parsed.timer_active = true;
-  job.extra_data_parsed.timer_state = 'running';
-  job.extra_data_parsed.timer_last_resumed_at = nowIso;
-  job.extra_data_parsed.timer_paused_at = '';
-  job.extra_data_parsed.timer_pause_started_at = '';
-  job.extra_data_parsed.timer_ended_at = '';
-  showDCTimerOverlay(job);
+  activeJob.extra_data_parsed.timer_active = true;
+  activeJob.extra_data_parsed.timer_state = 'running';
+  activeJob.extra_data_parsed.timer_last_resumed_at = nowIso;
+  activeJob.extra_data_parsed.timer_paused_at = '';
+  activeJob.extra_data_parsed.timer_pause_started_at = '';
+  activeJob.extra_data_parsed.timer_ended_at = '';
+  showDCTimerOverlay(activeJob);
 }
 
 async function cancelTimer() {
@@ -2530,5 +2567,363 @@ function generateQR(text) {
   if (allBtn) filterJobs('all', allBtn);
 })();
 </script>
+
+<?php if (!empty($dcRequireRollScan) && $isOperatorView): ?>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+let DC_VERIFIER_SCANNER = null;
+
+function dcNormalizeRollNo(val) {
+  return String(val || '').trim().toUpperCase();
+}
+
+function dcExtractRollNoFromQr(rawValue) {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return '';
+
+  try {
+    const u = new URL(raw);
+    const qRoll = u.searchParams.get('roll_no') || u.searchParams.get('roll') || u.searchParams.get('rn') || '';
+    if (String(qRoll).trim()) return String(qRoll).trim();
+  } catch (e) {}
+
+  const named = raw.match(/(?:roll\s*no|roll_no|roll)\s*[:=\-]\s*([A-Za-z0-9._\/-]+)/i);
+  if (named && named[1]) return named[1].trim();
+
+  const tokens = raw.split(/[^A-Za-z0-9._\/-]+/).filter(Boolean);
+  if (tokens.length) return tokens[tokens.length - 1].trim();
+  return raw;
+}
+
+function dcBuildRequiredRolls(job) {
+  const out = [];
+  const seen = {};
+  function addRoll(rollNo, meta) {
+    const raw = String(rollNo || '').trim();
+    const norm = dcNormalizeRollNo(raw);
+    if (!norm || seen[norm]) return;
+    seen[norm] = true;
+    out.push({
+      roll_no: raw,
+      norm: norm,
+      paper_type: String((meta && meta.paper_type) || ''),
+      width: (meta && (meta.width ?? meta.width_mm)) ?? '',
+      length: (meta && (meta.length ?? meta.length_mtr)) ?? ''
+    });
+  }
+
+  const extra = (job && job.extra_data_parsed) ? job.extra_data_parsed : {};
+  const parent = extra.parent_details || {};
+  addRoll(job?.roll_no || parent.roll_no || '', {
+    paper_type: job?.paper_type || parent.paper_type || '',
+    width: job?.width_mm ?? parent.width_mm ?? '',
+    length: job?.length_mtr ?? parent.length_mtr ?? ''
+  });
+
+  if (Array.isArray(extra.parent_rolls)) {
+    extra.parent_rolls.forEach(function(pr) {
+      addRoll(pr, {
+        paper_type: job?.paper_type || '',
+        width: job?.width_mm ?? '',
+        length: job?.length_mtr ?? ''
+      });
+    });
+  }
+  return out;
+}
+
+function dcShowVerificationMessage(el, kind, text) {
+  if (!el) return;
+  const colors = {
+    info: { bg: '#e0f2fe', border: '#7dd3fc', color: '#075985' },
+    ok:   { bg: '#dcfce7', border: '#86efac', color: '#166534' },
+    warn: { bg: '#fef3c7', border: '#fcd34d', color: '#92400e' },
+    bad:  { bg: '#fee2e2', border: '#fca5a5', color: '#991b1b' }
+  };
+  const style = colors[kind] || colors.info;
+  el.style.display = '';
+  el.style.background = style.bg;
+  el.style.border = '1px solid ' + style.border;
+  el.style.color = style.color;
+  el.innerHTML = text;
+}
+
+async function dcCloseVerifierScanner() {
+  if (!DC_VERIFIER_SCANNER) return;
+  try {
+    await DC_VERIFIER_SCANNER.clear();
+  } catch (e) {}
+  DC_VERIFIER_SCANNER = null;
+}
+
+async function dcOpenRollVerification(job) {
+  const required = dcBuildRequiredRolls(job);
+  if (!required.length) {
+    return { ok: false, error: 'No assigned roll found for this job.' };
+  }
+
+  const isMobileView = window.matchMedia('(max-width: 640px)').matches;
+  const actionWidth = isMobileView ? 'width:100%;justify-content:center;min-height:44px' : '';
+  const rowMap = {};
+  required.forEach(function(r) { rowMap[r.norm] = r; });
+  const matched = {};
+  const methods = {};
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.72);z-index:10050;display:flex;align-items:center;justify-content:center;padding:' + (isMobileView ? '0' : '16px');
+  overlay.innerHTML = `
+    <div style="width:min(760px,100%);height:${isMobileView ? '100dvh' : 'auto'};max-height:${isMobileView ? '100dvh' : '90vh'};overflow:auto;background:#fff;border-radius:${isMobileView ? '0' : '18px'};box-shadow:0 30px 80px rgba(15,23,42,.35)">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:${isMobileView ? '12px' : '18px 20px'};border-bottom:1px solid #e2e8f0">
+        <div>
+          <div style="font-size:1rem;font-weight:900;color:#0f172a">Assigned Roll Verification</div>
+          <div style="font-size:.82rem;color:#475569;margin-top:4px">Job ${esc(job?.job_no || ('#' + (job?.id || '')))} - verify all assigned rolls before start.</div>
+        </div>
+        <button type="button" id="dcVClose" class="dc-action-btn dc-btn-view"><i class="bi bi-x-lg"></i></button>
+      </div>
+
+      <div style="padding:${isMobileView ? '12px' : '18px 20px'};display:grid;gap:${isMobileView ? '12px' : '14px'}">
+        <div style="border:1px solid #e2e8f0;border-radius:14px;padding:${isMobileView ? '12px' : '14px'};background:#f8fafc">
+          <div style="font-size:.8rem;font-weight:900;color:#334155;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Assigned Rolls</div>
+          <div id="dcVList"></div>
+        </div>
+
+        <div id="dcVMsg" style="display:none;padding:10px 12px;border-radius:10px;font-size:.82rem;font-weight:800"></div>
+
+        <div>
+          <label style="display:block;font-size:.66rem;font-weight:900;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Last Scan Value</label>
+          <input type="text" id="dcVLast" readonly style="width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc">
+        </div>
+
+        <div>
+          <label style="display:block;font-size:.66rem;font-weight:900;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">QR Scanner</label>
+          <div id="dcVScanner" style="min-height:${isMobileView ? '250px' : '280px'};background:#0f172a;border-radius:14px;padding:${isMobileView ? '6px' : '10px'};overflow:hidden"></div>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;${isMobileView ? 'flex-direction:column;' : ''}">
+          <button type="button" id="dcVStart" class="dc-action-btn dc-btn-start" style="${actionWidth}"><i class="bi bi-camera"></i> Start QR Scanner</button>
+          <button type="button" id="dcVStop" class="dc-action-btn dc-btn-view" style="display:none;${actionWidth}"><i class="bi bi-stop-fill"></i> Stop Scan</button>
+          <button type="button" id="dcVPhoto" class="dc-action-btn dc-btn-view" style="${actionWidth}"><i class="bi bi-image"></i> Scan Photo</button>
+          <input type="file" id="dcVFile" accept="image/*" capture="environment" style="display:none">
+        </div>
+
+        <div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+            <label style="display:block;font-size:.66rem;font-weight:900;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Manual Roll Input</label>
+            <span id="dcVManualLock" style="display:none;font-size:.6rem;font-weight:900;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:999px;padding:2px 8px">Scan Only</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-direction:${isMobileView ? 'column' : 'row'}">
+            <input type="text" id="dcVManual" style="flex:1;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px" placeholder="Type roll no and add">
+            <button type="button" id="dcVAdd" class="dc-action-btn dc-btn-view" style="${actionWidth}"><i class="bi bi-keyboard"></i> Add</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:${isMobileView ? 'column' : 'row'};justify-content:space-between;gap:12px;align-items:${isMobileView ? 'stretch' : 'center'};padding:${isMobileView ? '12px' : '16px 20px'};border-top:1px solid #e2e8f0;background:#f8fafc">
+        <div id="dcVProgress" style="font-size:.84rem;font-weight:900;color:#0f172a;${isMobileView ? 'width:100%;' : ''}">Matched 0 / ${required.length}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;${isMobileView ? 'width:100%;' : ''}">
+          <button type="button" id="dcVCancel" class="dc-action-btn dc-btn-view" style="${actionWidth}">Cancel</button>
+          <button type="button" id="dcVProceed" class="dc-action-btn dc-btn-start" style="${actionWidth}" disabled>Start Job</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const listEl = overlay.querySelector('#dcVList');
+  const msgEl = overlay.querySelector('#dcVMsg');
+  const progressEl = overlay.querySelector('#dcVProgress');
+  const proceedBtn = overlay.querySelector('#dcVProceed');
+  const lastEl = overlay.querySelector('#dcVLast');
+  const manualEl = overlay.querySelector('#dcVManual');
+  const manualBtn = overlay.querySelector('#dcVAdd');
+  const manualLock = overlay.querySelector('#dcVManualLock');
+  const startBtn = overlay.querySelector('#dcVStart');
+  const stopBtn = overlay.querySelector('#dcVStop');
+  const fileInput = overlay.querySelector('#dcVFile');
+
+  if (!CAN_MANUAL_ROLL_ENTRY) {
+    if (manualLock) manualLock.style.display = '';
+    if (manualEl) {
+      manualEl.disabled = true;
+      manualEl.placeholder = 'Manual disabled for this account';
+      manualEl.style.background = '#f8fafc';
+      manualEl.style.opacity = '0.65';
+      manualEl.style.cursor = 'not-allowed';
+    }
+    if (manualBtn) {
+      manualBtn.disabled = true;
+      manualBtn.style.opacity = '0.65';
+      manualBtn.style.cursor = 'not-allowed';
+      manualBtn.title = 'Manual roll entry is disabled for this account.';
+    }
+    dcShowVerificationMessage(msgEl, 'info', '<strong>Scan Only Mode:</strong> Your account cannot use manual roll entry. Please verify rolls using QR Scanner and then start the job.');
+  }
+
+  function renderList() {
+    listEl.innerHTML = required.map(function(row) {
+      const ok = !!matched[row.norm];
+      const method = methods[row.norm] ? (' (' + methods[row.norm] + ')') : '';
+      return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 12px;border-radius:10px;background:${ok ? '#dcfce7' : '#fff'};border:1px solid ${ok ? '#86efac' : '#e2e8f0'};margin-bottom:8px">
+        <div>
+          <div style="font-size:.88rem;font-weight:900;color:#0f172a">${esc(row.roll_no)}</div>
+          <div style="font-size:.75rem;color:#64748b">${esc(row.paper_type || '--')} | ${esc(String(row.width || '--'))} x ${esc(String(row.length || '--'))}</div>
+        </div>
+        <div style="font-size:.72rem;font-weight:900;text-transform:uppercase;color:${ok ? '#166534' : '#92400e'}">${ok ? ('Matched' + method) : 'Pending'}</div>
+      </div>`;
+    }).join('');
+    const matchedCount = Object.keys(matched).length;
+    progressEl.textContent = 'Matched ' + matchedCount + ' / ' + required.length;
+    proceedBtn.disabled = matchedCount !== required.length;
+  }
+
+  function processRawValue(rawValue, method) {
+    const shown = String(rawValue || '').trim();
+    if (lastEl) lastEl.value = shown;
+    const extracted = dcExtractRollNoFromQr(rawValue);
+    const norm = dcNormalizeRollNo(extracted);
+    if (!norm) {
+      dcShowVerificationMessage(msgEl, 'bad', 'Could not detect a valid roll number.');
+      return;
+    }
+    if (!rowMap[norm]) {
+      dcShowVerificationMessage(msgEl, 'bad', 'Scanned roll ' + extracted + ' is not assigned to this job.');
+      return;
+    }
+    if (matched[norm]) {
+      dcShowVerificationMessage(msgEl, 'warn', 'Roll ' + rowMap[norm].roll_no + ' already matched.');
+      return;
+    }
+    matched[norm] = true;
+    methods[norm] = String(method || 'qr').toUpperCase();
+    renderList();
+    const done = Object.keys(matched).length === required.length;
+    dcShowVerificationMessage(msgEl, done ? 'ok' : 'info', done ? 'All assigned rolls matched. You can start the job now.' : ('Matched ' + rowMap[norm].roll_no + '. Continue remaining rolls.'));
+  }
+
+  async function startScanner() {
+    if (typeof Html5QrcodeScanner !== 'function') {
+      dcShowVerificationMessage(msgEl, 'bad', 'Scanner unavailable. Use manual input or photo scan.');
+      return;
+    }
+    await dcCloseVerifierScanner();
+    const reader = overlay.querySelector('#dcVScanner');
+    if (reader) reader.innerHTML = '';
+    startBtn.style.display = 'none';
+    stopBtn.style.display = '';
+    dcShowVerificationMessage(msgEl, 'info', 'Scanner opening...');
+    try {
+      DC_VERIFIER_SCANNER = new Html5QrcodeScanner('dcVScanner', {
+        fps: 10,
+        qrbox: { width: 250, height: 250 },
+        rememberLastUsedCamera: false,
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.QR_CODE,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8
+        ]
+      }, false);
+      DC_VERIFIER_SCANNER.render(function(decodedText) {
+        processRawValue(decodedText, 'qr');
+      }, function() {});
+      dcShowVerificationMessage(msgEl, 'info', 'Scanner started. Point camera at assigned roll QR code.');
+    } catch (err) {
+      startBtn.style.display = '';
+      stopBtn.style.display = 'none';
+      dcShowVerificationMessage(msgEl, 'bad', 'Camera could not start. Allow camera permission and retry.');
+    }
+  }
+
+  async function stopScanner() {
+    await dcCloseVerifierScanner();
+    startBtn.style.display = '';
+    stopBtn.style.display = 'none';
+    dcShowVerificationMessage(msgEl, 'info', CAN_MANUAL_ROLL_ENTRY ? 'Scanner stopped. You can use manual input or restart scanner.' : 'Scanner stopped. Restart scanner to continue verification.');
+  }
+
+  async function scanFromImageFile(file) {
+    if (!file) return;
+    if (typeof Html5Qrcode !== 'function') {
+      dcShowVerificationMessage(msgEl, 'bad', 'Image scan library is unavailable.');
+      return;
+    }
+    const tempId = 'dcVTmp_' + Date.now();
+    const temp = document.createElement('div');
+    temp.id = tempId;
+    temp.style.display = 'none';
+    document.body.appendChild(temp);
+    const qr = new Html5Qrcode(tempId);
+    try {
+      const decoded = await qr.scanFile(file, true);
+      processRawValue(decoded, 'qr');
+      dcShowVerificationMessage(msgEl, 'ok', 'QR decoded from image successfully.');
+    } catch (err) {
+      dcShowVerificationMessage(msgEl, 'bad', 'Could not decode QR from image. Try a clearer photo or live scan.');
+    } finally {
+      try { await qr.clear(); } catch (e) {}
+      if (temp.parentNode) temp.parentNode.removeChild(temp);
+    }
+  }
+
+  renderList();
+  setTimeout(function() { startScanner(); }, 150);
+
+  return new Promise(function(resolve) {
+    let done = false;
+    function finish(result) {
+      if (done) return;
+      done = true;
+      dcCloseVerifierScanner().finally(function() {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        resolve(result);
+      });
+    }
+
+    overlay.querySelector('#dcVClose').addEventListener('click', function() { finish({ ok: false, error: 'Verification cancelled.' }); });
+    overlay.querySelector('#dcVCancel').addEventListener('click', function() { finish({ ok: false, error: 'Verification cancelled.' }); });
+    overlay.querySelector('#dcVProceed').addEventListener('click', function() {
+      if (Object.keys(matched).length !== required.length) {
+        dcShowVerificationMessage(msgEl, 'bad', 'All assigned rolls must be matched before start.');
+        return;
+      }
+      const verified = required.filter(function(r) { return !!matched[r.norm]; }).map(function(r) { return r.roll_no; });
+      finish({ ok: true, verified_rolls: verified });
+    });
+    startBtn.addEventListener('click', startScanner);
+    stopBtn.addEventListener('click', stopScanner);
+    overlay.querySelector('#dcVPhoto').addEventListener('click', function() { fileInput.click(); });
+    fileInput.addEventListener('change', function() {
+      const file = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+      scanFromImageFile(file);
+      fileInput.value = '';
+    });
+    overlay.querySelector('#dcVAdd').addEventListener('click', function() {
+      if (!CAN_MANUAL_ROLL_ENTRY) {
+        dcShowVerificationMessage(msgEl, 'bad', 'Manual roll entry is disabled for this account. Please scan QR.');
+        return;
+      }
+      const raw = String(manualEl.value || '').trim();
+      if (!raw) {
+        dcShowVerificationMessage(msgEl, 'warn', 'Enter a roll number first.');
+        return;
+      }
+      processRawValue(raw, 'manual');
+      manualEl.value = '';
+      manualEl.focus();
+    });
+    manualEl.addEventListener('keydown', function(ev) {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        if (!CAN_MANUAL_ROLL_ENTRY) {
+          dcShowVerificationMessage(msgEl, 'bad', 'Manual roll entry is disabled for this account. Please scan QR.');
+          return;
+        }
+        overlay.querySelector('#dcVAdd').click();
+      }
+    });
+  });
+}
+</script>
+<?php endif; ?>
 
 <?php include __DIR__ . '/../../../includes/footer.php'; ?>

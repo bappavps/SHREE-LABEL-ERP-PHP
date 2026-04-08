@@ -3,7 +3,12 @@ require_once __DIR__ . '/../../../config/db.php';
 require_once __DIR__ . '/../../../includes/functions.php';
 require_once __DIR__ . '/../../../includes/auth_check.php';
 
-$isOperatorView = (string)($_GET['view'] ?? '') === 'operator';
+$statusCtx = erp_status_context();
+$isOperatorView = (bool)($statusCtx['is_operator_view'] ?? false);
+$canManualRollEntry = hasPageAction('/modules/jobs/printing/index.php', 'edit')
+  || hasPageAction('/modules/operators/printing/index.php', 'edit')
+  || hasRole('manager', 'system_admin', 'super_admin')
+  || isAdmin();
 $canDeleteJobs = isAdmin() && !$isOperatorView;
 $pageTitle = $isOperatorView ? 'Flexo Operator' : 'Flexo Printing Jobs';
 $db = getDB();
@@ -172,12 +177,14 @@ if (!empty($prevJobIds)) {
     }
 }
 
-// Collect all child roll_nos from slitting jobs
+// Collect all assigned child roll_nos from slitting jobs or direct-printing payloads
 $allChildRollNos = [];
 foreach ($jobs as &$j) {
     $prevId = (int)($j['previous_job_id'] ?? 0);
     $prevExtra = $prevJobExtraMap[$prevId] ?? [];
-    $childRolls = is_array($prevExtra['child_rolls'] ?? null) ? $prevExtra['child_rolls'] : [];
+  $childRolls = is_array($prevExtra['child_rolls'] ?? null) ? $prevExtra['child_rolls'] : [];
+  $directAssignedRolls = is_array($j['extra_data_parsed']['assigned_child_rolls'] ?? null) ? $j['extra_data_parsed']['assigned_child_rolls'] : [];
+  $childRolls = array_merge($childRolls, $directAssignedRolls);
     foreach ($childRolls as $cr) {
         $rn = trim((string)($cr['roll_no'] ?? ''));
         if ($rn !== '') $allChildRollNos[$rn] = true;
@@ -204,7 +211,11 @@ if (!empty($allChildRollNos)) {
 foreach ($jobs as &$j) {
     $prevId = (int)($j['previous_job_id'] ?? 0);
     $prevExtra = $prevJobExtraMap[$prevId] ?? [];
-    $childRolls = is_array($prevExtra['child_rolls'] ?? null) ? $prevExtra['child_rolls'] : [];
+  $childRolls = is_array($prevExtra['child_rolls'] ?? null) ? $prevExtra['child_rolls'] : [];
+  $directAssignedRolls = is_array($j['extra_data_parsed']['assigned_child_rolls'] ?? null) ? $j['extra_data_parsed']['assigned_child_rolls'] : [];
+  if (!empty($directAssignedRolls)) {
+    $childRolls = array_merge($childRolls, $directAssignedRolls);
+  }
     $slittingRolls = [];
     foreach ($childRolls as $cr) {
         $rn = trim((string)($cr['roll_no'] ?? ''));
@@ -215,10 +226,10 @@ foreach ($jobs as &$j) {
             'parent_roll_no' => trim((string)($cr['parent_roll_no'] ?? '')),
             'company' => $stock['company'] ?? '',
             'paper_type' => $stock['paper_type'] ?? '',
-            'width_mm' => (float)($stock['width_mm'] ?? $cr['width'] ?? 0),
-            'length_mtr' => (float)($stock['length_mtr'] ?? $cr['length'] ?? 0),
-            'gsm' => (float)($stock['gsm'] ?? 0),
-            'status' => $stock['status'] ?? '',
+      'width_mm' => (float)($stock['width_mm'] ?? $cr['width_mm'] ?? $cr['width'] ?? 0),
+      'length_mtr' => (float)($stock['length_mtr'] ?? $cr['length_mtr'] ?? $cr['length'] ?? 0),
+      'gsm' => (float)($stock['gsm'] ?? $cr['gsm'] ?? 0),
+      'status' => $stock['status'] ?? ($cr['status'] ?? ''),
         ];
     }
     $j['slitting_rolls'] = $slittingRolls;
@@ -763,11 +774,13 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
 </div>
 
 <script src="<?= BASE_URL ?>/assets/js/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 const CSRF = '<?= e($csrf) ?>';
 const API_BASE = '<?= BASE_URL ?>/modules/jobs/api.php';
 const BASE_URL = '<?= BASE_URL ?>';
 const IS_OPERATOR_VIEW = <?= $isOperatorView ? 'true' : 'false' ?>;
+const CAN_MANUAL_ROLL_ENTRY = <?= $canManualRollEntry ? 'true' : 'false' ?>;
 const IS_ADMIN = <?= $canDeleteJobs ? 'true' : 'false' ?>;
 const CURRENT_USER = <?= json_encode($sessionUser, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
@@ -1805,13 +1818,370 @@ function resumeRunningPrintTimer(jobId) {
   showPrintTimerOverlay(job);
 }
 
+let FP_VERIFIER_SCANNER = null;
+
+function printNormalizeRollNo(val) {
+  return String(val || '').trim().toUpperCase();
+}
+
+function printExtractRollNoFromQr(rawValue) {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return '';
+  try {
+    const u = new URL(raw);
+    const qRoll = u.searchParams.get('roll_no') || u.searchParams.get('roll') || u.searchParams.get('rn') || '';
+    if (String(qRoll).trim()) return String(qRoll).trim();
+  } catch (e) {}
+
+  const named = raw.match(/(?:roll\s*no|roll_no|roll)\s*[:=\-]\s*([A-Za-z0-9._\/-]+)/i);
+  if (named && named[1]) return named[1].trim();
+
+  const tokens = raw.split(/[^A-Za-z0-9._\/-]+/).filter(Boolean);
+  if (tokens.length) return tokens[tokens.length - 1].trim();
+  return raw;
+}
+
+function printBuildRequiredRolls(job) {
+  const rows = Array.isArray(job?.slitting_rolls) ? job.slitting_rolls : [];
+  const uniq = {};
+  const out = [];
+
+  rows.forEach(function(r) {
+    const candidate = String(r?.roll_no || '').trim();
+    const norm = printNormalizeRollNo(candidate);
+    if (!norm || uniq[norm]) return;
+    uniq[norm] = true;
+    out.push({
+      roll_no: candidate,
+      norm: norm,
+      paper_type: String(r?.paper_type || job?.paper_type || '').trim(),
+      company: String(r?.company || job?.company || '').trim(),
+      width: r?.width_mm ?? job?.width_mm ?? '',
+      length: r?.length_mtr ?? job?.length_mtr ?? ''
+    });
+  });
+
+  return out;
+}
+
+function printShowVerificationMessage(el, kind, text) {
+  if (!el) return;
+  const styles = {
+    info: 'background:#e0f2fe;color:#075985;border:1px solid #bae6fd',
+    ok: 'background:#dcfce7;color:#166534;border:1px solid #bbf7d0',
+    warn: 'background:#fef3c7;color:#92400e;border:1px solid #fde68a',
+    bad: 'background:#fee2e2;color:#991b1b;border:1px solid #fecaca'
+  };
+  el.style.display = 'block';
+  el.style.cssText += ';' + (styles[kind] || styles.info);
+  el.innerHTML = esc(text || '');
+}
+
+async function printCloseVerifierScanner() {
+  if (!FP_VERIFIER_SCANNER) return;
+  try {
+    await FP_VERIFIER_SCANNER.clear();
+  } catch (e) {}
+  FP_VERIFIER_SCANNER = null;
+}
+
+async function printOpenRollVerification(job) {
+  const required = printBuildRequiredRolls(job);
+  if (!required.length) {
+    return { ok: false, error: 'No assigned slitted rolls found for this printing job.' };
+  }
+
+  const isMobileView = window.matchMedia('(max-width: 640px)').matches;
+  const actionWidth = isMobileView ? 'width:100%;justify-content:center;min-height:44px' : '';
+  const rowMap = {};
+  required.forEach(function(r) { rowMap[r.norm] = r; });
+  const matched = {};
+  const methods = {};
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.72);z-index:10050;display:flex;align-items:center;justify-content:center;padding:' + (isMobileView ? '0' : '16px');
+  overlay.innerHTML = `
+    <div style="width:min(760px,100%);height:${isMobileView ? '100dvh' : 'auto'};max-height:${isMobileView ? '100dvh' : '90vh'};overflow:auto;background:#fff;border-radius:${isMobileView ? '0' : '18px'};box-shadow:0 30px 80px rgba(15,23,42,.35)">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:${isMobileView ? '12px' : '18px 20px'};border-bottom:1px solid #e2e8f0">
+        <div>
+          <div style="font-size:1rem;font-weight:900;color:#0f172a">Assigned Roll Verification</div>
+          <div style="font-size:.82rem;color:#475569;margin-top:4px">Job ${esc(job?.job_no || ('#' + (job?.id || '')))} - verify all assigned slitted rolls before start.</div>
+        </div>
+        <button type="button" id="fpVClose" class="fp-action-btn fp-btn-view"><i class="bi bi-x-lg"></i></button>
+      </div>
+
+      <div style="padding:${isMobileView ? '12px' : '18px 20px'};display:grid;gap:${isMobileView ? '12px' : '14px'}">
+        <div style="border:1px solid #e2e8f0;border-radius:14px;padding:${isMobileView ? '12px' : '14px'};background:#f8fafc">
+          <div style="font-size:.8rem;font-weight:900;color:#334155;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Assigned Slitted Rolls</div>
+          <div id="fpVList"></div>
+        </div>
+
+        <div id="fpVMsg" style="display:none;padding:10px 12px;border-radius:10px;font-size:.82rem;font-weight:800"></div>
+
+        <div>
+          <label style="display:block;font-size:.66rem;font-weight:900;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Last Scan Value</label>
+          <input type="text" id="fpVLast" readonly style="width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc">
+        </div>
+
+        <div>
+          <label style="display:block;font-size:.66rem;font-weight:900;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">QR Scanner</label>
+          <div id="fpVScanner" style="min-height:${isMobileView ? '250px' : '280px'};background:#0f172a;border-radius:14px;padding:${isMobileView ? '6px' : '10px'};overflow:hidden"></div>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;${isMobileView ? 'flex-direction:column;' : ''}">
+          <button type="button" id="fpVStart" class="fp-action-btn fp-btn-start" style="${actionWidth}"><i class="bi bi-camera"></i> Start QR Scanner</button>
+          <button type="button" id="fpVStop" class="fp-action-btn fp-btn-view" style="display:none;${actionWidth}"><i class="bi bi-stop-fill"></i> Stop Scan</button>
+          <button type="button" id="fpVPhoto" class="fp-action-btn fp-btn-view" style="${actionWidth}"><i class="bi bi-image"></i> Scan Photo</button>
+          <input type="file" id="fpVFile" accept="image/*" capture="environment" style="display:none">
+        </div>
+
+        <div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+            <label style="display:block;font-size:.66rem;font-weight:900;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Manual Roll Input</label>
+            <span id="fpVManualLock" style="display:none;font-size:.6rem;font-weight:900;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:999px;padding:2px 8px">Scan Only</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-direction:${isMobileView ? 'column' : 'row'}">
+            <input type="text" id="fpVManual" style="flex:1;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px" placeholder="Type roll no and add">
+            <button type="button" id="fpVAdd" class="fp-action-btn fp-btn-view" style="${actionWidth}"><i class="bi bi-keyboard"></i> Add</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:${isMobileView ? 'column' : 'row'};justify-content:space-between;gap:12px;align-items:${isMobileView ? 'stretch' : 'center'};padding:${isMobileView ? '12px' : '16px 20px'};border-top:1px solid #e2e8f0;background:#f8fafc">
+        <div id="fpVProgress" style="font-size:.84rem;font-weight:900;color:#0f172a;${isMobileView ? 'width:100%;' : ''}">Matched 0 / ${required.length}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;${isMobileView ? 'width:100%;' : ''}">
+          <button type="button" id="fpVCancel" class="fp-action-btn fp-btn-view" style="${actionWidth}">Cancel</button>
+          <button type="button" id="fpVProceed" class="fp-action-btn fp-btn-start" style="${actionWidth}" disabled>Start Job</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const listEl = overlay.querySelector('#fpVList');
+  const msgEl = overlay.querySelector('#fpVMsg');
+  const progressEl = overlay.querySelector('#fpVProgress');
+  const proceedBtn = overlay.querySelector('#fpVProceed');
+  const lastEl = overlay.querySelector('#fpVLast');
+  const manualEl = overlay.querySelector('#fpVManual');
+  const manualBtn = overlay.querySelector('#fpVAdd');
+  const manualLock = overlay.querySelector('#fpVManualLock');
+  const startBtn = overlay.querySelector('#fpVStart');
+  const stopBtn = overlay.querySelector('#fpVStop');
+  const fileInput = overlay.querySelector('#fpVFile');
+
+  if (!CAN_MANUAL_ROLL_ENTRY) {
+    if (manualLock) manualLock.style.display = '';
+    if (manualEl) {
+      manualEl.disabled = true;
+      manualEl.placeholder = 'Manual disabled for this account';
+      manualEl.style.background = '#f8fafc';
+      manualEl.style.opacity = '0.65';
+      manualEl.style.cursor = 'not-allowed';
+    }
+    if (manualBtn) {
+      manualBtn.disabled = true;
+      manualBtn.style.opacity = '0.65';
+      manualBtn.style.cursor = 'not-allowed';
+      manualBtn.title = 'Manual roll entry is disabled for this account.';
+    }
+    printShowVerificationMessage(msgEl, 'info', 'Scan Only Mode: manual roll entry is disabled for this account.');
+  }
+
+  function renderList() {
+    listEl.innerHTML = required.map(function(row) {
+      const ok = !!matched[row.norm];
+      const method = methods[row.norm] ? (' (' + methods[row.norm] + ')') : '';
+      return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 12px;border-radius:10px;background:${ok ? '#dcfce7' : '#fff'};border:1px solid ${ok ? '#86efac' : '#e2e8f0'};margin-bottom:8px">
+        <div>
+          <div style="font-size:.88rem;font-weight:900;color:#0f172a">${esc(row.roll_no)}</div>
+          <div style="font-size:.75rem;color:#64748b">${esc(row.paper_type || '--')} | ${esc(String(row.width || '--'))} x ${esc(String(row.length || '--'))}</div>
+        </div>
+        <div style="font-size:.72rem;font-weight:900;text-transform:uppercase;color:${ok ? '#166534' : '#92400e'}">${ok ? ('Matched' + method) : 'Pending'}</div>
+      </div>`;
+    }).join('');
+    const matchedCount = Object.keys(matched).length;
+    progressEl.textContent = 'Matched ' + matchedCount + ' / ' + required.length;
+    proceedBtn.disabled = matchedCount !== required.length;
+  }
+
+  function processRawValue(rawValue, method) {
+    const shown = String(rawValue || '').trim();
+    if (lastEl) lastEl.value = shown;
+    const extracted = printExtractRollNoFromQr(rawValue);
+    const norm = printNormalizeRollNo(extracted);
+    if (!norm) {
+      printShowVerificationMessage(msgEl, 'bad', 'Could not detect a valid roll number.');
+      return;
+    }
+    if (!rowMap[norm]) {
+      printShowVerificationMessage(msgEl, 'bad', 'Scanned roll ' + extracted + ' is not assigned to this job.');
+      return;
+    }
+    if (matched[norm]) {
+      printShowVerificationMessage(msgEl, 'warn', 'Roll ' + rowMap[norm].roll_no + ' already matched.');
+      return;
+    }
+    matched[norm] = true;
+    methods[norm] = String(method || 'qr').toUpperCase();
+    renderList();
+    const done = Object.keys(matched).length === required.length;
+    printShowVerificationMessage(msgEl, done ? 'ok' : 'info', done ? 'All assigned slitted rolls matched. You can start the job now.' : ('Matched ' + rowMap[norm].roll_no + '. Continue remaining rolls.'));
+  }
+
+  async function startScanner() {
+    if (typeof Html5QrcodeScanner !== 'function') {
+      printShowVerificationMessage(msgEl, 'bad', CAN_MANUAL_ROLL_ENTRY ? 'Scanner unavailable. Use manual input or photo scan.' : 'Scanner unavailable. Use photo scan.');
+      return;
+    }
+    await printCloseVerifierScanner();
+    const reader = overlay.querySelector('#fpVScanner');
+    if (reader) reader.innerHTML = '';
+    startBtn.style.display = 'none';
+    stopBtn.style.display = '';
+    printShowVerificationMessage(msgEl, 'info', 'Scanner opening...');
+    try {
+      FP_VERIFIER_SCANNER = new Html5QrcodeScanner('fpVScanner', {
+        fps: 10,
+        qrbox: { width: 250, height: 250 },
+        rememberLastUsedCamera: false,
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.QR_CODE,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8
+        ]
+      }, false);
+      FP_VERIFIER_SCANNER.render(function(decodedText) {
+        processRawValue(decodedText, 'qr');
+      }, function() {});
+      printShowVerificationMessage(msgEl, 'info', 'Scanner started. Point camera at assigned slitted roll QR code.');
+    } catch (err) {
+      startBtn.style.display = '';
+      stopBtn.style.display = 'none';
+      printShowVerificationMessage(msgEl, 'bad', 'Camera could not start. Allow camera permission and retry.');
+    }
+  }
+
+  async function stopScanner() {
+    await printCloseVerifierScanner();
+    startBtn.style.display = '';
+    stopBtn.style.display = 'none';
+    printShowVerificationMessage(msgEl, 'info', CAN_MANUAL_ROLL_ENTRY ? 'Scanner stopped. You can use manual input or restart scanner.' : 'Scanner stopped. Restart scanner to continue verification.');
+  }
+
+  async function scanFromImageFile(file) {
+    if (!file) return;
+    if (typeof Html5Qrcode !== 'function') {
+      printShowVerificationMessage(msgEl, 'bad', 'Image scan library is unavailable.');
+      return;
+    }
+    const tempId = 'fpVTmp_' + Date.now();
+    const temp = document.createElement('div');
+    temp.id = tempId;
+    temp.style.display = 'none';
+    document.body.appendChild(temp);
+    const qr = new Html5Qrcode(tempId);
+    try {
+      const decoded = await qr.scanFile(file, true);
+      processRawValue(decoded, 'qr');
+      printShowVerificationMessage(msgEl, 'ok', 'QR decoded from image successfully.');
+    } catch (err) {
+      printShowVerificationMessage(msgEl, 'bad', 'Could not decode QR from image. Try a clearer photo or live scan.');
+    } finally {
+      try { await qr.clear(); } catch (e) {}
+      if (temp.parentNode) temp.parentNode.removeChild(temp);
+    }
+  }
+
+  renderList();
+  setTimeout(function() { startScanner(); }, 150);
+
+  return new Promise(function(resolve) {
+    let done = false;
+    function finish(result) {
+      if (done) return;
+      done = true;
+      printCloseVerifierScanner().finally(function() {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        resolve(result);
+      });
+    }
+
+    overlay.querySelector('#fpVClose').addEventListener('click', function() { finish({ ok: false, error: 'Verification cancelled.' }); });
+    overlay.querySelector('#fpVCancel').addEventListener('click', function() { finish({ ok: false, error: 'Verification cancelled.' }); });
+    overlay.querySelector('#fpVProceed').addEventListener('click', function() {
+      if (Object.keys(matched).length !== required.length) {
+        printShowVerificationMessage(msgEl, 'bad', 'All assigned slitted rolls must be matched before start.');
+        return;
+      }
+      const verified = required.filter(function(r) { return !!matched[r.norm]; }).map(function(r) { return r.roll_no; });
+      finish({ ok: true, verified_rolls: verified });
+    });
+    startBtn.addEventListener('click', startScanner);
+    stopBtn.addEventListener('click', stopScanner);
+    overlay.querySelector('#fpVPhoto').addEventListener('click', function() { fileInput.click(); });
+    fileInput.addEventListener('change', function() {
+      const file = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+      scanFromImageFile(file);
+      fileInput.value = '';
+    });
+    overlay.querySelector('#fpVAdd').addEventListener('click', function() {
+      if (!CAN_MANUAL_ROLL_ENTRY) {
+        printShowVerificationMessage(msgEl, 'bad', 'Manual roll entry is disabled for this account. Please scan QR.');
+        return;
+      }
+      const raw = String(manualEl.value || '').trim();
+      if (!raw) {
+        printShowVerificationMessage(msgEl, 'warn', 'Enter a roll number first.');
+        return;
+      }
+      processRawValue(raw, 'manual');
+      manualEl.value = '';
+      manualEl.focus();
+    });
+    manualEl.addEventListener('keydown', function(ev) {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        if (!CAN_MANUAL_ROLL_ENTRY) {
+          printShowVerificationMessage(msgEl, 'bad', 'Manual roll entry is disabled for this account. Please scan QR.');
+          return;
+        }
+        overlay.querySelector('#fpVAdd').click();
+      }
+    });
+  });
+}
+
 async function startJobWithTimer(id) {
   if (!confirm('Start this job?')) return;
+  const job = ALL_JOBS.find(j => j.id == id) || null;
+  const verification = await printOpenRollVerification(job || { id: id, job_no: id, slitting_rolls: [] });
+  if (!verification.ok) {
+    alert(verification.error || 'Assigned roll verification is required before start.');
+    return;
+  }
+
+  const verifiedRolls = Array.isArray(verification.verified_rolls)
+    ? verification.verified_rolls.map(function(v) { return String(v || '').trim(); }).filter(Boolean)
+    : [];
+  if (!verifiedRolls.length) {
+    alert('Roll verification did not capture any required roll. Please verify again.');
+    return;
+  }
+
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
   fd.append('action', 'update_status');
   fd.append('job_id', id);
   fd.append('status', 'Running');
+  fd.append('verified_rolls_json', JSON.stringify(verifiedRolls));
+  fd.append('verified_rolls_csv', verifiedRolls.join(','));
+  fd.append('verified_rolls_count', String(verifiedRolls.length));
+  verifiedRolls.forEach(function(rollNo) {
+    fd.append('verified_rolls[]', rollNo);
+  });
+  fd.append('verified_rolls_mode', CAN_MANUAL_ROLL_ENTRY ? 'qr_manual' : 'qr_only');
   try {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
@@ -1820,29 +2190,29 @@ async function startJobWithTimer(id) {
 
   _timerJobId = id;
   _timerStart = Date.now();
-  const job = ALL_JOBS.find(j => j.id == id) || {};
+  const activeJob = ALL_JOBS.find(j => j.id == id) || {};
   const nowIso = new Date().toISOString();
   // Update ALL_JOBS so openPrintDetail sees Running status
-  job.status = 'Running';
-  if (!job.started_at) job.started_at = nowIso;
-  job.extra_data_parsed = job.extra_data_parsed || {};
-  if (!job.extra_data_parsed.timer_started_at) {
-    job.extra_data_parsed.timer_started_at = nowIso;
-    pushPrintTimerEventLocal(job.extra_data_parsed, 'start', nowIso);
-  } else if (String(job.extra_data_parsed.timer_state || '').toLowerCase() === 'paused') {
-    const pausedAt = job.extra_data_parsed.timer_pause_started_at || job.extra_data_parsed.timer_paused_at || '';
+  activeJob.status = 'Running';
+  if (!activeJob.started_at) activeJob.started_at = nowIso;
+  activeJob.extra_data_parsed = activeJob.extra_data_parsed || {};
+  if (!activeJob.extra_data_parsed.timer_started_at) {
+    activeJob.extra_data_parsed.timer_started_at = nowIso;
+    pushPrintTimerEventLocal(activeJob.extra_data_parsed, 'start', nowIso);
+  } else if (String(activeJob.extra_data_parsed.timer_state || '').toLowerCase() === 'paused') {
+    const pausedAt = activeJob.extra_data_parsed.timer_pause_started_at || activeJob.extra_data_parsed.timer_paused_at || '';
     if (pausedAt) {
-      pushPrintTimerSegmentLocal(job.extra_data_parsed, 'timer_pause_segments', pausedAt, nowIso);
+      pushPrintTimerSegmentLocal(activeJob.extra_data_parsed, 'timer_pause_segments', pausedAt, nowIso);
     }
-    pushPrintTimerEventLocal(job.extra_data_parsed, 'resume', nowIso);
+    pushPrintTimerEventLocal(activeJob.extra_data_parsed, 'resume', nowIso);
   }
-  job.extra_data_parsed.timer_active = true;
-  job.extra_data_parsed.timer_state = 'running';
-  job.extra_data_parsed.timer_last_resumed_at = nowIso;
-  job.extra_data_parsed.timer_paused_at = '';
-  job.extra_data_parsed.timer_pause_started_at = '';
-  job.extra_data_parsed.timer_ended_at = '';
-  showPrintTimerOverlay(job);
+  activeJob.extra_data_parsed.timer_active = true;
+  activeJob.extra_data_parsed.timer_state = 'running';
+  activeJob.extra_data_parsed.timer_last_resumed_at = nowIso;
+  activeJob.extra_data_parsed.timer_paused_at = '';
+  activeJob.extra_data_parsed.timer_pause_started_at = '';
+  activeJob.extra_data_parsed.timer_ended_at = '';
+  showPrintTimerOverlay(activeJob);
 }
 
 async function cancelTimer() {

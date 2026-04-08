@@ -712,7 +712,9 @@ try {
                     'length'  => $cLength,
                     'mode'    => $run['mode'],
                     'dest'    => $run['dest'],
-                    'status'  => (($run['dest'] ?? '') === 'JOB') ? 'Slitting' : 'Stock',
+                    'status'  => (($run['dest'] ?? '') === 'JOB')
+                        ? ($directFlexoBypass ? 'Job Assign' : 'Slitting')
+                        : 'Stock',
                     'job_no'  => $cJobNo,
                     'job_name'=> $cJobName,
                     'company' => $cCompany,
@@ -1004,6 +1006,25 @@ try {
                 $jcNoDct = '';
                 $barcodeDirectStart = false;
 
+                $printingAssignedRolls = [];
+                foreach ($jobChildRolls as $childRow) {
+                    $rollNoItem = trim((string)($childRow['roll_no'] ?? ''));
+                    if ($rollNoItem === '') continue;
+
+                    $printingAssignedRolls[] = [
+                        'roll_no' => $rollNoItem,
+                        'parent_roll_no' => trim((string)($childRow['parent_roll_no'] ?? $parentRollNo)),
+                        'width_mm' => (float)($childRow['width'] ?? 0),
+                        'length_mtr' => (float)($childRow['length'] ?? 0),
+                        'paper_type' => trim((string)($childRow['paper_type'] ?? '')),
+                        'company' => trim((string)($childRow['company'] ?? '')),
+                        'gsm' => (float)($childRow['gsm'] ?? 0),
+                        'status' => trim((string)($childRow['status'] ?? 'Slitting')),
+                        'job_no' => trim((string)($childRow['job_no'] ?? $planNo)),
+                        'job_name' => trim((string)($childRow['job_name'] ?? $displayJobName)),
+                    ];
+                }
+
                 // Keep one downstream printing job per plan as queued.
                 if ($planningId > 0 && ($allowPrintingJob || $allowDieCuttingJob || $allowBarcodeJob)) {
                     $chkP = $db->prepare("SELECT id, job_no FROM jobs WHERE job_type = 'Printing' AND planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
@@ -1027,11 +1048,17 @@ try {
                             if ($jcNoFlex === '') continue;
 
                             $notesF = $directFlexoBypass
-                                ? ('Flexo printing queued directly from slitting terminal | Plan: ' . ($planNo ?: 'N/A') . ' | Machine: ' . $machine . ' I Flexo: ' . $jcNoFlex . ($displayJobName !== '' ? ' | Job name : ' . $displayJobName : ''))
+                                ? ('Flexo printing created directly from slitting terminal | Plan: ' . ($planNo ?: 'N/A') . ' | Machine: ' . $machine . ' I Flexo: ' . $jcNoFlex . ($displayJobName !== '' ? ' | Job name : ' . $displayJobName : ''))
                                 : ('Flexo printing queued from Jumbo | Plan: ' . ($planNo ?: 'N/A') . ' | Jumbo: ' . ($jumboRefNo !== '' ? $jumboRefNo : 'N/A') . ' I Flexo: ' . $jcNoFlex . ($displayJobName !== '' ? ' | Job name : ' . $displayJobName : ''));
                             if ($directFlexoBypass) {
-                                $jcStmtF = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Printing', 'flexo_printing', 'Queued', 2, NULL, ?)");
-                                $jcStmtF->bind_param('siss', $jcNoFlex, $planningId, $parentRollNo, $notesF);
+                                $flexoExtra = json_encode([
+                                    'assigned_child_rolls' => array_values($printingAssignedRolls),
+                                    'direct_flexo_bypass' => true,
+                                    'machine' => $machine,
+                                    'plan_no' => $planNo,
+                                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                                $jcStmtF = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Printing', 'flexo_printing', 'Pending', 2, NULL, ?, ?)");
+                                $jcStmtF->bind_param('sisss', $jcNoFlex, $planningId, $parentRollNo, $notesF, $flexoExtra);
                             } else {
                                 $jcStmtF = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Printing', 'flexo_printing', 'Queued', 2, ?, ?)");
                                 $jcStmtF->bind_param('sisss', $jcNoFlex, $planningId, $parentRollNo, $jumboJobId, $notesF);
@@ -1049,7 +1076,9 @@ try {
                             if ($okFlex) {
                                 $newFlexJobId = (int)$db->insert_id;
                                 $createdJobCards[] = ['job_no' => $jcNoFlex, 'type' => 'Printing', 'roll' => $parentRollNo, 'id' => $newFlexJobId];
-                                $nMsgF = 'New Flexo job card queued: ' . $jcNoFlex . ' | From: ' . ($jumboRefNo !== '' ? $jumboRefNo : $parentRollNo);
+                                $nMsgF = $directFlexoBypass
+                                    ? ('New Flexo job card ready: ' . $jcNoFlex . ' | From: ' . $parentRollNo)
+                                    : ('New Flexo job card queued: ' . $jcNoFlex . ' | From: ' . ($jumboRefNo !== '' ? $jumboRefNo : $parentRollNo));
                                 $nInsF = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, 'flexo_printing', ?, 'info')");
                                 if ($nInsF) {
                                     $nInsF->bind_param('is', $newFlexJobId, $nMsgF);
@@ -1066,12 +1095,36 @@ try {
                         }
                     } else {
                         $notesF = $directFlexoBypass
-                            ? ('Flexo printing queued directly from slitting terminal | Plan: ' . ($planNo ?: 'N/A') . ' | Machine: ' . $machine . ' I Flexo: ' . ($existingFlexNo !== '' ? $existingFlexNo : 'N/A') . ($displayJobName !== '' ? ' | Job name : ' . $displayJobName : ''))
+                            ? ('Flexo printing created directly from slitting terminal | Plan: ' . ($planNo ?: 'N/A') . ' | Machine: ' . $machine . ' I Flexo: ' . ($existingFlexNo !== '' ? $existingFlexNo : 'N/A') . ($displayJobName !== '' ? ' | Job name : ' . $displayJobName : ''))
                             : ('Flexo printing queued from Jumbo | Plan: ' . ($planNo ?: 'N/A') . ' | Jumbo: ' . ($jumboRefNo !== '' ? $jumboRefNo : 'N/A') . ' I Flexo: ' . ($existingFlexNo !== '' ? $existingFlexNo : 'N/A') . ($displayJobName !== '' ? ' | Job name : ' . $displayJobName : ''));
                         if ($existingPrintId > 0) {
-                            $updFlexNotes = $db->prepare("UPDATE jobs SET notes = ? WHERE id = ?");
-                            $updFlexNotes->bind_param('si', $notesF, $existingPrintId);
-                            $updFlexNotes->execute();
+                            if ($directFlexoBypass) {
+                                $fetchFlexExtra = $db->prepare("SELECT extra_data FROM jobs WHERE id = ? LIMIT 1");
+                                $fetchFlexExtra->bind_param('i', $existingPrintId);
+                                $fetchFlexExtra->execute();
+                                $existingFlexRow = $fetchFlexExtra->get_result()->fetch_assoc() ?: [];
+                                $existingFlexExtra = json_decode((string)($existingFlexRow['extra_data'] ?? '{}'), true) ?: [];
+                                $existingAssignedRolls = is_array($existingFlexExtra['assigned_child_rolls'] ?? null)
+                                    ? $existingFlexExtra['assigned_child_rolls']
+                                    : [];
+                                foreach ($printingAssignedRolls as $assignedRoll) {
+                                    $rollNoKey = trim((string)($assignedRoll['roll_no'] ?? ''));
+                                    if ($rollNoKey === '') continue;
+                                    $existingAssignedRolls[$rollNoKey] = $assignedRoll;
+                                }
+                                $existingFlexExtra['assigned_child_rolls'] = array_values($existingAssignedRolls);
+                                $existingFlexExtra['direct_flexo_bypass'] = true;
+                                $existingFlexExtra['machine'] = $machine;
+                                $existingFlexExtra['plan_no'] = $planNo;
+                                $existingFlexExtraJson = json_encode($existingFlexExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                                $updFlexNotes = $db->prepare("UPDATE jobs SET previous_job_id = NULL, status = 'Pending', notes = ?, extra_data = ? WHERE id = ?");
+                                $updFlexNotes->bind_param('ssi', $notesF, $existingFlexExtraJson, $existingPrintId);
+                                $updFlexNotes->execute();
+                            } else {
+                                $updFlexNotes = $db->prepare("UPDATE jobs SET notes = ? WHERE id = ?");
+                                $updFlexNotes->bind_param('si', $notesF, $existingPrintId);
+                                $updFlexNotes->execute();
+                            }
                         }
                     }
                 }
@@ -1105,6 +1158,8 @@ try {
                         'assigned_parent_roll_no' => $parentRollNo,
                         'assigned_last_batch_no' => $batchNo,
                         'assigned_updated_at' => date('c'),
+                        'machine' => trim((string)($currentMachine ?? '')),
+                        'plan_no' => $planNo,
                     ];
 
                     $mergeBarcodeAssignedRolls = static function(array $existing, array $incoming): array {
@@ -1141,13 +1196,17 @@ try {
 
                     $barcodeDirectStart = ($barcodePrevId <= 0);
 
+                    $barcodeExtraBase['direct_barcode_bypass'] = $barcodeDirectStart;
+                    $barcodeStatus = $barcodeDirectStart ? 'Pending' : 'Queued';
+                    $barcodeActionLabel = $barcodeDirectStart ? 'created directly' : 'queued from upstream';
+
                     $chkB = $db->prepare("SELECT id, job_no, extra_data FROM jobs WHERE department = 'barcode' AND planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
                     $chkB->bind_param('i', $planningId);
                     $chkB->execute();
                     $existingBarcode = $chkB->get_result()->fetch_assoc();
 
                     $barcodeChainRef = trim((string)($existingBarcode['job_no'] ?? ''));
-                    $barcodeNotes = 'Barcode job queued from upstream'
+                    $barcodeNotes = 'Barcode job ' . $barcodeActionLabel
                         . ' | Plan: ' . ($planNo ?: 'N/A')
                         . ' | From: ' . $barcodeFromRef
                         . ' | Barcode: ' . ($barcodeChainRef !== '' ? $barcodeChainRef : 'N/A');
@@ -1169,11 +1228,11 @@ try {
                         $barcodeExtraJson = json_encode($existingBarcodeExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
                         if ($barcodePrevId > 0) {
-                            $updBarcode = $db->prepare("UPDATE jobs SET previous_job_id = ?, notes = ?, extra_data = ? WHERE id = ?");
-                            $updBarcode->bind_param('issi', $barcodePrevId, $barcodeNotes, $barcodeExtraJson, $barcodeId);
+                            $updBarcode = $db->prepare("UPDATE jobs SET previous_job_id = ?, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updBarcode->bind_param('isssi', $barcodePrevId, $barcodeStatus, $barcodeNotes, $barcodeExtraJson, $barcodeId);
                         } else {
-                            $updBarcode = $db->prepare("UPDATE jobs SET previous_job_id = NULL, notes = ?, extra_data = ? WHERE id = ?");
-                            $updBarcode->bind_param('ssi', $barcodeNotes, $barcodeExtraJson, $barcodeId);
+                            $updBarcode = $db->prepare("UPDATE jobs SET previous_job_id = NULL, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updBarcode->bind_param('sssi', $barcodeStatus, $barcodeNotes, $barcodeExtraJson, $barcodeId);
                         }
                         $updBarcode->execute();
                     } else {
@@ -1187,7 +1246,7 @@ try {
                                 $jcNoBarcode = $barcodePrefix . '/' . date('Y') . '/' . str_pad((string)($batchId + $barcodeAttempt), 4, '0', STR_PAD_LEFT);
                             }
 
-                            $barcodeNotesForInsert = 'Barcode job queued from upstream'
+                            $barcodeNotesForInsert = 'Barcode job ' . $barcodeActionLabel
                                 . ' | Plan: ' . ($planNo ?: 'N/A')
                                 . ' | From: ' . $barcodeFromRef
                                 . ' | Barcode: ' . $jcNoBarcode;
@@ -1201,11 +1260,11 @@ try {
                             $barcodeExtraJson = json_encode($newBarcodeExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
                             if ($barcodePrevId > 0) {
-                                $insBarcode = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'barcode', 'Queued', 3, ?, ?, ?)");
-                                $insBarcode->bind_param('sisiss', $jcNoBarcode, $planningId, $parentRollNo, $barcodePrevId, $barcodeNotesForInsert, $barcodeExtraJson);
+                                $insBarcode = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'barcode', ?, 3, ?, ?, ?)");
+                                $insBarcode->bind_param('sississ', $jcNoBarcode, $planningId, $parentRollNo, $barcodeStatus, $barcodePrevId, $barcodeNotesForInsert, $barcodeExtraJson);
                             } else {
-                                $insBarcode = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'barcode', 'Queued', 3, NULL, ?, ?)");
-                                $insBarcode->bind_param('sisss', $jcNoBarcode, $planningId, $parentRollNo, $barcodeNotesForInsert, $barcodeExtraJson);
+                                $insBarcode = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'barcode', ?, 3, NULL, ?, ?)");
+                                $insBarcode->bind_param('sissss', $jcNoBarcode, $planningId, $parentRollNo, $barcodeStatus, $barcodeNotesForInsert, $barcodeExtraJson);
                             }
 
                             $okBarcode = false;
@@ -1222,7 +1281,8 @@ try {
                             if ($okBarcode) {
                                 $barcodeId = (int)$db->insert_id;
                                 $createdJobCards[] = ['job_no' => $jcNoBarcode, 'type' => 'Barcode', 'roll' => $parentRollNo, 'id' => $barcodeId];
-                                $nMsgB = 'New Barcode job card queued: ' . $jcNoBarcode . ' | From: ' . $barcodeFromRef;
+                                $statusMsg = $barcodeDirectStart ? 'created directly' : 'queued';
+                                $nMsgB = 'New Barcode job card ' . $statusMsg . ': ' . $jcNoBarcode . ' | From: ' . $barcodeFromRef;
                                 $nInsB = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, 'barcode', ?, 'info')");
                                 if ($nInsB) {
                                     $nInsB->bind_param('is', $barcodeId, $nMsgB);
@@ -1434,11 +1494,12 @@ try {
                 $updPlan->execute();
             }
 
-            // 10. Mark JOB destination children as Slitting.
+            // 10. Mark JOB destination children as Slitting, except direct printing bypass rolls which stay Job Assign.
             foreach ($childRolls as $ch) {
                 if (($ch['dest'] ?? '') === 'JOB') {
-                    $lockStmt = $db->prepare("UPDATE paper_stock SET status = 'Slitting' WHERE roll_no = ?");
-                    $lockStmt->bind_param('s', $ch['roll_no']);
+                    $targetChildStatus = $directFlexoBypass ? 'Job Assign' : 'Slitting';
+                    $lockStmt = $db->prepare("UPDATE paper_stock SET status = ? WHERE roll_no = ?");
+                    $lockStmt->bind_param('ss', $targetChildStatus, $ch['roll_no']);
                     $lockStmt->execute();
                 }
             }

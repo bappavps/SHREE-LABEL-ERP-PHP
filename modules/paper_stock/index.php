@@ -20,6 +20,7 @@ $page    = max(1, (int)($_GET['page'] ?? 1));
 $offset  = ($page - 1) * $perPage;
 
 $allowedSort = ['roll_no','status','company','paper_type','width_mm','length_mtr','sqm','gsm','weight_kg','purchase_rate','date_received','date_used','job_no','job_size','job_name','lot_batch_no','company_roll_no','remarks'];
+$allowedColumnFilters = ['roll_no','status','company','paper_type','width_mm','length_mtr','sqm','gsm','weight_kg','purchase_rate','date_received','date_used','job_no','job_size','job_name','lot_batch_no','company_roll_no','remarks'];
 $sortCol = in_array($_GET['sort'] ?? '', $allowedSort) ? $_GET['sort'] : 'id';
 $sortDir = (strtolower($_GET['dir'] ?? '') === 'asc') ? 'ASC' : 'DESC';
 
@@ -42,6 +43,29 @@ $quickFilters = [
   'date_from' => trim((string)($_GET['date_from'] ?? '')),
   'date_to' => trim((string)($_GET['date_to'] ?? '')),
 ];
+$activeColumnFilters = [];
+$activeColumnFilterParams = [];
+foreach ($allowedColumnFilters as $colKey) {
+  $paramKey = 'cfp_' . $colKey;
+  $raw = $_GET[$paramKey] ?? '';
+  if ($raw === '' || $raw === null) {
+    continue;
+  }
+  $decoded = json_decode((string)$raw, true);
+  if (!is_array($decoded)) {
+    $decoded = [(string)$raw];
+  }
+  $values = [];
+  foreach ($decoded as $value) {
+    $value = trim((string)$value);
+    if ($value === '') continue;
+    $values[] = $value;
+  }
+  $values = array_values(array_unique($values));
+  if (!$values) continue;
+  $activeColumnFilters[$colKey] = $values;
+  $activeColumnFilterParams[$paramKey] = json_encode($values, JSON_UNESCAPED_UNICODE);
+}
 
 $whereParts = [];
 $whereParams = [];
@@ -121,10 +145,36 @@ if ($quickFilters['date_to'] !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $quic
   $whereParams[] = $quickFilters['date_to'];
   $whereTypes .= 's';
 }
+foreach ($activeColumnFilters as $colKey => $selectedValues) {
+  $selectedClauses = [];
+  $selectedNonBlank = [];
+  $hasBlank = false;
+  foreach ($selectedValues as $value) {
+    if ($value === '__blank__') {
+      $hasBlank = true;
+      continue;
+    }
+    $selectedNonBlank[] = strtolower(trim($value));
+  }
+  if ($selectedNonBlank) {
+    $placeholders = implode(',', array_fill(0, count($selectedNonBlank), '?'));
+    $selectedClauses[] = "LOWER(TRIM(CAST(COALESCE(`{$colKey}`, '') AS CHAR))) IN ({$placeholders})";
+    foreach ($selectedNonBlank as $selectedValue) {
+      $whereParams[] = $selectedValue;
+      $whereTypes .= 's';
+    }
+  }
+  if ($hasBlank) {
+    $selectedClauses[] = "(`{$colKey}` IS NULL OR TRIM(CAST(`{$colKey}` AS CHAR)) = '' OR TRIM(CAST(`{$colKey}` AS CHAR)) = '-')";
+  }
+  if ($selectedClauses) {
+    $whereParts[] = '(' . implode(' OR ', $selectedClauses) . ')';
+  }
+}
 
 $searchWhere = !empty($whereParts) ? (' WHERE ' . implode(' AND ', $whereParts)) : '';
 
-function activeFilterParams($searchTerm, array $quickFilters) {
+function activeFilterParams($searchTerm, array $quickFilters, array $columnFilterParams = []) {
   $out = [];
   if ($searchTerm !== '') {
     $out['search'] = $searchTerm;
@@ -135,16 +185,28 @@ function activeFilterParams($searchTerm, array $quickFilters) {
       $out[$k] = $v;
     }
   }
+  foreach ($columnFilterParams as $k => $v) {
+    $v = trim((string)$v);
+    if ($v !== '') {
+      $out[$k] = $v;
+    }
+  }
   return $out;
 }
 
 function renderHiddenFilterInputs(array $filterParams) {
   foreach ($filterParams as $k => $v) {
+    if (is_array($v)) {
+      foreach ($v as $nested) {
+        echo '<input type="hidden" name="' . e($k) . '[]" value="' . e($nested) . '">';
+      }
+      continue;
+    }
     echo '<input type="hidden" name="' . e($k) . '" value="' . e($v) . '">';
   }
 }
 
-$activeFilterParams = activeFilterParams($searchTerm, $quickFilters);
+$activeFilterParams = activeFilterParams($searchTerm, $quickFilters, $activeColumnFilterParams);
 
 $countSql = 'SELECT COUNT(*) AS c FROM paper_stock' . $searchWhere;
 if ($whereTypes !== '') {
@@ -846,13 +908,14 @@ include __DIR__ . '/../../includes/header.php';
 
   var colKeys = <?= json_encode(array_keys($allColumns)) ?>;
   var columnFilterSource = <?= json_encode($colFilterData, JSON_UNESCAPED_UNICODE) ?>;
+  var initialColumnFilters = <?= json_encode($activeColumnFilters, JSON_UNESCAPED_UNICODE) ?>;
   var quickFilterOptions = {
     company: <?= json_encode(array_map(function($row){ return $row['company']; }, $companies), JSON_UNESCAPED_UNICODE) ?>,
     type: <?= json_encode(array_map(function($row){ return $row['paper_type']; }, $paperTypes), JSON_UNESCAPED_UNICODE) ?>,
     gsm: <?= json_encode(array_map(function($row){ return (string)(int)$row['gsm']; }, $gsmValues), JSON_UNESCAPED_UNICODE) ?>,
     status: <?= json_encode(array_values($statusValues), JSON_UNESCAPED_UNICODE) ?>
   };
-  var activeColFilters = {};
+  var activeColFilters = initialColumnFilters || {};
   var draftColFilters = {};
   var activeCfpCol = null;
   var activeQuickPopup = null;
@@ -871,23 +934,16 @@ include __DIR__ . '/../../includes/header.php';
     return td ? (td.textContent || '').replace(/\s+/g, ' ').trim() : '';
   }
 
+  function normalizeColumnFilterToken(value){
+    return value === '__blank__' ? '__blank__' : String(value || '').trim().toLowerCase();
+  }
+
   function quickMatches(tr){
     // Quick filters are server-side (full dataset), keep client pass-through.
     return true;
   }
 
   function columnMatches(tr){
-    for (var col in activeColFilters) {
-      var set = activeColFilters[col];
-      var txt = cellText(tr, col).toLowerCase();
-      var isBlank = txt === '' || txt === '-';
-      var blankToken = '__blank__';
-      if (isBlank) {
-        if (!set.has(blankToken)) return false;
-      } else if (!set.has(txt)) {
-        return false;
-      }
-    }
     return true;
   }
 
@@ -1144,6 +1200,13 @@ include __DIR__ . '/../../includes/header.php';
     });
   });
 
+  ['dateFrom', 'dateTo'].forEach(function(key){
+    if (!qf[key]) return;
+    qf[key].addEventListener('change', function(){
+      window.applyGlobalSearch();
+    });
+  });
+
   window.resetQuickFilters = function(){
     // If any server-side quick/global filter is active, clear and reload
     var u = new URL(window.location.href);
@@ -1229,9 +1292,9 @@ include __DIR__ . '/../../includes/header.php';
     var pop = document.getElementById('cfp-' + col);
     var data = buildUniqueValues(col);
     var active = activeColFilters[col];
-    var draft = new Set(active ? Array.from(active) : []);
+    var draft = new Set(active ? active.map(normalizeColumnFilterToken) : []);
     if (!active) {
-      data.vals.forEach(function(v){ draft.add(v.toLowerCase()); });
+      data.vals.forEach(function(v){ draft.add(normalizeColumnFilterToken(v)); });
       if (data.hasBlank) draft.add('__blank__');
     }
     draftColFilters[col] = draft;
@@ -1255,7 +1318,7 @@ include __DIR__ . '/../../includes/header.php';
     // Defer checkbox state updates to next frame for smooth interaction
     requestAnimationFrame(function(){
       pop.querySelectorAll('.cfp-list input[type=checkbox]').forEach(function(cb){
-        var token = cb.value === '__blank__' ? '__blank__' : cb.value.toLowerCase();
+        var token = normalizeColumnFilterToken(cb.value);
         cb.checked = draft.has(token);
       });
 
@@ -1279,17 +1342,16 @@ include __DIR__ . '/../../includes/header.php';
     if (selected.length === total || selected.length === 0) {
       delete activeColFilters[col];
     } else {
-      var set = new Set();
+      var values = [];
       selected.forEach(function(cb){
-        var token = cb.value === '__blank__' ? '__blank__' : cb.value.toLowerCase();
-        set.add(token);
+        values.push(cb.value === '__blank__' ? '__blank__' : String(cb.value));
       });
-      activeColFilters[col] = set;
+      activeColFilters[col] = values;
     }
 
     updateFilterButton(col);
     closeCfp();
-    applyAllFilters();
+    applyServerColumnFilters();
   }
 
   function updateFilterButton(col){
@@ -1298,11 +1360,26 @@ include __DIR__ . '/../../includes/header.php';
     var count = btn.querySelector('.filter-count');
     if (activeColFilters[col]) {
       btn.classList.add('active');
-      count.textContent = activeColFilters[col].size;
+      count.textContent = activeColFilters[col].length;
     } else {
       btn.classList.remove('active');
       count.textContent = '';
     }
+  }
+
+  function applyServerColumnFilters(){
+    var u = new URL(window.location.href);
+    colKeys.forEach(function(col){
+      u.searchParams.delete('cfp_' + col);
+    });
+    Object.keys(activeColFilters).forEach(function(col){
+      var vals = activeColFilters[col];
+      if (!Array.isArray(vals) || !vals.length) return;
+      u.searchParams.set('cfp_' + col, JSON.stringify(vals));
+    });
+    u.searchParams.set('page', '1');
+    if (u.toString() === window.location.href) return;
+    window.location.href = u.toString();
   }
 
   var cfpOriginalParent = null;
@@ -1346,6 +1423,7 @@ include __DIR__ . '/../../includes/header.php';
       qf[key].value = qfItem.dataset.qfValue || '';
       updateQuickPickerLabel(key);
       closeQuickPopup();
+      window.applyGlobalSearch();
       return;
     }
 
@@ -1710,6 +1788,7 @@ include __DIR__ . '/../../includes/header.php';
   };
 
   ['company','type','gsm','status'].forEach(updateQuickPickerLabel);
+  Object.keys(activeColFilters).forEach(updateFilterButton);
 
   applyAllFilters();
 

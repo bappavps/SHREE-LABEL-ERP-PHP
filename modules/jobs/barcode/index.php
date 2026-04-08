@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/../../../includes/functions.php';
+
 $dcPageTitleOperator = 'Barcode Operator';
 $dcPageTitleProduction = 'Barcode Job Cards';
 $dcOperatorBreadcrumb = 'Barcode Operator';
@@ -17,6 +19,11 @@ $dcHeightLabel = 'Height';
 $dcPaperWidthLabel = 'Paper Width (mm)';
 $dcShowPaperCompanyInDetails = false;
 $dcDefaultFilter = 'Pending';
+$dcCanManualRollEntry = hasPageAction('/modules/jobs/barcode/index.php', 'edit')
+    || hasPageAction('/modules/operators/barcode/index.php', 'edit')
+    || hasRole('manager', 'system_admin', 'super_admin')
+    || isAdmin();
+$dcRequireRollScan = true;
 $dcWhereClauseOverride = "(
     LOWER(COALESCE(j.department, '')) IN ('barcode')
     OR LOWER(COALESCE(j.job_type, '')) IN ('barcode')

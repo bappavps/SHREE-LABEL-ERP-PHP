@@ -224,6 +224,32 @@ function jobs_department_label(string $department): string {
     return trim((string)preg_replace('/\s+/', ' ', ucwords($department)));
 }
 
+function jobs_can_manual_roll_entry_for_job(array $job): bool {
+    if (isAdmin() || hasRole('manager', 'system_admin', 'super_admin')) {
+        return true;
+    }
+
+    $jobType = strtolower(trim((string)($job['job_type'] ?? '')));
+    $dept = strtolower(trim((string)($job['department'] ?? '')));
+
+    $isJumbo = ($jobType === 'slitting' && $dept === 'jumbo_slitting')
+        || in_array($jobType, ['jumbo', 'jumbo_slitting'], true)
+        || $dept === 'jumbo_slitting';
+
+    if ($isJumbo) {
+        return hasPageAction('/modules/jobs/jumbo/index.php', 'edit')
+            || hasPageAction('/modules/operators/jumbo/index.php', 'edit');
+    }
+
+    $isPrinting = in_array($jobType, ['printing', 'flexo'], true) || $dept === 'flexo_printing';
+    if ($isPrinting) {
+        return hasPageAction('/modules/jobs/printing/index.php', 'edit')
+            || hasPageAction('/modules/operators/printing/index.php', 'edit');
+    }
+
+    return false;
+}
+
 function jobs_display_job_name(array $job): string {
     $planningName = trim((string)($job['planning_job_name'] ?? ''));
     if ($planningName !== '') return $planningName;
@@ -979,6 +1005,14 @@ try {
 
         // Update job status + timestamps
         if ($newStatus === 'Running') {
+            $verifiedMode = strtolower(trim((string)($_POST['verified_rolls_mode'] ?? '')));
+            $manualModeRequested = strpos($verifiedMode, 'manual') !== false;
+            if ($manualModeRequested && !jobs_can_manual_roll_entry_for_job($job)) {
+                try { $db->rollback(); } catch (Throwable $e) {}
+                echo json_encode(['ok' => false, 'error' => 'Manual roll verification is not allowed for this account. Please use QR scan only.']);
+                break;
+            }
+
             $isJumboSlitting = (strtolower(trim((string)($job['job_type'] ?? ''))) === 'slitting')
                 && (strtolower(trim((string)($job['department'] ?? ''))) === 'jumbo_slitting');
             if ($isJumboSlitting) {
@@ -1177,6 +1211,35 @@ try {
                 }
             }
         } elseif (in_array($newStatus, ['Closed', 'Finalized', 'Completed'], true) && $job['roll_no']) {
+            $extraClose = json_decode((string)($job['extra_data'] ?? '{}'), true) ?: [];
+            $isDirectPrintingBypass = !empty($extraClose['direct_flexo_bypass'])
+                && (in_array(strtolower(trim((string)($job['job_type'] ?? ''))), ['printing', 'flexo'], true)
+                    || strtolower(trim((string)($job['department'] ?? ''))) === 'flexo_printing');
+            if ($isDirectPrintingBypass) {
+                $assignedChildRolls = is_array($extraClose['assigned_child_rolls'] ?? null) ? $extraClose['assigned_child_rolls'] : [];
+                foreach ($assignedChildRolls as $assignedRoll) {
+                    $assignedRollNo = trim((string)($assignedRoll['roll_no'] ?? ''));
+                    if ($assignedRollNo === '') continue;
+                    $updAssigned = $db->prepare("UPDATE paper_stock SET status = 'Job Assign' WHERE roll_no = ? AND status = 'Slitting'");
+                    $updAssigned->bind_param('s', $assignedRollNo);
+                    $updAssigned->execute();
+                }
+            }
+
+            $isDirectBarcodeBypass = !empty($extraClose['direct_barcode_bypass'])
+                && (in_array(strtolower(trim((string)($job['job_type'] ?? ''))), ['finishing'], true)
+                    && strtolower(trim((string)($job['department'] ?? ''))) === 'barcode');
+            if ($isDirectBarcodeBypass) {
+                $assignedChildRolls = is_array($extraClose['assigned_child_rolls'] ?? null) ? $extraClose['assigned_child_rolls'] : [];
+                foreach ($assignedChildRolls as $assignedRoll) {
+                    $assignedRollNo = trim((string)($assignedRoll['roll_no'] ?? ''));
+                    if ($assignedRollNo === '') continue;
+                    $updAssigned = $db->prepare("UPDATE paper_stock SET status = 'Job Assign' WHERE roll_no = ? AND status = 'Slitting'");
+                    $updAssigned->bind_param('s', $assignedRollNo);
+                    $updAssigned->execute();
+                }
+            }
+
             // Non-slitting jobs: simple parent roll update
             $updRoll = $db->prepare("UPDATE paper_stock SET status = 'Slitted' WHERE roll_no = ? AND status = 'Slitting'");
             $updRoll->bind_param('s', $job['roll_no']);
