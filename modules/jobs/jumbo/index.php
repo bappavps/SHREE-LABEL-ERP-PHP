@@ -3,7 +3,12 @@ require_once __DIR__ . '/../../../config/db.php';
 require_once __DIR__ . '/../../../includes/functions.php';
 require_once __DIR__ . '/../../../includes/auth_check.php';
 
-$isOperatorView = (string)($_GET['view'] ?? '') === 'operator';
+$statusCtx = erp_status_context();
+$isOperatorView = (bool)($statusCtx['is_operator_view'] ?? false);
+$canManualRollEntry = hasPageAction('/modules/jobs/jumbo/index.php', 'edit')
+  || hasPageAction('/modules/operators/jumbo/index.php', 'edit')
+  || hasRole('manager', 'system_admin', 'super_admin')
+  || isAdmin();
 $canDeleteJobs = isAdmin() && !$isOperatorView;
 $pageTitle = $isOperatorView ? 'Jumbo Operator' : 'Jumbo Job Cards';
 $db = getDB();
@@ -395,6 +400,66 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-timer-btn-cancel:hover{background:#475569}
 .jc-timer-btn-end{background:#16a34a;color:#fff}
 .jc-timer-btn-end:hover{background:#15803d}
+
+/* Start Verification Modal */
+.jv-overlay{position:fixed;inset:0;z-index:30000;background:rgba(15,23,42,.72);display:flex;align-items:center;justify-content:center;padding:16px}
+.jv-modal{background:#fff;border-radius:14px;max-width:860px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 22px 56px rgba(2,6,23,.35)}
+.jv-head{padding:14px 16px;border-bottom:1px solid #e2e8f0;background:linear-gradient(135deg,#f0fdf4,#ffffff);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.jv-title{font-size:1rem;font-weight:900;color:#14532d;display:flex;align-items:center;gap:8px}
+.jv-sub{font-size:.72rem;color:#475569;font-weight:700}
+.jv-body{padding:14px;display:grid;gap:12px}
+.jv-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:12px}
+.jv-card{border:1px solid #d1e7dd;border-radius:10px;background:#fff;overflow:hidden}
+.jv-card h4{margin:0;padding:9px 11px;font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.04em;color:#166534;background:#f0fdf4;border-bottom:1px solid #d1e7dd}
+.jv-roll-list{max-height:280px;overflow:auto}
+.jv-roll-row{display:grid;grid-template-columns:1fr auto;gap:8px;padding:9px 11px;border-bottom:1px solid #f1f5f9}
+.jv-roll-row:last-child{border-bottom:none}
+.jv-roll-no{font-size:.8rem;font-weight:900;color:#0f172a}
+.jv-roll-meta{font-size:.68rem;color:#64748b;font-weight:700}
+.jv-pill{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:3px 9px;font-size:.62rem;font-weight:900;letter-spacing:.03em;text-transform:uppercase}
+.jv-pill-pending{background:#fef9c3;color:#854d0e}
+.jv-pill-ok{background:#dcfce7;color:#166534}
+.jv-tools{display:grid;gap:10px;padding:11px}
+.jv-tool-btn{padding:8px 11px;border-radius:8px;border:1px solid #d1d5db;background:#fff;color:#334155;font-size:.73rem;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.jv-tool-btn:hover{background:#f8fafc}
+.jv-tool-btn-main{background:#166534;border-color:#166534;color:#fff}
+.jv-tool-btn-main:hover{background:#14532d}
+.jv-tool-btn-stop{background:#fee2e2;border-color:#fecaca;color:#b91c1c}
+.jv-tool-btn-stop:hover{background:#fecaca}
+.jv-readonly{width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:.78rem;font-weight:700;background:#f8fafc;color:#0f172a}
+.jv-input{width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:.8rem;font-weight:700;color:#0f172a}
+.jv-input:focus{outline:none;border-color:#16a34a;box-shadow:0 0 0 2px rgba(22,163,74,.14)}
+.jv-input:disabled{background:#f1f5f9;color:#94a3b8;cursor:not-allowed;opacity:.6}
+.jv-tool-btn:disabled{opacity:.5;cursor:not-allowed;color:#94a3b8}
+.jv-manual-section-restricted{opacity:.7;animation:pulse-restrict 2s infinite}
+@keyframes pulse-restrict{0%,100%{opacity:.7}50%{opacity:.85}}
+.jv-scan-box{border:1px dashed #94a3b8;border-radius:10px;padding:8px;background:#f8fafc;min-height:160px}
+.jv-scanner{width:100%;min-height:140px}
+.jv-msg{padding:9px 11px;border-radius:9px;font-size:.76rem;font-weight:800;display:none}
+.jv-msg.show{display:block}
+.jv-msg-info{background:#e0f2fe;color:#075985;border:1px solid #bae6fd}
+.jv-msg-ok{background:#dcfce7;color:#166534;border:1px solid #bbf7d0}
+.jv-msg-warn{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.jv-msg-bad{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}
+.jv-foot{padding:12px 14px;border-top:1px solid #e2e8f0;background:#f8fafc;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.jv-progress{font-size:.78rem;font-weight:900;color:#0f172a}
+.jv-actions{display:flex;gap:8px;flex-wrap:wrap}
+.jv-toast-wrap{position:fixed;right:14px;top:14px;z-index:31000;display:grid;gap:8px;max-width:360px}
+.jv-toast{border-radius:10px;padding:10px 12px;border:1px solid #e2e8f0;background:#fff;box-shadow:0 10px 24px rgba(2,6,23,.18);font-size:.78rem;font-weight:800;color:#0f172a;animation:jv-toast-in .16s ease}
+.jv-toast.ok{border-color:#bbf7d0;background:#f0fdf4;color:#166534}
+.jv-toast.warn{border-color:#fde68a;background:#fffbeb;color:#92400e}
+.jv-toast.bad{border-color:#fecaca;background:#fef2f2;color:#991b1b}
+@keyframes jv-toast-in{from{transform:translateY(-6px);opacity:0}to{transform:translateY(0);opacity:1}}
+.jx-overlay{position:fixed;inset:0;z-index:32000;background:rgba(15,23,42,.62);display:flex;align-items:center;justify-content:center;padding:14px}
+.jx-modal{width:100%;max-width:460px;background:#fff;border-radius:12px;border:1px solid #e2e8f0;box-shadow:0 20px 52px rgba(2,6,23,.3);overflow:hidden}
+.jx-head{padding:11px 13px;background:linear-gradient(135deg,#f8fafc,#ffffff);border-bottom:1px solid #e2e8f0;font-size:.82rem;font-weight:900;color:#0f172a}
+.jx-body{padding:12px 13px;display:grid;gap:10px}
+.jx-msg{font-size:.8rem;line-height:1.45;color:#334155;font-weight:700;white-space:pre-line}
+.jx-input{width:100%;padding:9px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:.8rem;font-weight:700;color:#0f172a}
+.jx-input:focus{outline:none;border-color:#16a34a;box-shadow:0 0 0 2px rgba(22,163,74,.14)}
+.jx-foot{padding:11px 13px;border-top:1px solid #e2e8f0;background:#f8fafc;display:flex;justify-content:flex-end;gap:8px}
+@media(max-width:860px){.jv-grid{grid-template-columns:1fr}}
+@media(max-width:640px){.jv-overlay{padding:0;align-items:stretch}.jv-modal{max-width:none;max-height:100dvh;height:100dvh;border-radius:0}.jv-head{padding:12px;align-items:flex-start}.jv-title{font-size:.92rem}.jv-sub{font-size:.68rem;line-height:1.45}.jv-body{padding:12px;gap:10px}.jv-grid{grid-template-columns:1fr;gap:10px}.jv-grid>.jv-card:first-child{order:2}.jv-grid>.jv-card:last-child{order:1}.jv-roll-list{max-height:none}.jv-roll-row{grid-template-columns:1fr;gap:6px;padding:10px}.jv-tools{padding:10px}.jv-tool-btn{width:100%;min-height:42px;font-size:.82rem}.jv-readonly,.jv-input{font-size:.9rem;padding:10px 12px}.jv-scan-box{min-height:260px;padding:6px}.jv-scanner{min-height:248px}.jv-foot{padding:12px;align-items:stretch}.jv-progress{width:100%;font-size:.84rem}.jv-actions{width:100%}.jv-actions .jc-action-btn{flex:1 1 100%;justify-content:center;min-height:44px}.jx-overlay{padding:0;align-items:flex-end}.jx-modal{max-width:none;border-radius:16px 16px 0 0}}
 /* ── Upload area ── */
 .jc-upload-zone{border:2px dashed #d1e7dd;border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all .2s}
 .jc-upload-zone:hover{border-color:var(--jc-brand);background:#f0fdf4}
@@ -834,6 +899,7 @@ $historyCount = $finishedCount;
 <!-- ═══ PRINT AREA (hidden, used for browser print) ═══ -->
 <div class="jc-print-area" id="jcPrintArea"></div>
 
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/qrcode.min.js"></script>
 <script>
 const CSRF = '<?= e($csrf) ?>';
@@ -844,6 +910,7 @@ const APP_FOOTER_RIGHT = <?= json_encode($appFooterRight, JSON_HEX_TAG|JSON_HEX_
 const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const ALL_JOBS = <?= json_encode(array_values(array_merge($activeJobs, $historyJobs)), JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const IS_OPERATOR_VIEW = <?= $isOperatorView ? 'true' : 'false' ?>;
+const CAN_MANUAL_ROLL_ENTRY = <?= $canManualRollEntry ? 'true' : 'false' ?>;
 const IS_ADMIN = <?= $canDeleteJobs ? 'true' : 'false' ?>;
 const JC_AUTO_REFRESH_MS = 45000;
 const RC_REQUEST_CACHE = {};
@@ -1128,7 +1195,7 @@ function htDeselectAll() {
 
 function htBulkPrint() {
   const ids = Array.from(document.querySelectorAll('.ht-row-cb:checked')).map(function(cb) { return cb.dataset.jobId; });
-  if (!ids.length) { alert('No history job selected'); return; }
+  if (!ids.length) { jumboNotify('No history job selected', 'warn'); return; }
 
   const jobs = ids.map(function(id) { return ALL_JOBS.find(function(j) { return j.id == id; }); }).filter(Boolean);
   if (!jobs.length) return;
@@ -1155,10 +1222,10 @@ function htBulkPrint() {
 }
 
 async function htBulkDelete() {
-  if (!IS_ADMIN) { alert('Access denied. Only system admin can delete job cards.'); return; }
+  if (!IS_ADMIN) { jumboNotify('Access denied. Only system admin can delete job cards.', 'bad'); return; }
   const ids = Array.from(document.querySelectorAll('.ht-row-cb:checked')).map(cb => cb.dataset.jobId);
-  if (!ids.length) { alert('No history jobs selected'); return; }
-  if (!confirm(`Delete ${ids.length} selected job card(s)?\n\nThis will reset linked paper stock, planning status, and downstream queued jobs for each.`)) return;
+  if (!ids.length) { jumboNotify('No history jobs selected', 'warn'); return; }
+  if (!(await jumboConfirm(`Delete ${ids.length} selected job card(s)?\n\nThis will reset linked paper stock, planning status, and downstream queued jobs for each.`, 'Confirm Bulk Delete'))) return;
 
   let ok = 0, failed = 0, errors = [];
   for (const id of ids) {
@@ -1178,7 +1245,7 @@ async function htBulkDelete() {
       }
     } catch (err) { failed++; errors.push('ID ' + id + ': ' + err.message); }
   }
-  if (errors.length) alert(`Deleted: ${ok}, Failed: ${failed}\n\n${errors.join('\n')}`);
+  if (errors.length) jumboNotify(`Deleted: ${ok}, Failed: ${failed}`, failed > 0 ? 'warn' : 'ok');
   if (ok > 0) location.reload();
 }
 
@@ -1213,7 +1280,7 @@ setInterval(function() {
 
 // ─── Status update ──────────────────────────────────────────
 async function updateJobStatus(id, newStatus) {
-  if (!confirm('Set this job to ' + newStatus + '?')) return;
+  if (!(await jumboConfirm('Set this job to ' + newStatus + '?', 'Confirm Status Change'))) return;
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
   fd.append('action', 'update_status');
@@ -1223,8 +1290,8 @@ async function updateJobStatus(id, newStatus) {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
     if (data.ok) location.reload();
-    else alert('Error: ' + (data.error || 'Unknown'));
-  } catch (err) { alert('Network error: ' + err.message); }
+    else jumboNotify('Error: ' + (data.error || 'Unknown'), 'bad');
+  } catch (err) { jumboNotify('Network error: ' + err.message, 'bad'); }
 }
 
 // ─── Timer overlay (Flexo-style) ────────────────────────────
@@ -1362,7 +1429,7 @@ async function endRunningJumboTimer(jobId) {
   try {
     await markJumboTimerEnded(jobId);
   } catch (err) {
-    alert('Timer end failed: ' + err.message);
+    jumboNotify('Timer end failed: ' + err.message, 'bad');
     return;
   }
 
@@ -1371,23 +1438,620 @@ async function endRunningJumboTimer(jobId) {
   openJobDetail(jobId, 'complete');
 }
 
+let _jumboVerifierScanner = null;
+let _jumboVerifierNativeStream = null;
+let _jumboVerifierNativeTimer = null;
+let _jumboVerifierScannerMode = '';
+
+function jumboNotify(text, kind) {
+  const t = String(text || '').trim();
+  if (!t) return;
+  if (typeof showToast === 'function') {
+    showToast(t, kind === 'bad' ? 'error' : (kind || 'info'));
+    return;
+  }
+
+  let wrap = document.getElementById('jvToastWrap');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'jvToastWrap';
+    wrap.className = 'jv-toast-wrap';
+    document.body.appendChild(wrap);
+  }
+  const toast = document.createElement('div');
+  toast.className = 'jv-toast ' + (kind || 'info');
+  toast.textContent = t;
+  wrap.appendChild(toast);
+  setTimeout(function() {
+    if (toast && toast.parentNode) toast.parentNode.removeChild(toast);
+    if (wrap && wrap.childElementCount === 0 && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+  }, 2600);
+}
+
+function jumboConfirm(message, title) {
+  return new Promise(function(resolve) {
+    const overlay = document.createElement('div');
+    overlay.className = 'jx-overlay';
+    overlay.innerHTML = `
+      <div class="jx-modal">
+        <div class="jx-head">${esc(title || 'Please Confirm')}</div>
+        <div class="jx-body"><div class="jx-msg">${esc(message || '')}</div></div>
+        <div class="jx-foot">
+          <button type="button" class="jc-action-btn jc-btn-view" id="jxCancelBtn">Cancel</button>
+          <button type="button" class="jc-action-btn jc-btn-start" id="jxOkBtn">Confirm</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    let done = false;
+    function finish(val) {
+      if (done) return;
+      done = true;
+      if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      resolve(!!val);
+    }
+
+    overlay.querySelector('#jxCancelBtn').addEventListener('click', function(){ finish(false); });
+    overlay.querySelector('#jxOkBtn').addEventListener('click', function(){ finish(true); });
+    overlay.addEventListener('click', function(ev) { if (ev.target === overlay) finish(false); });
+  });
+}
+
+function jumboPrompt(message, defaultValue, title) {
+  return new Promise(function(resolve) {
+    const overlay = document.createElement('div');
+    overlay.className = 'jx-overlay';
+    overlay.innerHTML = `
+      <div class="jx-modal">
+        <div class="jx-head">${esc(title || 'Input Required')}</div>
+        <div class="jx-body">
+          <div class="jx-msg">${esc(message || '')}</div>
+          <input type="text" class="jx-input" id="jxPromptInput" value="${esc(defaultValue || '')}">
+        </div>
+        <div class="jx-foot">
+          <button type="button" class="jc-action-btn jc-btn-view" id="jxPromptCancel">Cancel</button>
+          <button type="button" class="jc-action-btn jc-btn-start" id="jxPromptOk">Submit</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const input = overlay.querySelector('#jxPromptInput');
+    if (input) {
+      input.focus();
+      input.select();
+    }
+
+    let done = false;
+    function finish(val) {
+      if (done) return;
+      done = true;
+      if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      resolve(val);
+    }
+
+    overlay.querySelector('#jxPromptCancel').addEventListener('click', function(){ finish(null); });
+    overlay.querySelector('#jxPromptOk').addEventListener('click', function(){ finish(String(input?.value || '')); });
+    overlay.addEventListener('click', function(ev) { if (ev.target === overlay) finish(null); });
+    overlay.addEventListener('keydown', function(ev) {
+      if (ev.key === 'Escape') { ev.preventDefault(); finish(null); }
+      if (ev.key === 'Enter') { ev.preventDefault(); finish(String(input?.value || '')); }
+    });
+  });
+}
+
+function jumboNormalizeRollNo(val) {
+  return String(val || '').trim().toUpperCase();
+}
+
+function jumboExtractRollNoFromQr(rawValue) {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return '';
+
+  try {
+    const u = new URL(raw);
+    const qRoll = u.searchParams.get('roll_no') || u.searchParams.get('roll') || u.searchParams.get('rn') || '';
+    if (String(qRoll).trim()) return String(qRoll).trim();
+  } catch (e) {}
+
+  const named = raw.match(/(?:roll\s*no|roll_no|roll)\s*[:=\-]\s*([A-Za-z0-9._\/-]+)/i);
+  if (named && named[1]) return named[1].trim();
+
+  const tokens = raw.split(/[^A-Za-z0-9._\/-]+/).filter(Boolean);
+  if (tokens.length) return tokens[tokens.length - 1].trim();
+
+  return raw;
+}
+
+function jumboBuildRequiredParentRolls(job) {
+  const extra = (job && job.extra_data_parsed) ? job.extra_data_parsed : {};
+  const out = [];
+  const uniq = {};
+
+  function addRoll(rollNo, meta) {
+    const raw = String(rollNo || '').trim();
+    const n = jumboNormalizeRollNo(raw);
+    if (!n || uniq[n]) return;
+    uniq[n] = true;
+    out.push({
+      roll_no: raw,
+      norm: n,
+      paper_type: String((meta && meta.paper_type) || ''),
+      width: (meta && (meta.width ?? meta.width_mm)) ?? '',
+      length: (meta && (meta.length ?? meta.length_mtr)) ?? ''
+    });
+  }
+
+  const p = extra.parent_details || {};
+  addRoll(p.roll_no || extra.parent_roll || job?.roll_no || '', {
+    paper_type: p.paper_type || job?.paper_type || '',
+    width: p.width_mm ?? job?.width_mm ?? '',
+    length: p.length_mtr ?? job?.length_mtr ?? ''
+  });
+
+  const parentRollsRaw = extra.parent_rolls;
+  if (Array.isArray(parentRollsRaw)) {
+    parentRollsRaw.forEach(function(pr) {
+      addRoll(pr, { paper_type: job?.paper_type || '', width: job?.width_mm ?? '', length: job?.length_mtr ?? '' });
+    });
+  } else if (typeof parentRollsRaw === 'string' && parentRollsRaw.trim() !== '') {
+    parentRollsRaw.split(',').forEach(function(pr) {
+      addRoll(pr, { paper_type: job?.paper_type || '', width: job?.width_mm ?? '', length: job?.length_mtr ?? '' });
+    });
+  }
+
+  (Array.isArray(extra.child_rolls) ? extra.child_rolls : []).forEach(function(r) {
+    addRoll(r && r.parent_roll_no ? r.parent_roll_no : '', {
+      paper_type: r?.paper_type || '',
+      width: r?.width ?? r?.width_mm ?? '',
+      length: r?.length ?? r?.length_mtr ?? ''
+    });
+  });
+  (Array.isArray(extra.stock_rolls) ? extra.stock_rolls : []).forEach(function(r) {
+    addRoll(r && r.parent_roll_no ? r.parent_roll_no : '', {
+      paper_type: r?.paper_type || '',
+      width: r?.width ?? r?.width_mm ?? '',
+      length: r?.length ?? r?.length_mtr ?? ''
+    });
+  });
+
+  return out;
+}
+
+function jumboShowVerificationMessage(el, kind, text) {
+  if (!el) return;
+  el.className = 'jv-msg show';
+  const k = String(kind || 'info');
+  if (k === 'ok') el.classList.add('jv-msg-ok');
+  else if (k === 'warn') el.classList.add('jv-msg-warn');
+  else if (k === 'bad') el.classList.add('jv-msg-bad');
+  else el.classList.add('jv-msg-info');
+  el.innerHTML = esc(text || '');
+}
+
+function jumboCloseVerifierScanner() {
+  if (_jumboVerifierNativeTimer) {
+    clearInterval(_jumboVerifierNativeTimer);
+    _jumboVerifierNativeTimer = null;
+  }
+  if (_jumboVerifierNativeStream) {
+    try {
+      (_jumboVerifierNativeStream.getTracks() || []).forEach(function(t) { try { t.stop(); } catch (e) {} });
+    } catch (e) {}
+    _jumboVerifierNativeStream = null;
+  }
+  if (!_jumboVerifierScanner) return Promise.resolve();
+  const inst = _jumboVerifierScanner;
+  _jumboVerifierScanner = null;
+  _jumboVerifierScannerMode = '';
+  if (inst && typeof inst.clear === 'function' && typeof inst.render === 'function') {
+    return inst.clear().catch(function(){});
+  }
+  if (inst && typeof inst.clear === 'function' && typeof inst.stop !== 'function') {
+    return inst.clear().catch(function(){});
+  }
+  if (inst && typeof inst.stop === 'function') {
+    return inst.stop().catch(function(){ }).then(function(){
+      return (typeof inst.clear === 'function') ? inst.clear().catch(function(){}) : Promise.resolve();
+    });
+  }
+  return Promise.resolve();
+}
+
+async function jumboStartNativeBarcodeScanner(containerId, onDecoded) {
+  const container = document.getElementById(containerId);
+  if (!container) throw new Error('Scanner container not found');
+  if (!('BarcodeDetector' in window)) throw new Error('BarcodeDetector API unavailable');
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+    throw new Error('Camera API unavailable');
+  }
+
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: {
+      facingMode: { ideal: 'environment' },
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
+    }
+  });
+  _jumboVerifierNativeStream = stream;
+
+  const video = document.createElement('video');
+  video.setAttribute('playsinline', 'true');
+  video.autoplay = true;
+  video.muted = true;
+  video.style.width = '100%';
+  video.style.borderRadius = '8px';
+  video.srcObject = stream;
+  container.innerHTML = '';
+  container.appendChild(video);
+
+  await video.play();
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const detector = new BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8'] });
+
+  _jumboVerifierNativeTimer = setInterval(async function() {
+    try {
+      if (!video.videoWidth || !video.videoHeight) return;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const codes = await detector.detect(canvas);
+      if (Array.isArray(codes) && codes.length) {
+        const raw = String(codes[0].rawValue || '').trim();
+        if (raw) onDecoded(raw);
+      }
+    } catch (e) {}
+  }, 350);
+}
+
+async function jumboOpenRollVerification(job) {
+  const required = jumboBuildRequiredParentRolls(job);
+  if (!required.length) {
+    return { ok: false, error: 'No parent rolls found for this job.' };
+  }
+
+  const rowMap = {};
+  required.forEach(function(r){ rowMap[r.norm] = r; });
+  const matched = {};
+  const methods = {};
+
+  const overlay = document.createElement('div');
+  overlay.className = 'jv-overlay';
+  overlay.innerHTML = `
+    <div class="jv-modal">
+      <div class="jv-head">
+        <div>
+          <div class="jv-title"><i class="bi bi-upc-scan"></i> Roll Verification Required</div>
+          <div class="jv-sub">Job ${esc(job.job_no || ('#' + job.id))} - verify all parent rolls before starting.</div>
+        </div>
+        <button type="button" class="jc-action-btn jc-btn-view" id="jvCloseBtn"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div class="jv-body">
+        <div id="jvMsg" class="jv-msg"></div>
+        <div class="jv-grid">
+          <div class="jv-card">
+            <h4>Required Parent Rolls</h4>
+            <div class="jv-roll-list" id="jvRollList"></div>
+          </div>
+          <div class="jv-card">
+            <h4>Scan or Manual Entry</h4>
+            <div class="jv-tools">
+              <button type="button" class="jv-tool-btn jv-tool-btn-main" id="jvStartScan"><i class="bi bi-camera"></i> Start QR Scanner</button>
+              <button type="button" class="jv-tool-btn jv-tool-btn-stop" id="jvStopScan" style="display:none"><i class="bi bi-stop-fill"></i> Stop Scanner</button>
+              <input type="file" id="jvScanFile" accept="image/*" capture="environment" style="display:none">
+              <button type="button" class="jv-tool-btn" id="jvScanFromPhoto"><i class="bi bi-image"></i> Scan From Camera Photo</button>
+              <label style="font-size:.63rem;font-weight:900;color:#475569;text-transform:uppercase">Last Scan Value</label>
+              <input type="text" class="jv-readonly" id="jvLastValue" readonly placeholder="No scan yet">
+              <div id="jvManualSection" style="display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;gap:6px">
+                  <label style="font-size:.63rem;font-weight:900;color:#475569;text-transform:uppercase">Manual Roll Input</label>
+                  <span id="jvManualLock" class="jv-pill" style="font-size:.55rem;display:none;background:#fee2e2;color:#991b1b"><i class="bi bi-lock"></i> Operators: Scan Only</span>
+                </div>
+                <input type="text" class="jv-input" id="jvManualValue" placeholder="Type roll no and add">
+                <button type="button" class="jv-tool-btn" id="jvAddManual"><i class="bi bi-keyboard"></i> Add Manual</button>
+              </div>
+              <div class="jv-scan-box"><div id="jvScanner" class="jv-scanner"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="jv-foot">
+        <div class="jv-progress" id="jvProgress">Matched 0 / ${required.length}</div>
+        <div class="jv-actions">
+          <button type="button" class="jc-action-btn jc-btn-view" id="jvCancel">Cancel</button>
+          <button type="button" class="jc-action-btn jc-btn-start" id="jvProceed" disabled>Start Job</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const rollListEl = overlay.querySelector('#jvRollList');
+  const msgEl = overlay.querySelector('#jvMsg');
+  const progressEl = overlay.querySelector('#jvProgress');
+  const proceedBtn = overlay.querySelector('#jvProceed');
+  const lastValEl = overlay.querySelector('#jvLastValue');
+  const manualEl = overlay.querySelector('#jvManualValue');
+  const manualBtn = overlay.querySelector('#jvAddManual');
+  const manualLockBadge = overlay.querySelector('#jvManualLock');
+  const manualSection = overlay.querySelector('#jvManualSection');
+  const startScanBtn = overlay.querySelector('#jvStartScan');
+  const stopScanBtn = overlay.querySelector('#jvStopScan');
+  const scanFromPhotoBtn = overlay.querySelector('#jvScanFromPhoto');
+  const scanFileInput = overlay.querySelector('#jvScanFile');
+
+  // Apply permission controls for manual entry
+  const manualEntryRestricted = !CAN_MANUAL_ROLL_ENTRY;
+  if (manualEntryRestricted) {
+    if (manualLockBadge) manualLockBadge.style.display = '';
+    if (manualSection) manualSection.classList.add('jv-manual-section-restricted');
+    if (manualEl) {
+      manualEl.disabled = true;
+      manualEl.style.opacity = '0.5';
+      manualEl.style.backgroundColor = '#f8fafc';
+      manualEl.style.cursor = 'not-allowed';
+      manualEl.placeholder = 'Manual entry disabled. Use QR Scanner only';
+    }
+    if (manualBtn) {
+      manualBtn.disabled = true;
+      manualBtn.style.opacity = '0.5';
+      manualBtn.style.backgroundColor = '#f1f5f9';
+      manualBtn.style.cursor = 'not-allowed';
+      manualBtn.title = 'Manual roll entry is disabled for your account. Please use QR Scanner.';
+    }
+  }
+
+  function renderList() {
+    rollListEl.innerHTML = required.map(function(r) {
+      const ok = !!matched[r.norm];
+      const method = methods[r.norm] ? ` (${methods[r.norm]})` : '';
+      return `<div class="jv-roll-row">
+        <div>
+          <div class="jv-roll-no">${esc(r.roll_no)}</div>
+          <div class="jv-roll-meta">${esc(r.paper_type || '--')} | ${esc(String(r.width || '--'))} x ${esc(String(r.length || '--'))}</div>
+        </div>
+        <div><span class="jv-pill ${ok ? 'jv-pill-ok' : 'jv-pill-pending'}">${ok ? ('Matched' + method) : 'Pending'}</span></div>
+      </div>`;
+    }).join('');
+
+    const matchedCount = Object.keys(matched).length;
+    progressEl.textContent = `Matched ${matchedCount} / ${required.length}`;
+    proceedBtn.disabled = matchedCount !== required.length;
+  }
+
+  function processRawValue(raw, method) {
+    const source = String(method || 'qr');
+    const shown = String(raw || '').trim();
+    if (lastValEl) lastValEl.value = shown;
+
+    const extracted = jumboExtractRollNoFromQr(raw);
+    const norm = jumboNormalizeRollNo(extracted);
+    if (!norm) {
+      jumboShowVerificationMessage(msgEl, 'bad', 'Could not detect a valid roll number.');
+      return;
+    }
+    if (!rowMap[norm]) {
+      jumboShowVerificationMessage(msgEl, 'bad', `Scanned roll ${extracted} is not assigned to this job.`);
+      return;
+    }
+    if (matched[norm]) {
+      jumboShowVerificationMessage(msgEl, 'warn', `Roll ${rowMap[norm].roll_no} already matched.`);
+      return;
+    }
+    matched[norm] = true;
+    methods[norm] = source.toUpperCase();
+    renderList();
+    const done = Object.keys(matched).length === required.length;
+    jumboShowVerificationMessage(msgEl, done ? 'ok' : 'info', done ? 'All parent rolls matched. You can start the job now.' : `Matched ${rowMap[norm].roll_no}. Continue remaining rolls.`);
+  }
+
+  async function startScanner() {
+    const hasHtml5Scanner = (typeof Html5QrcodeScanner === 'function');
+    const hasNative = ('BarcodeDetector' in window);
+    if (!hasHtml5Scanner && !hasNative) {
+      jumboShowVerificationMessage(msgEl, 'bad', 'Scanner is unavailable on this device/browser. Use manual input.');
+      return;
+    }
+    await jumboCloseVerifierScanner();
+
+    startScanBtn.style.display = 'none';
+    stopScanBtn.style.display = '';
+    jumboShowVerificationMessage(msgEl, 'info', 'Scanner opening...');
+
+    const onScan = function(decodedText) { processRawValue(decodedText, 'qr'); };
+    const onErr = function() {};
+
+    if (hasHtml5Scanner) {
+      try {
+        const readerEl = document.getElementById('jvScanner');
+        if (readerEl) readerEl.innerHTML = '';
+        const scanner = new Html5QrcodeScanner('jvScanner', {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          rememberLastUsedCamera: false,
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.QR_CODE,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8
+          ]
+        }, false);
+        _jumboVerifierScanner = scanner;
+        _jumboVerifierScannerMode = 'html5-render';
+        scanner.render(onScan, onErr);
+        jumboShowVerificationMessage(msgEl, 'info', 'Scanner started. Point camera at parent roll QR code.');
+        return;
+      } catch (fallbackErr) {
+        // Fall through to native fallback below.
+      }
+    }
+
+    if (hasNative) {
+      try {
+        await jumboStartNativeBarcodeScanner('jvScanner', onScan);
+        jumboShowVerificationMessage(msgEl, 'info', 'Native scanner started. Point camera at parent roll QR code.');
+        return;
+      } catch (nativeErr) {}
+    }
+
+    startScanBtn.style.display = '';
+    stopScanBtn.style.display = 'none';
+    jumboShowVerificationMessage(msgEl, 'bad', 'Camera could not start. Allow camera permission, then retry. You can also use Scan From Camera Photo.');
+  }
+
+  async function stopScanner() {
+    await jumboCloseVerifierScanner();
+    startScanBtn.style.display = '';
+    stopScanBtn.style.display = 'none';
+    const stopMsg = CAN_MANUAL_ROLL_ENTRY
+      ? 'Scanner stopped. You can use manual input or restart scanner.'
+      : 'Scanner stopped. Restart scanner to continue verification.';
+    jumboShowVerificationMessage(msgEl, 'info', stopMsg);
+  }
+
+  renderList();
+
+  // Show permission-based initial message
+  if (!CAN_MANUAL_ROLL_ENTRY) {
+    jumboShowVerificationMessage(msgEl, 'info', '<strong>⚠️ Scan Only Mode:</strong> Your account cannot use manual roll entry. Please verify rolls using QR Scanner and then start the job.');
+  } else {
+    jumboShowVerificationMessage(msgEl, 'info', 'Verify parent rolls by scanning QR codes or manually entering roll numbers.');
+  }
+
+  async function scanFromImageFile(file) {
+    if (!file) return;
+    if (typeof Html5Qrcode !== 'function') {
+      jumboShowVerificationMessage(msgEl, 'bad', 'Scanner library is unavailable for image decode.');
+      return;
+    }
+    const tmpId = 'jvScanTmp_' + Date.now();
+    const tmp = document.createElement('div');
+    tmp.id = tmpId;
+    tmp.style.display = 'none';
+    document.body.appendChild(tmp);
+    const qr = new Html5Qrcode(tmpId);
+    try {
+      const decoded = await qr.scanFile(file, true);
+      processRawValue(decoded, 'qr');
+      jumboShowVerificationMessage(msgEl, 'ok', 'QR decoded from image successfully.');
+    } catch (err) {
+      jumboShowVerificationMessage(msgEl, 'bad', 'Could not decode QR from image. Try clearer photo or live camera scan.');
+    } finally {
+      try { await qr.clear(); } catch (e) {}
+      if (tmp && tmp.parentNode) tmp.parentNode.removeChild(tmp);
+    }
+  }
+
+  setTimeout(function() { startScanner(); }, 150);
+
+  return new Promise(function(resolve) {
+    let done = false;
+    function finish(result) {
+      if (done) return;
+      done = true;
+      jumboCloseVerifierScanner().finally(function() {
+        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        resolve(result);
+      });
+    }
+
+    overlay.querySelector('#jvCloseBtn').addEventListener('click', function(){ finish({ ok: false, error: 'Verification cancelled.' }); });
+    overlay.querySelector('#jvCancel').addEventListener('click', function(){ finish({ ok: false, error: 'Verification cancelled.' }); });
+    overlay.querySelector('#jvProceed').addEventListener('click', function(){
+      if (Object.keys(matched).length !== required.length) {
+        jumboShowVerificationMessage(msgEl, 'bad', 'All assigned rolls must be matched before starting.');
+        return;
+      }
+      const verified = required.filter(function(r){ return !!matched[r.norm]; }).map(function(r){ return r.roll_no; });
+      finish({ ok: true, verified_rolls: verified });
+    });
+
+    startScanBtn.addEventListener('click', startScanner);
+    stopScanBtn.addEventListener('click', stopScanner);
+    scanFromPhotoBtn.addEventListener('click', function() { if (scanFileInput) scanFileInput.click(); });
+    scanFileInput.addEventListener('change', function() {
+      const file = scanFileInput.files && scanFileInput.files[0] ? scanFileInput.files[0] : null;
+      scanFromImageFile(file);
+      scanFileInput.value = '';
+    });
+    overlay.querySelector('#jvAddManual').addEventListener('click', function() {
+      // Permission check: operators cannot manually enter rolls
+      if (!CAN_MANUAL_ROLL_ENTRY) {
+        jumboShowVerificationMessage(msgEl, 'bad', 'Manual roll entry is disabled for your account. Please use QR Scanner to verify rolls.');
+        return;
+      }
+      const raw = String(manualEl.value || '').trim();
+      if (!raw) {
+        jumboShowVerificationMessage(msgEl, 'warn', 'Enter a roll number first.');
+        return;
+      }
+      processRawValue(raw, 'manual');
+      manualEl.value = '';
+      manualEl.focus();
+    });
+    manualEl.addEventListener('keydown', function(ev) {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        // Permission check: operators cannot manually enter rolls
+        if (!CAN_MANUAL_ROLL_ENTRY) {
+          jumboShowVerificationMessage(msgEl, 'bad', 'Manual roll entry is disabled for your account. Please use QR Scanner to verify rolls.');
+          return;
+        }
+        overlay.querySelector('#jvAddManual').click();
+      }
+    });
+  });
+}
+
 async function startJobWithTimer(id) {
-  if (!confirm('Start this job?')) return;
+  if (!(await jumboConfirm('Start this job?', 'Confirm Job Start'))) return;
+
+  let job = ALL_JOBS.find(j => j.id == id) || null;
+  const verification = await jumboOpenRollVerification(job || { id: id, job_no: id, extra_data_parsed: {} });
+  if (!verification.ok) {
+    jumboNotify(verification.error || 'Roll verification is required before starting this job.', 'warn');
+    return;
+  }
+
+  const verifiedRolls = Array.isArray(verification.verified_rolls)
+    ? verification.verified_rolls.map(function(v) { return String(v || '').trim(); }).filter(Boolean)
+    : [];
+  if (!verifiedRolls.length) {
+    jumboNotify('Roll verification did not capture any parent roll. Please verify again.', 'bad');
+    return;
+  }
+
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
   fd.append('action', 'update_status');
   fd.append('job_id', id);
   fd.append('status', 'Running');
+  fd.append('verified_rolls_json', JSON.stringify(verifiedRolls));
+  fd.append('verified_rolls_csv', verifiedRolls.join(','));
+  fd.append('verified_rolls_count', String(verifiedRolls.length));
+  verifiedRolls.forEach(function(rollNo) {
+    fd.append('verified_rolls[]', rollNo);
+  });
+  fd.append('verified_rolls_mode', 'qr_manual');
   try {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
-    const data = await res.json();
-    if (!data.ok) { alert('Error: ' + (data.error || 'Unknown')); return; }
-  } catch (err) { alert('Network error: ' + err.message); return; }
+    const raw = await res.text();
+    let data = null;
+    try { data = JSON.parse(raw); } catch (parseErr) {
+      jumboNotify('Server returned invalid response. ' + raw.slice(0, 120), 'bad');
+      return;
+    }
+    if (!data.ok) { jumboNotify('Start failed: ' + (data.error || 'Unknown error'), 'bad'); return; }
+  } catch (err) { jumboNotify('Network error: ' + err.message, 'bad'); return; }
 
   document.getElementById('jcDetailModal').classList.remove('active');
   _timerJobId = id;
   _timerStart = Date.now();
-  const job = ALL_JOBS.find(j => j.id == id) || {};
+  job = ALL_JOBS.find(j => j.id == id) || {};
   job.status = 'Running';
   job.started_at = new Date().toISOString();
   job.extra_data_parsed = job.extra_data_parsed || {};
@@ -1416,6 +2080,7 @@ async function startJobWithTimer(id) {
     </div>
   `;
   document.body.appendChild(overlay);
+  jumboNotify('Job started successfully.', 'ok');
 
   _timerInterval = setInterval(() => {
     const diff = Math.floor((Date.now() - _timerStart) / 1000);
@@ -1501,7 +2166,7 @@ function buildJumboExtraDataFromForm(form) {
 async function submitAndClose(id) {
   const job = ALL_JOBS.find(j => j.id == id) || {};
   if (isJumboTimerActive(job)) {
-    alert('Timer is still running. Please End the timer before finishing this job.');
+    jumboNotify('Timer is still running. Please End the timer before finishing this job.', 'warn');
     return;
   }
   const form = document.getElementById('dm-operator-form');
@@ -1518,8 +2183,8 @@ async function submitAndClose(id) {
   try {
     const r1 = await fetch(API_BASE, { method: 'POST', body: fd1 });
     const d1 = await r1.json();
-    if (!d1.ok) { alert('Save error: ' + (d1.error||'Unknown')); return; }
-  } catch(e) { alert('Network error'); return; }
+    if (!d1.ok) { jumboNotify('Save error: ' + (d1.error||'Unknown'), 'bad'); return; }
+  } catch(e) { jumboNotify('Network error', 'bad'); return; }
 
   // Now close
   await updateJobStatus(id, 'Closed');
@@ -1810,6 +2475,62 @@ async function openJobDetail(id, mode) {
   }
 }
 
+const _openJobDetailCore = openJobDetail;
+openJobDetail = async function(id, mode) {
+  try {
+    return await _openJobDetailCore(id, mode);
+  } catch (err) {
+    const job = ALL_JOBS.find(j => j.id == id) || {};
+    const msg = (err && err.message) ? err.message : 'Unknown error';
+    try { console.error('openJobDetail failed', err); } catch (e) {}
+
+    try {
+      const titleEl = document.getElementById('dm-jobno');
+      const badgeEl = document.getElementById('dm-status-badge');
+      const bodyEl = document.getElementById('dm-body');
+      const footEl = document.getElementById('dm-footer');
+      const modalEl = document.getElementById('jcDetailModal');
+
+      if (titleEl) titleEl.textContent = job.job_no || ('Job #' + id);
+      if (badgeEl) {
+        const sts = String(job.status || 'Pending');
+        const stsClass = {Pending:'pending',Running:'running',Closed:'completed',Finalized:'completed'}[sts] || 'pending';
+        badgeEl.textContent = sts;
+        badgeEl.className = 'jc-badge jc-badge-' + stsClass;
+      }
+
+      if (bodyEl) {
+        bodyEl.innerHTML = '<div class="jc-op-form">'
+          + '<div class="jc-op-section"><div class="jc-op-h"><i class="bi bi-exclamation-triangle"></i> Safe Mode</div>'
+          + '<div class="jc-op-b">'
+          + '<div style="font-size:.8rem;font-weight:800;color:#92400e;background:#fffbeb;border:1px solid #fde68a;padding:10px;border-radius:8px">'
+          + 'Full job card render failed, so a safe fallback view is shown.'
+          + '</div>'
+          + '<div class="jc-op-grid-2">'
+          + '<div class="jc-op-field"><label>Job No</label><div class="fv">' + esc(job.job_no || ('#' + id)) + '</div></div>'
+          + '<div class="jc-op-field"><label>Status</label><div class="fv">' + esc(job.status || 'Pending') + '</div></div>'
+          + '<div class="jc-op-field"><label>Job Name</label><div class="fv">' + esc(resolveJobDisplayName(job)) + '</div></div>'
+          + '<div class="jc-op-field"><label>Roll No</label><div class="fv">' + esc(job.roll_no || '--') + '</div></div>'
+          + '</div>'
+          + '<div style="font-size:.74rem;color:#991b1b;font-weight:800">Error: ' + esc(msg) + '</div>'
+          + '</div></div></div>';
+      }
+
+      if (footEl) {
+        footEl.innerHTML = '<div></div><div style="display:flex;gap:8px">'
+          + '<button class="jc-action-btn jc-btn-view" onclick="closeDetail()"><i class="bi bi-x-lg"></i> Close</button>'
+          + (job && job.id ? ('<button class="jc-action-btn jc-btn-print" onclick="printJobCard(' + Number(job.id) + ')"><i class="bi bi-printer"></i> Print</button>') : '')
+          + '</div>';
+      }
+
+      if (modalEl) modalEl.classList.add('active');
+      jumboNotify('Job card opened in safe mode. Full view render failed.', 'warn');
+    } catch (fallbackErr) {
+      jumboNotify('Job card open failed: ' + msg, 'bad');
+    }
+  }
+};
+
 // ─── Roll Change Comparison Panel ─────────────────────────
 async function loadRollChangeComparison(job) {
   const bodyEl = document.getElementById('dm-body');
@@ -2037,7 +2758,7 @@ function renderUpdateRowsTable(rows, editable, prefix) {
 function toggleSuggestedRollSelection() {
   if (!RC_EDITOR_STATE) return;
   RC_EDITOR_STATE.suggestedSelected = true;
-  alert('Suggested roll selected. Old parent roll will be restored to previous status on Update.');
+  jumboNotify('Suggested roll selected. Old parent roll will be restored to previous status on Update.', 'info');
 }
 
 function collectManagerUpdateRows() {
@@ -2071,19 +2792,19 @@ function collectManagerUpdateRows() {
 async function applyManagerRollUpdate() {
   if (!RC_EDITOR_STATE) return;
   if (!RC_EDITOR_STATE.suggestedSelected) {
-    alert('Please select suggested roll before Accept & Update.');
+    jumboNotify('Please select suggested roll before Accept & Update.', 'warn');
     return;
   }
   const rows = collectManagerUpdateRows();
   if (!rows.length) {
-    alert('No suggested rows found to update.');
+    jumboNotify('No suggested rows found to update.', 'warn');
     return;
   }
 
   const btn = document.getElementById('rc-btn-apply-update');
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Updating...'; }
 
-  const note = prompt('Optional manager note for this update:', 'Updated in manager embedded mode');
+  const note = await jumboPrompt('Optional manager note for this update:', 'Updated in manager embedded mode', 'Manager Note');
   if (note === null) {
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-save2"></i> Update'; }
     return;
@@ -2103,13 +2824,13 @@ async function applyManagerRollUpdate() {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
     if (data.ok) {
-      alert('Request accepted and update applied successfully. Same job card/job number kept; selected roll group updated.');
+      jumboNotify('Request accepted and update applied successfully. Same job card/job number kept; selected roll group updated.', 'ok');
       location.reload();
       return;
     }
-    alert('Update failed: ' + (data.error || 'Unknown'));
+    jumboNotify('Update failed: ' + (data.error || 'Unknown'), 'bad');
   } catch (err) {
-    alert('Network error: ' + err.message);
+    jumboNotify('Network error: ' + err.message, 'bad');
   }
   if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-save2"></i> Accept &amp; Update'; }
 }
@@ -2122,7 +2843,7 @@ function rcRow(label, value) {
 async function acceptRollChange(jobId, requestId) {
   const job = ALL_JOBS.find(j => j.id == jobId);
   const jobNo = job ? job.job_no : ('JOB-' + jobId);
-  if (!confirm('Accept roll change for ' + jobNo + '?\n\nThis will:\n• Delete the current job card and all child rolls\n• Restore the original parent roll\n• Recreate the same job (' + jobNo + ') with the new roll\n• Same JMB & PLN IDs will be preserved')) return;
+  if (!(await jumboConfirm('Accept roll change for ' + jobNo + '?\n\nThis will:\n- Delete the current job card and all child rolls\n- Restore the original parent roll\n- Recreate the same job (' + jobNo + ') with the new roll\n- Same JMB & PLN IDs will be preserved', 'Confirm Roll Change'))) return;
 
   const btn = document.querySelector('.rc-btn-accept');
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...'; }
@@ -2137,25 +2858,25 @@ async function acceptRollChange(jobId, requestId) {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
     if (data.ok) {
-      alert('Roll change accepted!\n\n' + (data.job_no || jobNo) + ' recreated with new parent roll: ' + (data.new_parent_roll || '?') + '\n\nOld roll (' + (data.old_parent_roll || '?') + ') has been restored.');
+      jumboNotify('Roll change accepted. ' + (data.job_no || jobNo) + ' recreated with new parent roll: ' + (data.new_parent_roll || '?') + '.', 'ok');
       location.reload();
     } else if (data.blocked_jobs && data.blocked_jobs.length) {
       const rows = data.blocked_jobs.map(b => (b.job_no || ('ID ' + b.id)) + ' [' + b.status + ']').join('\n');
-      alert((data.error || 'Blocked') + '\n\n' + rows);
+      jumboNotify((data.error || 'Blocked') + '. Check dependent jobs first.', 'warn');
       if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-circle"></i> Accept: Delete &amp; Recreate with New Roll'; }
     } else {
-      alert('Error: ' + (data.error || 'Unknown'));
+      jumboNotify('Error: ' + (data.error || 'Unknown'), 'bad');
       if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-circle"></i> Accept: Delete &amp; Recreate with New Roll'; }
     }
   } catch (err) {
-    alert('Network error: ' + err.message);
+    jumboNotify('Network error: ' + err.message, 'bad');
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-circle"></i> Accept: Delete &amp; Recreate with New Roll'; }
   }
 }
 
 // ─── Reject Roll Change Request ──────────────────────────
 async function rejectRollChange(jobId, requestId) {
-  const reason = prompt('Reject this roll change request?\n\nOptionally enter a reason:');
+  const reason = await jumboPrompt('Reject this roll change request?\n\nOptionally enter a reason:', '', 'Reject Request');
   if (reason === null) return; // Cancelled
 
   const fd = new FormData();
@@ -2169,13 +2890,13 @@ async function rejectRollChange(jobId, requestId) {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
     if (data.ok) {
-      alert('Request rejected.');
+      jumboNotify('Request rejected.', 'ok');
       location.reload();
     } else {
-      alert('Error: ' + (data.error || 'Unknown'));
+      jumboNotify('Error: ' + (data.error || 'Unknown'), 'bad');
     }
   } catch (err) {
-    alert('Network error: ' + err.message);
+    jumboNotify('Network error: ' + err.message, 'bad');
   }
 }
 
@@ -2188,8 +2909,8 @@ document.getElementById('jcDetailModal').addEventListener('click', function(e) {
 
 // ─── Delete job (admin) ─────────────────────────────────────
 async function deleteJob(id) {
-  if (!IS_ADMIN) { alert('Access denied. Only system admin can delete job cards.'); return; }
-  if (!confirm('Delete this job card and reset linked paper stock, planning status, and downstream queued jobs?')) return;
+  if (!IS_ADMIN) { jumboNotify('Access denied. Only system admin can delete job cards.', 'bad'); return; }
+  if (!(await jumboConfirm('Delete this job card and reset linked paper stock, planning status, and downstream queued jobs?', 'Confirm Delete'))) return;
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
   fd.append('action', 'delete_job');
@@ -2200,28 +2921,28 @@ async function deleteJob(id) {
     if (data.ok) location.reload();
     else if (data.blocked_jobs && data.blocked_jobs.length) {
       const rows = data.blocked_jobs.map(b => `${b.job_no || ('ID ' + b.id)} [${b.status}]`).join('\n');
-      alert((data.error || 'Delete blocked') + '\n\n' + rows);
+      jumboNotify((data.error || 'Delete blocked') + '. Resolve dependent jobs first.', 'warn');
     }
-    else alert('Error: ' + (data.error || 'Unknown'));
-  } catch (err) { alert('Network error: ' + err.message); }
+    else jumboNotify('Error: ' + (data.error || 'Unknown'), 'bad');
+  } catch (err) { jumboNotify('Network error: ' + err.message, 'bad'); }
 }
 
 // ─── Regenerate same job card (admin) ──────────────────────
 async function regenerateJobCard(id) {
-  if (!IS_ADMIN) { alert('Access denied. Only system admin can regenerate job cards.'); return; }
+  if (!IS_ADMIN) { jumboNotify('Access denied. Only system admin can regenerate job cards.', 'bad'); return; }
   const job = ALL_JOBS.find(j => j.id == id);
-  if (!job) { alert('Job not found.'); return; }
+  if (!job) { jumboNotify('Job not found.', 'bad'); return; }
 
-  const reason = prompt('Reason for regeneration (required):', 'Roll correction / planning update');
+  const reason = await jumboPrompt('Reason for regeneration (required):', 'Roll correction / planning update', 'Regenerate Job Card');
   if (reason === null) return;
   const reasonText = String(reason || '').trim();
-  if (!reasonText) { alert('Reason is required.'); return; }
+  if (!reasonText) { jumboNotify('Reason is required.', 'warn'); return; }
 
-  const notesAppend = prompt('Describe what changed (optional):', '');
+  const notesAppend = await jumboPrompt('Describe what changed (optional):', '', 'Regeneration Notes');
   if (notesAppend === null) return;
 
   const currentRoll = String(job.roll_no || '').trim();
-  const newRollPrompt = prompt('Parent Roll No change (optional). Keep blank to retain current roll:', currentRoll);
+  const newRollPrompt = await jumboPrompt('Parent Roll No change (optional). Keep blank to retain current roll:', currentRoll, 'Parent Roll Update');
   if (newRollPrompt === null) return;
   const newRoll = String(newRollPrompt || '').trim();
 
@@ -2247,13 +2968,13 @@ async function regenerateJobCard(id) {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
     if (!data.ok) {
-      alert('Regenerate failed: ' + (data.error || 'Unknown error'));
+      jumboNotify('Regenerate failed: ' + (data.error || 'Unknown error'), 'bad');
       return;
     }
-    alert('Job card regenerated successfully. Same job number kept and status reset to Pending.');
+    jumboNotify('Job card regenerated successfully. Same job number kept and status reset to Pending.', 'ok');
     location.reload();
   } catch (err) {
-    alert('Network error: ' + err.message);
+    jumboNotify('Network error: ' + err.message, 'bad');
   }
 }
 
@@ -2530,9 +3251,9 @@ function jcDeselectAll() {
 
 function jcBulkPrint() {
   const checkedIds = Array.from(document.querySelectorAll('.jc-select-check:checked')).map(cb => cb.dataset.jobId);
-  if (!checkedIds.length) { alert('No job cards selected'); return; }
+  if (!checkedIds.length) { jumboNotify('No job cards selected', 'warn'); return; }
   const jobs = checkedIds.map(id => ALL_JOBS.find(j => j.id == id)).filter(Boolean);
-  if (!jobs.length) { alert('Could not find selected jobs'); return; }
+  if (!jobs.length) { jumboNotify('Could not find selected jobs', 'bad'); return; }
 
   (async function() {
     const mode = await choosePrintMode();
@@ -2578,7 +3299,7 @@ async function printLabelsForJob(id) {
 
   const uniqueRollNos = Array.from(new Set(rollNos));
   if (!uniqueRollNos.length) {
-    alert('No rolls found for label printing.');
+    jumboNotify('No rolls found for label printing.', 'warn');
     return;
   }
 
@@ -2589,20 +3310,20 @@ async function printLabelsForJob(id) {
     const res = await fetch(url.toString());
     const data = await res.json();
     if (!data.ok) {
-      alert('Error: ' + (data.error || 'Unable to resolve roll IDs'));
+      jumboNotify('Error: ' + (data.error || 'Unable to resolve roll IDs'), 'bad');
       return;
     }
 
     const ids = Array.isArray(data.ids) ? data.ids.filter(Boolean) : [];
     if (!ids.length) {
-      alert('No matching paper stock records found for labels.');
+      jumboNotify('No matching paper stock records found for labels.', 'warn');
       return;
     }
 
     const labelUrl = `${BASE_URL}/modules/paper_stock/label.php?ids=${ids.join(',')}`;
     window.open(labelUrl, '_blank');
   } catch (err) {
-    alert('Network error: ' + (err.message || 'Unknown error'));
+    jumboNotify('Network error: ' + (err.message || 'Unknown error'), 'bad');
   }
 }
 
@@ -2635,11 +3356,7 @@ function generateQR(text) {
   const qs = new URLSearchParams(window.location.search);
   if (qs.get('accepted_done') !== '1') return;
   const msg = 'Accepted done. Paper roll update applied successfully.';
-  if (typeof showToast === 'function') {
-    showToast(msg, 'success');
-  } else {
-    alert(msg);
-  }
+  jumboNotify(msg, 'ok');
 })();
 function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
 // Default to Pending filter on page load

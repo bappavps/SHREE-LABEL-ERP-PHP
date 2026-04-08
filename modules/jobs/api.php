@@ -9,6 +9,17 @@ require_once __DIR__ . '/../../includes/auth_check.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
+// JSON API safety: never emit HTML warnings/notices into response body.
+@ini_set('display_errors', '0');
+@ini_set('html_errors', '0');
+error_reporting(E_ALL);
+set_error_handler(function(int $severity, string $message, string $file, int $line): bool {
+    if (!(error_reporting() & $severity)) {
+        return false;
+    }
+    throw new ErrorException($message, 0, $severity, $file, $line);
+});
+
 $db     = getDB();
 $action = trim($_REQUEST['action'] ?? '');
 $method = $_SERVER['REQUEST_METHOD'];
@@ -67,6 +78,46 @@ function jobs_ensure_delete_audit_table(mysqli $db): void {
         INDEX idx_jda_status (action_status),
         INDEX idx_jda_created_at (created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
+function jobs_collect_verified_rolls(): array {
+    $verified = [];
+
+    $verifiedRaw = trim((string)($_POST['verified_rolls_json'] ?? ''));
+    if ($verifiedRaw !== '') {
+        $decoded = json_decode($verifiedRaw, true);
+        if (is_array($decoded)) {
+            $verified = $decoded;
+        } elseif ($verifiedRaw !== '[]') {
+            $verified = [];
+        }
+    }
+
+    if (empty($verified)) {
+        $posted = $_POST['verified_rolls'] ?? $_POST['verified_rolls[]'] ?? [];
+        if (is_array($posted)) {
+            $verified = $posted;
+        } elseif (is_string($posted) && trim($posted) !== '') {
+            $verified = preg_split('/\s*,\s*/', trim($posted), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        }
+    }
+
+    if (empty($verified)) {
+        $csv = trim((string)($_POST['verified_rolls_csv'] ?? ''));
+        if ($csv !== '') {
+            $verified = preg_split('/\s*,\s*/', $csv, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        }
+    }
+
+    $clean = [];
+    foreach ($verified as $value) {
+        $rollNo = strtoupper(trim((string)$value));
+        if ($rollNo !== '') {
+            $clean[$rollNo] = true;
+        }
+    }
+
+    return array_keys($clean);
 }
 
 function jobs_apply_jumbo_roll_changes(mysqli $db, array $job, array $rows, float $operatorWastageKg, string $operatorRemarks, string $notePrefix = 'Operator remarks'): array {
@@ -928,6 +979,75 @@ try {
 
         // Update job status + timestamps
         if ($newStatus === 'Running') {
+            $isJumboSlitting = (strtolower(trim((string)($job['job_type'] ?? ''))) === 'slitting')
+                && (strtolower(trim((string)($job['department'] ?? ''))) === 'jumbo_slitting');
+            if ($isJumboSlitting) {
+                $validationError = '';
+                $requiredMap = [];
+
+                $parentPrimary = strtoupper(trim((string)($jobExtra['parent_details']['roll_no'] ?? ($jobExtra['parent_roll'] ?? ($job['roll_no'] ?? '')))));
+                if ($parentPrimary !== '') {
+                    $requiredMap[$parentPrimary] = true;
+                }
+
+                $parentRolls = $jobExtra['parent_rolls'] ?? [];
+                if (is_string($parentRolls)) {
+                    $parentRolls = preg_split('/\s*,\s*/', trim($parentRolls), -1, PREG_SPLIT_NO_EMPTY);
+                }
+                if (is_array($parentRolls)) {
+                    foreach ($parentRolls as $pr) {
+                        $rollNo = strtoupper(trim((string)$pr));
+                        if ($rollNo !== '') {
+                            $requiredMap[$rollNo] = true;
+                        }
+                    }
+                }
+
+                foreach (['child_rolls', 'stock_rolls'] as $bucket) {
+                    $rows = is_array($jobExtra[$bucket] ?? null) ? $jobExtra[$bucket] : [];
+                    foreach ($rows as $rr) {
+                        $parentNo = strtoupper(trim((string)($rr['parent_roll_no'] ?? '')));
+                        if ($parentNo !== '') {
+                            $requiredMap[$parentNo] = true;
+                        }
+                    }
+                }
+
+                if (empty($requiredMap)) {
+                    $validationError = 'No parent rolls found for this Jumbo job. Please set parent roll before starting.';
+                }
+
+                $verifiedArr = jobs_collect_verified_rolls();
+
+                $verifiedMap = [];
+                foreach ($verifiedArr as $v) {
+                    $rollNo = strtoupper(trim((string)$v));
+                    if ($rollNo !== '') {
+                        $verifiedMap[$rollNo] = true;
+                    }
+                }
+
+                if ($validationError === '' && empty($verifiedMap)) {
+                    $validationError = 'Parent roll verification incomplete. Please scan at least one parent roll.';
+                }
+
+                $missing = [];
+                foreach (array_keys($requiredMap) as $req) {
+                    if (!isset($verifiedMap[$req])) {
+                        $missing[] = $req;
+                    }
+                }
+                if ($validationError === '' && !empty($missing)) {
+                    $validationError = 'Parent roll verification incomplete. Missing: ' . implode(', ', $missing);
+                }
+
+                if ($validationError !== '') {
+                    try { $db->rollback(); } catch (Throwable $e) {}
+                    echo json_encode(['ok' => false, 'error' => $validationError]);
+                    break;
+                }
+            }
+
             $now = jobs_timer_now();
             $wasPaused = strtolower(trim((string)($jobExtra['timer_state'] ?? ''))) === 'paused';
             $jobExtra['timer_accumulated_seconds'] = jobs_timer_accumulated_seconds($jobExtra);
@@ -3475,7 +3595,7 @@ try {
     }
 
 } catch (Throwable $th) {
-    if ($db->in_transaction ?? false) $db->rollback();
+    try { $db->rollback(); } catch (Throwable $e) {}
     http_response_code(500);
     echo json_encode(['ok' => false, 'error' => 'Server error: ' . $th->getMessage()]);
 }

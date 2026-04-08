@@ -4,6 +4,7 @@ require_once __DIR__ . '/../../../includes/functions.php';
 require_once __DIR__ . '/../../../includes/auth_check.php';
 
 $pageTitle = 'Machine Jumbo Operator';
+$canManualRollEntry = hasRole('admin', 'manager', 'system_admin', 'super_admin') || isAdmin();
 $db = getDB();
 $appSettings = getAppSettings();
 $companyName = $appSettings['company_name'] ?? 'Shree Label Creation';
@@ -812,6 +813,7 @@ const APP_FOOTER_RIGHT = <?= json_encode($appFooterRight, JSON_HEX_TAG|JSON_HEX_
 const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const ALL_JOBS = <?= json_encode(array_values(array_merge($activeJobs, $historyJobs)), JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const IS_ADMIN = false;
+const CAN_MANUAL_ROLL_ENTRY = <?= $canManualRollEntry ? 'true' : 'false' ?>;
 let DM_ACTIVE_JOB_ID = 0;
 let DM_ROLL_FILTERS_LOADED = false;
 let DM_MODAL_LOCKED = false;
@@ -822,6 +824,7 @@ let _timerInterval = null;
 let _timerStart = null;
 let _timerJobId = null;
 let _timerBaseSeconds = 0;
+let JV_START_SCANNER = null;
 
 function isJumboTimerActive(job) {
   return !!(job && job.extra_data_parsed && job.extra_data_parsed.timer_active);
@@ -1456,6 +1459,374 @@ function getJobById(id) {
   return ALL_JOBS.find(j => j.id == id);
 }
 
+function operatorNormalizeRollNo(val) {
+  return String(val || '').trim().toUpperCase();
+}
+
+function operatorBuildRequiredParentRolls(job) {
+  const extra = (job && job.extra_data_parsed) ? job.extra_data_parsed : {};
+  const out = [];
+  const seen = {};
+
+  function addRoll(rollNo, meta) {
+    const raw = String(rollNo || '').trim();
+    const norm = operatorNormalizeRollNo(raw);
+    if (!norm || seen[norm]) return;
+    seen[norm] = true;
+    out.push({
+      roll_no: raw,
+      norm: norm,
+      paper_type: String((meta && meta.paper_type) || ''),
+      width: (meta && (meta.width ?? meta.width_mm)) ?? '',
+      length: (meta && (meta.length ?? meta.length_mtr)) ?? ''
+    });
+  }
+
+  const parent = extra.parent_details || {};
+  addRoll(parent.roll_no || extra.parent_roll || job?.roll_no || '', {
+    paper_type: parent.paper_type || job?.paper_type || '',
+    width: parent.width_mm ?? job?.width_mm ?? '',
+    length: parent.length_mtr ?? job?.length_mtr ?? ''
+  });
+
+  const parentRollsRaw = extra.parent_rolls;
+  if (Array.isArray(parentRollsRaw)) {
+    parentRollsRaw.forEach(function(pr) {
+      addRoll(pr, { paper_type: job?.paper_type || '', width: job?.width_mm ?? '', length: job?.length_mtr ?? '' });
+    });
+  } else if (typeof parentRollsRaw === 'string' && parentRollsRaw.trim() !== '') {
+    parentRollsRaw.split(',').forEach(function(pr) {
+      addRoll(pr, { paper_type: job?.paper_type || '', width: job?.width_mm ?? '', length: job?.length_mtr ?? '' });
+    });
+  }
+
+  (Array.isArray(extra.child_rolls) ? extra.child_rolls : []).forEach(function(row) {
+    addRoll(row && row.parent_roll_no ? row.parent_roll_no : '', {
+      paper_type: row?.paper_type || '',
+      width: row?.width ?? row?.width_mm ?? '',
+      length: row?.length ?? row?.length_mtr ?? ''
+    });
+  });
+  (Array.isArray(extra.stock_rolls) ? extra.stock_rolls : []).forEach(function(row) {
+    addRoll(row && row.parent_roll_no ? row.parent_roll_no : '', {
+      paper_type: row?.paper_type || '',
+      width: row?.width ?? row?.width_mm ?? '',
+      length: row?.length ?? row?.length_mtr ?? ''
+    });
+  });
+
+  return out;
+}
+
+function operatorSetStartVerificationMessage(el, kind, text) {
+  if (!el) return;
+  const palette = {
+    info: ['#eff6ff', '#1d4ed8'],
+    ok: ['#ecfdf5', '#047857'],
+    warn: ['#fffbeb', '#b45309'],
+    bad: ['#fef2f2', '#b91c1c']
+  };
+  const tone = palette[kind] || palette.info;
+  el.style.display = 'block';
+  el.style.background = tone[0];
+  el.style.color = tone[1];
+  el.textContent = text || '';
+}
+
+function operatorCloseStartVerifierScanner() {
+  if (!JV_START_SCANNER) return Promise.resolve();
+  const scanner = JV_START_SCANNER;
+  JV_START_SCANNER = null;
+  if (typeof scanner.clear === 'function') {
+    return scanner.clear().catch(function() {});
+  }
+  return Promise.resolve();
+}
+
+async function operatorOpenRollVerification(job) {
+  const required = operatorBuildRequiredParentRolls(job);
+  if (!required.length) {
+    return { ok: false, error: 'No parent rolls found for this job.' };
+  }
+
+  const isMobileView = window.matchMedia('(max-width: 640px)').matches;
+  const overlayPadding = isMobileView ? '0' : '16px';
+  const modalRadius = isMobileView ? '0' : '18px';
+  const modalHeight = isMobileView ? '100dvh' : 'auto';
+  const modalMaxHeight = isMobileView ? '100dvh' : '90vh';
+  const sectionGrid = isMobileView ? '1fr' : 'minmax(0,1fr) minmax(0,1.15fr)';
+  const sectionPadding = isMobileView ? '12px' : '18px 20px';
+  const footerDirection = isMobileView ? 'column' : 'row';
+  const footerAlign = isMobileView ? 'stretch' : 'center';
+  const actionWidth = isMobileView ? 'width:100%;justify-content:center;min-height:44px' : '';
+  const manualRowDirection = isMobileView ? 'column' : 'row';
+  const scannerMinHeight = isMobileView ? '250px' : '280px';
+  const requiredOrderStyle = isMobileView ? 'order:2;' : '';
+  const scannerOrderStyle = isMobileView ? 'order:1;' : '';
+  const rollRowDirection = isMobileView ? 'flex-direction:column;align-items:flex-start;' : 'align-items:center;';
+  const rollStatusWidth = isMobileView ? 'width:100%;' : '';
+
+  const rowMap = {};
+  required.forEach(function(row) { rowMap[row.norm] = row; });
+  const matched = {};
+  const methods = {};
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.72);z-index:10050;display:flex;align-items:center;justify-content:center;padding:' + overlayPadding;
+  overlay.innerHTML = `
+    <div style="width:min(760px,100%);height:${modalHeight};max-height:${modalMaxHeight};overflow:auto;background:#fff;border-radius:${modalRadius};box-shadow:0 30px 80px rgba(15,23,42,.35)">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:${isMobileView ? '12px' : '18px 20px'};border-bottom:1px solid #e2e8f0">
+        <div>
+          <div style="font-size:1rem;font-weight:900;color:#0f172a">Parent Roll Verification</div>
+          <div style="font-size:.82rem;color:#475569;margin-top:4px">Job ${esc(job?.job_no || ('#' + (job?.id || '')))} - all parent rolls must be matched before start.</div>
+        </div>
+        <button type="button" id="opJvClose" class="jc-action-btn jc-btn-view"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div style="padding:${sectionPadding};display:grid;gap:${isMobileView ? '12px' : '14px'}">
+        <div style="border:1px solid #e2e8f0;border-radius:14px;padding:${isMobileView ? '12px' : '14px'};background:#f8fafc">
+          <div style="font-size:.8rem;font-weight:900;color:#334155;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Required Parent Rolls</div>
+          <div id="opJvList"></div>
+        </div>
+
+        <div id="opJvMsg" style="display:none;padding:10px 12px;border-radius:10px;font-size:.82rem;font-weight:800"></div>
+
+        <div>
+          <label style="display:block;font-size:.66rem;font-weight:900;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Last Scan Value</label>
+          <input type="text" id="opJvLast" readonly style="width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc">
+        </div>
+
+        <div>
+          <label style="display:block;font-size:.66rem;font-weight:900;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">QR Scanner</label>
+          <div id="opJvScanner" style="min-height:${scannerMinHeight};background:#0f172a;border-radius:14px;padding:${isMobileView ? '6px' : '10px'};overflow:hidden"></div>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;${isMobileView ? 'flex-direction:column;' : ''}">
+          <button type="button" id="opJvStart" class="jc-action-btn jc-btn-start" style="${actionWidth}"><i class="bi bi-camera"></i> Start QR Scanner</button>
+          <button type="button" id="opJvStop" class="jc-action-btn jc-btn-view" style="display:none;${actionWidth}"><i class="bi bi-stop-fill"></i> Stop Scan</button>
+          <button type="button" id="opJvFromPhoto" class="jc-action-btn jc-btn-view" style="${actionWidth}"><i class="bi bi-image"></i> Scan Photo</button>
+          <input type="file" id="opJvFile" accept="image/*" capture="environment" style="display:none">
+        </div>
+
+        <div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+            <label style="display:block;font-size:.66rem;font-weight:900;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Manual Roll Input</label>
+            <span id="opJvManualLock" style="display:none;font-size:.6rem;font-weight:900;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:999px;padding:2px 8px">Scan Only</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-direction:${manualRowDirection}">
+            <input type="text" id="opJvManual" style="flex:1;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px" placeholder="Type roll no and add">
+            <button type="button" id="opJvAdd" class="jc-action-btn jc-btn-view" style="${actionWidth}"><i class="bi bi-keyboard"></i> Add</button>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:${footerDirection};justify-content:space-between;gap:12px;align-items:${footerAlign};padding:${isMobileView ? '12px' : '16px 20px'};border-top:1px solid #e2e8f0;background:#f8fafc">
+        <div id="opJvProgress" style="font-size:.84rem;font-weight:900;color:#0f172a;${isMobileView ? 'width:100%;' : ''}">Matched 0 / ${required.length}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;${isMobileView ? 'width:100%;' : ''}">
+          <button type="button" id="opJvCancel" class="jc-action-btn jc-btn-view" style="${actionWidth}">Cancel</button>
+          <button type="button" id="opJvProceed" class="jc-action-btn jc-btn-start" style="${actionWidth}" disabled>Start Job</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const listEl = overlay.querySelector('#opJvList');
+  const msgEl = overlay.querySelector('#opJvMsg');
+  const progressEl = overlay.querySelector('#opJvProgress');
+  const proceedBtn = overlay.querySelector('#opJvProceed');
+  const lastEl = overlay.querySelector('#opJvLast');
+  const manualEl = overlay.querySelector('#opJvManual');
+  const manualBtn = overlay.querySelector('#opJvAdd');
+  const manualLock = overlay.querySelector('#opJvManualLock');
+  const startBtn = overlay.querySelector('#opJvStart');
+  const stopBtn = overlay.querySelector('#opJvStop');
+  const fileInput = overlay.querySelector('#opJvFile');
+
+  if (!CAN_MANUAL_ROLL_ENTRY) {
+    if (manualLock) manualLock.style.display = '';
+    if (manualEl) {
+      manualEl.disabled = true;
+      manualEl.placeholder = 'Manual disabled for this account';
+      manualEl.style.background = '#f8fafc';
+      manualEl.style.opacity = '0.65';
+      manualEl.style.cursor = 'not-allowed';
+    }
+    if (manualBtn) {
+      manualBtn.disabled = true;
+      manualBtn.style.opacity = '0.65';
+      manualBtn.style.cursor = 'not-allowed';
+      manualBtn.title = 'Manual roll entry is disabled for this account.';
+    }
+  }
+
+  function renderList() {
+    listEl.innerHTML = required.map(function(row) {
+      const ok = !!matched[row.norm];
+      const method = methods[row.norm] ? (' (' + methods[row.norm] + ')') : '';
+      return `<div style="display:flex;justify-content:space-between;gap:10px;${rollRowDirection}padding:10px 12px;border-radius:10px;background:${ok ? '#dcfce7' : '#fff'};border:1px solid ${ok ? '#86efac' : '#e2e8f0'};margin-bottom:8px">
+        <div>
+          <div style="font-size:.88rem;font-weight:900;color:#0f172a">${esc(row.roll_no)}</div>
+          <div style="font-size:.75rem;color:#64748b">${esc(row.paper_type || '--')} | ${esc(String(row.width || '--'))} x ${esc(String(row.length || '--'))}</div>
+        </div>
+        <div style="${rollStatusWidth}font-size:.72rem;font-weight:900;text-transform:uppercase;color:${ok ? '#166534' : '#92400e'}">${ok ? ('Matched' + method) : 'Pending'}</div>
+      </div>`;
+    }).join('');
+    const matchedCount = Object.keys(matched).length;
+    progressEl.textContent = 'Matched ' + matchedCount + ' / ' + required.length;
+    proceedBtn.disabled = matchedCount !== required.length;
+  }
+
+  async function processRawValue(rawValue, method) {
+    const shown = String(rawValue || '').trim();
+    if (lastEl) lastEl.value = shown;
+    const extracted = await new Promise(function(resolve) {
+      extractRollNoFromQr(rawValue, function(rollNo) { resolve(String(rollNo || '').trim()); });
+    });
+    const norm = operatorNormalizeRollNo(extracted);
+    if (!norm) {
+      operatorSetStartVerificationMessage(msgEl, 'bad', 'Could not detect a valid roll number.');
+      return;
+    }
+    if (!rowMap[norm]) {
+      operatorSetStartVerificationMessage(msgEl, 'bad', 'Scanned roll ' + extracted + ' is not assigned to this job.');
+      return;
+    }
+    if (matched[norm]) {
+      operatorSetStartVerificationMessage(msgEl, 'warn', 'Roll ' + rowMap[norm].roll_no + ' already matched.');
+      return;
+    }
+    matched[norm] = true;
+    methods[norm] = String(method || 'qr').toUpperCase();
+    renderList();
+    const done = Object.keys(matched).length === required.length;
+    operatorSetStartVerificationMessage(msgEl, done ? 'ok' : 'info', done ? 'All parent rolls matched. You can start the job now.' : ('Matched ' + rowMap[norm].roll_no + '. Continue remaining rolls.'));
+  }
+
+  async function startScanner() {
+    if (typeof Html5QrcodeScanner !== 'function') {
+      operatorSetStartVerificationMessage(msgEl, 'bad', CAN_MANUAL_ROLL_ENTRY ? 'Scanner is unavailable on this device/browser. Use manual input or photo scan.' : 'Scanner is unavailable on this device/browser. Use photo scan.');
+      return;
+    }
+    await operatorCloseStartVerifierScanner();
+    const reader = overlay.querySelector('#opJvScanner');
+    if (reader) reader.innerHTML = '';
+    startBtn.style.display = 'none';
+    stopBtn.style.display = '';
+    operatorSetStartVerificationMessage(msgEl, 'info', 'Scanner opening...');
+    try {
+      JV_START_SCANNER = new Html5QrcodeScanner('opJvScanner', {
+        fps: 10,
+        qrbox: { width: 250, height: 250 },
+        rememberLastUsedCamera: false,
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.QR_CODE,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8
+        ]
+      }, false);
+      JV_START_SCANNER.render(function(decodedText) {
+        processRawValue(decodedText, 'qr');
+      }, function() {});
+      operatorSetStartVerificationMessage(msgEl, 'info', 'Scanner started. Point camera at parent roll QR code.');
+    } catch (err) {
+      startBtn.style.display = '';
+      stopBtn.style.display = 'none';
+      operatorSetStartVerificationMessage(msgEl, 'bad', 'Camera could not start. Allow camera permission and retry.');
+    }
+  }
+
+  async function stopScanner() {
+    await operatorCloseStartVerifierScanner();
+    startBtn.style.display = '';
+    stopBtn.style.display = 'none';
+    operatorSetStartVerificationMessage(msgEl, 'info', 'Scanner stopped.');
+  }
+
+  async function scanFromImageFile(file) {
+    if (!file) return;
+    if (typeof Html5Qrcode !== 'function') {
+      operatorSetStartVerificationMessage(msgEl, 'bad', 'Image scan library is unavailable.');
+      return;
+    }
+    const tempId = 'opJvTmp_' + Date.now();
+    const temp = document.createElement('div');
+    temp.id = tempId;
+    temp.style.display = 'none';
+    document.body.appendChild(temp);
+    const qr = new Html5Qrcode(tempId);
+    try {
+      const decoded = await qr.scanFile(file, true);
+      await processRawValue(decoded, 'qr');
+      operatorSetStartVerificationMessage(msgEl, 'ok', 'QR decoded from image successfully.');
+    } catch (err) {
+      operatorSetStartVerificationMessage(msgEl, 'bad', 'Could not decode QR from image. Try a clearer photo or live scan.');
+    } finally {
+      try { await qr.clear(); } catch (e) {}
+      if (temp.parentNode) temp.parentNode.removeChild(temp);
+    }
+  }
+
+  renderList();
+  if (!CAN_MANUAL_ROLL_ENTRY) {
+    operatorSetStartVerificationMessage(msgEl, 'info', 'Scan Only Mode: manual roll entry is disabled for this account.');
+  }
+  setTimeout(function() { startScanner(); }, 150);
+
+  return new Promise(function(resolve) {
+    let done = false;
+    function finish(result) {
+      if (done) return;
+      done = true;
+      operatorCloseStartVerifierScanner().finally(function() {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        resolve(result);
+      });
+    }
+
+    overlay.querySelector('#opJvClose').addEventListener('click', function() { finish({ ok: false, error: 'Verification cancelled.' }); });
+    overlay.querySelector('#opJvCancel').addEventListener('click', function() { finish({ ok: false, error: 'Verification cancelled.' }); });
+    overlay.querySelector('#opJvProceed').addEventListener('click', function() {
+      if (Object.keys(matched).length !== required.length) {
+        operatorSetStartVerificationMessage(msgEl, 'bad', 'All assigned parent rolls must be matched before start.');
+        return;
+      }
+      finish({ ok: true, verified_rolls: required.map(function(row) { return row.roll_no; }) });
+    });
+    startBtn.addEventListener('click', startScanner);
+    stopBtn.addEventListener('click', stopScanner);
+    overlay.querySelector('#opJvFromPhoto').addEventListener('click', function() { fileInput.click(); });
+    fileInput.addEventListener('change', function() {
+      const file = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+      scanFromImageFile(file);
+      fileInput.value = '';
+    });
+    overlay.querySelector('#opJvAdd').addEventListener('click', function() {
+      if (!CAN_MANUAL_ROLL_ENTRY) {
+        operatorSetStartVerificationMessage(msgEl, 'bad', 'Manual roll entry is disabled for this account. Please scan QR.');
+        return;
+      }
+      const raw = String(manualEl.value || '').trim();
+      if (!raw) {
+        operatorSetStartVerificationMessage(msgEl, 'warn', 'Enter a roll number first.');
+        return;
+      }
+      processRawValue(raw, 'manual');
+      manualEl.value = '';
+      manualEl.focus();
+    });
+    manualEl.addEventListener('keydown', function(ev) {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        if (!CAN_MANUAL_ROLL_ENTRY) {
+          operatorSetStartVerificationMessage(msgEl, 'bad', 'Manual roll entry is disabled for this account. Please scan QR.');
+          return;
+        }
+        overlay.querySelector('#opJvAdd').click();
+      }
+    });
+  });
+}
+
 function closeRollPicker() {
   document.getElementById('dmRollPickerModal')?.classList.remove('active');
 }
@@ -1631,11 +2002,33 @@ async function saveExecutionData(id) {
 
 async function startJobWithTimer(id) {
   if (!confirm('Start this job?')) return;
+
+  const job = getJobById(id) || null;
+  const verification = await operatorOpenRollVerification(job || { id: id, job_no: id, extra_data_parsed: {} });
+  if (!verification.ok) {
+    alert(verification.error || 'Parent roll verification is required before start.');
+    return;
+  }
+
+  const verifiedRolls = Array.isArray(verification.verified_rolls)
+    ? verification.verified_rolls.map(function(v) { return String(v || '').trim(); }).filter(Boolean)
+    : [];
+  if (!verifiedRolls.length) {
+    alert('Roll verification did not capture any parent roll. Please verify again.');
+    return;
+  }
+
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
   fd.append('action', 'update_status');
   fd.append('job_id', id);
   fd.append('status', 'Running');
+  fd.append('verified_rolls_json', JSON.stringify(verifiedRolls));
+  fd.append('verified_rolls_csv', verifiedRolls.join(','));
+  fd.append('verified_rolls_count', String(verifiedRolls.length));
+  verifiedRolls.forEach(function(rollNo) {
+    fd.append('verified_rolls[]', rollNo);
+  });
   try {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
@@ -1647,16 +2040,16 @@ async function startJobWithTimer(id) {
 
   _timerJobId = id;
   _timerStart = Date.now();
-  const job = getJobById(id) || {};
-  job.status = 'Running';
-  job.started_at = new Date().toISOString();
-  job.extra_data_parsed = job.extra_data_parsed || {};
-  job.extra_data_parsed.timer_active = true;
-  job.extra_data_parsed.timer_state = 'running';
-  job.extra_data_parsed.timer_started_at = new Date().toISOString();
-  job.extra_data_parsed.timer_ended_at = '';
+  const activeJob = getJobById(id) || {};
+  activeJob.status = 'Running';
+  activeJob.started_at = new Date().toISOString();
+  activeJob.extra_data_parsed = activeJob.extra_data_parsed || {};
+  activeJob.extra_data_parsed.timer_active = true;
+  activeJob.extra_data_parsed.timer_state = 'running';
+  activeJob.extra_data_parsed.timer_started_at = new Date().toISOString();
+  activeJob.extra_data_parsed.timer_ended_at = '';
 
-  showJumboTimerOverlay(job);
+  showJumboTimerOverlay(activeJob);
 }
 
 async function cancelTimer() {
