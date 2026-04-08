@@ -67,6 +67,9 @@ CREATE TABLE IF NOT EXISTS `paper_stock` (
   `sqm`             DECIMAL(10,4) DEFAULT NULL,
   `lot_batch_no`    VARCHAR(50)   DEFAULT NULL,
   `company_roll_no` VARCHAR(50)   DEFAULT NULL,
+  `parent_roll_no`  VARCHAR(50)   DEFAULT NULL,
+  `source_batch_id` INT           DEFAULT NULL,
+  `source_allocation_id` INT      DEFAULT NULL,
   `status`          ENUM('Main','Stock','Slitting','Job Assign','In Production','Consumed') NOT NULL DEFAULT 'Main',
   `job_no`          VARCHAR(50)   DEFAULT NULL,
   `job_size`        VARCHAR(100)  DEFAULT NULL,
@@ -404,6 +407,8 @@ CREATE TABLE IF NOT EXISTS `slitting_batches` (
   `status`         ENUM('Draft','Executing','Completed') NOT NULL DEFAULT 'Draft',
   `operator_name`  VARCHAR(100) DEFAULT NULL,
   `machine`        VARCHAR(100) DEFAULT NULL,
+  `execution_mode` VARCHAR(30)  DEFAULT 'single_plan',
+  `planning_ids_json` LONGTEXT  DEFAULT NULL,
   `notes`          TEXT         DEFAULT NULL,
   `created_by`     INT          DEFAULT NULL,
   `created_at`     TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
@@ -425,6 +430,11 @@ CREATE TABLE IF NOT EXISTS `slitting_entries` (
   `qty`              INT          NOT NULL DEFAULT 1,
   `mode`             ENUM('WIDTH','LENGTH') NOT NULL DEFAULT 'WIDTH',
   `destination`      ENUM('JOB','STOCK') NOT NULL DEFAULT 'STOCK',
+  `planning_id`      INT          DEFAULT NULL,
+  `plan_no`          VARCHAR(60)  DEFAULT NULL,
+  `allocation_id`    INT          DEFAULT NULL,
+  `allocation_sequence` INT       DEFAULT NULL,
+  `department_route` VARCHAR(255) DEFAULT NULL,
   `job_no`           VARCHAR(50)  DEFAULT NULL,
   `job_name`         VARCHAR(255) DEFAULT NULL,
   `job_size`         VARCHAR(100) DEFAULT NULL,
@@ -434,6 +444,34 @@ CREATE TABLE IF NOT EXISTS `slitting_entries` (
   INDEX `idx_se_parent` (`parent_roll_no`),
   INDEX `idx_se_child` (`child_roll_no`),
   CONSTRAINT `fk_se_batch` FOREIGN KEY (`batch_id`) REFERENCES `slitting_batches`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------
+-- Table: roll_allocations
+-- --------------------------------
+CREATE TABLE IF NOT EXISTS `roll_allocations` (
+  `id`                 INT AUTO_INCREMENT PRIMARY KEY,
+  `batch_id`           INT          NOT NULL,
+  `parent_roll_no`     VARCHAR(50)  NOT NULL,
+  `planning_id`        INT          DEFAULT NULL,
+  `plan_no`            VARCHAR(60)  DEFAULT NULL,
+  `job_name`           VARCHAR(255) DEFAULT NULL,
+  `job_size`           VARCHAR(100) DEFAULT NULL,
+  `department_route`   VARCHAR(255) DEFAULT NULL,
+  `destination`        ENUM('JOB','STOCK') NOT NULL DEFAULT 'JOB',
+  `allocated_width_mm` DECIMAL(10,2) NOT NULL DEFAULT 0,
+  `allocated_length_mtr` DECIMAL(10,2) NOT NULL DEFAULT 0,
+  `allocation_sequence` INT         NOT NULL DEFAULT 1,
+  `status`             ENUM('Allocated','Executed','Cancelled') NOT NULL DEFAULT 'Allocated',
+  `meta_json`          LONGTEXT     DEFAULT NULL,
+  `created_by`         INT          DEFAULT NULL,
+  `created_at`         TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`         TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX `idx_ra_batch` (`batch_id`),
+  INDEX `idx_ra_parent` (`parent_roll_no`),
+  INDEX `idx_ra_plan` (`planning_id`),
+  INDEX `idx_ra_plan_no` (`plan_no`),
+  CONSTRAINT `fk_ra_batch` FOREIGN KEY (`batch_id`) REFERENCES `slitting_batches`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================

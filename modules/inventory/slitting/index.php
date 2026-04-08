@@ -290,6 +290,7 @@ include __DIR__ . '/../../../includes/header.php';
     <p>Precision roll slitting with auto-planning, batch execution &amp; traceability</p>
   </div>
   <div style="display:flex;gap:8px">
+    <a class="btn btn-primary" href="<?= BASE_URL ?>/modules/inventory/slitting/multi-job.php" style="font-weight:700"><i class="bi bi-diagram-3"></i> Multi Job Slitting</a>
     <button class="btn btn-secondary" onclick="SLT.refreshAll()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
   </div>
 </div>
