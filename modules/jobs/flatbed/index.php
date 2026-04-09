@@ -1633,7 +1633,7 @@ async function startJobWithTimer(id) {
     verifiedRolls.forEach(function(rollNo) {
       fd.append('verified_rolls[]', rollNo);
     });
-    fd.append('verified_rolls_mode', 'qr_manual');
+    fd.append('verified_rolls_mode', CAN_MANUAL_ROLL_ENTRY ? 'qr_manual' : 'qr_only');
   }
   try {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
@@ -2614,19 +2614,27 @@ function dcBuildRequiredRolls(job) {
 
   const extra = (job && job.extra_data_parsed) ? job.extra_data_parsed : {};
   const parent = extra.parent_details || {};
-  addRoll(job?.roll_no || parent.roll_no || '', {
-    paper_type: job?.paper_type || parent.paper_type || '',
-    width: job?.width_mm ?? parent.width_mm ?? '',
-    length: job?.length_mtr ?? parent.length_mtr ?? ''
-  });
 
-  if (Array.isArray(extra.parent_rolls)) {
-    extra.parent_rolls.forEach(function(pr) {
+  // If the job came from slitting, extra.parent_rolls contains the assigned child rolls
+  // that the operator must scan. For jobs that went directly from production (no slitting),
+  // extra.parent_rolls is empty, so we fall back to scanning the parent roll.
+  const childRolls = Array.isArray(extra.parent_rolls) ? extra.parent_rolls.filter(function(r) { return String(r || '').trim() !== ''; }) : [];
+
+  if (childRolls.length > 0) {
+    // Job came via slitting — scan child (slit) rolls only
+    childRolls.forEach(function(pr) {
       addRoll(pr, {
         paper_type: job?.paper_type || '',
         width: job?.width_mm ?? '',
         length: job?.length_mtr ?? ''
       });
+    });
+  } else {
+    // Job came directly from production — scan the parent roll
+    addRoll(job?.roll_no || parent.roll_no || '', {
+      paper_type: job?.paper_type || parent.paper_type || '',
+      width: job?.width_mm ?? parent.width_mm ?? '',
+      length: job?.length_mtr ?? parent.length_mtr ?? ''
     });
   }
   return out;
@@ -2740,6 +2748,18 @@ async function dcOpenRollVerification(job) {
   const stopBtn = overlay.querySelector('#dcVStop');
   const fileInput = overlay.querySelector('#dcVFile');
 
+  function updateProceedBtnState() {
+    const matchedCount = Object.keys(matched).length;
+    const canProceed = matchedCount > 0 && matchedCount === required.length;
+    proceedBtn.disabled = !canProceed;
+    proceedBtn.style.opacity = canProceed ? '1' : '0.55';
+    proceedBtn.style.cursor = canProceed ? 'pointer' : 'not-allowed';
+    proceedBtn.style.pointerEvents = canProceed ? 'auto' : 'none';
+  }
+
+  // Force a locked visual + functional state until rolls are matched.
+  updateProceedBtnState();
+
   if (!CAN_MANUAL_ROLL_ENTRY) {
     if (manualLock) manualLock.style.display = '';
     if (manualEl) {
@@ -2772,7 +2792,7 @@ async function dcOpenRollVerification(job) {
     }).join('');
     const matchedCount = Object.keys(matched).length;
     progressEl.textContent = 'Matched ' + matchedCount + ' / ' + required.length;
-    proceedBtn.disabled = matchedCount !== required.length;
+    updateProceedBtnState();
   }
 
   function processRawValue(rawValue, method) {

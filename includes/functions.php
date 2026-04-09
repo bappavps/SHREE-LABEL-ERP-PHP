@@ -905,6 +905,11 @@ function canAccessPath($path) {
         return canAccessPath('/modules/inventory/slitting/index.php');
     }
 
+    // Multi Job Slitting page follows the same permission as slitting index.
+    if ($path === '/modules/inventory/slitting/multi-job.php') {
+        return canAccessPath('/modules/inventory/slitting/index.php');
+    }
+
     // Jobs API is used by Live Floor / Job Card pages for data fetch.
     if ($path === '/modules/jobs/api.php') {
         $allowed = rbacUserAllowedPaths();
