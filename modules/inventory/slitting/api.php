@@ -1850,6 +1850,35 @@ try {
                 if ($route === '') {
                     throw new Exception('Allocation #' . ($idx + 1) . ' missing department route');
                 }
+                $slitRunsRaw = $allocation['slit_runs'] ?? [];
+                if (is_string($slitRunsRaw) && trim($slitRunsRaw) !== '') {
+                    $decodedRuns = json_decode($slitRunsRaw, true);
+                    $slitRunsRaw = is_array($decodedRuns) ? $decodedRuns : [];
+                }
+                if (!is_array($slitRunsRaw) || !$slitRunsRaw) {
+                    $slitRunsRaw = [['qty' => 1, 'length_mtr' => $pl]];
+                }
+                $slitRuns = [];
+                $allocationQty = 0;
+                $maxRunLength = 0.0;
+                foreach ($slitRunsRaw as $runIdx => $run) {
+                    $runQty = max(1, (int)($run['qty'] ?? 1));
+                    $runLength = (float)($run['length_mtr'] ?? 0);
+                    if ($runLength <= 0) {
+                        $runLength = $pl;
+                    }
+                    if ($runLength > $pl + 0.0001) {
+                        throw new Exception('Allocation #' . ($idx + 1) . ' slit #' . ($runIdx + 1) . ' length exceeds parent length');
+                    }
+                    $slitRuns[] = [
+                        'qty' => $runQty,
+                        'length_mtr' => round($runLength, 2),
+                    ];
+                    $allocationQty += $runQty;
+                    if ($runLength > $maxRunLength) {
+                        $maxRunLength = $runLength;
+                    }
+                }
                 $normalizedAllocations[] = [
                     'planning_id' => (int)$ctx['planning_id'],
                     'plan_no' => (string)$ctx['plan_no'],
@@ -1858,10 +1887,12 @@ try {
                     'department_route' => $route,
                     'destination' => strtoupper(trim((string)($allocation['destination'] ?? 'JOB'))) === 'STOCK' ? 'STOCK' : 'JOB',
                     'allocated_width_mm' => round($width, 2),
-                    'allocated_length_mtr' => $pl,
+                    'allocated_length_mtr' => round($maxRunLength > 0 ? $maxRunLength : $pl, 2),
+                    'slit_runs' => $slitRuns,
+                    'total_slit_qty' => $allocationQty,
                     'allocation_sequence' => max(1, (int)($allocation['allocation_sequence'] ?? ($idx + 1))),
                 ];
-                $totalAllocatedWidth += $width;
+                $totalAllocatedWidth += ($width * $allocationQty);
             }
 
             if (!$normalizedAllocations) {
@@ -1986,9 +2017,7 @@ try {
                 $allocStmt->execute();
                 $allocationId = (int)$db->insert_id;
 
-                $childNo = $nextAvailableChildRollNo($db, $parentRollNo, $widthChildIdx);
                 $childStatus = $a['destination'] === 'JOB' ? 'Job Assign' : 'Stock';
-                $childSqm = ($a['allocated_width_mm'] / 1000) * $pl;
 
                 $insChild = $db->prepare("INSERT INTO paper_stock (roll_no, paper_type, company, width_mm, length_mtr, gsm, weight_kg, purchase_rate, sqm, lot_batch_no, parent_roll_no, source_batch_id, source_allocation_id, status, job_no, job_name, job_size, date_received, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?)");
                 $paperType = (string)($parent['paper_type'] ?? '');
@@ -2000,57 +2029,70 @@ try {
                 $planNoForChild = (string)$a['plan_no'];
                 $jobNameForChild = (string)$a['job_name'];
                 $jobSizeForChild = (string)$a['job_size'];
-                $insChild->bind_param('sssddddddssiissssi', $childNo, $paperType, $company, $a['allocated_width_mm'], $pl, $gsm, $weightKg, $purchaseRate, $childSqm, $lotBatch, $parentRollNo, $batchId, $allocationId, $childStatus, $planNoForChild, $jobNameForChild, $jobSizeForChild, $userId);
-                $insChild->execute();
-
-                $qty = 1;
-                $mode = 'WIDTH';
                 $dest = $a['destination'];
+                $mode = 'WIDTH';
                 $isRem = 0;
-                $entryStmt->bind_param('issddissisiissssi', $batchId, $parentRollNo, $childNo, $a['allocated_width_mm'], $pl, $qty, $mode, $dest, $a['planning_id'], $a['plan_no'], $allocationId, $a['allocation_sequence'], $a['department_route'], $planNoForChild, $jobNameForChild, $jobSizeForChild, $isRem);
-                $entryStmt->execute();
+                $assignedRolls = [];
+                $lastChildNo = '';
+                foreach ($a['slit_runs'] as $run) {
+                    $runQty = max(1, (int)($run['qty'] ?? 1));
+                    $runLength = (float)($run['length_mtr'] ?? $pl);
+                    if ($runLength <= 0) {
+                        $runLength = $pl;
+                    }
+                    for ($runCount = 0; $runCount < $runQty; $runCount++) {
+                        $childNo = $nextAvailableChildRollNo($db, $parentRollNo, $widthChildIdx);
+                        $lastChildNo = $childNo;
+                        $childSqm = ($a['allocated_width_mm'] / 1000) * $runLength;
+                        $insChild->bind_param('sssddddddssiissssi', $childNo, $paperType, $company, $a['allocated_width_mm'], $runLength, $gsm, $weightKg, $purchaseRate, $childSqm, $lotBatch, $parentRollNo, $batchId, $allocationId, $childStatus, $planNoForChild, $jobNameForChild, $jobSizeForChild, $userId);
+                        $insChild->execute();
 
-                $childRow = [
-                    'roll_no' => $childNo,
-                    'parent_roll_no' => $parentRollNo,
-                    'width' => $a['allocated_width_mm'],
-                    'length' => $pl,
-                    'mode' => 'WIDTH',
-                    'dest' => $dest,
-                    'status' => $childStatus,
-                    'planning_id' => $a['planning_id'],
-                    'plan_no' => $a['plan_no'],
-                    'allocation_id' => $allocationId,
-                    'allocation_sequence' => $a['allocation_sequence'],
-                    'department_route' => $a['department_route'],
-                    'job_no' => $a['plan_no'],
-                    'job_name' => $a['job_name'],
-                    'company' => $company,
-                    'paper_type' => $paperType,
-                    'gsm' => $gsm,
-                    'weight_kg' => $weightKg,
-                    'sqm' => round($childSqm, 2),
-                ];
-                $childRolls[] = $childRow;
+                        $qty = 1;
+                        $entryStmt->bind_param('issddissisiissssi', $batchId, $parentRollNo, $childNo, $a['allocated_width_mm'], $runLength, $qty, $mode, $dest, $a['planning_id'], $a['plan_no'], $allocationId, $a['allocation_sequence'], $a['department_route'], $planNoForChild, $jobNameForChild, $jobSizeForChild, $isRem);
+                        $entryStmt->execute();
+
+                        $childRow = [
+                            'roll_no' => $childNo,
+                            'parent_roll_no' => $parentRollNo,
+                            'width' => $a['allocated_width_mm'],
+                            'length' => $runLength,
+                            'mode' => 'WIDTH',
+                            'dest' => $dest,
+                            'status' => $childStatus,
+                            'planning_id' => $a['planning_id'],
+                            'plan_no' => $a['plan_no'],
+                            'allocation_id' => $allocationId,
+                            'allocation_sequence' => $a['allocation_sequence'],
+                            'department_route' => $a['department_route'],
+                            'job_no' => $a['plan_no'],
+                            'job_name' => $a['job_name'],
+                            'company' => $company,
+                            'paper_type' => $paperType,
+                            'gsm' => $gsm,
+                            'weight_kg' => $weightKg,
+                            'sqm' => round($childSqm, 2),
+                        ];
+                        $assignedRolls[] = [
+                            'roll_no' => $childNo,
+                            'parent_roll_no' => $parentRollNo,
+                            'width_mm' => (float)$a['allocated_width_mm'],
+                            'length_mtr' => (float)$runLength,
+                            'paper_type' => $paperType,
+                            'company' => $company,
+                            'gsm' => $gsm,
+                            'status' => $childStatus,
+                            'job_no' => $a['plan_no'],
+                            'job_name' => $a['job_name'],
+                        ];
+                        $childRolls[] = $childRow;
+                    }
+                }
 
                 $departments = erp_department_selection_list($a['department_route'], $departmentChoices, []);
                 $allowJumbo = erp_department_selection_contains($departments, 'Jumbo Slitting', $departmentChoices, []);
                 $allowPrinting = erp_department_selection_contains($departments, 'Printing', $departmentChoices, []);
                 $directFlexoBypass = $allowPrinting && !$allowJumbo;
                 $resolvedMachine = $machine !== '' ? $machine : resolveMachineFromDepartmentRoute($db, (string)$a['department_route']);
-
-                $assignedRolls = [[
-                    'roll_no' => $childNo,
-                    'parent_roll_no' => $parentRollNo,
-                    'width_mm' => (float)$a['allocated_width_mm'],
-                    'length_mtr' => (float)$pl,
-                    'paper_type' => $paperType,
-                    'company' => $company,
-                    'gsm' => $gsm,
-                    'status' => $childStatus,
-                    'job_no' => $a['plan_no'],
-                    'job_name' => $a['job_name'],
-                ]];
 
                 $jumboJobId = 0;
                 $jumboJobNo = '';
@@ -2080,7 +2122,7 @@ try {
                         $existingExtra['operator_name'] = $operatorName;
 
                         $existingNotes = trim((string)($existingJumbo['notes'] ?? ''));
-                        $mergeNote = 'Merged roll ' . $childNo . ' from parent ' . $parentRollNo . ' in batch ' . $batchNo;
+                        $mergeNote = 'Merged ' . count($assignedRolls) . ' roll(s) from parent ' . $parentRollNo . ' in batch ' . $batchNo;
                         $newNotes = $existingNotes === '' ? $mergeNote : ($existingNotes . "\n" . $mergeNote);
                         $extraPayload = json_encode($existingExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                         $updJ = $db->prepare("UPDATE jobs SET extra_data = ?, notes = ?, roll_no = CASE WHEN roll_no IS NULL OR roll_no = '' THEN ? ELSE roll_no END WHERE id = ?");
@@ -2139,7 +2181,7 @@ try {
                         }
 
                         $existingNotesF = trim((string)($existingPrinting['notes'] ?? ''));
-                        $mergeNoteF = 'Merged roll ' . $childNo . ' from parent ' . $parentRollNo . ' in batch ' . $batchNo;
+                        $mergeNoteF = 'Merged ' . count($assignedRolls) . ' roll(s) from parent ' . $parentRollNo . ' in batch ' . $batchNo;
                         $newNotesF = $existingNotesF === '' ? $mergeNoteF : ($existingNotesF . "\n" . $mergeNoteF);
                         $extraF = json_encode($existingExtraF, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
@@ -2206,7 +2248,7 @@ try {
                         $planExtra = json_decode((string)($planExtraRow['extra_data'] ?? '{}'), true) ?: [];
                         $planExtra['printing_planning'] = $planningStatusTarget;
                         $planExtra['multi_slitting_batch_no'] = $batchNo;
-                        $planExtra['last_slit_roll'] = $childNo;
+                        $planExtra['last_slit_roll'] = $lastChildNo;
                         $planExtraJson = json_encode($planExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                         $updPlanExtra = $db->prepare("UPDATE planning SET extra_data = ? WHERE id = ?");
                         $updPlanExtra->bind_param('si', $planExtraJson, $a['planning_id']);

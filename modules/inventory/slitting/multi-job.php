@@ -46,6 +46,17 @@ include __DIR__ . '/../../../includes/header.php';
 .mjs-alloc-table th{font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b}
 .mjs-alloc-table input,.mjs-alloc-table select{height:32px;border:1px solid var(--border);border-radius:6px;padding:0 8px;font-size:.78rem;width:100%}
 .mjs-alloc-table .mjs-route-select{height:auto;min-height:68px;padding:6px 8px}
+.mjs-plan-cell{min-width:280px}
+.mjs-slit-box{margin-top:8px;padding:10px;border:1px solid #dcfce7;border-radius:10px;background:#f0fdf4}
+.mjs-slit-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.mjs-slit-title{font-size:.68rem;font-weight:900;color:#166534;text-transform:uppercase;letter-spacing:.05em}
+.mjs-slit-grid{display:grid;gap:6px}
+.mjs-slit-row{display:grid;grid-template-columns:72px 1fr 1fr auto;gap:6px;align-items:center}
+.mjs-slit-row span{font-size:.7rem;font-weight:800;color:#475569}
+.mjs-slit-row .mjs-btn{padding:7px 10px;font-size:.72rem}
+.mjs-slit-row-head{font-size:.64rem;font-weight:900;color:#166534;text-transform:uppercase;letter-spacing:.05em}
+.mjs-slit-row-head div{padding:0 2px}
+.mjs-slit-summary{font-size:.68rem;color:#64748b;margin-top:8px}
 .mjs-actions{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}
 .mjs-btn{border:none;border-radius:8px;padding:9px 14px;font-size:.78rem;font-weight:800;cursor:pointer}
 .mjs-btn.primary{background:#16a34a;color:#fff}
@@ -56,9 +67,28 @@ include __DIR__ . '/../../../includes/header.php';
 .mjs-kpi .box{border:1px solid var(--border);border-radius:10px;padding:10px;background:#f8fafc}
 .mjs-kpi .k{font-size:.63rem;text-transform:uppercase;color:#64748b;font-weight:800;letter-spacing:.05em}
 .mjs-kpi .v{font-size:1rem;font-weight:900;color:#0f172a;margin-top:4px}
+.mjs-kpi-sub{display:block;margin-top:4px;font-size:.7rem;font-weight:700;color:#475569}
 .mjs-log{margin-top:10px;border:1px solid var(--border);border-radius:8px;padding:10px;max-height:220px;overflow:auto;background:#f8fafc;font-size:.76rem;line-height:1.45}
 .mjs-ok{color:#166534}
 .mjs-bad{color:#991b1b}
+.mjs-card-right{border:1px solid #dbeafe;background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)}
+.mjs-head-right{background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 100%);color:#e2e8f0;border-bottom:none;border-top-left-radius:12px;border-top-right-radius:12px}
+.mjs-head-right h3{color:#fff;letter-spacing:.01em}
+.mjs-subtitle{font-size:.72rem;color:#cbd5e1;font-weight:600;margin-top:3px}
+.mjs-remain-pill{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);color:#fff}
+.mjs-alloc-shell{background:#fff;border:1px solid #dbeafe;border-radius:12px;overflow:hidden;box-shadow:0 8px 22px rgba(15,23,42,.06)}
+.mjs-alloc-shell-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid #e2e8f0;background:#f8fafc}
+.mjs-alloc-shell-title{font-size:.68rem;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#1e3a8a}
+.mjs-alloc-shell-note{font-size:.7rem;color:#475569}
+.mjs-alloc-scroll{max-height:420px;overflow:auto}
+.mjs-alloc-table thead th{position:sticky;top:0;z-index:2;background:#f8fafc}
+.mjs-kpi-modern .box{background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);border:1px solid #dbeafe}
+.mjs-actions-modern{padding:12px;border:1px solid #dbeafe;border-radius:12px;background:#fff;gap:12px}
+.mjs-actions-label{font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:#64748b;font-weight:900}
+.mjs-actions-right{display:flex;gap:8px;flex-wrap:wrap}
+.mjs-log-modern{background:#0b1220;color:#e2e8f0;border:1px solid #1e293b;max-height:260px}
+.mjs-log-modern .mjs-ok{color:#86efac}
+.mjs-log-modern .mjs-bad{color:#fca5a5}
 .mjs-modal-overlay{display:none;position:fixed;inset:0;z-index:9998;background:rgba(15,23,42,.55);backdrop-filter:blur(3px)}
 .mjs-modal-overlay.open{display:flex;align-items:center;justify-content:center}
 .mjs-modal{background:#fff;border-radius:16px;width:min(1180px,96vw);max-height:88vh;overflow:hidden;box-shadow:0 25px 60px rgba(0,0,0,.25);display:flex;flex-direction:column}
@@ -84,7 +114,16 @@ include __DIR__ . '/../../../includes/header.php';
 .mjs-parent-chip{border:1px solid var(--border);background:#fff;border-radius:999px;padding:6px 10px;font-size:.74rem;display:flex;align-items:center;gap:8px;cursor:pointer}
 .mjs-parent-chip.active{border-color:var(--brand);background:#f0fdf4}
 .mjs-parent-chip .close{border:none;background:none;color:#991b1b;font-weight:800;cursor:pointer;line-height:1}
-@media(max-width:1100px){.mjs-wrap{grid-template-columns:1fr}}
+@media(max-width:1100px){.mjs-wrap{grid-template-columns:1fr}.mjs-alloc-scroll{max-height:none}}
+@media(max-width:900px){
+  .mjs-slit-row{grid-template-columns:1fr 1fr}
+  .mjs-slit-row span{grid-column:1 / -1}
+  .mjs-actions-modern{display:grid;grid-template-columns:1fr}
+  .mjs-actions-right{display:grid;grid-template-columns:1fr}
+  .mjs-actions-right .mjs-btn{width:100%}
+  .mjs-kpi{grid-template-columns:1fr}
+  .mjs-head-right{align-items:flex-start}
+}
 </style>
 
 <div class="breadcrumb">
@@ -128,45 +167,59 @@ include __DIR__ . '/../../../includes/header.php';
     </div>
   </div>
 
-  <div class="mjs-card">
-    <div class="mjs-head"><h3>2) Allocation Matrix + Execute</h3><span class="mjs-pill" id="mjsRemainBadge">Remaining: 0 mm</span></div>
+  <div class="mjs-card mjs-card-right">
+    <div class="mjs-head mjs-head-right">
+      <div>
+        <h3>2) Allocation Matrix + Execute</h3>
+        <div class="mjs-subtitle">Set width, route, slit quantity and length, then validate before execution</div>
+      </div>
+      <span class="mjs-pill mjs-remain-pill" id="mjsRemainBadge">Remaining: 0 mm</span>
+    </div>
     <div class="mjs-body">
-      <table class="mjs-alloc-table">
-        <thead>
-          <tr>
-            <th>Plan</th>
-            <th>Width (mm)</th>
-            <th>Route</th>
-            <th>Dest</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="mjsAllocBody">
-          <tr><td colspan="5" style="color:#64748b">Select plans from left panel.</td></tr>
-        </tbody>
-      </table>
+      <div class="mjs-alloc-shell">
+        <div class="mjs-alloc-shell-head">
+          <div class="mjs-alloc-shell-title">Active Allocations</div>
+          <div class="mjs-alloc-shell-note">Tip: Use Slit Runs in each plan to define Qty + Length</div>
+        </div>
+        <div class="mjs-alloc-scroll">
+          <table class="mjs-alloc-table">
+            <thead>
+              <tr>
+                <th>Plan</th>
+                <th>Width (mm)</th>
+                <th>Route</th>
+                <th>Dest</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="mjsAllocBody">
+              <tr><td colspan="5" style="color:#64748b">Select plans from left panel.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-      <div class="mjs-kpi" style="margin-top:10px">
+      <div class="mjs-kpi mjs-kpi-modern" style="margin-top:12px">
         <div class="box"><div class="k">Parent Width</div><div class="v" id="mjsParentWidth">0 mm</div></div>
         <div class="box"><div class="k">Allocated</div><div class="v" id="mjsAllocated">0 mm</div></div>
         <div class="box"><div class="k">Remainder</div><div class="v" id="mjsRemainder">0 mm</div></div>
       </div>
 
-      <div class="mjs-actions">
+      <div class="mjs-actions mjs-actions-modern">
         <div style="display:flex;align-items:center;gap:8px">
-          <label style="font-size:.72rem;font-weight:800;color:#64748b">Remainder</label>
+          <label class="mjs-actions-label">Remainder Action</label>
           <select id="mjsRemainderAction" class="mjs-select" style="width:140px;height:34px">
             <option value="STOCK">STOCK</option>
             <option value="ADJUST">ADJUST</option>
           </select>
         </div>
-        <div style="display:flex;gap:8px">
+        <div class="mjs-actions-right">
           <button class="mjs-btn light" id="mjsValidate">Validate</button>
           <button class="mjs-btn secondary" id="mjsExecute">Execute Multi-Plan Batch</button>
         </div>
       </div>
 
-      <div class="mjs-log" id="mjsLog"></div>
+      <div class="mjs-log mjs-log-modern" id="mjsLog"></div>
     </div>
   </div>
 </div>
@@ -371,16 +424,18 @@ include __DIR__ . '/../../../includes/header.php';
     el.parentMeta.innerHTML = `<strong>Active: ${esc(active.roll_no)}</strong> | ${esc(active.paper_type)} | ${esc(active.company)} | ${esc(active.width_mm)}mm x ${esc(active.length_mtr)}m`;
   }
 
-  function normalizeAllocationsForRoll(existingAllocations) {
+  function normalizeAllocationsForRoll(existingAllocations, parentRoll=null) {
     const map = {};
     (existingAllocations || []).forEach(row => {
       const k = getPlanKeyFromObj(row);
       if (k) map[k] = row;
     });
+    const parentLength = parentRoll ? (parseFloat(parentRoll.length_mtr) || 0) : 0;
     return selectedPlans().map((p, i) => {
       const key = getPlanKeyFromObj(p);
       const prev = map[key] || null;
       const suggestedWidth = parseFloat(p.label_width_mm || p.paper_size || 0) || 0;
+      const prevRuns = prev && Array.isArray(prev.slit_runs) ? prev.slit_runs : [];
       return {
         planning_id: parseInt(p.id || 0, 10) || 0,
         plan_no: String(p.job_no || '').trim(),
@@ -390,14 +445,38 @@ include __DIR__ . '/../../../includes/header.php';
         destination: (prev && prev.destination) || 'JOB',
         allocated_width_mm: prev ? (parseFloat(prev.allocated_width_mm) || 0) : suggestedWidth,
         allocation_sequence: i + 1,
+        slit_runs: (prevRuns.length ? prevRuns : [{ qty: 1, length_mtr: parentLength || 0 }]).map(run => ({
+          qty: Math.max(1, parseInt(run && run.qty ? run.qty : 1, 10) || 1),
+          length_mtr: parseFloat(run && run.length_mtr ? run.length_mtr : parentLength || 0) || 0,
+        })),
       };
     });
+  }
+
+  function normalizeSlitRunsForAllocation(allocation, parentLength) {
+    const sourceRuns = allocation && Array.isArray(allocation.slit_runs) && allocation.slit_runs.length
+      ? allocation.slit_runs
+      : [{ qty: 1, length_mtr: parentLength || 0 }];
+    return sourceRuns.map(run => ({
+      qty: Math.max(1, parseInt(run && run.qty ? run.qty : 1, 10) || 1),
+      length_mtr: parseFloat(run && run.length_mtr ? run.length_mtr : parentLength || 0) || 0,
+    }));
+  }
+
+  function allocationTotalQty(allocation) {
+    const runs = Array.isArray(allocation && allocation.slit_runs) ? allocation.slit_runs : [];
+    return runs.reduce((sum, run) => sum + Math.max(1, parseInt(run && run.qty ? run.qty : 1, 10) || 1), 0);
+  }
+
+  function allocationConsumedWidth(allocation) {
+    const width = parseFloat(allocation && allocation.allocated_width_mm ? allocation.allocated_width_mm : 0) || 0;
+    return width * allocationTotalQty(allocation);
   }
 
   function syncAllocationsFromSelectionAllRolls() {
     parentRolls.forEach(r => {
       const key = String(r.roll_no || '');
-      rollAllocations[key] = normalizeAllocationsForRoll(rollAllocations[key] || []);
+      rollAllocations[key] = normalizeAllocationsForRoll(rollAllocations[key] || [], r);
     });
     renderAllocations();
   }
@@ -409,7 +488,7 @@ include __DIR__ . '/../../../includes/header.php';
     const exists = parentRolls.find(r => String(r.roll_no) === rollNo);
     if (!exists) {
       parentRolls.push(row);
-      rollAllocations[rollNo] = normalizeAllocationsForRoll([]);
+      rollAllocations[rollNo] = normalizeAllocationsForRoll([], row);
       log('Parent added: ' + rollNo, true);
     }
     activeParentKey = rollNo;
@@ -639,21 +718,46 @@ include __DIR__ . '/../../../includes/header.php';
     const active = getActiveParent();
     const allocations = getActiveAllocations();
     const pw = active ? (parseFloat(active.width_mm) || 0) : 0;
-    const used = allocations.reduce((s, a) => s + (parseFloat(a.allocated_width_mm) || 0), 0);
+    const used = allocations.reduce((s, a) => s + allocationConsumedWidth(a), 0);
     const rem = pw - used;
     return {pw, used, rem};
   }
 
   function renderAllocations() {
     const allocations = getActiveAllocations();
+    const active = getActiveParent();
+    const parentLength = active ? (parseFloat(active.length_mtr) || 0) : 0;
     if (!allocations.length) {
       el.allocBody.innerHTML = '<tr><td colspan="5" style="color:#64748b">Select plans from left panel.</td></tr>';
     } else {
       el.allocBody.innerHTML = allocations.map((a, idx) => `
         <tr>
-          <td>
+          <td class="mjs-plan-cell">
             <div style="font-weight:800">${esc(a.plan_no || 'N/A')}</div>
             <div style="font-size:.68rem;color:#64748b">${esc(a.job_name || '')}</div>
+            <div class="mjs-slit-box">
+              <div class="mjs-slit-head">
+                <div class="mjs-slit-title">Slit Runs</div>
+                <button type="button" class="mjs-btn light" data-add-run="${idx}" style="padding:6px 10px">Add Slit</button>
+              </div>
+              <div class="mjs-slit-grid">
+                <div class="mjs-slit-row mjs-slit-row-head">
+                  <div>Run</div>
+                  <div>Qty</div>
+                  <div>Length (m)</div>
+                  <div>Action</div>
+                </div>
+                ${normalizeSlitRunsForAllocation(a, parentLength).map((run, runIdx, runs) => `
+                  <div class="mjs-slit-row">
+                    <span>Slit ${runIdx + 1}</span>
+                    <input data-idx="${idx}" data-run-idx="${runIdx}" data-run-k="qty" type="number" min="1" step="1" value="${esc(run.qty)}" title="Quantity of slit" placeholder="Qty">
+                    <input data-idx="${idx}" data-run-idx="${runIdx}" data-run-k="length_mtr" type="number" min="0.01" step="0.01" value="${esc(run.length_mtr)}" title="Length in meter" placeholder="Length (m)">
+                    <button type="button" class="mjs-btn light" data-del-run="${idx}:${runIdx}" ${runs.length <= 1 ? 'disabled' : ''}>Remove</button>
+                  </div>
+                `).join('')}
+              </div>
+              <div class="mjs-slit-summary">Total slits: ${allocationTotalQty(a)} | Width used: ${allocationConsumedWidth(a).toFixed(2)} mm | Parent length: ${(parentLength || 0).toFixed(2)} m</div>
+            </div>
           </td>
           <td><input data-idx="${idx}" data-k="allocated_width_mm" type="number" min="0" step="0.01" value="${esc(a.allocated_width_mm)}"></td>
           <td>
@@ -676,8 +780,20 @@ include __DIR__ . '/../../../includes/header.php';
       inp.addEventListener('input', () => {
         const idx = parseInt(inp.getAttribute('data-idx') || '-1', 10);
         const k = inp.getAttribute('data-k');
-        if (idx < 0 || !allocations[idx] || !k) return;
-        if (k === 'allocated_width_mm') {
+        const runIdx = parseInt(inp.getAttribute('data-run-idx') || '-1', 10);
+        const runKey = inp.getAttribute('data-run-k');
+        if (idx < 0 || !allocations[idx]) return;
+        if (runIdx >= 0 && runKey) {
+          allocations[idx].slit_runs = normalizeSlitRunsForAllocation(allocations[idx], parentLength);
+          if (!allocations[idx].slit_runs[runIdx]) return;
+          if (runKey === 'qty') {
+            allocations[idx].slit_runs[runIdx].qty = Math.max(1, parseInt(inp.value || 1, 10) || 1);
+          } else {
+            allocations[idx].slit_runs[runIdx].length_mtr = parseFloat(inp.value || 0) || 0;
+          }
+        } else if (!k) {
+          return;
+        } else if (k === 'allocated_width_mm') {
           allocations[idx][k] = parseFloat(inp.value || 0) || 0;
         } else if (k === 'department_route' && inp.multiple) {
           const route = Array.from(inp.selectedOptions).map(o => o.value).filter(Boolean).join(', ');
@@ -690,8 +806,20 @@ include __DIR__ . '/../../../includes/header.php';
       inp.addEventListener('change', () => {
         const idx = parseInt(inp.getAttribute('data-idx') || '-1', 10);
         const k = inp.getAttribute('data-k');
-        if (idx < 0 || !allocations[idx] || !k) return;
-        if (k === 'allocated_width_mm') {
+        const runIdx = parseInt(inp.getAttribute('data-run-idx') || '-1', 10);
+        const runKey = inp.getAttribute('data-run-k');
+        if (idx < 0 || !allocations[idx]) return;
+        if (runIdx >= 0 && runKey) {
+          allocations[idx].slit_runs = normalizeSlitRunsForAllocation(allocations[idx], parentLength);
+          if (!allocations[idx].slit_runs[runIdx]) return;
+          if (runKey === 'qty') {
+            allocations[idx].slit_runs[runIdx].qty = Math.max(1, parseInt(inp.value || 1, 10) || 1);
+          } else {
+            allocations[idx].slit_runs[runIdx].length_mtr = parseFloat(inp.value || 0) || 0;
+          }
+        } else if (!k) {
+          return;
+        } else if (k === 'allocated_width_mm') {
           allocations[idx][k] = parseFloat(inp.value || 0) || 0;
         } else if (k === 'department_route' && inp.multiple) {
           const route = Array.from(inp.selectedOptions).map(o => o.value).filter(Boolean).join(', ');
@@ -728,14 +856,59 @@ include __DIR__ . '/../../../includes/header.php';
       });
     });
 
+    el.allocBody.querySelectorAll('[data-add-run]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-add-run') || '-1', 10);
+        if (idx < 0 || !allocations[idx]) return;
+        allocations[idx].slit_runs = normalizeSlitRunsForAllocation(allocations[idx], parentLength);
+        allocations[idx].slit_runs.push({ qty: 1, length_mtr: parentLength || 0 });
+        setActiveAllocations(allocations);
+        renderAllocations();
+      });
+    });
+
+    el.allocBody.querySelectorAll('[data-del-run]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const token = String(btn.getAttribute('data-del-run') || '');
+        const parts = token.split(':');
+        const idx = parseInt(parts[0] || '-1', 10);
+        const runIdx = parseInt(parts[1] || '-1', 10);
+        if (idx < 0 || runIdx < 0 || !allocations[idx]) return;
+        allocations[idx].slit_runs = normalizeSlitRunsForAllocation(allocations[idx], parentLength);
+        if (allocations[idx].slit_runs.length <= 1) return;
+        allocations[idx].slit_runs.splice(runIdx, 1);
+        setActiveAllocations(allocations);
+        renderAllocations();
+      });
+    });
+
     refreshTotalsUI();
   }
 
   function refreshTotalsUI() {
     const t = totals();
-    el.parentWidth.textContent = t.pw.toFixed(2) + ' mm';
-    el.allocated.textContent = t.used.toFixed(2) + ' mm';
-    el.remainder.textContent = t.rem.toFixed(2) + ' mm';
+    const active = getActiveParent();
+    const parentLength = active ? (parseFloat(active.length_mtr) || 0) : 0;
+    const allocations = getActiveAllocations();
+
+    let allocatedMeters = 0;
+    let maxUsedLength = 0;
+    allocations.forEach(a => {
+      const runs = normalizeSlitRunsForAllocation(a, parentLength);
+      runs.forEach(run => {
+        const qty = Math.max(1, parseInt(run.qty || 1, 10) || 1);
+        const len = parseFloat(run.length_mtr || 0) || 0;
+        allocatedMeters += (qty * len);
+        if (len > maxUsedLength) {
+          maxUsedLength = len;
+        }
+      });
+    });
+    const remainingLength = Math.max(0, parentLength - maxUsedLength);
+
+    el.parentWidth.innerHTML = t.pw.toFixed(2) + ' mm' + '<span class="mjs-kpi-sub">' + parentLength.toFixed(2) + ' mtr</span>';
+    el.allocated.innerHTML = t.used.toFixed(2) + ' mm' + '<span class="mjs-kpi-sub">' + allocatedMeters.toFixed(2) + ' mtr</span>';
+    el.remainder.innerHTML = t.rem.toFixed(2) + ' mm' + '<span class="mjs-kpi-sub">' + remainingLength.toFixed(2) + ' mtr</span>';
     el.remainBadge.textContent = 'Remaining: ' + t.rem.toFixed(2) + ' mm';
     el.remainBadge.style.background = t.rem < -0.5 ? '#fee2e2' : '#f8fafc';
     el.remainBadge.style.color = t.rem < -0.5 ? '#991b1b' : '#475569';
@@ -840,6 +1013,28 @@ include __DIR__ . '/../../../includes/header.php';
           if (showToast) log('Roll ' + rollNo + ' allocation #' + (i + 1) + ' width must be > 0', false);
           return false;
         }
+        const parentLength = parseFloat(roll.length_mtr) || 0;
+        const slitRuns = normalizeSlitRunsForAllocation(a, parentLength);
+        if (!slitRuns.length) {
+          if (showToast) log('Roll ' + rollNo + ' allocation #' + (i + 1) + ' needs at least one slit run', false);
+          return false;
+        }
+        for (let runIdx = 0; runIdx < slitRuns.length; runIdx++) {
+          const run = slitRuns[runIdx];
+          if ((parseInt(run.qty || 0, 10) || 0) <= 0) {
+            if (showToast) log('Roll ' + rollNo + ' allocation #' + (i + 1) + ' slit #' + (runIdx + 1) + ' qty must be > 0', false);
+            return false;
+          }
+          if ((parseFloat(run.length_mtr) || 0) <= 0) {
+            if (showToast) log('Roll ' + rollNo + ' allocation #' + (i + 1) + ' slit #' + (runIdx + 1) + ' length must be > 0', false);
+            return false;
+          }
+          if (parentLength > 0 && (parseFloat(run.length_mtr) || 0) > parentLength) {
+            if (showToast) log('Roll ' + rollNo + ' allocation #' + (i + 1) + ' slit #' + (runIdx + 1) + ' length exceeds parent length', false);
+            return false;
+          }
+        }
+        allocations[i].slit_runs = slitRuns;
         const route = parseRoute(a.department_route);
         if (!route) {
           if (showToast) log('Roll ' + rollNo + ' allocation #' + (i + 1) + ' missing department route', false);
@@ -848,7 +1043,7 @@ include __DIR__ . '/../../../includes/header.php';
         allocations[i].department_route = route;
       }
       const pw = parseFloat(roll.width_mm) || 0;
-      const used = allocations.reduce((s, a) => s + (parseFloat(a.allocated_width_mm) || 0), 0);
+      const used = allocations.reduce((s, a) => s + allocationConsumedWidth(a), 0);
       const rem = pw - used;
       if (rem < -0.5) {
         if (showToast) log('Over-allocation on roll ' + rollNo + '. Reduce widths.', false);
@@ -877,6 +1072,10 @@ include __DIR__ . '/../../../includes/header.php';
         department_route: parseRoute(a.department_route),
         destination: a.destination,
         allocated_width_mm: parseFloat(a.allocated_width_mm) || 0,
+        slit_runs: normalizeSlitRunsForAllocation(a, parseFloat(roll.length_mtr) || 0).map(run => ({
+          qty: Math.max(1, parseInt(run.qty || 1, 10) || 1),
+          length_mtr: parseFloat(run.length_mtr || 0) || 0,
+        })),
         allocation_sequence: idx + 1,
       }));
 
