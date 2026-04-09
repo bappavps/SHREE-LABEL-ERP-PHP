@@ -811,7 +811,7 @@ include __DIR__ . '/../../includes/header.php';
             echo '<a href="view.php?id='.e($r['id']).'" class="act-view" title="View"><i class="bi bi-eye"></i></a>';
             echo '<a href="edit.php?id='.e($r['id']).'" class="act-edit" title="Edit"><i class="bi bi-pencil"></i></a>';
             echo '<a href="#" class="act-slit" title="Slitting" onclick="psGoSlitting(this);return false"><i class="bi bi-scissors"></i></a>';
-            echo '<a href="#" class="act-art" title="Artwork" onclick="alert(\'Artwork feature coming soon\');return false"><i class="bi bi-image"></i></a>';
+            echo '<a href="#" class="act-art" title="Multi Slitting" onclick="psGoMultiSlitting(this);return false"><i class="bi bi-diagram-3"></i></a>';
             echo '<a href="#" class="act-print" title="Print Label" onclick="psPrintSingleLabel('.e($r['id']).');return false"><i class="bi bi-printer"></i></a>';
             if ($isSysAdmin) {
               echo '<a href="delete.php?id='.e($r['id']).'&csrf='.$csrf.'" class="act-del" title="Delete" data-confirm="Delete roll '.e($r['roll_no']).'? This cannot be undone."><i class="bi bi-trash"></i></a>';
@@ -1573,34 +1573,57 @@ include __DIR__ . '/../../includes/header.php';
     window.open('<?= BASE_URL ?>/modules/paper_stock/label.php?ids=' + id, '_blank');
   };
 
+  function collectSelectedRollNos(){
+    var rolls = [];
+    var checked = document.querySelectorAll('.ps-row-cb:checked');
+    checked.forEach(function(cb){
+      var r = cb.closest('tr');
+      if (!r) return;
+      var rn = r.querySelector('.ps-col-roll_no a');
+      if (!rn) return;
+      var value = (rn.textContent || '').trim();
+      if (value) rolls.push(value);
+    });
+    return Array.from(new Set(rolls));
+  }
+
   window.psGoSlitting = function(el){
-    // Get the clicked row's roll_no
     var row = el.closest('tr');
     var rollNo = row ? row.querySelector('.ps-col-roll_no a') : null;
     var clickedRoll = rollNo ? rollNo.textContent.trim() : '';
+    var selectedRolls = collectSelectedRollNos();
 
-    // Check if any checkboxes are selected
-    var checked = document.querySelectorAll('.ps-row-cb:checked');
-    if (checked.length > 1) {
-      // Multi-roll: collect all selected roll numbers
-      var rolls = [];
-      checked.forEach(function(cb){
-        var r = cb.closest('tr');
-        if (r) {
-          var rn = r.querySelector('.ps-col-roll_no a');
-          if (rn) rolls.push(rn.textContent.trim());
-        }
-      });
-      if (rolls.length) {
-        window.location.href = '<?= BASE_URL ?>/modules/inventory/slitting/?rolls=' + encodeURIComponent(rolls.join(','));
-        return;
-      }
+    if (selectedRolls.length > 1) {
+      window.location.href = '<?= BASE_URL ?>/modules/inventory/slitting/?rolls=' + encodeURIComponent(selectedRolls.join(','));
+      return;
     }
 
-    // Single roll redirect
+    if (selectedRolls.length === 1) {
+      window.location.href = '<?= BASE_URL ?>/modules/inventory/slitting/?rollNo=' + encodeURIComponent(selectedRolls[0]);
+      return;
+    }
+
     if (clickedRoll) {
       window.location.href = '<?= BASE_URL ?>/modules/inventory/slitting/?rollNo=' + encodeURIComponent(clickedRoll);
     }
+  };
+
+  window.psGoMultiSlitting = function(el){
+    var row = el.closest('tr');
+    var rollNo = row ? row.querySelector('.ps-col-roll_no a') : null;
+    var clickedRoll = rollNo ? rollNo.textContent.trim() : '';
+    var selectedRolls = collectSelectedRollNos();
+
+    if (!selectedRolls.length && clickedRoll) {
+      selectedRolls = [clickedRoll];
+    }
+
+    if (!selectedRolls.length) {
+      alert('Please select at least one roll.');
+      return;
+    }
+
+    window.location.href = '<?= BASE_URL ?>/modules/inventory/slitting/multi-job.php?rolls=' + encodeURIComponent(selectedRolls.join(','));
   };
 
   window.psBulkDelete = function(){

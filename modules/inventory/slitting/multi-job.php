@@ -9,6 +9,21 @@ ensureSlittingTables();
 $db = getDB();
 $csrf = generateCSRF();
 $pageTitle = 'Multi Job Slitting';
+$initialRolls = [];
+$rollsParam = trim((string)($_GET['rolls'] ?? ''));
+$singleRollParam = trim((string)($_GET['rollNo'] ?? ''));
+if ($rollsParam !== '') {
+  foreach (explode(',', $rollsParam) as $rn) {
+    $rn = trim((string)$rn);
+    if ($rn !== '') {
+      $initialRolls[] = $rn;
+    }
+  }
+}
+if ($singleRollParam !== '') {
+  $initialRolls[] = $singleRollParam;
+}
+$initialRolls = array_values(array_unique($initialRolls));
 include __DIR__ . '/../../../includes/header.php';
 ?>
 
@@ -58,11 +73,17 @@ include __DIR__ . '/../../../includes/header.php';
 .mjs-parent-table{width:100%;border-collapse:collapse}
 .mjs-parent-table th,.mjs-parent-table td{padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:.78rem;text-align:left;vertical-align:middle}
 .mjs-parent-table th{font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;background:#f8fafc}
+.mjs-parent-filter-row th{background:#fff;padding:8px 10px}
+.mjs-parent-filter-row input,.mjs-parent-filter-row select{width:100%;height:30px;border:1px solid var(--border);border-radius:6px;padding:0 8px;font-size:.74rem}
 .mjs-parent-table tr:hover{background:#f0fdf4}
 .mjs-parent-table .pick-btn{border:none;border-radius:8px;background:#16a34a;color:#fff;padding:7px 10px;font-size:.72rem;font-weight:800;cursor:pointer}
 .mjs-parent-table .pick-btn:hover{background:#15803d}
 .mjs-empty{padding:24px 16px;text-align:center;color:#64748b;font-size:.8rem}
 .mjs-pager{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.mjs-parent-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.mjs-parent-chip{border:1px solid var(--border);background:#fff;border-radius:999px;padding:6px 10px;font-size:.74rem;display:flex;align-items:center;gap:8px;cursor:pointer}
+.mjs-parent-chip.active{border-color:var(--brand);background:#f0fdf4}
+.mjs-parent-chip .close{border:none;background:none;color:#991b1b;font-weight:800;cursor:pointer;line-height:1}
 @media(max-width:1100px){.mjs-wrap{grid-template-columns:1fr}}
 </style>
 
@@ -96,8 +117,10 @@ include __DIR__ . '/../../../includes/header.php';
       </div>
       <div style="display:flex;gap:8px;margin-bottom:10px">
         <button class="mjs-btn light" id="mjsLoadParent"><i class="bi bi-search"></i> Browse Parent Stock</button>
+        <button class="mjs-btn light" id="mjsAddParent"><i class="bi bi-plus-circle"></i> Add Another Roll</button>
         <button class="mjs-btn light" id="mjsLoadPlans"><i class="bi bi-list-task"></i> Load Planning Queue</button>
       </div>
+      <div id="mjsParentList" class="mjs-parent-list"></div>
       <div id="mjsParentMeta" style="margin-bottom:10px;font-size:.78rem;color:#475569"></div>
       <div class="mjs-plans" id="mjsPlanList">
         <div style="font-size:.78rem;color:#64748b">Load planning queue to select multiple plans.</div>
@@ -156,8 +179,8 @@ include __DIR__ . '/../../../includes/header.php';
     </div>
     <div class="mjs-modal-body">
       <div class="mjs-modal-tools">
-        <input id="mjsParentSearch" class="mjs-input" placeholder="Search roll no, paper type, supplier, job no" style="max-width:420px">
-        <button class="mjs-btn light" id="mjsParentSearchBtn"><i class="bi bi-search"></i> Search</button>
+        <button class="mjs-btn light" id="mjsParentSearchBtn"><i class="bi bi-search"></i> Apply Filters</button>
+        <button class="mjs-btn light" id="mjsParentFilterReset"><i class="bi bi-arrow-counterclockwise"></i> Reset Filters</button>
         <span class="mjs-pill" id="mjsParentCount">0 rows</span>
       </div>
       <div class="mjs-parent-table-wrap">
@@ -173,9 +196,19 @@ include __DIR__ . '/../../../includes/header.php';
               <th>Job Ref</th>
               <th></th>
             </tr>
+            <tr class="mjs-parent-filter-row">
+              <th><input id="mjsParentColRoll" placeholder="Roll no"></th>
+              <th><input id="mjsParentColPaper" placeholder="Material type"></th>
+              <th><input id="mjsParentColCompany" placeholder="Company"></th>
+              <th><input id="mjsParentColWidth" type="number" min="0" step="0.01" placeholder="Min mm"></th>
+              <th></th>
+              <th><input id="mjsParentColStatus" placeholder="Status"></th>
+              <th><input id="mjsParentColJob" placeholder="Job ref"></th>
+              <th></th>
+            </tr>
           </thead>
           <tbody id="mjsParentTableBody">
-            <tr><td colspan="8" class="mjs-empty">Click search to load available parent rolls.</td></tr>
+            <tr><td colspan="8" class="mjs-empty">Apply filters to load available parent rolls.</td></tr>
           </tbody>
         </table>
       </div>
@@ -214,12 +247,14 @@ include __DIR__ . '/../../../includes/header.php';
 (() => {
   const API = '<?= BASE_URL ?>/modules/inventory/slitting/api.php';
   const CSRF = '<?= e($csrf) ?>';
+  const PRESELECTED_ROLLS = <?= json_encode($initialRolls, JSON_UNESCAPED_UNICODE) ?>;
   const operator = '<?= e(trim((string)($_SESSION['user_name'] ?? '')) ?: 'Operator') ?>';
 
-  let parent = null;
+  let parentRolls = [];
+  let activeParentKey = '';
   let plans = [];
   let selectedPlanMap = {};
-  let allocations = [];
+  let rollAllocations = {};
   let departmentOptions = [];
   let parentBrowseRows = [];
   let parentBrowsePage = 1;
@@ -230,7 +265,9 @@ include __DIR__ . '/../../../includes/header.php';
   const el = {
     parentRoll: document.getElementById('mjsParentRoll'),
     loadParent: document.getElementById('mjsLoadParent'),
+    addParent: document.getElementById('mjsAddParent'),
     loadPlans: document.getElementById('mjsLoadPlans'),
+    parentList: document.getElementById('mjsParentList'),
     parentMeta: document.getElementById('mjsParentMeta'),
     planList: document.getElementById('mjsPlanList'),
     planCount: document.getElementById('mjsPlanCount'),
@@ -246,8 +283,14 @@ include __DIR__ . '/../../../includes/header.php';
     parentModal: document.getElementById('mjsParentModal'),
     parentModalClose: document.getElementById('mjsParentModalClose'),
     parentModalDone: document.getElementById('mjsParentModalDone'),
-    parentSearch: document.getElementById('mjsParentSearch'),
+    parentColRoll: document.getElementById('mjsParentColRoll'),
+    parentColPaper: document.getElementById('mjsParentColPaper'),
+    parentColCompany: document.getElementById('mjsParentColCompany'),
+    parentColWidth: document.getElementById('mjsParentColWidth'),
+    parentColStatus: document.getElementById('mjsParentColStatus'),
+    parentColJob: document.getElementById('mjsParentColJob'),
     parentSearchBtn: document.getElementById('mjsParentSearchBtn'),
+    parentFilterReset: document.getElementById('mjsParentFilterReset'),
     parentCount: document.getElementById('mjsParentCount'),
     parentTableBody: document.getElementById('mjsParentTableBody'),
     parentModalSummary: document.getElementById('mjsParentModalSummary'),
@@ -269,6 +312,126 @@ include __DIR__ . '/../../../includes/header.php';
 
   function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));}
 
+  function getPlanKeyFromObj(obj) {
+    const id = parseInt(obj && obj.planning_id ? obj.planning_id : (obj && obj.id ? obj.id : 0), 10) || 0;
+    if (id > 0) return 'id:' + id;
+    const planNo = String((obj && (obj.plan_no || obj.job_no)) || '').trim().toUpperCase();
+    return planNo ? ('plan:' + planNo) : '';
+  }
+
+  function getActiveParent() {
+    if (!activeParentKey) return null;
+    return parentRolls.find(r => String(r.roll_no) === String(activeParentKey)) || null;
+  }
+
+  function getActiveAllocations() {
+    const active = getActiveParent();
+    if (!active) return [];
+    const key = String(active.roll_no || '');
+    if (!rollAllocations[key]) rollAllocations[key] = [];
+    return rollAllocations[key];
+  }
+
+  function setActiveAllocations(rows) {
+    const active = getActiveParent();
+    if (!active) return;
+    const key = String(active.roll_no || '');
+    rollAllocations[key] = Array.isArray(rows) ? rows : [];
+  }
+
+  function selectedPlans() {
+    return plans.filter(p => {
+      const idKey = 'id:' + (parseInt(p.id || 0, 10) || 0);
+      const planKey = 'plan:' + String(p.job_no || '').trim().toUpperCase();
+      return !!selectedPlanMap[idKey] || (planKey !== 'plan:' && !!selectedPlanMap[planKey]);
+    });
+  }
+
+  function renderParentRollChips() {
+    if (!parentRolls.length) {
+      el.parentList.innerHTML = '<span style="font-size:.74rem;color:#64748b">No parent roll selected yet.</span>';
+      return;
+    }
+    el.parentList.innerHTML = parentRolls.map(r => {
+      const rollNo = String(r.roll_no || '');
+      const active = String(activeParentKey) === rollNo;
+      return `<div class="mjs-parent-chip ${active ? 'active' : ''}" data-parent-switch="${esc(rollNo)}">
+        <span>${esc(rollNo)}</span>
+        <button type="button" class="close" data-parent-remove="${esc(rollNo)}">&times;</button>
+      </div>`;
+    }).join('');
+  }
+
+  function refreshParentMeta() {
+    const active = getActiveParent();
+    if (!active) {
+      el.parentMeta.innerHTML = '<span class="mjs-bad">Pick at least one parent roll</span>';
+      return;
+    }
+    el.parentMeta.innerHTML = `<strong>Active: ${esc(active.roll_no)}</strong> | ${esc(active.paper_type)} | ${esc(active.company)} | ${esc(active.width_mm)}mm x ${esc(active.length_mtr)}m`;
+  }
+
+  function normalizeAllocationsForRoll(existingAllocations) {
+    const map = {};
+    (existingAllocations || []).forEach(row => {
+      const k = getPlanKeyFromObj(row);
+      if (k) map[k] = row;
+    });
+    return selectedPlans().map((p, i) => {
+      const key = getPlanKeyFromObj(p);
+      const prev = map[key] || null;
+      const suggestedWidth = parseFloat(p.label_width_mm || p.paper_size || 0) || 0;
+      return {
+        planning_id: parseInt(p.id || 0, 10) || 0,
+        plan_no: String(p.job_no || '').trim(),
+        job_name: String(p.job_name || '').trim(),
+        job_size: String(p.label_length_mm || p.label_width_mm || p.paper_size || '').trim(),
+        department_route: parseRoute((prev && prev.department_route) || p.department_route || p.department),
+        destination: (prev && prev.destination) || 'JOB',
+        allocated_width_mm: prev ? (parseFloat(prev.allocated_width_mm) || 0) : suggestedWidth,
+        allocation_sequence: i + 1,
+      };
+    });
+  }
+
+  function syncAllocationsFromSelectionAllRolls() {
+    parentRolls.forEach(r => {
+      const key = String(r.roll_no || '');
+      rollAllocations[key] = normalizeAllocationsForRoll(rollAllocations[key] || []);
+    });
+    renderAllocations();
+  }
+
+  function addOrActivateParentRoll(row) {
+    if (!row || !row.roll_no) return;
+    const rollNo = String(row.roll_no || '').trim();
+    if (!rollNo) return;
+    const exists = parentRolls.find(r => String(r.roll_no) === rollNo);
+    if (!exists) {
+      parentRolls.push(row);
+      rollAllocations[rollNo] = normalizeAllocationsForRoll([]);
+      log('Parent added: ' + rollNo, true);
+    }
+    activeParentKey = rollNo;
+    renderParentRollChips();
+    refreshParentMeta();
+    renderAllocations();
+  }
+
+  function removeParentRoll(rollNo) {
+    const target = String(rollNo || '').trim();
+    if (!target) return;
+    parentRolls = parentRolls.filter(r => String(r.roll_no) !== target);
+    delete rollAllocations[target];
+    if (String(activeParentKey) === target) {
+      activeParentKey = parentRolls.length ? String(parentRolls[0].roll_no) : '';
+    }
+    renderParentRollChips();
+    refreshParentMeta();
+    renderAllocations();
+    refreshTotalsUI();
+  }
+
   async function apiGet(action, params={}) {
     const q = new URLSearchParams(params);
     q.set('action', action);
@@ -287,9 +450,11 @@ include __DIR__ . '/../../../includes/header.php';
 
   function openParentModal(searchTerm='') {
     el.parentModal.classList.add('open');
-    el.parentSearch.value = String(searchTerm || el.parentRoll.value || '').trim();
+    if (String(searchTerm || '').trim() !== '') {
+      el.parentColRoll.value = String(searchTerm || '').trim();
+    }
     parentBrowsePage = 1;
-    browseParentRolls(el.parentSearch.value, parentBrowsePage);
+    browseParentRolls(parentBrowsePage);
   }
 
   function closeParentModal() {
@@ -363,10 +528,19 @@ include __DIR__ . '/../../../includes/header.php';
     });
   }
 
-  async function browseParentRolls(q='', page=1) {
+  async function browseParentRolls(page=1) {
     el.parentTableBody.innerHTML = '<tr><td colspan="8" class="mjs-empty">Loading available parent rolls…</td></tr>';
     el.parentPager.textContent = 'Loading...';
-    const data = await apiGet('browse_parent_rolls', {q, limit: parentBrowseLimit, page});
+    const data = await apiGet('browse_parent_rolls', {
+      roll_no: String(el.parentColRoll.value || '').trim(),
+      paper_type: String(el.parentColPaper.value || '').trim(),
+      company: String(el.parentColCompany.value || '').trim(),
+      width_mm: parseFloat(el.parentColWidth.value || 0) || 0,
+      status: String(el.parentColStatus.value || '').trim(),
+      job_ref: String(el.parentColJob.value || '').trim(),
+      limit: parentBrowseLimit,
+      page
+    });
     if (!data.ok) {
       parentBrowseRows = [];
       parentBrowseTotal = 0;
@@ -384,8 +558,8 @@ include __DIR__ . '/../../../includes/header.php';
     parentBrowsePages = parseInt(data.pages || 1, 10) || 1;
     parentBrowseTotal = parseInt(data.total || parentBrowseRows.length || 0, 10) || 0;
     el.parentModalSummary.textContent = parentBrowseRows.length
-      ? 'Pick a parent roll to load it into the slitting screen. Each page shows 50 rows.'
-      : 'No available rolls matched your search.';
+      ? 'Column header filters applied from Paper Stock style.'
+      : 'No available rolls matched your filters.';
     renderParentRows();
   }
 
@@ -438,7 +612,8 @@ include __DIR__ . '/../../../includes/header.php';
 
   function renderPlans() {
     const list = plans.map(p => {
-      const key = String(p.id || '') || String(p.job_no || '');
+      const id = parseInt(p.id || 0, 10) || 0;
+      const key = id > 0 ? ('id:' + id) : ('plan:' + String(p.job_no || '').trim().toUpperCase());
       const active = !!selectedPlanMap[key];
       return `<div class="mjs-plan ${active ? 'active' : ''}" data-key="${esc(key)}">
         <div class="n">${esc(p.job_no || 'N/A')} - ${esc(p.job_name || '')}</div>
@@ -451,7 +626,7 @@ include __DIR__ . '/../../../includes/header.php';
       card.addEventListener('click', () => {
         const key = card.getAttribute('data-key');
         if (selectedPlanMap[key]) delete selectedPlanMap[key]; else selectedPlanMap[key] = true;
-        syncAllocationsFromSelection();
+        syncAllocationsFromSelectionAllRolls();
         renderPlans();
       });
     });
@@ -460,32 +635,17 @@ include __DIR__ . '/../../../includes/header.php';
     el.planCount.textContent = selectedCount + ' selected';
   }
 
-  function syncAllocationsFromSelection() {
-    const selected = plans.filter(p => selectedPlanMap[String(p.id || '') || String(p.job_no || '')]);
-    allocations = selected.map((p, i) => {
-      const suggestedWidth = parseFloat(p.label_width_mm || p.paper_size || 0) || 0;
-      return {
-        planning_id: parseInt(p.id || 0, 10) || 0,
-        plan_no: String(p.job_no || '').trim(),
-        job_name: String(p.job_name || '').trim(),
-        job_size: String(p.label_length_mm || p.label_width_mm || p.paper_size || '').trim(),
-        department_route: parseRoute(p.department_route || p.department),
-        destination: 'JOB',
-        allocated_width_mm: suggestedWidth,
-        allocation_sequence: i + 1,
-      };
-    });
-    renderAllocations();
-  }
-
   function totals() {
-    const pw = parent ? (parseFloat(parent.width_mm) || 0) : 0;
+    const active = getActiveParent();
+    const allocations = getActiveAllocations();
+    const pw = active ? (parseFloat(active.width_mm) || 0) : 0;
     const used = allocations.reduce((s, a) => s + (parseFloat(a.allocated_width_mm) || 0), 0);
     const rem = pw - used;
     return {pw, used, rem};
   }
 
   function renderAllocations() {
+    const allocations = getActiveAllocations();
     if (!allocations.length) {
       el.allocBody.innerHTML = '<tr><td colspan="5" style="color:#64748b">Select plans from left panel.</td></tr>';
     } else {
@@ -549,9 +709,19 @@ include __DIR__ . '/../../../includes/header.php';
         if (idx < 0) return;
         const dropped = allocations[idx];
         allocations.splice(idx, 1);
-        if (dropped) {
-          const key = String(dropped.planning_id || '') || String(dropped.plan_no || '');
-          delete selectedPlanMap[key];
+        setActiveAllocations(allocations);
+        if (dropped && parentRolls.length) {
+          const planKey = getPlanKeyFromObj(dropped);
+          let stillUsed = false;
+          parentRolls.forEach(r => {
+            const rows = rollAllocations[String(r.roll_no) || ''] || [];
+            if (rows.some(rr => getPlanKeyFromObj(rr) === planKey)) {
+              stillUsed = true;
+            }
+          });
+          if (!stillUsed && planKey) {
+            delete selectedPlanMap[planKey];
+          }
         }
         renderPlans();
         renderAllocations();
@@ -587,6 +757,7 @@ include __DIR__ . '/../../../includes/header.php';
       return;
     }
     plans = data.jobs || [];
+    syncAllocationsFromSelectionAllRolls();
     renderPlans();
     log('Planning queue loaded: ' + plans.length + ' jobs', true);
   }
@@ -595,16 +766,13 @@ include __DIR__ . '/../../../includes/header.php';
     if (!rn) return;
     const data = await apiGet('search_roll', {q: rn});
     if (!data.ok || !data.roll) {
-      parent = null;
       el.parentMeta.innerHTML = '<span class="mjs-bad">Parent roll not found</span>';
       refreshTotalsUI();
       log('Parent roll not found: ' + rn, false);
       return;
     }
-    parent = data.roll;
-    el.parentMeta.innerHTML = `<strong>${esc(parent.roll_no)}</strong> | ${esc(parent.paper_type)} | ${esc(parent.company)} | ${esc(parent.width_mm)}mm x ${esc(parent.length_mtr)}m`;
+    addOrActivateParentRoll(data.roll);
     refreshTotalsUI();
-    log('Parent loaded: ' + parent.roll_no, true);
   }
 
   async function loadParent() {
@@ -612,45 +780,80 @@ include __DIR__ . '/../../../includes/header.php';
     openParentModal(rn);
   }
 
+  function resetParentFilters() {
+    el.parentColRoll.value = '';
+    el.parentColPaper.value = '';
+    el.parentColCompany.value = '';
+    el.parentColWidth.value = '';
+    el.parentColStatus.value = '';
+    el.parentColJob.value = '';
+  }
+
+  async function addParent() {
+    el.parentRoll.value = '';
+    resetParentFilters();
+    openParentModal('');
+  }
+
+  async function bootstrapPreselectedRolls() {
+    if (!Array.isArray(PRESELECTED_ROLLS) || !PRESELECTED_ROLLS.length) {
+      return;
+    }
+    for (let i = 0; i < PRESELECTED_ROLLS.length; i++) {
+      const rn = String(PRESELECTED_ROLLS[i] || '').trim();
+      if (!rn) continue;
+      await loadParentByRollNo(rn);
+    }
+  }
+
   function validateBeforeExecute(showToast=true) {
-    if (!parent) {
-      if (showToast) log('Load parent roll first', false);
+    if (!parentRolls.length) {
+      if (showToast) log('Load at least one parent roll first', false);
       return false;
     }
-    if (!allocations.length) {
+    if (!Object.keys(selectedPlanMap).length) {
       if (showToast) log('Select at least one plan allocation', false);
       return false;
     }
-    const seen = {};
-    for (let i = 0; i < allocations.length; i++) {
-      const a = allocations[i];
-      if (!a.plan_no) {
-        if (showToast) log('Allocation #' + (i+1) + ' missing plan no', false);
+    for (let p = 0; p < parentRolls.length; p++) {
+      const roll = parentRolls[p];
+      const rollNo = String(roll.roll_no || '');
+      const allocations = rollAllocations[rollNo] || [];
+      if (!allocations.length) {
+        if (showToast) log('No allocations found for roll: ' + rollNo, false);
         return false;
       }
-      const key = (parseInt(a.planning_id || 0, 10) > 0)
-        ? ('id:' + parseInt(a.planning_id || 0, 10))
-        : ('plan:' + String(a.plan_no || '').trim().toUpperCase());
-      if (seen[key]) {
-        if (showToast) log('Duplicate plan allocation found: ' + a.plan_no, false);
+      const seen = {};
+      for (let i = 0; i < allocations.length; i++) {
+        const a = allocations[i];
+        if (!a.plan_no) {
+          if (showToast) log('Roll ' + rollNo + ' allocation #' + (i + 1) + ' missing plan no', false);
+          return false;
+        }
+        const key = getPlanKeyFromObj(a);
+        if (seen[key]) {
+          if (showToast) log('Roll ' + rollNo + ' has duplicate plan allocation: ' + a.plan_no, false);
+          return false;
+        }
+        seen[key] = true;
+        if ((parseFloat(a.allocated_width_mm) || 0) <= 0) {
+          if (showToast) log('Roll ' + rollNo + ' allocation #' + (i + 1) + ' width must be > 0', false);
+          return false;
+        }
+        const route = parseRoute(a.department_route);
+        if (!route) {
+          if (showToast) log('Roll ' + rollNo + ' allocation #' + (i + 1) + ' missing department route', false);
+          return false;
+        }
+        allocations[i].department_route = route;
+      }
+      const pw = parseFloat(roll.width_mm) || 0;
+      const used = allocations.reduce((s, a) => s + (parseFloat(a.allocated_width_mm) || 0), 0);
+      const rem = pw - used;
+      if (rem < -0.5) {
+        if (showToast) log('Over-allocation on roll ' + rollNo + '. Reduce widths.', false);
         return false;
       }
-      seen[key] = true;
-      if ((parseFloat(a.allocated_width_mm) || 0) <= 0) {
-        if (showToast) log('Allocation #' + (i+1) + ' width must be > 0', false);
-        return false;
-      }
-      const route = parseRoute(a.department_route);
-      if (!route) {
-        if (showToast) log('Allocation #' + (i+1) + ' missing department route', false);
-        return false;
-      }
-      allocations[i].department_route = route;
-    }
-    const t = totals();
-    if (t.rem < -0.5) {
-      if (showToast) log('Over-allocation detected. Reduce widths.', false);
-      return false;
     }
     return true;
   }
@@ -659,73 +862,116 @@ include __DIR__ . '/../../../includes/header.php';
     if (!validateBeforeExecute(true)) return;
 
     el.execute.disabled = true;
-    const payload = allocations.map((a, i) => ({
-      planning_id: a.planning_id || 0,
-      plan_no: a.plan_no,
-      job_name: a.job_name,
-      job_size: a.job_size,
-      department_route: parseRoute(a.department_route),
-      destination: a.destination,
-      allocated_width_mm: parseFloat(a.allocated_width_mm) || 0,
-      allocation_sequence: i + 1,
-    }));
+    const runs = [];
+    const allCreatedCards = [];
+    const allChildRolls = [];
+    for (let i = 0; i < parentRolls.length; i++) {
+      const roll = parentRolls[i];
+      const rollNo = String(roll.roll_no || '');
+      const allocations = rollAllocations[rollNo] || [];
+      const payload = allocations.map((a, idx) => ({
+        planning_id: a.planning_id || 0,
+        plan_no: a.plan_no,
+        job_name: a.job_name,
+        job_size: a.job_size,
+        department_route: parseRoute(a.department_route),
+        destination: a.destination,
+        allocated_width_mm: parseFloat(a.allocated_width_mm) || 0,
+        allocation_sequence: idx + 1,
+      }));
 
-    const data = await apiPost('execute_multi_plan_batch', {
-      parent_roll_no: parent.roll_no,
-      plan_allocations: JSON.stringify(payload),
-      remainder_action: el.remainderAction.value || 'STOCK',
-      operator_name: operator,
-    });
-
-    if (!data.ok) {
-      log('Execute failed: ' + (data.error || 'Unknown error'), false);
-      el.execute.disabled = false;
-      return;
+      const data = await apiPost('execute_multi_plan_batch', {
+        parent_roll_no: rollNo,
+        plan_allocations: JSON.stringify(payload),
+        remainder_action: el.remainderAction.value || 'STOCK',
+        operator_name: operator,
+      });
+      if (!data.ok) {
+        log('Execute failed for ' + rollNo + ': ' + (data.error || 'Unknown error'), false);
+        el.execute.disabled = false;
+        return;
+      }
+      runs.push(data);
+      (data.created_job_cards || []).forEach(j => allCreatedCards.push(j));
+      (data.child_rolls || []).forEach(ch => allChildRolls.push(ch));
+      log('Success! Roll ' + rollNo + ' -> Batch ' + data.batch_no, true);
     }
 
-    log('Success! Batch ' + data.batch_no + ' created', true);
-    log('Created job cards: ' + ((data.created_job_cards || []).map(j => j.job_no + ' [' + j.type + ']').join(', ') || 'None'), true);
-    log('Remainder: ' + data.remainder_width_mm + ' mm (' + data.remainder_action + ')', true);
+    const summary = {
+      batch_no: runs.length === 1 ? runs[0].batch_no : ('MULTI (' + runs.length + ' batches)'),
+      parent_roll: parentRolls.map(r => r.roll_no).join(', '),
+      child_rolls: allChildRolls,
+      created_job_cards: allCreatedCards,
+      remainder_width_mm: runs.reduce((s, r) => s + (parseFloat(r.remainder_width_mm) || 0), 0).toFixed(2),
+      remainder_action: el.remainderAction.value || 'STOCK',
+    };
 
-    allocations = [];
+    rollAllocations = {};
+    parentRolls = [];
+    activeParentKey = '';
     selectedPlanMap = {};
-    plans = plans.filter(p => !payload.some(a => (parseInt(a.planning_id || 0, 10) > 0 && parseInt(a.planning_id || 0, 10) === parseInt(p.id || 0, 10)) || ((a.plan_no || '').trim() !== '' && String(a.plan_no || '').trim() === String(p.job_no || '').trim())));
-    parent = null;
     el.parentRoll.value = '';
-    el.parentMeta.innerHTML = '';
+    el.parentMeta.innerHTML = '<span class="mjs-bad">Pick at least one parent roll</span>';
+    renderParentRollChips();
     renderPlans();
     renderAllocations();
     refreshTotalsUI();
     await loadPlans();
-    openSuccessModal(data);
+    openSuccessModal(summary);
     el.execute.disabled = false;
   }
 
   el.loadPlans.addEventListener('click', loadPlans);
   el.loadParent.addEventListener('click', loadParent);
+  el.addParent.addEventListener('click', addParent);
   el.parentRoll.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); loadParent(); } });
   el.validate.addEventListener('click', () => validateBeforeExecute(true));
   el.execute.addEventListener('click', executeMultiPlan);
-  el.parentSearchBtn.addEventListener('click', () => browseParentRolls(String(el.parentSearch.value || '').trim()));
-  el.parentSearch.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      parentBrowsePage = 1;
-      browseParentRolls(String(el.parentSearch.value || '').trim(), parentBrowsePage);
-    }
+  el.parentSearchBtn.addEventListener('click', () => browseParentRolls(1));
+  el.parentFilterReset.addEventListener('click', () => {
+    resetParentFilters();
+    browseParentRolls(1);
+  });
+  [el.parentColRoll, el.parentColPaper, el.parentColCompany, el.parentColWidth, el.parentColStatus, el.parentColJob].forEach(inp => {
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        parentBrowsePage = 1;
+        browseParentRolls(parentBrowsePage);
+      }
+    });
   });
   el.parentPrev.addEventListener('click', () => {
     if (parentBrowsePage <= 1) return;
-    browseParentRolls(String(el.parentSearch.value || '').trim(), parentBrowsePage - 1);
+    browseParentRolls(parentBrowsePage - 1);
   });
   el.parentNext.addEventListener('click', () => {
     if (parentBrowsePage >= parentBrowsePages) return;
-    browseParentRolls(String(el.parentSearch.value || '').trim(), parentBrowsePage + 1);
+    browseParentRolls(parentBrowsePage + 1);
   });
   el.parentModalClose.addEventListener('click', closeParentModal);
   el.parentModalDone.addEventListener('click', closeParentModal);
   el.parentModal.addEventListener('click', (e) => {
     if (e.target === el.parentModal) closeParentModal();
+  });
+  el.parentList.addEventListener('click', (e) => {
+    const removeBtn = e.target.closest('[data-parent-remove]');
+    if (removeBtn) {
+      e.stopPropagation();
+      const rollNo = removeBtn.getAttribute('data-parent-remove') || '';
+      removeParentRoll(rollNo);
+      return;
+    }
+    const switchChip = e.target.closest('[data-parent-switch]');
+    if (switchChip) {
+      const rollNo = switchChip.getAttribute('data-parent-switch') || '';
+      if (rollNo) {
+        activeParentKey = rollNo;
+        renderParentRollChips();
+        refreshParentMeta();
+        renderAllocations();
+      }
+    }
   });
   el.successModalClose.addEventListener('click', closeSuccessModal);
   el.successDone.addEventListener('click', closeSuccessModal);
@@ -733,8 +979,13 @@ include __DIR__ . '/../../../includes/header.php';
     if (e.target === el.successModal) closeSuccessModal();
   });
 
-  loadMachines();
-  loadPlans();
-  renderAllocations();
+  (async () => {
+    await loadMachines();
+    await loadPlans();
+    renderParentRollChips();
+    refreshParentMeta();
+    renderAllocations();
+    await bootstrapPreselectedRolls();
+  })();
 })();
 </script>

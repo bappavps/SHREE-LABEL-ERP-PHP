@@ -284,22 +284,83 @@ try {
     // ═════════════════════════════════════════════════════════
     case 'browse_parent_rolls':
         $q = trim((string)($_GET['q'] ?? ''));
+        $rollNoFilter = trim((string)($_GET['roll_no'] ?? ''));
+        $paperTypeFilter = trim((string)($_GET['paper_type'] ?? ''));
+        $companyFilter = trim((string)($_GET['company'] ?? ''));
+        $statusFilter = trim((string)($_GET['status'] ?? ''));
+        $jobRefFilter = trim((string)($_GET['job_ref'] ?? ''));
+        $widthMinFilter = (float)($_GET['width_mm'] ?? 0);
         $limit = max(10, min(100, (int)($_GET['limit'] ?? 50)));
         $page = max(1, (int)($_GET['page'] ?? 1));
         $offset = ($page - 1) * $limit;
-        $baseSql = " FROM paper_stock
-                WHERE status NOT IN ('Consumed', 'Dispatched')";
+
+        $where = ["status NOT IN ('Consumed', 'Dispatched')"];
+        $types = '';
+        $params = [];
 
         if ($q !== '') {
             $like = '%' . $q . '%';
-            $baseSql .= " AND (
+            $where[] = "(
                 roll_no LIKE ?
                 OR paper_type LIKE ?
                 OR company LIKE ?
                 OR COALESCE(job_no, '') LIKE ?
                 OR COALESCE(job_name, '') LIKE ?
             )";
+            $types .= 'sssss';
+            array_push($params, $like, $like, $like, $like, $like);
         }
+
+        if ($rollNoFilter !== '') {
+            $where[] = "roll_no LIKE ?";
+            $types .= 's';
+            $params[] = '%' . $rollNoFilter . '%';
+        }
+
+        if ($paperTypeFilter !== '') {
+            $where[] = "paper_type LIKE ?";
+            $types .= 's';
+            $params[] = '%' . $paperTypeFilter . '%';
+        }
+
+        if ($companyFilter !== '') {
+            $where[] = "company LIKE ?";
+            $types .= 's';
+            $params[] = '%' . $companyFilter . '%';
+        }
+
+        if ($statusFilter !== '') {
+            $where[] = "status LIKE ?";
+            $types .= 's';
+            $params[] = '%' . $statusFilter . '%';
+        }
+
+        if ($jobRefFilter !== '') {
+            $where[] = "(COALESCE(job_no, '') LIKE ? OR COALESCE(job_name, '') LIKE ?)";
+            $types .= 'ss';
+            $likeJob = '%' . $jobRefFilter . '%';
+            $params[] = $likeJob;
+            $params[] = $likeJob;
+        }
+
+        if ($widthMinFilter > 0) {
+            $where[] = "width_mm >= ?";
+            $types .= 'd';
+            $params[] = $widthMinFilter;
+        }
+
+        $baseSql = " FROM paper_stock WHERE " . implode(' AND ', $where);
+
+        $bindDynamic = static function ($stmt, string $bindTypes, array $bindValues): void {
+            if ($bindTypes === '' || !$bindValues) {
+                return;
+            }
+            $args = [$bindTypes];
+            foreach ($bindValues as $k => $v) {
+                $args[] = &$bindValues[$k];
+            }
+            call_user_func_array([$stmt, 'bind_param'], $args);
+        };
 
         $countSql = "SELECT COUNT(*) AS total" . $baseSql;
         $sql = "SELECT id, roll_no, paper_type, company, width_mm, length_mtr, gsm, status, job_no, job_name, date_received" . $baseSql;
@@ -310,21 +371,16 @@ try {
                     id DESC
                   LIMIT ? OFFSET ?";
 
-        if ($q !== '') {
-            $countStmt = $db->prepare($countSql);
-            $countStmt->bind_param('sssss', $like, $like, $like, $like, $like);
-        } else {
-            $countStmt = $db->prepare($countSql);
-        }
+        $countStmt = $db->prepare($countSql);
+        $bindDynamic($countStmt, $types, $params);
         $countStmt->execute();
         $total = (int)($countStmt->get_result()->fetch_assoc()['total'] ?? 0);
 
         $stmt = $db->prepare($sql);
-        if ($q !== '') {
-            $stmt->bind_param('sssssii', $like, $like, $like, $like, $like, $limit, $offset);
-        } else {
-            $stmt->bind_param('ii', $limit, $offset);
-        }
+        $pageParams = $params;
+        $pageParams[] = $limit;
+        $pageParams[] = $offset;
+        $bindDynamic($stmt, $types . 'ii', $pageParams);
         $stmt->execute();
         $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
@@ -1847,6 +1903,62 @@ try {
             if ($jumboPrefix === '') $jumboPrefix = 'JMB';
             if ($printingPrefix === '') $printingPrefix = 'FLX';
 
+            $findExistingStageJob = static function (mysqli $dbConn, int $planningId, string $department): ?array {
+                if ($planningId <= 0) {
+                    return null;
+                }
+                $q = $dbConn->prepare("SELECT id, job_no, extra_data, notes, previous_job_id, roll_no FROM jobs WHERE planning_id = ? AND department = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
+                $q->bind_param('is', $planningId, $department);
+                $q->execute();
+                $row = $q->get_result()->fetch_assoc();
+                return $row ?: null;
+            };
+
+            $decodeJsonAssoc = static function ($raw): array {
+                if (!is_string($raw) || trim($raw) === '') {
+                    return [];
+                }
+                $decoded = json_decode($raw, true);
+                return is_array($decoded) ? $decoded : [];
+            };
+
+            $mergeAssignedRolls = static function (array $existing, array $incoming): array {
+                $map = [];
+                foreach ($existing as $row) {
+                    if (!is_array($row)) continue;
+                    $rollKey = trim((string)($row['roll_no'] ?? ''));
+                    if ($rollKey === '') continue;
+                    $map[$rollKey] = $row;
+                }
+                foreach ($incoming as $row) {
+                    if (!is_array($row)) continue;
+                    $rollKey = trim((string)($row['roll_no'] ?? ''));
+                    if ($rollKey === '') continue;
+                    $map[$rollKey] = $row;
+                }
+                return array_values($map);
+            };
+
+            $mergeParentRollNos = static function (array $extra, string $parentRollNo): array {
+                $existingParents = [];
+                if (isset($extra['parent_roll']) && trim((string)$extra['parent_roll']) !== '') {
+                    $existingParents[] = trim((string)$extra['parent_roll']);
+                }
+                if (isset($extra['parent_rolls']) && is_array($extra['parent_rolls'])) {
+                    foreach ($extra['parent_rolls'] as $pr) {
+                        $pr = trim((string)$pr);
+                        if ($pr !== '') {
+                            $existingParents[] = $pr;
+                        }
+                    }
+                }
+                $existingParents[] = trim($parentRollNo);
+                $existingParents = array_values(array_unique(array_filter($existingParents, static function ($v) {
+                    return $v !== '';
+                })));
+                return $existingParents;
+            };
+
             $widthChildIdx = 0;
             $nextAvailableChildRollNo = static function (mysqli $dbConn, string $parentNo, int &$idx): string {
                 $guard = 0;
@@ -1943,44 +2055,141 @@ try {
                 $jumboJobId = 0;
                 $jumboJobNo = '';
                 if ($allowJumbo) {
-                    $jumboJobNo = generateUniqueStageJobNo($db, $a['plan_no'], 'jumbo_job', $jumboPrefix, $batchId + $a['allocation_sequence']);
-                    $extraPayload = json_encode([
-                        'plan_no' => $a['plan_no'],
-                        'parent_roll' => $parentRollNo,
-                        'plan_allocations' => [$a],
-                        'child_rolls' => $assignedRolls,
-                        'batch_no' => $batchNo,
-                        'machine' => $resolvedMachine,
-                        'operator_name' => $operatorName,
-                    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-                    $notes = 'Jumbo grouped slitting job | Plan: ' . $a['plan_no'] . ' | ' . $jumboPrefix . ': ' . $jumboJobNo;
-                    $insJ = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, notes, extra_data) VALUES (?, ?, NULL, ?, 'Slitting', 'jumbo_slitting', 'Pending', 1, ?, ?)");
-                    $insJ->bind_param('sisss', $jumboJobNo, $a['planning_id'], $parentRollNo, $notes, $extraPayload);
-                    $insJ->execute();
-                    $jumboJobId = (int)$db->insert_id;
-                    $createdJobCards[] = ['job_no' => $jumboJobNo, 'type' => 'Slitting', 'plan_no' => $a['plan_no'], 'allocation_id' => $allocationId, 'id' => $jumboJobId];
+                    $existingJumbo = $findExistingStageJob($db, (int)$a['planning_id'], 'jumbo_slitting');
+                    if ($existingJumbo) {
+                        $jumboJobId = (int)($existingJumbo['id'] ?? 0);
+                        $jumboJobNo = trim((string)($existingJumbo['job_no'] ?? ''));
+                        $existingExtra = $decodeJsonAssoc($existingJumbo['extra_data'] ?? '');
+                        $existingExtra['plan_no'] = (string)$a['plan_no'];
+                        $existingExtra['parent_roll'] = (string)$parentRollNo;
+                        $existingExtra['parent_rolls'] = $mergeParentRollNos($existingExtra, $parentRollNo);
+                        $existingExtra['plan_allocations'] = isset($existingExtra['plan_allocations']) && is_array($existingExtra['plan_allocations'])
+                            ? array_merge($existingExtra['plan_allocations'], [$a])
+                            : [$a];
+                        $existingExtra['child_rolls'] = $mergeAssignedRolls(
+                            isset($existingExtra['child_rolls']) && is_array($existingExtra['child_rolls']) ? $existingExtra['child_rolls'] : [],
+                            $assignedRolls
+                        );
+                        $existingExtra['batch_refs'] = isset($existingExtra['batch_refs']) && is_array($existingExtra['batch_refs'])
+                            ? $existingExtra['batch_refs']
+                            : [];
+                        if (!in_array($batchNo, $existingExtra['batch_refs'], true)) {
+                            $existingExtra['batch_refs'][] = $batchNo;
+                        }
+                        $existingExtra['machine'] = $resolvedMachine;
+                        $existingExtra['operator_name'] = $operatorName;
+
+                        $existingNotes = trim((string)($existingJumbo['notes'] ?? ''));
+                        $mergeNote = 'Merged roll ' . $childNo . ' from parent ' . $parentRollNo . ' in batch ' . $batchNo;
+                        $newNotes = $existingNotes === '' ? $mergeNote : ($existingNotes . "\n" . $mergeNote);
+                        $extraPayload = json_encode($existingExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        $updJ = $db->prepare("UPDATE jobs SET extra_data = ?, notes = ?, roll_no = CASE WHEN roll_no IS NULL OR roll_no = '' THEN ? ELSE roll_no END WHERE id = ?");
+                        $updJ->bind_param('sssi', $extraPayload, $newNotes, $parentRollNo, $jumboJobId);
+                        $updJ->execute();
+                        $createdJobCards[] = [
+                            'job_no' => $jumboJobNo,
+                            'type' => 'Slitting',
+                            'action' => 'merged',
+                            'plan_no' => $a['plan_no'],
+                            'allocation_id' => $allocationId,
+                            'id' => $jumboJobId
+                        ];
+                    } else {
+                        $jumboJobNo = generateUniqueStageJobNo($db, $a['plan_no'], 'jumbo_job', $jumboPrefix, $batchId + $a['allocation_sequence']);
+                        $extraPayload = json_encode([
+                            'plan_no' => $a['plan_no'],
+                            'parent_roll' => $parentRollNo,
+                            'parent_rolls' => [$parentRollNo],
+                            'plan_allocations' => [$a],
+                            'child_rolls' => $assignedRolls,
+                            'batch_no' => $batchNo,
+                            'batch_refs' => [$batchNo],
+                            'machine' => $resolvedMachine,
+                            'operator_name' => $operatorName,
+                        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        $notes = 'Jumbo grouped slitting job | Plan: ' . $a['plan_no'] . ' | ' . $jumboPrefix . ': ' . $jumboJobNo;
+                        $insJ = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, notes, extra_data) VALUES (?, ?, NULL, ?, 'Slitting', 'jumbo_slitting', 'Pending', 1, ?, ?)");
+                        $insJ->bind_param('sisss', $jumboJobNo, $a['planning_id'], $parentRollNo, $notes, $extraPayload);
+                        $insJ->execute();
+                        $jumboJobId = (int)$db->insert_id;
+                        $createdJobCards[] = ['job_no' => $jumboJobNo, 'type' => 'Slitting', 'action' => 'created', 'plan_no' => $a['plan_no'], 'allocation_id' => $allocationId, 'id' => $jumboJobId];
+                    }
                 }
 
                 if ($allowPrinting) {
-                    $printingJobNo = generateUniqueStageJobNo($db, $a['plan_no'], 'printing_job', $printingPrefix, $batchId + 100 + $a['allocation_sequence']);
-                    $notesF = $directFlexoBypass
-                        ? ('Flexo printing created directly from multi-plan slitting | Plan: ' . $a['plan_no'] . ' | Flexo: ' . $printingJobNo)
-                        : ('Flexo printing queued from Jumbo | Plan: ' . $a['plan_no'] . ' | Jumbo: ' . ($jumboJobNo !== '' ? $jumboJobNo : 'N/A') . ' | Flexo: ' . $printingJobNo);
-                    if ($directFlexoBypass) {
-                        $extraF = json_encode([
-                            'assigned_child_rolls' => $assignedRolls,
-                            'direct_flexo_bypass' => true,
-                            'machine' => $resolvedMachine,
+                    $existingPrinting = $findExistingStageJob($db, (int)$a['planning_id'], 'flexo_printing');
+                    if ($existingPrinting) {
+                        $printingJobId = (int)($existingPrinting['id'] ?? 0);
+                        $printingJobNo = trim((string)($existingPrinting['job_no'] ?? ''));
+                        $existingExtraF = $decodeJsonAssoc($existingPrinting['extra_data'] ?? '');
+                        $existingExtraF['plan_no'] = (string)$a['plan_no'];
+                        $existingExtraF['machine'] = $resolvedMachine;
+                        $existingExtraF['assigned_child_rolls'] = $mergeAssignedRolls(
+                            isset($existingExtraF['assigned_child_rolls']) && is_array($existingExtraF['assigned_child_rolls']) ? $existingExtraF['assigned_child_rolls'] : [],
+                            $assignedRolls
+                        );
+                        $existingExtraF['parent_rolls'] = $mergeParentRollNos($existingExtraF, $parentRollNo);
+                        $existingExtraF['direct_flexo_bypass'] =
+                            (bool)($existingExtraF['direct_flexo_bypass'] ?? false) || $directFlexoBypass;
+                        $existingExtraF['batch_refs'] = isset($existingExtraF['batch_refs']) && is_array($existingExtraF['batch_refs'])
+                            ? $existingExtraF['batch_refs']
+                            : [];
+                        if (!in_array($batchNo, $existingExtraF['batch_refs'], true)) {
+                            $existingExtraF['batch_refs'][] = $batchNo;
+                        }
+
+                        $existingNotesF = trim((string)($existingPrinting['notes'] ?? ''));
+                        $mergeNoteF = 'Merged roll ' . $childNo . ' from parent ' . $parentRollNo . ' in batch ' . $batchNo;
+                        $newNotesF = $existingNotesF === '' ? $mergeNoteF : ($existingNotesF . "\n" . $mergeNoteF);
+                        $extraF = json_encode($existingExtraF, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                        if (!$directFlexoBypass && $jumboJobId > 0 && (int)($existingPrinting['previous_job_id'] ?? 0) <= 0) {
+                            $updF = $db->prepare("UPDATE jobs SET extra_data = ?, notes = ?, previous_job_id = ?, roll_no = CASE WHEN roll_no IS NULL OR roll_no = '' THEN ? ELSE roll_no END WHERE id = ?");
+                            $updF->bind_param('ssisi', $extraF, $newNotesF, $jumboJobId, $parentRollNo, $printingJobId);
+                        } else {
+                            $updF = $db->prepare("UPDATE jobs SET extra_data = ?, notes = ?, roll_no = CASE WHEN roll_no IS NULL OR roll_no = '' THEN ? ELSE roll_no END WHERE id = ?");
+                            $updF->bind_param('sssi', $extraF, $newNotesF, $parentRollNo, $printingJobId);
+                        }
+                        $updF->execute();
+                        $createdJobCards[] = [
+                            'job_no' => $printingJobNo,
+                            'type' => 'Printing',
+                            'action' => 'merged',
                             'plan_no' => $a['plan_no'],
-                        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-                        $insF = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Printing', 'flexo_printing', 'Pending', 2, NULL, ?, ?)");
-                        $insF->bind_param('sisss', $printingJobNo, $a['planning_id'], $parentRollNo, $notesF, $extraF);
+                            'allocation_id' => $allocationId,
+                            'id' => $printingJobId
+                        ];
                     } else {
-                        $insF = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Printing', 'flexo_printing', 'Queued', 2, ?, ?)");
-                        $insF->bind_param('sisss', $printingJobNo, $a['planning_id'], $parentRollNo, $jumboJobId, $notesF);
+                        $printingJobNo = generateUniqueStageJobNo($db, $a['plan_no'], 'printing_job', $printingPrefix, $batchId + 100 + $a['allocation_sequence']);
+                        $notesF = $directFlexoBypass
+                            ? ('Flexo printing created directly from multi-plan slitting | Plan: ' . $a['plan_no'] . ' | Flexo: ' . $printingJobNo)
+                            : ('Flexo printing queued from Jumbo | Plan: ' . $a['plan_no'] . ' | Jumbo: ' . ($jumboJobNo !== '' ? $jumboJobNo : 'N/A') . ' | Flexo: ' . $printingJobNo);
+                        if ($directFlexoBypass) {
+                            $extraF = json_encode([
+                                'assigned_child_rolls' => $assignedRolls,
+                                'parent_rolls' => [$parentRollNo],
+                                'direct_flexo_bypass' => true,
+                                'machine' => $resolvedMachine,
+                                'plan_no' => $a['plan_no'],
+                                'batch_refs' => [$batchNo],
+                            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                            $insF = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Printing', 'flexo_printing', 'Pending', 2, NULL, ?, ?)");
+                            $insF->bind_param('sisss', $printingJobNo, $a['planning_id'], $parentRollNo, $notesF, $extraF);
+                        } else {
+                            $extraF = json_encode([
+                                'assigned_child_rolls' => $assignedRolls,
+                                'parent_rolls' => [$parentRollNo],
+                                'direct_flexo_bypass' => false,
+                                'machine' => $resolvedMachine,
+                                'plan_no' => $a['plan_no'],
+                                'batch_refs' => [$batchNo],
+                            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                            $insF = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Printing', 'flexo_printing', 'Queued', 2, ?, ?, ?)");
+                            $insF->bind_param('sissss', $printingJobNo, $a['planning_id'], $parentRollNo, $jumboJobId, $notesF, $extraF);
+                        }
+                        $insF->execute();
+                        $createdJobCards[] = ['job_no' => $printingJobNo, 'type' => 'Printing', 'action' => 'created', 'plan_no' => $a['plan_no'], 'allocation_id' => $allocationId, 'id' => (int)$db->insert_id];
                     }
-                    $insF->execute();
-                    $createdJobCards[] = ['job_no' => $printingJobNo, 'type' => 'Printing', 'plan_no' => $a['plan_no'], 'allocation_id' => $allocationId, 'id' => (int)$db->insert_id];
                 }
 
                 $planningStatusTarget = 'Slitting Completed';
