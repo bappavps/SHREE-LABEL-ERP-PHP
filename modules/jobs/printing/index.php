@@ -10,6 +10,7 @@ $canManualRollEntry = hasPageAction('/modules/jobs/printing/index.php', 'edit')
   || hasRole('manager', 'system_admin', 'super_admin')
   || isAdmin();
 $canDeleteJobs = isAdmin() && !$isOperatorView;
+$canReviewFlexoRequests = hasRole('admin', 'manager', 'system_admin', 'super_admin');
 $pageTitle = $isOperatorView ? 'Flexo Operator' : 'Flexo Printing Jobs';
 $db = getDB();
 $appSettings = getAppSettings();
@@ -103,6 +104,61 @@ foreach ($jobs as &$j) {
     }
 }
 unset($j);
+
+// Attach latest/pending Flexo operator request metadata per job (if table exists)
+$jobIds = array_values(array_unique(array_map(static fn($j) => (int)($j['id'] ?? 0), $jobs)));
+if (!empty($jobIds) && jobs_printing_table_exists($db, 'job_change_requests')) {
+  $pendingMap = [];
+  $ph = implode(',', array_fill(0, count($jobIds), '?'));
+  $types = str_repeat('i', count($jobIds));
+
+  $pStmt = $db->prepare("SELECT job_id, COUNT(*) AS pending_count FROM job_change_requests WHERE request_type = 'flexo_operator_request' AND status = 'Pending' AND job_id IN ($ph) GROUP BY job_id");
+  if ($pStmt) {
+    $pStmt->bind_param($types, ...$jobIds);
+    $pStmt->execute();
+    $pRows = $pStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($pRows as $pr) {
+      $pendingMap[(int)($pr['job_id'] ?? 0)] = (int)($pr['pending_count'] ?? 0);
+    }
+  }
+
+  $latestMap = [];
+  $lSql = "SELECT r.*
+           FROM job_change_requests r
+           INNER JOIN (
+              SELECT job_id, MAX(id) AS max_id
+              FROM job_change_requests
+              WHERE request_type = 'flexo_operator_request' AND job_id IN ($ph)
+              GROUP BY job_id
+           ) lr ON lr.max_id = r.id";
+  $lStmt = $db->prepare($lSql);
+  if ($lStmt) {
+    $lStmt->bind_param($types, ...$jobIds);
+    $lStmt->execute();
+    $lRows = $lStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($lRows as $lr) {
+      $jid = (int)($lr['job_id'] ?? 0);
+      if ($jid <= 0) continue;
+      $lr['payload'] = json_decode((string)($lr['payload_json'] ?? '{}'), true) ?: [];
+      $latestMap[$jid] = $lr;
+    }
+  }
+
+  foreach ($jobs as &$j) {
+    $jid = (int)($j['id'] ?? 0);
+    $j['flexo_pending_request_count'] = (int)($pendingMap[$jid] ?? 0);
+    $latest = $latestMap[$jid] ?? null;
+    $j['flexo_latest_request_id'] = (int)($latest['id'] ?? 0);
+    $j['flexo_latest_request_status'] = (string)($latest['status'] ?? '');
+    $j['flexo_latest_request_note'] = (string)($latest['review_note'] ?? '');
+    $j['flexo_latest_request_requested_by'] = (string)($latest['requested_by_name'] ?? '');
+    $j['flexo_latest_request_requested_at'] = (string)($latest['requested_at'] ?? '');
+    $j['flexo_latest_request_reviewed_by'] = (string)($latest['reviewed_by_name'] ?? '');
+    $j['flexo_latest_request_reviewed_at'] = (string)($latest['reviewed_at'] ?? '');
+    $j['flexo_latest_request_payload'] = is_array($latest['payload'] ?? null) ? $latest['payload'] : [];
+  }
+  unset($j);
+}
 
 // Map plate-data image by plate number and attach preview URLs for all printing job cards.
 $plateImageByPlateNo = [];
@@ -254,6 +310,7 @@ $activeJobs  = array_values(array_filter($jobs, fn($j) => !in_array($j['status']
 $historyJobs = array_values(array_filter($jobs, fn($j) => in_array($j['status'], ['Completed','QC Passed','Closed','Finalized'])));
 $activeCount  = count($activeJobs);
 $historyCount = count($historyJobs);
+$requestTabCount = count(array_filter($jobs, fn($j) => $j['status'] === 'Running' && (int)($j['flexo_pending_request_count'] ?? 0) > 0));
 
 $csrf = generateCSRF();
 include __DIR__ . '/../../../includes/header.php';
@@ -316,7 +373,9 @@ include __DIR__ . '/../../../includes/header.php';
 .fp-badge-urgent{background:#fee2e2;color:#991b1b}
 .fp-badge-high{background:#ffedd5;color:#9a3412}
 .fp-badge-normal{background:#e0f2fe;color:#075985}
+.fp-badge-request-alert{background:#fee2e2;color:#991b1b;border:1px solid #ef4444;animation:fp-request-blink 1.1s ease-in-out infinite}
 @keyframes pulse-fp{0%,100%{opacity:1}50%{opacity:.6}}
+@keyframes fp-request-blink{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(1.06)}}
 .fp-action-btn{padding:5px 12px;font-size:.65rem;font-weight:800;text-transform:uppercase;border:none;border-radius:8px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:4px}
 .fp-btn-start{background:var(--fp-brand);color:#fff}
 .fp-btn-start:hover{background:#7c3aed}
@@ -375,6 +434,17 @@ include __DIR__ . '/../../../includes/header.php';
 .fp-op-grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
 .fp-op-grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
 .fp-op-grid-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.fp-req-grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.fp-req-grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.fp-req-meta{font-size:.72rem;color:#475569;font-weight:700}
+.fp-req-note{font-size:.74rem;color:#64748b;line-height:1.45}
+.fp-req-diff{font-size:.78rem;border:1px solid #fecaca;background:#fff1f2;color:#991b1b;border-radius:8px;padding:6px 8px;font-weight:800}
+.fp-req-chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:.62rem;font-weight:900;text-transform:uppercase;letter-spacing:.04em}
+.fp-req-chip.pending{background:#fef3c7;color:#92400e}
+.fp-req-chip.approved{background:#dcfce7;color:#166534}
+.fp-req-chip.rejected{background:#fee2e2;color:#991b1b}
+.fp-req-attn{border:1px solid #fecaca;background:#fff1f2 !important}
+.fp-req-attn .fp-op-h{background:#ef4444;color:#fff}
 .fp-op-field{display:grid;gap:5px}
 .fp-op-field label{font-size:.62rem;font-weight:800;text-transform:uppercase;color:#64748b;letter-spacing:.03em}
 .fp-op-field input,.fp-op-field select,.fp-op-field textarea{padding:8px 10px;border:1px solid #dbe5f0;border-radius:8px;font-size:.8rem;font-weight:600;font-family:inherit;background:#fcfdff}
@@ -400,12 +470,18 @@ include __DIR__ . '/../../../includes/header.php';
 .fp-photo-preview{width:100%;height:160px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc}
 .fp-voice-btn{padding:6px 10px;font-size:.62rem;font-weight:800;text-transform:uppercase;border:1px solid #dbe5f0;border-radius:8px;background:#fff;cursor:pointer;color:#334155}
 .fp-voice-btn.active{background:#fee2e2;border-color:#fca5a5;color:#b91c1c}
+.fp-btn-reject{background:#ef4444;color:#fff}
+.fp-btn-reject:hover{background:#dc2626}
 
 .fp-tabs{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
 .fp-tab-btn{padding:7px 14px;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border:1px solid var(--border,#e2e8f0);background:#fff;border-radius:999px;cursor:pointer;color:#64748b;transition:all .15s}
 .fp-tab-btn.active{background:#0f172a;color:#fff;border-color:#0f172a}
 .fp-tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#e2e8f0;color:#334155;font-size:.62rem;margin-left:6px}
 .fp-tab-btn.active .fp-tab-count{background:rgba(255,255,255,.2);color:#fff}
+.fp-filter-request-badge{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;padding:0 8px;border-radius:999px;background:#ef4444;color:#fff;font-size:.72rem;font-weight:900;margin-left:8px;box-shadow:0 0 0 3px rgba(239,68,68,.2);animation:fp-request-blink 1.1s ease-in-out infinite}
+.fp-card-request-alert{border-left-color:#ef4444;box-shadow:0 0 0 2px rgba(239,68,68,.22), 0 8px 20px rgba(239,68,68,.16);animation:fp-request-card-pulse 1.25s ease-in-out infinite}
+.fp-card-request-alert .fp-card-head{background:linear-gradient(135deg,#fff1f2,#fff)}
+@keyframes fp-request-card-pulse{0%,100%{box-shadow:0 0 0 2px rgba(239,68,68,.22), 0 8px 20px rgba(239,68,68,.16)}50%{box-shadow:0 0 0 4px rgba(239,68,68,.34), 0 12px 28px rgba(239,68,68,.24)}}
 .fp-card-check{width:16px;height:16px;cursor:pointer;accent-color:var(--fp-brand);flex-shrink:0;margin-right:2px}
 @media print{.no-print,.breadcrumb,.page-header,.fp-modal-overlay{display:none!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
 @media(max-width:900px){.fp-op-grid-4{grid-template-columns:repeat(2,minmax(0,1fr))}.fp-op-lanes{grid-template-columns:repeat(4,minmax(72px,1fr))}.fp-op-topstrip{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -456,6 +532,7 @@ include __DIR__ . '/../../../includes/header.php';
 $totalJobs = count($jobs);
 $pendingJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Pending'));
 $runningJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Running'));
+$runningRequestJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Running' && (int)($j['flexo_pending_request_count'] ?? 0) > 0));
 $completedJobs = count(array_filter($jobs, fn($j) => in_array($j['status'], ['Completed','QC Passed'])));
 $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
 ?>
@@ -476,6 +553,10 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
     <div class="fp-stat-icon" style="background:#dbeafe;color:#3b82f6"><i class="bi bi-play-circle"></i></div>
     <div><div class="fp-stat-val"><?= $runningJobs ?></div><div class="fp-stat-label">Running</div></div>
   </div>
+  <div class="fp-stat" style="cursor:pointer" onclick="clickStatFilter('Request')">
+    <div class="fp-stat-icon" style="background:#fee2e2;color:#dc2626"><i class="bi bi-bell-fill"></i></div>
+    <div><div class="fp-stat-val"><?= $requestTabCount ?></div><div class="fp-stat-label">Request</div></div>
+  </div>
   <div class="fp-stat" style="cursor:pointer" onclick="clickStatFilter('Completed')">
     <div class="fp-stat-icon" style="background:#dcfce7;color:#16a34a"><i class="bi bi-check-circle"></i></div>
     <div><div class="fp-stat-val"><?= $completedJobs ?></div><div class="fp-stat-label">Completed</div></div>
@@ -490,12 +571,13 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
 <div id="fpPanelActive">
 <div class="fp-filters no-print">
   <input type="text" class="fp-search" id="fpSearch" placeholder="Search by job no, roll, company&hellip;">
-  <button class="fp-filter-btn" onclick="filterFP('all',this)">All</button>
-  <button class="fp-filter-btn" onclick="filterFP('Queued',this)">Queued</button>
-  <button class="fp-filter-btn active" onclick="filterFP('Pending',this)">Pending</button>
-  <button class="fp-filter-btn" onclick="filterFP('Running',this)">Running</button>
-  <button class="fp-filter-btn" onclick="filterFP('Completed',this)">Completed</button>
-  <button id="fpPrintSelBtn" onclick="printSelectedJobs()" style="display:none;padding:6px 14px;font-size:.7rem;font-weight:800;text-transform:uppercase;border:none;background:var(--fp-brand);color:#fff;border-radius:20px;cursor:pointer;align-items:center;gap:6px;letter-spacing:.04em"><i class="bi bi-printer-fill"></i> Print Selected (<span id="fpSelCount">0</span>)</button>
+  <button type="button" class="fp-filter-btn" onclick="filterFP('all',this)">All</button>
+  <button type="button" class="fp-filter-btn" onclick="filterFP('Queued',this)">Queued</button>
+  <button type="button" class="fp-filter-btn active" onclick="filterFP('Pending',this)">Pending</button>
+  <button type="button" class="fp-filter-btn" onclick="filterFP('Running',this)">Running<?php if (!$isOperatorView && $runningRequestJobs > 0): ?> <span class="fp-filter-request-badge" title="Running jobs with pending request"><?= (int)$runningRequestJobs ?></span><?php endif; ?></button>
+  <button type="button" class="fp-filter-btn" onclick="filterFP('Request',this)">Request<?php if (!$isOperatorView && $requestTabCount > 0): ?> <span class="fp-filter-request-badge" title="Pending request jobs"><?= (int)$requestTabCount ?></span><?php endif; ?></button>
+  <button type="button" class="fp-filter-btn" onclick="filterFP('Completed',this)">Completed</button>
+  <button type="button" id="fpPrintSelBtn" onclick="printSelectedJobs()" style="display:none;padding:6px 14px;font-size:.7rem;font-weight:800;text-transform:uppercase;border:none;background:var(--fp-brand);color:#fff;border-radius:20px;cursor:pointer;align-items:center;gap:6px;letter-spacing:.04em"><i class="bi bi-printer-fill"></i> Print Selected (<span id="fpSelCount">0</span>)</button>
 </div>
 
 <div class="fp-grid no-print" id="fpGrid">
@@ -508,6 +590,8 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
   <?php foreach ($jobs as $idx => $job):
     $sts = $job['status'];
     $stsClass = match($sts) { 'Queued'=>'queued', 'Pending'=>'pending', 'Running'=>'running', 'Completed','QC Passed'=>'completed', default=>'pending' };
+    $pendingReqCount = (int)($job['flexo_pending_request_count'] ?? 0);
+    $hasPendingFlexoReq = !$isOperatorView && $sts === 'Running' && $pendingReqCount > 0;
     $timerActive = !empty($job['extra_data_parsed']['timer_active']);
     $timerState = strtolower(trim((string)($job['extra_data_parsed']['timer_state'] ?? '')));
     $pri = $job['planning_priority'] ?? 'Normal';
@@ -525,11 +609,14 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
     }
     $isQueued = ($sts === 'Queued');
   ?>
-  <div class="fp-card <?= $isQueued ? 'fp-queued' : '' ?>" data-status="<?= e($sts) ?>" data-lockstate="<?= $prevDone ? 'unlocked' : 'locked' ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" onclick="openPrintDetail(<?= $job['id'] ?>)">
+  <div class="fp-card <?= $isQueued ? 'fp-queued' : '' ?> <?= $hasPendingFlexoReq ? 'fp-card-request-alert' : '' ?>" data-status="<?= e($sts) ?>" data-has-request="<?= $hasPendingFlexoReq ? '1' : '0' ?>" data-lockstate="<?= $prevDone ? 'unlocked' : 'locked' ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" onclick="openPrintDetail(<?= $job['id'] ?>)">
     <div class="fp-card-head">
       <div class="fp-jobno"><i class="bi bi-printer-fill"></i> <?= e($job['job_no']) ?></div>
       <div style="display:flex;gap:6px;align-items:center">
         <span class="fp-badge fp-badge-<?= $stsClass ?>"><?= e($sts) ?></span>
+        <?php if ($hasPendingFlexoReq): ?>
+          <span class="fp-badge fp-badge-request-alert" title="Pending flexo operator request">REQUEST <?= $pendingReqCount ?></span>
+        <?php endif; ?>
         <?php if ($pri !== 'Normal'): ?>
           <span class="fp-badge fp-badge-<?= $priClass ?>"><?= e($pri) ?></span>
         <?php endif; ?>
@@ -663,16 +750,16 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
 <div class="ht-filter-bar no-print" style="margin-top:14px">
   <input type="text" class="ht-search" id="htSearch" placeholder="Search job no, roll, company, material&hellip;">
   <span class="ht-label">Period:</span>
-  <button class="ht-period-btn active" onclick="htSetPeriod('all',this)">All</button>
-  <button class="ht-period-btn" onclick="htSetPeriod('today',this)">Today</button>
-  <button class="ht-period-btn" onclick="htSetPeriod('week',this)">Week</button>
-  <button class="ht-period-btn" onclick="htSetPeriod('month',this)">Month</button>
-  <button class="ht-period-btn" onclick="htSetPeriod('year',this)">Year</button>
+  <button type="button" class="ht-period-btn active" onclick="htSetPeriod('all',this)">All</button>
+  <button type="button" class="ht-period-btn" onclick="htSetPeriod('today',this)">Today</button>
+  <button type="button" class="ht-period-btn" onclick="htSetPeriod('week',this)">Week</button>
+  <button type="button" class="ht-period-btn" onclick="htSetPeriod('month',this)">Month</button>
+  <button type="button" class="ht-period-btn" onclick="htSetPeriod('year',this)">Year</button>
   <span class="ht-label" style="margin-left:4px">Custom:</span>
   <input type="date" class="ht-date-input" id="htDateFrom" title="From date">
   <span style="color:#94a3b8;font-size:.7rem">to</span>
   <input type="date" class="ht-date-input" id="htDateTo" title="To date">
-  <button class="ht-period-btn" onclick="htApplyCustomDate()" style="background:var(--fp-brand);color:#fff;border-color:var(--fp-brand)"><i class="bi bi-funnel"></i> Apply</button>
+  <button type="button" class="ht-period-btn" onclick="htApplyCustomDate()" style="background:var(--fp-brand);color:#fff;border-color:var(--fp-brand)"><i class="bi bi-funnel"></i> Apply</button>
 </div>
 
 <!-- History Bulk Bar -->
@@ -682,11 +769,11 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
     <span style="font-weight:800;font-size:.82rem"><span id="htSelectedCount">0</span> Selected</span>
   </div>
   <div style="display:flex;gap:8px;align-items:center">
-    <button class="ht-bulk-btn" onclick="htSelectAllVisible()">Select All</button>
-    <button class="ht-bulk-btn" onclick="htDeselectAll()">Deselect All</button>
-    <button class="ht-bulk-print" onclick="htBulkPrint()"><i class="bi bi-printer-fill"></i> Print Selected</button>
+    <button type="button" class="ht-bulk-btn" onclick="htSelectAllVisible()">Select All</button>
+    <button type="button" class="ht-bulk-btn" onclick="htDeselectAll()">Deselect All</button>
+    <button type="button" class="ht-bulk-print" onclick="htBulkPrint()"><i class="bi bi-printer-fill"></i> Print Selected</button>
     <?php if ($canDeleteJobs): ?>
-    <button class="ht-bulk-delete" onclick="htBulkDelete()"><i class="bi bi-trash-fill"></i> Delete Selected</button>
+    <button type="button" class="ht-bulk-delete" onclick="htBulkDelete()"><i class="bi bi-trash-fill"></i> Delete Selected</button>
     <?php endif; ?>
   </div>
 </div>
@@ -790,6 +877,7 @@ const BASE_URL = '<?= BASE_URL ?>';
 const IS_OPERATOR_VIEW = <?= $isOperatorView ? 'true' : 'false' ?>;
 const CAN_MANUAL_ROLL_ENTRY = <?= $canManualRollEntry ? 'true' : 'false' ?>;
 const IS_ADMIN = <?= $canDeleteJobs ? 'true' : 'false' ?>;
+const CAN_REVIEW_FLEXO_REQUESTS = <?= $canReviewFlexoRequests ? 'true' : 'false' ?>;
 const CURRENT_USER = <?= json_encode($sessionUser, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const ALL_JOBS = <?= json_encode($jobs, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
@@ -798,7 +886,14 @@ const ANILOX_LPI_OPTIONS = <?= json_encode($aniloxLpiOptions, JSON_HEX_TAG|JSON_
 let activeStatusFilter = 'Pending';
 
 function getFieldVal(form, name) {
-  return String(form.querySelector('[name="' + name + '"]')?.value || '').trim();
+  const local = form ? form.querySelector('[name="' + name + '"]') : null;
+  if (local) return String(local.value || '').trim();
+  const formId = String(form?.id || '').trim();
+  if (formId !== '') {
+    const linked = document.querySelector('[name="' + name + '"][form="' + formId + '"]');
+    if (linked) return String(linked.value || '').trim();
+  }
+  return '';
 }
 
 function getNumberFieldVal(form, name) {
@@ -951,8 +1046,18 @@ function toLocalDateInputValue(value) {
 }
 
 function toSafeNumber(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0;
+  }
+  const raw = String(value == null ? '' : value).trim();
+  if (!raw) return 0;
+  const normalized = raw.replace(/,/g, '');
+  const direct = Number(normalized);
+  if (Number.isFinite(direct)) return direct;
+  const match = normalized.match(/-?\d+(?:\.\d+)?/);
+  if (!match) return 0;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function normalizeAniloxLaneValue(value) {
@@ -1239,12 +1344,313 @@ function resolvePrintDisplayName(job) {
   return dept || '—';
 }
 
+function flexoRequestStatusClass(status) {
+  const s = String(status || '').toLowerCase();
+  if (s === 'approved') return 'approved';
+  if (s === 'rejected') return 'rejected';
+  return 'pending';
+}
+
+function flexoRequestDraftKey(jobId) {
+  return 'fp_flexo_req_draft_' + String(jobId || '0');
+}
+
+function loadFlexoRequestDraft(jobId, payload) {
+  let fromStorage = null;
+  try {
+    const raw = localStorage.getItem(flexoRequestDraftKey(jobId));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') fromStorage = parsed;
+    }
+  } catch (_) {}
+
+  const add = (payload && typeof payload.additional_roll_request === 'object') ? payload.additional_roll_request : {};
+  const ex = (payload && typeof payload.excess_roll_adjustment === 'object') ? payload.excess_roll_adjustment : {};
+
+  return {
+    source_roll_no: String(fromStorage?.source_roll_no || ex.source_roll_no || '').trim(),
+    used_length_mtr: toSafeNumber(fromStorage?.used_length_mtr ?? ex.used_length_mtr ?? 0),
+    remaining_length_mtr: toSafeNumber(fromStorage?.remaining_length_mtr ?? ex.remaining_length_mtr ?? 0),
+    additional_width_mm: toSafeNumber(fromStorage?.additional_width_mm ?? add.width_mm ?? 0),
+    additional_length_mtr: toSafeNumber(fromStorage?.additional_length_mtr ?? add.length_mtr ?? 0),
+    additional_reason: String(fromStorage?.additional_reason || add.reason || '').trim(),
+    operator_request_note: String(fromStorage?.operator_request_note || add.operator_note || ex.operator_note || '').trim(),
+  };
+}
+
+function saveFlexoRequestDraft(jobId, form) {
+  if (!jobId || !form) return;
+  const draft = {
+    source_roll_no: getFieldVal(form, 'fr_source_roll_no'),
+    used_length_mtr: toSafeNumber(getFieldVal(form, 'fr_used_length_mtr')),
+    remaining_length_mtr: toSafeNumber(getFieldVal(form, 'fr_remaining_length_mtr')),
+    additional_width_mm: toSafeNumber(getFieldVal(form, 'fr_additional_width_mm')),
+    additional_length_mtr: toSafeNumber(getFieldVal(form, 'fr_additional_length_mtr')),
+    additional_reason: getFieldVal(form, 'fr_additional_reason'),
+    operator_request_note: getFieldVal(form, 'fr_operator_request_note')
+  };
+  try { localStorage.setItem(flexoRequestDraftKey(jobId), JSON.stringify(draft)); } catch (_) {}
+}
+
+function clearFlexoRequestDraft(jobId) {
+  if (!jobId) return;
+  try { localStorage.removeItem(flexoRequestDraftKey(jobId)); } catch (_) {}
+}
+
+function hasFlexoRequestValues(form) {
+  if (!form) return false;
+  const sourceRollNo = String(getFieldVal(form, 'fr_source_roll_no') || '').trim();
+  const usedLength = toSafeNumber(getFieldVal(form, 'fr_used_length_mtr'));
+  const additionalWidth = toSafeNumber(getFieldVal(form, 'fr_additional_width_mm'));
+  const additionalLength = toSafeNumber(getFieldVal(form, 'fr_additional_length_mtr'));
+  const additionalReason = String(getFieldVal(form, 'fr_additional_reason') || '').trim();
+  const operatorNote = String(getFieldVal(form, 'fr_operator_request_note') || '').trim();
+  return sourceRollNo || usedLength > 0 || additionalWidth > 0 || additionalLength > 0 || additionalReason || operatorNote;
+}
+
+function updateFlexoRequestButtonStates(jobId) {
+  if (!jobId) return;
+  const form = document.getElementById('dm-operator-form');
+  if (!form) return;
+  const hasValues = hasFlexoRequestValues(form);
+  const submitBtn = document.querySelector('[data-role="fr-submit"]');
+  const againStartBtn = document.querySelector('[data-role="again-start"]');
+  const submitForceLocked = !!(submitBtn && submitBtn.hasAttribute('data-force-disabled'));
+  if (submitBtn && !submitForceLocked) submitBtn.disabled = !hasValues;
+  if (againStartBtn) {
+    if (submitForceLocked) {
+      if (!againStartBtn.hasAttribute('data-force-disabled')) againStartBtn.disabled = false;
+    } else if (hasValues) {
+      againStartBtn.disabled = true;
+    } else {
+      if (!againStartBtn.hasAttribute('data-force-disabled')) {
+        againStartBtn.disabled = false;
+      }
+    }
+  }
+}
+
+function bindFlexoRequestAutoCalc(jobId, form, options) {
+  if (!form) return;
+  const opts = options || {};
+  const formId = String(form.id || '');
+  const resolveLinked = function(name) {
+    if (!name) return null;
+    return document.querySelector('[name="' + name + '"][form="' + formId + '"]') || form.querySelector('[name="' + name + '"]');
+  };
+
+  const sourceEl = resolveLinked('fr_source_roll_no');
+  const usedEl = resolveLinked('fr_used_length_mtr');
+  const remEl = resolveLinked('fr_remaining_length_mtr');
+  const reqInputs = Array.from(document.querySelectorAll('[name^="fr_"][form="' + formId + '"]'));
+  if (!sourceEl || !usedEl || !remEl) return;
+
+  remEl.readOnly = true;
+
+  function syncRemaining() {
+    const selected = sourceEl.options[sourceEl.selectedIndex];
+    const rollLen = toSafeNumber(selected ? selected.getAttribute('data-roll-length') : 0);
+    const used = toSafeNumber(usedEl.value);
+    if (rollLen > 0 && used >= 0) {
+      const rem = Math.max(0, rollLen - used);
+      remEl.value = rem.toFixed(2);
+    } else if (toSafeNumber(remEl.value) <= 0) {
+      remEl.value = '';
+    }
+    saveFlexoRequestDraft(jobId, form);
+    updateFlexoRequestButtonStates(jobId);
+  }
+
+  sourceEl.addEventListener('change', syncRemaining);
+  usedEl.addEventListener('input', syncRemaining);
+  reqInputs.forEach(function(el) {
+    if (el === sourceEl || el === usedEl || el === remEl) return;
+    el.addEventListener('input', function() { 
+      saveFlexoRequestDraft(jobId, form);
+      updateFlexoRequestButtonStates(jobId);
+    });
+    el.addEventListener('change', function() { 
+      saveFlexoRequestDraft(jobId, form);
+      updateFlexoRequestButtonStates(jobId);
+    });
+  });
+
+  if (opts.autoComputeOnInit) syncRemaining();
+}
+
+function setControlsEditable(root, editable) {
+  if (!root) return;
+  root.querySelectorAll('input,select,textarea,button').forEach(function(el) {
+    if (el.type === 'hidden') return;
+    if (el.hasAttribute('data-keep-readonly')) return;
+    if (!editable) {
+      el.disabled = true;
+    } else if (!el.hasAttribute('data-force-disabled')) {
+      el.disabled = false;
+    }
+  });
+}
+
+function applyOperatorModalEditState(ctx) {
+  if (!ctx || !ctx.form) return;
+  const reqWrap = ctx.reqWrap || null;
+  const reqEditable = !!ctx.reqEditable;
+  const mainEditable = !!ctx.mainEditable;
+
+  setControlsEditable(ctx.form, mainEditable);
+
+  if (reqWrap) {
+    reqWrap.style.display = ctx.showRequest ? '' : 'none';
+    reqWrap.querySelectorAll('[name^="fr_"][form="dm-operator-form"], [data-role="fr-submit"]').forEach(function(el) {
+      if (!reqEditable) {
+        el.disabled = true;
+      } else if (!el.hasAttribute('data-force-disabled')) {
+        el.disabled = false;
+      }
+    });
+    const remField = reqWrap.querySelector('[name="fr_remaining_length_mtr"][form="dm-operator-form"]');
+    if (remField) remField.readOnly = true;
+  }
+}
+
+function buildFlexoRequestPayloadFromForm(job, form) {
+  if (!form) return null;
+  const sourceRollNo = getFieldVal(form, 'fr_source_roll_no');
+  const usedLength = toSafeNumber(getFieldVal(form, 'fr_used_length_mtr'));
+  const remainingLength = toSafeNumber(getFieldVal(form, 'fr_remaining_length_mtr'));
+  const additionalWidth = toSafeNumber(getFieldVal(form, 'fr_additional_width_mm'));
+  const additionalLength = toSafeNumber(getFieldVal(form, 'fr_additional_length_mtr'));
+  const additionalReason = getFieldVal(form, 'fr_additional_reason');
+  const operatorNote = getFieldVal(form, 'fr_operator_request_note');
+
+  const excessEnabled = !!sourceRollNo && (usedLength > 0 || remainingLength > 0);
+  const additionalEnabled = additionalWidth > 0 && additionalLength > 0;
+  if (!excessEnabled && !additionalEnabled) return null;
+
+  return {
+    additional_roll_request: {
+      enabled: additionalEnabled,
+      width_mm: additionalWidth,
+      length_mtr: additionalLength,
+      reason: additionalReason,
+      operator_note: operatorNote,
+    },
+    excess_roll_adjustment: {
+      enabled: excessEnabled,
+      source_roll_no: sourceRollNo,
+      used_length_mtr: usedLength,
+      remaining_length_mtr: remainingLength,
+      operator_note: operatorNote,
+    },
+    same_job_card: true,
+    request_scope: 'flexo_operator_request',
+    created_from_modal: true,
+    created_from_job_id: Number(job?.id || 0),
+  };
+}
+
+async function submitFlexoOperatorRequest(jobId) {
+  const job = ALL_JOBS.find(j => j.id == jobId);
+  if (!job) { alert('Job not found'); return; }
+  const form = document.getElementById('dm-operator-form');
+  if (!form) { alert('Request form not found'); return; }
+
+  const payload = buildFlexoRequestPayloadFromForm(job, form);
+  if (!payload) {
+    alert('Fill at least one request block: additional roll OR excess adjustment.');
+    return;
+  }
+
+  if (!confirm('Submit this Flexo Operator Request to Production Manager?')) return;
+
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'submit_flexo_operator_request');
+  fd.append('job_id', String(jobId));
+  fd.append('request_payload', JSON.stringify(payload));
+  try {
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) {
+      alert('Request failed: ' + (data.error || 'Unknown error'));
+      return;
+    }
+    clearFlexoRequestDraft(jobId);
+    alert('Request submitted successfully. Request ID: ' + (data.request_id || 'N/A'));
+    location.reload();
+  } catch (err) {
+    alert('Network error: ' + err.message);
+  }
+}
+
+async function reviewFlexoOperatorRequest(requestId, decision, jobId) {
+  if (!requestId) return;
+  const decisionLabel = decision === 'Approved' ? 'Accept' : 'Reject';
+  if (!confirm('Are you sure you want to ' + decisionLabel + ' this request?')) return;
+  const note = prompt((decision === 'Approved' ? 'Approval' : 'Rejection') + ' note (optional):', '') || '';
+
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'review_flexo_operator_request');
+  fd.append('request_id', String(requestId));
+  fd.append('decision', String(decision));
+  fd.append('review_note', note);
+
+  try {
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) {
+      alert('Review failed: ' + (data.error || 'Unknown error'));
+      return;
+    }
+    alert('Request ' + decisionLabel.toLowerCase() + 'ed successfully.');
+    location.reload();
+  } catch (err) {
+    alert('Network error: ' + err.message);
+  }
+}
+
+async function completeFlexoAdditionalSlitting(jobId, taskIndex) {
+  const rollNo = prompt('Enter issued roll no from completed slitting (stock roll):', '');
+  if (rollNo === null) return;
+  const cleanRoll = String(rollNo || '').trim();
+  if (!cleanRoll) {
+    alert('Roll number is required.');
+    return;
+  }
+  const note = prompt('Completion note (optional):', '') || '';
+  if (!confirm('Complete additional slitting task using roll ' + cleanRoll + '?')) return;
+
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'complete_flexo_additional_slitting_task');
+  fd.append('job_id', String(jobId));
+  fd.append('task_index', String(taskIndex));
+  fd.append('source_roll_no', cleanRoll);
+  fd.append('completion_note', note);
+  try {
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) {
+      alert('Task completion failed: ' + (data.error || 'Unknown error'));
+      return;
+    }
+    alert('Additional slitting task completed. Issued roll: ' + (data.issued_roll_no || cleanRoll));
+    location.reload();
+  } catch (err) {
+    alert('Network error: ' + err.message);
+  }
+}
+
 function operatorTabMatch(card, status) {
   const lockState = String(card.dataset.lockstate || '').toLowerCase();
   const cardStatus = String(card.dataset.status || '').trim();
+  const hasRequest = String(card.dataset.hasRequest || '0') === '1';
 
   if (status === 'Queued') return lockState === 'locked';
   if (status === 'Pending') return lockState !== 'locked' && (cardStatus === 'Pending' || cardStatus === 'Queued');
+  if (status === 'Request') return cardStatus === 'Running' && hasRequest;
   if (status === 'all') return true;
   return cardStatus === status;
 }
@@ -1263,13 +1669,21 @@ function filterFP(status, btn) {
   activeStatusFilter = status;
   document.querySelectorAll('.fp-filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+
+  const btnActive = document.getElementById('fpTabBtnActive');
+  const btnHistory = document.getElementById('fpTabBtnHistory');
+  if (btnHistory) btnHistory.classList.remove('active');
+  if (btnActive) btnActive.classList.add('active');
+
   applyFPFilters();
 }
 
 function clickStatFilter(status) {
   activeStatusFilter = status;
   document.querySelectorAll('.fp-filter-btn').forEach(b => {
-    b.classList.toggle('active', b.textContent.trim() === (status === 'all' ? 'All' : status));
+    const txt = b.textContent.trim().toLowerCase();
+    const target = (status === 'all' ? 'all' : String(status || '').toLowerCase());
+    b.classList.toggle('active', txt.startsWith(target));
   });
   // Ensure active tab is on Job Cards
   switchFPTab('active');
@@ -2164,18 +2578,23 @@ async function printOpenRollVerification(job) {
 async function startJobWithTimer(id) {
   if (!confirm('Start this job?')) return;
   const job = ALL_JOBS.find(j => j.id == id) || null;
-  const verification = await printOpenRollVerification(job || { id: id, job_no: id, slitting_rolls: [] });
-  if (!verification.ok) {
-    alert(verification.error || 'Assigned roll verification is required before start.');
-    return;
-  }
+  const timerState = String((job && job.extra_data_parsed && job.extra_data_parsed.timer_state) || '').toLowerCase();
+  const isResumeFromPause = !!job && String(job.status || '') === 'Running' && timerState === 'paused';
+  let verifiedRolls = [];
+  if (!isResumeFromPause) {
+    const verification = await printOpenRollVerification(job || { id: id, job_no: id, slitting_rolls: [] });
+    if (!verification.ok) {
+      alert(verification.error || 'Assigned roll verification is required before start.');
+      return;
+    }
 
-  const verifiedRolls = Array.isArray(verification.verified_rolls)
-    ? verification.verified_rolls.map(function(v) { return String(v || '').trim(); }).filter(Boolean)
-    : [];
-  if (!verifiedRolls.length) {
-    alert('Roll verification did not capture any required roll. Please verify again.');
-    return;
+    verifiedRolls = Array.isArray(verification.verified_rolls)
+      ? verification.verified_rolls.map(function(v) { return String(v || '').trim(); }).filter(Boolean)
+      : [];
+    if (!verifiedRolls.length) {
+      alert('Roll verification did not capture any required roll. Please verify again.');
+      return;
+    }
   }
 
   const fd = new FormData();
@@ -2183,13 +2602,15 @@ async function startJobWithTimer(id) {
   fd.append('action', 'update_status');
   fd.append('job_id', id);
   fd.append('status', 'Running');
-  fd.append('verified_rolls_json', JSON.stringify(verifiedRolls));
-  fd.append('verified_rolls_csv', verifiedRolls.join(','));
-  fd.append('verified_rolls_count', String(verifiedRolls.length));
-  verifiedRolls.forEach(function(rollNo) {
-    fd.append('verified_rolls[]', rollNo);
-  });
-  fd.append('verified_rolls_mode', CAN_MANUAL_ROLL_ENTRY ? 'qr_manual' : 'qr_only');
+  if (!isResumeFromPause) {
+    fd.append('verified_rolls_json', JSON.stringify(verifiedRolls));
+    fd.append('verified_rolls_csv', verifiedRolls.join(','));
+    fd.append('verified_rolls_count', String(verifiedRolls.length));
+    verifiedRolls.forEach(function(rollNo) {
+      fd.append('verified_rolls[]', rollNo);
+    });
+    fd.append('verified_rolls_mode', CAN_MANUAL_ROLL_ENTRY ? 'qr_manual' : 'qr_only');
+  }
   try {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
@@ -2520,6 +2941,18 @@ async function openPrintDetail(id, mode) {
   })();
   const prevDone = !job.previous_job_id || !job.prev_job_status || ['Completed','QC Passed','Closed','Finalized'].includes(job.prev_job_status);
   const elapsedSec = timerActive ? printTimerTotalSeconds(job) : activeSeconds;
+  const flexoReqId = Number(job.flexo_latest_request_id || 0);
+  const flexoReqStatus = String(job.flexo_latest_request_status || '').trim();
+  const flexoReqPendingCount = Number(job.flexo_pending_request_count || 0);
+  const flexoReqPayload = (job.flexo_latest_request_payload && typeof job.flexo_latest_request_payload === 'object') ? job.flexo_latest_request_payload : {};
+  const hasPendingFlexoReq = flexoReqStatus === 'Pending' || flexoReqPendingCount > 0;
+  const hasApprovedFlexoReq = flexoReqStatus === 'Approved' && flexoReqId > 0;
+  const hasLockedFlexoReq = hasPendingFlexoReq || hasApprovedFlexoReq;
+  const requestDraft = loadFlexoRequestDraft(job.id, flexoReqPayload);
+  const extensionTasks = Array.isArray(extra.flexo_extension_tasks) ? extra.flexo_extension_tasks : [];
+  const pendingAdditionalTasks = extensionTasks
+    .map((t, idx) => Object.assign({ _idx: idx }, t || {}))
+    .filter(t => String(t.type || '').toLowerCase() === 'additional_slitting' && String(t.status || '').toLowerCase() === 'pending');
 
   const rollRows = (Array.isArray(card.roll_wastage_rows) && card.roll_wastage_rows.length ? card.roll_wastage_rows : card.material_rows).map((row, idx) => ({
     idx,
@@ -2606,12 +3039,13 @@ async function openPrintDetail(id, mode) {
     </div>`;
   }
 
-  html += `<div class="fp-op-topstrip" style="grid-template-columns:repeat(5,minmax(0,1fr))">
+  html += `<div class="fp-op-topstrip" style="grid-template-columns:repeat(6,minmax(0,1fr))">
     <div class="fp-op-topitem"><div class="k">Created</div><div class="v">${esc(createdAt)}</div></div>
     <div class="fp-op-topitem"><div class="k">Started</div><div class="v">${esc(startedAt)}</div></div>
     <div class="fp-op-topitem"><div class="k">Completed</div><div class="v">${esc(completedAt)}</div></div>
     <div class="fp-op-topitem"><div class="k">Active Time</div><div class="v">${activeSeconds > 0 ? esc(formatDurationText(activeSeconds)) : '—'}</div></div>
     <div class="fp-op-topitem"><div class="k">Pause Time</div><div class="v">${pauseSeconds > 0 ? esc(formatDurationText(pauseSeconds)) : '—'}</div></div>
+    <div class="fp-op-topitem"><div class="k">Total Time</div><div class="v">${(activeSeconds + pauseSeconds) > 0 ? esc(formatDurationText(activeSeconds + pauseSeconds)) : '—'}</div></div>
   </div>`;
 
   html += `<div class="fp-detail-section">${buildPrintTimerHistoryHtml(job)}</div>`;
@@ -2720,9 +3154,110 @@ async function openPrintDetail(id, mode) {
     </div></div>`;
   }
 
+  const requestStatusChip = flexoReqId > 0
+    ? `<span class="fp-req-chip ${flexoRequestStatusClass(flexoReqStatus)}">${esc(flexoReqStatus || 'Pending')}</span>`
+    : '<span class="fp-req-chip pending">No Request</span>';
+
+  if (IS_OPERATOR_VIEW) {
+    html += `<div id="fpFlexoRequestWrap" class="fp-detail-section fp-op-shell fp-req-attn"><div class="fp-op-form">
+      <div class="fp-op-section"><div class="fp-op-h">Flexo Operator Request Function</div><div class="fp-op-b">
+        <div class="fp-req-meta">Latest Request Status: ${requestStatusChip}</div>
+        <div class="fp-req-note">Create request from this same job card for additional roll requirement or excess remaining adjustment. Same job card number will be retained after approval.</div>
+      </div>
+      <div class="fp-op-b fp-req-grid-3">
+        <div class="fp-op-field"><label>Source Assigned Roll</label>
+          <select name="fr_source_roll_no" form="dm-operator-form" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}>
+            <option value="">Select roll</option>
+            ${rollRows.map(r => `<option value="${esc(r.roll_no || '')}" data-roll-length="${esc(String(toSafeNumber(r.slitted_length || 0)))}" ${(String(requestDraft.source_roll_no || '').trim() === String(r.roll_no || '').trim()) ? 'selected' : ''}>${esc(r.roll_no || '')} (${esc(String(r.slitted_length || '0'))}m)</option>`).join('')}
+          </select>
+        </div>
+        <div class="fp-op-field"><label>Used Length (mtr)</label><input type="number" step="0.01" min="0" name="fr_used_length_mtr" form="dm-operator-form" value="${esc(requestDraft.used_length_mtr > 0 ? String(requestDraft.used_length_mtr) : '')}" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}></div>
+        <div class="fp-op-field"><label>Remaining Length (mtr)</label><input type="number" step="0.01" min="0" name="fr_remaining_length_mtr" form="dm-operator-form" value="${esc(requestDraft.remaining_length_mtr > 0 ? String(requestDraft.remaining_length_mtr) : '')}" readonly ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}></div>
+      </div>
+      <div class="fp-op-b fp-req-grid-3">
+        <div class="fp-op-field"><label>Additional Width (mm)</label><input type="number" step="0.01" min="0" name="fr_additional_width_mm" form="dm-operator-form" value="${esc(requestDraft.additional_width_mm > 0 ? String(requestDraft.additional_width_mm) : '')}" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}></div>
+        <div class="fp-op-field"><label>Additional Length (mtr)</label><input type="number" step="0.01" min="0" name="fr_additional_length_mtr" form="dm-operator-form" value="${esc(requestDraft.additional_length_mtr > 0 ? String(requestDraft.additional_length_mtr) : '')}" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}></div>
+        <div class="fp-op-field"><label>Additional Roll Reason</label><input type="text" name="fr_additional_reason" form="dm-operator-form" value="${esc(requestDraft.additional_reason || '')}" placeholder="Wastage / extra requirement" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}></div>
+      </div>
+      <div class="fp-op-b">
+        <div class="fp-op-field"><label>Operator Request Note</label><textarea name="fr_operator_request_note" form="dm-operator-form" placeholder="Why this request is needed" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}>${esc(requestDraft.operator_request_note || '')}</textarea></div>
+      </div>
+      <div class="fp-op-b">
+        <div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
+          <button type="button" class="fp-action-btn fp-btn-start" data-role="fr-submit" onclick="submitFlexoOperatorRequest(${job.id})" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : 'disabled'}><i class="bi bi-send"></i> Submit Request to Production</button>
+        </div>
+        ${hasPendingFlexoReq ? '<div class="fp-req-note">One pending request already exists for this job. Please wait for manager review.</div>' : ''}
+        ${hasApprovedFlexoReq ? '<div class="fp-req-note">Latest request already approved. This section is now view-only.</div>' : ''}
+      </div>
+      </div></div></div>`;
+  } else if (flexoReqId > 0) {
+    const addReq = (flexoReqPayload && typeof flexoReqPayload.additional_roll_request === 'object') ? flexoReqPayload.additional_roll_request : {};
+    const exReq = (flexoReqPayload && typeof flexoReqPayload.excess_roll_adjustment === 'object') ? flexoReqPayload.excess_roll_adjustment : {};
+    const srcRoll = String(exReq.source_roll_no || '').trim();
+    const srcRow = rollRows.find(r => String(r.roll_no || '').trim() === srcRoll);
+    const srcLength = toSafeNumber(srcRow ? srcRow.slitted_length : 0);
+    const usedLen = toSafeNumber(exReq.used_length_mtr || 0);
+    const remLen = toSafeNumber(exReq.remaining_length_mtr || 0);
+    const reqBy = String(job.flexo_latest_request_requested_by || '').trim();
+    const reqAt = String(job.flexo_latest_request_requested_at || '').trim();
+    const reviewNote = String(job.flexo_latest_request_note || '').trim();
+
+    html += `<div class="fp-detail-section fp-op-shell fp-req-attn"><div class="fp-op-form">
+      <div class="fp-op-section"><div class="fp-op-h">Flexo Operator Request Review</div><div class="fp-op-b">
+        <div class="fp-req-meta">Request #${esc(String(flexoReqId))} • Status: ${requestStatusChip}</div>
+        <div class="fp-req-note">Requested by: <strong>${esc(reqBy || '—')}</strong> at <strong>${esc(formatDateTimeText(reqAt))}</strong></div>
+        ${reviewNote ? `<div class="fp-req-note">Review Note: ${esc(reviewNote)}</div>` : ''}
+      </div>
+      ${addReq && addReq.enabled ? `<div class="fp-op-b fp-req-grid-3">
+        <div class="fp-op-field"><label>Additional Width (mm)</label><div class="fp-req-diff">${esc(String(addReq.width_mm || 0))}</div></div>
+        <div class="fp-op-field"><label>Additional Length (mtr)</label><div class="fp-req-diff">${esc(String(addReq.length_mtr || 0))}</div></div>
+        <div class="fp-op-field"><label>Reason</label><div class="fp-req-diff">${esc(String(addReq.reason || ''))}</div></div>
+      </div>` : ''}
+      ${exReq && exReq.enabled ? `<div class="fp-op-b fp-req-grid-3">
+        <div class="fp-op-field"><label>Source Roll</label><div class="fp-req-diff">${esc(srcRoll || '—')}</div></div>
+        <div class="fp-op-field"><label>Original Length (mtr)</label><div class="fp-op-field"><input value="${esc(String(srcLength || 0))}" readonly></div></div>
+        <div class="fp-op-field"><label>Used Length (mtr)</label><div class="fp-req-diff">${esc(String(usedLen || 0))}</div></div>
+      </div>
+      <div class="fp-op-b fp-req-grid-2">
+        <div class="fp-op-field"><label>Remaining Length (mtr)</label><div class="fp-req-diff">${esc(String(remLen || 0))}</div></div>
+        <div class="fp-op-field"><label>Expected Remaining Stock Roll</label><div class="fp-req-diff">${esc(srcRoll ? (srcRoll + '-1 / -2 ...') : 'Numeric suffix')}</div></div>
+      </div>` : ''}
+      ${pendingAdditionalTasks.length ? `<div class="fp-op-b">
+        <div class="fp-req-meta">Pending Additional Slitting Tasks (Same Job Card)</div>
+        ${pendingAdditionalTasks.map(t => `<div style="border:1px solid #fde68a;background:#fffbeb;border-radius:10px;padding:10px;margin-top:8px">
+          <div class="fp-req-note"><strong>Task #${esc(String(t._idx + 1))}</strong> • Width: ${esc(String(t.width_mm || 0))} mm • Length: ${esc(String(t.length_mtr || 0))} mtr • Status: ${esc(String(t.status || 'Pending'))}</div>
+          <div class="fp-req-note">Reason: ${esc(String(t.reason || ''))}</div>
+          <div style="display:flex;justify-content:flex-end;margin-top:8px"><button type="button" class="fp-action-btn fp-btn-start" onclick="completeFlexoAdditionalSlitting(${job.id}, ${t._idx})"><i class="bi bi-check2-square"></i> Complete Additional Slitting</button></div>
+        </div>`).join('')}
+      </div>` : ''}
+      </div></div></div>`;
+  }
+
   document.getElementById('dm-body').innerHTML = html;
   updateTimers();
-  bindFlexoFormBehavior(document.getElementById('dm-operator-form'));
+  const operatorFormEl = document.getElementById('dm-operator-form');
+  bindFlexoFormBehavior(operatorFormEl);
+
+  if (IS_OPERATOR_VIEW && operatorFormEl) {
+    const isPausedState = sts === 'Running' && timerState === 'paused';
+    const isCompleteState = mode === 'complete';
+    const isBeforeStart = sts === 'Pending' && !isCompleteState;
+    const showRequestSection = !isBeforeStart;
+    const mainEditable = isCompleteState;
+    const reqEditable = !hasLockedFlexoReq && (isPausedState || isCompleteState);
+    const reqWrap = document.getElementById('fpFlexoRequestWrap');
+
+    applyOperatorModalEditState({
+      form: operatorFormEl,
+      reqWrap: reqWrap,
+      mainEditable: mainEditable,
+      reqEditable: reqEditable,
+      showRequest: showRequestSection,
+    });
+
+    bindFlexoRequestAutoCalc(job.id, operatorFormEl, { autoComputeOnInit: true });
+    updateFlexoRequestButtonStates(job.id);
+  }
 
   // Footer actions
   let fHtml = '<div style="display:flex;gap:8px">';
@@ -2736,12 +3271,16 @@ async function openPrintDetail(id, mode) {
     fHtml += `<button class="fp-action-btn fp-btn-start" disabled><i class="bi bi-lock-fill"></i> Waiting for Slitting</button>`;
   } else if (sts === 'Running' && IS_OPERATOR_VIEW) {
     if (timerState === 'paused') {
-      fHtml += `<button class="fp-action-btn fp-btn-start" onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-circle"></i> Again Start</button>`;
+      fHtml += `<button class="fp-action-btn fp-btn-start" data-role="again-start" onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-circle"></i> Again Start</button>`;
     } else if (timerActive) {
       fHtml += `<button class="fp-action-btn fp-btn-start" onclick="resumeRunningPrintTimer(${job.id})"><i class="bi bi-play-circle"></i> Open Timer</button>`;
     } else {
       fHtml += `<button class="fp-action-btn fp-btn-complete" onclick="openPrintDetail(${job.id},'complete')"><i class="bi bi-check-lg"></i> Complete</button>`;
     }
+  }
+  if (!IS_OPERATOR_VIEW && CAN_REVIEW_FLEXO_REQUESTS && flexoReqId > 0 && flexoReqStatus === 'Pending') {
+    fHtml += `<button class="fp-action-btn fp-btn-start" onclick="reviewFlexoOperatorRequest(${flexoReqId}, 'Approved', ${job.id})"><i class="bi bi-check2-circle"></i> Accept Request</button>`;
+    fHtml += `<button class="fp-action-btn fp-btn-reject" onclick="reviewFlexoOperatorRequest(${flexoReqId}, 'Rejected', ${job.id})"><i class="bi bi-x-circle"></i> Reject Request</button>`;
   }
   if (IS_ADMIN) {
     fHtml += `<button class="fp-action-btn fp-btn-start" onclick="regenerateJobCard(${job.id})" title="Regenerate with reason"><i class="bi bi-arrow-repeat"></i> Regenerate</button>`;

@@ -211,6 +211,304 @@ function jobs_apply_jumbo_roll_changes(mysqli $db, array $job, array $rows, floa
     }
 }
 
+function jobs_float2($value): float {
+    $n = (float)$value;
+    return round($n, 2);
+}
+
+function jobs_calc_sqm(float $widthMm, float $lengthMtr): float {
+    if ($widthMm <= 0 || $lengthMtr <= 0) return 0.0;
+    return round(($widthMm / 1000) * $lengthMtr, 2);
+}
+
+function jobs_next_numeric_roll_no(mysqli $db, string $baseRollNo): string {
+    $baseRollNo = trim($baseRollNo);
+    if ($baseRollNo === '') {
+        throw new Exception('Base roll number is required for numeric suffix generation');
+    }
+    for ($i = 1; $i <= 5000; $i++) {
+        $candidate = $baseRollNo . '-' . $i;
+        $chk = $db->prepare("SELECT id FROM paper_stock WHERE roll_no = ? LIMIT 1");
+        $chk->bind_param('s', $candidate);
+        $chk->execute();
+        $exists = $chk->get_result()->fetch_assoc();
+        if (!$exists) return $candidate;
+    }
+    throw new Exception('Could not generate numeric suffix roll for base: ' . $baseRollNo);
+}
+
+function jobs_merge_roll_item(array $rows, array $item): array {
+    $rollNo = trim((string)($item['roll_no'] ?? ''));
+    if ($rollNo === '') return $rows;
+    $out = [];
+    $updated = false;
+    foreach ($rows as $row) {
+        if (!is_array($row)) continue;
+        $rn = trim((string)($row['roll_no'] ?? ''));
+        if ($rn !== '' && strcasecmp($rn, $rollNo) === 0) {
+            $out[] = array_merge($row, $item);
+            $updated = true;
+            continue;
+        }
+        $out[] = $row;
+    }
+    if (!$updated) {
+        $out[] = $item;
+    }
+    return array_values($out);
+}
+
+function jobs_insert_inventory_log(mysqli $db, string $rollNo, int $paperStockId, string $description, int $performedBy): void {
+    $stmt = $db->prepare("INSERT INTO inventory_logs (action_type, roll_no, paper_stock_id, description, performed_by) VALUES ('FLEXO_REQUEST', ?, ?, ?, ?)");
+    if (!$stmt) return;
+    $stmt->bind_param('sisi', $rollNo, $paperStockId, $description, $performedBy);
+    $stmt->execute();
+}
+
+function jobs_apply_flexo_operator_request(mysqli $db, array $job, array $payload, int $actorId, string $actorName): array {
+    $jobId = (int)($job['id'] ?? 0);
+    if ($jobId <= 0) return ['ok' => false, 'error' => 'Invalid flexo job'];
+
+    $extra = json_decode((string)($job['extra_data'] ?? '{}'), true);
+    if (!is_array($extra)) $extra = [];
+    $assignedRolls = is_array($extra['assigned_child_rolls'] ?? null) ? $extra['assigned_child_rolls'] : [];
+    $jobName = jobs_display_job_name($job);
+
+    $summary = [
+        'issued_roll_no' => '',
+        'remaining_stock_roll_no' => '',
+        'additional_slitting_task_created' => false,
+    ];
+
+    $beforeState = [
+        'assigned_child_rolls' => $assignedRolls,
+        'flexo_extension_tasks' => is_array($extra['flexo_extension_tasks'] ?? null) ? $extra['flexo_extension_tasks'] : [],
+    ];
+
+    $db->begin_transaction();
+    try {
+        $excess = is_array($payload['excess_roll_adjustment'] ?? null) ? $payload['excess_roll_adjustment'] : [];
+        $excessEnabled = !empty($excess['enabled']);
+        if ($excessEnabled) {
+            $sourceRollNo = trim((string)($excess['source_roll_no'] ?? ''));
+            $usedLength = jobs_float2($excess['used_length_mtr'] ?? 0);
+            $remainingLength = jobs_float2($excess['remaining_length_mtr'] ?? 0);
+            if ($sourceRollNo === '') throw new Exception('Source roll is required for excess adjustment');
+
+            $srcStmt = $db->prepare("SELECT * FROM paper_stock WHERE roll_no = ? LIMIT 1 FOR UPDATE");
+            $srcStmt->bind_param('s', $sourceRollNo);
+            $srcStmt->execute();
+            $src = $srcStmt->get_result()->fetch_assoc();
+            if (!$src) throw new Exception('Source roll not found in stock: ' . $sourceRollNo);
+
+            $originalLength = jobs_float2($src['length_mtr'] ?? 0);
+            if ($originalLength <= 0) {
+                $originalLength = jobs_float2($usedLength + $remainingLength);
+            }
+            if ($usedLength <= 0 && $remainingLength > 0) {
+                $usedLength = jobs_float2(max(0, $originalLength - $remainingLength));
+            }
+            if ($remainingLength <= 0 && $usedLength > 0 && $originalLength > ($usedLength + 0.01)) {
+                // If operator provided only used length, infer remaining from source roll.
+                $remainingLength = jobs_float2(max(0, $originalLength - $usedLength));
+            }
+            if ($usedLength <= 0) throw new Exception('Used length must be greater than 0');
+            if ($remainingLength < 0) throw new Exception('Remaining length cannot be negative');
+            if (($usedLength + $remainingLength) > ($originalLength + 0.01)) {
+                throw new Exception('Used + remaining exceeds original roll length');
+            }
+
+            $srcWidth = jobs_float2($src['width_mm'] ?? 0);
+            $srcSqmUsed = jobs_calc_sqm($srcWidth, $usedLength);
+            $srcRemarks = trim((string)($src['remarks'] ?? ''));
+            $adjNote = 'Flexo request approved by ' . $actorName . ' on ' . date('Y-m-d H:i');
+            $srcRemarks = $srcRemarks === '' ? $adjNote : ($srcRemarks . ' | ' . $adjNote);
+            $srcStatus = 'Job Assign';
+            $srcJobNo = (string)($job['job_no'] ?? '');
+            $srcJobName = $jobName;
+            $updSrc = $db->prepare("UPDATE paper_stock SET length_mtr = ?, sqm = ?, remarks = ?, status = ?, job_no = ?, job_name = ?, date_used = CURDATE() WHERE roll_no = ?");
+            $updSrc->bind_param('ddsssss', $usedLength, $srcSqmUsed, $srcRemarks, $srcStatus, $srcJobNo, $srcJobName, $sourceRollNo);
+            $updSrc->execute();
+
+            $assignedRolls = jobs_merge_roll_item($assignedRolls, [
+                'roll_no' => $sourceRollNo,
+                'parent_roll_no' => (string)($src['parent_roll_no'] ?? ''),
+                'width_mm' => $srcWidth,
+                'length_mtr' => $usedLength,
+                'paper_type' => (string)($src['paper_type'] ?? ''),
+                'company' => (string)($src['company'] ?? ''),
+                'gsm' => jobs_float2($src['gsm'] ?? 0),
+                'status' => 'Job Assign',
+                'job_no' => (string)($job['job_no'] ?? ''),
+                'job_name' => $jobName,
+            ]);
+
+            jobs_insert_inventory_log($db, $sourceRollNo, (int)($src['id'] ?? 0), 'Flexo request apply: adjusted used length to ' . $usedLength . ' mtr', $actorId);
+
+            if ($remainingLength > 0.01) {
+                $newStockRollNo = jobs_next_numeric_roll_no($db, $sourceRollNo);
+                $summary['remaining_stock_roll_no'] = $newStockRollNo;
+                $newSqm = jobs_calc_sqm($srcWidth, $remainingLength);
+                $stockStatus = 'Stock';
+                $empty = '';
+                $insNew = $db->prepare("INSERT INTO paper_stock (roll_no, paper_type, company, width_mm, length_mtr, gsm, weight_kg, purchase_rate, sqm, lot_batch_no, parent_roll_no, source_batch_id, source_allocation_id, status, job_no, job_name, job_size, date_received, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, CURDATE(), ?)");
+                $insNew->bind_param(
+                    'sssddddddssssssi',
+                    $newStockRollNo,
+                    $src['paper_type'],
+                    $src['company'],
+                    $srcWidth,
+                    $remainingLength,
+                    $src['gsm'],
+                    $src['weight_kg'],
+                    $src['purchase_rate'],
+                    $newSqm,
+                    $src['lot_batch_no'],
+                    $sourceRollNo,
+                    $stockStatus,
+                    $empty,
+                    $empty,
+                    $empty,
+                    $actorId
+                );
+                $insNew->execute();
+                $newStockId = (int)$db->insert_id;
+                jobs_insert_inventory_log($db, $newStockRollNo, $newStockId, 'Flexo request apply: created remaining stock roll ' . $remainingLength . ' mtr from ' . $sourceRollNo, $actorId);
+            }
+        }
+
+        $additional = is_array($payload['additional_roll_request'] ?? null) ? $payload['additional_roll_request'] : [];
+        $addEnabled = !empty($additional['enabled']);
+        if ($addEnabled) {
+            $reqWidth = jobs_float2($additional['width_mm'] ?? 0);
+            $reqLength = jobs_float2($additional['length_mtr'] ?? 0);
+            $reqReason = trim((string)($additional['reason'] ?? ''));
+            if ($reqWidth <= 0 || $reqLength <= 0) {
+                throw new Exception('Additional roll width and length must be greater than 0');
+            }
+
+            $candidate = null;
+            $find = $db->prepare("SELECT * FROM paper_stock WHERE ABS(width_mm - ?) <= 0.01 AND length_mtr >= ? AND LOWER(COALESCE(status,'')) IN ('stock','main','available') ORDER BY length_mtr ASC, id ASC LIMIT 1 FOR UPDATE");
+            $find->bind_param('dd', $reqWidth, $reqLength);
+            $find->execute();
+            $candidate = $find->get_result()->fetch_assoc();
+
+            if ($candidate) {
+                $candRollNo = (string)($candidate['roll_no'] ?? '');
+                $candLen = jobs_float2($candidate['length_mtr'] ?? 0);
+                $issuedRollNo = $candRollNo;
+                $issuedLength = $reqLength;
+                $issuedSqm = jobs_calc_sqm($reqWidth, $issuedLength);
+
+                if ($candLen > ($reqLength + 0.01)) {
+                    $issuedRollNo = jobs_next_numeric_roll_no($db, $candRollNo);
+                    $remain = jobs_float2($candLen - $reqLength);
+                    $remainSqm = jobs_calc_sqm($reqWidth, $remain);
+                    $stockStatus = 'Stock';
+                    $updCand = $db->prepare("UPDATE paper_stock SET length_mtr = ?, sqm = ?, status = ? WHERE id = ?");
+                    $candId = (int)($candidate['id'] ?? 0);
+                    $updCand->bind_param('ddsi', $remain, $remainSqm, $stockStatus, $candId);
+                    $updCand->execute();
+
+                    $jobStatus = 'Job Assign';
+                    $jobNo = (string)($job['job_no'] ?? '');
+                    $emptyText = '';
+                    $insIssue = $db->prepare("INSERT INTO paper_stock (roll_no, paper_type, company, width_mm, length_mtr, gsm, weight_kg, purchase_rate, sqm, lot_batch_no, parent_roll_no, source_batch_id, source_allocation_id, status, job_no, job_name, job_size, date_received, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, CURDATE(), ?)");
+                    $insIssue->bind_param(
+                        'sssddddddssssssi',
+                        $issuedRollNo,
+                        $candidate['paper_type'],
+                        $candidate['company'],
+                        $reqWidth,
+                        $issuedLength,
+                        $candidate['gsm'],
+                        $candidate['weight_kg'],
+                        $candidate['purchase_rate'],
+                        $issuedSqm,
+                        $candidate['lot_batch_no'],
+                        $candRollNo,
+                        $jobStatus,
+                        $jobNo,
+                        $jobName,
+                        $emptyText,
+                        $actorId
+                    );
+                    $insIssue->execute();
+                    $issuedId = (int)$db->insert_id;
+                    jobs_insert_inventory_log($db, $issuedRollNo, $issuedId, 'Flexo request apply: additional roll issued by splitting stock roll ' . $candRollNo, $actorId);
+                } else {
+                    $jobStatus = 'Job Assign';
+                    $jobNo = (string)($job['job_no'] ?? '');
+                    $updWhole = $db->prepare("UPDATE paper_stock SET status = ?, job_no = ?, job_name = ?, date_used = CURDATE() WHERE id = ?");
+                    $candId = (int)($candidate['id'] ?? 0);
+                    $updWhole->bind_param('sssi', $jobStatus, $jobNo, $jobName, $candId);
+                    $updWhole->execute();
+                    jobs_insert_inventory_log($db, $issuedRollNo, (int)($candidate['id'] ?? 0), 'Flexo request apply: additional roll issued directly from stock', $actorId);
+                }
+
+                $summary['issued_roll_no'] = $issuedRollNo;
+                $assignedRolls = jobs_merge_roll_item($assignedRolls, [
+                    'roll_no' => $issuedRollNo,
+                    'parent_roll_no' => (string)($candidate['parent_roll_no'] ?? ''),
+                    'width_mm' => $reqWidth,
+                    'length_mtr' => $issuedLength,
+                    'paper_type' => (string)($candidate['paper_type'] ?? ''),
+                    'company' => (string)($candidate['company'] ?? ''),
+                    'gsm' => jobs_float2($candidate['gsm'] ?? 0),
+                    'status' => 'Job Assign',
+                    'job_no' => (string)($job['job_no'] ?? ''),
+                    'job_name' => $jobName,
+                    'request_reason' => $reqReason,
+                ]);
+            } else {
+                $tasks = is_array($extra['flexo_extension_tasks'] ?? null) ? $extra['flexo_extension_tasks'] : [];
+                $tasks[] = [
+                    'type' => 'additional_slitting',
+                    'tag' => 'Additional Slitting',
+                    'status' => 'Pending',
+                    'job_id' => $jobId,
+                    'job_no' => (string)($job['job_no'] ?? ''),
+                    'width_mm' => $reqWidth,
+                    'length_mtr' => $reqLength,
+                    'reason' => $reqReason,
+                    'created_by' => $actorName,
+                    'created_by_id' => $actorId,
+                    'created_at' => date('c'),
+                ];
+                $extra['flexo_extension_tasks'] = $tasks;
+                $summary['additional_slitting_task_created'] = true;
+            }
+        }
+
+        $extra['assigned_child_rolls'] = array_values($assignedRolls);
+        $extra['flexo_request_last_applied_at'] = date('c');
+        $extra['flexo_request_last_applied_by'] = $actorName;
+        $extra['flexo_request_last_applied_by_id'] = $actorId;
+
+        $afterState = [
+            'assigned_child_rolls' => $extra['assigned_child_rolls'],
+            'flexo_extension_tasks' => is_array($extra['flexo_extension_tasks'] ?? null) ? $extra['flexo_extension_tasks'] : [],
+        ];
+        $extra['flexo_request_last_apply_summary'] = $summary;
+
+        $extraJson = json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $updJob = $db->prepare("UPDATE jobs SET extra_data = ? WHERE id = ?");
+        $updJob->bind_param('si', $extraJson, $jobId);
+        $updJob->execute();
+
+        $db->commit();
+        return [
+            'ok' => true,
+            'summary' => $summary,
+            'before_state' => $beforeState,
+            'after_state' => $afterState,
+        ];
+    } catch (Throwable $th) {
+        $db->rollback();
+        return ['ok' => false, 'error' => $th->getMessage()];
+    }
+}
+
 function jobs_department_label(string $department): string {
     $department = strtolower(trim($department));
     $map = [
@@ -2551,6 +2849,442 @@ try {
         $nIns->execute();
 
         echo json_encode(['ok' => true, 'request_id' => $requestId, 'decision' => $decision]);
+        break;
+
+    // ─── Submit flexo operator request ─────────────────────
+    case 'submit_flexo_operator_request':
+        if ($method !== 'POST') {
+            echo json_encode(['ok' => false, 'error' => 'POST required']);
+            break;
+        }
+
+        jobs_ensure_change_request_table($db);
+
+        $jobId = (int)($_POST['job_id'] ?? 0);
+        $payloadRaw = (string)($_POST['request_payload'] ?? '{}');
+        $payload = json_decode($payloadRaw, true);
+        if (!is_array($payload)) $payload = [];
+
+        if ($jobId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Invalid job_id']);
+            break;
+        }
+
+        $jobStmt = $db->prepare("SELECT * FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $jobStmt->bind_param('i', $jobId);
+        $jobStmt->execute();
+        $job = $jobStmt->get_result()->fetch_assoc();
+        if (!$job) {
+            echo json_encode(['ok' => false, 'error' => 'Flexo job not found']);
+            break;
+        }
+
+        $jobType = strtolower(trim((string)($job['job_type'] ?? '')));
+        $dept = strtolower(trim((string)($job['department'] ?? '')));
+        $isFlexo = $jobType === 'printing' || $dept === 'flexo_printing';
+        if (!$isFlexo) {
+            echo json_encode(['ok' => false, 'error' => 'Only flexo printing jobs are supported']);
+            break;
+        }
+
+        $pendingChk = $db->prepare("SELECT id FROM job_change_requests WHERE job_id = ? AND request_type = 'flexo_operator_request' AND status = 'Pending' ORDER BY id DESC LIMIT 1");
+        $pendingChk->bind_param('i', $jobId);
+        $pendingChk->execute();
+        $existing = $pendingChk->get_result()->fetch_assoc();
+        if ($existing) {
+            echo json_encode(['ok' => false, 'error' => 'A pending request already exists for this job', 'request_id' => (int)$existing['id']]);
+            break;
+        }
+
+        $additional = is_array($payload['additional_roll_request'] ?? null) ? $payload['additional_roll_request'] : [];
+        $excess = is_array($payload['excess_roll_adjustment'] ?? null) ? $payload['excess_roll_adjustment'] : [];
+        $addEnabled = !empty($additional['enabled']);
+        $exEnabled = !empty($excess['enabled']);
+        if (!$addEnabled && !$exEnabled) {
+            echo json_encode(['ok' => false, 'error' => 'No flexo request data provided']);
+            break;
+        }
+
+        if ($addEnabled) {
+            $w = jobs_float2($additional['width_mm'] ?? 0);
+            $l = jobs_float2($additional['length_mtr'] ?? 0);
+            if ($w <= 0 || $l <= 0) {
+                echo json_encode(['ok' => false, 'error' => 'Additional roll width and length must be greater than 0']);
+                break;
+            }
+        }
+        if ($exEnabled) {
+            $srcRoll = trim((string)($excess['source_roll_no'] ?? ''));
+            $used = jobs_float2($excess['used_length_mtr'] ?? 0);
+            $rem = jobs_float2($excess['remaining_length_mtr'] ?? 0);
+            if ($srcRoll === '') {
+                echo json_encode(['ok' => false, 'error' => 'Source roll is required for excess adjustment']);
+                break;
+            }
+            if ($used <= 0 && $rem <= 0) {
+                echo json_encode(['ok' => false, 'error' => 'Used or remaining length must be greater than 0']);
+                break;
+            }
+            if ($rem < 0) {
+                echo json_encode(['ok' => false, 'error' => 'Remaining length cannot be negative']);
+                break;
+            }
+        }
+
+        $requestedBy = (int)($_SESSION['user_id'] ?? 0);
+        $requestedByName = trim((string)($_SESSION['name'] ?? ($_SESSION['user_name'] ?? 'Operator')));
+        if ($requestedByName === '') $requestedByName = 'Operator';
+
+        $jobExtra = json_decode((string)($job['extra_data'] ?? '{}'), true);
+        if (!is_array($jobExtra)) $jobExtra = [];
+        $payload['requested_context'] = [
+            'job_no' => (string)($job['job_no'] ?? ''),
+            'job_name' => jobs_display_job_name($job),
+            'department' => (string)($job['department'] ?? ''),
+            'requested_at_iso' => date('c'),
+            'requested_by' => $requestedByName,
+            'before_state' => [
+                'assigned_child_rolls' => is_array($jobExtra['assigned_child_rolls'] ?? null) ? $jobExtra['assigned_child_rolls'] : [],
+                'flexo_extension_tasks' => is_array($jobExtra['flexo_extension_tasks'] ?? null) ? $jobExtra['flexo_extension_tasks'] : [],
+            ],
+        ];
+
+        $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $ins = $db->prepare("INSERT INTO job_change_requests (job_id, request_type, payload_json, status, requested_by, requested_by_name) VALUES (?, 'flexo_operator_request', ?, 'Pending', ?, ?)");
+        $ins->bind_param('isis', $jobId, $payloadJson, $requestedBy, $requestedByName);
+        $ins->execute();
+        $rid = (int)$db->insert_id;
+
+        $notifDept = 'flexo_printing';
+        $notifMsg = 'Flexo operator request submitted for ' . ((string)($job['job_no'] ?? ('JOB-' . $jobId)));
+        $nIns = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, 'warning')");
+        $nIns->bind_param('iss', $jobId, $notifDept, $notifMsg);
+        $nIns->execute();
+
+        echo json_encode(['ok' => true, 'request_id' => $rid]);
+        break;
+
+    // ─── List flexo operator requests ──────────────────────
+    case 'list_flexo_operator_requests':
+        jobs_ensure_change_request_table($db);
+
+        $status = trim((string)($_GET['status'] ?? 'all'));
+        $jobId = (int)($_GET['job_id'] ?? 0);
+        $limit = min(300, max(1, (int)($_GET['limit'] ?? 50)));
+
+        $where = ["r.request_type = 'flexo_operator_request'"];
+        $params = [];
+        $types = '';
+
+        if ($status !== '' && strtolower($status) !== 'all') {
+            $where[] = 'r.status = ?';
+            $params[] = $status;
+            $types .= 's';
+        }
+        if ($jobId > 0) {
+            $where[] = 'r.job_id = ?';
+            $params[] = $jobId;
+            $types .= 'i';
+        }
+
+        $sql = "SELECT r.*, j.job_no, j.status AS job_status
+                FROM job_change_requests r
+                LEFT JOIN jobs j ON r.job_id = j.id
+                WHERE " . implode(' AND ', $where) . "
+                ORDER BY r.id DESC
+                LIMIT ?";
+        $params[] = $limit;
+        $types .= 'i';
+
+        $stmt = $db->prepare($sql);
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        foreach ($rows as &$r) {
+            $r['payload'] = json_decode((string)($r['payload_json'] ?? '{}'), true) ?: [];
+        }
+        unset($r);
+        echo json_encode(['ok' => true, 'requests' => $rows]);
+        break;
+
+    // ─── Review flexo operator request ─────────────────────
+    case 'review_flexo_operator_request':
+        if ($method !== 'POST') {
+            echo json_encode(['ok' => false, 'error' => 'POST required']);
+            break;
+        }
+        if (!hasRole('admin', 'manager', 'system_admin', 'super_admin')) {
+            echo json_encode(['ok' => false, 'error' => 'Only manager/admin can review flexo requests']);
+            break;
+        }
+
+        jobs_ensure_change_request_table($db);
+        $requestId = (int)($_POST['request_id'] ?? 0);
+        $decision = trim((string)($_POST['decision'] ?? ''));
+        $reviewNote = trim((string)($_POST['review_note'] ?? ''));
+        if ($requestId <= 0 || !in_array($decision, ['Approved', 'Rejected'], true)) {
+            echo json_encode(['ok' => false, 'error' => 'Invalid request or decision']);
+            break;
+        }
+
+        $reqStmt = $db->prepare("SELECT * FROM job_change_requests WHERE id = ? AND request_type = 'flexo_operator_request' LIMIT 1");
+        $reqStmt->bind_param('i', $requestId);
+        $reqStmt->execute();
+        $req = $reqStmt->get_result()->fetch_assoc();
+        if (!$req) {
+            echo json_encode(['ok' => false, 'error' => 'Flexo request not found']);
+            break;
+        }
+        if ((string)($req['status'] ?? '') !== 'Pending') {
+            echo json_encode(['ok' => false, 'error' => 'Request already reviewed']);
+            break;
+        }
+
+        $jobId = (int)($req['job_id'] ?? 0);
+        $jobStmt = $db->prepare("SELECT * FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $jobStmt->bind_param('i', $jobId);
+        $jobStmt->execute();
+        $job = $jobStmt->get_result()->fetch_assoc();
+        if (!$job) {
+            echo json_encode(['ok' => false, 'error' => 'Flexo job not found']);
+            break;
+        }
+
+        $payload = json_decode((string)($req['payload_json'] ?? '{}'), true);
+        if (!is_array($payload)) $payload = [];
+
+        $reviewedBy = (int)($_SESSION['user_id'] ?? 0);
+        $reviewedByName = trim((string)($_SESSION['name'] ?? ($_SESSION['user_name'] ?? 'Manager')));
+        if ($reviewedByName === '') $reviewedByName = 'Manager';
+
+        $applySummary = [];
+        if ($decision === 'Approved') {
+            $applyRes = jobs_apply_flexo_operator_request($db, $job, $payload, $reviewedBy, $reviewedByName);
+            if (!($applyRes['ok'] ?? false)) {
+                echo json_encode(['ok' => false, 'error' => 'Approval apply failed: ' . ($applyRes['error'] ?? 'Unknown')]);
+                break;
+            }
+            $applySummary = is_array($applyRes['summary'] ?? null) ? $applyRes['summary'] : [];
+            $payload['applied_context'] = [
+                'applied_by' => $reviewedByName,
+                'applied_by_id' => $reviewedBy,
+                'applied_at_iso' => date('c'),
+                'review_note' => $reviewNote,
+                'summary' => $applySummary,
+                'before_state' => $applyRes['before_state'] ?? [],
+                'after_state' => $applyRes['after_state'] ?? [],
+            ];
+        }
+
+        $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $updReq = $db->prepare("UPDATE job_change_requests SET status = ?, reviewed_by = ?, reviewed_by_name = ?, reviewed_at = NOW(), review_note = ?, payload_json = ? WHERE id = ?");
+        $updReq->bind_param('sisssi', $decision, $reviewedBy, $reviewedByName, $reviewNote, $payloadJson, $requestId);
+        $updReq->execute();
+
+        $notifDept = 'flexo_printing';
+        $notifMsg = 'Flexo request #' . $requestId . ' for ' . ((string)($job['job_no'] ?? ('JOB-' . $jobId))) . ' ' . strtolower($decision);
+        $ntype = $decision === 'Approved' ? 'success' : 'error';
+        $nIns = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, ?)");
+        $nIns->bind_param('isss', $jobId, $notifDept, $notifMsg, $ntype);
+        $nIns->execute();
+
+        if ($decision === 'Approved' && !empty($applySummary['additional_slitting_task_created'])) {
+            $msg2 = 'Additional slitting task tagged under same job card: ' . ((string)($job['job_no'] ?? ('JOB-' . $jobId)));
+            $dept2 = 'jumbo_slitting';
+            $type2 = 'warning';
+            $nIns2 = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, ?)");
+            $nIns2->bind_param('isss', $jobId, $dept2, $msg2, $type2);
+            $nIns2->execute();
+        }
+
+        echo json_encode(['ok' => true, 'request_id' => $requestId, 'decision' => $decision, 'apply_summary' => $applySummary]);
+        break;
+
+    // ─── Complete flexo additional slitting task ───────────
+    case 'complete_flexo_additional_slitting_task':
+        if ($method !== 'POST') {
+            echo json_encode(['ok' => false, 'error' => 'POST required']);
+            break;
+        }
+        if (!hasRole('admin', 'manager', 'system_admin', 'super_admin')) {
+            echo json_encode(['ok' => false, 'error' => 'Only manager/admin can complete additional slitting task']);
+            break;
+        }
+
+        $jobId = (int)($_POST['job_id'] ?? 0);
+        $taskIndex = (int)($_POST['task_index'] ?? -1);
+        $sourceRollNo = trim((string)($_POST['source_roll_no'] ?? ''));
+        $completionNote = trim((string)($_POST['completion_note'] ?? ''));
+
+        if ($jobId <= 0 || $taskIndex < 0 || $sourceRollNo === '') {
+            echo json_encode(['ok' => false, 'error' => 'Missing job/task/roll information']);
+            break;
+        }
+
+        $jobStmt = $db->prepare("SELECT * FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $jobStmt->bind_param('i', $jobId);
+        $jobStmt->execute();
+        $job = $jobStmt->get_result()->fetch_assoc();
+        if (!$job) {
+            echo json_encode(['ok' => false, 'error' => 'Flexo job not found']);
+            break;
+        }
+
+        $jobType = strtolower(trim((string)($job['job_type'] ?? '')));
+        $dept = strtolower(trim((string)($job['department'] ?? '')));
+        $isFlexo = $jobType === 'printing' || $dept === 'flexo_printing';
+        if (!$isFlexo) {
+            echo json_encode(['ok' => false, 'error' => 'Only flexo printing jobs are supported']);
+            break;
+        }
+
+        $reviewedBy = (int)($_SESSION['user_id'] ?? 0);
+        $reviewedByName = trim((string)($_SESSION['name'] ?? ($_SESSION['user_name'] ?? 'Manager')));
+        if ($reviewedByName === '') $reviewedByName = 'Manager';
+
+        $extra = json_decode((string)($job['extra_data'] ?? '{}'), true);
+        if (!is_array($extra)) $extra = [];
+        $tasks = is_array($extra['flexo_extension_tasks'] ?? null) ? $extra['flexo_extension_tasks'] : [];
+        if (!isset($tasks[$taskIndex]) || !is_array($tasks[$taskIndex])) {
+            echo json_encode(['ok' => false, 'error' => 'Task not found']);
+            break;
+        }
+
+        $task = $tasks[$taskIndex];
+        $taskType = strtolower(trim((string)($task['type'] ?? '')));
+        $taskStatus = strtolower(trim((string)($task['status'] ?? 'pending')));
+        if ($taskType !== 'additional_slitting' || $taskStatus !== 'pending') {
+            echo json_encode(['ok' => false, 'error' => 'Task is not pending additional slitting']);
+            break;
+        }
+
+        $reqWidth = jobs_float2($task['width_mm'] ?? 0);
+        $reqLength = jobs_float2($task['length_mtr'] ?? 0);
+        if ($reqWidth <= 0 || $reqLength <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'Task dimensions are invalid']);
+            break;
+        }
+
+        $db->begin_transaction();
+        try {
+            $srcStmt = $db->prepare("SELECT * FROM paper_stock WHERE roll_no = ? LIMIT 1 FOR UPDATE");
+            $srcStmt->bind_param('s', $sourceRollNo);
+            $srcStmt->execute();
+            $src = $srcStmt->get_result()->fetch_assoc();
+            if (!$src) {
+                throw new Exception('Source roll not found: ' . $sourceRollNo);
+            }
+
+            $srcStatusRaw = strtolower(trim((string)($src['status'] ?? '')));
+            if (!in_array($srcStatusRaw, ['stock', 'main', 'available'], true)) {
+                throw new Exception('Selected roll is not available in stock');
+            }
+
+            $srcWidth = jobs_float2($src['width_mm'] ?? 0);
+            $srcLength = jobs_float2($src['length_mtr'] ?? 0);
+            if (abs($srcWidth - $reqWidth) > 0.01) {
+                throw new Exception('Selected roll width does not match task width');
+            }
+            if ($srcLength + 0.01 < $reqLength) {
+                throw new Exception('Selected roll length is less than required length');
+            }
+
+            $issuedRollNo = $sourceRollNo;
+            $issuedLength = $reqLength;
+            $issuedSqm = jobs_calc_sqm($reqWidth, $issuedLength);
+            $jobNo = (string)($job['job_no'] ?? '');
+            $jobName = jobs_display_job_name($job);
+            $emptyText = '';
+
+            if ($srcLength > ($reqLength + 0.01)) {
+                $issuedRollNo = jobs_next_numeric_roll_no($db, $sourceRollNo);
+                $remainLen = jobs_float2($srcLength - $reqLength);
+                $remainSqm = jobs_calc_sqm($reqWidth, $remainLen);
+                $remainStatus = 'Stock';
+                $updSrc = $db->prepare("UPDATE paper_stock SET length_mtr = ?, sqm = ?, status = ? WHERE id = ?");
+                $srcId = (int)($src['id'] ?? 0);
+                $updSrc->bind_param('ddsi', $remainLen, $remainSqm, $remainStatus, $srcId);
+                $updSrc->execute();
+
+                $jobStatus = 'Job Assign';
+                $insIssue = $db->prepare("INSERT INTO paper_stock (roll_no, paper_type, company, width_mm, length_mtr, gsm, weight_kg, purchase_rate, sqm, lot_batch_no, parent_roll_no, source_batch_id, source_allocation_id, status, job_no, job_name, job_size, date_received, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, CURDATE(), ?)");
+                $insIssue->bind_param(
+                    'sssddddddssssssi',
+                    $issuedRollNo,
+                    $src['paper_type'],
+                    $src['company'],
+                    $reqWidth,
+                    $issuedLength,
+                    $src['gsm'],
+                    $src['weight_kg'],
+                    $src['purchase_rate'],
+                    $issuedSqm,
+                    $src['lot_batch_no'],
+                    $sourceRollNo,
+                    $jobStatus,
+                    $jobNo,
+                    $jobName,
+                    $emptyText,
+                    $reviewedBy
+                );
+                $insIssue->execute();
+                $issuedStockId = (int)$db->insert_id;
+                jobs_insert_inventory_log($db, $issuedRollNo, $issuedStockId, 'Flexo additional slitting task completed from source ' . $sourceRollNo, $reviewedBy);
+            } else {
+                $jobStatus = 'Job Assign';
+                $updWhole = $db->prepare("UPDATE paper_stock SET status = ?, job_no = ?, job_name = ?, date_used = CURDATE() WHERE id = ?");
+                $srcId = (int)($src['id'] ?? 0);
+                $updWhole->bind_param('sssi', $jobStatus, $jobNo, $jobName, $srcId);
+                $updWhole->execute();
+                jobs_insert_inventory_log($db, $issuedRollNo, (int)($src['id'] ?? 0), 'Flexo additional slitting task completed by direct issue', $reviewedBy);
+            }
+
+            $assigned = is_array($extra['assigned_child_rolls'] ?? null) ? $extra['assigned_child_rolls'] : [];
+            $assigned = jobs_merge_roll_item($assigned, [
+                'roll_no' => $issuedRollNo,
+                'parent_roll_no' => (string)($src['parent_roll_no'] ?? ''),
+                'width_mm' => $reqWidth,
+                'length_mtr' => $issuedLength,
+                'paper_type' => (string)($src['paper_type'] ?? ''),
+                'company' => (string)($src['company'] ?? ''),
+                'gsm' => jobs_float2($src['gsm'] ?? 0),
+                'status' => 'Job Assign',
+                'job_no' => $jobNo,
+                'job_name' => $jobName,
+                'task_ref' => 'additional_slitting:' . $taskIndex,
+            ]);
+            $extra['assigned_child_rolls'] = array_values($assigned);
+
+            $tasks[$taskIndex]['status'] = 'Completed';
+            $tasks[$taskIndex]['completed_at'] = date('c');
+            $tasks[$taskIndex]['completed_by'] = $reviewedByName;
+            $tasks[$taskIndex]['completed_by_id'] = $reviewedBy;
+            $tasks[$taskIndex]['issued_roll_no'] = $issuedRollNo;
+            $tasks[$taskIndex]['source_roll_no'] = $sourceRollNo;
+            $tasks[$taskIndex]['completion_note'] = $completionNote;
+            $extra['flexo_extension_tasks'] = array_values($tasks);
+            $extra['flexo_request_last_applied_at'] = date('c');
+            $extra['flexo_request_last_applied_by'] = $reviewedByName;
+            $extra['flexo_request_last_applied_by_id'] = $reviewedBy;
+
+            $extraJson = json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $updJob = $db->prepare("UPDATE jobs SET extra_data = ? WHERE id = ?");
+            $updJob->bind_param('si', $extraJson, $jobId);
+            $updJob->execute();
+
+            $notifMsg = 'Additional slitting task completed for ' . ($jobNo !== '' ? $jobNo : ('JOB-' . $jobId)) . ' | Roll: ' . $issuedRollNo;
+            $notifDept = 'flexo_printing';
+            $notifType = 'success';
+            $nIns = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, ?)");
+            $nIns->bind_param('isss', $jobId, $notifDept, $notifMsg, $notifType);
+            $nIns->execute();
+
+            $db->commit();
+            echo json_encode(['ok' => true, 'issued_roll_no' => $issuedRollNo, 'task_index' => $taskIndex]);
+        } catch (Throwable $th) {
+            $db->rollback();
+            echo json_encode(['ok' => false, 'error' => $th->getMessage()]);
+        }
         break;
 
     // ─── Manager update: apply suggested roll without delete/recreate ───

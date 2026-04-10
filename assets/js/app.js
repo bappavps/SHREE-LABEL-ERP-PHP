@@ -16,6 +16,109 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
 (function () {
     'use strict';
 
+    function setupCenterMessageUI() {
+        if (document.getElementById('erpCenterMessageOverlay')) {
+            return;
+        }
+
+        var style = document.createElement('style');
+        style.id = 'erpCenterMessageStyle';
+        style.textContent = '' +
+            '#erpCenterMessageOverlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(15,23,42,.45);z-index:9999;padding:18px}' +
+            '#erpCenterMessageOverlay.is-open{display:flex}' +
+            '#erpCenterMessageCard{width:min(560px,95vw);background:linear-gradient(145deg,#ffffff,#f8fafc);border:1px solid #e2e8f0;border-radius:16px;box-shadow:0 26px 60px rgba(2,6,23,.28);overflow:hidden}' +
+            '#erpCenterMessageHead{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:linear-gradient(90deg,#0f172a,#1e293b);color:#fff}' +
+            '#erpCenterMessageTitle{font-size:15px;font-weight:700;letter-spacing:.2px}' +
+            '#erpCenterMessageClose{border:0;background:rgba(255,255,255,.16);color:#fff;border-radius:8px;padding:5px 9px;cursor:pointer}' +
+            '#erpCenterMessageBody{padding:18px;color:#0f172a;font-size:15px;line-height:1.5;max-height:58vh;overflow:auto;white-space:pre-wrap}' +
+            '#erpCenterMessageFooter{display:flex;gap:10px;justify-content:flex-end;padding:14px 18px;background:#f8fafc;border-top:1px solid #e2e8f0}' +
+            '#erpCenterMessageAction,#erpCenterMessageOk{border:0;border-radius:10px;padding:9px 14px;font-weight:600;cursor:pointer}' +
+            '#erpCenterMessageAction{background:#0f766e;color:#fff;display:none}' +
+            '#erpCenterMessageOk{background:#1d4ed8;color:#fff}' +
+            '@media (max-width:640px){#erpCenterMessageBody{font-size:14px;padding:14px}#erpCenterMessageHead,#erpCenterMessageFooter{padding:12px}}';
+        document.head.appendChild(style);
+
+        var overlay = document.createElement('div');
+        overlay.id = 'erpCenterMessageOverlay';
+        overlay.innerHTML = '' +
+            '<div id="erpCenterMessageCard" role="dialog" aria-modal="true" aria-live="polite">' +
+                '<div id="erpCenterMessageHead">' +
+                    '<div id="erpCenterMessageTitle">ERP Message</div>' +
+                    '<button id="erpCenterMessageClose" type="button" aria-label="Close">X</button>' +
+                '</div>' +
+                '<div id="erpCenterMessageBody"></div>' +
+                '<div id="erpCenterMessageFooter">' +
+                    '<button id="erpCenterMessageAction" type="button"></button>' +
+                    '<button id="erpCenterMessageOk" type="button">OK</button>' +
+                '</div>' +
+            '</div>';
+        document.body.appendChild(overlay);
+
+        var queue = [];
+        var showing = false;
+        var titleEl = document.getElementById('erpCenterMessageTitle');
+        var bodyEl = document.getElementById('erpCenterMessageBody');
+        var actionBtn = document.getElementById('erpCenterMessageAction');
+
+        function hideCurrent() {
+            overlay.classList.remove('is-open');
+            showing = false;
+            if (queue.length > 0) {
+                setTimeout(showNext, 80);
+            }
+        }
+
+        function showNext() {
+            if (showing || queue.length === 0) return;
+            showing = true;
+            var item = queue.shift();
+            titleEl.textContent = item.title || 'ERP Message';
+            bodyEl.textContent = item.message || '';
+
+            if (typeof item.action === 'function') {
+                actionBtn.style.display = 'inline-block';
+                actionBtn.textContent = item.actionLabel || 'Open';
+                actionBtn.onclick = function () {
+                    try { item.action(); } catch (e) {}
+                    hideCurrent();
+                };
+            } else {
+                actionBtn.style.display = 'none';
+                actionBtn.onclick = null;
+            }
+
+            overlay.classList.add('is-open');
+        }
+
+        function enqueueCenterMessage(payload) {
+            if (!payload) return;
+            queue.push(payload);
+            showNext();
+        }
+
+        document.getElementById('erpCenterMessageOk').addEventListener('click', hideCurrent);
+        document.getElementById('erpCenterMessageClose').addEventListener('click', hideCurrent);
+        overlay.addEventListener('click', function (e) {
+            if (e.target === overlay) hideCurrent();
+        });
+
+        window.erpCenterMessage = function (message, options) {
+            var opts = options || {};
+            enqueueCenterMessage({
+                title: String(opts.title || 'ERP Message'),
+                message: String(message == null ? '' : message),
+                actionLabel: opts.actionLabel || '',
+                action: typeof opts.action === 'function' ? opts.action : null
+            });
+        };
+
+        window.alert = function (message) {
+            window.erpCenterMessage(String(message == null ? '' : message), { title: 'Notification' });
+        };
+    }
+
+    setupCenterMessageUI();
+
     // Auto-dismiss flash alerts after 5 seconds
     document.querySelectorAll('.alert').forEach(function (el) {
         var btn = el.querySelector('.alert-close');
@@ -180,17 +283,61 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
 
     // Topbar controls
     var fullscreenBtn = document.getElementById('topbarFullscreenBtn');
+
+    function isFullscreenActive() {
+        return !!(document.fullscreenElement || document.webkitFullscreenElement);
+    }
+
+    function requestFullscreenSafe() {
+        var root = document.documentElement;
+        if (root.requestFullscreen) return root.requestFullscreen();
+        if (root.webkitRequestFullscreen) {
+            root.webkitRequestFullscreen();
+            return Promise.resolve();
+        }
+        return Promise.reject(new Error('Fullscreen API not supported'));
+    }
+
+    function exitFullscreenSafe() {
+        if (document.exitFullscreen) return document.exitFullscreen();
+        if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+            return Promise.resolve();
+        }
+        return Promise.resolve();
+    }
+
+    function syncFullscreenButtonUi() {
+        if (!fullscreenBtn) return;
+        var icon = fullscreenBtn.querySelector('i');
+        var active = isFullscreenActive();
+        fullscreenBtn.setAttribute('aria-label', active ? 'Exit Fullscreen' : 'Enter Fullscreen');
+        fullscreenBtn.setAttribute('title', active ? 'Exit Fullscreen' : 'Enter Fullscreen');
+        if (icon) {
+            icon.className = active ? 'bi bi-fullscreen-exit' : 'bi bi-arrows-angle-expand';
+        }
+    }
+
     if (fullscreenBtn) {
         fullscreenBtn.addEventListener('click', function () {
-            if (!document.fullscreenElement) {
-                if (document.documentElement.requestFullscreen) {
-                    document.documentElement.requestFullscreen();
-                }
-            } else if (document.exitFullscreen) {
-                document.exitFullscreen();
+            if (!isFullscreenActive()) {
+                requestFullscreenSafe().catch(function () {
+                    syncFullscreenButtonUi();
+                });
+            } else {
+                exitFullscreenSafe().catch(function () {});
             }
         });
     }
+
+    document.addEventListener('fullscreenchange', function () {
+        syncFullscreenButtonUi();
+    });
+    document.addEventListener('webkitfullscreenchange', function () {
+        syncFullscreenButtonUi();
+    });
+
+    syncFullscreenButtonUi();
 
     function redirectFromButton(btnId) {
         var btn = document.getElementById(btnId);
@@ -220,6 +367,8 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
         var csrfMeta = document.querySelector('meta[name="csrf-token"]');
         var csrfToken = csrfMeta ? (csrfMeta.getAttribute('content') || '') : '';
         var pollingTimer = null;
+        var seenUnreadIds = {};
+        var firstUnreadFetch = true;
 
         function escHtml(v) {
             return String(v || '')
@@ -280,8 +429,31 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                 .then(function (res) {
                     if (!res || !res.ok) return;
                     var unread = parseInt(res.unread_count || 0, 10) || 0;
+                    var rows = res.notifications || [];
                     notifDot.style.display = unread > 0 ? 'inline-block' : 'none';
-                    if (typeof done === 'function') done(res.notifications || []);
+                    if (unreadOnly) {
+                        var latest = null;
+                        rows.forEach(function (n) {
+                            var id = String(n.id || '');
+                            if (!id) return;
+                            if (!seenUnreadIds[id]) {
+                                seenUnreadIds[id] = true;
+                                latest = n;
+                            }
+                        });
+                        if (!firstUnreadFetch && latest && typeof window.erpCenterMessage === 'function') {
+                            var targetUrl = String(latest.target_url || '').trim();
+                            var dept = String(latest.department || '').trim();
+                            var openUrl = targetUrl || buildDeptUrl(dept);
+                            window.erpCenterMessage(String(latest.message || 'New notification'), {
+                                title: String(latest.job_no || latest.department || 'New Notification'),
+                                actionLabel: 'Open',
+                                action: function () { window.location.href = openUrl; }
+                            });
+                        }
+                        firstUnreadFetch = false;
+                    }
+                    if (typeof done === 'function') done(rows);
                 })
                 .catch(function () {
                     // Ignore silently when jobs API is not accessible for this role.
