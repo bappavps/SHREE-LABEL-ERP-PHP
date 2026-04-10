@@ -81,7 +81,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 4
+                "counter": 1
             },
             "sales_order": {
                 "prefix": "SO",
@@ -89,7 +89,7 @@
             },
             "planning": {
                 "prefix": "PLN",
-                "counter": 2
+                "counter": 0
             },
             "jumbo_job": {
                 "prefix": "SLT",
@@ -113,7 +113,7 @@
             },
             "barcode_job": {
                 "prefix": "BRC-BAR",
-                "counter": 1
+                "counter": 0
             }
         }
     },

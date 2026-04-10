@@ -523,6 +523,53 @@ function jobs_join_base_url(string $path): string {
     return $base . '/' . $rel;
 }
 
+function jobs_notification_target_url(array $notification): string {
+    $department = strtolower(trim((string)($notification['department'] ?? '')));
+    $message = strtolower(trim((string)($notification['message'] ?? '')));
+
+    if ($department === 'planning') {
+        if (strpos($message, 'barcode planning') !== false || strpos($message, 'rotery planning') !== false || strpos($message, 'rotary planning') !== false) {
+            return jobs_join_base_url('/modules/planning/barcode/index.php');
+        }
+        if (strpos($message, 'label slitting planning') !== false) {
+            return jobs_join_base_url('/modules/planning/label-slitting/index.php');
+        }
+        if (strpos($message, 'label printing planning') !== false) {
+            return jobs_join_base_url('/modules/planning/label/index.php');
+        }
+        if (strpos($message, 'jumbo slitting planning') !== false || strpos($message, 'slitting planning') !== false) {
+            return jobs_join_base_url('/modules/planning/slitting/index.php');
+        }
+        if (strpos($message, 'die-cutting planning') !== false || strpos($message, 'flatbed planning') !== false) {
+            return jobs_join_base_url('/modules/planning/flatbed/index.php');
+        }
+        if (strpos($message, 'batch printing planning') !== false || strpos($message, 'batch planning') !== false) {
+            return jobs_join_base_url('/modules/planning/batch/index.php');
+        }
+        if (strpos($message, 'packaging planning') !== false || strpos($message, 'packing planning') !== false) {
+            return jobs_join_base_url('/modules/planning/packing/index.php');
+        }
+        if (strpos($message, 'dispatch planning') !== false) {
+            return jobs_join_base_url('/modules/planning/dispatch/index.php');
+        }
+        if (strpos($message, 'printing planning') !== false) {
+            return jobs_join_base_url('/modules/planning/printing/index.php');
+        }
+        return jobs_join_base_url('/modules/planning/index.php');
+    }
+
+    if ($department === 'jumbo_slitting') return jobs_join_base_url('/modules/operators/jumbo/index.php');
+    if ($department === 'flexo_printing') return jobs_join_base_url('/modules/operators/printing/index.php');
+    if ($department === 'flatbed') return jobs_join_base_url('/modules/operators/flatbed/index.php');
+    if ($department === 'rotery') return jobs_join_base_url('/modules/operators/rotery/index.php');
+    if ($department === 'barcode') return jobs_join_base_url('/modules/operators/barcode/index.php');
+    if ($department === 'label_slitting') return jobs_join_base_url('/modules/operators/label-slitting/index.php');
+    if ($department === 'packing') return jobs_join_base_url('/modules/operators/packing/index.php');
+    if ($department === 'dispatch') return jobs_join_base_url('/modules/dispatch/index.php');
+
+    return jobs_join_base_url('/modules/approval/index.php');
+}
+
 function jobs_is_die_cutting_job(array $job): bool {
     $department = strtolower(trim((string)($job['department'] ?? '')));
     $jobType = strtolower(trim((string)($job['job_type'] ?? '')));
@@ -3055,6 +3102,10 @@ try {
         if ($types) $stmt->bind_param($types, ...$params);
         $stmt->execute();
         $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        foreach ($rows as &$row) {
+            $row['target_url'] = jobs_notification_target_url($row);
+        }
+        unset($row);
 
         $countSql = "SELECT COUNT(*) AS c FROM job_notifications n";
         $countWhere = [];

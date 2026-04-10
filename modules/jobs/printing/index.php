@@ -216,6 +216,14 @@ foreach ($jobs as &$j) {
   if (!empty($directAssignedRolls)) {
     $childRolls = array_merge($childRolls, $directAssignedRolls);
   }
+  $childRollMap = [];
+  foreach ($childRolls as $cr) {
+    if (!is_array($cr)) continue;
+    $rn = trim((string)($cr['roll_no'] ?? ''));
+    if ($rn === '') continue;
+    $childRollMap[$rn] = $cr;
+  }
+  $childRolls = array_values($childRollMap);
     $slittingRolls = [];
     foreach ($childRolls as $cr) {
         $rn = trim((string)($cr['roll_no'] ?? ''));

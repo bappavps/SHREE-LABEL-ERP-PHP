@@ -55,6 +55,154 @@ function jumboDisplayJobName(array $job): string {
   return $dept !== '' ? $dept : '—';
 }
 
+function jumboHydrateMissingStockRows(mysqli $db, array $extra): array {
+  $stockRows = is_array($extra['stock_rolls'] ?? null) ? $extra['stock_rolls'] : [];
+
+  $batchNos = [];
+  $batchNo = trim((string)($extra['batch_no'] ?? ''));
+  if ($batchNo !== '') $batchNos[$batchNo] = true;
+  $batchRefs = $extra['batch_refs'] ?? [];
+  if (is_string($batchRefs)) {
+    $batchRefs = preg_split('/\s*,\s*/', trim($batchRefs), -1, PREG_SPLIT_NO_EMPTY);
+  }
+  if (is_array($batchRefs)) {
+    foreach ($batchRefs as $br) {
+      $brn = trim((string)$br);
+      if ($brn !== '') $batchNos[$brn] = true;
+    }
+  }
+  $batchNos = array_values(array_keys($batchNos));
+
+  $allowedParents = [];
+  $primaryParent = trim((string)($extra['parent_roll'] ?? (($extra['parent_details']['roll_no'] ?? ''))));
+  if ($primaryParent !== '') $allowedParents[$primaryParent] = true;
+  $rawParents = $extra['parent_rolls'] ?? [];
+  if (is_string($rawParents)) {
+    $rawParents = preg_split('/\s*,\s*/', trim($rawParents), -1, PREG_SPLIT_NO_EMPTY);
+  }
+  if (is_array($rawParents)) {
+    foreach ($rawParents as $pr) {
+      $prn = trim((string)$pr);
+      if ($prn !== '') $allowedParents[$prn] = true;
+    }
+  }
+
+  $rows = [];
+  $resolvedBatchIds = [];
+  if (!empty($batchNos)) {
+    $ph = implode(',', array_fill(0, count($batchNos), '?'));
+    $types = str_repeat('s', count($batchNos));
+    $sql = "SELECT b.id AS batch_id, e.child_roll_no, e.parent_roll_no, e.slit_width_mm, e.slit_length_mtr, e.is_remainder FROM slitting_entries e INNER JOIN slitting_batches b ON b.id = e.batch_id WHERE b.batch_no IN ($ph) AND UPPER(TRIM(e.destination)) = 'STOCK' ORDER BY e.id ASC";
+    $stmt = $db->prepare($sql);
+    if ($stmt) {
+      $stmt->bind_param($types, ...$batchNos);
+      $stmt->execute();
+      $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+      foreach ($rows as $row) {
+        $bid = (int)($row['batch_id'] ?? 0);
+        if ($bid > 0) $resolvedBatchIds[$bid] = true;
+      }
+    }
+  }
+
+  $existingByRoll = [];
+  foreach ($stockRows as $r) {
+    $rn = trim((string)($r['roll_no'] ?? ''));
+    if ($rn !== '') $existingByRoll[$rn] = true;
+  }
+
+  foreach ($rows as $row) {
+    $rollNo = trim((string)($row['child_roll_no'] ?? ''));
+    $parentNo = trim((string)($row['parent_roll_no'] ?? ''));
+    if ($rollNo === '') continue;
+    if (!empty($allowedParents) && $parentNo !== '' && !isset($allowedParents[$parentNo])) continue;
+    if (isset($existingByRoll[$rollNo])) continue;
+
+    $stockRows[] = [
+      'roll_no' => $rollNo,
+      'parent_roll_no' => $parentNo,
+      'width_mm' => (float)($row['slit_width_mm'] ?? 0),
+      'length_mtr' => (float)($row['slit_length_mtr'] ?? 0),
+      'status' => 'Stock',
+      'dest' => 'STOCK',
+      'is_remainder' => (int)($row['is_remainder'] ?? 0),
+    ];
+    $existingByRoll[$rollNo] = true;
+  }
+
+  if (empty($stockRows) && !empty($allowedParents)) {
+    $parents = array_values(array_keys($allowedParents));
+    $pph = implode(',', array_fill(0, count($parents), '?'));
+    $ptypes = str_repeat('s', count($parents));
+    $sqlByParent = "SELECT e.child_roll_no, e.parent_roll_no, e.slit_width_mm, e.slit_length_mtr, e.is_remainder FROM slitting_entries e WHERE e.parent_roll_no IN ($pph) AND UPPER(TRIM(e.destination)) = 'STOCK' ORDER BY e.id ASC";
+    $stByParent = $db->prepare($sqlByParent);
+    if ($stByParent) {
+      $stByParent->bind_param($ptypes, ...$parents);
+      $stByParent->execute();
+      $rowsByParent = $stByParent->get_result()->fetch_all(MYSQLI_ASSOC);
+      foreach ($rowsByParent as $row) {
+        $rollNo = trim((string)($row['child_roll_no'] ?? ''));
+        $parentNo = trim((string)($row['parent_roll_no'] ?? ''));
+        if ($rollNo === '' || isset($existingByRoll[$rollNo])) continue;
+        if (!isset($allowedParents[$parentNo])) continue;
+        $stockRows[] = [
+          'roll_no' => $rollNo,
+          'parent_roll_no' => $parentNo,
+          'width_mm' => (float)($row['slit_width_mm'] ?? 0),
+          'length_mtr' => (float)($row['slit_length_mtr'] ?? 0),
+          'status' => 'Stock',
+          'dest' => 'STOCK',
+          'is_remainder' => (int)($row['is_remainder'] ?? 0),
+        ];
+        $existingByRoll[$rollNo] = true;
+      }
+    }
+  }
+
+  if (!empty($allowedParents)) {
+    $parents = array_values(array_keys($allowedParents));
+    $php = implode(',', array_fill(0, count($parents), '?'));
+    $ptypes = str_repeat('s', count($parents));
+
+    $sql = "SELECT roll_no, parent_roll_no, width_mm, length_mtr, gsm, paper_type, company, source_batch_id, status FROM paper_stock WHERE parent_roll_no IN ($php) AND UPPER(TRIM(status)) LIKE 'STOCK%'";
+    if (!empty($resolvedBatchIds)) {
+      $bidList = implode(',', array_map('intval', array_keys($resolvedBatchIds)));
+      $sql .= " AND source_batch_id IN ($bidList)";
+    }
+    $sql .= " ORDER BY id ASC";
+    $ps = $db->prepare($sql);
+    if ($ps) {
+      $ps->bind_param($ptypes, ...$parents);
+      $ps->execute();
+      $psRows = $ps->get_result()->fetch_all(MYSQLI_ASSOC);
+      foreach ($psRows as $r) {
+        $rn = trim((string)($r['roll_no'] ?? ''));
+        $prn = trim((string)($r['parent_roll_no'] ?? ''));
+        if ($rn === '' || isset($existingByRoll[$rn])) continue;
+        if (!isset($allowedParents[$prn])) continue;
+        $stockRows[] = [
+          'roll_no' => $rn,
+          'parent_roll_no' => $prn,
+          'width_mm' => (float)($r['width_mm'] ?? 0),
+          'length_mtr' => (float)($r['length_mtr'] ?? 0),
+          'paper_type' => (string)($r['paper_type'] ?? ''),
+          'company' => (string)($r['company'] ?? ''),
+          'gsm' => (float)($r['gsm'] ?? 0),
+          'status' => 'Stock',
+          'dest' => 'STOCK',
+        ];
+        $existingByRoll[$rn] = true;
+      }
+    }
+  }
+
+  if (!empty($stockRows)) {
+    $extra['stock_rolls'] = $stockRows;
+  }
+
+  return $extra;
+}
+
 $db->query("CREATE TABLE IF NOT EXISTS job_change_requests (
   id INT AUTO_INCREMENT PRIMARY KEY,
   job_id INT NOT NULL,
@@ -94,9 +242,18 @@ if ($jobsStmt) {
   }
 }
 
+$rowExtraOverrides = [];
+foreach ($allJumboRows as $row) {
+  $rowId = (int)($row['id'] ?? 0);
+  if ($rowId <= 0) continue;
+  $extra = json_decode((string)($row['extra_data'] ?? '{}'), true) ?: [];
+  $rowExtraOverrides[$rowId] = jumboHydrateMissingStockRows($db, $extra);
+}
+
 $allRollNos = [];
 foreach ($allJumboRows as $row) {
-  $extra = json_decode((string)($row['extra_data'] ?? '{}'), true) ?: [];
+  $rowId = (int)($row['id'] ?? 0);
+  $extra = $rowExtraOverrides[$rowId] ?? (json_decode((string)($row['extra_data'] ?? '{}'), true) ?: []);
   $jobRoll = trim((string)($row['roll_no'] ?? ''));
   if ($jobRoll !== '') $allRollNos[$jobRoll] = true;
   $parentRoll = trim((string)($extra['parent_roll'] ?? (($extra['parent_details']['roll_no'] ?? ''))));
@@ -151,7 +308,8 @@ if (!empty($allRollNos)) {
 }
 
 foreach ($allJumboRows as $row) {
-  $extra = json_decode((string)($row['extra_data'] ?? '{}'), true) ?: [];
+  $rowId = (int)($row['id'] ?? 0);
+  $extra = $rowExtraOverrides[$rowId] ?? (json_decode((string)($row['extra_data'] ?? '{}'), true) ?: []);
   $row['display_job_name'] = jumboDisplayJobName($row);
   $row['extra_data_parsed'] = $extra;
   $row['live_roll_map'] = [];
@@ -1619,6 +1777,23 @@ function jumboBuildRequiredParentRolls(job) {
   return out;
 }
 
+function isStockIntendedRollRow(row) {
+  const bucket = String((row && (row.bucket || row.dest)) || '').trim().toLowerCase();
+  if (bucket === 'stock') return true;
+  const statusRaw = String((row && (row.status || row.status_live)) || '').trim().toLowerCase();
+  return statusRaw === 'stock' || statusRaw.indexOf('stock') !== -1;
+}
+
+function resolveRollStatusForCard(row, liveEntry, fallbackStatus) {
+  const liveStatus = String((liveEntry && liveEntry.status) || '').trim();
+  if (liveStatus !== '') return liveStatus;
+  const rowLiveStatus = String((row && row.status_live) || '').trim();
+  if (rowLiveStatus !== '') return rowLiveStatus;
+  const rowStatus = String((row && row.status) || '').trim();
+  if (rowStatus !== '') return rowStatus;
+  return String(fallbackStatus || '').trim();
+}
+
 function jumboShowVerificationMessage(el, kind, text) {
   if (!el) return;
   el.className = 'jv-msg show';
@@ -2311,6 +2486,7 @@ async function openJobDetail(id, mode) {
   childRows.forEach(function(r) {
     const rrn = String(r.roll_no || '').trim();
     const liveEntry = (job.live_roll_map && job.live_roll_map[rrn]) ? job.live_roll_map[rrn] : {};
+    const fallbackStatus = isStockIntendedRollRow(r) ? 'Stock' : 'Job Assign';
     allRows.push({
       parent_roll_no: r.parent_roll_no || extra.parent_roll || job.roll_no || '',
       roll_no: r.roll_no || '',
@@ -2322,7 +2498,7 @@ async function openJobDetail(id, mode) {
       gsm: (r.gsm ?? job.gsm),
       wastage: (r.wastage ?? 0),
       remarks: liveEntry.remarks !== undefined ? liveEntry.remarks : (r.remarks || ''),
-      status: liveEntry.status || r.status_live || 'Job Assign',
+      status: resolveRollStatusForCard(r, liveEntry, fallbackStatus),
     });
   });
   stockRows.forEach(function(r) {
@@ -2339,7 +2515,7 @@ async function openJobDetail(id, mode) {
       gsm: (r.gsm ?? job.gsm),
       wastage: (r.wastage ?? 0),
       remarks: liveEntry.remarks !== undefined ? liveEntry.remarks : (r.remarks || ''),
-      status: liveEntry.status || r.status_live || 'Stock',
+      status: resolveRollStatusForCard(r, liveEntry, 'Stock'),
     });
   });
 
@@ -3104,8 +3280,35 @@ function renderJumboPrintCardHtml(job, qrDataUrl) {
   const childRows = Array.isArray(extra.child_rolls) ? extra.child_rolls : [];
   const stockRows = Array.isArray(extra.stock_rolls) ? extra.stock_rolls : [];
   const allRows = [];
-  childRows.forEach(r => allRows.push({ parent_roll_no: r.parent_roll_no || extra.parent_roll || job.roll_no || '', roll_no: r.roll_no || '', type: r.paper_type || job.paper_type || '', width: (r.width ?? r.width_mm ?? '—'), length: (r.length ?? r.length_mtr ?? '—'), wastage: (r.wastage ?? 0), remarks: r.remarks || '', status: 'Job Assign' }));
-  stockRows.forEach(r => allRows.push({ parent_roll_no: r.parent_roll_no || extra.parent_roll || job.roll_no || '', roll_no: r.roll_no || '', type: r.paper_type || job.paper_type || '', width: (r.width ?? r.width_mm ?? '—'), length: (r.length ?? r.length_mtr ?? '—'), wastage: (r.wastage ?? 0), remarks: r.remarks || '', status: 'Stock' }));
+  childRows.forEach(r => {
+    const rrn = String(r.roll_no || '').trim();
+    const liveEntry = (job.live_roll_map && job.live_roll_map[rrn]) ? job.live_roll_map[rrn] : {};
+    const fallbackStatus = isStockIntendedRollRow(r) ? 'Stock' : 'Job Assign';
+    allRows.push({
+      parent_roll_no: r.parent_roll_no || extra.parent_roll || job.roll_no || '',
+      roll_no: r.roll_no || '',
+      type: r.paper_type || job.paper_type || '',
+      width: (r.width ?? r.width_mm ?? '—'),
+      length: (r.length ?? r.length_mtr ?? '—'),
+      wastage: (r.wastage ?? 0),
+      remarks: (liveEntry.remarks !== undefined ? liveEntry.remarks : (r.remarks || '')),
+      status: resolveRollStatusForCard(r, liveEntry, fallbackStatus)
+    });
+  });
+  stockRows.forEach(r => {
+    const rrn = String(r.roll_no || '').trim();
+    const liveEntry = (job.live_roll_map && job.live_roll_map[rrn]) ? job.live_roll_map[rrn] : {};
+    allRows.push({
+      parent_roll_no: r.parent_roll_no || extra.parent_roll || job.roll_no || '',
+      roll_no: r.roll_no || '',
+      type: r.paper_type || job.paper_type || '',
+      width: (r.width ?? r.width_mm ?? '—'),
+      length: (r.length ?? r.length_mtr ?? '—'),
+      wastage: (r.wastage ?? 0),
+      remarks: (liveEntry.remarks !== undefined ? liveEntry.remarks : (r.remarks || '')),
+      status: resolveRollStatusForCard(r, liveEntry, 'Stock')
+    });
+  });
   allRows.sort((a,b) => String(a.roll_no||'').localeCompare(String(b.roll_no||''), undefined, {numeric:true}));
 
   let childTableHtml = '';

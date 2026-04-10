@@ -262,8 +262,10 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             if (dept === 'flexo_printing') return withAppBase('modules/operators/printing/index.php');
             if (dept === 'flatbed') return withAppBase('modules/operators/flatbed/index.php');
             if (dept === 'rotery') return withAppBase('modules/operators/rotery/index.php');
+            if (dept === 'barcode') return withAppBase('modules/operators/barcode/index.php');
             if (dept === 'label_slitting') return withAppBase('modules/operators/label-slitting/index.php');
             if (dept === 'packing') return withAppBase('modules/operators/packing/index.php');
+            if (dept === 'dispatch') return withAppBase('modules/dispatch/index.php');
             if (dept === 'planning') return withAppBase('modules/planning/index.php');
             return withAppBase('modules/approval/index.php');
         }
@@ -293,8 +295,9 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             }
             notifList.innerHTML = items.map(function (n) {
                 var title = (n.job_no || n.department || 'Notification');
+                var targetUrl = String(n.target_url || '');
                 return '' +
-                    '<div class="np-item" data-nid="' + escHtml(n.id) + '" data-dept="' + escHtml(n.department || '') + '">' +
+                    '<div class="np-item" data-nid="' + escHtml(n.id) + '" data-dept="' + escHtml(n.department || '') + '" data-url="' + escHtml(targetUrl) + '">' +
                     '<div class="np-item-title">' + escHtml(title) + '</div>' +
                     '<div class="np-item-msg">' + escHtml(n.message || '') + '</div>' +
                     '<div class="np-item-time">' + escHtml(timeAgo(n.created_at)) + '</div>' +
@@ -344,8 +347,9 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             if (!item) return;
             var nid = parseInt(item.getAttribute('data-nid') || '0', 10) || 0;
             var dept = (item.getAttribute('data-dept') || '').trim();
+            var targetUrl = (item.getAttribute('data-url') || '').trim();
             markRead(nid, function () {
-                window.location.href = buildDeptUrl(dept);
+                window.location.href = targetUrl || buildDeptUrl(dept);
             });
         });
 

@@ -385,6 +385,40 @@ function planningNotificationTargets($planningDepartment = '') {
     return array_values(array_unique(array_filter($targets)));
 }
 
+function planningNotificationRouteInfo($planningDepartment = '') {
+    $department = strtolower(trim((string)$planningDepartment));
+
+    if (in_array($department, ['label', 'label-printing', 'label_printing'], true)) {
+        return ['label' => 'label printing', 'path' => '/modules/planning/label/index.php'];
+    }
+    if (in_array($department, ['slitting', 'jumbo_slitting', 'jumbo-slitting'], true)) {
+        return ['label' => 'jumbo slitting', 'path' => '/modules/planning/slitting/index.php'];
+    }
+    if (in_array($department, ['printing', 'flexo_printing', 'flexo-printing'], true)) {
+        return ['label' => 'printing', 'path' => '/modules/planning/printing/index.php'];
+    }
+    if (in_array($department, ['flatbed', 'die-cutting', 'die_cutting'], true)) {
+        return ['label' => 'die-cutting', 'path' => '/modules/planning/flatbed/index.php'];
+    }
+    if (in_array($department, ['barcode', 'rotery', 'rotary'], true)) {
+        return ['label' => 'barcode', 'path' => '/modules/planning/barcode/index.php'];
+    }
+    if (in_array($department, ['label_slitting', 'label-slitting', 'label slitting'], true)) {
+        return ['label' => 'label slitting', 'path' => '/modules/planning/label-slitting/index.php'];
+    }
+    if (in_array($department, ['batch', 'batch_printing', 'batch-printing'], true)) {
+        return ['label' => 'batch printing', 'path' => '/modules/planning/batch/index.php'];
+    }
+    if (in_array($department, ['packing', 'packaging'], true)) {
+        return ['label' => 'packaging', 'path' => '/modules/planning/packing/index.php'];
+    }
+    if ($department === 'dispatch') {
+        return ['label' => 'dispatch', 'path' => '/modules/planning/dispatch/index.php'];
+    }
+
+    return ['label' => 'planning', 'path' => '/modules/planning/index.php'];
+}
+
 function createDepartmentNotifications(mysqli $db, array $departments, $jobId, $message, $type = 'info') {
     $jobId = (int)$jobId;
     $message = trim((string)$message);
@@ -442,12 +476,18 @@ function planningCreateNotifications(mysqli $db, $jobNo, $jobName, $planningDepa
     if ($eventLabel === '') $eventLabel = 'updated';
     if ($jobNo === '' && $jobName === '') return;
 
+    $routeInfo = planningNotificationRouteInfo($planningDepartment);
+    $planningLabel = strtolower(trim((string)($routeInfo['label'] ?? 'planning')));
+    $planningSuffix = $planningLabel === '' || $planningLabel === 'planning'
+        ? 'planning'
+        : ($planningLabel . ' planning');
+
     if ($jobNo !== '' && $jobName !== '') {
-        $message = $jobNo . ' - ' . $jobName . ' ' . $eventLabel . ' to planning';
+        $message = $jobNo . ' - ' . $jobName . ' ' . $eventLabel . ' to ' . $planningSuffix;
     } elseif ($jobNo !== '') {
-        $message = $jobNo . ' ' . $eventLabel . ' to planning';
+        $message = $jobNo . ' ' . $eventLabel . ' to ' . $planningSuffix;
     } else {
-        $message = $jobName . ' ' . $eventLabel . ' to planning';
+        $message = $jobName . ' ' . $eventLabel . ' to ' . $planningSuffix;
     }
 
     createDepartmentNotifications($db, planningNotificationTargets($planningDepartment), 0, $message, 'info');
