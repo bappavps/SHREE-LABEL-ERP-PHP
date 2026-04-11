@@ -112,6 +112,73 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             });
         };
 
+        window.showERPToast = function (message, type) {
+            var msg = String(message == null ? '' : message).trim();
+            if (!msg) return;
+            var kind = String(type || 'info').toLowerCase();
+            var colors = {
+                success: '#16a34a',
+                ok: '#16a34a',
+                error: '#dc2626',
+                bad: '#dc2626',
+                warning: '#d97706',
+                warn: '#d97706',
+                info: '#2563eb'
+            };
+            var toast = document.createElement('div');
+            toast.style.cssText = 'position:fixed;top:20px;right:20px;z-index:11000;padding:12px 18px;border-radius:10px;font-size:.85rem;font-weight:700;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.2);max-width:420px;opacity:0;transform:translateY(-4px);transition:opacity .18s,transform .18s';
+            toast.style.background = colors[kind] || colors.info;
+            toast.textContent = msg;
+            document.body.appendChild(toast);
+            requestAnimationFrame(function () {
+                toast.style.opacity = '1';
+                toast.style.transform = 'translateY(0)';
+            });
+            setTimeout(function () {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(-4px)';
+                setTimeout(function () {
+                    if (toast.parentNode) toast.parentNode.removeChild(toast);
+                }, 220);
+            }, 2800);
+        };
+
+        window.showERPConfirm = function (message, onOk, options) {
+            var opts = options || {};
+            var overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;inset:0;z-index:12000;background:rgba(15,23,42,.52);display:flex;align-items:center;justify-content:center;padding:16px';
+            overlay.innerHTML = '' +
+                '<div style="width:min(520px,96vw);background:#fff;border:1px solid #e2e8f0;border-radius:16px;box-shadow:0 26px 60px rgba(2,6,23,.28);overflow:hidden">' +
+                    '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:linear-gradient(90deg,#0f172a,#1e293b);color:#fff">' +
+                        '<div style="font-size:15px;font-weight:700;letter-spacing:.2px">' + String(opts.title || 'Please Confirm') + '</div>' +
+                        '<button type="button" id="erpConfirmClose" style="border:0;background:rgba(255,255,255,.16);color:#fff;border-radius:8px;padding:5px 9px;cursor:pointer">X</button>' +
+                    '</div>' +
+                    '<div style="padding:18px;color:#0f172a;font-size:15px;line-height:1.5;white-space:pre-wrap">' + String(message == null ? '' : message).replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>' +
+                    '<div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 18px;background:#f8fafc;border-top:1px solid #e2e8f0">' +
+                        '<button type="button" id="erpConfirmCancel" style="border:1px solid #cbd5e1;background:#fff;color:#374151;border-radius:10px;padding:9px 14px;font-weight:700;cursor:pointer">' + String(opts.cancelLabel || 'Cancel') + '</button>' +
+                        '<button type="button" id="erpConfirmOk" style="border:0;background:#1d4ed8;color:#fff;border-radius:10px;padding:9px 14px;font-weight:700;cursor:pointer">' + String(opts.okLabel || 'Confirm') + '</button>' +
+                    '</div>' +
+                '</div>';
+            document.body.appendChild(overlay);
+
+            var done = false;
+            function finish(ok) {
+                if (done) return;
+                done = true;
+                if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+                if (ok) {
+                    if (typeof onOk === 'function') onOk();
+                } else if (typeof opts.onCancel === 'function') {
+                    opts.onCancel();
+                }
+            }
+
+            overlay.querySelector('#erpConfirmOk').addEventListener('click', function () { finish(true); });
+            overlay.querySelector('#erpConfirmCancel').addEventListener('click', function () { finish(false); });
+            overlay.querySelector('#erpConfirmClose').addEventListener('click', function () { finish(false); });
+            overlay.addEventListener('click', function (e) { if (e.target === overlay) finish(false); });
+        };
+
         window.alert = function (message) {
             window.erpCenterMessage(String(message == null ? '' : message), { title: 'Notification' });
         };
@@ -442,13 +509,8 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                             }
                         });
                         if (!firstUnreadFetch && latest && typeof window.erpCenterMessage === 'function') {
-                            var targetUrl = String(latest.target_url || '').trim();
-                            var dept = String(latest.department || '').trim();
-                            var openUrl = targetUrl || buildDeptUrl(dept);
                             window.erpCenterMessage(String(latest.message || 'New notification'), {
-                                title: String(latest.job_no || latest.department || 'New Notification'),
-                                actionLabel: 'Open',
-                                action: function () { window.location.href = openUrl; }
+                                title: String(latest.job_no || latest.department || 'New Notification')
                             });
                         }
                         firstUnreadFetch = false;

@@ -81,7 +81,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 5
+                "counter": 36
             },
             "sales_order": {
                 "prefix": "SO",

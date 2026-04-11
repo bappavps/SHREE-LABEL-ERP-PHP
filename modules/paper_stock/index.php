@@ -21,7 +21,7 @@ $offset  = ($page - 1) * $perPage;
 
 $allowedSort = ['roll_no','status','company','paper_type','width_mm','length_mtr','sqm','gsm','weight_kg','purchase_rate','date_received','date_used','job_no','job_size','job_name','lot_batch_no','company_roll_no','remarks'];
 $allowedColumnFilters = ['roll_no','status','company','paper_type','width_mm','length_mtr','sqm','gsm','weight_kg','purchase_rate','date_received','date_used','job_no','job_size','job_name','lot_batch_no','company_roll_no','remarks'];
-$sortCol = in_array($_GET['sort'] ?? '', $allowedSort) ? $_GET['sort'] : 'id';
+$sortCol = in_array($_GET['sort'] ?? '', $allowedSort) ? $_GET['sort'] : 'roll_no';
 $sortDir = (strtolower($_GET['dir'] ?? '') === 'asc') ? 'ASC' : 'DESC';
 
 $orderBySql = "`{$sortCol}` {$sortDir}";
@@ -752,19 +752,27 @@ include __DIR__ . '/../../includes/header.php';
         }
 
         // --- Recursive render function ---
-        function renderRollTree($nodes, $allColumns, $csrf, $isSysAdmin, $level = 0, &$slNo = 1, $offset = 0, $parentLines = []) {
-          // Sort children by last suffix ascending (A, B, C, D, 1, 2, ...)
-          usort($nodes, function($a, $b) {
-            $aSuf = array_slice(explode('-', $a['roll_no']), -1)[0];
-            $bSuf = array_slice(explode('-', $b['roll_no']), -1)[0];
-            // Try numeric sort, else alpha
-            $aNum = intval($aSuf);
-            $bNum = intval($bSuf);
-            if (strval($aNum) === $aSuf && strval($bNum) === $bSuf) return $aNum - $bNum;
-            if (strval($aNum) === $aSuf) return -1;
-            if (strval($bNum) === $bSuf) return 1;
-            return strcmp($aSuf, $bSuf);
-          });
+        function renderRollTree($nodes, $allColumns, $csrf, $isSysAdmin, $sortCol, $sortDir, $level = 0, &$slNo = 1, $offset = 0, $parentLines = []) {
+          if ($sortCol === 'roll_no') {
+            usort($nodes, function($a, $b) use ($sortDir) {
+              $aSuf = array_slice(explode('-', (string)$a['roll_no']), -1)[0];
+              $bSuf = array_slice(explode('-', (string)$b['roll_no']), -1)[0];
+              $aNum = ctype_digit($aSuf) ? (int)$aSuf : null;
+              $bNum = ctype_digit($bSuf) ? (int)$bSuf : null;
+
+              if ($aNum !== null && $bNum !== null) {
+                $cmp = $aNum <=> $bNum;
+              } elseif ($aNum !== null) {
+                $cmp = -1;
+              } elseif ($bNum !== null) {
+                $cmp = 1;
+              } else {
+                $cmp = strcmp($aSuf, $bSuf);
+              }
+
+              return ($sortDir === 'DESC') ? -$cmp : $cmp;
+            });
+          }
           $count = count($nodes);
           foreach ($nodes as $idx => $r) {
             $sqm = calcSQM($r['width_mm'], $r['length_mtr']);
@@ -827,12 +835,12 @@ include __DIR__ . '/../../includes/header.php';
               if ($level > 0) {
                 $childParentLines[$level - 1] = !$isLast;
               }
-              renderRollTree($r['children'], $allColumns, $csrf, $isSysAdmin, $level+1, $slNo, $offset, $childParentLines);
+              renderRollTree($r['children'], $allColumns, $csrf, $isSysAdmin, $sortCol, $sortDir, $level+1, $slNo, $offset, $childParentLines);
             }
           }
         }
         $slNo = 1;
-        renderRollTree($roots, $allColumns, $csrf, $isSysAdmin, 0, $slNo, $offset);
+        renderRollTree($roots, $allColumns, $csrf, $isSysAdmin, $sortCol, $sortDir, 0, $slNo, $offset);
         ?>
       <?php endif; ?>
       </tbody>
@@ -919,6 +927,7 @@ include __DIR__ . '/../../includes/header.php';
   var draftColFilters = {};
   var activeCfpCol = null;
   var activeQuickPopup = null;
+  var CURRENT_SORT_DIR = <?= json_encode($sortDir) ?>;
 
   function ensureAllRowsMode(){
     // Keep interactions smooth: never force a page reload while opening filters.
@@ -998,15 +1007,21 @@ include __DIR__ . '/../../includes/header.php';
       }
     });
 
-    // 3. Sort children ascending by last suffix
+    // 3. Sort children by last suffix (respecting server-side sort direction)
     function sortNodes(nodes) {
       nodes.sort(function(a, b){
         var aSuf = a.rollNo.split('-').pop();
         var bSuf = b.rollNo.split('-').pop();
         var aNum = parseInt(aSuf, 10);
         var bNum = parseInt(bSuf, 10);
-        if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
-        return aSuf.localeCompare(bSuf);
+        var result = 0;
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+          result = aNum - bNum;
+        } else {
+            result = aSuf.localeCompare(bSuf);
+        }
+        // Reverse if DESC direction
+        return CURRENT_SORT_DIR === 'DESC' ? -result : result;
       });
       nodes.forEach(function(n){ if (n.children.length) sortNodes(n.children); });
     }

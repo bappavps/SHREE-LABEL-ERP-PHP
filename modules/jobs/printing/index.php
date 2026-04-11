@@ -355,6 +355,8 @@ include __DIR__ . '/../../../includes/header.php';
 .fp-card{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:14px;overflow:hidden;transition:all .2s;border-left:4px solid var(--fp-brand);cursor:pointer}
 .fp-card:hover{box-shadow:0 8px 24px rgba(0,0,0,.07);transform:translateY(-2px)}
 .fp-card.fp-queued{opacity:.7;border-left-color:#94a3b8}
+.fp-card.fp-card-waiting-slitting{border-left-color:#f59e0b}
+.fp-card.fp-card-waiting-slitting .fp-card-head{background:linear-gradient(135deg,#fffbeb,#fff)}
 .fp-card-head{padding:14px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border,#e2e8f0);background:linear-gradient(135deg,#faf5ff,#fff)}
 .fp-card-head .fp-jobno{font-weight:900;font-size:.85rem;color:#0f172a;display:flex;align-items:center;gap:8px}
 .fp-card-head .fp-jobno i{color:var(--fp-brand);font-size:1rem}
@@ -374,6 +376,7 @@ include __DIR__ . '/../../../includes/header.php';
 .fp-badge-high{background:#ffedd5;color:#9a3412}
 .fp-badge-normal{background:#e0f2fe;color:#075985}
 .fp-badge-request-alert{background:#fee2e2;color:#991b1b;border:1px solid #ef4444;animation:fp-request-blink 1.1s ease-in-out infinite}
+.fp-badge-waiting{background:#ffedd5;color:#9a3412;border:1px solid #fdba74}
 @keyframes pulse-fp{0%,100%{opacity:1}50%{opacity:.6}}
 @keyframes fp-request-blink{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(1.06)}}
 .fp-action-btn{padding:5px 12px;font-size:.65rem;font-weight:800;text-transform:uppercase;border:none;border-radius:8px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:4px}
@@ -395,6 +398,7 @@ include __DIR__ . '/../../../includes/header.php';
 .fp-timer{font-size:.75rem;font-weight:800;color:var(--fp-brand);font-family:'Courier New',monospace}
 .fp-notif-badge{background:#ef4444;color:#fff;font-size:9px;font-weight:800;width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-left:6px}
 .fp-gate-info{font-size:.6rem;color:#f59e0b;font-weight:700;display:flex;align-items:center;gap:4px;background:#fef3c7;padding:4px 8px;border-radius:6px}
+.fp-wait-info{font-size:.62rem;color:#9a3412;font-weight:700;display:flex;align-items:flex-start;gap:6px;background:#fffbeb;border:1px solid #fde68a;padding:6px 8px;border-radius:8px;line-height:1.35}
 
 /* ── Detail Modal ── */
 .fp-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;padding:20px}
@@ -533,6 +537,22 @@ $totalJobs = count($jobs);
 $pendingJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Pending'));
 $runningJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Running'));
 $runningRequestJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Running' && (int)($j['flexo_pending_request_count'] ?? 0) > 0));
+$waitingSlittingJobs = count(array_filter($jobs, static function($j) {
+  $extra = is_array($j['extra_data_parsed'] ?? null) ? $j['extra_data_parsed'] : [];
+  $flag = !empty($extra['flexo_waiting_additional_slitting']);
+  $pendingTask = false;
+  $tasks = is_array($extra['flexo_extension_tasks'] ?? null) ? $extra['flexo_extension_tasks'] : [];
+  foreach ($tasks as $t) {
+    if (!is_array($t)) continue;
+    $type = strtolower(trim((string)($t['type'] ?? '')));
+    $status = strtolower(trim((string)($t['status'] ?? '')));
+    if ($type === 'additional_slitting' && $status === 'pending') {
+      $pendingTask = true;
+      break;
+    }
+  }
+  return (string)($j['status'] ?? '') === 'Pending' && ($flag || $pendingTask);
+}));
 $completedJobs = count(array_filter($jobs, fn($j) => in_array($j['status'], ['Completed','QC Passed'])));
 $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
 ?>
@@ -571,12 +591,13 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
 <div id="fpPanelActive">
 <div class="fp-filters no-print">
   <input type="text" class="fp-search" id="fpSearch" placeholder="Search by job no, roll, company&hellip;">
-  <button type="button" class="fp-filter-btn" onclick="filterFP('all',this)">All</button>
-  <button type="button" class="fp-filter-btn" onclick="filterFP('Queued',this)">Queued</button>
-  <button type="button" class="fp-filter-btn active" onclick="filterFP('Pending',this)">Pending</button>
-  <button type="button" class="fp-filter-btn" onclick="filterFP('Running',this)">Running<?php if (!$isOperatorView && $runningRequestJobs > 0): ?> <span class="fp-filter-request-badge" title="Running jobs with pending request"><?= (int)$runningRequestJobs ?></span><?php endif; ?></button>
-  <button type="button" class="fp-filter-btn" onclick="filterFP('Request',this)">Request<?php if (!$isOperatorView && $requestTabCount > 0): ?> <span class="fp-filter-request-badge" title="Pending request jobs"><?= (int)$requestTabCount ?></span><?php endif; ?></button>
-  <button type="button" class="fp-filter-btn" onclick="filterFP('Completed',this)">Completed</button>
+  <button type="button" class="fp-filter-btn" data-filter="all" onclick="filterFP('all',this)">All</button>
+  <button type="button" class="fp-filter-btn" data-filter="Queued" onclick="filterFP('Queued',this)">Queued</button>
+  <button type="button" class="fp-filter-btn active" data-filter="Pending" onclick="filterFP('Pending',this)">Pending</button>
+  <button type="button" class="fp-filter-btn" data-filter="WaitingSlitting" onclick="filterFP('WaitingSlitting',this)">Waiting Slitting<?php if ($waitingSlittingJobs > 0): ?> <span class="fp-filter-request-badge" style="background:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.22);animation:none" title="Jobs waiting for additional slitting"><?= (int)$waitingSlittingJobs ?></span><?php endif; ?></button>
+  <button type="button" class="fp-filter-btn" data-filter="Running" onclick="filterFP('Running',this)">Running<?php if (!$isOperatorView && $runningRequestJobs > 0): ?> <span class="fp-filter-request-badge" title="Running jobs with pending request"><?= (int)$runningRequestJobs ?></span><?php endif; ?></button>
+  <button type="button" class="fp-filter-btn" data-filter="Request" onclick="filterFP('Request',this)">Request<?php if (!$isOperatorView && $requestTabCount > 0): ?> <span class="fp-filter-request-badge" title="Pending request jobs"><?= (int)$requestTabCount ?></span><?php endif; ?></button>
+  <button type="button" class="fp-filter-btn" data-filter="Completed" onclick="filterFP('Completed',this)">Completed</button>
   <button type="button" id="fpPrintSelBtn" onclick="printSelectedJobs()" style="display:none;padding:6px 14px;font-size:.7rem;font-weight:800;text-transform:uppercase;border:none;background:var(--fp-brand);color:#fff;border-radius:20px;cursor:pointer;align-items:center;gap:6px;letter-spacing:.04em"><i class="bi bi-printer-fill"></i> Print Selected (<span id="fpSelCount">0</span>)</button>
 </div>
 
@@ -591,7 +612,7 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
     $sts = $job['status'];
     $stsClass = match($sts) { 'Queued'=>'queued', 'Pending'=>'pending', 'Running'=>'running', 'Completed','QC Passed'=>'completed', default=>'pending' };
     $pendingReqCount = (int)($job['flexo_pending_request_count'] ?? 0);
-    $hasPendingFlexoReq = !$isOperatorView && $sts === 'Running' && $pendingReqCount > 0;
+    $hasPendingFlexoReq = $sts === 'Running' && $pendingReqCount > 0;
     $timerActive = !empty($job['extra_data_parsed']['timer_active']);
     $timerState = strtolower(trim((string)($job['extra_data_parsed']['timer_state'] ?? '')));
     $pri = $job['planning_priority'] ?? 'Normal';
@@ -607,15 +628,20 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
     if ($job['previous_job_id'] && $job['prev_job_status'] && !in_array($job['prev_job_status'], ['Completed','QC Passed','Closed','Finalized'])) {
         $prevDone = false;
     }
+    $isWaitingAdditionalSlitting = !empty($job['extra_data_parsed']['flexo_waiting_additional_slitting']);
+    $waitingSlittingReason = trim((string)($job['extra_data_parsed']['flexo_waiting_additional_slitting_reason'] ?? ''));
     $isQueued = ($sts === 'Queued');
   ?>
-  <div class="fp-card <?= $isQueued ? 'fp-queued' : '' ?> <?= $hasPendingFlexoReq ? 'fp-card-request-alert' : '' ?>" data-status="<?= e($sts) ?>" data-has-request="<?= $hasPendingFlexoReq ? '1' : '0' ?>" data-lockstate="<?= $prevDone ? 'unlocked' : 'locked' ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" onclick="openPrintDetail(<?= $job['id'] ?>)">
+  <div class="fp-card <?= $isQueued ? 'fp-queued' : '' ?> <?= $hasPendingFlexoReq ? 'fp-card-request-alert' : '' ?> <?= $isWaitingAdditionalSlitting ? 'fp-card-waiting-slitting' : '' ?>" data-status="<?= e($sts) ?>" data-has-request="<?= $hasPendingFlexoReq ? '1' : '0' ?>" data-waiting-slitting="<?= $isWaitingAdditionalSlitting ? '1' : '0' ?>" data-lockstate="<?= $prevDone ? 'unlocked' : 'locked' ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" onclick="openPrintDetail(<?= $job['id'] ?>)">
     <div class="fp-card-head">
       <div class="fp-jobno"><i class="bi bi-printer-fill"></i> <?= e($job['job_no']) ?></div>
       <div style="display:flex;gap:6px;align-items:center">
         <span class="fp-badge fp-badge-<?= $stsClass ?>"><?= e($sts) ?></span>
         <?php if ($hasPendingFlexoReq): ?>
           <span class="fp-badge fp-badge-request-alert" title="Pending flexo operator request">REQUEST <?= $pendingReqCount ?></span>
+        <?php endif; ?>
+        <?php if ($isWaitingAdditionalSlitting): ?>
+          <span class="fp-badge fp-badge-waiting" title="Awaiting additional slitting completion">Waiting Slitting</span>
         <?php endif; ?>
         <?php if ($pri !== 'Normal'): ?>
           <span class="fp-badge fp-badge-<?= $priClass ?>"><?= e($pri) ?></span>
@@ -647,6 +673,11 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
         <span class="fp-gate-info"><i class="bi bi-lock-fill"></i> Waiting for slitting: <?= e($job['prev_job_no'] ?? '—') ?> (<?= e($job['prev_job_status'] ?? '—') ?>)</span>
       </div>
       <?php endif; ?>
+      <?php if ($isWaitingAdditionalSlitting): ?>
+      <div class="fp-card-row">
+        <span class="fp-wait-info"><i class="bi bi-hourglass-split"></i> Waiting for additional slitting<?= $waitingSlittingReason !== '' ? ': ' . e($waitingSlittingReason) : '' ?></span>
+      </div>
+      <?php endif; ?>
       <?php if ($sts === 'Running' && $resumedTs && $timerState !== 'paused'): ?>
       <div class="fp-card-row"><span class="fp-label">Elapsed</span><span class="fp-timer" data-base-seconds="<?= $baseSeconds ?>" data-resumed-at="<?= $resumedTs ?>">00:00:00</span></div>
       <?php elseif ($dur !== null): ?>
@@ -656,10 +687,13 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
     <div class="fp-card-foot">
       <div class="fp-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
       <div style="display:flex;gap:6px;align-items:center" onclick="event.stopPropagation()">
-        <input type="checkbox" class="fp-card-check" data-id="<?= $job['id'] ?>" onclick="event.stopPropagation();updatePrintCount()" title="Select for bulk print">
         <?php if ($sts === 'Pending' && $prevDone): ?>
           <?php if ($isOperatorView): ?>
-            <button class="fp-action-btn fp-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>)"><i class="bi bi-play-fill"></i> Start</button>
+            <?php if ($isWaitingAdditionalSlitting): ?>
+              <button class="fp-action-btn fp-btn-start" disabled title="Complete additional slitting task first"><i class="bi bi-hourglass-split"></i> Waiting Slitting</button>
+            <?php else: ?>
+              <button class="fp-action-btn fp-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>)"><i class="bi bi-play-fill"></i> Start</button>
+            <?php endif; ?>
           <?php else: ?>
             <button class="fp-action-btn fp-btn-view" onclick="openPrintDetail(<?= $job['id'] ?>);event.stopPropagation()"><i class="bi bi-eye"></i> Open</button>
           <?php endif; ?>
@@ -668,7 +702,7 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
         <?php elseif ($sts === 'Running'): ?>
           <?php if ($isOperatorView): ?>
             <?php if ($timerState === 'paused'): ?>
-              <button class="fp-action-btn fp-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>);event.stopPropagation()"><i class="bi bi-play-circle"></i> Again Start</button>
+              <button class="fp-action-btn fp-btn-start" <?= $hasPendingFlexoReq ? 'disabled title="Request is active. Wait for review."' : '' ?> onclick="startJobWithTimer(<?= $job['id'] ?>);event.stopPropagation()"><i class="bi bi-play-circle"></i> Again Start</button>
             <?php elseif ($timerActive): ?>
               <button class="fp-action-btn fp-btn-start" onclick="resumeRunningPrintTimer(<?= $job['id'] ?>);event.stopPropagation()"><i class="bi bi-play-circle"></i> Open Timer</button>
             <?php else: ?>
@@ -1161,7 +1195,7 @@ function validateAniloxLaneQuantities(form) {
   if (exceeded.length) {
     message += 'Quantity mismatch:\n- ' + exceeded.map(e => `${e.lpi}: selected ${e.used}, available ${e.stock}`).join('\n- ');
   }
-  alert(message.trim());
+  erpToast(message.trim(), 'warning');
   return false;
 }
 
@@ -1188,6 +1222,85 @@ function formatDateTimeText(value) {
   if (!raw) return '—';
   const dt = new Date(raw.replace(' ', 'T'));
   return Number.isFinite(dt.getTime()) ? dt.toLocaleString() : '—';
+}
+
+function erpToast(message, type) {
+  const msg = String(message || '').trim();
+  if (!msg) return;
+  if (typeof window.showERPToast === 'function') {
+    window.showERPToast(msg, type || 'info');
+    return;
+  }
+  if (typeof window.erpCenterMessage === 'function') {
+    window.erpCenterMessage(msg, { title: 'Notification' });
+    return;
+  }
+  try { console.warn('[ERP toast fallback]', msg); } catch (_) {}
+}
+
+function erpConfirmAsync(message, options) {
+  const opts = options || {};
+  return new Promise(function(resolve) {
+    if (typeof window.showERPConfirm === 'function') {
+      window.showERPConfirm(String(message || ''), function() {
+        resolve(true);
+      }, {
+        title: String(opts.title || 'Please Confirm'),
+        okLabel: String(opts.okLabel || 'Confirm'),
+        cancelLabel: String(opts.cancelLabel || 'Cancel'),
+        onCancel: function() { resolve(false); }
+      });
+      return;
+    }
+    resolve(false);
+  });
+}
+
+function erpPromptAsync(message, defaultValue, options) {
+  const opts = options || {};
+  return new Promise(function(resolve) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:25000;background:rgba(15,23,42,.52);display:flex;align-items:center;justify-content:center;padding:16px';
+    overlay.innerHTML = `<div style="width:min(560px,96vw);background:#fff;border:1px solid #e2e8f0;border-radius:16px;box-shadow:0 26px 60px rgba(2,6,23,.28);overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:linear-gradient(90deg,#0f172a,#1e293b);color:#fff">
+        <div style="font-size:15px;font-weight:700">${esc(opts.title || 'Input Required')}</div>
+        <button type="button" id="erpPromptClose" style="border:0;background:rgba(255,255,255,.16);color:#fff;border-radius:8px;padding:5px 9px;cursor:pointer">X</button>
+      </div>
+      <div style="padding:16px">
+        <div style="font-size:.86rem;color:#334155;line-height:1.5;white-space:pre-wrap;margin-bottom:10px">${esc(message || '')}</div>
+        <input type="text" id="erpPromptInput" value="${esc(defaultValue || '')}" style="width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:.85rem">
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 18px;background:#f8fafc;border-top:1px solid #e2e8f0">
+        <button type="button" id="erpPromptCancel" class="fp-action-btn fp-btn-view">${esc(opts.cancelLabel || 'Cancel')}</button>
+        <button type="button" id="erpPromptOk" class="fp-action-btn fp-btn-start">${esc(opts.okLabel || 'OK')}</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('#erpPromptInput');
+    if (input) {
+      input.focus();
+      input.select();
+    }
+
+    let done = false;
+    function finish(val) {
+      if (done) return;
+      done = true;
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      resolve(val);
+    }
+
+    overlay.querySelector('#erpPromptOk')?.addEventListener('click', function() {
+      finish(String(input?.value || ''));
+    });
+    overlay.querySelector('#erpPromptCancel')?.addEventListener('click', function() { finish(null); });
+    overlay.querySelector('#erpPromptClose')?.addEventListener('click', function() { finish(null); });
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) finish(null); });
+    overlay.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') { e.preventDefault(); finish(null); }
+      if (e.key === 'Enter') { e.preventDefault(); finish(String(input?.value || '')); }
+    });
+  });
 }
 
 function printDurationSeconds(job) {
@@ -1369,6 +1482,7 @@ function loadFlexoRequestDraft(jobId, payload) {
   const ex = (payload && typeof payload.excess_roll_adjustment === 'object') ? payload.excess_roll_adjustment : {};
 
   return {
+    request_mode: String(fromStorage?.request_mode || 'remaining').toLowerCase() === 'add' ? 'add' : 'remaining',
     source_roll_no: String(fromStorage?.source_roll_no || ex.source_roll_no || '').trim(),
     used_length_mtr: toSafeNumber(fromStorage?.used_length_mtr ?? ex.used_length_mtr ?? 0),
     remaining_length_mtr: toSafeNumber(fromStorage?.remaining_length_mtr ?? ex.remaining_length_mtr ?? 0),
@@ -1382,6 +1496,7 @@ function loadFlexoRequestDraft(jobId, payload) {
 function saveFlexoRequestDraft(jobId, form) {
   if (!jobId || !form) return;
   const draft = {
+    request_mode: getFieldVal(form, 'fr_request_mode') || 'remaining',
     source_roll_no: getFieldVal(form, 'fr_source_roll_no'),
     used_length_mtr: toSafeNumber(getFieldVal(form, 'fr_used_length_mtr')),
     remaining_length_mtr: toSafeNumber(getFieldVal(form, 'fr_remaining_length_mtr')),
@@ -1400,13 +1515,27 @@ function clearFlexoRequestDraft(jobId) {
 
 function hasFlexoRequestValues(form) {
   if (!form) return false;
+  const mode = String(getFieldVal(form, 'fr_request_mode') || 'remaining').toLowerCase();
   const sourceRollNo = String(getFieldVal(form, 'fr_source_roll_no') || '').trim();
   const usedLength = toSafeNumber(getFieldVal(form, 'fr_used_length_mtr'));
+  const remainingLength = toSafeNumber(getFieldVal(form, 'fr_remaining_length_mtr'));
   const additionalWidth = toSafeNumber(getFieldVal(form, 'fr_additional_width_mm'));
   const additionalLength = toSafeNumber(getFieldVal(form, 'fr_additional_length_mtr'));
   const additionalReason = String(getFieldVal(form, 'fr_additional_reason') || '').trim();
   const operatorNote = String(getFieldVal(form, 'fr_operator_request_note') || '').trim();
-  return sourceRollNo || usedLength > 0 || additionalWidth > 0 || additionalLength > 0 || additionalReason || operatorNote;
+  if (mode === 'add') {
+    return additionalWidth > 0 || additionalLength > 0 || additionalReason || operatorNote;
+  }
+  return sourceRollNo || usedLength > 0 || remainingLength > 0;
+}
+
+function updateFlexoRequestModeUI(form) {
+  if (!form) return;
+  const mode = String(getFieldVal(form, 'fr_request_mode') || 'remaining').toLowerCase();
+  const addWrap = document.querySelector('[data-req-section="add"]');
+  const remWrap = document.querySelector('[data-req-section="remaining"]');
+  if (addWrap) addWrap.style.display = mode === 'add' ? '' : 'none';
+  if (remWrap) remWrap.style.display = mode === 'add' ? 'none' : '';
 }
 
 function updateFlexoRequestButtonStates(jobId) {
@@ -1441,6 +1570,7 @@ function bindFlexoRequestAutoCalc(jobId, form, options) {
   };
 
   const sourceEl = resolveLinked('fr_source_roll_no');
+  const modeEl = resolveLinked('fr_request_mode');
   const usedEl = resolveLinked('fr_used_length_mtr');
   const remEl = resolveLinked('fr_remaining_length_mtr');
   const reqInputs = Array.from(document.querySelectorAll('[name^="fr_"][form="' + formId + '"]'));
@@ -1464,6 +1594,13 @@ function bindFlexoRequestAutoCalc(jobId, form, options) {
 
   sourceEl.addEventListener('change', syncRemaining);
   usedEl.addEventListener('input', syncRemaining);
+  if (modeEl) {
+    modeEl.addEventListener('change', function() {
+      saveFlexoRequestDraft(jobId, form);
+      updateFlexoRequestModeUI(form);
+      updateFlexoRequestButtonStates(jobId);
+    });
+  }
   reqInputs.forEach(function(el) {
     if (el === sourceEl || el === usedEl || el === remEl) return;
     el.addEventListener('input', function() { 
@@ -1477,6 +1614,7 @@ function bindFlexoRequestAutoCalc(jobId, form, options) {
   });
 
   if (opts.autoComputeOnInit) syncRemaining();
+  updateFlexoRequestModeUI(form);
 }
 
 function setControlsEditable(root, editable) {
@@ -1516,6 +1654,7 @@ function applyOperatorModalEditState(ctx) {
 
 function buildFlexoRequestPayloadFromForm(job, form) {
   if (!form) return null;
+  const requestMode = String(getFieldVal(form, 'fr_request_mode') || 'remaining').toLowerCase();
   const sourceRollNo = getFieldVal(form, 'fr_source_roll_no');
   const usedLength = toSafeNumber(getFieldVal(form, 'fr_used_length_mtr'));
   const remainingLength = toSafeNumber(getFieldVal(form, 'fr_remaining_length_mtr'));
@@ -1524,8 +1663,8 @@ function buildFlexoRequestPayloadFromForm(job, form) {
   const additionalReason = getFieldVal(form, 'fr_additional_reason');
   const operatorNote = getFieldVal(form, 'fr_operator_request_note');
 
-  const excessEnabled = !!sourceRollNo && (usedLength > 0 || remainingLength > 0);
-  const additionalEnabled = additionalWidth > 0 && additionalLength > 0;
+  const excessEnabled = requestMode !== 'add' && !!sourceRollNo && (usedLength > 0 || remainingLength > 0);
+  const additionalEnabled = requestMode === 'add' && additionalWidth > 0 && additionalLength > 0;
   if (!excessEnabled && !additionalEnabled) return null;
 
   return {
@@ -1552,17 +1691,21 @@ function buildFlexoRequestPayloadFromForm(job, form) {
 
 async function submitFlexoOperatorRequest(jobId) {
   const job = ALL_JOBS.find(j => j.id == jobId);
-  if (!job) { alert('Job not found'); return; }
+  if (!job) { erpToast('Job not found', 'error'); return; }
   const form = document.getElementById('dm-operator-form');
-  if (!form) { alert('Request form not found'); return; }
+  if (!form) { erpToast('Request form not found', 'error'); return; }
 
   const payload = buildFlexoRequestPayloadFromForm(job, form);
   if (!payload) {
-    alert('Fill at least one request block: additional roll OR excess adjustment.');
+    erpToast('Fill required request fields before submitting.', 'warning');
     return;
   }
 
-  if (!confirm('Submit this Flexo Operator Request to Production Manager?')) return;
+  const submitBtn = document.querySelector('[data-role="fr-submit"]');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Submitting...';
+  }
 
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
@@ -1573,22 +1716,40 @@ async function submitFlexoOperatorRequest(jobId) {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
     if (!data.ok) {
-      alert('Request failed: ' + (data.error || 'Unknown error'));
+      erpToast('Request failed: ' + (data.error || 'Unknown error'), 'error');
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="bi bi-send"></i> Submit Request to Production';
+      }
       return;
     }
     clearFlexoRequestDraft(jobId);
-    alert('Request submitted successfully. Request ID: ' + (data.request_id || 'N/A'));
+    erpToast('Request submitted to Production Manager', 'success');
     location.reload();
   } catch (err) {
-    alert('Network error: ' + err.message);
+    erpToast('Network error: ' + err.message, 'error');
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="bi bi-send"></i> Submit Request to Production';
+    }
   }
 }
 
 async function reviewFlexoOperatorRequest(requestId, decision, jobId) {
   if (!requestId) return;
   const decisionLabel = decision === 'Approved' ? 'Accept' : 'Reject';
-  if (!confirm('Are you sure you want to ' + decisionLabel + ' this request?')) return;
-  const note = prompt((decision === 'Approved' ? 'Approval' : 'Rejection') + ' note (optional):', '') || '';
+  const ok = await erpConfirmAsync('Are you sure you want to ' + decisionLabel + ' this request?', {
+    title: 'Confirm Review',
+    okLabel: decisionLabel,
+    cancelLabel: 'Cancel'
+  });
+  if (!ok) return;
+  const noteRaw = await erpPromptAsync((decision === 'Approved' ? 'Approval' : 'Rejection') + ' note (optional):', '', {
+    title: 'Review Note',
+    okLabel: 'Continue'
+  });
+  if (noteRaw === null) return;
+  const note = String(noteRaw || '').trim();
 
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
@@ -1601,26 +1762,147 @@ async function reviewFlexoOperatorRequest(requestId, decision, jobId) {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
     if (!data.ok) {
-      alert('Review failed: ' + (data.error || 'Unknown error'));
+      erpToast('Review failed: ' + (data.error || 'Unknown error'), 'error');
       return;
     }
-    alert('Request ' + decisionLabel.toLowerCase() + 'ed successfully.');
+    erpToast('Request ' + decisionLabel.toLowerCase() + 'ed successfully.', 'success');
     location.reload();
   } catch (err) {
-    alert('Network error: ' + err.message);
+    erpToast('Network error: ' + err.message, 'error');
   }
 }
 
+function buildFlexoSlittingUrl(job, requestId, task) {
+  const target = new URL(BASE_URL + '/modules/inventory/slitting/index.php', window.location.origin);
+  target.searchParams.set('from', 'flexo_request_accept');
+  target.searchParams.set('job_id', String(job?.id || ''));
+  target.searchParams.set('request_id', String(requestId || ''));
+  if (Number(job?.planning_id || 0) > 0) {
+    target.searchParams.set('planning_id', String(job.planning_id));
+  }
+  if (String(job?.plan_no || '').trim()) {
+    target.searchParams.set('plan_no', String(job.plan_no).trim());
+  }
+  if (task && Number(task.width_mm || 0) > 0) {
+    target.searchParams.set('target_width', String(task.width_mm));
+  }
+  if (task && Number(task.length_mtr || 0) > 0) {
+    target.searchParams.set('target_length', String(task.length_mtr));
+  }
+  if (task && Number(task._idx) >= 0) {
+    target.searchParams.set('task_index', String(task._idx));
+  }
+  return target.toString();
+}
+
+function openFlexoSlittingWorkspace(jobId, taskIndex, requestId) {
+  const job = ALL_JOBS.find(j => j.id == jobId);
+  if (!job) {
+    erpToast('Job not found', 'error');
+    return;
+  }
+  const extra = job.extra_data_parsed || {};
+  const tasks = Array.isArray(extra.flexo_extension_tasks) ? extra.flexo_extension_tasks : [];
+  const task = (Number.isInteger(taskIndex) && taskIndex >= 0) ? (tasks[taskIndex] || null) : null;
+  window.location = buildFlexoSlittingUrl(job, requestId || job.flexo_latest_request_id || 0, task);
+}
+
+function showFlexoProductionUpdateModal(job, requestId, requestSpec, candidates) {
+  return new Promise(resolve => {
+    const reqW = Number(requestSpec?.width_mm || 0);
+    const reqL = Number(requestSpec?.length_mtr || 0);
+    const list = Array.isArray(candidates) ? candidates : [];
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(2,6,23,.55);z-index:20020;display:flex;align-items:center;justify-content:center;padding:16px';
+    overlay.innerHTML = `<div style="width:min(980px,96vw);max-height:88vh;overflow:auto;background:#fff;border-radius:16px;border:1px solid #e2e8f0;box-shadow:0 30px 70px rgba(2,6,23,.35)">
+      <div style="padding:14px 16px;border-bottom:1px solid #e2e8f0;background:linear-gradient(135deg,#fff7ed,#ffffff)">
+        <div style="font-weight:900;font-size:1rem;color:#0f172a">Production Update</div>
+        <div style="font-size:.78rem;color:#64748b">Job: <strong>${esc(job?.job_no || '—')}</strong> • Request #${esc(String(requestId || ''))} • Required: <strong>${esc(String(reqW || 0))}mm × ${esc(String(reqL || 0))}m</strong></div>
+      </div>
+      <div style="padding:14px 16px;display:grid;gap:10px">
+        <div style="font-size:.76rem;color:#475569">Select compatible stock roll if available. If unavailable, choose slitting workflow.</div>
+        <div style="border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">
+          <table style="width:100%;border-collapse:collapse;font-size:.75rem">
+            <thead style="background:#f8fafc"><tr><th style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:left">Pick</th><th style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:left">Roll</th><th style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:left">Material</th><th style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:left">Size</th><th style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:left">After Issue</th></tr></thead>
+            <tbody>
+              ${list.length ? list.map((r, idx) => `<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:8px"><input type="radio" name="fp_prod_pick" value="${esc(String(r.roll_no || ''))}" ${idx===0 ? 'checked' : ''}></td><td style="padding:8px;font-weight:800;color:#7c3aed">${esc(String(r.roll_no || ''))}</td><td style="padding:8px">${esc(String(r.company || ''))} / ${esc(String(r.paper_type || ''))}</td><td style="padding:8px">${esc(String(r.width_mm || 0))}mm × ${esc(String(r.length_mtr || 0))}m</td><td style="padding:8px">${r.will_split ? ('Split, remain ' + esc(String(r.remaining_after_issue || 0)) + 'm') : 'Full issue'}</td></tr>`).join('') : `<tr><td colspan="5" style="padding:12px;color:#b45309;background:#fffbeb">No compatible stock available.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+        <textarea id="fpProdUpdateNote" placeholder="Manager note (optional)" style="min-height:70px;border:1px solid #e2e8f0;border-radius:10px;padding:10px;font-size:.8rem"></textarea>
+      </div>
+      <div style="padding:12px 16px;border-top:1px solid #e2e8f0;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+        <button id="fpProdCancel" class="fp-action-btn fp-btn-view" style="padding:8px 14px">Cancel</button>
+        <button id="fpProdSlit" class="fp-action-btn fp-btn-start" style="padding:8px 14px;background:#f59e0b">Open Slitting Interface</button>
+        <button id="fpProdApply" class="fp-action-btn fp-btn-start" style="padding:8px 14px">Apply Selected Roll</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+
+    const close = (payload) => {
+      try { document.body.removeChild(overlay); } catch (_) {}
+      resolve(payload);
+    };
+
+    overlay.querySelector('#fpProdCancel')?.addEventListener('click', () => close({ action: 'cancel' }));
+    overlay.querySelector('#fpProdSlit')?.addEventListener('click', () => {
+      const note = String(overlay.querySelector('#fpProdUpdateNote')?.value || '').trim();
+      close({ action: 'slitting', note: note });
+    });
+    overlay.querySelector('#fpProdApply')?.addEventListener('click', () => {
+      const selected = overlay.querySelector('input[name="fp_prod_pick"]:checked');
+      const note = String(overlay.querySelector('#fpProdUpdateNote')?.value || '').trim();
+      if (!selected) {
+        erpToast('Please select a stock roll, or use Open Slitting Interface.', 'warning');
+        return;
+      }
+      close({ action: 'stock', selected_roll_no: String(selected.value || '').trim(), note: note });
+    });
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close({ action: 'cancel' });
+    });
+  });
+}
+
+async function openFlexoProductionUpdate(requestId, jobId) {
+  if (!requestId) return;
+  const job = ALL_JOBS.find(j => j.id == jobId) || null;
+  if (!job) {
+    erpToast('Job not found', 'error');
+    return;
+  }
+  const proceed = await erpConfirmAsync('Start slitting process for this request?', {
+    title: 'Slitting Confirmation',
+    okLabel: 'Start',
+    cancelLabel: 'Cancel'
+  });
+  if (!proceed) return;
+
+  const url = buildFlexoSlittingUrl(job, requestId, null);
+  window.location = url;
+}
+
 async function completeFlexoAdditionalSlitting(jobId, taskIndex) {
-  const rollNo = prompt('Enter issued roll no from completed slitting (stock roll):', '');
+  const rollNo = await erpPromptAsync('Enter issued roll no from completed slitting (stock roll):', '', {
+    title: 'Complete Additional Slitting',
+    okLabel: 'Continue'
+  });
   if (rollNo === null) return;
   const cleanRoll = String(rollNo || '').trim();
   if (!cleanRoll) {
-    alert('Roll number is required.');
+    erpToast('Roll number is required.', 'warning');
     return;
   }
-  const note = prompt('Completion note (optional):', '') || '';
-  if (!confirm('Complete additional slitting task using roll ' + cleanRoll + '?')) return;
+  const noteRaw = await erpPromptAsync('Completion note (optional):', '', { title: 'Completion Note', okLabel: 'Next' });
+  if (noteRaw === null) return;
+  const note = String(noteRaw || '').trim();
+  const ok = await erpConfirmAsync('Complete additional slitting task using roll ' + cleanRoll + '?', {
+    title: 'Confirm Completion',
+    okLabel: 'Complete',
+    cancelLabel: 'Cancel'
+  });
+  if (!ok) return;
 
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
@@ -1633,13 +1915,13 @@ async function completeFlexoAdditionalSlitting(jobId, taskIndex) {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
     if (!data.ok) {
-      alert('Task completion failed: ' + (data.error || 'Unknown error'));
+      erpToast('Task completion failed: ' + (data.error || 'Unknown error'), 'error');
       return;
     }
-    alert('Additional slitting task completed. Issued roll: ' + (data.issued_roll_no || cleanRoll));
+    erpToast('Additional slitting task completed. Issued roll: ' + (data.issued_roll_no || cleanRoll), 'success');
     location.reload();
   } catch (err) {
-    alert('Network error: ' + err.message);
+    erpToast('Network error: ' + err.message, 'error');
   }
 }
 
@@ -1647,9 +1929,11 @@ function operatorTabMatch(card, status) {
   const lockState = String(card.dataset.lockstate || '').toLowerCase();
   const cardStatus = String(card.dataset.status || '').trim();
   const hasRequest = String(card.dataset.hasRequest || '0') === '1';
+  const isWaitingSlitting = String(card.dataset.waitingSlitting || '0') === '1';
 
   if (status === 'Queued') return lockState === 'locked';
   if (status === 'Pending') return lockState !== 'locked' && (cardStatus === 'Pending' || cardStatus === 'Queued');
+  if (status === 'WaitingSlitting') return cardStatus === 'Pending' && isWaitingSlitting;
   if (status === 'Request') return cardStatus === 'Running' && hasRequest;
   if (status === 'all') return true;
   return cardStatus === status;
@@ -1681,9 +1965,9 @@ function filterFP(status, btn) {
 function clickStatFilter(status) {
   activeStatusFilter = status;
   document.querySelectorAll('.fp-filter-btn').forEach(b => {
-    const txt = b.textContent.trim().toLowerCase();
-    const target = (status === 'all' ? 'all' : String(status || '').toLowerCase());
-    b.classList.toggle('active', txt.startsWith(target));
+    const filterKey = String(b.dataset.filter || b.textContent || '').toLowerCase().replace(/\s+/g, '');
+    const target = (status === 'all' ? 'all' : String(status || '').toLowerCase().replace(/\s+/g, ''));
+    b.classList.toggle('active', filterKey === target);
   });
   // Ensure active tab is on Job Cards
   switchFPTab('active');
@@ -1891,7 +2175,7 @@ function htDeselectAll() {
 
 function htBulkPrint() {
   const ids = Array.from(document.querySelectorAll('.ht-row-cb:checked')).map(function(cb) { return cb.dataset.jobId; });
-  if (!ids.length) { alert('No history job selected'); return; }
+  if (!ids.length) { erpToast('No history job selected', 'warning'); return; }
   const jobs = ids.map(function(id) { return ALL_JOBS.find(function(j) { return j.id == id; }); }).filter(Boolean);
   if (!jobs.length) return;
 
@@ -1919,10 +2203,15 @@ function htBulkPrint() {
 }
 
 async function htBulkDelete() {
-  if (!IS_ADMIN) { alert('Access denied. Only system admin can delete job cards.'); return; }
+  if (!IS_ADMIN) { erpToast('Access denied. Only system admin can delete job cards.', 'error'); return; }
   const ids = Array.from(document.querySelectorAll('.ht-row-cb:checked')).map(cb => cb.dataset.jobId);
-  if (!ids.length) { alert('No history jobs selected'); return; }
-  if (!confirm(`Delete ${ids.length} selected job card(s)?\n\nLinked reset logic will apply for each job (paper stock, planning, downstream jobs).`)) return;
+  if (!ids.length) { erpToast('No history jobs selected', 'warning'); return; }
+  const delOk = await erpConfirmAsync(`Delete ${ids.length} selected job card(s)?\n\nLinked reset logic will apply for each job (paper stock, planning, downstream jobs).`, {
+    title: 'Confirm Bulk Delete',
+    okLabel: 'Delete',
+    cancelLabel: 'Cancel'
+  });
+  if (!delOk) return;
 
   let ok = 0, failed = 0, errors = [];
   for (const id of ids) {
@@ -1942,7 +2231,7 @@ async function htBulkDelete() {
       }
     } catch (err) { failed++; errors.push('ID ' + id + ': ' + err.message); }
   }
-  if (errors.length) alert(`Deleted: ${ok}, Failed: ${failed}\n\n${errors.join('\n')}`);
+  if (errors.length) erpToast(`Deleted: ${ok}, Failed: ${failed}`, failed > 0 ? 'warning' : 'success');
   if (ok > 0) location.reload();
 }
 
@@ -1963,7 +2252,7 @@ function updatePrintCount() {
 
 async function printSelectedJobs() {
   const checkedIds = Array.from(document.querySelectorAll('.fp-card-check:checked')).map(c => parseInt(c.dataset.id));
-  if (!checkedIds.length) { alert('No job cards selected.'); return; }
+  if (!checkedIds.length) { erpToast('No job cards selected.', 'warning'); return; }
   const mode = await choosePrintMode();
   if (!mode) return;
   const selectedJobs = ALL_JOBS.filter(j => checkedIds.includes(j.id));
@@ -1999,7 +2288,12 @@ updateTimers();
 
 // ─── Status update ──────────────────────────────────────────
 async function updateFPStatus(id, newStatus) {
-  if (!confirm('Set this job to ' + newStatus + '?')) return;
+  const ok = await erpConfirmAsync('Set this job to ' + newStatus + '?', {
+    title: 'Confirm Status Change',
+    okLabel: 'Confirm',
+    cancelLabel: 'Cancel'
+  });
+  if (!ok) return;
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
   fd.append('action', 'update_status');
@@ -2009,8 +2303,8 @@ async function updateFPStatus(id, newStatus) {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
     if (data.ok) location.reload();
-    else alert('Error: ' + (data.error || 'Unknown'));
-  } catch (err) { alert('Network error: ' + err.message); }
+    else erpToast('Error: ' + (data.error || 'Unknown'), 'error');
+  } catch (err) { erpToast('Network error: ' + err.message, 'error'); }
 }
 
 // ─── Start Job with Timer Overlay ───────────────────────────
@@ -2124,7 +2418,7 @@ async function finalizePrintTimer(jobId) {
   try {
     await markPrintTimerEnded(jobId);
   } catch (err) {
-    alert('Timer end failed: ' + err.message);
+    erpToast('Timer end failed: ' + err.message, 'error');
     return;
   }
 
@@ -2158,10 +2452,10 @@ async function finalizePrintTimer(jobId) {
             j.extra_data_parsed.physical_print_photo_path = data.photo_path || '';
           }
         } else {
-          alert('Photo upload failed: ' + (data.error || 'Unknown'));
+          erpToast('Photo upload failed: ' + (data.error || 'Unknown'), 'error');
         }
       } catch (err) {
-        alert('Photo upload error: ' + err.message);
+        erpToast('Photo upload error: ' + err.message, 'error');
       }
     }
     camInput.remove();
@@ -2230,11 +2524,11 @@ function showPrintTimerOverlay(job) {
 function resumeRunningPrintTimer(jobId) {
   const job = ALL_JOBS.find(j => j.id == jobId);
   if (!job || String(job.status || '') !== 'Running') {
-    alert('Timer is not active for this job.');
+    erpToast('Timer is not active for this job.', 'warning');
     return;
   }
   if (!isPrintTimerActive(job)) {
-    alert('Timer is paused. Click Again Start.');
+    erpToast('Timer is paused. Click Again Start.', 'warning');
     return;
   }
   showPrintTimerOverlay(job);
@@ -2576,15 +2870,21 @@ async function printOpenRollVerification(job) {
 }
 
 async function startJobWithTimer(id) {
-  if (!confirm('Start this job?')) return;
+  const allowStart = await erpConfirmAsync('Start this job?', { title: 'Confirm Job Start', okLabel: 'Start', cancelLabel: 'Cancel' });
+  if (!allowStart) return;
   const job = ALL_JOBS.find(j => j.id == id) || null;
+  const waitingAdditionalSlitting = !!(job && job.extra_data_parsed && job.extra_data_parsed.flexo_waiting_additional_slitting);
+  if (waitingAdditionalSlitting) {
+    erpToast('This job is waiting for additional slitting completion. Please complete the pending task first.', 'warning');
+    return;
+  }
   const timerState = String((job && job.extra_data_parsed && job.extra_data_parsed.timer_state) || '').toLowerCase();
   const isResumeFromPause = !!job && String(job.status || '') === 'Running' && timerState === 'paused';
   let verifiedRolls = [];
   if (!isResumeFromPause) {
     const verification = await printOpenRollVerification(job || { id: id, job_no: id, slitting_rolls: [] });
     if (!verification.ok) {
-      alert(verification.error || 'Assigned roll verification is required before start.');
+      erpToast(verification.error || 'Assigned roll verification is required before start.', 'warning');
       return;
     }
 
@@ -2592,7 +2892,7 @@ async function startJobWithTimer(id) {
       ? verification.verified_rolls.map(function(v) { return String(v || '').trim(); }).filter(Boolean)
       : [];
     if (!verifiedRolls.length) {
-      alert('Roll verification did not capture any required roll. Please verify again.');
+      erpToast('Roll verification did not capture any required roll. Please verify again.', 'warning');
       return;
     }
   }
@@ -2614,8 +2914,8 @@ async function startJobWithTimer(id) {
   try {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
-    if (!data.ok) { alert('Error: ' + (data.error || 'Unknown')); return; }
-  } catch (err) { alert('Network error: ' + err.message); return; }
+    if (!data.ok) { erpToast('Error: ' + (data.error || 'Unknown'), 'error'); return; }
+  } catch (err) { erpToast('Network error: ' + err.message, 'error'); return; }
 
   _timerJobId = id;
   _timerStart = Date.now();
@@ -2646,11 +2946,16 @@ async function startJobWithTimer(id) {
 
 async function cancelTimer() {
   if (!_timerJobId) return;
-  if (!confirm('Cancel will reset this job timer and return it to Pending. Continue?')) return;
+  const ok = await erpConfirmAsync('Cancel will reset this job timer and return it to Pending. Continue?', {
+    title: 'Cancel Timer',
+    okLabel: 'Confirm',
+    cancelLabel: 'Cancel'
+  });
+  if (!ok) return;
   try {
     await resetPrintTimer(_timerJobId);
   } catch (err) {
-    alert('Timer reset failed: ' + err.message);
+    erpToast('Timer reset failed: ' + err.message, 'error');
     return;
   }
   if (_timerInterval) clearInterval(_timerInterval);
@@ -2667,7 +2972,7 @@ async function pauseTimer() {
   try {
     await pausePrintTimer(jobId);
   } catch (err) {
-    alert('Timer pause failed: ' + err.message);
+    erpToast('Timer pause failed: ' + err.message, 'error');
     return;
   }
   if (_timerInterval) clearInterval(_timerInterval);
@@ -2767,7 +3072,7 @@ function buildPrintingExtraDataFromForm(job, form) {
 async function submitAndComplete(id) {
   const job = ALL_JOBS.find(j => j.id == id) || {};
   if (isPrintTimerActive(job)) {
-    alert('Timer is still running. Please End the timer before finishing this job.');
+    erpToast('Timer is still running. Please End the timer before finishing this job.', 'warning');
     return;
   }
   const form = document.getElementById('dm-operator-form');
@@ -2784,28 +3089,37 @@ async function submitAndComplete(id) {
   try {
     const r1 = await fetch(API_BASE, { method: 'POST', body: fd1 });
     const d1 = await r1.json();
-    if (!d1.ok) { alert('Save error: ' + (d1.error||'Unknown')); return; }
-  } catch(e) { alert('Network error'); return; }
+    if (!d1.ok) { erpToast('Save error: ' + (d1.error||'Unknown'), 'error'); return; }
+  } catch(e) { erpToast('Network error', 'error'); return; }
 
   await updateFPStatus(id, 'Completed');
 }
 
 // ─── Regenerate job card with reason (admin) ───────────────
 async function regenerateJobCard(id) {
-  if (!IS_ADMIN) { alert('Access denied. Only system admin can regenerate job cards.'); return; }
+  if (!IS_ADMIN) { erpToast('Access denied. Only system admin can regenerate job cards.', 'error'); return; }
   const job = ALL_JOBS.find(j => j.id == id);
-  if (!job) { alert('Job not found.'); return; }
+  if (!job) { erpToast('Job not found.', 'error'); return; }
 
-  const reason = prompt('Reason for regeneration (required):', 'Planning update / roll correction');
+  const reason = await erpPromptAsync('Reason for regeneration (required):', 'Planning update / roll correction', {
+    title: 'Regenerate Job Card',
+    okLabel: 'Next'
+  });
   if (reason === null) return;
   const reasonText = String(reason || '').trim();
-  if (!reasonText) { alert('Reason is required.'); return; }
+  if (!reasonText) { erpToast('Reason is required.', 'warning'); return; }
 
-  const notesAppend = prompt('Describe what changed (optional):', '');
+  const notesAppend = await erpPromptAsync('Describe what changed (optional):', '', {
+    title: 'Regeneration Notes',
+    okLabel: 'Next'
+  });
   if (notesAppend === null) return;
 
   const currentRoll = String(job.roll_no || '').trim();
-  const newRollPrompt = prompt('Roll No change (optional). Keep blank to retain current roll:', currentRoll);
+  const newRollPrompt = await erpPromptAsync('Roll No change (optional). Keep blank to retain current roll:', currentRoll, {
+    title: 'Roll Update',
+    okLabel: 'Continue'
+  });
   if (newRollPrompt === null) return;
   const newRoll = String(newRollPrompt || '').trim();
 
@@ -2831,13 +3145,13 @@ async function regenerateJobCard(id) {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
     if (!data.ok) {
-      alert('Regenerate failed: ' + (data.error || 'Unknown error'));
+      erpToast('Regenerate failed: ' + (data.error || 'Unknown error'), 'error');
       return;
     }
-    alert('Job card regenerated successfully. Same job number kept and status reset to Pending.');
+    erpToast('Job card regenerated successfully. Same job number kept and status reset to Pending.', 'success');
     location.reload();
   } catch (err) {
-    alert('Network error: ' + err.message);
+    erpToast('Network error: ' + err.message, 'error');
   }
 }
 
@@ -2863,7 +3177,7 @@ async function handlePrintingPhotoUpload(input, jobId) {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
     if (!data.ok) {
-      alert('Image upload failed: ' + (data.error || 'Unknown'));
+      erpToast('Image upload failed: ' + (data.error || 'Unknown'), 'error');
       return;
     }
     const img = document.getElementById('physical-photo-preview');
@@ -2873,7 +3187,7 @@ async function handlePrintingPhotoUpload(input, jobId) {
     if (f1) f1.value = data.photo_url || '';
     if (f2) f2.value = data.photo_path || '';
   } catch (err) {
-    alert('Image upload network error: ' + err.message);
+    erpToast('Image upload network error: ' + err.message, 'error');
   } finally {
     input.disabled = false;
   }
@@ -2883,7 +3197,7 @@ let voiceRec = null;
 function startVoiceToField(fieldName, btn) {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
-    alert('Voice input is not supported in this browser.');
+    erpToast('Voice input is not supported in this browser.', 'warning');
     return;
   }
   if (voiceRec) {
@@ -2953,6 +3267,8 @@ async function openPrintDetail(id, mode) {
   const pendingAdditionalTasks = extensionTasks
     .map((t, idx) => Object.assign({ _idx: idx }, t || {}))
     .filter(t => String(t.type || '').toLowerCase() === 'additional_slitting' && String(t.status || '').toLowerCase() === 'pending');
+  const isWaitingAdditionalSlitting = !!extra.flexo_waiting_additional_slitting || pendingAdditionalTasks.length > 0;
+  const waitingAdditionalReason = String(extra.flexo_waiting_additional_slitting_reason || '').trim();
 
   const rollRows = (Array.isArray(card.roll_wastage_rows) && card.roll_wastage_rows.length ? card.roll_wastage_rows : card.material_rows).map((row, idx) => ({
     idx,
@@ -3008,6 +3324,18 @@ async function openPrintDetail(id, mode) {
         <i class="bi bi-${prevDone?'check-circle-fill':'lock-fill'}" style="color:${pvColor}"></i>
         Previous Job: <span style="color:var(--fp-brand)">${esc(job.prev_job_no)}</span>
         — <span style="color:${pvColor}">${esc(job.prev_job_status||'—')}</span>
+      </div>
+    </div>`;
+  }
+
+  if (isWaitingAdditionalSlitting) {
+    html += `<div class="fp-detail-section" style="padding:12px;background:#fffbeb;border-radius:10px;border-left:4px solid #f59e0b">
+      <div style="display:flex;align-items:flex-start;gap:8px;font-size:.78rem;font-weight:700;color:#9a3412;line-height:1.45">
+        <i class="bi bi-hourglass-split" style="color:#d97706"></i>
+        <div>
+          <div>Job is waiting for additional slitting completion before printing can restart.</div>
+          ${waitingAdditionalReason ? `<div style="font-size:.72rem;color:#b45309;margin-top:2px">Reason: ${esc(waitingAdditionalReason)}</div>` : ''}
+        </div>
       </div>
     </div>`;
   }
@@ -3162,26 +3490,47 @@ async function openPrintDetail(id, mode) {
     html += `<div id="fpFlexoRequestWrap" class="fp-detail-section fp-op-shell fp-req-attn"><div class="fp-op-form">
       <div class="fp-op-section"><div class="fp-op-h">Flexo Operator Request Function</div><div class="fp-op-b">
         <div class="fp-req-meta">Latest Request Status: ${requestStatusChip}</div>
-        <div class="fp-req-note">Create request from this same job card for additional roll requirement or excess remaining adjustment. Same job card number will be retained after approval.</div>
+        <div class="fp-req-note">Choose one request mode. Only one section stays active at a time.</div>
       </div>
-      <div class="fp-op-b fp-req-grid-3">
-        <div class="fp-op-field"><label>Source Assigned Roll</label>
+      <div class="fp-op-b">
+        <div class="fp-op-field"><label>Request Mode</label>
+          <select name="fr_request_mode" form="dm-operator-form" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}>
+            <option value="remaining" ${requestDraft.request_mode === 'add' ? '' : 'selected'}>Remaining Roll</option>
+            <option value="add" ${requestDraft.request_mode === 'add' ? 'selected' : ''}>Add Roll</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="fp-op-b" data-req-section="remaining" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;margin:8px">
+        <div class="fp-req-meta" style="color:#1d4ed8;font-weight:900">REMAINING ROLL (Blue)</div>
+        <div class="fp-req-grid-3">
+          <div class="fp-op-field"><label>Source Assigned Roll</label>
           <select name="fr_source_roll_no" form="dm-operator-form" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}>
             <option value="">Select roll</option>
             ${rollRows.map(r => `<option value="${esc(r.roll_no || '')}" data-roll-length="${esc(String(toSafeNumber(r.slitted_length || 0)))}" ${(String(requestDraft.source_roll_no || '').trim() === String(r.roll_no || '').trim()) ? 'selected' : ''}>${esc(r.roll_no || '')} (${esc(String(r.slitted_length || '0'))}m)</option>`).join('')}
           </select>
+          </div>
+          <div class="fp-op-field"><label>Used Length (MTR)</label><input type="number" step="0.01" min="0" name="fr_used_length_mtr" form="dm-operator-form" value="${esc(requestDraft.used_length_mtr > 0 ? String(requestDraft.used_length_mtr) : '')}" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}></div>
+          <div class="fp-op-field"><label>Remaining Length (MTR)</label><input type="number" step="0.01" min="0" name="fr_remaining_length_mtr" form="dm-operator-form" value="${esc(requestDraft.remaining_length_mtr > 0 ? String(requestDraft.remaining_length_mtr) : '')}" readonly ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}></div>
         </div>
-        <div class="fp-op-field"><label>Used Length (mtr)</label><input type="number" step="0.01" min="0" name="fr_used_length_mtr" form="dm-operator-form" value="${esc(requestDraft.used_length_mtr > 0 ? String(requestDraft.used_length_mtr) : '')}" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}></div>
-        <div class="fp-op-field"><label>Remaining Length (mtr)</label><input type="number" step="0.01" min="0" name="fr_remaining_length_mtr" form="dm-operator-form" value="${esc(requestDraft.remaining_length_mtr > 0 ? String(requestDraft.remaining_length_mtr) : '')}" readonly ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}></div>
       </div>
-      <div class="fp-op-b fp-req-grid-3">
-        <div class="fp-op-field"><label>Additional Width (mm)</label><input type="number" step="0.01" min="0" name="fr_additional_width_mm" form="dm-operator-form" value="${esc(requestDraft.additional_width_mm > 0 ? String(requestDraft.additional_width_mm) : '')}" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}></div>
-        <div class="fp-op-field"><label>Additional Length (mtr)</label><input type="number" step="0.01" min="0" name="fr_additional_length_mtr" form="dm-operator-form" value="${esc(requestDraft.additional_length_mtr > 0 ? String(requestDraft.additional_length_mtr) : '')}" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}></div>
-        <div class="fp-op-field"><label>Additional Roll Reason</label><input type="text" name="fr_additional_reason" form="dm-operator-form" value="${esc(requestDraft.additional_reason || '')}" placeholder="Wastage / extra requirement" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}></div>
+
+      <div class="fp-op-b" data-req-section="add" style="display:none;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;margin:8px">
+        <div class="fp-req-meta" style="color:#c2410c;font-weight:900">ADD ROLL (Orange)</div>
+        <div class="fp-req-grid-3">
+          <div class="fp-op-field"><label>Additional Width (MM)</label><input type="number" step="0.01" min="0" name="fr_additional_width_mm" form="dm-operator-form" value="${esc(requestDraft.additional_width_mm > 0 ? String(requestDraft.additional_width_mm) : '')}" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}></div>
+          <div class="fp-op-field"><label>Additional Length (MTR)</label><input type="number" step="0.01" min="0" name="fr_additional_length_mtr" form="dm-operator-form" value="${esc(requestDraft.additional_length_mtr > 0 ? String(requestDraft.additional_length_mtr) : '')}" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}></div>
+          <div class="fp-op-field"><label>Reason</label>
+            <select name="fr_additional_reason" form="dm-operator-form" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}>
+              <option value="">Select reason</option>
+              <option value="Wastage" ${(String(requestDraft.additional_reason || '') === 'Wastage') ? 'selected' : ''}>Wastage</option>
+              <option value="Extra Requirement" ${(String(requestDraft.additional_reason || '') === 'Extra Requirement') ? 'selected' : ''}>Extra Requirement</option>
+            </select>
+          </div>
+          <div class="fp-op-field" style="grid-column:1/-1"><label>Note</label><textarea name="fr_operator_request_note" form="dm-operator-form" placeholder="Why this additional roll is needed" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}>${esc(requestDraft.operator_request_note || '')}</textarea></div>
+        </div>
       </div>
-      <div class="fp-op-b">
-        <div class="fp-op-field"><label>Operator Request Note</label><textarea name="fr_operator_request_note" form="dm-operator-form" placeholder="Why this request is needed" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : ''}>${esc(requestDraft.operator_request_note || '')}</textarea></div>
-      </div>
+
       <div class="fp-op-b">
         <div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
           <button type="button" class="fp-action-btn fp-btn-start" data-role="fr-submit" onclick="submitFlexoOperatorRequest(${job.id})" ${hasLockedFlexoReq ? 'disabled data-force-disabled="1"' : 'disabled'}><i class="bi bi-send"></i> Submit Request to Production</button>
@@ -3208,18 +3557,23 @@ async function openPrintDetail(id, mode) {
         <div class="fp-req-note">Requested by: <strong>${esc(reqBy || '—')}</strong> at <strong>${esc(formatDateTimeText(reqAt))}</strong></div>
         ${reviewNote ? `<div class="fp-req-note">Review Note: ${esc(reviewNote)}</div>` : ''}
       </div>
-      ${addReq && addReq.enabled ? `<div class="fp-op-b fp-req-grid-3">
-        <div class="fp-op-field"><label>Additional Width (mm)</label><div class="fp-req-diff">${esc(String(addReq.width_mm || 0))}</div></div>
-        <div class="fp-op-field"><label>Additional Length (mtr)</label><div class="fp-req-diff">${esc(String(addReq.length_mtr || 0))}</div></div>
-        <div class="fp-op-field"><label>Reason</label><div class="fp-req-diff">${esc(String(addReq.reason || ''))}</div></div>
+      ${addReq && addReq.enabled ? `<div class="fp-op-b" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px">
+        <div class="fp-req-meta" style="color:#c2410c;font-weight:900">Type: ADD ROLL</div>
+        <div class="fp-req-grid-3" style="margin-top:8px">
+          <div class="fp-op-field"><label>Width (MM)</label><div class="fp-req-diff" style="border-color:#fed7aa;background:#fff7ed;color:#9a3412">${esc(String(addReq.width_mm || 0))}</div></div>
+          <div class="fp-op-field"><label>Length (MTR)</label><div class="fp-req-diff" style="border-color:#fed7aa;background:#fff7ed;color:#9a3412">${esc(String(addReq.length_mtr || 0))}</div></div>
+          <div class="fp-op-field"><label>Reason</label><div class="fp-req-diff" style="border-color:#fed7aa;background:#fff7ed;color:#9a3412">${esc(String(addReq.reason || ''))}</div></div>
+        </div>
       </div>` : ''}
-      ${exReq && exReq.enabled ? `<div class="fp-op-b fp-req-grid-3">
-        <div class="fp-op-field"><label>Source Roll</label><div class="fp-req-diff">${esc(srcRoll || '—')}</div></div>
+      ${exReq && exReq.enabled ? `<div class="fp-op-b" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px">
+        <div class="fp-req-meta" style="color:#1d4ed8;font-weight:900">Type: REMAINING ROLL</div>
+        <div class="fp-req-grid-3" style="margin-top:8px">
+        <div class="fp-op-field"><label>Source Assigned Roll</label><div class="fp-req-diff" style="border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8">${esc(srcRoll || '—')}</div></div>
         <div class="fp-op-field"><label>Original Length (mtr)</label><div class="fp-op-field"><input value="${esc(String(srcLength || 0))}" readonly></div></div>
-        <div class="fp-op-field"><label>Used Length (mtr)</label><div class="fp-req-diff">${esc(String(usedLen || 0))}</div></div>
-      </div>
-      <div class="fp-op-b fp-req-grid-2">
-        <div class="fp-op-field"><label>Remaining Length (mtr)</label><div class="fp-req-diff">${esc(String(remLen || 0))}</div></div>
+        <div class="fp-op-field"><label>Used Length (mtr)</label><div class="fp-req-diff" style="border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8">${esc(String(usedLen || 0))}</div></div>
+      </div></div>
+      <div class="fp-op-b fp-req-grid-2" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px">
+        <div class="fp-op-field"><label>Remaining Length (mtr)</label><div class="fp-req-diff" style="border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8">${esc(String(remLen || 0))}</div></div>
         <div class="fp-op-field"><label>Expected Remaining Stock Roll</label><div class="fp-req-diff">${esc(srcRoll ? (srcRoll + '-1 / -2 ...') : 'Numeric suffix')}</div></div>
       </div>` : ''}
       ${pendingAdditionalTasks.length ? `<div class="fp-op-b">
@@ -3227,7 +3581,7 @@ async function openPrintDetail(id, mode) {
         ${pendingAdditionalTasks.map(t => `<div style="border:1px solid #fde68a;background:#fffbeb;border-radius:10px;padding:10px;margin-top:8px">
           <div class="fp-req-note"><strong>Task #${esc(String(t._idx + 1))}</strong> • Width: ${esc(String(t.width_mm || 0))} mm • Length: ${esc(String(t.length_mtr || 0))} mtr • Status: ${esc(String(t.status || 'Pending'))}</div>
           <div class="fp-req-note">Reason: ${esc(String(t.reason || ''))}</div>
-          <div style="display:flex;justify-content:flex-end;margin-top:8px"><button type="button" class="fp-action-btn fp-btn-start" onclick="completeFlexoAdditionalSlitting(${job.id}, ${t._idx})"><i class="bi bi-check2-square"></i> Complete Additional Slitting</button></div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:8px"><button type="button" class="fp-action-btn fp-btn-start" onclick="openFlexoSlittingWorkspace(${job.id}, ${t._idx}, ${flexoReqId})"><i class="bi bi-scissors"></i> Open Slitting Interface</button><button type="button" class="fp-action-btn fp-btn-view" onclick="completeFlexoAdditionalSlitting(${job.id}, ${t._idx})"><i class="bi bi-check2-square"></i> Mark Completed</button></div>
         </div>`).join('')}
       </div>` : ''}
       </div></div></div>`;
@@ -3241,7 +3595,7 @@ async function openPrintDetail(id, mode) {
   if (IS_OPERATOR_VIEW && operatorFormEl) {
     const isPausedState = sts === 'Running' && timerState === 'paused';
     const isCompleteState = mode === 'complete';
-    const isBeforeStart = sts === 'Pending' && !isCompleteState;
+    const isBeforeStart = sts === 'Pending' && !isCompleteState && !isWaitingAdditionalSlitting;
     const showRequestSection = !isBeforeStart;
     const mainEditable = isCompleteState;
     const reqEditable = !hasLockedFlexoReq && (isPausedState || isCompleteState);
@@ -3266,12 +3620,16 @@ async function openPrintDetail(id, mode) {
   if (mode === 'complete' && IS_OPERATOR_VIEW && !timerActive && timerState !== 'paused') {
     fHtml += `<button class="fp-action-btn fp-btn-complete" onclick="submitAndComplete(${job.id})"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
   } else if (sts === 'Pending' && prevDone && IS_OPERATOR_VIEW) {
-    fHtml += `<button class="fp-action-btn fp-btn-start" onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-fill"></i> Start Job</button>`;
+    if (isWaitingAdditionalSlitting) {
+      fHtml += `<button class="fp-action-btn fp-btn-start" disabled><i class="bi bi-hourglass-split"></i> Waiting Additional Slitting</button>`;
+    } else {
+      fHtml += `<button class="fp-action-btn fp-btn-start" onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-fill"></i> Start Job</button>`;
+    }
   } else if (sts === 'Pending' && !prevDone) {
     fHtml += `<button class="fp-action-btn fp-btn-start" disabled><i class="bi bi-lock-fill"></i> Waiting for Slitting</button>`;
   } else if (sts === 'Running' && IS_OPERATOR_VIEW) {
     if (timerState === 'paused') {
-      fHtml += `<button class="fp-action-btn fp-btn-start" data-role="again-start" onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-circle"></i> Again Start</button>`;
+      fHtml += `<button class="fp-action-btn fp-btn-start" data-role="again-start" ${hasPendingFlexoReq ? 'disabled data-force-disabled="1" title="Request is active. Wait for review."' : ''} onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-circle"></i> Again Start</button>`;
     } else if (timerActive) {
       fHtml += `<button class="fp-action-btn fp-btn-start" onclick="resumeRunningPrintTimer(${job.id})"><i class="bi bi-play-circle"></i> Open Timer</button>`;
     } else {
@@ -3279,7 +3637,7 @@ async function openPrintDetail(id, mode) {
     }
   }
   if (!IS_OPERATOR_VIEW && CAN_REVIEW_FLEXO_REQUESTS && flexoReqId > 0 && flexoReqStatus === 'Pending') {
-    fHtml += `<button class="fp-action-btn fp-btn-start" onclick="reviewFlexoOperatorRequest(${flexoReqId}, 'Approved', ${job.id})"><i class="bi bi-check2-circle"></i> Accept Request</button>`;
+    fHtml += `<button class="fp-action-btn fp-btn-start" onclick="openFlexoProductionUpdate(${flexoReqId}, ${job.id})"><i class="bi bi-scissors"></i> Slitting</button>`;
     fHtml += `<button class="fp-action-btn fp-btn-reject" onclick="reviewFlexoOperatorRequest(${flexoReqId}, 'Rejected', ${job.id})"><i class="bi bi-x-circle"></i> Reject Request</button>`;
   }
   if (IS_ADMIN) {
@@ -3301,8 +3659,13 @@ document.getElementById('fpDetailModal').addEventListener('click', function(e) {
 
 // ─── Delete job (admin) ─────────────────────────────────────
 async function deleteJob(id) {
-  if (!IS_ADMIN) { alert('Access denied. Only system admin can delete job cards.'); return; }
-  if (!confirm('Delete this job card? If linked reset logic applies, related queued jobs may also be rolled back.')) return;
+  if (!IS_ADMIN) { erpToast('Access denied. Only system admin can delete job cards.', 'error'); return; }
+  const ok = await erpConfirmAsync('Delete this job card? If linked reset logic applies, related queued jobs may also be rolled back.', {
+    title: 'Confirm Delete',
+    okLabel: 'Delete',
+    cancelLabel: 'Cancel'
+  });
+  if (!ok) return;
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
   fd.append('action', 'delete_job');
@@ -3311,8 +3674,8 @@ async function deleteJob(id) {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
     if (data.ok) location.reload();
-    else alert('Error: ' + (data.error || 'Unknown'));
-  } catch (err) { alert('Network error: ' + err.message); }
+    else erpToast('Error: ' + (data.error || 'Unknown'), 'error');
+  } catch (err) { erpToast('Network error: ' + err.message, 'error'); }
 }
 
 // ─── Print Mode Chooser & B&W Transform ────────────────────

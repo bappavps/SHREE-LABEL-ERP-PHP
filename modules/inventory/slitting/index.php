@@ -24,6 +24,7 @@ $acceptOldParentRoll = trim($_GET['old_parent_roll'] ?? '');
 $acceptOldParentPrevStatus = trim($_GET['old_parent_prev_status'] ?? 'Main');
 $acceptPlanningId = (int)($_GET['planning_id'] ?? 0);
 $acceptPlanNo = trim($_GET['plan_no'] ?? '');
+$acceptTaskIndex = (int)($_GET['task_index'] ?? -1);
 $isAcceptMode = ($sourceFlow === 'jumbo_accept' || $acceptRequestId > 0 || $acceptJobId > 0);
 
 $pageTitle = 'Industrial Slitting Terminal';
@@ -154,6 +155,8 @@ include __DIR__ . '/../../../includes/header.php';
 .slt-check-card{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#fff;cursor:pointer;transition:all .18s}
 .slt-check-card:hover{border-color:#86efac;background:#f0fdf4}
 .slt-check-card.active{border-color:var(--brand);background:#f0fdf4;box-shadow:0 0 0 3px rgba(34,197,94,.12)}
+.slt-check-card.disabled{opacity:.55;cursor:not-allowed;background:#f8fafc}
+.slt-check-card.disabled:hover{border-color:var(--border);background:#f8fafc}
 .slt-check-card input{margin-top:2px}
 .slt-check-card strong{display:block;font-size:.8rem;color:var(--text-main)}
 .slt-check-card span{display:block;font-size:.7rem;color:var(--text-muted);margin-top:2px}
@@ -497,6 +500,7 @@ const SLT = (() => {
   const ACCEPT_OLD_PARENT_PREV_STATUS = '<?= e($acceptOldParentPrevStatus) ?>';
   const ACCEPT_PLANNING_ID = <?= (int)$acceptPlanningId ?>;
   const ACCEPT_PLAN_NO = '<?= e($acceptPlanNo) ?>';
+  const ACCEPT_TASK_INDEX = <?= (int)$acceptTaskIndex ?>;
   const DEFAULT_DEPARTMENTS = <?= json_encode(erp_default_department_selection(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 
   // ── State ──────────────────────────────────────────────────
@@ -646,12 +650,32 @@ const SLT = (() => {
   }
 
   function setSelectedDepartments(values, preferredMachine) {
-    const picked = parseDepartmentList(values);
+    let picked = parseDepartmentList(values);
+    if (isFlexoAcceptMode()) {
+      picked = picked.filter(function(dept){ return isFlexoAllowedDepartment(dept); });
+      if (!picked.length) {
+        const fallback = pickFlexoDepartmentFallback();
+        picked = fallback ? [fallback] : [];
+      } else {
+        picked = [picked[0]];
+      }
+    }
     selectedMachineDepartments = picked;
     activePlannerDepartmentSeed = picked.slice();
     departmentSelectionTouched = false;
     renderDepartmentChooser();
     renderMachineChooser(preferredMachine || '');
+  }
+
+  function isFlexoAllowedDepartment(dept) {
+    const text = String(dept || '').toLowerCase();
+    return text.includes('print') || text.includes('jumbo');
+  }
+
+  function pickFlexoDepartmentFallback() {
+    const allowed = machineDepartments.filter(function(dept){ return isFlexoAllowedDepartment(dept); });
+    if (allowed.length) return allowed[0];
+    return machineDepartments.length ? machineDepartments[0] : '';
   }
 
   function renderDepartmentIssueHint() {
@@ -665,9 +689,15 @@ const SLT = (() => {
       title.textContent = picked.length ? picked.join(', ') : 'No department selected yet';
     }
     if (note) {
-      note.textContent = picked.length
-        ? 'After execution, job cards will be issued only to the selected departments below. The machine will be auto-selected from the Machine Master mapping.'
-        : 'Select one or more departments below. Final job cards will be generated only for the departments selected here.';
+      if (isFlexoAcceptMode()) {
+        note.textContent = picked.length
+          ? 'Only one department can stay active for this accept flow. Other departments are locked.'
+          : 'Select exactly one active department (Printing or Jumbo).';
+      } else {
+        note.textContent = picked.length
+          ? 'After execution, job cards will be issued only to the selected departments below. The machine will be auto-selected from the Machine Master mapping.'
+          : 'Select one or more departments below. Final job cards will be generated only for the departments selected here.';
+      }
     }
   }
 
@@ -679,23 +709,33 @@ const SLT = (() => {
       renderDepartmentIssueHint();
       return;
     }
+    const flexoMode = isFlexoAcceptMode();
     wrap.innerHTML = machineDepartments.map(function(dept, idx){
       const checked = selectedMachineDepartments.some(function(selected){ return sameText(selected, dept); });
-      return '<label class="slt-check-card' + (checked ? ' active' : '') + '">' +
-        '<input type="checkbox" data-dept-index="' + idx + '" ' + (checked ? 'checked' : '') + '>' +
-        '<div><strong>' + esc(dept) + '</strong><span>You can add or uncheck this department before final job card generation</span></div>' +
+      const enabled = !flexoMode || isFlexoAllowedDepartment(dept);
+      const inputType = flexoMode ? 'radio' : 'checkbox';
+      const lockNote = flexoMode
+        ? (enabled ? 'Active option for request accept flow' : 'Inactive in this request accept flow')
+        : 'You can add or uncheck this department before final job card generation';
+      return '<label class="slt-check-card' + (checked ? ' active' : '') + (!enabled ? ' disabled' : '') + '">' +
+        '<input type="' + inputType + '" name="execDeptPick" data-dept-index="' + idx + '" ' + (checked ? 'checked' : '') + ' ' + (!enabled ? 'disabled' : '') + '>' +
+        '<div><strong>' + esc(dept) + '</strong><span>' + lockNote + '</span></div>' +
       '</label>';
     }).join('');
 
-    wrap.querySelectorAll('input[type="checkbox"]').forEach(function(box){
+    wrap.querySelectorAll('input[name="execDeptPick"]').forEach(function(box){
       box.addEventListener('change', function(){
         const dept = machineDepartments[Number(this.getAttribute('data-dept-index') || 0)] || '';
-        if (this.checked) {
-          if (!selectedMachineDepartments.some(function(item){ return sameText(item, dept); })) {
-            selectedMachineDepartments.push(dept);
-          }
+        if (flexoMode) {
+          selectedMachineDepartments = this.checked ? [dept] : [];
         } else {
-          selectedMachineDepartments = selectedMachineDepartments.filter(function(item){ return !sameText(item, dept); });
+          if (this.checked) {
+            if (!selectedMachineDepartments.some(function(item){ return sameText(item, dept); })) {
+              selectedMachineDepartments.push(dept);
+            }
+          } else {
+            selectedMachineDepartments = selectedMachineDepartments.filter(function(item){ return !sameText(item, dept); });
+          }
         }
         departmentSelectionTouched = true;
         renderDepartmentChooser();
@@ -734,9 +774,22 @@ const SLT = (() => {
 
     if (!departmentSelectionTouched) {
       if (jobDepartments.length) {
-        selectedMachineDepartments = jobDepartments.slice();
+        if (isFlexoAcceptMode()) {
+          const flexoPick = jobDepartments.filter(function(dept){ return isFlexoAllowedDepartment(dept); });
+          if (flexoPick.length) {
+            selectedMachineDepartments = [flexoPick[0]];
+          } else {
+            const fallback = pickFlexoDepartmentFallback();
+            selectedMachineDepartments = fallback ? [fallback] : [];
+          }
+        } else {
+          selectedMachineDepartments = jobDepartments.slice();
+        }
       } else if (!selectedJob) {
         selectedMachineDepartments = [];
+      } else if (isFlexoAcceptMode()) {
+        const fallback = pickFlexoDepartmentFallback();
+        selectedMachineDepartments = fallback ? [fallback] : [];
       }
     }
 
@@ -749,14 +802,17 @@ const SLT = (() => {
 
     if (isAcceptMode()) {
       const available = getFilteredMachines();
-      const jumboMachine = available.find(function(machine){
+      const selectedDept = String((selectedMachineDepartments[0] || '')).toLowerCase();
+      const needsPrinting = isFlexoAcceptMode() && selectedDept.includes('print');
+      const keyword = needsPrinting ? 'print' : 'jumbo';
+      const defaultMachine = available.find(function(machine){
         const blob = String((machine.name || '') + ' ' + (machine.type || '') + ' ' + (machine.section || '')).toLowerCase();
-        return blob.includes('jumbo');
+        return blob.includes(keyword);
       }) || machines.find(function(machine){
         const blob = String((machine.name || '') + ' ' + (machine.type || '') + ' ' + (machine.section || '')).toLowerCase();
-        return blob.includes('jumbo');
+        return blob.includes(keyword);
       });
-      renderMachineChooser(jumboMachine && jumboMachine.name ? jumboMachine.name : '');
+      renderMachineChooser(defaultMachine && defaultMachine.name ? defaultMachine.name : '');
       return;
     }
 
@@ -1546,9 +1602,18 @@ const SLT = (() => {
 
   function isAcceptMode() {
     if (SOURCE_FLOW === 'jumbo_accept') return true;
+    if (SOURCE_FLOW === 'flexo_request_accept') return true;
     if (ACCEPT_REQUEST_ID > 0) return true;
     if (ACCEPT_JOB_ID > 0) return true;
     return false;
+  }
+
+  function isJumboAcceptMode() {
+    return SOURCE_FLOW === 'jumbo_accept';
+  }
+
+  function isFlexoAcceptMode() {
+    return SOURCE_FLOW === 'flexo_request_accept';
   }
 
   function getExecuteButtonLabel() {
@@ -2090,7 +2155,7 @@ const SLT = (() => {
       return;
     }
 
-    if (isAcceptMode()) {
+    if (isJumboAcceptMode()) {
       await applyAcceptRollUpdate(btn);
       return;
     }
@@ -2106,31 +2171,42 @@ const SLT = (() => {
       if (!validRuns.length) continue;
 
       const fd = new FormData();
+      const execJobNo = isFlexoAcceptMode() ? '' : String(cfg.job_no || '');
+      const execJobName = isFlexoAcceptMode() ? '' : String(cfg.job_name || '');
+      const execJobSize = isFlexoAcceptMode() ? '' : String(cfg.job_size || '');
       fd.append('csrf_token', CSRF);
       fd.append('action', 'execute_batch');
       fd.append('parent_roll_no', roll.roll_no);
+      if (isFlexoAcceptMode()) {
+        cfg.destination = 'JOB';
+      }
       fd.append('runs', JSON.stringify(validRuns.map(r => ({
         width: r.width,
         length: r.length,
         qty: r.qty,
         destination: cfg.destination,
-        job_no: cfg.job_no,
-        job_name: cfg.job_name,
-        job_size: cfg.job_size,
+        job_no: execJobNo,
+        job_name: execJobName,
+        job_size: execJobSize,
       }))));
       fd.append('remainder_action', cfg.remainderAction);
       fd.append('operator_name', operator);
       fd.append('machine', machine);
       fd.append('department_route', selectedMachineDepartments.join(', '));
       fd.append('destination', cfg.destination);
-      fd.append('job_no', cfg.job_no);
-      fd.append('job_name', cfg.job_name);
-      fd.append('job_size', cfg.job_size);
-      if (selectedJob && selectedJob.job_no) {
+      fd.append('job_no', execJobNo);
+      fd.append('job_name', execJobName);
+      fd.append('job_size', execJobSize);
+      if (isFlexoAcceptMode()) {
+        fd.append('flexo_request_id', String(ACCEPT_REQUEST_ID));
+        fd.append('flexo_job_id', String(ACCEPT_JOB_ID));
+        fd.append('flexo_task_index', String(ACCEPT_TASK_INDEX));
+      }
+      if (!isFlexoAcceptMode() && selectedJob && selectedJob.job_no) {
         fd.append('plan_no', selectedJob.job_no);
       }
       // Pass planning_id for status update if from planner
-      if (selectedJob && selectedJob.id) {
+      if (!isFlexoAcceptMode() && selectedJob && selectedJob.id) {
         fd.append('planning_id', selectedJob.id);
       }
       if (isAcceptMode()) {
@@ -2141,6 +2217,29 @@ const SLT = (() => {
         const res = await fetch(API, {method: 'POST', body: fd});
         const data = await res.json();
         if (data.ok) {
+          if (isFlexoAcceptMode()) {
+            const children = Array.isArray(data.children) ? data.children : [];
+            const issued = children.find(c => String(c.dest || '').toUpperCase() === 'JOB' && !c.is_remainder);
+            const issuedRollNo = String((issued && issued.roll_no) || '').trim();
+            if (!issuedRollNo) {
+              showToast('Slitting complete, but no JOB destination roll found for flexo sync.', 'warning');
+            } else if (ACCEPT_JOB_ID > 0 && ACCEPT_REQUEST_ID > 0) {
+              const syncFd = new FormData();
+              syncFd.append('csrf_token', CSRF);
+              syncFd.append('action', 'complete_flexo_slitting_from_batch');
+              syncFd.append('job_id', String(ACCEPT_JOB_ID));
+              syncFd.append('request_id', String(ACCEPT_REQUEST_ID));
+              syncFd.append('task_index', String(ACCEPT_TASK_INDEX));
+              syncFd.append('issued_roll_no', issuedRollNo);
+              syncFd.append('target_department', String(selectedMachineDepartments[0] || ''));
+              syncFd.append('completion_note', 'Completed via slitting terminal batch ' + String(data.batch_no || ''));
+              const syncRes = await fetch(JOBS_API, { method: 'POST', body: syncFd });
+              const syncData = await syncRes.json();
+              if (!syncData.ok) {
+                showToast('Flexo sync failed: ' + (syncData.error || 'Unknown error'), 'error');
+              }
+            }
+          }
           results.push(data);
         } else {
           hasError = true;
@@ -2164,11 +2263,6 @@ const SLT = (() => {
       renderBatchStatus();
       await loadPlannerJobs();
       await loadHistory();
-
-      // Show report for last batch
-      if (results.length === 1) {
-        openBatchReport(results[0].batch_id);
-      }
     }
 
     btn.disabled = false;

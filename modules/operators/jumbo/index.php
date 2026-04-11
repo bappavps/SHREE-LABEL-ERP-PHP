@@ -214,7 +214,7 @@ foreach ($allJumboRows as $row) {
   }
   if (is_array($parentRollsRaw)) {
     foreach ($parentRollsRaw as $pr) {
-      $prn = trim((string)$pr);
+      $prn = is_array($pr) ? trim((string)($pr['roll_no'] ?? '')) : trim((string)$pr);
       if ($prn !== '') $allRollNos[$prn] = true;
     }
   }
@@ -233,7 +233,7 @@ if (!empty($allRollNos)) {
   $rollNos = array_values(array_keys($allRollNos));
   $ph = implode(',', array_fill(0, count($rollNos), '?'));
   $types = str_repeat('s', count($rollNos));
-  $sql = "SELECT roll_no, remarks, status, width_mm, length_mtr, gsm, weight_kg, paper_type, company FROM paper_stock WHERE roll_no IN ($ph)";
+  $sql = "SELECT roll_no, parent_roll_no, parent_roll_no AS parent_roll_id, remarks, status, width_mm, length_mtr, gsm, weight_kg, paper_type, company FROM paper_stock WHERE roll_no IN ($ph)";
   $rmStmt = $db->prepare($sql);
   if ($rmStmt) {
     $rmStmt->bind_param($types, ...$rollNos);
@@ -243,6 +243,8 @@ if (!empty($allRollNos)) {
       $k = (string)($r['roll_no'] ?? '');
       if ($k === '') continue;
       $rollMap[$k] = [
+          'parent_roll_no' => (string)($r['parent_roll_no'] ?? ''),
+          'parent_roll_id' => (string)($r['parent_roll_id'] ?? ''),
           'remarks'    => (string)($r['remarks'] ?? ''),
           'status'     => (string)($r['status'] ?? ''),
           'width_mm'   => (float)($r['width_mm'] ?? 0),
@@ -276,7 +278,7 @@ foreach ($allJumboRows as $row) {
   }
   if (is_array($parentRollsRaw)) {
     foreach ($parentRollsRaw as $pr) {
-      $prn = trim((string)$pr);
+      $prn = is_array($pr) ? trim((string)($pr['roll_no'] ?? '')) : trim((string)$pr);
       if ($prn !== '' && isset($rollMap[$prn])) {
         $row['live_roll_map'][$prn] = $rollMap[$prn];
       }
@@ -291,7 +293,13 @@ foreach ($allJumboRows as $row) {
         $r2['remarks_live'] = (string)($rollMap[$rn]['remarks'] ?? '');
         $r2['status_live']  = (string)($rollMap[$rn]['status'] ?? '');
       }
-    }
+        // Also populate live_roll_map for the parent roll referenced by this child row
+        // (critical for EXTRA cards where job.roll_no='' and parent is only known via child entries)
+        $parentRefNo = trim((string)($r2['parent_roll_no'] ?? ''));
+        if ($parentRefNo !== '' && !isset($row['live_roll_map'][$parentRefNo]) && isset($rollMap[$parentRefNo])) {
+          $row['live_roll_map'][$parentRefNo] = $rollMap[$parentRefNo];
+        }
+      }
     unset($r2);
     $extra[$bucket] = $rows2;
   }
@@ -362,6 +370,11 @@ $finishedQuery = $db->prepare("
 $finishedQuery->execute();
 $finishedCount = $finishedQuery->get_result()->fetch_assoc()['cnt'];
 
+$requestTabCount = count(array_filter($allJumboRows, static function(array $job): bool {
+  $status = strtolower(trim((string)($job['status'] ?? '')));
+  return $status === 'running' && (int)($job['pending_change_requests'] ?? 0) > 0;
+}));
+
 $csrf = generateCSRF();
 include __DIR__ . '/../../../includes/header.php';
 ?>
@@ -394,6 +407,7 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-search:focus{border-color:var(--jc-brand)}
 .jc-filter-btn{padding:6px 14px;font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border:1px solid var(--border,#e2e8f0);background:#fff;border-radius:20px;cursor:pointer;transition:all .15s;color:#64748b}
 .jc-filter-btn.active{background:var(--jc-brand);border-color:var(--jc-brand);color:#fff}
+.jc-filter-request-badge{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;padding:0 8px;border-radius:999px;background:#ef4444;color:#fff;font-size:.72rem;font-weight:900;margin-left:8px;box-shadow:0 0 0 3px rgba(239,68,68,.2);animation:jc-request-blink 1.1s ease-in-out infinite}
 .jc-tabs{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
 .jc-tab-btn{padding:7px 14px;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border:1px solid var(--border,#e2e8f0);background:#fff;border-radius:999px;cursor:pointer;color:#64748b;transition:all .15s}
 .jc-tab-btn.active{background:#0f172a;color:#fff;border-color:#0f172a}
@@ -402,6 +416,8 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px}
 .jc-card{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:14px;overflow:hidden;transition:all .2s;cursor:pointer}
 .jc-card:hover{box-shadow:0 8px 24px rgba(0,0,0,.07);transform:translateY(-2px)}
+.jc-card-request-alert{border-left:4px solid #ef4444;box-shadow:0 0 0 2px rgba(239,68,68,.22),0 8px 20px rgba(239,68,68,.16);animation:jc-request-card-pulse 1.25s ease-in-out infinite}
+.jc-card-request-alert .jc-card-head{background:linear-gradient(135deg,#fff1f2,#fff)}
 .jc-card-head{padding:14px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border,#e2e8f0);background:linear-gradient(135deg,#f8fafc,#fff)}
 .jc-card-head .jc-jobno{font-weight:900;font-size:.85rem;color:#0f172a;display:flex;align-items:center;gap:8px}
 .jc-card-head .jc-jobno i{color:var(--jc-brand);font-size:1rem}
@@ -476,9 +492,11 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-request-box{margin-top:14px;padding:12px 14px;border:1px dashed #cbd5e1;border-radius:10px;background:#f8fafc}
 .jc-request-state{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;background:#fef3c7;color:#92400e;font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
 .jc-request-chip{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;background:#fef3c7;color:#92400e;font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
-.jc-request-chip.pending{background:#fef3c7;color:#92400e}
+.jc-request-chip.pending{background:#fee2e2;color:#991b1b;border:1px solid #ef4444;animation:jc-request-blink 1.1s ease-in-out infinite}
 .jc-request-chip.rejected{background:#fee2e2;color:#991b1b}
 .jc-request-state.rejected{background:#fee2e2;color:#991b1b}
+@keyframes jc-request-blink{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(1.06)}}
+@keyframes jc-request-card-pulse{0%,100%{box-shadow:0 0 0 2px rgba(239,68,68,.22),0 8px 20px rgba(239,68,68,.16)}50%{box-shadow:0 0 0 4px rgba(239,68,68,.34),0 12px 28px rgba(239,68,68,.24)}}
 .jc-roll-check{margin-top:12px;padding:12px 14px;border-radius:10px;border:1px solid #dbe3ea;background:#f8fafc}
 .jc-roll-check.ok{border-color:#bbf7d0;background:#f0fdf4}
 .jc-roll-check.bad{border-color:#fecaca;background:#fef2f2}
@@ -609,6 +627,10 @@ $historyCount = $finishedCount;
     <div class="jc-stat-icon" style="background:#e0e7ff;color:#6366f1"><i class="bi bi-play-circle-fill"></i></div>
     <div><div class="jc-stat-val"><?= $runningCount ?></div><div class="jc-stat-label">Running</div></div>
   </div>
+  <div class="jc-stat" data-filter="Request" onclick="filterFromStat('Request')">
+    <div class="jc-stat-icon" style="background:#fee2e2;color:#dc2626"><i class="bi bi-bell-fill"></i></div>
+    <div><div class="jc-stat-val"><?= $requestTabCount ?></div><div class="jc-stat-label">Request</div></div>
+  </div>
   <div class="jc-stat" data-filter="Hold" onclick="filterFromStat('Hold')">
     <div class="jc-stat-icon" style="background:#fecdd3;color:#dc2626"><i class="bi bi-pause-circle-fill"></i></div>
     <div><div class="jc-stat-val"><?= $holdCount ?></div><div class="jc-stat-label">Hold</div></div>
@@ -628,11 +650,12 @@ $historyCount = $finishedCount;
 
 <div class="jc-filters no-print">
   <input type="text" class="jc-search" id="jcSearch" placeholder="Search by job no, roll, company&hellip;">
-  <button class="jc-filter-btn active" onclick="filterJobs('all',this)">All</button>
-  <button class="jc-filter-btn" onclick="filterJobs('Pending',this)">Pending</button>
-  <button class="jc-filter-btn" onclick="filterJobs('Running',this)">Running</button>
-  <button class="jc-filter-btn" onclick="filterJobs('Hold',this)">Hold</button>
-  <button class="jc-filter-btn" onclick="filterJobs('Finished',this)">Finished</button>
+  <button class="jc-filter-btn active" data-filter-status="all" onclick="filterJobs('all',this)">All</button>
+  <button class="jc-filter-btn" data-filter-status="Pending" onclick="filterJobs('Pending',this)">Pending</button>
+  <button class="jc-filter-btn" data-filter-status="Running" onclick="filterJobs('Running',this)">Running</button>
+  <button class="jc-filter-btn" data-filter-status="Request" onclick="filterJobs('Request',this)">Request<?php if ($requestTabCount > 0): ?> <span class="jc-filter-request-badge" title="Running jobs with pending request"><?= (int)$requestTabCount ?></span><?php endif; ?></button>
+  <button class="jc-filter-btn" data-filter-status="Hold" onclick="filterJobs('Hold',this)">Hold</button>
+  <button class="jc-filter-btn" data-filter-status="Finished" onclick="filterJobs('Finished',this)">Finished</button>
 </div>
 
 <div class="jc-grid no-print" id="jcGrid">
@@ -651,14 +674,16 @@ $historyCount = $finishedCount;
     $rStsClass = strtolower(str_replace(' ', '', $rSts)) === 'slitting' ? 'slitting' : $stsClass;
     $pri = $job['planning_priority'] ?? 'Normal';
     $priClass = match(strtolower($pri)) { 'urgent'=>'urgent', 'high'=>'high', default=>'normal' };
+    $hasPendingRequest = (int)($job['pending_change_requests'] ?? 0) > 0;
+    $hasRequestAlert = ($sts === 'Running' && $hasPendingRequest);
     $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : '—';
     $searchText = strtolower($job['job_no'] . ' ' . ($job['roll_no'] ?? '') . ' ' . ($job['company'] ?? '') . ' ' . ($job['planning_job_name'] ?? ''));
   ?>
-  <div class="jc-card" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" onclick="openJobDetail(<?= $job['id'] ?>)">
+  <div class="jc-card<?= $hasRequestAlert ? ' jc-card-request-alert' : '' ?>" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" data-has-request="<?= $hasRequestAlert ? '1' : '0' ?>" onclick="openJobDetail(<?= $job['id'] ?>)">
     <div class="jc-card-head">
       <div class="jc-jobno"><i class="bi bi-box-seam"></i> <?= e($job['job_no']) ?></div>
       <div style="display:flex;gap:6px;align-items:center">
-        <?php if ((int)($job['pending_change_requests'] ?? 0) > 0): ?>
+        <?php if ($hasPendingRequest): ?>
           <span class="jc-request-chip pending">Request Pending</span>
         <?php elseif (strtolower(trim((string)($job['latest_request_status'] ?? ''))) === 'rejected'): ?>
           <span class="jc-request-chip rejected">Request Rejected</span>
@@ -684,10 +709,10 @@ $historyCount = $finishedCount;
       <div class="jc-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
       <div style="display:flex;gap:6px;align-items:center" onclick="event.stopPropagation()">
         <?php if ($sts === 'Pending'): ?>
-          <button class="jc-action-btn jc-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>)"><i class="bi bi-play-fill"></i> Start</button>
+          <button class="jc-action-btn jc-btn-start" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-play-fill"></i> Start</button>
         <?php elseif ($sts === 'Running'): ?>
           <?php if ($timerState === 'paused'): ?>
-            <button class="jc-action-btn jc-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>)"><i class="bi bi-play-circle"></i> Again Start</button>
+            <button class="jc-action-btn jc-btn-start" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-play-circle"></i> Again Start</button>
           <?php elseif ($timerActive): ?>
             <button class="jc-action-btn jc-btn-start" onclick="resumeRunningJumboTimer(<?= $job['id'] ?>)"><i class="bi bi-play-circle"></i> Open Timer</button>
           <?php else: ?>
@@ -1031,6 +1056,20 @@ function jumboFormatDateTime(value) {
   return Number.isFinite(parsed.getTime()) ? parsed.toLocaleString() : '—';
 }
 
+function jumboNotify(message, type) {
+  const msg = String(message || '').trim();
+  if (!msg) return;
+  const kind = String(type || 'info').toLowerCase();
+  if (typeof window.showERPToast === 'function') {
+    const toastType = (kind === 'bad' || kind === 'error') ? 'error' : (kind === 'warning' ? 'warning' : 'info');
+    window.showERPToast(msg, toastType);
+    return;
+  }
+  if (typeof window.erpCenterMessage === 'function') {
+    window.erpCenterMessage(msg, { title: 'Notification' });
+  }
+}
+
 function jumboDurationSeconds(job) {
   if (!job) return 0;
   const extra = job.extra_data_parsed || {};
@@ -1178,11 +1217,11 @@ function showJumboTimerOverlay(job) {
 function resumeRunningJumboTimer(jobId) {
   const job = getJobById(jobId);
   if (!job || String(job.status || '') !== 'Running') {
-    alert('Timer is not active for this job.');
+    jumboNotify('Timer is not active for this job.', 'warning');
     return;
   }
   if (!isJumboTimerActive(job)) {
-    alert('Timer is paused. Click Again Start.');
+    jumboNotify('Timer is paused. Click Again Start.', 'warning');
     return;
   }
   showJumboTimerOverlay(job);
@@ -1469,7 +1508,7 @@ function htDeselectAll() {
 
 function htBulkPrint() {
   const ids = Array.from(document.querySelectorAll('.ht-row-cb:checked')).map(function(cb) { return cb.dataset.jobId; });
-  if (!ids.length) { alert('No history job selected'); return; }
+  if (!ids.length) { jumboNotify('No history job selected', 'warning'); return; }
   const jobs = ids.map(function(id) { return ALL_JOBS.find(function(j) { return j.id == id; }); }).filter(Boolean);
   if (!jobs.length) return;
 
@@ -1503,45 +1542,41 @@ function filterJobs(status, btn) {
   document.querySelectorAll('.jc-filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   updateStatBoxes(status);
+  const q = (document.getElementById('jcSearch')?.value || '').toLowerCase();
   document.querySelectorAll('.jc-card').forEach(card => {
     const cardStatus = (card.dataset.status || '').toLowerCase();
     const finishedOnly = card.dataset.finishedOnly === '1';
+    const hasRequest = card.dataset.hasRequest === '1';
+    const matchesSearch = (card.dataset.search || '').includes(q);
     if (status === 'all') {
-      card.style.display = finishedOnly ? 'none' : '';
+      card.style.display = (!finishedOnly && matchesSearch) ? '' : 'none';
       return;
     }
     if (status === 'Finished') {
       const isFinished = ['finished', 'completed', 'closed', 'finalized', 'qc passed'].includes(cardStatus);
-      card.style.display = isFinished ? '' : 'none';
+      card.style.display = (isFinished && matchesSearch) ? '' : 'none';
       return;
     }
     if (finishedOnly) {
       card.style.display = 'none';
       return;
     }
-    if (status === 'Hold') {
-      const isHold = cardStatus === 'hold' || cardStatus === 'hold for payment' || cardStatus === 'hold for approval';
-      card.style.display = isHold ? '' : 'none';
+    if (status === 'Request') {
+      card.style.display = (hasRequest && matchesSearch) ? '' : 'none';
       return;
     }
-    card.style.display = (cardStatus === status.toLowerCase()) ? '' : 'none';
+    if (status === 'Hold') {
+      const isHold = cardStatus === 'hold' || cardStatus === 'hold for payment' || cardStatus === 'hold for approval';
+      card.style.display = (isHold && matchesSearch) ? '' : 'none';
+      return;
+    }
+    card.style.display = (cardStatus === status.toLowerCase() && matchesSearch) ? '' : 'none';
   });
 }
 
 // ─── Trigger filter from stat box ───────────────────────────
 function filterFromStat(status) {
-  const filterBtns = document.querySelectorAll('.jc-filter-btn');
-  let targetBtn = null;
-  
-  if (status === 'all') {
-    targetBtn = filterBtns[0]; // First button is ALL
-  } else {
-    // Find button with matching text (case-insensitive)
-    targetBtn = Array.from(filterBtns).find(btn => 
-      btn.textContent.trim().split('\n')[0] === status
-    );
-  }
-  
+  const targetBtn = document.querySelector(`.jc-filter-btn[data-filter-status="${status}"]`);
   if (targetBtn) {
     targetBtn.click();
   }
@@ -1561,10 +1596,10 @@ function updateStatBoxes(status) {
 }
 
 document.getElementById('jcSearch').addEventListener('input', function() {
-  const q = this.value.toLowerCase();
-  document.querySelectorAll('.jc-card').forEach(card => {
-    card.style.display = (card.dataset.search || '').includes(q) ? '' : 'none';
-  });
+  const activeBtn = document.querySelector('.jc-filter-btn.active');
+  if (activeBtn) {
+    filterJobs(activeBtn.dataset.filterStatus || activeBtn.textContent.trim(), activeBtn);
+  }
 });
 
 // ─── Live timers for running jobs ────────────────────────────
@@ -1593,9 +1628,38 @@ setInterval(function() {
 }, DM_AUTO_REFRESH_MS);
 
 // ─── Status update ──────────────────────────────────────────
+function jumboConfirmERP(message, title) {
+  return new Promise(function(resolve) {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:32000;background:rgba(15,23,42,.62);display:flex;align-items:center;justify-content:center;padding:14px';
+    ov.innerHTML = `<div style="width:min(480px,95vw);background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 26px 60px rgba(2,6,23,.28)">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:linear-gradient(90deg,#0f172a,#1e293b);color:#fff">
+        <span style="font-size:15px;font-weight:700;letter-spacing:.2px">${esc(title||'Confirm')}</span>
+        <button type="button" id="jceCancel" style="border:0;background:rgba(255,255,255,.16);color:#fff;border-radius:8px;padding:5px 9px;cursor:pointer">X</button>
+      </div>
+      <div style="padding:18px;font-size:15px;line-height:1.5;color:#0f172a;white-space:pre-wrap">${esc(message||'')}</div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 18px;background:#f8fafc;border-top:1px solid #e2e8f0">
+        <button type="button" id="jceCancelBtn" style="border:1px solid #cbd5e1;background:#fff;color:#374151;border-radius:10px;padding:9px 16px;font-weight:600;cursor:pointer">Cancel</button>
+        <button type="button" id="jceOkBtn" style="border:0;background:#1d4ed8;color:#fff;border-radius:10px;padding:9px 16px;font-weight:600;cursor:pointer">Confirm</button>
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+    let done = false;
+    function finish(val) {
+      if (done) return; done = true;
+      if (ov.parentNode) ov.parentNode.removeChild(ov);
+      resolve(!!val);
+    }
+    ov.querySelector('#jceOkBtn').addEventListener('click', function() { finish(true); });
+    ov.querySelector('#jceCancelBtn').addEventListener('click', function() { finish(false); });
+    ov.querySelector('#jceCancel').addEventListener('click', function() { finish(false); });
+    ov.addEventListener('click', function(e) { if (e.target === ov) finish(false); });
+  });
+}
+
 async function updateJobStatus(id, newStatus, options = {}) {
   const reloadOnSuccess = options.reloadOnSuccess !== false;
-  if (!confirm('Set this job to ' + newStatus + '?')) return;
+  if (!(await jumboConfirmERP('Set this job to ' + newStatus + '?', 'Confirm Status Change'))) return;
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
   fd.append('action', 'update_status');
@@ -1608,9 +1672,9 @@ async function updateJobStatus(id, newStatus, options = {}) {
       if (reloadOnSuccess) location.reload();
       return true;
     }
-    else alert('Error: ' + (data.error || 'Unknown'));
+    else jumboNotify('Error: ' + (data.error || 'Unknown'), 'bad');
     return false;
-  } catch (err) { alert('Network error: ' + err.message); return false; }
+  } catch (err) { jumboNotify('Network error: ' + err.message, 'bad'); return false; }
 }
 
 function getJobById(id) {
@@ -1621,12 +1685,221 @@ function operatorNormalizeRollNo(val) {
   return String(val || '').trim().toUpperCase();
 }
 
-function operatorBuildRequiredParentRolls(job) {
+function operatorIsChildRollNo(rollNo, liveRollMap) {
+  const raw = String(rollNo || '').trim();
+  if (!raw) return false;
+  const live = (liveRollMap && liveRollMap[raw]) ? liveRollMap[raw] : null;
+  const rollType = String((live && live.roll_type) || '').toLowerCase();
+  if (rollType === 'child') return true;
+  if (rollType === 'parent') return false;
+
+  // Definitive: if paper_stock recorded a parent_roll_no, this is unambiguously a child
+  const liveParentNo = String((live && live.parent_roll_no) || '').trim();
+  if (liveParentNo !== '') return true;
+
+  const m = raw.match(/^(.*)-([A-Z]+\d*)$/i);
+  if (!m) return false;
+  const base = String(m[1] || '').trim();
+  if (!base) return false;
+  if (liveRollMap && liveRollMap[base]) return true;
+  return false;
+}
+
+function operatorIsParentRollNo(rollNo, liveRollMap) {
+  const raw = String(rollNo || '').trim();
+  if (!raw) return false;
+  return !operatorIsChildRollNo(raw, liveRollMap);
+}
+
+function operatorSplitRollCollections(job) {
   const extra = (job && job.extra_data_parsed) ? job.extra_data_parsed : {};
+  const liveRollMap = (job && job.live_roll_map) ? job.live_roll_map : {};
+  const parent = extra.parent_details || {};
+  // For EXTRA jobs, extra.parent_roll may be absent; derive parent from child_rolls[0].parent_roll_no.
+  // Do NOT fall back to job.roll_no — for slitting jobs that field holds the first OUTPUT roll, not the input.
+  const extraChildParent = (function() {
+    const rolls = extra.child_rolls;
+    if (!Array.isArray(rolls) || rolls.length === 0) return '';
+    return String((rolls[0] && rolls[0].parent_roll_no) || '').trim();
+  })();
+  const primaryPRN = String((parent.roll_no) || extra.parent_roll || extraChildParent || '').trim();
+
+  // Keep source arrays untouched; classify from a separate immutable collection.
+  const parentRollSet = {};
+  const explicitParentSet = {}; // rolls forced in via 'primary' or 'parent' source — never filtered out
+  const childRows = [];
+  const stockRows = [];
+  const childSeen = {};
+  const stockSeen = {};
+  const allRollEntries = [];
+
+  function normalizeRollRow(row) {
+    return (row && typeof row === 'object') ? row : { roll_no: String(row || '').trim() };
+  }
+
+  function getRollNo(row) {
+    return String((row && row.roll_no) || '').trim();
+  }
+
+  function isSuffixChildRollNo(rollNo) {
+    const raw = String(rollNo || '').trim();
+    if (!raw) return false;
+    // Final UI classifier rule: any single trailing uppercase suffix means child.
+    return /-[A-Z]$/.test(operatorNormalizeRollNo(raw));
+  }
+
+  function isParentRollNo(rollNo) {
+    const raw = String(rollNo || '').trim();
+    if (!raw) return false;
+    return !isSuffixChildRollNo(raw);
+  }
+
+  function pushEntry(source, row) {
+    const rr = normalizeRollRow(row);
+    const rn = getRollNo(rr);
+    if (!rn) return;
+    allRollEntries.push({ source: source, row: rr });
+  }
+
+  function tryAddParentRoll(rollNo) {
+    const raw = String(rollNo || '').trim();
+    if (!raw) return;
+    if (!isParentRollNo(raw)) return;
+    parentRollSet[raw] = true;
+  }
+
+  // Collect all rolls first (without mutating original arrays)
+  if (primaryPRN !== '') pushEntry('primary', { roll_no: primaryPRN });
+  const jobRollNo = String(job?.roll_no || '').trim();
+  if (jobRollNo !== '' && jobRollNo !== primaryPRN) pushEntry('job', { roll_no: jobRollNo });
+
+  const parentRollsRaw = extra.parent_rolls;
+  if (Array.isArray(parentRollsRaw)) {
+    parentRollsRaw.forEach(function(pr) {
+      if (pr && typeof pr === 'object') {
+        pushEntry('parent', pr);
+        return;
+      }
+      pushEntry('parent', { roll_no: String(pr || '').trim() });
+    });
+  } else if (typeof parentRollsRaw === 'string' && parentRollsRaw.trim() !== '') {
+    parentRollsRaw.split(',').forEach(function(pr) {
+      pushEntry('parent', { roll_no: String(pr || '').trim() });
+    });
+  }
+
+  const sourceChildRows = Array.isArray(extra.child_rolls) ? extra.child_rolls : [];
+  const sourceStockRows = Array.isArray(extra.stock_rolls) ? extra.stock_rolls : [];
+  sourceChildRows.forEach(function(row) {
+    pushEntry('child', row);
+  });
+  sourceStockRows.forEach(function(row) {
+    pushEntry('stock', row);
+  });
+  // Derive parents from each child/stock row's parent_roll_no.
+  // This is the fallback that ensures e.g. SLC/2026/0016-C shows in the parent table
+  // after an EXTRA merge — even if parent_rolls[] in DB wasn't updated for old jobs.
+  var seenChildParents = {};
+  [].concat(sourceChildRows, sourceStockRows).forEach(function(row) {
+    var prn = String((row && row.parent_roll_no) || '').trim();
+    if (!prn || seenChildParents[prn]) return;
+    seenChildParents[prn] = true;
+    pushEntry('parent', { roll_no: prn });
+  });
+
+  // Classify deterministically from combined list.
+  // Rolls explicitly sourced as 'primary' or 'parent' are ALWAYS the job's parent rolls,
+  // even if their roll_no ends with a letter suffix (e.g. SLC/2026/0016-C in EXTRA jobs).
+  // Only 'child' and 'stock' source rolls are further classified by suffix rule.
+  allRollEntries.forEach(function(entry) {
+    const rr = entry.row;
+    const rn = getRollNo(rr);
+    if (!rn) return;
+    if (entry.source === 'primary' || entry.source === 'parent') {
+      // These are the rolls being slitted in this job — always parent regardless of number format.
+      parentRollSet[rn] = true;
+      explicitParentSet[rn] = true; // tag as explicit so cross-check filter never removes it
+      return;
+    }
+    const isChild = isSuffixChildRollNo(rn);
+    if (isChild) {
+      const key = operatorNormalizeRollNo(rn);
+      const target = (entry.source === 'stock') ? stockSeen : childSeen;
+      if (target[key]) return;
+      target[key] = true;
+      if (entry.source === 'stock') {
+        stockRows.push(rr);
+      } else {
+        childRows.push(rr);
+      }
+    } else {
+      tryAddParentRoll(rn);
+    }
+  });
+
+  // Safety fallback: if parent set is still empty but rolls exist, use suffix rule on all.
+  if (!Object.keys(parentRollSet).length && allRollEntries.length) {
+    allRollEntries.forEach(function(entry) {
+      const rn = getRollNo(entry.row);
+      if (!rn) return;
+      if (!isSuffixChildRollNo(rn)) parentRollSet[rn] = true;
+    });
+  }
+
+  const parentRollNos = Object.keys(parentRollSet).filter(function(prn) {
+    // Explicit parent sources (primary/parent roll entries) are NEVER filtered out,
+    // even if the same roll_no also appears in stock/child lists (e.g. SLC/0016-C
+    // is both the parent being slitted AND a stock roll in paper_stock).
+    if (explicitParentSet[prn]) return true;
+    // For auto-classified parents (from job.roll_no etc.), exclude ones that also
+    // appeared as a child/stock row (safety dedup for edge cases).
+    const normPrn = operatorNormalizeRollNo(prn);
+    return !childSeen[normPrn] && !stockSeen[normPrn];
+  }).sort(function(a, b) {
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  });
+
+  const parentRowsMeta = parentRollNos.map(function(prn) {
+    const live = liveRollMap[prn] || {};
+    const isPrimary = (prn === primaryPRN);
+    const company = live.company || (isPrimary ? (parent.company || job?.company || '') : '');
+    const ptype = live.paper_type || (isPrimary ? (parent.paper_type || job?.paper_type || '') : '');
+    const width = live.width_mm !== undefined ? live.width_mm : (isPrimary ? (parent.width_mm ?? job?.width_mm ?? '') : '');
+    const length = live.length_mtr !== undefined ? live.length_mtr : (isPrimary ? (parent.length_mtr ?? job?.length_mtr ?? '') : '');
+    const weight = live.weight_kg !== undefined ? live.weight_kg : (isPrimary ? (parent.weight_kg ?? job?.weight_kg ?? '') : '');
+    const gsm = live.gsm !== undefined ? live.gsm : (isPrimary ? (parent.gsm ?? job?.gsm ?? '') : '');
+    const sqm = isPrimary ? (parent.sqm ?? '--') : '--';
+    const liveStatus = live.status || '--';
+    const liveRemarks = live.remarks !== undefined ? live.remarks : (isPrimary ? (parent.remarks || '') : '');
+    return {
+      roll_no: prn,
+      company: company || '',
+      paper_type: ptype || '',
+      width_mm: width,
+      length_mtr: length,
+      weight_kg: weight,
+      gsm: gsm,
+      sqm: sqm,
+      status: liveStatus,
+      remarks: liveRemarks || ''
+    };
+  });
+
+  return {
+    parent_roll_nos: parentRollNos,
+    parent_rows_meta: parentRowsMeta,
+    child_rows: childRows,
+    stock_rows: stockRows
+  };
+}
+
+function operatorBuildRequiredParentRolls(job) {
+  const split = operatorSplitRollCollections(job);
   const out = [];
   const seen = {};
 
-  function addRoll(rollNo, meta) {
+  function addRoll(rowMeta) {
+    const rollNo = String((rowMeta && rowMeta.roll_no) || '').trim();
     const raw = String(rollNo || '').trim();
     const norm = operatorNormalizeRollNo(raw);
     if (!norm || seen[norm]) return;
@@ -1634,44 +1907,13 @@ function operatorBuildRequiredParentRolls(job) {
     out.push({
       roll_no: raw,
       norm: norm,
-      paper_type: String((meta && meta.paper_type) || ''),
-      width: (meta && (meta.width ?? meta.width_mm)) ?? '',
-      length: (meta && (meta.length ?? meta.length_mtr)) ?? ''
+      paper_type: String((rowMeta && rowMeta.paper_type) || ''),
+      width: (rowMeta && (rowMeta.width ?? rowMeta.width_mm)) ?? '',
+      length: (rowMeta && (rowMeta.length ?? rowMeta.length_mtr)) ?? ''
     });
   }
 
-  const parent = extra.parent_details || {};
-  addRoll(parent.roll_no || extra.parent_roll || job?.roll_no || '', {
-    paper_type: parent.paper_type || job?.paper_type || '',
-    width: parent.width_mm ?? job?.width_mm ?? '',
-    length: parent.length_mtr ?? job?.length_mtr ?? ''
-  });
-
-  const parentRollsRaw = extra.parent_rolls;
-  if (Array.isArray(parentRollsRaw)) {
-    parentRollsRaw.forEach(function(pr) {
-      addRoll(pr, { paper_type: job?.paper_type || '', width: job?.width_mm ?? '', length: job?.length_mtr ?? '' });
-    });
-  } else if (typeof parentRollsRaw === 'string' && parentRollsRaw.trim() !== '') {
-    parentRollsRaw.split(',').forEach(function(pr) {
-      addRoll(pr, { paper_type: job?.paper_type || '', width: job?.width_mm ?? '', length: job?.length_mtr ?? '' });
-    });
-  }
-
-  (Array.isArray(extra.child_rolls) ? extra.child_rolls : []).forEach(function(row) {
-    addRoll(row && row.parent_roll_no ? row.parent_roll_no : '', {
-      paper_type: row?.paper_type || '',
-      width: row?.width ?? row?.width_mm ?? '',
-      length: row?.length ?? row?.length_mtr ?? ''
-    });
-  });
-  (Array.isArray(extra.stock_rolls) ? extra.stock_rolls : []).forEach(function(row) {
-    addRoll(row && row.parent_roll_no ? row.parent_roll_no : '', {
-      paper_type: row?.paper_type || '',
-      width: row?.width ?? row?.width_mm ?? '',
-      length: row?.length ?? row?.length_mtr ?? ''
-    });
-  });
+  split.parent_rows_meta.forEach(function(meta) { addRoll(meta); });
 
   return out;
 }
@@ -2148,23 +2390,21 @@ async function saveExecutionData(id) {
     const r = await fetch(API_BASE, { method: 'POST', body: fd });
     const d = await r.json();
     if (!d.ok) {
-      alert('Save error: ' + (d.error || 'Unknown'));
+      jumboNotify('Save error: ' + (d.error || 'Unknown'), 'bad');
       return false;
     }
     return true;
   } catch (e) {
-    alert('Network error while saving execution data');
+    jumboNotify('Network error while saving execution data', 'bad');
     return false;
   }
 }
 
 async function startJobWithTimer(id) {
-  if (!confirm('Start this job?')) return;
-
   const job = getJobById(id) || null;
   const verification = await operatorOpenRollVerification(job || { id: id, job_no: id, extra_data_parsed: {} });
   if (!verification.ok) {
-    alert(verification.error || 'Parent roll verification is required before start.');
+    jumboNotify(verification.error || 'Parent roll verification is required before start.', 'warning');
     return;
   }
 
@@ -2172,7 +2412,7 @@ async function startJobWithTimer(id) {
     ? verification.verified_rolls.map(function(v) { return String(v || '').trim(); }).filter(Boolean)
     : [];
   if (!verifiedRolls.length) {
-    alert('Roll verification did not capture any parent roll. Please verify again.');
+    jumboNotify('Roll verification did not capture any parent roll. Please verify again.', 'warning');
     return;
   }
 
@@ -2190,8 +2430,8 @@ async function startJobWithTimer(id) {
   try {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
-    if (!data.ok) { alert('Error: ' + (data.error || 'Unknown')); return; }
-  } catch (err) { alert('Network error: ' + err.message); return; }
+    if (!data.ok) { jumboNotify('Error: ' + (data.error || 'Unknown'), 'bad'); return; }
+  } catch (err) { jumboNotify('Network error: ' + err.message, 'bad'); return; }
 
   // Close modal if open
   document.getElementById('jcDetailModal').classList.remove('active');
@@ -2212,11 +2452,11 @@ async function startJobWithTimer(id) {
 
 async function cancelTimer() {
   if (!_timerJobId) return;
-  if (!confirm('Cancel will reset this job timer and return it to Pending. Continue?')) return;
+  if (!(await jumboConfirmERP('Cancel will reset this job timer and return it to Pending. Continue?', 'Cancel Timer'))) return;
   try {
     await resetJumboTimer(_timerJobId);
   } catch (err) {
-    alert('Timer reset failed: ' + err.message);
+    jumboNotify('Timer reset failed: ' + err.message, 'bad');
     return;
   }
   if (_timerInterval) clearInterval(_timerInterval);
@@ -2235,7 +2475,7 @@ async function pauseTimer() {
   try {
     await pauseJumboTimer(jobId);
   } catch (err) {
-    alert('Timer pause failed: ' + err.message);
+    jumboNotify('Timer pause failed: ' + err.message, 'bad');
     return;
   }
   if (_timerInterval) clearInterval(_timerInterval);
@@ -2253,7 +2493,7 @@ async function endTimer() {
   try {
     await markJumboTimerEnded(jobId);
   } catch (err) {
-    alert('Timer end failed: ' + err.message);
+    jumboNotify('Timer end failed: ' + err.message, 'bad');
     return;
   }
 
@@ -2276,10 +2516,19 @@ async function submitAndClose(id) {
   try {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
-    if (!data.ok) { alert('Close error: ' + (data.error || 'Unknown')); return; }
+    if (!data.ok) { jumboNotify('Close error: ' + (data.error || 'Unknown'), 'bad'); return; }
     DM_MODAL_LOCKED = false;
-    location.reload();
-  } catch (err) { alert('Network error: ' + err.message); }
+    document.getElementById('jcDetailModal').classList.remove('active');
+    const _compJob = getJobById(id) || {};
+    const _compJobNo = _compJob.job_no || ('Job #' + id);
+    window.erpCenterMessage(_compJobNo + ' has been completed successfully.\n\nJob is now marked as Finished.', { title: 'Job Completed' });
+    let _reloaded = false;
+    function _doReload() { if (!_reloaded) { _reloaded = true; location.reload(); } }
+    ['erpCenterMessageOk', 'erpCenterMessageClose'].forEach(function(bid) {
+      const btn = document.getElementById(bid);
+      if (btn) btn.addEventListener('click', _doReload, { once: true });
+    });
+  } catch (err) { jumboNotify('Network error: ' + err.message, 'bad'); }
 }
 
 async function uploadJumboPhoto(jobId) {
@@ -2395,7 +2644,8 @@ function getRequiredWidthForAutoSearch(job) {
   if (editableSum > 0) return Number(editableSum.toFixed(2));
 
   const extra = job.extra_data_parsed || {};
-  const childRows = Array.isArray(extra.child_rolls) ? extra.child_rolls : [];
+  const split = operatorSplitRollCollections(job);
+  const childRows = Array.isArray(split.child_rows) ? split.child_rows : [];
   let sum = 0;
   childRows.forEach(r => {
     const w = Number(r.width ?? r.width_mm ?? 0);
@@ -2459,7 +2709,7 @@ async function runAutoSearchForParents() {
   if (!job) return;
   syncParentSelectionUI();
   if (!DM_SELECTED_PARENT_ROLLS.length) {
-    alert('Select at least one parent roll before auto search.');
+    jumboNotify('Select at least one parent roll before auto search.', 'warning');
     return;
   }
 
@@ -2626,7 +2876,7 @@ let DM_REASON_VOICE_LANG = 'hi-IN';
 
 function startReasonVoice() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) { alert('Voice input not supported. Use Chrome, Edge, or Safari.'); return; }
+  if (!SpeechRecognition) { jumboNotify('Voice input not supported. Use Chrome, Edge, or Safari.', 'warning'); return; }
   if (!DM_REASON_VOICE) {
     DM_REASON_VOICE = new SpeechRecognition();
     DM_REASON_VOICE.continuous = false;
@@ -2998,7 +3248,7 @@ async function submitChangeRequest(id) {
   const requestBtn = document.getElementById('dm-request-roll-btn-footer') || document.getElementById('dm-request-roll-btn');
   const validationMessage = requestBtn?.dataset.validationMessage || 'Please enter valid substitute rolls for all selected parent rolls.';
   if (!requestBtn || requestBtn.disabled || requestBtn.dataset.rollValid !== '1') {
-    alert(validationMessage);
+    jumboNotify(validationMessage, 'warning');
     return;
   }
   const rows = collectEditedRows();
@@ -3016,7 +3266,7 @@ async function submitChangeRequest(id) {
   });
 
   if (rollChanges.length === 0) {
-    alert('Select parent rolls and enter valid substitute rolls.');
+    jumboNotify('Select parent rolls and enter valid substitute rolls.', 'warning');
     return;
   }
 
@@ -3035,14 +3285,14 @@ async function submitChangeRequest(id) {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
     if (!data.ok) {
-      alert('Request error: ' + (data.error || 'Unknown'));
+      jumboNotify('Request error: ' + (data.error || 'Unknown'), 'bad');
       return;
     }
-    if (data.already_pending) alert('This job already has a pending request.');
-    else alert('Change request submitted successfully.');
+    if (data.already_pending) jumboNotify('This job already has a pending request.', 'warning');
+    else jumboNotify('Change request submitted successfully.', 'info');
     location.reload();
   } catch (err) {
-    alert('Network error: ' + err.message);
+    jumboNotify('Network error: ' + err.message, 'bad');
   }
 }
 
@@ -3248,10 +3498,16 @@ async function openJobDetail(id, mode) {
 
   // Photo upload section (always available for operator)
   const existingPhoto = extra.jumbo_photo_url || '';
+  const _cameraEnabled = (mode === 'complete' && sts === 'Running' && !timerActive && timerState !== 'paused');
   const photoUploadHtml = `<div class="jc-detail-section"><h3><i class="bi bi-camera"></i> Job Photo</h3>
-    <div class="jc-upload-zone" onclick="document.getElementById('jc-photo-input-${job.id}').click()">
-      <input type="file" id="jc-photo-input-${job.id}" accept="image/*" capture="environment" onchange="uploadJumboPhoto(${job.id})">
-      <div style="font-size:.75rem;color:#64748b"><i class="bi bi-cloud-arrow-up" style="font-size:1.5rem;color:var(--jc-brand)"></i><br>Tap to open camera</div>
+    <div class="jc-upload-zone${_cameraEnabled ? '' : ' jc-upload-zone--disabled'}"
+         style="${_cameraEnabled ? '' : 'opacity:.5;pointer-events:none;cursor:not-allowed;background:#f8fafc;border:2px dashed #cbd5e1'}"
+         ${_cameraEnabled ? `onclick="document.getElementById('jc-photo-input-${job.id}').click()"` : ''}>
+      <input type="file" id="jc-photo-input-${job.id}" accept="image/*" capture="environment" onchange="uploadJumboPhoto(${job.id})" ${_cameraEnabled ? '' : 'disabled'}>
+      <div style="font-size:.75rem;color:${_cameraEnabled ? '#64748b' : '#94a3b8'}">
+        <i class="bi bi-${_cameraEnabled ? 'cloud-arrow-up' : 'camera-slash'}" style="font-size:1.5rem;color:${_cameraEnabled ? 'var(--jc-brand)' : '#94a3b8'}"></i>
+        <br>${_cameraEnabled ? 'Tap to open camera' : 'Start job to enable camera'}
+      </div>
       <div id="jc-photo-status-${job.id}" style="font-size:.7rem;margin-top:6px"></div>
     </div>
     <div id="jc-photo-preview-${job.id}" class="jc-upload-preview">${existingPhoto ? `<img src="${existingPhoto}" alt="Job Photo">` : ''}</div>
@@ -3263,59 +3519,27 @@ async function openJobDetail(id, mode) {
 
   // Multi-parent roll collection (same logic as main JMB page)
   {
-    const liveRollMap = job.live_roll_map || {};
-    const p = extra.parent_details || {};
-    const refChildRows = Array.isArray(extra.child_rolls) ? extra.child_rolls : [];
-    const seenParents = {};
-    const primaryPRN = String((p.roll_no) || extra.parent_roll || job.roll_no || '').trim();
-    if (primaryPRN !== '') seenParents[primaryPRN] = true;
-    const parentRollsRaw = extra.parent_rolls;
-    if (Array.isArray(parentRollsRaw)) {
-      parentRollsRaw.forEach(function(pr) {
-        const prn = String(pr || '').trim();
-        if (prn !== '') seenParents[prn] = true;
-      });
-    } else if (typeof parentRollsRaw === 'string' && parentRollsRaw.trim() !== '') {
-      parentRollsRaw.split(',').forEach(function(pr) {
-        const prn = String(pr || '').trim();
-        if (prn !== '') seenParents[prn] = true;
-      });
-    }
-    (Array.isArray(extra.child_rolls) ? extra.child_rolls : []).forEach(function(r) {
-      const prn = String(r.parent_roll_no || '').trim();
-      if (prn !== '') seenParents[prn] = true;
+    const split = operatorSplitRollCollections(job);
+    const allParentRollNos = Array.isArray(split.parent_roll_nos) ? split.parent_roll_nos : [];
+    const parentRowsMeta = Array.isArray(split.parent_rows_meta) ? split.parent_rows_meta : [];
+    const parentMetaByRoll = {};
+    parentRowsMeta.forEach(function(meta) {
+      const key = String(meta.roll_no || '').trim();
+      if (key !== '') parentMetaByRoll[key] = meta;
     });
-    (Array.isArray(extra.stock_rolls) ? extra.stock_rolls : []).forEach(function(r) {
-      const prn = String(r.parent_roll_no || '').trim();
-      if (prn !== '') seenParents[prn] = true;
-    });
-    const allParentRollNos = Object.keys(seenParents).sort(function(a, b) {
-      return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
-    });
-    const parentRowsMeta = [];
     if (allParentRollNos.length > 0) {
       let parentTableHtml = '<table class="jc-soft-table"><tr><th>Roll No</th><th>Paper Company</th><th>Material</th><th>Width</th><th>Length</th><th>Weight</th><th>Sqr Mtr</th><th>GSM</th><th>Status</th><th>Remarks</th></tr>';
       allParentRollNos.forEach(function(prn) {
-        const live      = liveRollMap[prn] || {};
-        const isPrimary = (prn === primaryPRN);
-        const company   = live.company    || (isPrimary ? (p.company    || job.company    || '') : '');
-        const ptype     = live.paper_type || (isPrimary ? (p.paper_type || job.paper_type || '') : '');
-        const width     = live.width_mm   !== undefined ? live.width_mm   : (isPrimary ? (p.width_mm  ?? job.width_mm  ?? '--') : '--');
-        const length    = live.length_mtr !== undefined ? live.length_mtr : (isPrimary ? (p.length_mtr ?? job.length_mtr ?? '--') : '--');
-        const weight    = live.weight_kg  !== undefined ? live.weight_kg  : (isPrimary ? (p.weight_kg ?? job.weight_kg ?? '--') : '--');
-        const sqm       = isPrimary ? (p.sqm ?? '--') : '--';
-        const gsm       = live.gsm !== undefined ? live.gsm : (isPrimary ? (p.gsm ?? job.gsm ?? '--') : '--');
-        const liveStatus  = live.status  || '--';
-        const liveRemarks = live.remarks !== undefined ? live.remarks : (isPrimary ? (p.remarks || '') : '');
-        parentRowsMeta.push({
-          roll_no: prn,
-          company: company || '',
-          paper_type: ptype || '',
-          width_mm: Number(width || 0),
-          length_mtr: Number(length || 0),
-          status: liveStatus || '',
-          remarks: liveRemarks || ''
-        });
+        const meta = parentMetaByRoll[prn] || {};
+        const company = meta.company || '--';
+        const ptype = meta.paper_type || '--';
+        const width = (meta.width_mm ?? '--');
+        const length = (meta.length_mtr ?? '--');
+        const weight = (meta.weight_kg ?? '--');
+        const sqm = (meta.sqm ?? '--');
+        const gsm = (meta.gsm ?? '--');
+        const liveStatus = meta.status || '--';
+        const liveRemarks = meta.remarks || '';
         parentTableHtml += `<tr><td style="color:var(--jc-brand);font-weight:700">${esc(prn)}</td><td>${esc(company || '--')}</td><td>${esc(ptype || '--')}</td><td>${esc(width + '')}</td><td>${esc(length + '')}</td><td>${esc(weight + '')}</td><td>${esc(sqm + '')}</td><td>${esc(gsm + '')}</td><td>${esc(liveStatus)}</td><td>${esc(liveRemarks || '--')}</td></tr>`;
       });
       parentTableHtml += '</table>';
@@ -3324,17 +3548,16 @@ async function openJobDetail(id, mode) {
       // Edit tab: parent roll table WITH checkboxes for selection
       let editParentTableHtml = '<table class="jc-soft-table" id="dm-edit-parent-table"><tr><th style="width:40px"><i class="bi bi-check2-square"></i></th><th>Roll No</th><th>Paper Company</th><th>Material</th><th>Width</th><th>Length</th><th>Weight</th><th>Sqr Mtr</th><th>GSM</th><th>Status</th><th>Remarks</th></tr>';
       allParentRollNos.forEach(function(prn) {
-        const live      = liveRollMap[prn] || {};
-        const isPrimary = (prn === primaryPRN);
-        const company   = live.company    || (isPrimary ? (p.company    || job.company    || '') : '');
-        const ptype     = live.paper_type || (isPrimary ? (p.paper_type || job.paper_type || '') : '');
-        const width     = live.width_mm   !== undefined ? live.width_mm   : (isPrimary ? (p.width_mm  ?? job.width_mm  ?? '--') : '--');
-        const length    = live.length_mtr !== undefined ? live.length_mtr : (isPrimary ? (p.length_mtr ?? job.length_mtr ?? '--') : '--');
-        const weight    = live.weight_kg  !== undefined ? live.weight_kg  : (isPrimary ? (p.weight_kg ?? job.weight_kg ?? '--') : '--');
-        const sqm       = isPrimary ? (p.sqm ?? '--') : '--';
-        const gsm       = live.gsm !== undefined ? live.gsm : (isPrimary ? (p.gsm ?? job.gsm ?? '--') : '--');
-        const liveStatus  = live.status  || '--';
-        const liveRemarks = live.remarks !== undefined ? live.remarks : (isPrimary ? (p.remarks || '') : '');
+        const meta = parentMetaByRoll[prn] || {};
+        const company = meta.company || '--';
+        const ptype = meta.paper_type || '--';
+        const width = (meta.width_mm ?? '--');
+        const length = (meta.length_mtr ?? '--');
+        const weight = (meta.weight_kg ?? '--');
+        const sqm = (meta.sqm ?? '--');
+        const gsm = (meta.gsm ?? '--');
+        const liveStatus = meta.status || '--';
+        const liveRemarks = meta.remarks || '';
         editParentTableHtml += `<tr data-roll="${esc(prn)}"><td style="text-align:center"><input type="checkbox" class="dm-parent-select-cb" value="${esc(prn)}"></td><td style="color:var(--jc-brand);font-weight:700">${esc(prn)}</td><td>${esc(company || '--')}</td><td>${esc(ptype || '--')}</td><td>${esc(width + '')}</td><td>${esc(length + '')}</td><td>${esc(weight + '')}</td><td>${esc(sqm + '')}</td><td>${esc(gsm + '')}</td><td>${esc(liveStatus)}</td><td>${esc(liveRemarks || '--')}</td></tr>`;
       });
       editParentTableHtml += '</table>';
@@ -3345,8 +3568,9 @@ async function openJobDetail(id, mode) {
   }
 
   // All child rolls in one table (job assign + stock) with plan number.
-  const childRows = Array.isArray(extra.child_rolls) ? extra.child_rolls : [];
-  const stockRows = Array.isArray(extra.stock_rolls) ? extra.stock_rolls : [];
+  const splitRows = operatorSplitRollCollections(job);
+  const childRows = Array.isArray(splitRows.child_rows) ? splitRows.child_rows : [];
+  const stockRows = Array.isArray(splitRows.stock_rows) ? splitRows.stock_rows : [];
   const allRows = [];
   childRows.forEach(function(r) {
     allRows.push({
@@ -3496,9 +3720,7 @@ async function openJobDetail(id, mode) {
 function closeDetail() {
   document.getElementById('jcDetailModal').classList.remove('active');
 }
-document.getElementById('jcDetailModal').addEventListener('click', function(e) {
-  if (e.target === this) closeDetail();
-});
+// Keep detail modal open on backdrop click; close only via explicit close controls.
 document.getElementById('dmRollPickerModal').addEventListener('click', function(e) {
   if (e.target === this) closeRollPicker();
 });
@@ -3548,7 +3770,7 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
 
   voiceRecognition.onerror = function(event) {
     console.error('Voice recognition error:', event.error);
-    alert('Voice input error: ' + event.error);
+    jumboNotify('Voice input error: ' + event.error, 'bad');
     updateVoiceButton('Error');
   };
 
@@ -3561,7 +3783,7 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
 
 function startVoiceInput() {
   if (!voiceRecognition) {
-    alert('Voice input not supported in your browser. Please use Chrome, Edge, or Safari.');
+    jumboNotify('Voice input not supported in your browser. Please use Chrome, Edge, or Safari.', 'warning');
     return;
   }
 
@@ -3640,8 +3862,8 @@ function translateVoiceText(originalText) {
 
 // ─── Delete job (admin) ─────────────────────────────────────
 async function deleteJob(id) {
-  if (!IS_ADMIN) { alert('Access denied. Only system admin can delete job cards.'); return; }
-  if (!confirm('Are you sure you want to delete this job card? This action is soft-delete.')) return;
+  if (!IS_ADMIN) { jumboNotify('Access denied. Only system admin can delete job cards.', 'bad'); return; }
+  if (!(await jumboConfirmERP('Are you sure you want to delete this job card? This action is soft-delete.', 'Confirm Delete'))) return;
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
   fd.append('action', 'delete_job');
@@ -3650,8 +3872,8 @@ async function deleteJob(id) {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
     if (data.ok) location.reload();
-    else alert('Error: ' + (data.error || 'Unknown'));
-  } catch (err) { alert('Network error: ' + err.message); }
+    else jumboNotify('Error: ' + (data.error || 'Unknown'), 'bad');
+  } catch (err) { jumboNotify('Network error: ' + err.message, 'bad'); }
 }
 
 // ─── Print Mode Chooser & B&W Transform ────────────────────
@@ -3709,28 +3931,24 @@ function printBwTransform(html) {
 // ─── Print Job Card ─────────────────────────────────────────
 function renderJumboPrintCardHtml(job, qrDataUrl) {
   const extra = job.extra_data_parsed || {};
+  const split = operatorSplitRollCollections(job);
   const liveRollMap = job.live_roll_map || {};
   const created = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
   const started = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
   const completed = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
   const dur = Number(job.duration_minutes);
   const durText = Number.isFinite(dur) ? `${Math.floor(dur/60)}h ${dur%60}m` : '—';
-  const p = extra.parent_details || {};
-  const primaryPRN = String((p.roll_no) || extra.parent_roll || job.roll_no || '').trim();
+  const parentMetaByRoll = {};
+  (Array.isArray(split.parent_rows_meta) ? split.parent_rows_meta : []).forEach(function(meta) {
+    const k = String(meta.roll_no || '').trim();
+    if (k !== '') parentMetaByRoll[k] = meta;
+  });
 
   const qrHtml = qrDataUrl
     ? `<div style="text-align:center;margin-left:12px"><img src="${qrDataUrl}" style="width:90px;height:90px;display:block"><div style="font-size:.56rem;color:#64748b;margin-top:2px">Scan job card</div></div>`
     : '';
 
-  // Collect parent rolls
-  const seenParents = {};
-  if (primaryPRN !== '') seenParents[primaryPRN] = true;
-  const parentRollsRaw = extra.parent_rolls;
-  if (Array.isArray(parentRollsRaw)) parentRollsRaw.forEach(pr => { const s = String(pr||'').trim(); if (s) seenParents[s] = true; });
-  else if (typeof parentRollsRaw === 'string' && parentRollsRaw.trim()) parentRollsRaw.split(',').forEach(pr => { const s = String(pr||'').trim(); if (s) seenParents[s] = true; });
-  (Array.isArray(extra.child_rolls) ? extra.child_rolls : []).forEach(r => { const s = String(r.parent_roll_no||'').trim(); if (s) seenParents[s] = true; });
-  (Array.isArray(extra.stock_rolls) ? extra.stock_rolls : []).forEach(r => { const s = String(r.parent_roll_no||'').trim(); if (s) seenParents[s] = true; });
-  const allParentRollNos = Object.keys(seenParents).sort((a,b) => a.localeCompare(b, undefined, {numeric:true}));
+  const allParentRollNos = Array.isArray(split.parent_roll_nos) ? split.parent_roll_nos : [];
 
   // Parent rolls table
   let parentTableHtml = '';
@@ -3749,16 +3967,15 @@ function renderJumboPrintCardHtml(job, qrDataUrl) {
           <th style="padding:5px 6px;border:1px solid #bbf7d0;background:#dcfce7;color:#166534;font-weight:800;font-size:.62rem">Remarks</th>
         </tr></thead><tbody>`;
     allParentRollNos.forEach(prn => {
-      const live = liveRollMap[prn] || {};
-      const isPrimary = (prn === primaryPRN);
-      const company = live.company || (isPrimary ? (p.company || job.company || '') : '');
-      const ptype = live.paper_type || (isPrimary ? (p.paper_type || job.paper_type || '') : '');
-      const width = live.width_mm !== undefined ? live.width_mm : (isPrimary ? (p.width_mm ?? job.width_mm ?? '—') : '—');
-      const length = live.length_mtr !== undefined ? live.length_mtr : (isPrimary ? (p.length_mtr ?? job.length_mtr ?? '—') : '—');
-      const weight = live.weight_kg !== undefined ? live.weight_kg : (isPrimary ? (p.weight_kg ?? job.weight_kg ?? '—') : '—');
-      const gsm = live.gsm !== undefined ? live.gsm : (isPrimary ? (p.gsm ?? job.gsm ?? '—') : '—');
-      const rstatus = live.status || '—';
-      const remarks = live.remarks !== undefined ? live.remarks : (isPrimary ? (p.remarks || '') : '');
+      const meta = parentMetaByRoll[prn] || {};
+      const company = meta.company || '—';
+      const ptype = meta.paper_type || '—';
+      const width = (meta.width_mm ?? '—');
+      const length = (meta.length_mtr ?? '—');
+      const weight = (meta.weight_kg ?? '—');
+      const gsm = (meta.gsm ?? '—');
+      const rstatus = meta.status || '—';
+      const remarks = meta.remarks || '';
       parentTableHtml += `<tr>
         <td style="padding:5px 6px;border:1px solid #d1e7dd;font-weight:800;color:#166534">${esc(prn)}</td>
         <td style="padding:5px 6px;border:1px solid #d1e7dd">${esc(company||'—')}</td>
@@ -3775,8 +3992,8 @@ function renderJumboPrintCardHtml(job, qrDataUrl) {
   }
 
   // Child / Stock rolls table
-  const childRows = Array.isArray(extra.child_rolls) ? extra.child_rolls : [];
-  const stockRows = Array.isArray(extra.stock_rolls) ? extra.stock_rolls : [];
+  const childRows = Array.isArray(split.child_rows) ? split.child_rows : [];
+  const stockRows = Array.isArray(split.stock_rows) ? split.stock_rows : [];
   const allRows = [];
   childRows.forEach(r => allRows.push({ parent_roll_no: r.parent_roll_no || extra.parent_roll || job.roll_no || '', roll_no: r.roll_no || '', type: r.paper_type || job.paper_type || '', width: (r.width ?? r.width_mm ?? '—'), length: (r.length ?? r.length_mtr ?? '—'), weight_kg: (r.weight_kg ?? '—'), gsm: (r.gsm ?? job.gsm ?? '—'), wastage: (r.wastage ?? 0), remarks: r.remarks || '', status: 'Job Assign' }));
   stockRows.forEach(r => allRows.push({ parent_roll_no: r.parent_roll_no || extra.parent_roll || job.roll_no || '', roll_no: r.roll_no || '', type: r.paper_type || job.paper_type || '', width: (r.width ?? r.width_mm ?? '—'), length: (r.length ?? r.length_mtr ?? '—'), weight_kg: (r.weight_kg ?? '—'), gsm: (r.gsm ?? job.gsm ?? '—'), wastage: (r.wastage ?? 0), remarks: r.remarks || '', status: 'Stock' }));
@@ -3934,7 +4151,7 @@ async function printLabelsForJob(id) {
 
   const uniqueRollNos = Array.from(new Set(rollNos));
   if (!uniqueRollNos.length) {
-    alert('No rolls found for label printing.');
+    jumboNotify('No rolls found for label printing.', 'warning');
     return;
   }
 
@@ -3945,20 +4162,20 @@ async function printLabelsForJob(id) {
     const res = await fetch(url.toString());
     const data = await res.json();
     if (!data.ok) {
-      alert('Error: ' + (data.error || 'Unable to resolve roll IDs'));
+      jumboNotify('Error: ' + (data.error || 'Unable to resolve roll IDs'), 'bad');
       return;
     }
 
     const ids = Array.isArray(data.ids) ? data.ids.filter(Boolean) : [];
     if (!ids.length) {
-      alert('No matching paper stock records found for labels.');
+      jumboNotify('No matching paper stock records found for labels.', 'warning');
       return;
     }
 
     const labelUrl = `${BASE_URL}/modules/paper_stock/label.php?ids=${ids.join(',')}`;
     window.open(labelUrl, '_blank');
   } catch (err) {
-    alert('Network error: ' + (err.message || 'Unknown error'));
+    jumboNotify('Network error: ' + (err.message || 'Unknown error'), 'bad');
   }
 }
 

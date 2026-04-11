@@ -409,6 +409,11 @@ $finishedCount = safeCountQuery($db, "
     AND deleted_at IS NULL
 ");
 
+$requestTabCount = count(array_filter($allJumboRows, static function(array $job): bool {
+  $status = strtolower(trim((string)($job['status'] ?? '')));
+  return $status === 'running' && (int)($job['pending_change_requests'] ?? 0) > 0;
+}));
+
 $csrf = generateCSRF();
 include __DIR__ . '/../../../includes/header.php';
 ?>
@@ -440,6 +445,7 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-search:focus{border-color:var(--jc-brand)}
 .jc-filter-btn{padding:6px 14px;font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border:1px solid var(--border,#e2e8f0);background:#fff;border-radius:20px;cursor:pointer;transition:all .15s;color:#64748b}
 .jc-filter-btn.active{background:var(--jc-brand);border-color:var(--jc-brand);color:#fff}
+.jc-filter-request-badge{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;padding:0 8px;border-radius:999px;background:#ef4444;color:#fff;font-size:.72rem;font-weight:900;margin-left:8px;box-shadow:0 0 0 3px rgba(239,68,68,.2);animation:jc-request-blink 1.1s ease-in-out infinite}
 .jc-tabs{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
 .jc-tab-btn{padding:7px 14px;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border:1px solid var(--border,#e2e8f0);background:#fff;border-radius:999px;cursor:pointer;color:#64748b;transition:all .15s}
 .jc-tab-btn.active{background:#0f172a;color:#fff;border-color:#0f172a}
@@ -448,6 +454,8 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px}
 .jc-card{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:14px;overflow:hidden;transition:all .2s;cursor:pointer}
 .jc-card:hover{box-shadow:0 8px 24px rgba(0,0,0,.07);transform:translateY(-2px)}
+.jc-card-request-alert{border-left:4px solid #ef4444;box-shadow:0 0 0 2px rgba(239,68,68,.22),0 8px 20px rgba(239,68,68,.16);animation:jc-request-card-pulse 1.25s ease-in-out infinite}
+.jc-card-request-alert .jc-card-head{background:linear-gradient(135deg,#fff1f2,#fff)}
 .jc-card-head{padding:14px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border,#e2e8f0);background:linear-gradient(135deg,#f8fafc,#fff)}
 .jc-card-head .jc-jobno{font-weight:900;font-size:.85rem;color:#0f172a;display:flex;align-items:center;gap:8px}
 .jc-card-head .jc-jobno i{color:var(--jc-brand);font-size:1rem}
@@ -488,6 +496,8 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-notif-badge{background:#ef4444;color:#fff;font-size:9px;font-weight:800;width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-left:6px}
 .jc-request-state{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;border:1px solid #fecaca;background:#fff1f2;color:#dc2626;font-size:.6rem;font-weight:900;text-transform:uppercase;letter-spacing:.04em;animation:request-blink 1s linear infinite}
 @keyframes request-blink{0%,100%{opacity:1}50%{opacity:.2}}
+@keyframes jc-request-blink{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(1.06)}}
+@keyframes jc-request-card-pulse{0%,100%{box-shadow:0 0 0 2px rgba(239,68,68,.22),0 8px 20px rgba(239,68,68,.16)}50%{box-shadow:0 0 0 4px rgba(239,68,68,.34),0 12px 28px rgba(239,68,68,.24)}}
 
 /* ── Detail Modal ── */
 .jc-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;padding:20px}
@@ -728,6 +738,10 @@ $historyCount = $finishedCount;
     <div class="jc-stat-icon" style="background:#e0e7ff;color:#6366f1"><i class="bi bi-play-circle-fill"></i></div>
     <div><div class="jc-stat-val"><?= $runningCount ?></div><div class="jc-stat-label">Running</div></div>
   </div>
+  <div class="jc-stat" data-filter="Request" onclick="filterFromStat('Request')">
+    <div class="jc-stat-icon" style="background:#fee2e2;color:#dc2626"><i class="bi bi-bell-fill"></i></div>
+    <div><div class="jc-stat-val"><?= $requestTabCount ?></div><div class="jc-stat-label">Request</div></div>
+  </div>
   <div class="jc-stat" data-filter="Hold" onclick="filterFromStat('Hold')">
     <div class="jc-stat-icon" style="background:#fecdd3;color:#dc2626"><i class="bi bi-pause-circle-fill"></i></div>
     <div><div class="jc-stat-val"><?= $holdCount ?></div><div class="jc-stat-label">Hold</div></div>
@@ -747,11 +761,12 @@ $historyCount = $finishedCount;
 
 <div class="jc-filters no-print">
   <input type="text" class="jc-search" id="jcSearch" placeholder="Search by job no, roll, company&hellip;">
-  <button class="jc-filter-btn" onclick="filterJobs('all',this)">All</button>
-  <button class="jc-filter-btn active" onclick="filterJobs('Pending',this)">Pending</button>
-  <button class="jc-filter-btn" onclick="filterJobs('Running',this)">Running</button>
-  <button class="jc-filter-btn" onclick="filterJobs('Hold',this)">Hold</button>
-  <button class="jc-filter-btn" onclick="filterJobs('Finished',this)">Finished</button>
+  <button class="jc-filter-btn" data-filter-status="all" onclick="filterJobs('all',this)">All</button>
+  <button class="jc-filter-btn active" data-filter-status="Pending" onclick="filterJobs('Pending',this)">Pending</button>
+  <button class="jc-filter-btn" data-filter-status="Running" onclick="filterJobs('Running',this)">Running</button>
+  <button class="jc-filter-btn" data-filter-status="Request" onclick="filterJobs('Request',this)">Request<?php if ($requestTabCount > 0): ?> <span class="jc-filter-request-badge" title="Running jobs with pending request"><?= (int)$requestTabCount ?></span><?php endif; ?></button>
+  <button class="jc-filter-btn" data-filter-status="Hold" onclick="filterJobs('Hold',this)">Hold</button>
+  <button class="jc-filter-btn" data-filter-status="Finished" onclick="filterJobs('Finished',this)">Finished</button>
 </div>
 
 <div class="jc-grid no-print" id="jcGrid">
@@ -773,13 +788,13 @@ $historyCount = $finishedCount;
     $pri = $job['planning_priority'] ?? 'Normal';
     $priClass = match(strtolower($pri)) { 'urgent'=>'urgent', 'high'=>'high', default=>'normal' };
     $hasPendingRequest = (int)($job['pending_change_requests'] ?? 0) > 0;
+    $hasRequestAlert = ($sts === 'Running' && $hasPendingRequest);
     $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : '—';
     $startedAt = $job['started_at'] ? date('d M Y, H:i', strtotime($job['started_at'])) : '—';
     $completedAt = $job['completed_at'] ? date('d M Y, H:i', strtotime($job['completed_at'])) : '—';
     $searchText = strtolower($job['job_no'] . ' ' . ($job['roll_no'] ?? '') . ' ' . ($job['company'] ?? '') . ' ' . ($job['display_job_name'] ?? ''));
   ?>
-  <div class="jc-card" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" onclick="openJobDetail(<?= $job['id'] ?>)">
-    <input type="checkbox" class="jc-select-check" data-job-id="<?= $job['id'] ?>" onclick="event.stopPropagation();jcUpdateBulkBar()" title="Select for bulk print">
+  <div class="jc-card<?= $hasRequestAlert ? ' jc-card-request-alert' : '' ?>" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" data-has-request="<?= $hasRequestAlert ? '1' : '0' ?>" onclick="openJobDetail(<?= $job['id'] ?>)">
     <div class="jc-card-head">
       <div class="jc-jobno"><i class="bi bi-box-seam"></i> <?= e($job['job_no']) ?></div>
       <div style="display:flex;gap:6px;align-items:center">
@@ -836,7 +851,6 @@ $historyCount = $finishedCount;
     $searchText = strtolower($job['job_no'] . ' ' . ($job['roll_no'] ?? '') . ' ' . ($job['company'] ?? '') . ' ' . ($job['display_job_name'] ?? ''));
   ?>
   <div class="jc-card" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" data-finished-only="1" style="display:none" onclick="openJobDetail(<?= $job['id'] ?>)">
-    <input type="checkbox" class="jc-select-check" data-job-id="<?= $job['id'] ?>" onclick="event.stopPropagation();jcUpdateBulkBar()" title="Select for bulk print">
     <div class="jc-card-head">
       <div class="jc-jobno"><i class="bi bi-box-seam"></i> <?= e($job['job_no']) ?></div>
       <div style="display:flex;gap:6px;align-items:center">
@@ -1111,45 +1125,41 @@ function filterJobs(status, btn) {
   document.querySelectorAll('.jc-filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   updateStatBoxes(status);
+  const q = (document.getElementById('jcSearch')?.value || '').toLowerCase();
   document.querySelectorAll('.jc-card').forEach(card => {
     const cardStatus = (card.dataset.status || '').toLowerCase();
     const finishedOnly = card.dataset.finishedOnly === '1';
+    const hasRequest = card.dataset.hasRequest === '1';
+    const matchesSearch = (card.dataset.search || '').includes(q);
     if (status === 'all') {
-      card.style.display = finishedOnly ? 'none' : '';
+      card.style.display = (!finishedOnly && matchesSearch) ? '' : 'none';
       return;
     }
     if (status === 'Finished') {
       const isFinished = ['finished', 'completed', 'closed', 'finalized', 'qc passed'].includes(cardStatus);
-      card.style.display = isFinished ? '' : 'none';
+      card.style.display = (isFinished && matchesSearch) ? '' : 'none';
       return;
     }
     if (finishedOnly) {
       card.style.display = 'none';
       return;
     }
-    if (status === 'Hold') {
-      const isHold = cardStatus === 'hold' || cardStatus === 'hold for payment' || cardStatus === 'hold for approval';
-      card.style.display = isHold ? '' : 'none';
+    if (status === 'Request') {
+      card.style.display = (hasRequest && matchesSearch) ? '' : 'none';
       return;
     }
-    card.style.display = (cardStatus === status.toLowerCase()) ? '' : 'none';
+    if (status === 'Hold') {
+      const isHold = cardStatus === 'hold' || cardStatus === 'hold for payment' || cardStatus === 'hold for approval';
+      card.style.display = (isHold && matchesSearch) ? '' : 'none';
+      return;
+    }
+    card.style.display = (cardStatus === status.toLowerCase() && matchesSearch) ? '' : 'none';
   });
 }
 
 // ─── Trigger filter from stat box ───────────────────────────
 function filterFromStat(status) {
-  const filterBtns = document.querySelectorAll('.jc-filter-btn');
-  let targetBtn = null;
-  
-  if (status === 'all') {
-    targetBtn = filterBtns[0]; // First button is ALL
-  } else {
-    // Find button with matching text (case-insensitive)
-    targetBtn = Array.from(filterBtns).find(btn => 
-      btn.textContent.trim().split('\n')[0] === status
-    );
-  }
-  
+  const targetBtn = document.querySelector(`.jc-filter-btn[data-filter-status="${status}"]`);
   if (targetBtn) {
     targetBtn.click();
   }
@@ -1169,10 +1179,10 @@ function updateStatBoxes(status) {
 }
 
 document.getElementById('jcSearch').addEventListener('input', function() {
-  const q = this.value.toLowerCase();
-  document.querySelectorAll('.jc-card').forEach(card => {
-    card.style.display = (card.dataset.search || '').includes(q) ? '' : 'none';
-  });
+  const activeBtn = document.querySelector('.jc-filter-btn.active');
+  if (activeBtn) {
+    filterJobs(activeBtn.dataset.filterStatus || activeBtn.textContent.trim(), activeBtn);
+  }
 });
 
 // ─── History table: search/filter/sort/pagination ─────────

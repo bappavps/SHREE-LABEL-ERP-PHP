@@ -668,7 +668,15 @@ try {
         $departmentRouteInput = trim($_POST['department_route'] ?? '');
         $planningId     = (int)($_POST['planning_id'] ?? 0);
         $planAllocationsJson = trim($_POST['plan_allocations'] ?? '');
+        $flexoRequestId = (int)($_POST['flexo_request_id'] ?? 0);
+        $flexoJobId = (int)($_POST['flexo_job_id'] ?? 0);
+        $flexoTaskIndex = (int)($_POST['flexo_task_index'] ?? -1);
         $runs           = json_decode($runsJson, true);
+
+        $isFlexoRequestAcceptFlow = ($flexoRequestId > 0 && $flexoJobId > 0);
+        $selectedDeptKey = strtolower(trim((string)(explode(',', $departmentRouteInput)[0] ?? '')));
+        $flexoRouteToPrinting = $isFlexoRequestAcceptFlow && strpos($selectedDeptKey, 'print') !== false;
+        $flexoRouteToJumbo = $isFlexoRequestAcceptFlow && strpos($selectedDeptKey, 'jumbo') !== false;
 
         if (!$parentRollNo || !is_array($runs) || empty($runs)) {
             echo json_encode(['ok' => false, 'error' => 'Missing parent_roll_no or runs']);
@@ -792,13 +800,22 @@ try {
             $allowLabelSlittingJob = erp_department_selection_contains($selectedDepartments, 'Label Slitting', $departmentChoices, []);
             $allowBarcodeJob = erp_department_selection_contains($selectedDepartments, 'BarCode', $departmentChoices, []);
 
+            if ($isFlexoRequestAcceptFlow) {
+                // Flexo request extra slitting must not create separate downstream cards.
+                $allowJumboJob = false;
+                $allowPrintingJob = false;
+                $allowDieCuttingJob = false;
+                $allowLabelSlittingJob = false;
+                $allowBarcodeJob = false;
+            }
+
             // Barcode downstream card creation is reserved for PLN-BAR plans.
             $isBarcodePlanPrefix = stripos((string)$planNo, 'PLN-BAR/') === 0;
             if (!$isBarcodePlanPrefix) {
                 $allowBarcodeJob = false;
             }
 
-            $directFlexoBypass = $allowPrintingJob && !$allowJumboJob;
+            $directFlexoBypass = ($allowPrintingJob && !$allowJumboJob) || ($isFlexoRequestAcceptFlow && $flexoRouteToPrinting);
 
             // 3. Create batch (collision-safe for unique batch_no)
             $userId  = $_SESSION['user_id'] ?? null;
@@ -1097,6 +1114,11 @@ try {
                 'batch_no' => $batchNo,
                 'machine' => $machine,
                 'operator_name' => $operatorName,
+                'flexo_request_accept_flow' => $isFlexoRequestAcceptFlow,
+                'flexo_target_department' => $selectedDeptKey,
+                'flexo_request_id' => $flexoRequestId,
+                'flexo_job_id' => $flexoJobId,
+                'flexo_task_index' => $flexoTaskIndex,
                 'plan_allocations' => [[
                     'allocation_id' => $allocationId,
                     'planning_id' => $allocationPlanningId,
@@ -1712,7 +1734,7 @@ try {
             if (!empty($allowBarcodeJob) && $barcodeDirectStart) {
                 $planningStatusTarget = 'Pending - Barcode';
             }
-            if ($planNo !== '') {
+            if (!$isFlexoRequestAcceptFlow && $planNo !== '') {
                 $updPlanNo = $db->prepare("UPDATE planning SET status = ? WHERE job_no = ?");
                 $updPlanNo->bind_param('ss', $planningStatusTarget, $planNo);
                 $updPlanNo->execute();
@@ -1730,7 +1752,7 @@ try {
                     $updExtra->bind_param('si', $newExtra, $pid);
                     $updExtra->execute();
                 }
-            } elseif ($planningId > 0) {
+            } elseif (!$isFlexoRequestAcceptFlow && $planningId > 0) {
                 $updPlan = $db->prepare("UPDATE planning SET status = ? WHERE id = ?");
                 $updPlan->bind_param('si', $planningStatusTarget, $planningId);
                 $updPlan->execute();
@@ -1740,6 +1762,9 @@ try {
             foreach ($childRolls as $ch) {
                 if (($ch['dest'] ?? '') === 'JOB') {
                     $targetChildStatus = $directFlexoBypass ? 'Job Assign' : 'Slitting';
+                    if ($isFlexoRequestAcceptFlow && $flexoRouteToJumbo) {
+                        $targetChildStatus = 'Slitting';
+                    }
                     $lockStmt = $db->prepare("UPDATE paper_stock SET status = ? WHERE roll_no = ?");
                     $lockStmt->bind_param('ss', $targetChildStatus, $ch['roll_no']);
                     $lockStmt->execute();
@@ -1756,8 +1781,10 @@ try {
                 'children' => $childRolls,
                 'remainder_action' => $remainderAction,
                 'job_cards' => $createdJobCards,
-                'planning_status' => ($planningId > 0 || $planNo !== '') ? $planningStatusTarget : null,
+                'planning_status' => (!$isFlexoRequestAcceptFlow && ($planningId > 0 || $planNo !== '')) ? $planningStatusTarget : null,
                 'direct_flexo_bypass' => $directFlexoBypass,
+                'flexo_request_accept_flow' => $isFlexoRequestAcceptFlow,
+                'flexo_target_department' => $selectedDeptKey,
             ]);
 
         } catch (Exception $ex) {
