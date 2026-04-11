@@ -1919,7 +1919,16 @@ async function openFlexoProductionUpdate(requestId, jobId) {
       erpToast('Update failed: ' + (data.error || 'Unknown error'), 'error');
       return;
     }
-    erpToast('Roll request updated successfully.', 'success');
+    if (data.auto_completed) {
+      erpToast('Remaining roll updated and job completed successfully', 'success');
+    } else {
+      erpToast('Roll request updated successfully.', 'success');
+    }
+    const labelUrl = String(data.label_print_url || '').trim();
+    if (labelUrl) {
+      window.location = labelUrl;
+      return;
+    }
     location.reload();
   } catch (err) {
     erpToast('Network error: ' + err.message, 'error');

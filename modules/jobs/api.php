@@ -369,6 +369,7 @@ function jobs_apply_flexo_operator_request(mysqli $db, array $job, array $payloa
     $summary = [
         'issued_roll_no' => '',
         'remaining_stock_roll_no' => '',
+        'remaining_stock_roll_id' => 0,
         'additional_slitting_task_created' => false,
         'slitting_task_index' => -1,
         'selected_roll_no' => $selectedRollNo,
@@ -468,6 +469,7 @@ function jobs_apply_flexo_operator_request(mysqli $db, array $job, array $payloa
                 );
                 $insNew->execute();
                 $newStockId = (int)$db->insert_id;
+                $summary['remaining_stock_roll_id'] = $newStockId;
                 jobs_insert_inventory_log($db, $newStockRollNo, $newStockId, 'Flexo request apply: created remaining stock roll ' . $remainingLength . ' mtr from ' . $sourceRollNo, $actorId);
             }
         }
@@ -3515,6 +3517,57 @@ try {
         $additionalReq = is_array($payload['additional_roll_request'] ?? null) ? $payload['additional_roll_request'] : [];
         $reqWidth = jobs_float2($additionalReq['width_mm'] ?? 0);
         $reqLength = jobs_float2($additionalReq['length_mtr'] ?? 0);
+        $remainingAutoCompleted = false;
+
+        // Remaining-roll production update: auto-complete the flexo job immediately.
+        if ($hasRemaining && !$hasAdd && $mode === 'stock') {
+            $jobRefreshStmt = $db->prepare("SELECT * FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+            $jobRefreshStmt->bind_param('i', $jobId);
+            $jobRefreshStmt->execute();
+            $jobFresh = $jobRefreshStmt->get_result()->fetch_assoc();
+
+            if ($jobFresh) {
+                $currStatus = trim((string)($jobFresh['status'] ?? ''));
+                $isAlreadyComplete = in_array($currStatus, ['Completed', 'QC Passed', 'Closed', 'Finalized'], true);
+                if (!$isAlreadyComplete) {
+                    $jobExtraComplete = jobs_decode_extra_data($jobFresh['extra_data'] ?? '{}');
+                    $nowComplete = jobs_timer_now();
+                    $accComplete = jobs_timer_accumulated_seconds($jobExtraComplete);
+
+                    if (!empty($jobExtraComplete['timer_active']) && !empty($jobExtraComplete['timer_last_resumed_at'])) {
+                        $accComplete += jobs_timer_seconds_between((string)$jobExtraComplete['timer_last_resumed_at'], $nowComplete);
+                        $jobExtraComplete = jobs_timer_close_work_segment($jobExtraComplete, $nowComplete);
+                    }
+                    if (strtolower(trim((string)($jobExtraComplete['timer_state'] ?? ''))) === 'paused') {
+                        $jobExtraComplete = jobs_timer_close_pause_segment($jobExtraComplete, $nowComplete);
+                    }
+
+                    $jobExtraComplete['timer_accumulated_seconds'] = max(0, $accComplete);
+                    $jobExtraComplete['timer_active'] = false;
+                    $jobExtraComplete['timer_state'] = 'completed';
+                    $jobExtraComplete['timer_last_resumed_at'] = '';
+                    $jobExtraComplete['timer_paused_at'] = '';
+                    $jobExtraComplete['timer_pause_started_at'] = '';
+                    $jobExtraComplete['timer_ended_at'] = $nowComplete;
+                    $jobExtraComplete = jobs_timer_push_event($jobExtraComplete, 'complete', $nowComplete);
+
+                    $durationMinutesComplete = (int)floor($accComplete / 60);
+                    $safeExtraCompleteJson = json_encode($jobExtraComplete, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    $statusCompleted = 'Completed';
+                    $updComplete = $db->prepare("UPDATE jobs SET status = ?, completed_at = NOW(), duration_minutes = ?, extra_data = ? WHERE id = ?");
+                    $updComplete->bind_param('sisi', $statusCompleted, $durationMinutesComplete, $safeExtraCompleteJson, $jobId);
+                    $updComplete->execute();
+
+                    $completeStage = jobs_stage_status_for_event($jobFresh, 'complete');
+                    if ($completeStage !== '') {
+                        jobs_set_planning_status_and_stage_for_job($db, $jobFresh, $completeStage);
+                    }
+
+                    $remainingAutoCompleted = true;
+                }
+            }
+        }
+
         $payload['applied_context'] = [
             'applied_by' => $reviewedByName,
             'applied_by_id' => $reviewedBy,
@@ -3541,6 +3594,7 @@ try {
         $nIns->execute();
 
         $redirectUrl = '';
+        $labelPrintUrl = '';
         if (!empty($applySummary['additional_slitting_task_created'])) {
             $msg2 = 'Additional slitting task tagged under same job card: ' . ((string)($job['job_no'] ?? ('JOB-' . $jobId)));
             $dept2 = 'jumbo_slitting';
@@ -3555,6 +3609,8 @@ try {
                 $reqWidth,
                 $reqLength
             );
+        } elseif ($hasRemaining && !$hasAdd && (int)($applySummary['remaining_stock_roll_id'] ?? 0) > 0) {
+            $labelPrintUrl = BASE_URL . '/modules/paper_stock/label.php?ids=' . (int)$applySummary['remaining_stock_roll_id'];
         }
 
         echo json_encode([
@@ -3562,6 +3618,8 @@ try {
             'request_id' => $requestId,
             'decision' => $decision,
             'apply_summary' => $applySummary,
+            'auto_completed' => $remainingAutoCompleted,
+            'label_print_url' => $labelPrintUrl,
             'slitting_redirect_url' => $redirectUrl,
         ]);
         break;
