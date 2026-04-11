@@ -3484,6 +3484,19 @@ try {
         $payload = json_decode((string)($req['payload_json'] ?? '{}'), true);
         if (!is_array($payload)) $payload = [];
 
+        $additional = is_array($payload['additional_roll_request'] ?? null) ? $payload['additional_roll_request'] : [];
+        $excess = is_array($payload['excess_roll_adjustment'] ?? null) ? $payload['excess_roll_adjustment'] : [];
+        $hasAdd = !empty($additional['enabled']);
+        $hasRemaining = !empty($excess['enabled']);
+        if ($hasAdd && !$hasRemaining && $mode !== 'slitting') {
+            echo json_encode(['ok' => false, 'error' => 'ADD ROLL request must be processed via slitting only']);
+            break;
+        }
+        if ($hasRemaining && !$hasAdd && $mode !== 'stock') {
+            echo json_encode(['ok' => false, 'error' => 'REMAINING ROLL request must be processed via direct update only']);
+            break;
+        }
+
         $reviewedBy = (int)($_SESSION['user_id'] ?? 0);
         $reviewedByName = trim((string)($_SESSION['name'] ?? ($_SESSION['user_name'] ?? 'Manager')));
         if ($reviewedByName === '') $reviewedByName = 'Manager';

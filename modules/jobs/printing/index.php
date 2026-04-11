@@ -1795,6 +1795,17 @@ function buildFlexoSlittingUrl(job, requestId, task) {
   return target.toString();
 }
 
+function getFlexoRequestType(payload) {
+  const p = (payload && typeof payload === 'object') ? payload : {};
+  const addReq = (p.additional_roll_request && typeof p.additional_roll_request === 'object') ? p.additional_roll_request : {};
+  const exReq = (p.excess_roll_adjustment && typeof p.excess_roll_adjustment === 'object') ? p.excess_roll_adjustment : {};
+  const addEnabled = !!addReq.enabled;
+  const remainingEnabled = !!exReq.enabled;
+  if (addEnabled && !remainingEnabled) return 'add_roll';
+  if (remainingEnabled && !addEnabled) return 'remaining_roll';
+  return 'unknown';
+}
+
 function openFlexoSlittingWorkspace(jobId, taskIndex, requestId) {
   const job = ALL_JOBS.find(j => j.id == jobId);
   if (!job) {
@@ -1872,15 +1883,47 @@ async function openFlexoProductionUpdate(requestId, jobId) {
     erpToast('Job not found', 'error');
     return;
   }
-  const proceed = await erpConfirmAsync('Start slitting process for this request?', {
-    title: 'Slitting Confirmation',
-    okLabel: 'Start',
-    cancelLabel: 'Cancel'
-  });
-  if (!proceed) return;
+  const payload = (job && typeof job.flexo_latest_request_payload === 'object') ? job.flexo_latest_request_payload : {};
+  const reqType = getFlexoRequestType(payload);
 
-  const url = buildFlexoSlittingUrl(job, requestId, null);
-  window.location = url;
+  if (reqType === 'add_roll') {
+    const url = buildFlexoSlittingUrl(job, requestId, null);
+    window.location = url;
+    return;
+  }
+
+  if (reqType !== 'remaining_roll') {
+    erpToast('Unsupported request type for production update.', 'error');
+    return;
+  }
+
+  const noteRaw = await erpPromptAsync('Update note (optional):', '', {
+    title: 'Update Roll Request',
+    okLabel: 'Update'
+  });
+  if (noteRaw === null) return;
+  const reviewNote = String(noteRaw || '').trim();
+
+  const fd = new FormData();
+  fd.append('csrf_token', CSRF);
+  fd.append('action', 'approve_flexo_request_production_update');
+  fd.append('request_id', String(requestId));
+  fd.append('mode', 'stock');
+  fd.append('selected_roll_no', '');
+  fd.append('review_note', reviewNote);
+
+  try {
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) {
+      erpToast('Update failed: ' + (data.error || 'Unknown error'), 'error');
+      return;
+    }
+    erpToast('Roll request updated successfully.', 'success');
+    location.reload();
+  } catch (err) {
+    erpToast('Network error: ' + err.message, 'error');
+  }
 }
 
 async function completeFlexoAdditionalSlitting(jobId, taskIndex) {
@@ -3637,7 +3680,12 @@ async function openPrintDetail(id, mode) {
     }
   }
   if (!IS_OPERATOR_VIEW && CAN_REVIEW_FLEXO_REQUESTS && flexoReqId > 0 && flexoReqStatus === 'Pending') {
-    fHtml += `<button class="fp-action-btn fp-btn-start" onclick="openFlexoProductionUpdate(${flexoReqId}, ${job.id})"><i class="bi bi-scissors"></i> Slitting</button>`;
+    const reqType = getFlexoRequestType(flexoReqPayload);
+    if (reqType === 'remaining_roll') {
+      fHtml += `<button class="fp-action-btn fp-btn-start" onclick="openFlexoProductionUpdate(${flexoReqId}, ${job.id})"><i class="bi bi-arrow-repeat"></i> Update Roll Request</button>`;
+    } else {
+      fHtml += `<button class="fp-action-btn fp-btn-start" onclick="openFlexoProductionUpdate(${flexoReqId}, ${job.id})"><i class="bi bi-scissors"></i> Slitting</button>`;
+    }
     fHtml += `<button class="fp-action-btn fp-btn-reject" onclick="reviewFlexoOperatorRequest(${flexoReqId}, 'Rejected', ${job.id})"><i class="bi bi-x-circle"></i> Reject Request</button>`;
   }
   if (IS_ADMIN) {
