@@ -608,8 +608,18 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                             }
                         });
                         if (!firstUnreadFetch && latest && typeof window.erpCenterMessage === 'function') {
+                            var latestId = parseInt(latest.id || 0, 10) || 0;
+                            var latestDept = String(latest.department || '').trim();
+                            var latestTarget = String(latest.target_url || '').trim() || buildDeptUrl(latestDept);
                             window.erpCenterMessage(String(latest.message || 'New notification'), {
-                                title: String(latest.job_no || latest.department || 'New Notification')
+                                title: String(latest.job_no || latest.department || 'New Notification'),
+                                okLabel: 'Open Job Card',
+                                cancelLabel: 'Cancel',
+                                onOk: function () {
+                                    markRead(latestId, function () {
+                                        window.location.href = latestTarget;
+                                    });
+                                }
                             });
                         }
                         firstUnreadFetch = false;

@@ -2262,7 +2262,85 @@ const SLT = (() => {
     }
 
     if (results.length) {
-      showToast(results.length + ' batch(es) executed successfully!', 'success');
+      var createdJobNos = [];
+      var createdCards = [];
+
+      function cardRank(jobNo) {
+        var no = String(jobNo || '').trim().toUpperCase();
+        if (no.indexOf('JMB/') === 0) return 1;
+        if (no.indexOf('FLX/') === 0) return 2;
+        if (no.indexOf('DCT/') === 0) return 3;
+        if (no.indexOf('BRC/') === 0 || no.indexOf('BAR/') === 0) return 4;
+        if (no.indexOf('LSL/') === 0 || no.indexOf('LST/') === 0) return 5;
+        if (no.indexOf('BAT/') === 0 || no.indexOf('BCH/') === 0 || no.indexOf('PKG/') === 0) return 6;
+        return 99;
+      }
+
+      function targetUrlFromCard(card) {
+        var rank = cardRank(card && card.job_no);
+        var id = parseInt((card && card.id) || 0, 10) || 0;
+        var base = '<?= BASE_URL ?>';
+        var url = '';
+        if (rank === 1) url = base + '/modules/jobs/jumbo/index.php';
+        else if (rank === 2) url = base + '/modules/jobs/printing/index.php';
+        else if (rank === 3) url = base + '/modules/jobs/flatbed/index.php';
+        else if (rank === 4) url = base + '/modules/jobs/barcode/index.php';
+        else if (rank === 5) url = base + '/modules/jobs/label-slitting/index.php';
+        else if (rank === 6) url = base + '/modules/jobs/packing/index.php';
+        if (!url) return '';
+        if (id > 0) url += '?auto_job=' + encodeURIComponent(String(id));
+        return url;
+      }
+
+      results.forEach(function (r) {
+        var cards = Array.isArray(r && r.job_cards) ? r.job_cards : [];
+        cards.forEach(function (card) {
+          var no = String((card && card.job_no) || '').trim();
+          if (no && createdJobNos.indexOf(no) === -1) createdJobNos.push(no);
+          if (no) {
+            createdCards.push({
+              job_no: no,
+              id: parseInt((card && card.id) || 0, 10) || 0
+            });
+          }
+        });
+      });
+
+      createdCards.sort(function (a, b) {
+        var ra = cardRank(a.job_no);
+        var rb = cardRank(b.job_no);
+        if (ra !== rb) return ra - rb;
+        return String(a.job_no).localeCompare(String(b.job_no));
+      });
+
+      var firstCardTargetUrl = createdCards.length ? targetUrlFromCard(createdCards[0]) : '';
+      var redirectUrlAfterOk = flexoRedirectUrl || firstCardTargetUrl;
+
+      var successMsg = results.length + ' batch(es) executed successfully!';
+      if (createdJobNos.length) {
+        successMsg += '\n\nCreated/queued job cards: ' + createdJobNos.join(', ');
+      }
+
+      if (typeof window.erpCenterMessage === 'function') {
+        window.erpCenterMessage(successMsg, {
+          title: 'Paper Slitting Completed',
+          okLabel: 'OK',
+          cancelLabel: 'Cancel',
+          hideCancel: true,
+          onOk: function () {
+            if (redirectUrlAfterOk) {
+              window.location.href = redirectUrlAfterOk;
+            }
+          }
+        });
+      } else {
+        showToast(successMsg, 'success');
+        if (redirectUrlAfterOk) {
+          setTimeout(function () {
+            window.location.href = redirectUrlAfterOk;
+          }, 700);
+        }
+      }
 
       // Clear terminal
       loadedRolls = [];
@@ -2273,11 +2351,7 @@ const SLT = (() => {
       renderBatchStatus();
       await loadPlannerJobs();
       await loadHistory();
-      if (flexoRedirectUrl) {
-        setTimeout(() => {
-          window.location.href = flexoRedirectUrl;
-        }, 700);
-      }
+      // Redirect is handled by modal OK action (or toast fallback above).
     }
 
     btn.disabled = false;

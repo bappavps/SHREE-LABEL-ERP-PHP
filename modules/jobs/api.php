@@ -1000,9 +1000,67 @@ function jobs_join_base_url(string $path): string {
     return $base . '/' . $rel;
 }
 
-function jobs_notification_target_url(array $notification): string {
+function jobs_notification_department_rank(string $department): int {
+    $d = strtolower(trim($department));
+    if ($d === 'jumbo_slitting') return 1;
+    if ($d === 'flexo_printing') return 2;
+    if ($d === 'flatbed') return 3;
+    if ($d === 'barcode') return 4;
+    if ($d === 'label_slitting') return 5;
+    if ($d === 'packing') return 6;
+    return 99;
+}
+
+function jobs_notification_job_page_by_department(string $department): string {
+    $d = strtolower(trim($department));
+    if ($d === 'jumbo_slitting') return '/modules/jobs/jumbo/index.php';
+    if ($d === 'flexo_printing') return '/modules/jobs/printing/index.php';
+    if ($d === 'flatbed') return '/modules/jobs/flatbed/index.php';
+    if ($d === 'rotery') return '/modules/jobs/rotery/index.php';
+    if ($d === 'barcode') return '/modules/jobs/barcode/index.php';
+    if ($d === 'label_slitting') return '/modules/jobs/label-slitting/index.php';
+    if ($d === 'packing') return '/modules/jobs/packing/index.php';
+    return '';
+}
+
+function jobs_notification_primary_chain_job_id(mysqli $db, int $jobId): int {
+    if ($jobId <= 0) return 0;
+
+    $currentId = $jobId;
+    $bestId = $jobId;
+    $bestRank = 99;
+    $visited = [];
+
+    for ($depth = 0; $depth < 16 && $currentId > 0; $depth++) {
+        if (isset($visited[$currentId])) break;
+        $visited[$currentId] = true;
+
+        $stmt = $db->prepare("SELECT id, previous_job_id, department FROM jobs WHERE id = ? LIMIT 1");
+        if (!$stmt) break;
+        $stmt->bind_param('i', $currentId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$row) break;
+
+        $rank = jobs_notification_department_rank((string)($row['department'] ?? ''));
+        if ($rank < $bestRank) {
+            $bestRank = $rank;
+            $bestId = (int)($row['id'] ?? $currentId);
+        }
+
+        $nextId = (int)($row['previous_job_id'] ?? 0);
+        if ($nextId <= 0) break;
+        $currentId = $nextId;
+    }
+
+    return $bestId > 0 ? $bestId : $jobId;
+}
+
+function jobs_notification_target_url(mysqli $db, array $notification): string {
     $department = strtolower(trim((string)($notification['department'] ?? '')));
     $message = strtolower(trim((string)($notification['message'] ?? '')));
+    $notificationJobId = (int)($notification['job_id'] ?? 0);
 
     if ($department === 'planning') {
         if (strpos($message, 'barcode planning') !== false || strpos($message, 'rotery planning') !== false || strpos($message, 'rotary planning') !== false) {
@@ -1035,13 +1093,28 @@ function jobs_notification_target_url(array $notification): string {
         return jobs_join_base_url('/modules/planning/index.php');
     }
 
-    if ($department === 'jumbo_slitting') return jobs_join_base_url('/modules/operators/jumbo/index.php');
-    if ($department === 'flexo_printing') return jobs_join_base_url('/modules/operators/printing/index.php');
-    if ($department === 'flatbed') return jobs_join_base_url('/modules/operators/flatbed/index.php');
-    if ($department === 'rotery') return jobs_join_base_url('/modules/operators/rotery/index.php');
-    if ($department === 'barcode') return jobs_join_base_url('/modules/operators/barcode/index.php');
-    if ($department === 'label_slitting') return jobs_join_base_url('/modules/operators/label-slitting/index.php');
-    if ($department === 'packing') return jobs_join_base_url('/modules/operators/packing/index.php');
+    if ($notificationJobId > 0) {
+        $targetJobId = jobs_notification_primary_chain_job_id($db, $notificationJobId);
+        $jobStmt = $db->prepare("SELECT department FROM jobs WHERE id = ? LIMIT 1");
+        if ($jobStmt) {
+            $jobStmt->bind_param('i', $targetJobId);
+            $jobStmt->execute();
+            $jobRow = $jobStmt->get_result()->fetch_assoc() ?: [];
+            $jobStmt->close();
+
+            $jobDepartment = strtolower(trim((string)($jobRow['department'] ?? $department)));
+            $jobPage = jobs_notification_job_page_by_department($jobDepartment);
+            if ($jobPage !== '') {
+                return jobs_join_base_url($jobPage) . '?auto_job=' . rawurlencode((string)$targetJobId);
+            }
+        }
+    }
+
+    $fallbackPage = jobs_notification_job_page_by_department($department);
+    if ($fallbackPage !== '') {
+        return jobs_join_base_url($fallbackPage);
+    }
+
     if ($department === 'dispatch') return jobs_join_base_url('/modules/dispatch/index.php');
 
     return jobs_join_base_url('/modules/approval/index.php');
@@ -4809,7 +4882,7 @@ try {
         $stmt->execute();
         $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         foreach ($rows as &$row) {
-            $row['target_url'] = jobs_notification_target_url($row);
+            $row['target_url'] = jobs_notification_target_url($db, $row);
         }
         unset($row);
 

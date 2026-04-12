@@ -219,13 +219,13 @@ $notificationDeptCsv = implode(',', $notificationDepartments);
 
   <!-- Flash Message -->
   <?php
-  $flash = getFlash();
-  if ($flash):
-    $type = in_array($flash['type'], ['success','error','warning','info']) ? $flash['type'] : 'info';
+  $headerFlash = getFlash();
+  if ($headerFlash):
+    $type = in_array($headerFlash['type'], ['success','error','warning','info']) ? $headerFlash['type'] : 'info';
   ?>
   <div style="padding:0 24px;padding-top:16px">
     <div class="alert alert-<?= $type ?>" role="alert">
-      <span><?= e($flash['message']) ?></span>
+      <span><?= e($headerFlash['message']) ?></span>
       <button class="alert-close" type="button">&times;</button>
     </div>
   </div>

@@ -2402,18 +2402,62 @@ async function saveExecutionData(id) {
 
 async function startJobWithTimer(id) {
   const job = getJobById(id) || null;
-  const verification = await operatorOpenRollVerification(job || { id: id, job_no: id, extra_data_parsed: {} });
-  if (!verification.ok) {
-    jumboNotify(verification.error || 'Parent roll verification is required before start.', 'warning');
-    return;
+  const extra = (job && job.extra_data_parsed) ? job.extra_data_parsed : {};
+  const timerState = String(extra.timer_state || '').toLowerCase();
+  const hasPendingRequest = Number((job && job.pending_change_requests) || 0) > 0;
+
+  function collectRequiredParentRolls(jobObj) {
+    const src = (jobObj && jobObj.extra_data_parsed) ? jobObj.extra_data_parsed : {};
+    const map = {};
+
+    const childParent = Array.isArray(src.child_rolls) && src.child_rolls.length
+      ? String((src.child_rolls[0] && src.child_rolls[0].parent_roll_no) || '').trim().toUpperCase()
+      : '';
+    const primary = String(((src.parent_details && src.parent_details.roll_no) || src.parent_roll || childParent || '')).trim().toUpperCase();
+    if (primary) map[primary] = true;
+
+    let parentRolls = src.parent_rolls || [];
+    if (typeof parentRolls === 'string') {
+      parentRolls = parentRolls.split(',');
+    }
+    if (Array.isArray(parentRolls)) {
+      parentRolls.forEach(function (pr) {
+        const rollNo = String((pr && typeof pr === 'object') ? (pr.roll_no || '') : (pr || '')).trim().toUpperCase();
+        if (rollNo) map[rollNo] = true;
+      });
+    }
+
+    ['child_rolls', 'stock_rolls'].forEach(function (bucket) {
+      const rows = Array.isArray(src[bucket]) ? src[bucket] : [];
+      rows.forEach(function (row) {
+        const parentNo = String((row && row.parent_roll_no) || '').trim().toUpperCase();
+        if (parentNo) map[parentNo] = true;
+      });
+    });
+
+    return Object.keys(map);
   }
 
-  const verifiedRolls = Array.isArray(verification.verified_rolls)
-    ? verification.verified_rolls.map(function(v) { return String(v || '').trim(); }).filter(Boolean)
-    : [];
+  const canSkipVerification = timerState === 'paused' && !hasPendingRequest;
+  let verifiedRolls = [];
+
+  if (canSkipVerification) {
+    verifiedRolls = collectRequiredParentRolls(job);
+  }
+
   if (!verifiedRolls.length) {
-    jumboNotify('Roll verification did not capture any parent roll. Please verify again.', 'warning');
-    return;
+    const verification = await operatorOpenRollVerification(job || { id: id, job_no: id, extra_data_parsed: {} });
+    if (!verification.ok) {
+      jumboNotify(verification.error || 'Parent roll verification is required before start.', 'warning');
+      return;
+    }
+    verifiedRolls = Array.isArray(verification.verified_rolls)
+      ? verification.verified_rolls.map(function(v) { return String(v || '').trim(); }).filter(Boolean)
+      : [];
+    if (!verifiedRolls.length) {
+      jumboNotify('Roll verification did not capture any parent roll. Please verify again.', 'warning');
+      return;
+    }
   }
 
   const fd = new FormData();
@@ -2424,6 +2468,7 @@ async function startJobWithTimer(id) {
   fd.append('verified_rolls_json', JSON.stringify(verifiedRolls));
   fd.append('verified_rolls_csv', verifiedRolls.join(','));
   fd.append('verified_rolls_count', String(verifiedRolls.length));
+  fd.append('verified_rolls_mode', canSkipVerification ? 'resume-skip' : 'scan');
   verifiedRolls.forEach(function(rollNo) {
     fd.append('verified_rolls[]', rollNo);
   });
