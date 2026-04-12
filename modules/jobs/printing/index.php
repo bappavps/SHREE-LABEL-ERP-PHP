@@ -1806,6 +1806,22 @@ function getFlexoRequestType(payload) {
   return 'unknown';
 }
 
+function getPendingFlexoSlittingTask(job, requestId) {
+  const extra = (job && job.extra_data_parsed && typeof job.extra_data_parsed === 'object') ? job.extra_data_parsed : {};
+  const tasks = Array.isArray(extra.flexo_extension_tasks) ? extra.flexo_extension_tasks : [];
+  const cleanRequestId = Number(requestId || 0);
+  for (let idx = 0; idx < tasks.length; idx++) {
+    const row = tasks[idx] && typeof tasks[idx] === 'object' ? tasks[idx] : null;
+    if (!row) continue;
+    if (String(row.type || '').toLowerCase() !== 'additional_slitting') continue;
+    if (String(row.status || '').toLowerCase() !== 'pending') continue;
+    const rowRequestId = Number(row.request_id || 0);
+    if (cleanRequestId > 0 && rowRequestId > 0 && rowRequestId !== cleanRequestId) continue;
+    return Object.assign({ _idx: idx }, row);
+  }
+  return null;
+}
+
 function openFlexoSlittingWorkspace(jobId, taskIndex, requestId) {
   const job = ALL_JOBS.find(j => j.id == jobId);
   if (!job) {
@@ -1887,7 +1903,8 @@ async function openFlexoProductionUpdate(requestId, jobId) {
   const reqType = getFlexoRequestType(payload);
 
   if (reqType === 'add_roll') {
-    const url = buildFlexoSlittingUrl(job, requestId, null);
+    const pendingTask = getPendingFlexoSlittingTask(job, requestId);
+    const url = buildFlexoSlittingUrl(job, requestId, pendingTask);
     window.location = url;
     return;
   }
@@ -3321,6 +3338,8 @@ async function openPrintDetail(id, mode) {
     .filter(t => String(t.type || '').toLowerCase() === 'additional_slitting' && String(t.status || '').toLowerCase() === 'pending');
   const isWaitingAdditionalSlitting = !!extra.flexo_waiting_additional_slitting || pendingAdditionalTasks.length > 0;
   const waitingAdditionalReason = String(extra.flexo_waiting_additional_slitting_reason || '').trim();
+  const flexoReqType = getFlexoRequestType(flexoReqPayload);
+  const managerPendingSlittingTask = getPendingFlexoSlittingTask(job, flexoReqId);
 
   const rollRows = (Array.isArray(card.roll_wastage_rows) && card.roll_wastage_rows.length ? card.roll_wastage_rows : card.material_rows).map((row, idx) => ({
     idx,
@@ -3688,14 +3707,17 @@ async function openPrintDetail(id, mode) {
       fHtml += `<button class="fp-action-btn fp-btn-complete" onclick="openPrintDetail(${job.id},'complete')"><i class="bi bi-check-lg"></i> Complete</button>`;
     }
   }
-  if (!IS_OPERATOR_VIEW && CAN_REVIEW_FLEXO_REQUESTS && flexoReqId > 0 && flexoReqStatus === 'Pending') {
-    const reqType = getFlexoRequestType(flexoReqPayload);
-    if (reqType === 'remaining_roll') {
+  if (!IS_OPERATOR_VIEW && CAN_REVIEW_FLEXO_REQUESTS && flexoReqId > 0) {
+    if (flexoReqType === 'remaining_roll' && flexoReqStatus === 'Pending') {
       fHtml += `<button class="fp-action-btn fp-btn-start" onclick="openFlexoProductionUpdate(${flexoReqId}, ${job.id})"><i class="bi bi-arrow-repeat"></i> Update Roll Request</button>`;
-    } else {
+    } else if (flexoReqType === 'add_roll' && managerPendingSlittingTask) {
+      fHtml += `<button class="fp-action-btn fp-btn-start" onclick="openFlexoSlittingWorkspace(${job.id}, ${managerPendingSlittingTask._idx}, ${flexoReqId})"><i class="bi bi-scissors"></i> Slitting</button>`;
+    } else if (flexoReqStatus === 'Pending') {
       fHtml += `<button class="fp-action-btn fp-btn-start" onclick="openFlexoProductionUpdate(${flexoReqId}, ${job.id})"><i class="bi bi-scissors"></i> Slitting</button>`;
     }
-    fHtml += `<button class="fp-action-btn fp-btn-reject" onclick="reviewFlexoOperatorRequest(${flexoReqId}, 'Rejected', ${job.id})"><i class="bi bi-x-circle"></i> Reject Request</button>`;
+    if (flexoReqStatus === 'Pending') {
+      fHtml += `<button class="fp-action-btn fp-btn-reject" onclick="reviewFlexoOperatorRequest(${flexoReqId}, 'Rejected', ${job.id})"><i class="bi bi-x-circle"></i> Reject Request</button>`;
+    }
   }
   if (IS_ADMIN) {
     fHtml += `<button class="fp-action-btn fp-btn-start" onclick="regenerateJobCard(${job.id})" title="Regenerate with reason"><i class="bi bi-arrow-repeat"></i> Regenerate</button>`;
@@ -4000,7 +4022,13 @@ function generateQR(text) {
   });
 }
 (function(){
-  const autoId = new URLSearchParams(window.location.search).get('auto_job');
+  const params = new URLSearchParams(window.location.search);
+  const autoId = params.get('auto_job');
+  if (params.get('flexo_slitting_done') === '1') {
+    const rollNo = String(params.get('issued_roll_no') || '').trim();
+    const toastMsg = rollNo ? ('Additional roll added to Flexo job: ' + rollNo) : 'Additional roll added to Flexo job successfully';
+    setTimeout(function(){ try { erpToast(toastMsg, 'success'); } catch(e){} }, 250);
+  }
   if (autoId) setTimeout(function(){ try { openPrintDetail(parseInt(autoId)); } catch(e){} }, 600);
 })();
 function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }

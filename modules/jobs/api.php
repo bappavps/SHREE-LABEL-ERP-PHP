@@ -3891,32 +3891,6 @@ try {
             ]);
             $extra['assigned_child_rolls'] = array_values($assigned);
 
-            if ($routeViaPrinting && $oldJumbo) {
-                $jExtra = json_decode((string)($oldJumbo['extra_data'] ?? '{}'), true);
-                if (!is_array($jExtra)) $jExtra = [];
-                $jChild = is_array($jExtra['child_rolls'] ?? null) ? $jExtra['child_rolls'] : [];
-                $jChild = jobs_merge_roll_item($jChild, [
-                    'roll_no' => $issuedRollNo,
-                    'parent_roll_no' => (string)($issuedRow['parent_roll_no'] ?? ''),
-                    'width' => jobs_float2($issuedRow['width_mm'] ?? 0),
-                    'length' => jobs_float2($issuedRow['length_mtr'] ?? 0),
-                    'status' => 'Extra',
-                    'remarks' => 'Extra from flexo request #' . $requestId . ' (Printing route)',
-                    'from_flexo_request' => true,
-                    'flexo_request_id' => $requestId,
-                    'extra_route' => 'printing',
-                ]);
-                $jExtra['child_rolls'] = array_values($jChild);
-                $jExtra['total_roll_count'] = count($jExtra['child_rolls']) + count(is_array($jExtra['stock_rolls'] ?? null) ? $jExtra['stock_rolls'] : []) + 1;
-                $jExtra['has_extra_roll_update'] = true;
-                $jExtra['last_extra_roll_update_at'] = date('c');
-                $jExtra['last_extra_roll_update_roll_no'] = $issuedRollNo;
-                $jExtraJson = json_encode($jExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-                $updJumbo = $db->prepare("UPDATE jobs SET extra_data = ? WHERE id = ?");
-                $updJumbo->bind_param('si', $jExtraJson, $prevJumboId);
-                $updJumbo->execute();
-            }
-
             if ($routeViaJumbo && $tempExtraJumboCard) {
                 $tempExtra = is_array($tempExtraJumboCard['extra_data'] ?? null) ? $tempExtraJumboCard['extra_data'] : [];
                 $tempChild = is_array($tempExtra['child_rolls'] ?? null) ? $tempExtra['child_rolls'] : [];
@@ -3975,20 +3949,59 @@ try {
                 }
             }
 
+            $pendingTasksForRequest = 0;
+            foreach ($extra['flexo_extension_tasks'] as $taskRow) {
+                if (!is_array($taskRow)) continue;
+                $tType = strtolower(trim((string)($taskRow['type'] ?? '')));
+                $tStatus = strtolower(trim((string)($taskRow['status'] ?? '')));
+                $tReqId = (int)($taskRow['request_id'] ?? 0);
+                if ($tType === 'additional_slitting' && $tStatus === 'pending' && $tReqId === $requestId) {
+                    $pendingTasksForRequest++;
+                }
+            }
+
             $jobStatusToSet = 'Pending';
             if ($pendingAdditionalTasks <= 0 && !$routeViaJumbo) {
                 $restoreStatus = trim((string)($extra['flexo_status_before_waiting_slitting'] ?? 'Running'));
-                $jobStatusToSet = $restoreStatus === '' ? 'Running' : $restoreStatus;
+                if ($routeViaPrinting) {
+                    $jobStatusToSet = 'Running';
+                } else {
+                    $jobStatusToSet = $restoreStatus === '' ? 'Running' : $restoreStatus;
+                }
                 unset($extra['flexo_status_before_waiting_slitting']);
                 unset($extra['flexo_waiting_additional_slitting']);
                 unset($extra['flexo_waiting_additional_slitting_since']);
                 unset($extra['flexo_waiting_additional_slitting_reason']);
+                unset($extra['flexo_waiting_requires_jumbo_end']);
             } else {
                 $extra['flexo_waiting_additional_slitting'] = true;
                 if ($routeViaJumbo) {
                     $extra['flexo_waiting_additional_slitting_reason'] = 'Waiting for jumbo EXTRA card completion';
                     $extra['flexo_waiting_requires_jumbo_end'] = true;
+                } else {
+                    unset($extra['flexo_waiting_requires_jumbo_end']);
                 }
+            }
+
+            $requestStatus = (string)($req['status'] ?? 'Pending');
+            if ($routeViaPrinting && $pendingTasksForRequest <= 0) {
+                $requestStatus = 'Approved';
+                $reqPayload = json_decode((string)($req['payload_json'] ?? '{}'), true);
+                if (!is_array($reqPayload)) $reqPayload = [];
+                $reqPayload['applied_context'] = [
+                    'applied_by' => $reviewedByName,
+                    'applied_by_id' => $reviewedBy,
+                    'applied_at_iso' => date('c'),
+                    'review_note' => $completionNote,
+                    'production_update_mode' => 'slitting',
+                    'issued_roll_no' => $issuedRollNo,
+                    'target_department' => $targetDepartment,
+                    'completed_via' => 'slitting_batch',
+                ];
+                $reqPayloadJson = json_encode($reqPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                $updReq = $db->prepare("UPDATE job_change_requests SET status = 'Approved', reviewed_by = ?, reviewed_by_name = ?, reviewed_at = NOW(), review_note = ?, payload_json = ? WHERE id = ?");
+                $updReq->bind_param('isssi', $reviewedBy, $reviewedByName, $completionNote, $reqPayloadJson, $requestId);
+                $updReq->execute();
             }
 
             $extra['flexo_request_last_applied_at'] = date('c');
@@ -4000,7 +4013,7 @@ try {
             $updJob->bind_param('ssi', $jobStatusToSet, $extraJson, $jobId);
             $updJob->execute();
 
-            $notifMsg = 'Flexo additional slitting synced from batch for ' . ($jobNo !== '' ? $jobNo : ('JOB-' . $jobId)) . ' | Roll: ' . $issuedRollNo;
+            $notifMsg = 'Flexo additional roll synced to printing for ' . ($jobNo !== '' ? $jobNo : ('JOB-' . $jobId)) . ' | Roll: ' . $issuedRollNo;
             $notifDept = 'flexo_printing';
             $notifType = 'success';
             $nIns = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, ?)");
@@ -4008,7 +4021,22 @@ try {
             $nIns->execute();
 
             $db->commit();
-            echo json_encode(['ok' => true, 'issued_roll_no' => $issuedRollNo, 'task_index' => $taskIndex]);
+            $redirectUrl = '';
+            if ($routeViaPrinting) {
+                $redirectUrl = jobs_join_base_url('/modules/jobs/printing/index.php')
+                    . '?auto_job=' . rawurlencode((string)$jobId)
+                    . '&flexo_slitting_done=1&issued_roll_no=' . rawurlencode($issuedRollNo);
+            }
+            echo json_encode([
+                'ok' => true,
+                'issued_roll_no' => $issuedRollNo,
+                'task_index' => $taskIndex,
+                'request_status' => $requestStatus,
+                'redirect_url' => $redirectUrl,
+                'message' => $routeViaPrinting
+                    ? 'Additional roll added to the same Flexo job and ready for printing.'
+                    : 'Additional slitting synced from batch.',
+            ]);
         } catch (Throwable $th) {
             $db->rollback();
             echo json_encode(['ok' => false, 'error' => $th->getMessage()]);

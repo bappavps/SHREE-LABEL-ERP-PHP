@@ -2074,6 +2074,12 @@ try {
             $printingPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['printing_job']['prefix'] ?? 'FLX')));
             if ($jumboPrefix === '') $jumboPrefix = 'JMB';
             if ($printingPrefix === '') $printingPrefix = 'FLX';
+            $dieCutPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['die_cutting_job']['prefix'] ?? 'DCT')));
+            if ($dieCutPrefix === '') $dieCutPrefix = 'DCT';
+            $labelSlittingPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['label_slitting_job']['prefix'] ?? 'LSL')));
+            if ($labelSlittingPrefix === '') $labelSlittingPrefix = 'LSL';
+            $barcodePrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['barcode_job']['prefix'] ?? 'BRC-BAR')));
+            if ($barcodePrefix === '') $barcodePrefix = 'BRC-BAR';
 
             $findExistingStageJob = static function (mysqli $dbConn, int $planningId, string $department): ?array {
                 if ($planningId <= 0) {
@@ -2386,6 +2392,13 @@ try {
                     $departments = erp_department_selection_list($a['department_route'], $departmentChoices, []);
                     $allowJumbo = erp_department_selection_contains($departments, 'Jumbo Slitting', $departmentChoices, []);
                     $allowPrinting = erp_department_selection_contains($departments, 'Printing', $departmentChoices, []);
+                    $allowDieCutting = erp_department_selection_contains($departments, 'Die-Cutting', $departmentChoices, []);
+                    $allowLabelSlitting = erp_department_selection_contains($departments, 'Label Slitting', $departmentChoices, []);
+                    $allowBarcode = erp_department_selection_contains($departments, 'BarCode', $departmentChoices, []);
+                    // Barcode downstream card creation is reserved for PLN-BAR plans
+                    if (stripos((string)$a['plan_no'], 'PLN-BAR/') !== 0) {
+                        $allowBarcode = false;
+                    }
                     $directFlexoBypass = $allowPrinting && !$allowJumbo;
                     $resolvedMachine = $machine !== '' ? $machine : resolveMachineFromDepartmentRoute($db, (string)$a['department_route']);
 
@@ -2531,6 +2544,148 @@ try {
                         }
                         $insF->execute();
                         $createdJobCards[] = ['job_no' => $printingJobNo, 'type' => 'Printing', 'action' => 'created', 'plan_no' => $a['plan_no'], 'allocation_id' => $allocationId, 'id' => (int)$db->insert_id];
+                    }
+                }
+
+                // Track printing job id/no for downstream chaining (die-cut, label-slitting, barcode)
+                $printingJobIdForChain = 0;
+                $printingJobNoForChain = '';
+                if ($allowPrinting && $a['planning_id'] > 0) {
+                    $chkPrtChain = $db->prepare("SELECT id, job_no FROM jobs WHERE planning_id = ? AND department = 'flexo_printing' AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
+                    $chkPrtChain->bind_param('i', $a['planning_id']);
+                    $chkPrtChain->execute();
+                    $prtChainRow = $chkPrtChain->get_result()->fetch_assoc();
+                    $printingJobIdForChain = (int)($prtChainRow['id'] ?? 0);
+                    $printingJobNoForChain = trim((string)($prtChainRow['job_no'] ?? ''));
+                }
+
+                // --- Die-Cutting job card (flatbed die type only) ---
+                $dctJobId = 0;
+                $dctJobNo = '';
+                if ($allowDieCutting && $a['planning_id'] > 0) {
+                    $planCtxDie = loadPlanningContext($db, (int)$a['planning_id'], (string)$a['plan_no']);
+                    $dieValueNorm = strtolower(trim((string)($planCtxDie['planning_extra']['die'] ?? '')));
+                    $isFlatbedLikeDie = ($dieValueNorm !== '') && (strpos($dieValueNorm, 'flatbed') !== false) && (strpos($dieValueNorm, 'rotary') === false);
+                    if ($isFlatbedLikeDie) {
+                        $dctUpstreamId = $printingJobIdForChain > 0 ? $printingJobIdForChain : $jumboJobId;
+                        $dctUpstreamRef = $printingJobNoForChain !== '' ? $printingJobNoForChain : ($jumboJobNo !== '' ? $jumboJobNo : 'N/A');
+                        $existingDie = $findExistingStageJob($db, (int)$a['planning_id'], 'flatbed');
+                        $dctJobId = (int)($existingDie['id'] ?? 0);
+                        $dctJobNo = trim((string)($existingDie['job_no'] ?? ''));
+                        if (!$existingDie) {
+                            $jcNoDct = generateUniqueStageJobNo($db, $a['plan_no'], 'die_cutting_job', $dieCutPrefix, $batchId + 200 + $a['allocation_sequence']);
+                            $dctJobNo = $jcNoDct;
+                            $notesDct = 'Die-cutting queued from upstream | Plan: ' . $a['plan_no'] . ' | From: ' . $dctUpstreamRef;
+                            if ($dctUpstreamId > 0) {
+                                $insD = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Finishing', 'flatbed', 'Queued', 3, ?, ?)");
+                                $insD->bind_param('sisis', $jcNoDct, $a['planning_id'], $parentRollNo, $dctUpstreamId, $notesDct);
+                            } else {
+                                $insD = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Finishing', 'flatbed', 'Queued', 3, NULL, ?)");
+                                $insD->bind_param('siss', $jcNoDct, $a['planning_id'], $parentRollNo, $notesDct);
+                            }
+                            $insD->execute();
+                            $dctJobId = (int)$db->insert_id;
+                            $createdJobCards[] = ['job_no' => $jcNoDct, 'type' => 'Finishing', 'action' => 'created', 'plan_no' => $a['plan_no'], 'allocation_id' => $allocationId, 'id' => $dctJobId];
+                        }
+                    }
+                }
+
+                // --- Label Slitting job card ---
+                if ($allowLabelSlitting && $a['planning_id'] > 0) {
+                    $labelUpstreamId = 0;
+                    $labelUpstreamRef = 'N/A';
+                    if ($dctJobId > 0) {
+                        $labelUpstreamId = $dctJobId;
+                        $labelUpstreamRef = $dctJobNo !== '' ? $dctJobNo : 'N/A';
+                    } elseif ($printingJobIdForChain > 0) {
+                        $labelUpstreamId = $printingJobIdForChain;
+                        $labelUpstreamRef = $printingJobNoForChain !== '' ? $printingJobNoForChain : 'N/A';
+                    } elseif ($jumboJobId > 0) {
+                        $labelUpstreamId = $jumboJobId;
+                        $labelUpstreamRef = $jumboJobNo !== '' ? $jumboJobNo : 'N/A';
+                    }
+                    $existingLabel = $findExistingStageJob($db, (int)$a['planning_id'], 'label_slitting');
+                    $labelJobId = (int)($existingLabel['id'] ?? 0);
+                    $labelJobNo = trim((string)($existingLabel['job_no'] ?? ''));
+                    $labelNotes = 'Label slitting queued from upstream | Plan: ' . $a['plan_no'] . ' | From: ' . $labelUpstreamRef;
+                    if (!$existingLabel) {
+                        $jcNoLabel = generateUniqueStageJobNo($db, $a['plan_no'], 'label_slitting_job', $labelSlittingPrefix, $batchId + 300 + $a['allocation_sequence']);
+                        $labelJobNo = $jcNoLabel;
+                        $labelNotes = 'Label slitting queued from upstream | Plan: ' . $a['plan_no'] . ' | From: ' . $labelUpstreamRef . ' | Label: ' . $jcNoLabel;
+                        if ($labelUpstreamId > 0) {
+                            $insLabel = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Finishing', 'label_slitting', 'Queued', 4, ?, ?)");
+                            $insLabel->bind_param('sisis', $jcNoLabel, $a['planning_id'], $parentRollNo, $labelUpstreamId, $labelNotes);
+                        } else {
+                            $insLabel = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes) VALUES (?, ?, NULL, ?, 'Finishing', 'label_slitting', 'Queued', 4, NULL, ?)");
+                            $insLabel->bind_param('siss', $jcNoLabel, $a['planning_id'], $parentRollNo, $labelNotes);
+                        }
+                        $insLabel->execute();
+                        $labelJobId = (int)$db->insert_id;
+                        $createdJobCards[] = ['job_no' => $jcNoLabel, 'type' => 'Label Slitting', 'action' => 'created', 'plan_no' => $a['plan_no'], 'allocation_id' => $allocationId, 'id' => $labelJobId];
+                    } else {
+                        if ($labelUpstreamId > 0) {
+                            $updLabel = $db->prepare("UPDATE jobs SET previous_job_id = ?, notes = ? WHERE id = ?");
+                            $updLabel->bind_param('isi', $labelUpstreamId, $labelNotes, $labelJobId);
+                        } else {
+                            $updLabel = $db->prepare("UPDATE jobs SET previous_job_id = NULL, notes = ? WHERE id = ?");
+                            $updLabel->bind_param('si', $labelNotes, $labelJobId);
+                        }
+                        $updLabel->execute();
+                    }
+                }
+
+                // --- BarCode job card (PLN-BAR plans only) ---
+                if ($allowBarcode && $a['planning_id'] > 0) {
+                    $barcodeUpstreamId = 0;
+                    $barcodeUpstreamRef = 'N/A';
+                    if ($printingJobIdForChain > 0) {
+                        $barcodeUpstreamId = $printingJobIdForChain;
+                        $barcodeUpstreamRef = $printingJobNoForChain !== '' ? $printingJobNoForChain : 'N/A';
+                    } elseif ($jumboJobId > 0) {
+                        $barcodeUpstreamId = $jumboJobId;
+                        $barcodeUpstreamRef = $jumboJobNo !== '' ? $jumboJobNo : 'N/A';
+                    }
+                    $barcodeStatus = $barcodeUpstreamId <= 0 ? 'Pending' : 'Queued';
+                    $barcodeExtraData = [
+                        'assigned_child_rolls' => $jobAssignedRolls,
+                        'assigned_child_roll_count' => count($jobAssignedRolls),
+                        'assigned_parent_roll_no' => $parentRollNo,
+                        'assigned_last_batch_no' => $batchNo,
+                        'plan_no' => $a['plan_no'],
+                        'machine' => $resolvedMachine,
+                        'direct_barcode_bypass' => ($barcodeUpstreamId <= 0),
+                    ];
+                    $existingBarcode = $findExistingStageJob($db, (int)$a['planning_id'], 'barcode');
+                    if ($existingBarcode) {
+                        $barcodeJobId = (int)($existingBarcode['id'] ?? 0);
+                        $existingBarcodeExtra = $decodeJsonAssoc($existingBarcode['extra_data'] ?? '');
+                        $existingBarcodeRolls = is_array($existingBarcodeExtra['assigned_child_rolls'] ?? null) ? $existingBarcodeExtra['assigned_child_rolls'] : [];
+                        $barcodeExtraData['assigned_child_rolls'] = $mergeAssignedRolls($existingBarcodeRolls, $jobAssignedRolls);
+                        $barcodeExtraData['assigned_child_roll_count'] = count($barcodeExtraData['assigned_child_rolls']);
+                        $barcodeExtraJson = json_encode(array_merge($existingBarcodeExtra, $barcodeExtraData), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        $barcodeNotes = 'Barcode job updated | Plan: ' . $a['plan_no'] . ' | From: ' . $barcodeUpstreamRef;
+                        if ($barcodeUpstreamId > 0) {
+                            $updB = $db->prepare("UPDATE jobs SET previous_job_id = ?, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updB->bind_param('isssi', $barcodeUpstreamId, $barcodeStatus, $barcodeNotes, $barcodeExtraJson, $barcodeJobId);
+                        } else {
+                            $updB = $db->prepare("UPDATE jobs SET previous_job_id = NULL, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updB->bind_param('sssi', $barcodeStatus, $barcodeNotes, $barcodeExtraJson, $barcodeJobId);
+                        }
+                        $updB->execute();
+                    } else {
+                        $jcNoBarcode = generateUniqueStageJobNo($db, $a['plan_no'], 'barcode_job', $barcodePrefix, $batchId + 400 + $a['allocation_sequence']);
+                        $barcodeNotes = 'Barcode job queued | Plan: ' . $a['plan_no'] . ' | From: ' . $barcodeUpstreamRef . ' | Barcode: ' . $jcNoBarcode;
+                        $barcodeExtraJson = json_encode($barcodeExtraData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        if ($barcodeUpstreamId > 0) {
+                            $insB = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'barcode', ?, 3, ?, ?, ?)");
+                            $insB->bind_param('sississ', $jcNoBarcode, $a['planning_id'], $parentRollNo, $barcodeStatus, $barcodeUpstreamId, $barcodeNotes, $barcodeExtraJson);
+                        } else {
+                            $insB = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'barcode', ?, 3, NULL, ?, ?)");
+                            $insB->bind_param('sissss', $jcNoBarcode, $a['planning_id'], $parentRollNo, $barcodeStatus, $barcodeNotes, $barcodeExtraJson);
+                        }
+                        $insB->execute();
+                        $barcodeJobId = (int)$db->insert_id;
+                        $createdJobCards[] = ['job_no' => $jcNoBarcode, 'type' => 'Barcode', 'action' => 'created', 'plan_no' => $a['plan_no'], 'allocation_id' => $allocationId, 'id' => $barcodeJobId];
                     }
                 }
 

@@ -574,6 +574,58 @@ function ensureRbacSchema() {
 
     $db = getDB();
 
+    $tableExists = function(string $tableName) use ($db): bool {
+        $stmt = $db->prepare("SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1");
+        if (!$stmt) {
+            return false;
+        }
+        $schema = DB_NAME;
+        $stmt->bind_param('ss', $schema, $tableName);
+        $stmt->execute();
+        $exists = (bool)$stmt->get_result()->fetch_row();
+        $stmt->close();
+        return $exists;
+    };
+
+    $columnExists = function(string $tableName, string $columnName) use ($db): bool {
+        $stmt = $db->prepare("SELECT 1 FROM information_schema.columns WHERE table_schema = ? AND table_name = ? AND column_name = ? LIMIT 1");
+        if (!$stmt) {
+            return false;
+        }
+        $schema = DB_NAME;
+        $stmt->bind_param('sss', $schema, $tableName, $columnName);
+        $stmt->execute();
+        $exists = (bool)$stmt->get_result()->fetch_row();
+        $stmt->close();
+        return $exists;
+    };
+
+    $indexExists = function(string $tableName, string $indexName) use ($db): bool {
+        $stmt = $db->prepare("SELECT 1 FROM information_schema.statistics WHERE table_schema = ? AND table_name = ? AND index_name = ? LIMIT 1");
+        if (!$stmt) {
+            return false;
+        }
+        $schema = DB_NAME;
+        $stmt->bind_param('sss', $schema, $tableName, $indexName);
+        $stmt->execute();
+        $exists = (bool)$stmt->get_result()->fetch_row();
+        $stmt->close();
+        return $exists;
+    };
+
+    $constraintExists = function(string $tableName, string $constraintName) use ($db): bool {
+        $stmt = $db->prepare("SELECT 1 FROM information_schema.table_constraints WHERE table_schema = ? AND table_name = ? AND constraint_name = ? LIMIT 1");
+        if (!$stmt) {
+            return false;
+        }
+        $schema = DB_NAME;
+        $stmt->bind_param('sss', $schema, $tableName, $constraintName);
+        $stmt->execute();
+        $exists = (bool)$stmt->get_result()->fetch_row();
+        $stmt->close();
+        return $exists;
+    };
+
     $safeSchemaQuery = function($sql) use ($db) {
         try {
             $db->query($sql);
@@ -597,35 +649,51 @@ function ensureRbacSchema() {
     };
 
     // Users can be assigned to one group.
-    $safeSchemaQuery("ALTER TABLE users ADD COLUMN group_id INT NULL AFTER role");
-    $safeSchemaQuery("ALTER TABLE users ADD INDEX idx_users_group_id (group_id)");
+    if (!$columnExists('users', 'group_id')) {
+        $safeSchemaQuery("ALTER TABLE users ADD COLUMN group_id INT NULL AFTER role");
+    }
+    if (!$indexExists('users', 'idx_users_group_id')) {
+        $safeSchemaQuery("ALTER TABLE users ADD INDEX idx_users_group_id (group_id)");
+    }
 
     // Group master.
-    $safeSchemaQuery("CREATE TABLE IF NOT EXISTS user_groups (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(100) NOT NULL UNIQUE,
-        description VARCHAR(255) NULL,
-        is_active TINYINT(1) NOT NULL DEFAULT 1,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    if (!$tableExists('user_groups')) {
+        $safeSchemaQuery("CREATE TABLE IF NOT EXISTS user_groups (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(100) NOT NULL UNIQUE,
+            description VARCHAR(255) NULL,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    }
 
     // Group to page permission mapping.
-    $safeSchemaQuery("CREATE TABLE IF NOT EXISTS group_page_permissions (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        group_id INT NOT NULL,
-        page_path VARCHAR(190) NOT NULL,
-        can_view TINYINT(1) NOT NULL DEFAULT 1,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY uq_group_page (group_id, page_path),
-        KEY idx_perm_group (group_id),
-        CONSTRAINT fk_gpp_group FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    if (!$tableExists('group_page_permissions')) {
+        $safeSchemaQuery("CREATE TABLE IF NOT EXISTS group_page_permissions (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            group_id INT NOT NULL,
+            page_path VARCHAR(190) NOT NULL,
+            can_view TINYINT(1) NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_group_page (group_id, page_path),
+            KEY idx_perm_group (group_id),
+            CONSTRAINT fk_gpp_group FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    } elseif (!$constraintExists('group_page_permissions', 'fk_gpp_group')) {
+        $safeSchemaQuery("ALTER TABLE group_page_permissions ADD CONSTRAINT fk_gpp_group FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE CASCADE");
+    }
 
     // Granular action permissions for pages (add/edit/delete).
-    $safeSchemaQuery("ALTER TABLE group_page_permissions ADD COLUMN can_add TINYINT(1) NOT NULL DEFAULT 0 AFTER can_view");
-    $safeSchemaQuery("ALTER TABLE group_page_permissions ADD COLUMN can_edit TINYINT(1) NOT NULL DEFAULT 0 AFTER can_add");
-    $safeSchemaQuery("ALTER TABLE group_page_permissions ADD COLUMN can_delete TINYINT(1) NOT NULL DEFAULT 0 AFTER can_edit");
+    if (!$columnExists('group_page_permissions', 'can_add')) {
+        $safeSchemaQuery("ALTER TABLE group_page_permissions ADD COLUMN can_add TINYINT(1) NOT NULL DEFAULT 0 AFTER can_view");
+    }
+    if (!$columnExists('group_page_permissions', 'can_edit')) {
+        $safeSchemaQuery("ALTER TABLE group_page_permissions ADD COLUMN can_edit TINYINT(1) NOT NULL DEFAULT 0 AFTER can_add");
+    }
+    if (!$columnExists('group_page_permissions', 'can_delete')) {
+        $safeSchemaQuery("ALTER TABLE group_page_permissions ADD COLUMN can_delete TINYINT(1) NOT NULL DEFAULT 0 AFTER can_edit");
+    }
 }
 
 /**

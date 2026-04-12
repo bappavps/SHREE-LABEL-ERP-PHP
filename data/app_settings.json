@@ -81,7 +81,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 4
+                "counter": 7
             },
             "sales_order": {
                 "prefix": "SO",
@@ -97,7 +97,7 @@
             },
             "printing_job": {
                 "prefix": "FLX",
-                "counter": 1
+                "counter": 0
             },
             "die_cutting_job": {
                 "prefix": "DCT",

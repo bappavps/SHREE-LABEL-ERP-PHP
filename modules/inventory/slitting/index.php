@@ -2162,6 +2162,7 @@ const SLT = (() => {
 
     const results = [];
     let hasError = false;
+    let flexoRedirectUrl = '';
 
     for (const roll of loadedRolls) {
       const cfg = rollConfigs[roll.roll_no];
@@ -2237,6 +2238,15 @@ const SLT = (() => {
               const syncData = await syncRes.json();
               if (!syncData.ok) {
                 showToast('Flexo sync failed: ' + (syncData.error || 'Unknown error'), 'error');
+              } else {
+                const nextUrl = String(syncData.redirect_url || '').trim();
+                if (nextUrl) {
+                  flexoRedirectUrl = nextUrl;
+                }
+                const syncMsg = String(syncData.message || '').trim();
+                if (syncMsg) {
+                  showToast(syncMsg, 'success');
+                }
               }
             }
           }
@@ -2263,6 +2273,11 @@ const SLT = (() => {
       renderBatchStatus();
       await loadPlannerJobs();
       await loadHistory();
+      if (flexoRedirectUrl) {
+        setTimeout(() => {
+          window.location.href = flexoRedirectUrl;
+        }, 700);
+      }
     }
 
     btn.disabled = false;
