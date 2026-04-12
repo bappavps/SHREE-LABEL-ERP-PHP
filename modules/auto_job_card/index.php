@@ -310,6 +310,7 @@ async function apiPost(action, body) {
 }
 
 function toast(msg, type) {
+  if (typeof window.showERPToast === 'function') { window.showERPToast(msg, type); return; }
   if (typeof window.erpToast === 'function') { window.erpToast(msg, type); return; }
   alert((type === 'error' ? 'Error: ' : '') + msg);
 }
@@ -943,7 +944,14 @@ async function executeBatch() {
     return;
   }
 
-  if (!confirm('Execute slitting for ' + selectedRolls.length + ' roll(s)? This will mark parent rolls as Consumed and create child rolls.')) return;
+  if (typeof window.showERPConfirm === 'function') {
+    window.showERPConfirm('Execute slitting for ' + selectedRolls.length + ' roll(s)? This will mark parent rolls as Consumed and create child rolls.', executeBatchConfirmed, { title: 'Please Confirm', okLabel: 'Execute', cancelLabel: 'Cancel' });
+    return;
+  }
+
+  executeBatchConfirmed();
+
+  async function executeBatchConfirmed() {
 
   var results = [];
   var errors = [];
@@ -987,6 +995,7 @@ async function executeBatch() {
     renderConfig();
     showExecuteButton();
     loadPlannerJobs(); // Refresh planner
+  }
   }
 }
 

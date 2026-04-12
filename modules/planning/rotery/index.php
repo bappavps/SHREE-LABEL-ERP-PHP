@@ -461,7 +461,7 @@ include __DIR__ . '/../../../includes/header.php';
               <td><span class="bc-status-badge"><?= e(erp_status_page_normalize((string)($row['status'] ?? $defaultStatus), 'planning.barcode')) ?></span></td>
               <td class="no-print">
                 <?php if ($canDelete): ?>
-                  <form method="post" class="bc-delete-form" onsubmit="return confirm('Delete this barcode planning entry?');"><input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>"><input type="hidden" name="action" value="delete_barcode_planning"><input type="hidden" name="id" value="<?= (int)($row['id'] ?? 0) ?>"><button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-trash"></i></button></form>
+                  <form method="post" class="bc-delete-form" data-confirm="Delete this barcode planning entry?"><input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>"><input type="hidden" name="action" value="delete_barcode_planning"><input type="hidden" name="id" value="<?= (int)($row['id'] ?? 0) ?>"><button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-trash"></i></button></form>
                 <?php else: ?>
                   <span class="bc-muted">Read only</span>
                 <?php endif; ?>

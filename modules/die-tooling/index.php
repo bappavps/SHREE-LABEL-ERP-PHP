@@ -896,7 +896,7 @@ foreach ($rows as $rowItem) {
             <td>
               <a class="btn btn-sm btn-primary" href="<?= e(dieToolingBuildUrl($mode, ['edit_id' => (int)$row['id']])) ?>"><i class="bi bi-pencil"></i></a>
               <?php if (!$isDesignMode): ?>
-                <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this row?');">
+                <form method="POST" style="display:inline;" data-confirm="Delete this row?">
                   <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
                   <input type="hidden" name="action" value="delete_die_tool">
                   <input type="hidden" name="id" value="<?= (int)$row['id'] ?>">
@@ -1163,9 +1163,6 @@ foreach ($rows as $rowItem) {
       if (!checkedRows.length) {
         return;
       }
-      if (!window.confirm('Delete selected rows?')) {
-        return;
-      }
 
       bulkDeleteIds.innerHTML = '';
       checkedRows.forEach(function (checkbox) {
@@ -1175,6 +1172,10 @@ foreach ($rows as $rowItem) {
         input.value = checkbox.value;
         bulkDeleteIds.appendChild(input);
       });
+      if (typeof window.showERPConfirm === 'function') {
+        window.showERPConfirm('Delete selected rows?', function(){ bulkDeleteForm.submit(); }, { title:'Please Confirm', okLabel:'Delete', cancelLabel:'Cancel' });
+        return;
+      }
       bulkDeleteForm.submit();
     });
     updateBulkDeleteState();

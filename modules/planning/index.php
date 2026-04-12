@@ -2361,15 +2361,11 @@ include __DIR__ . '/../../includes/header.php';
   var _toastCtr = null;
   function toast(msg, type) {
     var t = (type === true || type === 'error') ? 'error' : (type === 'info' ? 'info' : 'success');
-    if (!_toastCtr) { _toastCtr = document.createElement('div'); _toastCtr.id = 'erp-toast-ctr'; document.body.appendChild(_toastCtr); }
-    var el = document.createElement('div');
-    el.className = 'erp-toast erp-toast-' + t;
-    var icon = t === 'error' ? '&#10007;' : '&#10003;';
-    el.innerHTML = '<span class="erp-toast-icon">' + icon + '</span><span class="erp-toast-msg">' + String(msg).replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</span><button class="erp-toast-x" type="button">&#215;</button>';
-    el.querySelector('.erp-toast-x').onclick = function(){ _dToast(el); };
-    _toastCtr.appendChild(el);
-    requestAnimationFrame(function(){ el.classList.add('show'); });
-    setTimeout(function(){ _dToast(el); }, 5000);
+    if (typeof window.showERPToast === 'function') {
+      window.showERPToast(msg, t);
+      return;
+    }
+    alert(String(msg || ''));
   }
   function _dToast(el) {
     el.classList.remove('show');
@@ -2377,17 +2373,11 @@ include __DIR__ . '/../../includes/header.php';
   }
 
   function confirmDialog(msg, onConfirm) {
-    if (!_toastCtr) { _toastCtr = document.createElement('div'); _toastCtr.id = 'erp-toast-ctr'; document.body.appendChild(_toastCtr); }
-    var el = document.createElement('div');
-    el.className = 'erp-toast erp-toast-confirm show';
-    el.innerHTML =
-      '<span class="erp-toast-icon">&#9888;</span>' +
-      '<span class="erp-toast-msg">' + String(msg).replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</span>' +
-      '<button class="erp-confirm-yes btn btn-danger btn-sm" type="button">Delete</button>' +
-      '<button class="erp-confirm-no btn btn-ghost btn-sm" type="button">Cancel</button>';
-    el.querySelector('.erp-confirm-yes').onclick = function(){ _dToast(el); onConfirm(); };
-    el.querySelector('.erp-confirm-no').onclick = function(){ _dToast(el); };
-    _toastCtr.appendChild(el);
+    if (typeof window.showERPConfirm === 'function') {
+      window.showERPConfirm(msg, onConfirm, { title: 'Please Confirm', okLabel: 'Delete', cancelLabel: 'Cancel' });
+      return;
+    }
+    onConfirm();
   }
 
   function applyRowStatus(tr, val) {

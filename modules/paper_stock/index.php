@@ -1481,8 +1481,7 @@ include __DIR__ . '/../../includes/header.php';
     var cp = document.getElementById('col-panel'), cb = document.getElementById('col-toggle-btn');
     if (cp.classList.contains('open') && !cp.contains(e.target) && !cb.contains(e.target)) cp.classList.remove('open');
 
-    var link = e.target.closest('[data-confirm]');
-    if (link && !confirm(link.dataset.confirm)) e.preventDefault();
+    // Custom data-confirm handling is centralized in assets/js/app.js
   });
 
   document.addEventListener('scroll', function(e){
@@ -1645,9 +1644,16 @@ include __DIR__ . '/../../includes/header.php';
     if (!IS_SYS_ADMIN) { alert('Access denied. Only system admin can delete paper stock.'); return; }
     var ids = selectedIds();
     if (!ids.length) { alert('Select at least one roll.'); return; }
-    if (!confirm('Delete ' + ids.length + ' roll(s)? This cannot be undone.')) return;
-    document.getElementById('ps-batch-delete-ids').value = ids.join(',');
-    document.getElementById('ps-batch-delete-form').submit();
+    var doDelete = function(){
+      document.getElementById('ps-batch-delete-ids').value = ids.join(',');
+      document.getElementById('ps-batch-delete-form').submit();
+    };
+    var msg = 'Delete ' + ids.length + ' roll(s)? This cannot be undone.';
+    if (typeof window.showERPConfirm === 'function') {
+      window.showERPConfirm(msg, doDelete, { title: 'Please Confirm', okLabel: 'Delete', cancelLabel: 'Cancel' });
+      return;
+    }
+    doDelete();
   };
 
   window.toggleColPanel = function(){ document.getElementById('col-panel').classList.toggle('open'); };

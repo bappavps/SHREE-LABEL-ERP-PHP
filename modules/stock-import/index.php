@@ -1766,24 +1766,36 @@ function confirmDeleteAllRolls() {
   var total = <?= (int)$totalRolls ?>;
   if (total === 0) return;
   var msg = 'Are you sure you want to DELETE ALL ' + total.toLocaleString() + ' paper roll(s)?\n\nThis action CANNOT be undone.';
-  if (!confirm(msg)) return;
-  var msg2 = 'FINAL CONFIRMATION: Type OK to proceed with deleting ALL rolls.';
-  var answer = prompt(msg2);
-  if (!answer || answer.trim().toUpperCase() !== 'OK') { alert('Deletion cancelled.'); return; }
+  var finalMsg = 'FINAL CONFIRMATION: Proceed to delete ALL rolls?';
 
-  // Fetch all roll IDs via AJAX, then submit
-  var xhr = new XMLHttpRequest();
-  xhr.open('GET', '<?= BASE_URL ?>/modules/paper_stock/export.php?format=ids&mode=all', true);
-  xhr.onload = function() {
-    if (xhr.status === 200) {
-      document.getElementById('delete-all-roll-ids').value = xhr.responseText.trim();
-      document.getElementById('delete-all-rolls-form').submit();
-    } else {
-      alert('Failed to fetch roll IDs. Please try again.');
-    }
+  var executeDelete = function () {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '<?= BASE_URL ?>/modules/paper_stock/export.php?format=ids&mode=all', true);
+    xhr.onload = function() {
+      if (xhr.status === 200) {
+        document.getElementById('delete-all-roll-ids').value = xhr.responseText.trim();
+        document.getElementById('delete-all-rolls-form').submit();
+      } else {
+        alert('Failed to fetch roll IDs. Please try again.');
+      }
+    };
+    xhr.onerror = function() { alert('Network error. Please try again.'); };
+    xhr.send();
   };
-  xhr.onerror = function() { alert('Network error. Please try again.'); };
-  xhr.send();
+
+  var askFinal = function () {
+    if (typeof window.showERPConfirm === 'function') {
+      window.showERPConfirm(finalMsg, executeDelete, { title: 'Final Confirmation', okLabel: 'Delete All', cancelLabel: 'Cancel' });
+      return;
+    }
+    executeDelete();
+  };
+
+  if (typeof window.showERPConfirm === 'function') {
+    window.showERPConfirm(msg, askFinal, { title: 'Please Confirm', okLabel: 'Continue', cancelLabel: 'Cancel' });
+    return;
+  }
+  askFinal();
 }
 </script>
 
@@ -2518,23 +2530,36 @@ function confirmDeleteAllRollsGlobal() {
   var total = <?= (int)$totalRollsAlways ?>;
   if (total === 0) return;
   var msg = 'Are you sure you want to DELETE ALL ' + total.toLocaleString() + ' paper roll(s)?\n\nThis action CANNOT be undone.';
-  if (!confirm(msg)) return;
-  var msg2 = 'FINAL CONFIRMATION: Type OK to proceed with deleting ALL rolls.';
-  var answer = prompt(msg2);
-  if (!answer || answer.trim().toUpperCase() !== 'OK') { alert('Deletion cancelled.'); return; }
+  var finalMsg = 'FINAL CONFIRMATION: Proceed to delete ALL rolls?';
 
-  var xhr = new XMLHttpRequest();
-  xhr.open('GET', '<?= BASE_URL ?>/modules/paper_stock/export.php?format=ids&mode=all', true);
-  xhr.onload = function() {
-    if (xhr.status === 200) {
-      document.getElementById('delete-all-roll-ids-global').value = xhr.responseText.trim();
-      document.getElementById('delete-all-rolls-form-global').submit();
-    } else {
-      alert('Failed to fetch roll IDs. Please try again.');
-    }
+  var executeDelete = function () {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '<?= BASE_URL ?>/modules/paper_stock/export.php?format=ids&mode=all', true);
+    xhr.onload = function() {
+      if (xhr.status === 200) {
+        document.getElementById('delete-all-roll-ids-global').value = xhr.responseText.trim();
+        document.getElementById('delete-all-rolls-form-global').submit();
+      } else {
+        alert('Failed to fetch roll IDs. Please try again.');
+      }
+    };
+    xhr.onerror = function() { alert('Network error. Please try again.'); };
+    xhr.send();
   };
-  xhr.onerror = function() { alert('Network error. Please try again.'); };
-  xhr.send();
+
+  var askFinal = function () {
+    if (typeof window.showERPConfirm === 'function') {
+      window.showERPConfirm(finalMsg, executeDelete, { title: 'Final Confirmation', okLabel: 'Delete All', cancelLabel: 'Cancel' });
+      return;
+    }
+    executeDelete();
+  };
+
+  if (typeof window.showERPConfirm === 'function') {
+    window.showERPConfirm(msg, askFinal, { title: 'Please Confirm', okLabel: 'Continue', cancelLabel: 'Cancel' });
+    return;
+  }
+  askFinal();
 }
 </script>
 <?php endif; ?>

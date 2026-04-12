@@ -1261,11 +1261,27 @@ function htBulkPrint() {
   })();
 }
 
+function dcConfirmAsync(message, options) {
+  return new Promise(function(resolve){
+    if (typeof window.showERPConfirm === 'function') {
+      var opts = options || {};
+      window.showERPConfirm(String(message || ''), function(){ resolve(true); }, {
+        title: opts.title || 'Please Confirm',
+        okLabel: opts.okLabel || 'OK',
+        cancelLabel: opts.cancelLabel || 'Cancel',
+        onCancel: function(){ resolve(false); }
+      });
+      return;
+    }
+    resolve(true);
+  });
+}
+
 async function htBulkDelete() {
   if (!IS_ADMIN) { alert('Access denied. Only system admin can delete job cards.'); return; }
   const ids = Array.from(document.querySelectorAll('.ht-row-cb:checked')).map(cb => cb.dataset.jobId);
   if (!ids.length) { alert('No history jobs selected'); return; }
-  if (!confirm(`Delete ${ids.length} selected job card(s)?\n\nThis will reset linked paper stock, planning status, and downstream queued jobs for each.`)) return;
+  if (!(await dcConfirmAsync(`Delete ${ids.length} selected job card(s)?\n\nThis will reset linked paper stock, planning status, and downstream queued jobs for each.`, { okLabel:'Delete' }))) return;
   let ok = 0, failed = 0, errors = [];
   for (const id of ids) {
     const fd = new FormData(); fd.append('csrf_token', CSRF); fd.append('action', 'delete_job'); fd.append('job_id', id);
@@ -1306,7 +1322,7 @@ setInterval(function() {
 
 // ═══ STATUS UPDATE ═══
 async function updateJobStatus(id, newStatus) {
-  if (!confirm('Set this job to ' + newStatus + '?')) return;
+  if (!(await dcConfirmAsync('Set this job to ' + newStatus + '?'))) return;
   const fd = new FormData();
   fd.append('csrf_token', CSRF); fd.append('action', 'update_status'); fd.append('job_id', id); fd.append('status', newStatus);
   try {
@@ -1605,7 +1621,7 @@ function resumeRunningDCTimer(jobId) {
 }
 
 async function startJobWithTimer(id) {
-  if (!confirm('Start this job?')) return;
+  if (!(await dcConfirmAsync('Start this job?', { okLabel: 'Start' }))) return;
   const job = ALL_JOBS.find(j => j.id == id) || null;
 
   let verifiedRolls = [];
@@ -1670,7 +1686,7 @@ async function startJobWithTimer(id) {
 
 async function cancelTimer() {
   if (!_timerJobId) return;
-  if (!confirm('Cancel will reset this job timer and return it to Pending. Continue?')) return;
+  if (!(await dcConfirmAsync('Cancel will reset this job timer and return it to Pending. Continue?', { okLabel:'Continue' }))) return;
   try {
     await resetDCTimer(_timerJobId);
   } catch (err) {
@@ -2215,7 +2231,7 @@ document.getElementById('dcDetailModal').addEventListener('click', function(e) {
 // ═══ DELETE JOB ═══
 async function deleteJob(id) {
   if (!IS_ADMIN) { alert('Access denied. Only system admin can delete job cards.'); return; }
-  if (!confirm('Delete this job card and reset linked paper stock, planning status?')) return;
+  if (!(await dcConfirmAsync('Delete this job card and reset linked paper stock, planning status?', { okLabel:'Delete' }))) return;
   const fd = new FormData();
   fd.append('csrf_token', CSRF); fd.append('action', 'delete_job'); fd.append('job_id', id);
   try {
@@ -2235,11 +2251,15 @@ async function regenerateJobCard(id) {
   if (!IS_ADMIN) { alert('Access denied.'); return; }
   const job = ALL_JOBS.find(j => j.id == id);
   if (!job) { alert('Job not found.'); return; }
-  const reason = prompt('Reason for regeneration (required):', 'Die correction / planning update');
+  const reason = (typeof window.showERPPrompt === 'function')
+    ? await window.showERPPrompt('Reason for regeneration (required):', 'Die correction / planning update', { title: 'Regenerate Job Card', okLabel: 'Continue' })
+    : 'Die correction / planning update';
   if (reason === null) return;
   const reasonText = String(reason || '').trim();
   if (!reasonText) { alert('Reason is required.'); return; }
-  const notesAppend = prompt('Describe what changed (optional):', '');
+  const notesAppend = (typeof window.showERPPrompt === 'function')
+    ? await window.showERPPrompt('Describe what changed (optional):', '', { title: 'Regenerate Job Card', okLabel: 'Continue' })
+    : '';
   if (notesAppend === null) return;
 
   const fd = new FormData();

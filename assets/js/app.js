@@ -32,8 +32,9 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             '#erpCenterMessageClose{border:0;background:rgba(255,255,255,.16);color:#fff;border-radius:8px;padding:5px 9px;cursor:pointer}' +
             '#erpCenterMessageBody{padding:18px;color:#0f172a;font-size:15px;line-height:1.5;max-height:58vh;overflow:auto;white-space:pre-wrap}' +
             '#erpCenterMessageFooter{display:flex;gap:10px;justify-content:flex-end;padding:14px 18px;background:#f8fafc;border-top:1px solid #e2e8f0}' +
-            '#erpCenterMessageAction,#erpCenterMessageOk{border:0;border-radius:10px;padding:9px 14px;font-weight:600;cursor:pointer}' +
+            '#erpCenterMessageAction,#erpCenterMessageCancel,#erpCenterMessageOk{border:0;border-radius:10px;padding:9px 14px;font-weight:600;cursor:pointer}' +
             '#erpCenterMessageAction{background:#0f766e;color:#fff;display:none}' +
+            '#erpCenterMessageCancel{background:#e2e8f0;color:#334155}' +
             '#erpCenterMessageOk{background:#1d4ed8;color:#fff}' +
             '@media (max-width:640px){#erpCenterMessageBody{font-size:14px;padding:14px}#erpCenterMessageHead,#erpCenterMessageFooter{padding:12px}}';
         document.head.appendChild(style);
@@ -49,6 +50,7 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                 '<div id="erpCenterMessageBody"></div>' +
                 '<div id="erpCenterMessageFooter">' +
                     '<button id="erpCenterMessageAction" type="button"></button>' +
+                    '<button id="erpCenterMessageCancel" type="button">Cancel</button>' +
                     '<button id="erpCenterMessageOk" type="button">OK</button>' +
                 '</div>' +
             '</div>';
@@ -59,10 +61,26 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
         var titleEl = document.getElementById('erpCenterMessageTitle');
         var bodyEl = document.getElementById('erpCenterMessageBody');
         var actionBtn = document.getElementById('erpCenterMessageAction');
+        var cancelBtn = document.getElementById('erpCenterMessageCancel');
+        var okBtn = document.getElementById('erpCenterMessageOk');
+        var activeItem = null;
 
-        function hideCurrent() {
+        function hideCurrent(decision) {
             overlay.classList.remove('is-open');
+            var item = activeItem;
+            activeItem = null;
             showing = false;
+            if (item) {
+                if (decision === 'ok') {
+                    if (typeof item.onOk === 'function') {
+                        try { item.onOk(); } catch (e) {}
+                    }
+                } else {
+                    if (typeof item.onCancel === 'function') {
+                        try { item.onCancel(); } catch (e) {}
+                    }
+                }
+            }
             if (queue.length > 0) {
                 setTimeout(showNext, 80);
             }
@@ -72,6 +90,7 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             if (showing || queue.length === 0) return;
             showing = true;
             var item = queue.shift();
+            activeItem = item;
             titleEl.textContent = item.title || 'ERP Message';
             bodyEl.textContent = item.message || '';
 
@@ -80,12 +99,16 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                 actionBtn.textContent = item.actionLabel || 'Open';
                 actionBtn.onclick = function () {
                     try { item.action(); } catch (e) {}
-                    hideCurrent();
+                    hideCurrent('ok');
                 };
             } else {
                 actionBtn.style.display = 'none';
                 actionBtn.onclick = null;
             }
+
+            cancelBtn.style.display = item.hideCancel ? 'none' : 'inline-block';
+            cancelBtn.textContent = item.cancelLabel || 'Cancel';
+            okBtn.textContent = item.okLabel || 'OK';
 
             overlay.classList.add('is-open');
         }
@@ -96,10 +119,14 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             showNext();
         }
 
-        document.getElementById('erpCenterMessageOk').addEventListener('click', hideCurrent);
-        document.getElementById('erpCenterMessageClose').addEventListener('click', hideCurrent);
+        okBtn.addEventListener('click', function () { hideCurrent('ok'); });
+        cancelBtn.addEventListener('click', function () { hideCurrent('cancel'); });
+        document.getElementById('erpCenterMessageClose').addEventListener('click', function () { hideCurrent('cancel'); });
         overlay.addEventListener('click', function (e) {
-            if (e.target === overlay) hideCurrent();
+            if (e.target === overlay) {
+                // Keep blocker strict: outside click must not dismiss the modal.
+                return;
+            }
         });
 
         window.erpCenterMessage = function (message, options) {
@@ -108,7 +135,12 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                 title: String(opts.title || 'ERP Message'),
                 message: String(message == null ? '' : message),
                 actionLabel: opts.actionLabel || '',
-                action: typeof opts.action === 'function' ? opts.action : null
+                action: typeof opts.action === 'function' ? opts.action : null,
+                okLabel: opts.okLabel || 'OK',
+                cancelLabel: opts.cancelLabel || 'Cancel',
+                hideCancel: !!opts.hideCancel,
+                onOk: typeof opts.onOk === 'function' ? opts.onOk : null,
+                onCancel: typeof opts.onCancel === 'function' ? opts.onCancel : null
             });
         };
 
@@ -116,31 +148,20 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             var msg = String(message == null ? '' : message).trim();
             if (!msg) return;
             var kind = String(type || 'info').toLowerCase();
-            var colors = {
-                success: '#16a34a',
-                ok: '#16a34a',
-                error: '#dc2626',
-                bad: '#dc2626',
-                warning: '#d97706',
-                warn: '#d97706',
-                info: '#2563eb'
+            var titleMap = {
+                success: 'Success Message',
+                ok: 'Success Message',
+                error: 'Error Message',
+                bad: 'Error Message',
+                warning: 'Warning Message',
+                warn: 'Warning Message',
+                info: 'Info Message'
             };
-            var toast = document.createElement('div');
-            toast.style.cssText = 'position:fixed;top:20px;right:20px;z-index:11000;padding:12px 18px;border-radius:10px;font-size:.85rem;font-weight:700;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.2);max-width:420px;opacity:0;transform:translateY(-4px);transition:opacity .18s,transform .18s';
-            toast.style.background = colors[kind] || colors.info;
-            toast.textContent = msg;
-            document.body.appendChild(toast);
-            requestAnimationFrame(function () {
-                toast.style.opacity = '1';
-                toast.style.transform = 'translateY(0)';
+            window.erpCenterMessage(msg, {
+                title: titleMap[kind] || 'Message',
+                okLabel: 'OK',
+                cancelLabel: 'Cancel'
             });
-            setTimeout(function () {
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateY(-4px)';
-                setTimeout(function () {
-                    if (toast.parentNode) toast.parentNode.removeChild(toast);
-                }, 220);
-            }, 2800);
         };
 
         window.showERPConfirm = function (message, onOk, options) {
@@ -176,7 +197,78 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             overlay.querySelector('#erpConfirmOk').addEventListener('click', function () { finish(true); });
             overlay.querySelector('#erpConfirmCancel').addEventListener('click', function () { finish(false); });
             overlay.querySelector('#erpConfirmClose').addEventListener('click', function () { finish(false); });
-            overlay.addEventListener('click', function (e) { if (e.target === overlay) finish(false); });
+            overlay.addEventListener('click', function (e) {
+                if (e.target === overlay) {
+                    // Do not allow outside click to close confirmation.
+                    return;
+                }
+            });
+        };
+
+        window.showERPPrompt = function (message, defaultValue, options) {
+            var opts = options || {};
+            return new Promise(function (resolve) {
+                var overlay = document.createElement('div');
+                overlay.style.cssText = 'position:fixed;inset:0;z-index:12000;background:rgba(15,23,42,.52);display:flex;align-items:center;justify-content:center;padding:16px';
+                overlay.innerHTML = '' +
+                    '<div style="width:min(560px,96vw);background:#fff;border:1px solid #e2e8f0;border-radius:16px;box-shadow:0 26px 60px rgba(2,6,23,.28);overflow:hidden">' +
+                        '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:linear-gradient(90deg,#0f172a,#1e293b);color:#fff">' +
+                            '<div style="font-size:15px;font-weight:700;letter-spacing:.2px">' + String(opts.title || 'Input Required') + '</div>' +
+                            '<button type="button" data-erp-prompt-close style="border:0;background:rgba(255,255,255,.16);color:#fff;border-radius:8px;padding:5px 9px;cursor:pointer">X</button>' +
+                        '</div>' +
+                        '<div style="padding:16px 18px;color:#0f172a;font-size:14px;line-height:1.45;white-space:pre-wrap">' + String(message == null ? '' : message).replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>' +
+                        '<div style="padding:0 18px 16px 18px">' +
+                            '<input type="text" data-erp-prompt-input style="width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px;outline:none" value="' + String(defaultValue == null ? '' : defaultValue).replace(/"/g, '&quot;') + '">' +
+                        '</div>' +
+                        '<div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 18px;background:#f8fafc;border-top:1px solid #e2e8f0">' +
+                            '<button type="button" data-erp-prompt-cancel style="border:1px solid #cbd5e1;background:#fff;color:#374151;border-radius:10px;padding:9px 14px;font-weight:700;cursor:pointer">' + String(opts.cancelLabel || 'Cancel') + '</button>' +
+                            '<button type="button" data-erp-prompt-ok style="border:0;background:#1d4ed8;color:#fff;border-radius:10px;padding:9px 14px;font-weight:700;cursor:pointer">' + String(opts.okLabel || 'OK') + '</button>' +
+                        '</div>' +
+                    '</div>';
+                document.body.appendChild(overlay);
+
+                var done = false;
+                var input = overlay.querySelector('[data-erp-prompt-input]');
+
+                function finish(value) {
+                    if (done) return;
+                    done = true;
+                    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+                    resolve(value);
+                }
+
+                overlay.querySelector('[data-erp-prompt-ok]').addEventListener('click', function () {
+                    finish(String((input && input.value) || ''));
+                });
+                overlay.querySelector('[data-erp-prompt-cancel]').addEventListener('click', function () {
+                    finish(null);
+                });
+                overlay.querySelector('[data-erp-prompt-close]').addEventListener('click', function () {
+                    finish(null);
+                });
+                if (input) {
+                    setTimeout(function () {
+                        input.focus();
+                        input.select();
+                    }, 0);
+                    input.addEventListener('keydown', function (ev) {
+                        if (ev.key === 'Enter') {
+                            ev.preventDefault();
+                            finish(String(input.value || ''));
+                        } else if (ev.key === 'Escape') {
+                            ev.preventDefault();
+                            finish(null);
+                        }
+                    });
+                }
+
+                overlay.addEventListener('click', function (e) {
+                    if (e.target === overlay) {
+                        // Keep strict modal behavior; outside click does not dismiss.
+                        return;
+                    }
+                });
+            });
         };
 
         window.alert = function (message) {
@@ -186,13 +278,19 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
 
     setupCenterMessageUI();
 
-    // Auto-dismiss flash alerts after 5 seconds
+    // Convert server flash alerts to blocking center messages.
     document.querySelectorAll('.alert').forEach(function (el) {
-        var btn = el.querySelector('.alert-close');
-        if (btn) {
-            btn.addEventListener('click', function () { el.remove(); });
+        var msgNode = el.querySelector('span');
+        var message = (msgNode ? msgNode.textContent : el.textContent) || '';
+        message = String(message).trim();
+        if (message) {
+            window.erpCenterMessage(message, {
+                title: 'System Message',
+                okLabel: 'OK',
+                cancelLabel: 'Cancel'
+            });
         }
-        setTimeout(function () { if (el.isConnected) el.remove(); }, 5000);
+        if (el.isConnected) el.remove();
     });
 
     // Mobile sidebar toggle
@@ -434,6 +532,7 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
         var csrfMeta = document.querySelector('meta[name="csrf-token"]');
         var csrfToken = csrfMeta ? (csrfMeta.getAttribute('content') || '') : '';
         var pollingTimer = null;
+        var pollingMs = 5000;
         var seenUnreadIds = {};
         var firstUnreadFetch = true;
 
@@ -594,7 +693,16 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
         });
 
         fetchNotifications(true);
-        pollingTimer = setInterval(function () { fetchNotifications(true); }, 20000);
+        pollingTimer = setInterval(function () { fetchNotifications(true); }, pollingMs);
+
+        // Browser may throttle timers on background tabs; refresh on focus/visibility for near real-time notifications.
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) fetchNotifications(true);
+        });
+        window.addEventListener('focus', function () {
+            fetchNotifications(true);
+        });
+
         window.addEventListener('beforeunload', function () {
             if (pollingTimer) clearInterval(pollingTimer);
         });
@@ -780,12 +888,53 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
         });
     });
 
-    // Confirm delete
+    // Unified custom confirmation flow (no browser-native confirm popups)
     document.querySelectorAll('[data-confirm]').forEach(function (el) {
-        el.addEventListener('click', function (e) {
-            if (!confirm(el.getAttribute('data-confirm') || 'Are you sure?')) {
+        if (el.tagName === 'FORM') {
+            if (el.dataset.confirmBound === '1') return;
+            el.dataset.confirmBound = '1';
+            el.addEventListener('submit', function (e) {
+                if (el.dataset.confirmBypass === '1') {
+                    el.dataset.confirmBypass = '0';
+                    return;
+                }
                 e.preventDefault();
+                var msg = el.getAttribute('data-confirm') || 'Are you sure?';
+                if (typeof window.showERPConfirm === 'function') {
+                    window.showERPConfirm(msg, function () {
+                        el.dataset.confirmBypass = '1';
+                        el.submit();
+                    }, { title: 'Please Confirm', okLabel: 'OK', cancelLabel: 'Cancel' });
+                    return;
+                }
+                el.dataset.confirmBypass = '1';
+                el.submit();
+            });
+            return;
+        }
+
+        if (el.dataset.confirmBound === '1') return;
+        el.dataset.confirmBound = '1';
+        el.addEventListener('click', function (e) {
+            e.preventDefault();
+            var msg = el.getAttribute('data-confirm') || 'Are you sure?';
+            var proceed = function () {
+                if (el.tagName === 'A') {
+                    var href = el.getAttribute('href');
+                    if (href) window.location.href = href;
+                    return;
+                }
+                var form = el.closest('form');
+                if (form) {
+                    form.dataset.confirmBypass = '1';
+                    form.submit();
+                }
+            };
+            if (typeof window.showERPConfirm === 'function') {
+                window.showERPConfirm(msg, proceed, { title: 'Please Confirm', okLabel: 'OK', cancelLabel: 'Cancel' });
+                return;
             }
+            proceed();
         });
     });
 

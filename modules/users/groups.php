@@ -613,7 +613,7 @@ include __DIR__ . '/../../includes/header.php';
           </div>
         </form>
 
-        <form method="POST" class="gp-panel" onsubmit="return confirm('Delete this group? This cannot be undone.');">
+        <form method="POST" class="gp-panel" data-confirm="Delete this group? This cannot be undone.">
           <input type="hidden" name="csrf_token" value="<?= generateCSRF() ?>">
           <input type="hidden" name="action" value="delete_group">
           <input type="hidden" name="gid" value="<?= (int)$selectedGroup['id'] ?>">

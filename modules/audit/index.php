@@ -728,50 +728,65 @@ function stopCamera(){
 
 // ── Delete Scan ───────────────────────────────────────────
 window.deleteScan = function(scanId){
-  if(!confirm('Remove this scanned entry?')) return;
-  postAPI('delete_scan', {scan_id: scanId, session_id: activeSessionId}, function(res){
-    if(!res.ok){ alert(res.error); return; }
-    loadSessionDetail();
-  });
+  var run = function(){
+    postAPI('delete_scan', {scan_id: scanId, session_id: activeSessionId}, function(res){
+      if(!res.ok){ alert(res.error); return; }
+      loadSessionDetail();
+    });
+  };
+  if (typeof window.showERPConfirm === 'function') { window.showERPConfirm('Remove this scanned entry?', run, { title:'Please Confirm', okLabel:'Delete', cancelLabel:'Cancel' }); return; }
+  run();
 };
 
 // ── Bulk Remove Missing ───────────────────────────────────
 window.bulkRemoveMissing = function(){
   var checked = document.querySelectorAll('.cb-miss:checked');
   if(checked.length === 0) return;
-  if(!confirm('Mark '+checked.length+' missing roll(s) as Consumed in Paper Stock?\nThis will update actual inventory.')) return;
-  var rollNos = [];
-  checked.forEach(function(c){ rollNos.push(c.value); });
-  postAPI('bulk_remove_missing', {session_id: activeSessionId, roll_nos: JSON.stringify(rollNos)}, function(res){
-    if(!res.ok){ alert(res.error); return; }
-    alert(res.updated + ' roll(s) marked as Consumed.');
-    loadReconciliation();
-  });
+  var run = function(){
+    var rollNos = [];
+    checked.forEach(function(c){ rollNos.push(c.value); });
+    postAPI('bulk_remove_missing', {session_id: activeSessionId, roll_nos: JSON.stringify(rollNos)}, function(res){
+      if(!res.ok){ alert(res.error); return; }
+      alert(res.updated + ' roll(s) marked as Consumed.');
+      loadReconciliation();
+    });
+  };
+  var msg = 'Mark '+checked.length+' missing roll(s) as Consumed in Paper Stock?\nThis will update actual inventory.';
+  if (typeof window.showERPConfirm === 'function') { window.showERPConfirm(msg, run, { title:'Please Confirm', okLabel:'Proceed', cancelLabel:'Cancel' }); return; }
+  run();
 };
 
 // ── Bulk Add Extra ────────────────────────────────────────
 window.bulkAddExtra = function(){
   var checked = document.querySelectorAll('.cb-extra:checked');
   if(checked.length === 0) return;
-  if(!confirm('Register '+checked.length+' extra roll(s) as new Stock in Paper Stock?')) return;
-  var rollNos = [];
-  checked.forEach(function(c){ rollNos.push(c.value); });
-  postAPI('bulk_add_extra', {session_id: activeSessionId, roll_nos: JSON.stringify(rollNos)}, function(res){
-    if(!res.ok){ alert(res.error); return; }
-    alert(res.created + ' roll(s) registered in stock.');
-    loadReconciliation();
-  });
+  var run = function(){
+    var rollNos = [];
+    checked.forEach(function(c){ rollNos.push(c.value); });
+    postAPI('bulk_add_extra', {session_id: activeSessionId, roll_nos: JSON.stringify(rollNos)}, function(res){
+      if(!res.ok){ alert(res.error); return; }
+      alert(res.created + ' roll(s) registered in stock.');
+      loadReconciliation();
+    });
+  };
+  var msg = 'Register '+checked.length+' extra roll(s) as new Stock in Paper Stock?';
+  if (typeof window.showERPConfirm === 'function') { window.showERPConfirm(msg, run, { title:'Please Confirm', okLabel:'Proceed', cancelLabel:'Cancel' }); return; }
+  run();
 };
 
 // ── Finalize Session ──────────────────────────────────────
 window.finalizeSession = function(){
   if(!activeSessionId) return;
-  if(!confirm('Finalize this audit session? This locks all data permanently and cannot be undone.')) return;
-  postAPI('finalize', {session_id: activeSessionId}, function(res){
-    if(!res.ok){ alert(res.error); return; }
-    loadSessions();
-    loadSessionDetail();
-  });
+  var run = function(){
+    postAPI('finalize', {session_id: activeSessionId}, function(res){
+      if(!res.ok){ alert(res.error); return; }
+      loadSessions();
+      loadSessionDetail();
+    });
+  };
+  var msg = 'Finalize this audit session? This locks all data permanently and cannot be undone.';
+  if (typeof window.showERPConfirm === 'function') { window.showERPConfirm(msg, run, { title:'Please Confirm', okLabel:'Finalize', cancelLabel:'Cancel' }); return; }
+  run();
 };
 
 // ── New Session Dialog ────────────────────────────────────
@@ -876,16 +891,20 @@ window.exportPrintReport = function(){
 // ── Delete Session ────────────────────────────────────────
 window.deleteSession = function(id, name){
   if(!IS_ADMIN) return;
-  if(!confirm('Delete session "'+name+'"?\nAll scanned data in this session will be permanently removed.')) return;
-  postAPI('delete_session', {session_id: id}, function(res){
-    if(!res.ok){ alert(res.error); return; }
-    if(activeSessionId == id){
-      activeSessionId = null;
-      activeSession = null;
-      $('ah-panel').classList.remove('visible');
-    }
-    loadSessions();
-  });
+  var run = function(){
+    postAPI('delete_session', {session_id: id}, function(res){
+      if(!res.ok){ alert(res.error); return; }
+      if(activeSessionId == id){
+        activeSessionId = null;
+        activeSession = null;
+        $('ah-panel').classList.remove('visible');
+      }
+      loadSessions();
+    });
+  };
+  var msg = 'Delete session "'+name+'"?\nAll scanned data in this session will be permanently removed.';
+  if (typeof window.showERPConfirm === 'function') { window.showERPConfirm(msg, run, { title:'Please Confirm', okLabel:'Delete', cancelLabel:'Cancel' }); return; }
+  run();
 };
 
 // ── Init ──────────────────────────────────────────────────

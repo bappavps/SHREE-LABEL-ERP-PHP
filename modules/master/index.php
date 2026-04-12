@@ -2005,14 +2005,14 @@ if ($activeTab === 'clients' && $editClientId > 0) {
             type="submit"
             name="action"
             value="reset_prefix_counters"
-            onclick="return confirm('Reset all prefix counters? Next generated IDs will start from 0001.');"
+            data-confirm="Reset all prefix counters? Next generated IDs will start from 0001."
           ><i class="bi bi-arrow-counterclockwise"></i> Reset All Counters to 0001</button>
           <button
             class="btn btn-danger"
             type="submit"
             name="action"
             value="reset_test_data"
-            onclick="return confirm('⚠️ TESTING RESET\n\nThis will permanently delete/reset:\n• All production job cards (Jumbo/Flexo/Die/Label Slitting/Barcode)\n• Live Floor runtime data (slitting batches, entries, change requests, notifications, audits)\n\nPlanning rows will be kept, but all planning statuses become Pending.\n\nAnd related planning/job counters reset to 0001.\n\nThis cannot be undone. Continue only on a test environment.');"
+            data-confirm="⚠️ TESTING RESET\n\nThis will permanently delete/reset:\n• All production job cards (Jumbo/Flexo/Die/Label Slitting/Barcode)\n• Live Floor runtime data (slitting batches, entries, change requests, notifications, audits)\n\nPlanning rows will be kept, but all planning statuses become Pending.\n\nAnd related planning/job counters reset to 0001.\n\nThis cannot be undone. Continue only on a test environment."
             style="background:#dc2626;border-color:#dc2626;color:#fff"
           ><i class="bi bi-trash3"></i> Reset Production + Live Floor (Keep Planning)</button>
         </div>

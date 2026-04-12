@@ -3076,7 +3076,10 @@ try {
             echo json_encode(['ok' => false, 'error' => 'POST required']);
             break;
         }
-        if (!hasRole('admin', 'manager')) {
+        $reviewRole = strtolower(trim((string)($_SESSION['role'] ?? '')));
+        $canReviewRequest = in_array($reviewRole, ['admin', 'manager', 'system_admin', 'super_admin', 'systemadmin', 'superadmin'], true)
+            || hasRole('admin', 'manager', 'system_admin', 'super_admin');
+        if (!$canReviewRequest) {
             echo json_encode(['ok' => false, 'error' => 'Only admin/manager can review requests']);
             break;
         }
@@ -4271,6 +4274,7 @@ try {
         $jobId = (int)($_POST['job_id'] ?? 0);
         $requestId = (int)($_POST['request_id'] ?? 0);
         $oldParentRoll = trim((string)($_POST['old_parent_roll_no'] ?? ''));
+        $postedNewParentRoll = trim((string)($_POST['new_parent_roll_no'] ?? ''));
         $oldParentPrevStatus = jobs_safe_parent_restore_status((string)($_POST['old_parent_prev_status'] ?? 'Main'));
         $rowsJson = (string)($_POST['rows_json'] ?? '[]');
         $reviewNote = trim((string)($_POST['review_note'] ?? ''));
@@ -4302,7 +4306,10 @@ try {
 
         $payload = json_decode((string)($changeReq['payload_json'] ?? '{}'), true);
         if (!is_array($payload)) $payload = [];
-        $newParentRoll = trim((string)($payload['parent_roll_no'] ?? ''));
+        $newParentRoll = $postedNewParentRoll;
+        if ($newParentRoll === '') {
+            $newParentRoll = trim((string)($payload['parent_roll_no'] ?? ''));
+        }
         if ($newParentRoll === '') {
             $rollChanges = is_array($payload['roll_changes'] ?? null) ? $payload['roll_changes'] : [];
             if (!empty($rollChanges) && is_array($rollChanges[0] ?? null)) {

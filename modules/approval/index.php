@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../includes/auth_check.php';
 
 $pageTitle = 'Job Approvals';
 $csrf = generateCSRF();
-$canReview = hasRole('admin', 'manager');
+$canReview = hasRole('admin', 'manager', 'system_admin', 'super_admin');
 include __DIR__ . '/../../includes/header.php';
 ?>
 
@@ -154,6 +154,7 @@ include __DIR__ . '/../../includes/header.php';
   let managerEditMode = false;
 
   function toast(msg, type) {
+    if (typeof window.showERPToast === 'function') { window.showERPToast(msg, type || 'info'); return; }
     if (typeof showToast === 'function') { showToast(msg, type || 'info'); return; }
     if (typeof erpToast === 'function') { erpToast(msg, type || 'info'); return; }
     alert(msg);
@@ -391,6 +392,7 @@ include __DIR__ . '/../../includes/header.php';
       job_id: String(activeReq.job_id),
       request_id: String(activeReq.id),
       old_parent_roll_no: oldParent,
+      new_parent_roll_no: newParent,
       old_parent_prev_status: 'Main',
       rows_json: JSON.stringify(rows),
       review_note: note

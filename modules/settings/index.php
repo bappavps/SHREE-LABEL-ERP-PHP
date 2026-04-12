@@ -1424,7 +1424,7 @@ include __DIR__ . '/../../includes/header.php';
               <button type="button" class="btn btn-primary btn-sm" onclick="openPaperTypeModal(<?= (int)$idx ?>)" style="width:100%;margin-top:8px;margin-bottom:8px"><i class="bi bi-tag"></i> Assign to Type</button>
             <?php endif; ?>
             </div>
-            <form method="POST" onsubmit="return confirm('Remove this image?')">
+            <form method="POST" data-confirm="Remove this image?">
               <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
               <input type="hidden" name="action" value="remove_library_image">
               <input type="hidden" name="image_index" value="<?= (int)$idx ?>">
@@ -1540,7 +1540,7 @@ include __DIR__ . '/../../includes/header.php';
       </div>
 
       <div class="tenant-shell">
-        <form method="POST" enctype="multipart/form-data" onsubmit="return confirm('Provision this tenant now?');">
+        <form method="POST" enctype="multipart/form-data" data-confirm="Provision this tenant now?">
           <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
           <input type="hidden" name="action" value="provision_tenant">
 
@@ -1742,7 +1742,7 @@ include __DIR__ . '/../../includes/header.php';
         <div class="backup-panel backup-danger">
           <h3><i class="bi bi-upload"></i> Restore Database</h3>
           <p>Restore from full backup (.zip) or SQL (.sql). ZIP restore also restores company/library images.</p>
-          <form method="POST" enctype="multipart/form-data" class="mt-12" onsubmit="return confirm('This will restore database data. Continue?');">
+          <form method="POST" enctype="multipart/form-data" class="mt-12" data-confirm="This will restore database data. Continue?">
             <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
             <input type="hidden" name="action" value="restore_backup">
             <input type="file" name="backup_file" accept=".zip,.sql" required>
@@ -1806,7 +1806,7 @@ include __DIR__ . '/../../includes/header.php';
         <div class="backup-panel">
           <h3><i class="bi bi-cloud-arrow-up"></i> Apply Update</h3>
           <p>Upload an update package (.zip) created with the build tool. A backup is created automatically before applying.</p>
-          <form method="POST" enctype="multipart/form-data" class="mt-12" onsubmit="return confirm('Apply this update? A backup will be created automatically before changes are applied.');">
+          <form method="POST" enctype="multipart/form-data" class="mt-12" data-confirm="Apply this update? A backup will be created automatically before changes are applied.">
             <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
             <input type="hidden" name="action" value="apply_update">
             <div class="upd-upload-zone" id="upd-drop-zone">
@@ -1900,7 +1900,7 @@ include __DIR__ . '/../../includes/header.php';
                     </td>
                     <td style="padding:6px">
                       <?php if (empty($entry['rolled_back']) && !empty($entry['backup_path'])): ?>
-                        <form method="POST" style="margin:0" onsubmit="return confirm('Rollback this update? This will restore files and database to the pre-update state.');">
+                        <form method="POST" style="margin:0" data-confirm="Rollback this update? This will restore files and database to the pre-update state.">
                           <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
                           <input type="hidden" name="action" value="rollback_update">
                           <input type="hidden" name="rollback_index" value="<?= (int)$idx ?>">
