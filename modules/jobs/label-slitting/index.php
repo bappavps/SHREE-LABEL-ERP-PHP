@@ -44,8 +44,8 @@ $jobsSql = "
            p.job_no AS planning_ref_no, p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority,
            p.extra_data AS planning_extra_data,
            prev.job_no AS prev_job_no, prev.department AS prev_department, prev.status AS prev_job_status, prev.extra_data AS prev_extra_data,
-           grandprev.job_no AS grandprev_job_no, grandprev.department AS grandprev_department,
-           greatgrandprev.job_no AS greatgrandprev_job_no, greatgrandprev.department AS greatgrandprev_department
+           grandprev.job_no AS grandprev_job_no, grandprev.department AS grandprev_department, grandprev.extra_data AS grandprev_extra_data,
+           greatgrandprev.job_no AS greatgrandprev_job_no, greatgrandprev.department AS greatgrandprev_department, greatgrandprev.extra_data AS greatgrandprev_extra_data
     FROM jobs j
     LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no
     LEFT JOIN planning p ON j.planning_id = p.id
@@ -97,9 +97,50 @@ foreach ($jobs as &$job) {
     }
 
     // ── Parse previous job extra_data (printing production qty) ──
-    $prevExtra = json_decode((string)($job['prev_extra_data'] ?? '{}'), true) ?: [];
+    $prevExtra         = json_decode((string)($job['prev_extra_data']           ?? '{}'), true) ?: [];
+    $grandPrevExtra    = json_decode((string)($job['grandprev_extra_data']      ?? '{}'), true) ?: [];
+    $greatGrandPrevExtra = json_decode((string)($job['greatgrandprev_extra_data'] ?? '{}'), true) ?: [];
     $job['prev_actual_qty'] = (string)($prevExtra['actual_qty'] ?? ($prevExtra['die_cutting_total_qty_pcs'] ?? ''));
-    unset($job['prev_extra_data']); // Don't send raw blob to JS
+
+    // ── Build upstream assigned roll list (Job Assign only, all 3 ancestor levels) ──
+    $lsRollMap = [];
+    foreach ([$prevExtra, $grandPrevExtra, $greatGrandPrevExtra] as $upstreamExtra) {
+      if (!is_array($upstreamExtra) || empty($upstreamExtra)) continue;
+      foreach (['assigned_child_rolls', 'child_rolls'] as $bucket) {
+        $bRows = $upstreamExtra[$bucket] ?? null;
+        if (!is_array($bRows)) continue;
+        foreach ($bRows as $row) {
+          if (is_array($row)) {
+            $rn = trim((string)($row['roll_no'] ?? $row['roll'] ?? $row['roll_number'] ?? ''));
+            $rowSt = strtolower(trim((string)($row['status'] ?? '')));
+            if ($rn === '') continue;
+            // Accept only Job Assign (or empty status treated as Job Assign); skip Stock/Slitting/etc
+            if ($rowSt !== '' && $rowSt !== 'job assign') continue;
+            $k = strtolower($rn);
+            if (!isset($lsRollMap[$k])) {
+              $lsRollMap[$k] = [
+                'roll_no'    => $rn,
+                'width_mm'   => $row['width_mm']   ?? ($row['width']  ?? ''),
+                'length_mtr' => $row['length_mtr'] ?? ($row['length'] ?? ''),
+                'paper_type' => $row['paper_type'] ?? ($row['material'] ?? ''),
+                'company'    => $row['company']    ?? ($row['company_name'] ?? ''),
+                'gsm'        => $row['gsm']  ?? '',
+                'status'     => 'Job Assign',
+              ];
+            }
+          } else {
+            $rn = trim((string)$row);
+            if ($rn === '') continue;
+            $k = strtolower($rn);
+            if (!isset($lsRollMap[$k])) {
+              $lsRollMap[$k] = ['roll_no' => $rn, 'width_mm' => '', 'length_mtr' => '', 'paper_type' => '', 'company' => '', 'gsm' => '', 'status' => 'Job Assign'];
+            }
+          }
+        }
+      }
+    }
+    $job['upstream_rolls'] = array_values($lsRollMap);
+    unset($job['prev_extra_data'], $job['grandprev_extra_data'], $job['greatgrandprev_extra_data']); // Don't send raw blobs to JS
 
     // ── Normalize notes_display ──
     $rawNotes = trim((string)($job['notes'] ?? ''));
@@ -163,6 +204,49 @@ foreach ($jobs as &$job) {
       }
       $job['notes_display'] = $normalized;
     }
+}
+unset($job);
+
+// ── Batch enrich upstream_rolls with paper_stock data ──
+$lsAllRollNos = [];
+foreach ($jobs as $j) {
+  foreach ((array)($j['upstream_rolls'] ?? []) as $r) {
+    $rn = trim((string)($r['roll_no'] ?? ''));
+    if ($rn !== '') $lsAllRollNos[$rn] = true;
+  }
+}
+$lsStockMap = [];
+if (!empty($lsAllRollNos)) {
+  $lsRollList = array_keys($lsAllRollNos);
+  $lsPh = implode(',', array_fill(0, count($lsRollList), '?'));
+  $lsTypes = str_repeat('s', count($lsRollList));
+  $lsStmt = $db->prepare("SELECT roll_no, paper_type, company, width_mm, length_mtr, gsm, status FROM paper_stock WHERE roll_no IN ($lsPh)");
+  if ($lsStmt) {
+    $lsStmt->bind_param($lsTypes, ...$lsRollList);
+    $lsStmt->execute();
+    $lsPsRows = $lsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($lsPsRows as $lsPs) {
+      $lsStockMap[trim((string)($lsPs['roll_no'] ?? ''))] = $lsPs;
+    }
+  }
+}
+foreach ($jobs as &$job) {
+  $enriched = [];
+  foreach ((array)($job['upstream_rolls'] ?? []) as $row) {
+    $rn = trim((string)($row['roll_no'] ?? ''));
+    if ($rn === '') continue;
+    $ps = $lsStockMap[$rn] ?? [];
+    $enriched[] = [
+      'roll_no'    => $rn,
+      'width_mm'   => (float)($ps['width_mm']   ?? ($row['width_mm']   ?? 0)) ?: '',
+      'length_mtr' => (float)($ps['length_mtr'] ?? ($row['length_mtr'] ?? 0)) ?: '',
+      'paper_type' => (string)($ps['paper_type'] ?? ($row['paper_type'] ?? '')),
+      'company'    => (string)($ps['company']    ?? ($row['company']    ?? '')),
+      'gsm'        => (float)($ps['gsm']         ?? ($row['gsm']        ?? 0)) ?: '',
+      'status'     => (string)($ps['status']      ?? ($row['status']     ?? 'Job Assign')),
+    ];
+  }
+  $job['upstream_rolls'] = $enriched;
 }
 unset($job);
 
@@ -1648,6 +1732,35 @@ async function openJobDetail(id, mode) {
     <div class="dc-op-field"><label>GSM</label><div class="fv">${esc((job.gsm ?? '—') + '')}</div></div>
   </div></div>`;
 
+  // ── Upstream Assigned Rolls ──
+  {
+    const upRolls = Array.isArray(job.upstream_rolls) ? job.upstream_rolls.filter(r => String(r.status || '').toLowerCase() === 'job assign') : [];
+    if (upRolls.length > 0) {
+      html += `<div class="dc-op-section"><div class="dc-op-h" style="background:#f0fdf4;color:#15803d"><i class="bi bi-list-check"></i> Assigned Rolls (${upRolls.length})</div><div class="dc-op-b" style="overflow:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:.72rem">
+          <thead><tr style="background:#f8fafc">
+            <th style="padding:6px 10px;text-align:left;font-weight:800;font-size:.6rem;text-transform:uppercase;color:#64748b;border-bottom:2px solid #e2e8f0">Roll No</th>
+            <th style="padding:6px 10px;text-align:left;font-weight:800;font-size:.6rem;text-transform:uppercase;color:#64748b;border-bottom:2px solid #e2e8f0">Width (mm)</th>
+            <th style="padding:6px 10px;text-align:left;font-weight:800;font-size:.6rem;text-transform:uppercase;color:#64748b;border-bottom:2px solid #e2e8f0">Length (m)</th>
+            <th style="padding:6px 10px;text-align:left;font-weight:800;font-size:.6rem;text-transform:uppercase;color:#64748b;border-bottom:2px solid #e2e8f0">Paper</th>
+            <th style="padding:6px 10px;text-align:left;font-weight:800;font-size:.6rem;text-transform:uppercase;color:#64748b;border-bottom:2px solid #e2e8f0">Company</th>
+            <th style="padding:6px 10px;text-align:left;font-weight:800;font-size:.6rem;text-transform:uppercase;color:#64748b;border-bottom:2px solid #e2e8f0">GSM</th>
+            <th style="padding:6px 10px;text-align:left;font-weight:800;font-size:.6rem;text-transform:uppercase;color:#64748b;border-bottom:2px solid #e2e8f0">Status</th>
+          </tr></thead>
+          <tbody>${upRolls.map((r,i) => `<tr style="background:${i%2===0?'#fff':'#f8fafc'}">
+            <td style="padding:7px 10px;font-weight:800;color:#0f172a">${esc(r.roll_no||'—')}</td>
+            <td style="padding:7px 10px">${r.width_mm ? Number(r.width_mm).toFixed(2) : '—'}</td>
+            <td style="padding:7px 10px">${r.length_mtr ? Number(r.length_mtr).toFixed(2) : '—'}</td>
+            <td style="padding:7px 10px">${esc(r.paper_type||'—')}</td>
+            <td style="padding:7px 10px">${esc(r.company||'—')}</td>
+            <td style="padding:7px 10px">${r.gsm ? Number(r.gsm).toFixed(0) : '—'}</td>
+            <td style="padding:7px 10px"><span style="font-size:.65rem;font-weight:800;padding:2px 7px;border-radius:20px;background:#dcfce7;color:#15803d">${esc(r.status||'—')}</span></td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div></div>`;
+    }
+  }
+
   // ── Job Preview Image ──
   const previewUrl = job.planning_image_url || '';
   if (previewUrl) {
@@ -1785,7 +1898,7 @@ function closeDetail() {
   document.getElementById('dcDetailModal').classList.remove('active');
 }
 document.getElementById('dcDetailModal').addEventListener('click', function(e) {
-  if (e.target === this) closeDetail();
+  // Never close on outside click — prevents accidental dismissal on both operator and manager views
 });
 
 // ═══ DELETE JOB ═══

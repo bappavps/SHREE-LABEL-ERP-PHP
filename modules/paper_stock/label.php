@@ -15,6 +15,36 @@ $logoUrl = $logoPath ? (BASE_URL . '/' . $logoPath) : '';
 $companyLogoUrl = $logoUrl !== '' ? $logoUrl : (BASE_URL . '/assets/img/logo.svg');
 $themeColor = (string)($appSettings['sidebar_button_color'] ?? '#22c55e');
 
+if (!function_exists('resolveLabelBackUrl')) {
+    function resolveLabelBackUrl(string $raw): string {
+        $raw = trim($raw);
+        if ($raw === '') return '';
+
+        $base = rtrim((string)BASE_URL, '/');
+        $basePrefix = $base . '/';
+
+        if (preg_match('#^https?://#i', $raw)) {
+            $parts = parse_url($raw);
+            $host = strtolower((string)($parts['host'] ?? ''));
+            $serverHost = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+            if ($host === '' || $serverHost === '' || $host !== $serverHost) return '';
+
+            $path = (string)($parts['path'] ?? '');
+            if ($path === '' || strpos($path, $basePrefix) !== 0) return '';
+            $qs = isset($parts['query']) && $parts['query'] !== '' ? ('?' . $parts['query']) : '';
+            return $path . $qs;
+        }
+
+        if (strpos($raw, $basePrefix) === 0) {
+            return $raw;
+        }
+
+        return '';
+    }
+}
+
+$cancelBackUrl = resolveLabelBackUrl((string)($_GET['back_url'] ?? ''));
+
 // ── Auto-create print_templates table if missing ──────────────
 @$db->query("CREATE TABLE IF NOT EXISTS print_templates (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -400,7 +430,7 @@ if (typeof qrcode === 'undefined') {
             <?php endif; ?>
         </select>
         <button class="btn-print" onclick="window.print()"><i class="bi bi-printer"></i> Print Labels</button>
-        <button class="btn-close" onclick="window.close()"><i class="bi bi-x-lg"></i> Close</button>
+        <button class="btn-close" onclick="handleLabelCancel()"><i class="bi bi-x-lg"></i> Cancel</button>
     </div>
 </div>
 
@@ -450,6 +480,8 @@ if (typeof qrcode === 'undefined') {
 
 var rolls = <?= json_encode($jsRolls, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 var templates = <?= json_encode($jsTemplates, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+var cancelBackUrl = <?= json_encode($cancelBackUrl, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+var baseUrl = <?= json_encode(BASE_URL, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 var activeTemplateId = 0;
 
 // Find default template
@@ -907,6 +939,70 @@ window.selectTemplateById = function(id) {
 window.toggleAllRolls = function(checked) {
     document.querySelectorAll('.roll-cb').forEach(function(cb) { cb.checked = checked; });
     updatePreview();
+};
+
+function showCancelNotice(message) {
+    var existing = document.getElementById('label-cancel-notice');
+    if (existing) existing.remove();
+    var box = document.createElement('div');
+    box.id = 'label-cancel-notice';
+    box.style.position = 'fixed';
+    box.style.top = '14px';
+    box.style.right = '14px';
+    box.style.zIndex = '99999';
+    box.style.background = '#fef3c7';
+    box.style.color = '#92400e';
+    box.style.border = '1px solid #f59e0b';
+    box.style.borderRadius = '10px';
+    box.style.padding = '10px 12px';
+    box.style.boxShadow = '0 6px 18px rgba(0,0,0,.12)';
+    box.style.fontSize = '12px';
+    box.style.fontWeight = '700';
+    box.textContent = message;
+    document.body.appendChild(box);
+}
+
+function appendCancelledFlag(urlText) {
+    try {
+        var u = new URL(urlText, window.location.origin);
+        u.searchParams.set('label_cancelled', '1');
+        return u.toString();
+    } catch (e) {
+        return String(baseUrl || '') + '/modules/jobs/printing/index.php?label_cancelled=1';
+    }
+}
+
+function buildCancelTarget() {
+    if (cancelBackUrl) return appendCancelledFlag(cancelBackUrl);
+
+    var ref = String(document.referrer || '').trim();
+    if (ref) {
+        try {
+            var ru = new URL(ref);
+            if (ru.origin === window.location.origin && ru.pathname.indexOf('/modules/jobs/') !== -1) {
+                ru.searchParams.set('label_cancelled', '1');
+                return ru.toString();
+            }
+        } catch (e) {}
+    }
+
+    return String(baseUrl || '') + '/modules/jobs/printing/index.php?label_cancelled=1';
+}
+
+window.handleLabelCancel = function() {
+    var target = buildCancelTarget();
+    showCancelNotice('Label printing cancelled. Returning to job card...');
+
+    setTimeout(function() {
+        try {
+            if (window.opener && !window.opener.closed) {
+                window.opener.location.href = target;
+                window.close();
+                return;
+            }
+        } catch (e) {}
+        window.location.href = target;
+    }, 420);
 };
 
 // Initial render

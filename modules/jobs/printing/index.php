@@ -1943,7 +1943,12 @@ async function openFlexoProductionUpdate(requestId, jobId) {
     }
     const labelUrl = String(data.label_print_url || '').trim();
     if (labelUrl) {
-      window.location = labelUrl;
+      const backUrl = new URL(window.location.href);
+      if (jobId) backUrl.searchParams.set('auto_job', String(jobId));
+
+      const nextUrl = new URL(labelUrl, window.location.origin);
+      nextUrl.searchParams.set('back_url', backUrl.toString());
+      window.location = nextUrl.toString();
       return;
     }
     location.reload();
@@ -3733,7 +3738,7 @@ function closeDetail() {
   document.getElementById('fpDetailModal').classList.remove('active');
 }
 document.getElementById('fpDetailModal').addEventListener('click', function(e) {
-  if (e.target === this) closeDetail();
+  if (e.target === this && !IS_OPERATOR_VIEW) closeDetail();
 });
 
 // ─── Delete job (admin) ─────────────────────────────────────
@@ -4024,6 +4029,9 @@ function generateQR(text) {
 (function(){
   const params = new URLSearchParams(window.location.search);
   const autoId = params.get('auto_job');
+  if (params.get('label_cancelled') === '1') {
+    setTimeout(function(){ try { erpToast('Label print cancelled. Returned to job card.', 'warning'); } catch(e){} }, 220);
+  }
   if (params.get('flexo_slitting_done') === '1') {
     const rollNo = String(params.get('issued_roll_no') || '').trim();
     const toastMsg = rollNo ? ('Additional roll added to Flexo job: ' + rollNo) : 'Additional roll added to Flexo job successfully';

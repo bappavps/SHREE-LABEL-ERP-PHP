@@ -104,7 +104,7 @@ $jobsSql = "
            p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority,
            p.extra_data AS planning_extra_data,
            prev.job_no AS prev_job_no, prev.status AS prev_job_status, prev.extra_data AS prev_extra_data,
-           grandprev.job_no AS jumbo_job_no
+           grandprev.job_no AS jumbo_job_no, grandprev.extra_data AS grandprev_extra_data
     FROM jobs j
     LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no
     LEFT JOIN planning p ON j.planning_id = p.id
@@ -182,6 +182,8 @@ foreach ($jobs as &$job) {
 
     // ── Parse previous job extra_data (printing production qty) ──
     $prevExtra = json_decode((string)($job['prev_extra_data'] ?? '{}'), true) ?: [];
+    $job['prev_extra_data_parsed'] = $prevExtra;
+    $job['grandprev_extra_data_parsed'] = json_decode((string)($job['grandprev_extra_data'] ?? '{}'), true) ?: [];
     $job['prev_actual_qty'] = (string)(
       $prevExtra['actual_qty']
       ?? $prevExtra['production_total_qty']
@@ -192,7 +194,63 @@ foreach ($jobs as &$job) {
       ?? $prevExtra['dc_total_qty']
       ?? ''
     );
+
+    $prevRollMap = [];
+    $prevRollGroups = [
+      'assigned_child_rolls' => 'Job Assign',
+      'child_rolls' => 'Job Assign',
+      'stock_rolls' => 'Stock',
+      'remaining_rolls' => 'Remaining',
+    ];
+    foreach ($prevRollGroups as $groupKey => $defaultStatus) {
+      $rows = $prevExtra[$groupKey] ?? null;
+      if (!is_array($rows)) continue;
+      foreach ($rows as $row) {
+        $rollNo = '';
+        $entry = [];
+        if (is_array($row)) {
+          $rollNo = trim((string)($row['roll_no'] ?? $row['roll'] ?? $row['roll_number'] ?? ''));
+          $entry = [
+            'roll_no' => $rollNo,
+            'width_mm' => $row['width_mm'] ?? ($row['width'] ?? ''),
+            'length_mtr' => $row['length_mtr'] ?? ($row['length'] ?? ''),
+            'paper_type' => $row['paper_type'] ?? ($row['material'] ?? ''),
+            'company' => $row['company'] ?? ($row['company_name'] ?? ''),
+            'gsm' => $row['gsm'] ?? '',
+            'status' => $row['status'] ?? $defaultStatus,
+          ];
+        } else {
+          $rollNo = trim((string)$row);
+          $entry = [
+            'roll_no' => $rollNo,
+            'width_mm' => '',
+            'length_mtr' => '',
+            'paper_type' => '',
+            'company' => '',
+            'gsm' => '',
+            'status' => $defaultStatus,
+          ];
+        }
+
+        if ($rollNo === '') continue;
+        $k = strtolower($rollNo);
+        if (!isset($prevRollMap[$k])) {
+          $prevRollMap[$k] = $entry;
+          continue;
+        }
+
+        foreach (['width_mm', 'length_mtr', 'paper_type', 'company', 'gsm', 'status'] as $field) {
+          $oldVal = trim((string)($prevRollMap[$k][$field] ?? ''));
+          $newVal = trim((string)($entry[$field] ?? ''));
+          if ($oldVal === '' && $newVal !== '') {
+            $prevRollMap[$k][$field] = $entry[$field];
+          }
+        }
+      }
+    }
+    $job['prev_assigned_child_rolls'] = array_values($prevRollMap);
     unset($job['prev_extra_data']); // Don't send raw blob to JS
+    unset($job['grandprev_extra_data']); // Don't send raw blob to JS
 
     // ── Normalize notes_display ──
     $rawNotes = trim((string)($job['notes'] ?? ''));
@@ -243,6 +301,133 @@ foreach ($jobs as &$job) {
   $job['job_preview_image_url'] = trim((string)($job['planning_image_url'] ?? '')) !== ''
     ? (string)$job['planning_image_url']
     : $plateImageUrl;
+}
+unset($job);
+
+// ── Enrich flatbed jobs with full upstream flexo roll list ─────────────
+$prevJobIds = array_filter(array_unique(array_map(static fn($j) => (int)($j['previous_job_id'] ?? 0), $jobs)));
+$prevJobExtraMap = []; // prev_job_id => parsed extra_data
+if (!empty($prevJobIds)) {
+  $ph = implode(',', array_fill(0, count($prevJobIds), '?'));
+  $types = str_repeat('i', count($prevJobIds));
+  $pStmt = $db->prepare("SELECT id, extra_data FROM jobs WHERE id IN ($ph)");
+  if ($pStmt) {
+    $pStmt->bind_param($types, ...$prevJobIds);
+    $pStmt->execute();
+    $pRows = $pStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($pRows as $pr) {
+      $prevJobExtraMap[(int)($pr['id'] ?? 0)] = json_decode((string)($pr['extra_data'] ?? '{}'), true) ?: [];
+    }
+  }
+}
+
+$flatbedRollNos = [];
+foreach ($jobs as &$job) {
+  $prevId = (int)($job['previous_job_id'] ?? 0);
+  $prevExtra = $prevJobExtraMap[$prevId] ?? [];
+  if (!is_array($prevExtra) || empty($prevExtra)) {
+    $prevExtra = is_array($job['prev_extra_data_parsed'] ?? null) ? $job['prev_extra_data_parsed'] : [];
+  }
+  $grandPrevExtra = is_array($job['grandprev_extra_data_parsed'] ?? null) ? $job['grandprev_extra_data_parsed'] : [];
+  $sourceRows = [];
+
+  foreach ([$prevExtra, $grandPrevExtra] as $upstreamExtra) {
+    if (!is_array($upstreamExtra) || empty($upstreamExtra)) continue;
+    foreach (['assigned_child_rolls', 'child_rolls', 'stock_rolls', 'slitting_rolls', 'remaining_rolls'] as $bucket) {
+      $rows = $upstreamExtra[$bucket] ?? null;
+      if (is_array($rows)) {
+        $sourceRows = array_merge($sourceRows, $rows);
+      }
+    }
+    foreach (['generated_child_roll_nos', 'verified_rolls'] as $bucket) {
+      $rows = $upstreamExtra[$bucket] ?? null;
+      if (is_array($rows)) {
+        foreach ($rows as $rnRaw) {
+          $rn = trim((string)$rnRaw);
+          if ($rn !== '') {
+            $sourceRows[] = ['roll_no' => $rn];
+          }
+        }
+      }
+    }
+    $remainingOne = trim((string)($upstreamExtra['flexo_request_last_apply_summary']['remaining_stock_roll_no'] ?? ''));
+    if ($remainingOne !== '') {
+      $sourceRows[] = ['roll_no' => $remainingOne, 'status' => 'Stock'];
+    }
+  }
+
+  $rollMap = [];
+  foreach ($sourceRows as $row) {
+    $rollNo = '';
+    if (is_array($row)) {
+      $rollNo = trim((string)($row['roll_no'] ?? $row['roll'] ?? $row['roll_number'] ?? ''));
+    } else {
+      $rollNo = trim((string)$row);
+      $row = ['roll_no' => $rollNo];
+    }
+    if ($rollNo === '') continue;
+    $k = strtolower($rollNo);
+    if (!isset($rollMap[$k])) {
+      $rollMap[$k] = [
+        'roll_no' => $rollNo,
+        'parent_roll_no' => trim((string)($row['parent_roll_no'] ?? '')),
+        'width_mm' => $row['width_mm'] ?? ($row['width'] ?? ''),
+        'length_mtr' => $row['length_mtr'] ?? ($row['length'] ?? ''),
+        'paper_type' => $row['paper_type'] ?? ($row['material'] ?? ''),
+        'company' => $row['company'] ?? ($row['company_name'] ?? ''),
+        'gsm' => $row['gsm'] ?? '',
+        'status' => $row['status'] ?? '',
+      ];
+    } else {
+      foreach (['parent_roll_no', 'width_mm', 'length_mtr', 'paper_type', 'company', 'gsm', 'status'] as $f) {
+        $old = trim((string)($rollMap[$k][$f] ?? ''));
+        $new = trim((string)($row[$f] ?? ''));
+        if ($old === '' && $new !== '') $rollMap[$k][$f] = $row[$f];
+      }
+    }
+    $flatbedRollNos[$rollNo] = true;
+  }
+
+  $job['flatbed_source_rolls'] = array_values($rollMap);
+}
+unset($job);
+
+$flatbedRollStockMap = [];
+if (!empty($flatbedRollNos)) {
+  $rollList = array_keys($flatbedRollNos);
+  $ph = implode(',', array_fill(0, count($rollList), '?'));
+  $types = str_repeat('s', count($rollList));
+  $psStmt = $db->prepare("SELECT roll_no, paper_type, company, width_mm, length_mtr, gsm, status FROM paper_stock WHERE roll_no IN ($ph)");
+  if ($psStmt) {
+    $psStmt->bind_param($types, ...$rollList);
+    $psStmt->execute();
+    $psRows = $psStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($psRows as $ps) {
+      $rn = (string)($ps['roll_no'] ?? '');
+      if ($rn !== '') $flatbedRollStockMap[$rn] = $ps;
+    }
+  }
+}
+
+foreach ($jobs as &$job) {
+  $enriched = [];
+  $rows = is_array($job['flatbed_source_rolls'] ?? null) ? $job['flatbed_source_rolls'] : [];
+  foreach ($rows as $row) {
+    $rn = trim((string)($row['roll_no'] ?? ''));
+    if ($rn === '') continue;
+    $ps = $flatbedRollStockMap[$rn] ?? [];
+    $enriched[] = [
+      'roll_no' => $rn,
+      'parent_roll_no' => trim((string)($row['parent_roll_no'] ?? '')),
+      'width_mm' => (float)($ps['width_mm'] ?? ($row['width_mm'] ?? 0)),
+      'length_mtr' => (float)($ps['length_mtr'] ?? ($row['length_mtr'] ?? 0)),
+      'paper_type' => (string)($ps['paper_type'] ?? ($row['paper_type'] ?? '')),
+      'company' => (string)($ps['company'] ?? ($row['company'] ?? '')),
+      'gsm' => (float)($ps['gsm'] ?? ($row['gsm'] ?? 0)),
+      'status' => (string)($ps['status'] ?? ($row['status'] ?? '')),
+    ];
+  }
+  $job['flatbed_source_rolls'] = $enriched;
 }
 unset($job);
 
@@ -866,6 +1051,69 @@ function resolveJobDisplayName(job) {
   if (job && String(job.planning_job_name || '').trim() !== '') return String(job.planning_job_name).trim();
   const jobNo = String(job?.job_no || '').trim();
   return jobNo || '—';
+}
+
+function dcNormalizeRollEntry(entry, fallbackStatus) {
+  const fb = String(fallbackStatus || '').trim();
+  if (!entry) return null;
+  if (typeof entry === 'string' || typeof entry === 'number') {
+    const rollNo = String(entry || '').trim();
+    if (!rollNo) return null;
+    return { roll_no: rollNo, width_mm: '', length_mtr: '', paper_type: '', company: '', gsm: '', status: fb || '—' };
+  }
+  if (typeof entry !== 'object') return null;
+  const rollNo = String(entry.roll_no || entry.roll || entry.roll_number || '').trim();
+  if (!rollNo) return null;
+  return {
+    roll_no: rollNo,
+    width_mm: entry.width_mm ?? entry.width ?? '',
+    length_mtr: entry.length_mtr ?? entry.length ?? '',
+    paper_type: entry.paper_type ?? entry.material ?? '',
+    company: entry.company ?? entry.company_name ?? '',
+    gsm: entry.gsm ?? '',
+    status: entry.status || fb || '—'
+  };
+}
+
+function dcMergeRollRows(baseRows, incomingRows, fallbackStatus) {
+  const out = Array.isArray(baseRows) ? baseRows.slice() : [];
+  const index = {};
+  out.forEach(function(row, idx) {
+    const key = String(row && row.roll_no || '').trim().toLowerCase();
+    if (key) index[key] = idx;
+  });
+
+  (Array.isArray(incomingRows) ? incomingRows : []).forEach(function(raw) {
+    const normalized = dcNormalizeRollEntry(raw, fallbackStatus);
+    if (!normalized) return;
+    const key = normalized.roll_no.toLowerCase();
+    if (index[key] == null) {
+      index[key] = out.length;
+      out.push(normalized);
+      return;
+    }
+    const target = out[index[key]];
+    ['width_mm', 'length_mtr', 'paper_type', 'company', 'gsm', 'status'].forEach(function(field) {
+      const oldVal = String(target[field] ?? '').trim();
+      const newVal = String(normalized[field] ?? '').trim();
+      if (!oldVal && newVal) target[field] = normalized[field];
+    });
+  });
+
+  return out;
+}
+
+function dcCollectAssignedChildRolls(job) {
+  const extra = (job && job.extra_data_parsed) ? job.extra_data_parsed : {};
+  let rows = [];
+  rows = dcMergeRollRows(rows, extra.assigned_child_rolls, 'Job Assign');
+  rows = dcMergeRollRows(rows, extra.child_rolls, 'Job Assign');
+  rows = dcMergeRollRows(rows, extra.stock_rolls, 'Stock');
+  rows = dcMergeRollRows(rows, job && job.flatbed_source_rolls, 'Job Assign');
+  rows = dcMergeRollRows(rows, job && job.prev_assigned_child_rolls, 'Job Assign');
+  return rows.filter(function(row) {
+    return String((row && row.status) || '').trim().toLowerCase() === 'job assign';
+  });
 }
 
 function isDCSpeechSupported() {
@@ -2037,9 +2285,7 @@ async function openJobDetail(id, mode) {
   </div></div>`;
 
   // ── Die-Cutting Details ──
-  const assignedChildRolls = Array.isArray(extra.assigned_child_rolls)
-    ? extra.assigned_child_rolls.filter(function(r){ return r && String(r.roll_no || '').trim() !== ''; })
-    : [];
+  const assignedChildRolls = dcCollectAssignedChildRolls(job);
 
   html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-scissors"></i> ${esc(DC_DETAILS_SECTION_LABEL || 'Die-Cutting Details')}</div><div class="dc-op-b dc-op-grid-2">
     <div class="dc-op-field"><label>Material</label><div class="fv">${esc(job.planning_material || job.paper_type || '—')}</div></div>
@@ -2225,7 +2471,7 @@ function closeDetail() {
   document.getElementById('dcDetailModal').classList.remove('active');
 }
 document.getElementById('dcDetailModal').addEventListener('click', function(e) {
-  if (e.target === this) closeDetail();
+  if (e.target === this) return;
 });
 
 // ═══ DELETE JOB ═══
@@ -2333,9 +2579,7 @@ function printBwTransform(html) {
 // ═══ PRINT CARD HTML ═══
 function renderDCPrintCardHtml(job, qrDataUrl) {
   const extra = job.extra_data_parsed || {};
-  const assignedChildRolls = Array.isArray(extra.assigned_child_rolls)
-    ? extra.assigned_child_rolls.filter(function(r){ return r && String(r.roll_no || '').trim() !== ''; })
-    : [];
+  const assignedChildRolls = dcCollectAssignedChildRolls(job);
   const created = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
   const started = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
   const completed = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
