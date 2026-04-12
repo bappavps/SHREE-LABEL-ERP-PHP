@@ -2427,6 +2427,36 @@ const SLT = (() => {
     return rows;
   }
 
+  function validateManagerUpdateInputs() {
+    const errors = [];
+    loadedRolls.forEach(roll => {
+      const cfg = rollConfigs[roll.roll_no];
+      if (!cfg || !Array.isArray(cfg.runs)) return;
+      cfg.runs.forEach((run, idx) => {
+        const widthRaw = String((run && run.width) || '').trim();
+        const widthNum = parseFloat(widthRaw);
+        if (widthRaw === '' || !Number.isFinite(widthNum) || widthNum <= 0) {
+          errors.push('Roll ' + String(roll.roll_no || '') + ' row ' + (idx + 1) + ': Width is required.');
+        }
+      });
+    });
+    return errors;
+  }
+
+  function showAcceptFlowMessage(message, type, title) {
+    const kind = String(type || 'info').toLowerCase();
+    if (typeof window.erpCenterMessage === 'function') {
+      window.erpCenterMessage(String(message || ''), {
+        title: String(title || (kind === 'error' ? 'Update Error' : 'Update Message')),
+        okLabel: 'OK',
+        cancelLabel: 'Cancel',
+        hideCancel: true
+      });
+      return;
+    }
+    showToast(String(message || ''), kind === 'error' ? 'error' : (kind === 'success' ? 'success' : 'warning'));
+  }
+
   async function applyAcceptRollUpdate(btn) {
     if (ACCEPT_JOB_ID <= 0 || ACCEPT_REQUEST_ID <= 0) {
       showToast('Request context missing (job_id/request_id). Please reopen from Accept button.', 'error');
@@ -2435,9 +2465,18 @@ const SLT = (() => {
       return;
     }
 
+    const inputErrors = validateManagerUpdateInputs();
+    if (inputErrors.length) {
+      const msg = 'Please fill required fields before update:\n\n- ' + inputErrors.slice(0, 8).join('\n- ');
+      showAcceptFlowMessage(msg, 'error', 'Missing Required Input');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-play-circle"></i> ' + getExecuteButtonLabel();
+      return;
+    }
+
     const rows = buildManagerRowsFromTerminal();
     if (!rows.length) {
-      showToast('No valid slit rows found for update.', 'warning');
+      showAcceptFlowMessage('No valid slit rows found for update. Please enter width and try again.', 'error', 'Update Blocked');
       btn.disabled = false;
       btn.innerHTML = '<i class="bi bi-play-circle"></i> ' + getExecuteButtonLabel();
       return;
@@ -2463,24 +2502,36 @@ const SLT = (() => {
       const data = await res.json();
       if (!data.ok) {
         const msg = data.error || 'Manager update failed';
-        showToast(msg, 'error');
-        alert('Update Roll failed: ' + msg);
+        showAcceptFlowMessage('Update Roll failed:\n' + msg, 'error', 'Update Failed');
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-play-circle"></i> ' + getExecuteButtonLabel();
         return;
       }
 
-      alert('Update Roll success: ' + String(data.new_parent_roll || 'updated'));
-      showToast('Roll updated successfully. Redirecting…', 'success');
-      setTimeout(() => {
-        const doneUrl = new URL('<?= BASE_URL ?>/modules/jobs/jumbo/index.php', window.location.origin);
-        doneUrl.searchParams.set('accepted_done', '1');
-        if (ACCEPT_JOB_ID > 0) doneUrl.searchParams.set('auto_job', String(ACCEPT_JOB_ID));
-        if (ACCEPT_REQUEST_ID > 0) doneUrl.searchParams.set('request_id', String(ACCEPT_REQUEST_ID));
-        window.location.href = doneUrl.toString();
-      }, 700);
+      const doneUrl = new URL('<?= BASE_URL ?>/modules/jobs/jumbo/index.php', window.location.origin);
+      doneUrl.searchParams.set('accepted_done', '1');
+      if (ACCEPT_JOB_ID > 0) doneUrl.searchParams.set('auto_job', String(ACCEPT_JOB_ID));
+      if (ACCEPT_REQUEST_ID > 0) doneUrl.searchParams.set('request_id', String(ACCEPT_REQUEST_ID));
+
+      const successText = 'Update Roll success: ' + String(data.new_parent_roll || 'updated');
+      if (typeof window.erpCenterMessage === 'function') {
+        window.erpCenterMessage(successText, {
+          title: 'Roll Updated',
+          okLabel: 'Open Job Card',
+          cancelLabel: 'Cancel',
+          hideCancel: true,
+          onOk: function () {
+            window.location.href = doneUrl.toString();
+          }
+        });
+      } else {
+        showToast('Roll updated successfully. Redirecting…', 'success');
+        setTimeout(() => {
+          window.location.href = doneUrl.toString();
+        }, 700);
+      }
     } catch (err) {
-      showToast('Network error: ' + err.message, 'error');
+      showAcceptFlowMessage('Network error: ' + err.message, 'error', 'Network Error');
       btn.disabled = false;
       btn.innerHTML = '<i class="bi bi-play-circle"></i> ' + getExecuteButtonLabel();
     }
