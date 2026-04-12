@@ -28,7 +28,7 @@ function rbac_ui_section_for_path($path) {
     if (strpos($path, '/modules/jobs/') === 0 || strpos($path, '/modules/bom/') === 0 || strpos($path, '/modules/live/') === 0 || strpos($path, '/modules/production-manager/') === 0 || strpos($path, '/modules/approval/') === 0) {
         return 'Production';
     }
-    if (strpos($path, '/modules/purchase/') === 0) {
+    if (strpos($path, '/modules/purchase/') === 0 || strpos($path, '/modules/requisition-management/') === 0) {
         return 'Purchase';
     }
     if (strpos($path, '/modules/qc/') === 0 || strpos($path, '/modules/dispatch/') === 0 || strpos($path, '/modules/billing/') === 0) {
@@ -56,6 +56,7 @@ function rbac_ui_module_blurb($dir, $title) {
         '/modules/planning' => 'Planning board and department-wise job planning.',
         '/modules/operators' => 'Operator workspaces for production teams.',
         '/modules/jobs' => 'Production job card execution screens.',
+        '/modules/requisition-management' => 'Requisition request, approval, and PO preparation workflow.',
     ];
     if (isset($map[$dir])) return $map[$dir];
     return $title . ' access and allowed functions.';

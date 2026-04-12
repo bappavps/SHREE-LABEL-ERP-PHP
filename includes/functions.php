@@ -847,6 +847,8 @@ function rbacPageCatalog() {
         '/modules/live/index.php' => 'Live Floor',
         '/modules/production-manager/index.php' => 'Production Summary',
 
+        '/modules/requisition-management/index.php' => 'Requisition Management',
+        '/modules/requisition-management/api.php' => 'Requisition Management API',
         '/modules/purchase/index.php' => 'Purchase Order',
 
         '/modules/qc/index.php' => 'QC Report',
@@ -1028,6 +1030,11 @@ function canAccessPath($path) {
             }
         }
         return false;
+    }
+
+    // Requisition API follows same permission as requisition module page.
+    if ($path === '/modules/requisition-management/api.php') {
+        return canAccessPath('/modules/requisition-management/index.php');
     }
 
     $catalog = rbacPageCatalog();

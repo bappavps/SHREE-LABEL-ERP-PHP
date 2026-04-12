@@ -236,6 +236,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
         <i class="bi bi-chevron-down"></i>
       </a>
       <div class="nav-sub">
+        <?= navSubItem('/modules/requisition-management/index.php', 'Requisition Management', $currentFile, [], '', 'clipboard-plus') ?>
         <?= navSubItem('/modules/purchase/index.php', 'Purchase Order', $currentFile, [], '', 'cart3') ?>
       </div>
     </div>

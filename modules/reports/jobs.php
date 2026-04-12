@@ -6,6 +6,69 @@ require_once __DIR__ . '/../../includes/auth_check.php';
 $pageTitle = 'Job Reports';
 $db = getDB();
 
+function jrNormalizeDepartment(array $job): array {
+  $rawDept = strtolower(trim((string)($job['department'] ?? '')));
+  $rawType = strtolower(trim((string)($job['job_type'] ?? '')));
+
+  if (in_array($rawDept, ['jumbo_slitting', 'jumbo slitting'], true)) {
+    return ['key' => 'jumbo_slitting', 'label' => 'Jumbo Slitting', 'class' => 'jr-dept-slitting'];
+  }
+  if (in_array($rawDept, ['flexo_printing', 'flexo printing'], true)) {
+    return ['key' => 'flexo_printing', 'label' => 'Flexo Printing', 'class' => 'jr-dept-printing'];
+  }
+  if (in_array($rawDept, ['flatbed', 'die-cutting', 'die_cutting', 'die cutting'], true)) {
+    return ['key' => 'flatbed', 'label' => 'Die Cutting', 'class' => 'jr-dept-slitting'];
+  }
+  if ($rawDept === 'barcode') {
+    return ['key' => 'barcode', 'label' => 'Barcode', 'class' => 'jr-dept-printing'];
+  }
+  if (in_array($rawDept, ['label_slitting', 'label slitting', 'label-slitting'], true)) {
+    return ['key' => 'label_slitting', 'label' => 'Label Slitting', 'class' => 'jr-dept-slitting'];
+  }
+
+  // Legacy fallback by job_type
+  if ($rawType === 'slitting') {
+    return ['key' => 'jumbo_slitting', 'label' => 'Jumbo Slitting', 'class' => 'jr-dept-slitting'];
+  }
+  if ($rawType === 'printing') {
+    return ['key' => 'flexo_printing', 'label' => 'Flexo Printing', 'class' => 'jr-dept-printing'];
+  }
+
+  return ['key' => 'unknown', 'label' => 'Unknown', 'class' => 'jr-dept-printing'];
+}
+
+function jrPauseSeconds(array $extra): int {
+  $total = 0;
+  $segments = $extra['timer_pause_segments'] ?? [];
+  if (is_array($segments)) {
+    foreach ($segments as $row) {
+      $total += max(0, (int)($row['seconds'] ?? 0));
+    }
+  }
+
+  $timerState = strtolower(trim((string)($extra['timer_state'] ?? '')));
+  if ($timerState === 'paused') {
+    $pausedAt = trim((string)($extra['timer_pause_started_at'] ?? ($extra['timer_paused_at'] ?? '')));
+    if ($pausedAt !== '') {
+      $pausedTs = strtotime($pausedAt);
+      if ($pausedTs !== false && $pausedTs > 0) {
+        $total += max(0, time() - $pausedTs);
+      }
+    }
+  }
+
+  return $total;
+}
+
+function jrWastagePct(array $extra): ?float {
+  foreach (['wastage_percentage', 'wastage_percent', 'label_slitting_wastage_percentage', 'die_cutting_wastage_percentage'] as $k) {
+    if (isset($extra[$k]) && is_numeric($extra[$k])) {
+      return (float)$extra[$k];
+    }
+  }
+  return null;
+}
+
 // Date filters
 $dateFrom = $_GET['from'] ?? date('Y-m-01');
 $dateTo   = $_GET['to']   ?? date('Y-m-d');
@@ -13,8 +76,17 @@ $deptFilter = $_GET['dept'] ?? 'all';
 
 $where = "(j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')";
 $where .= " AND DATE(j.created_at) BETWEEN '" . $db->real_escape_string($dateFrom) . "' AND '" . $db->real_escape_string($dateTo) . "'";
-if ($deptFilter === 'slitting') $where .= " AND j.job_type = 'Slitting'";
-elseif ($deptFilter === 'printing') $where .= " AND j.job_type = 'Printing'";
+if ($deptFilter === 'jumbo_slitting') {
+  $where .= " AND (j.department IN ('jumbo_slitting','jumbo slitting') OR j.job_type = 'Slitting')";
+} elseif ($deptFilter === 'flexo_printing') {
+  $where .= " AND (j.department IN ('flexo_printing','flexo printing') OR j.job_type = 'Printing')";
+} elseif ($deptFilter === 'die_cutting') {
+  $where .= " AND (j.department IN ('flatbed','die-cutting','die_cutting','die cutting'))";
+} elseif ($deptFilter === 'barcode') {
+  $where .= " AND (j.department = 'barcode')";
+} elseif ($deptFilter === 'label_slitting') {
+  $where .= " AND (j.department IN ('label_slitting','label slitting','label-slitting'))";
+}
 
 $jobs = $db->query("
     SELECT j.*, ps.paper_type, ps.company, ps.width_mm, ps.gsm, ps.weight_kg,
@@ -30,6 +102,10 @@ $jobs = $db->query("
 // Parse extra data
 foreach ($jobs as &$j) {
     $j['extra_data_parsed'] = json_decode($j['extra_data'] ?? '{}', true) ?: [];
+  $deptInfo = jrNormalizeDepartment($j);
+  $j['report_dept_key'] = $deptInfo['key'];
+  $j['report_dept_label'] = $deptInfo['label'];
+  $j['report_dept_class'] = $deptInfo['class'];
 }
 unset($j);
 
@@ -43,9 +119,48 @@ $avgDuration = 0;
 $durations = array_filter(array_column($completed, 'duration_minutes'), fn($d) => $d > 0);
 if (count($durations) > 0) $avgDuration = round(array_sum($durations) / count($durations));
 
+$completionRate = $totalJobs > 0 ? round(($completedCount / $totalJobs) * 100, 1) : 0.0;
+$totalRunSeconds = 0;
+$totalPauseSeconds = 0;
+$issueCount = 0;
+$wastageSum = 0.0;
+$wastageCount = 0;
+
+foreach ($jobs as $j) {
+  $extra = $j['extra_data_parsed'] ?? [];
+  $totalRunSeconds += max(0, (int)($extra['timer_accumulated_seconds'] ?? 0));
+  $totalPauseSeconds += jrPauseSeconds($extra);
+
+  $status = strtolower(trim((string)($j['status'] ?? '')));
+  if ($status === 'hold' || str_starts_with($status, 'hold for')) {
+    $issueCount++;
+  }
+
+  $notes = strtolower((string)($j['notes'] ?? ''));
+  foreach (['issue', 'error', 'delay', 'breakdown', 'reject'] as $kw) {
+    if (strpos($notes, $kw) !== false) {
+      $issueCount++;
+      break;
+    }
+  }
+
+  $wastage = jrWastagePct($extra);
+  if ($wastage !== null) {
+    $wastageSum += $wastage;
+    $wastageCount++;
+  }
+}
+
+$utilizationRate = ($totalRunSeconds + $totalPauseSeconds) > 0
+  ? round(($totalRunSeconds / ($totalRunSeconds + $totalPauseSeconds)) * 100, 1)
+  : 0.0;
+$totalWastagePct = $wastageCount > 0 ? round($wastageSum / $wastageCount, 1) : 0.0;
+$runHoursText = floor($totalRunSeconds / 3600) . 'h ' . floor(($totalRunSeconds % 3600) / 60) . 'm';
+$pauseHoursText = floor($totalPauseSeconds / 3600) . 'h ' . floor(($totalPauseSeconds % 3600) / 60) . 'm';
+
 // Department breakdown
-$slittingJobs = array_filter($jobs, fn($j) => $j['job_type'] === 'Slitting');
-$printingJobs = array_filter($jobs, fn($j) => $j['job_type'] === 'Printing');
+$slittingJobs = array_filter($jobs, fn($j) => in_array(($j['report_dept_key'] ?? ''), ['jumbo_slitting', 'flatbed', 'label_slitting'], true));
+$printingJobs = array_filter($jobs, fn($j) => in_array(($j['report_dept_key'] ?? ''), ['flexo_printing', 'barcode'], true));
 $slittingCompleted = count(array_filter($slittingJobs, fn($j) => in_array($j['status'], ['Completed','QC Passed'])));
 $printingCompleted = count(array_filter($printingJobs, fn($j) => in_array($j['status'], ['Completed','QC Passed'])));
 
@@ -58,7 +173,7 @@ for ($i = 13; $i >= 0; $i--) {
 foreach ($completed as $j) {
     $d = date('Y-m-d', strtotime($j['completed_at'] ?? $j['updated_at']));
     if (isset($chartDays[$d])) {
-        $key = $j['job_type'] === 'Slitting' ? 'slitting' : 'printing';
+    $key = in_array(($j['report_dept_key'] ?? ''), ['jumbo_slitting', 'flatbed', 'label_slitting'], true) ? 'slitting' : 'printing';
         $chartDays[$d][$key]++;
     }
 }
@@ -141,8 +256,11 @@ include __DIR__ . '/../../includes/header.php';
     <input type="date" name="to" value="<?= e($dateTo) ?>">
     <select name="dept">
       <option value="all"<?= $deptFilter==='all'?' selected':'' ?>>All Departments</option>
-      <option value="slitting"<?= $deptFilter==='slitting'?' selected':'' ?>>Jumbo Slitting</option>
-      <option value="printing"<?= $deptFilter==='printing'?' selected':'' ?>>Flexo Printing</option>
+      <option value="jumbo_slitting"<?= $deptFilter==='jumbo_slitting'?' selected':'' ?>>Jumbo Slitting</option>
+      <option value="flexo_printing"<?= $deptFilter==='flexo_printing'?' selected':'' ?>>Flexo Printing</option>
+      <option value="die_cutting"<?= $deptFilter==='die_cutting'?' selected':'' ?>>Die Cutting</option>
+      <option value="barcode"<?= $deptFilter==='barcode'?' selected':'' ?>>Barcode</option>
+      <option value="label_slitting"<?= $deptFilter==='label_slitting'?' selected':'' ?>>Label Slitting</option>
     </select>
     <button class="jr-apply-btn" type="submit"><i class="bi bi-filter"></i> Apply</button>
   </form>
@@ -168,6 +286,30 @@ include __DIR__ . '/../../includes/header.php';
   <div class="jr-stat">
     <div class="jr-stat-icon" style="background:#faf5ff;color:var(--jr-purple)"><i class="bi bi-printer"></i></div>
     <div><div class="jr-stat-val"><?= $printingCompleted ?></div><div class="jr-stat-label">Printing Done</div></div>
+  </div>
+  <div class="jr-stat">
+    <div class="jr-stat-icon" style="background:#eff6ff;color:#1d4ed8"><i class="bi bi-clipboard-data"></i></div>
+    <div><div class="jr-stat-val"><?= number_format($completionRate, 1) ?>%</div><div class="jr-stat-label">Completion Rate</div></div>
+  </div>
+  <div class="jr-stat">
+    <div class="jr-stat-icon" style="background:#ecfeff;color:#0891b2"><i class="bi bi-cpu"></i></div>
+    <div><div class="jr-stat-val"><?= number_format($utilizationRate, 1) ?>%</div><div class="jr-stat-label">Utilization</div></div>
+  </div>
+  <div class="jr-stat">
+    <div class="jr-stat-icon" style="background:#f0fdf4;color:#15803d"><i class="bi bi-play-circle"></i></div>
+    <div><div class="jr-stat-val"><?= e($runHoursText) ?></div><div class="jr-stat-label">Total Run Time</div></div>
+  </div>
+  <div class="jr-stat">
+    <div class="jr-stat-icon" style="background:#fff7ed;color:#c2410c"><i class="bi bi-pause-circle"></i></div>
+    <div><div class="jr-stat-val"><?= e($pauseHoursText) ?></div><div class="jr-stat-label">Total Pause Time</div></div>
+  </div>
+  <div class="jr-stat">
+    <div class="jr-stat-icon" style="background:#fef2f2;color:#dc2626"><i class="bi bi-exclamation-triangle"></i></div>
+    <div><div class="jr-stat-val"><?= (int)$issueCount ?></div><div class="jr-stat-label">Issues</div></div>
+  </div>
+  <div class="jr-stat">
+    <div class="jr-stat-icon" style="background:#fefce8;color:#a16207"><i class="bi bi-percent"></i></div>
+    <div><div class="jr-stat-val"><?= number_format($totalWastagePct, 1) ?>%</div><div class="jr-stat-label">Avg Wastage</div></div>
   </div>
 </div>
 
@@ -264,8 +406,8 @@ include __DIR__ . '/../../includes/header.php';
         <?php foreach ($jobs as $i => $j):
           $sts = $j['status'];
           $stsClass = match($sts) { 'Completed','QC Passed'=>'completed', 'Running'=>'running', 'Pending'=>'pending', default=>'queued' };
-          $dept = $j['job_type'] === 'Slitting' ? 'Slitting' : 'Printing';
-          $deptClass = $j['job_type'] === 'Slitting' ? 'jr-dept-slitting' : 'jr-dept-printing';
+          $dept = $j['report_dept_label'] ?? ($j['job_type'] === 'Slitting' ? 'Slitting' : 'Printing');
+          $deptClass = $j['report_dept_class'] ?? ($j['job_type'] === 'Slitting' ? 'jr-dept-slitting' : 'jr-dept-printing');
           $dur = $j['duration_minutes'];
           $durStr = ($dur !== null && $dur > 0) ? floor($dur/60).'h '.$dur%60 .'m' : '—';
         ?>
