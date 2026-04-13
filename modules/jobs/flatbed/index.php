@@ -1202,11 +1202,12 @@ function dcCollectAssignedChildRolls(job) {
   let rows = [];
   rows = dcMergeRollRows(rows, extra.assigned_child_rolls, 'Job Assign');
   rows = dcMergeRollRows(rows, extra.child_rolls, 'Job Assign');
-  rows = dcMergeRollRows(rows, extra.stock_rolls, 'Stock');
   rows = dcMergeRollRows(rows, job && job.flatbed_source_rolls, 'Job Assign');
   rows = dcMergeRollRows(rows, job && job.prev_assigned_child_rolls, 'Job Assign');
   return rows.filter(function(row) {
-    return String((row && row.status) || '').trim().toLowerCase() === 'job assign';
+    const status = String((row && row.status) || '').trim().toLowerCase();
+    if (!status) return true;
+    return !['stock', 'remaining', 'remainder', 'consumed'].includes(status);
   });
 }
 
@@ -3172,24 +3173,28 @@ function dcBuildRequiredRolls(job) {
         length: job?.length_mtr ?? ''
       });
     });
-  } else if (hasPrevJob && Array.isArray(extra.assigned_child_rolls) && extra.assigned_child_rolls.length > 0) {
-    // Job came after upstream (e.g. Jumbo / Printing) — scan the assigned child rolls
-    extra.assigned_child_rolls.forEach(function(r) {
-      if (!r || typeof r !== 'object') return;
-      addRoll(r.roll_no || '', {
-        paper_type: r.paper_type || job?.paper_type || '',
-        width: r.width_mm ?? job?.width_mm ?? '',
-        length: r.length_mtr ?? job?.length_mtr ?? ''
-      });
-    });
   } else {
-    // Job started directly (no upstream job) — scan the parent roll
-    addRoll(job?.roll_no || extra.assigned_parent_roll_no || parent.roll_no || '', {
-      paper_type: job?.paper_type || parent.paper_type || '',
-      width: job?.width_mm ?? parent.width_mm ?? '',
-      length: job?.length_mtr ?? parent.length_mtr ?? ''
-    });
+    const assignedRows = hasPrevJob ? dcCollectAssignedChildRolls(job) : [];
+    if (assignedRows.length > 0) {
+      // Job came after upstream (e.g. Jumbo / Printing) — scan all collected assigned child rolls
+      assignedRows.forEach(function(r) {
+        if (!r || typeof r !== 'object') return;
+        addRoll(r.roll_no || '', {
+          paper_type: r.paper_type || job?.paper_type || '',
+          width: r.width_mm ?? job?.width_mm ?? '',
+          length: r.length_mtr ?? job?.length_mtr ?? ''
+        });
+      });
+    } else {
+      // Job started directly (no upstream job) — scan the parent roll
+      addRoll(job?.roll_no || extra.assigned_parent_roll_no || parent.roll_no || '', {
+        paper_type: job?.paper_type || parent.paper_type || '',
+        width: job?.width_mm ?? parent.width_mm ?? '',
+        length: job?.length_mtr ?? parent.length_mtr ?? ''
+      });
+    }
   }
+
   return out;
 }
 

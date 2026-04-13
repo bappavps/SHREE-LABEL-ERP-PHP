@@ -262,6 +262,72 @@ function planningContainsOnePlyMarker(array $planningExtra, string ...$texts): b
     return false;
 }
 
+function textContainsTwoPlyToken(string $text): bool {
+    $normalized = strtolower((string)preg_replace('/[^a-z0-9]+/', ' ', trim($text)));
+    if ($normalized === '') return false;
+    if ((bool)preg_match('/\b(two\s*ply|twoply|2\s*ply|2ply)\b/', $normalized)) {
+        return true;
+    }
+    // Support names like: 210mm-2, 210mm-two, 210 mm / 2
+    return (bool)preg_match('/\b\d+\s*mm\s*(?:-|\/|_)\s*(two|2)\b/', $normalized);
+}
+
+function planningContainsTwoPlyMarker(array $planningExtra, string ...$texts): bool {
+    foreach ($texts as $txt) {
+        if (textContainsTwoPlyToken($txt)) return true;
+    }
+
+    $candidates = [];
+    $directKeys = [
+        'item', 'item_name', 'job_item', 'job_name', 'item_description',
+        'product_name', 'label_item', 'job_label', 'label', 'label_name',
+        'label_code', 'item_code', 'sku', 'code', 'title', 'description',
+        'material', 'material_type', 'paper_type', 'paper_name', 'paper',
+        'department', 'department_route', 'route', 'category', 'type'
+    ];
+    foreach ($directKeys as $k) {
+        if (isset($planningExtra[$k]) && is_scalar($planningExtra[$k])) {
+            $candidates[] = (string)$planningExtra[$k];
+        }
+    }
+
+    foreach (['items', 'rows', 'line_items', 'products'] as $listKey) {
+        $rows = $planningExtra[$listKey] ?? null;
+        if (!is_array($rows)) continue;
+        foreach ($rows as $row) {
+            if (!is_array($row)) continue;
+            foreach ($directKeys as $k) {
+                if (isset($row[$k]) && is_scalar($row[$k])) {
+                    $candidates[] = (string)$row[$k];
+                }
+            }
+        }
+    }
+
+    $scan = null;
+    $scan = static function($node, int $depth = 0) use (&$scan, &$candidates): void {
+        if ($depth > 4 || !is_array($node)) return;
+        foreach ($node as $key => $value) {
+            if (is_array($value)) {
+                $scan($value, $depth + 1);
+                continue;
+            }
+            if (!is_scalar($value)) continue;
+            $k = strtolower((string)$key);
+            if (preg_match('/item|product|job.*name|job.*label|label|name|description|title|sku|code|material|paper|department|route|category|type/', $k)) {
+                $candidates[] = (string)$value;
+            }
+        }
+    };
+    $scan($planningExtra, 0);
+
+    foreach ($candidates as $candidate) {
+        if (textContainsTwoPlyToken($candidate)) return true;
+    }
+
+    return false;
+}
+
 // ─── Helper: Decide whether selected machine should bypass jumbo ─
 function shouldBypassJumboForMachine(mysqli $db, string $machine): bool {
     $machine = trim($machine);
@@ -951,8 +1017,10 @@ try {
             $hasPaperRollRoute = erp_department_selection_contains($selectedDepartments, 'PaperRoll', $departmentChoices, []);
             $containsPosMarker = planningContainsPosMarker($planningExtra, $planningJobName, $jobName, $allocationJobName, $allocationDepartmentRoute, (string)($parent['paper_type'] ?? ''));
             $containsOnePlyMarker = planningContainsOnePlyMarker($planningExtra, $planningJobName, $jobName, $allocationJobName, $allocationDepartmentRoute, (string)($parent['paper_type'] ?? ''));
+            $containsTwoPlyMarker = planningContainsTwoPlyMarker($planningExtra, $planningJobName, $jobName, $allocationJobName, $allocationDepartmentRoute, (string)($parent['paper_type'] ?? ''));
             $allowPosJobFromPaperRoll = $allowPaperRollJob && $hasPaperRollRoute && !$isFlexoRequestAcceptFlow && $containsPosMarker;
-            $allowOnePlyJobFromPaperRoll = $allowPaperRollJob && $hasPaperRollRoute && !$isFlexoRequestAcceptFlow && !$containsPosMarker;
+            $allowTwoPlyJobFromPaperRoll = $allowPaperRollJob && $hasPaperRollRoute && !$isFlexoRequestAcceptFlow && !$containsPosMarker && $containsTwoPlyMarker;
+            $allowOnePlyJobFromPaperRoll = $allowPaperRollJob && $hasPaperRollRoute && !$isFlexoRequestAcceptFlow && !$containsPosMarker && !$containsTwoPlyMarker && $containsOnePlyMarker;
 
             $directFlexoBypass = ($allowPrintingJob && !$allowJumboJob) || ($isFlexoRequestAcceptFlow && $flexoRouteToPrinting);
 
@@ -1291,6 +1359,8 @@ try {
                     if ($posPrefix === '') $posPrefix = 'POS';
                     $onePlyPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['oneply_job']['prefix'] ?? 'OPL')));
                     if ($onePlyPrefix === '') $onePlyPrefix = 'OPL';
+                    $twoPlyPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['twoply_job']['prefix'] ?? 'TPL')));
+                    if ($twoPlyPrefix === '') $twoPlyPrefix = 'TPL';
 
                 $jumboRefNo = '';
                 if ($allowJumboJob) {
@@ -2211,6 +2281,173 @@ try {
                     }
                 }
 
+                if ($planningId > 0 && $allowTwoPlyJobFromPaperRoll) {
+                    $twoPlyAssignedRolls = [];
+                    foreach ($childRolls as $childRow) {
+                        $dest = strtoupper(trim((string)($childRow['dest'] ?? '')));
+                        if ($dest !== 'JOB') continue;
+                        $rollNoItem = trim((string)($childRow['roll_no'] ?? ''));
+                        if ($rollNoItem === '') continue;
+
+                        $twoPlyAssignedRolls[] = [
+                            'roll_no' => $rollNoItem,
+                            'parent_roll_no' => trim((string)($childRow['parent_roll_no'] ?? $parentRollNo)),
+                            'width_mm' => (float)($childRow['width'] ?? 0),
+                            'length_mtr' => (float)($childRow['length'] ?? 0),
+                            'paper_type' => trim((string)($childRow['paper_type'] ?? '')),
+                            'company' => trim((string)($childRow['company'] ?? '')),
+                            'gsm' => (float)($childRow['gsm'] ?? 0),
+                            'status' => trim((string)($childRow['status'] ?? 'Slitting')),
+                            'job_no' => trim((string)($childRow['job_no'] ?? $planNo)),
+                            'job_name' => trim((string)($childRow['job_name'] ?? $displayJobName)),
+                        ];
+                    }
+
+                    $twoPlyExtraBase = [
+                        'assigned_child_rolls' => $twoPlyAssignedRolls,
+                        'assigned_child_roll_count' => count($twoPlyAssignedRolls),
+                        'assigned_parent_roll_no' => $parentRollNo,
+                        'assigned_last_batch_no' => $batchNo,
+                        'assigned_updated_at' => date('c'),
+                        'machine' => trim((string)($currentMachine ?? '')),
+                        'plan_no' => $planNo,
+                        'auto_created_from_slitting' => true,
+                        'trigger' => 'paperroll_only_pln_prl_twoply',
+                    ];
+
+                    $mergeTwoPlyAssignedRolls = static function(array $existing, array $incoming): array {
+                        $merged = [];
+                        foreach ($existing as $row) {
+                            if (!is_array($row)) continue;
+                            $rn = strtoupper(trim((string)($row['roll_no'] ?? '')));
+                            if ($rn === '') continue;
+                            $merged[$rn] = $row;
+                        }
+                        foreach ($incoming as $row) {
+                            if (!is_array($row)) continue;
+                            $rn = strtoupper(trim((string)($row['roll_no'] ?? '')));
+                            if ($rn === '') continue;
+                            $merged[$rn] = $row;
+                        }
+                        $out = array_values($merged);
+                        usort($out, static function($a, $b) {
+                            return strnatcasecmp((string)($a['roll_no'] ?? ''), (string)($b['roll_no'] ?? ''));
+                        });
+                        return $out;
+                    };
+
+                    $twoPlyPrevId = 0;
+                    $twoPlyFromRef = $parentRollNo;
+                    if ($newFlexJobId > 0 || $existingPrintId > 0) {
+                        $twoPlyPrevId = $newFlexJobId > 0 ? $newFlexJobId : $existingPrintId;
+                        $twoPlyFromRef = $jcNoFlex !== '' ? $jcNoFlex : ($existingFlexNo !== '' ? $existingFlexNo : 'N/A');
+                    } elseif ($jumboJobId > 0) {
+                        $twoPlyPrevId = $jumboJobId;
+                        $twoPlyFromRef = $jumboRefNo !== '' ? $jumboRefNo : 'N/A';
+                    } elseif ($paperRollRefNo !== '') {
+                        $twoPlyFromRef = $paperRollRefNo;
+                    }
+
+                    $twoPlyStatus = $twoPlyPrevId <= 0 ? 'Pending' : 'Queued';
+                    $twoPlyActionLabel = $twoPlyPrevId <= 0 ? 'created directly' : 'queued from upstream';
+
+                    $chkTwoPly = $db->prepare("SELECT id, job_no, extra_data FROM jobs WHERE department = 'twoply' AND planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
+                    $chkTwoPly->bind_param('i', $planningId);
+                    $chkTwoPly->execute();
+                    $existingTwoPly = $chkTwoPly->get_result()->fetch_assoc();
+
+                    if ($existingTwoPly) {
+                        $twoPlyId = (int)$existingTwoPly['id'];
+                        $existingTwoPlyExtra = json_decode((string)($existingTwoPly['extra_data'] ?? '{}'), true);
+                        if (!is_array($existingTwoPlyExtra)) $existingTwoPlyExtra = [];
+                        $existingAssignedRolls = is_array($existingTwoPlyExtra['assigned_child_rolls'] ?? null)
+                            ? $existingTwoPlyExtra['assigned_child_rolls']
+                            : [];
+                        $mergedAssignedRolls = $mergeTwoPlyAssignedRolls($existingAssignedRolls, $twoPlyAssignedRolls);
+                        $existingTwoPlyExtra = array_merge($existingTwoPlyExtra, $twoPlyExtraBase);
+                        $existingTwoPlyExtra['assigned_child_rolls'] = $mergedAssignedRolls;
+                        $existingTwoPlyExtra['assigned_child_roll_count'] = count($mergedAssignedRolls);
+                        $twoPlyExtraJson = json_encode($existingTwoPlyExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                        $twoPlyNotes = 'Two Ply job ' . $twoPlyActionLabel
+                            . ' | Plan: ' . ($planNo ?: 'N/A')
+                            . ' | From: ' . $twoPlyFromRef
+                            . ' | Two Ply: ' . trim((string)($existingTwoPly['job_no'] ?? 'N/A'));
+                        if ($displayJobName !== '') {
+                            $twoPlyNotes .= ' | Job name: ' . $displayJobName;
+                        }
+
+                        if ($twoPlyPrevId > 0) {
+                            $updTwoPly = $db->prepare("UPDATE jobs SET previous_job_id = ?, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updTwoPly->bind_param('isssi', $twoPlyPrevId, $twoPlyStatus, $twoPlyNotes, $twoPlyExtraJson, $twoPlyId);
+                        } else {
+                            $updTwoPly = $db->prepare("UPDATE jobs SET previous_job_id = NULL, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updTwoPly->bind_param('sssi', $twoPlyStatus, $twoPlyNotes, $twoPlyExtraJson, $twoPlyId);
+                        }
+                        $updTwoPly->execute();
+                    } else {
+                        for ($twoPlyAttempt = 0; $twoPlyAttempt < 30; $twoPlyAttempt++) {
+                            $jcNoTwoPly = (string)(generateUniqueIdForTable($db, 'twoply_job', 'jobs', 'job_no') ?? '');
+                            if ($jcNoTwoPly === '') {
+                                $jcNoTwoPly = deriveStageJobNo($planNo, $twoPlyPrefix);
+                            }
+                            if ($jcNoTwoPly === '') {
+                                $jcNoTwoPly = $twoPlyPrefix . '/' . date('Y') . '/' . str_pad((string)($batchId + $twoPlyAttempt), 4, '0', STR_PAD_LEFT);
+                            }
+
+                            $twoPlyNotesForInsert = 'Two Ply job ' . $twoPlyActionLabel
+                                . ' | Plan: ' . ($planNo ?: 'N/A')
+                                . ' | From: ' . $twoPlyFromRef
+                                . ' | Two Ply: ' . $jcNoTwoPly;
+                            if ($displayJobName !== '') {
+                                $twoPlyNotesForInsert .= ' | Job name: ' . $displayJobName;
+                            }
+
+                            $newTwoPlyExtra = $twoPlyExtraBase;
+                            $newTwoPlyExtra['assigned_child_rolls'] = $twoPlyAssignedRolls;
+                            $newTwoPlyExtra['assigned_child_roll_count'] = count($twoPlyAssignedRolls);
+                            $twoPlyExtraJson = json_encode($newTwoPlyExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                            if ($twoPlyPrevId > 0) {
+                                $insTwoPly = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'twoply', ?, 5, ?, ?, ?)");
+                                $insTwoPly->bind_param('sississ', $jcNoTwoPly, $planningId, $parentRollNo, $twoPlyStatus, $twoPlyPrevId, $twoPlyNotesForInsert, $twoPlyExtraJson);
+                            } else {
+                                $insTwoPly = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'twoply', ?, 5, NULL, ?, ?)");
+                                $insTwoPly->bind_param('sissss', $jcNoTwoPly, $planningId, $parentRollNo, $twoPlyStatus, $twoPlyNotesForInsert, $twoPlyExtraJson);
+                            }
+
+                            $okTwoPly = false;
+                            try {
+                                $okTwoPly = $insTwoPly->execute();
+                            } catch (Throwable $insertErr) {
+                                if ((int)($insTwoPly->errno ?? 0) === 1062 || stripos((string)$insertErr->getMessage(), 'Duplicate entry') !== false) {
+                                    $okTwoPly = false;
+                                } else {
+                                    throw $insertErr;
+                                }
+                            }
+
+                            if ($okTwoPly) {
+                                $twoPlyId = (int)$db->insert_id;
+                                $createdJobCards[] = ['job_no' => $jcNoTwoPly, 'type' => 'Two Ply', 'roll' => $parentRollNo, 'id' => $twoPlyId];
+                                $statusMsg = $twoPlyPrevId <= 0 ? 'created directly' : 'queued';
+                                $nMsgTwoPly = 'New Two Ply job card ' . $statusMsg . ': ' . $jcNoTwoPly . ' | From: ' . $twoPlyFromRef;
+                                $nInsTwoPly = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, 'twoply', ?, 'info')");
+                                if ($nInsTwoPly) {
+                                    $nInsTwoPly->bind_param('is', $twoPlyId, $nMsgTwoPly);
+                                    $nInsTwoPly->execute();
+                                }
+                                break;
+                            }
+
+                            if ((int)$insTwoPly->errno === 1062) continue;
+                            if ($twoPlyAttempt >= 29) {
+                                throw new Exception('Unable to generate unique Two Ply job number. Please try again.');
+                            }
+                        }
+                    }
+                }
+
                 // Keep one downstream die-cutting job per plan as queued (FlatBed variants only).
                 $dieValueNorm = strtolower(trim((string)($planningExtra['die'] ?? '')));
                 $isFlatbedLikeDie = ($dieValueNorm !== '') && (strpos($dieValueNorm, 'flatbed') !== false) && (strpos($dieValueNorm, 'rotary') === false);
@@ -2732,6 +2969,8 @@ try {
             if ($posPrefix === '') $posPrefix = 'POS';
             $onePlyPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['oneply_job']['prefix'] ?? 'OPL')));
             if ($onePlyPrefix === '') $onePlyPrefix = 'OPL';
+            $twoPlyPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['twoply_job']['prefix'] ?? 'TPL')));
+            if ($twoPlyPrefix === '') $twoPlyPrefix = 'TPL';
 
             $findExistingStageJob = static function (mysqli $dbConn, int $planningId, string $department): ?array {
                 if ($planningId <= 0) {
@@ -3071,8 +3310,16 @@ try {
                         (string)($a['department_route'] ?? ''),
                         (string)($parent['paper_type'] ?? '')
                     );
+                    $containsTwoPly = planningContainsTwoPlyMarker(
+                        $planCtxPos['planning_extra'] ?? [],
+                        (string)($planCtxPos['planning_job_name'] ?? ''),
+                        (string)($a['job_name'] ?? ''),
+                        (string)($a['department_route'] ?? ''),
+                        (string)($parent['paper_type'] ?? '')
+                    );
                     $allowPosFromPaperRoll = $allowPaperRoll && $hasPaperRollRoute && $containsPos;
-                    $allowOnePlyFromPaperRoll = $allowPaperRoll && $hasPaperRollRoute && !$containsPos;
+                    $allowTwoPlyFromPaperRoll = $allowPaperRoll && $hasPaperRollRoute && !$containsPos && $containsTwoPly;
+                    $allowOnePlyFromPaperRoll = $allowPaperRoll && $hasPaperRollRoute && !$containsPos && !$containsTwoPly && $containsOnePly;
                     $directFlexoBypass = $allowPrinting && !$allowJumbo;
                     $resolvedMachine = $machine !== '' ? $machine : resolveMachineFromDepartmentRoute($db, (string)$a['department_route']);
 
@@ -3532,6 +3779,63 @@ try {
                         $insOnePly->execute();
                         $onePlyJobId = (int)$db->insert_id;
                         $createdJobCards[] = ['job_no' => $jcNoOnePly, 'type' => 'One Ply', 'action' => 'created', 'plan_no' => $a['plan_no'], 'allocation_id' => $allocationId, 'id' => $onePlyJobId];
+                    }
+                }
+
+                if ($allowTwoPlyFromPaperRoll && $a['planning_id'] > 0) {
+                    $twoPlyUpstreamId = 0;
+                    $twoPlyUpstreamRef = $parentRollNo !== '' ? $parentRollNo : 'N/A';
+                    if ($printingJobIdForChain > 0) {
+                        $twoPlyUpstreamId = $printingJobIdForChain;
+                        $twoPlyUpstreamRef = $printingJobNoForChain !== '' ? $printingJobNoForChain : 'N/A';
+                    } elseif ($jumboJobId > 0) {
+                        $twoPlyUpstreamId = $jumboJobId;
+                        $twoPlyUpstreamRef = $jumboJobNo !== '' ? $jumboJobNo : 'N/A';
+                    } elseif ($paperRollJobNo !== '') {
+                        $twoPlyUpstreamRef = $paperRollJobNo;
+                    }
+                    $twoPlyStatus = $twoPlyUpstreamId <= 0 ? 'Pending' : 'Queued';
+                    $twoPlyExtraData = [
+                        'assigned_child_rolls' => $jobAssignedRolls,
+                        'assigned_child_roll_count' => count($jobAssignedRolls),
+                        'assigned_parent_roll_no' => $parentRollNo,
+                        'assigned_last_batch_no' => $batchNo,
+                        'plan_no' => $a['plan_no'],
+                        'machine' => $resolvedMachine,
+                        'auto_created_from_slitting' => true,
+                        'trigger' => 'paperroll_only_pln_prl_twoply',
+                    ];
+                    $existingTwoPly = $findExistingStageJob($db, (int)$a['planning_id'], 'twoply');
+                    if ($existingTwoPly) {
+                        $twoPlyJobId = (int)($existingTwoPly['id'] ?? 0);
+                        $existingTwoPlyExtra = $decodeJsonAssoc($existingTwoPly['extra_data'] ?? '');
+                        $existingTwoPlyRolls = is_array($existingTwoPlyExtra['assigned_child_rolls'] ?? null) ? $existingTwoPlyExtra['assigned_child_rolls'] : [];
+                        $twoPlyExtraData['assigned_child_rolls'] = $mergeAssignedRolls($existingTwoPlyRolls, $jobAssignedRolls);
+                        $twoPlyExtraData['assigned_child_roll_count'] = count($twoPlyExtraData['assigned_child_rolls']);
+                        $twoPlyExtraJson = json_encode(array_merge($existingTwoPlyExtra, $twoPlyExtraData), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        $twoPlyNotes = 'Two Ply job updated | Plan: ' . $a['plan_no'] . ' | From: ' . $twoPlyUpstreamRef;
+                        if ($twoPlyUpstreamId > 0) {
+                            $updTwoPly = $db->prepare("UPDATE jobs SET previous_job_id = ?, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updTwoPly->bind_param('isssi', $twoPlyUpstreamId, $twoPlyStatus, $twoPlyNotes, $twoPlyExtraJson, $twoPlyJobId);
+                        } else {
+                            $updTwoPly = $db->prepare("UPDATE jobs SET previous_job_id = NULL, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updTwoPly->bind_param('sssi', $twoPlyStatus, $twoPlyNotes, $twoPlyExtraJson, $twoPlyJobId);
+                        }
+                        $updTwoPly->execute();
+                    } else {
+                        $jcNoTwoPly = generateUniqueStageJobNo($db, $a['plan_no'], 'twoply_job', $twoPlyPrefix, $batchId + 800 + $a['allocation_sequence']);
+                        $twoPlyNotes = 'Two Ply job queued | Plan: ' . $a['plan_no'] . ' | From: ' . $twoPlyUpstreamRef . ' | Two Ply: ' . $jcNoTwoPly;
+                        $twoPlyExtraJson = json_encode($twoPlyExtraData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        if ($twoPlyUpstreamId > 0) {
+                            $insTwoPly = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'twoply', ?, 5, ?, ?, ?)");
+                            $insTwoPly->bind_param('sississ', $jcNoTwoPly, $a['planning_id'], $parentRollNo, $twoPlyStatus, $twoPlyUpstreamId, $twoPlyNotes, $twoPlyExtraJson);
+                        } else {
+                            $insTwoPly = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'twoply', ?, 5, NULL, ?, ?)");
+                            $insTwoPly->bind_param('sissss', $jcNoTwoPly, $a['planning_id'], $parentRollNo, $twoPlyStatus, $twoPlyNotes, $twoPlyExtraJson);
+                        }
+                        $insTwoPly->execute();
+                        $twoPlyJobId = (int)$db->insert_id;
+                        $createdJobCards[] = ['job_no' => $jcNoTwoPly, 'type' => 'Two Ply', 'action' => 'created', 'plan_no' => $a['plan_no'], 'allocation_id' => $allocationId, 'id' => $twoPlyJobId];
                     }
                 }
 

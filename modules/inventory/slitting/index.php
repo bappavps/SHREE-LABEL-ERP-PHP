@@ -1852,6 +1852,21 @@ const SLT = (() => {
     document.getElementById('btnAnalyzeStock').onclick = () => analyzeStock();
   }
 
+  function textHasTwoPlyToken(text) {
+    const norm = String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+    if (/\b(two\s*ply|twoply|2\s*ply|2ply)\b/.test(norm)) return true;
+    return /\b\d+\s*mm\s*(?:-|\/|_)\s*(two|2)\b/.test(norm);
+  }
+
+  function isTwoPlyPlanningJob(job) {
+    if (!job) return false;
+    return textHasTwoPlyToken(job.material_type)
+      || textHasTwoPlyToken(job.paper_type)
+      || textHasTwoPlyToken(job.job_name)
+      || textHasTwoPlyToken(job.department_route)
+      || textHasTwoPlyToken(job.job_no);
+  }
+
   async function analyzeStock() {
     if (!selectedJob) return;
     openModal('stockModal');
@@ -1865,33 +1880,54 @@ const SLT = (() => {
     const targetWidth = requestWidth > 0 ? requestWidth : planningWidth;
     const material = (j.material_type || j.paper_type || '').trim();
     const reqMtrs = parseFloat(j.allocate_mtrs) || 0;
+    const twoPlyMode = isTwoPlyPlanningJob(j);
 
     if (isAcceptMode() && requestWidth > 0 && planningWidth > 0 && Math.abs(requestWidth - planningWidth) > 0.5 && !acceptWidthMismatchWarned) {
       acceptWidthMismatchWarned = true;
       showToast('Width mismatch: request card width ' + requestWidth + 'mm, planning width ' + planningWidth + 'mm. Using request width.', 'warning');
     }
 
-    if (!material || !targetWidth) {
+    if ((!material && !twoPlyMode) || !targetWidth) {
       contentEl.innerHTML = '<div class="slt-empty"><i class="bi bi-exclamation-triangle" style="color:#f59e0b"></i><p>Paper width is missing in planning/request context, so stock analysis cannot run.</p></div>';
       document.getElementById('btnDeployTerminal').style.display = 'none';
       document.getElementById('stockModalSummary').innerHTML = 'Set width in planning or ensure accepted request contains roll row widths, then try again.';
       return;
     }
 
-    const data = await apiGet('search_rolls_by_material', {
-      paper_type: material,
-      target_width: targetWidth,
-      target_length: 0,
-    });
+    const materialQueries = twoPlyMode
+      ? ['Carbonless paper cb white', 'Carbonless paper cf yellow']
+      : [material];
+    const mergedOptions = [];
+    const seenRollKeys = new Set();
 
-    if (!data.ok || !data.options || !data.options.length) {
-      contentEl.innerHTML = `<div class="slt-empty"><i class="bi bi-exclamation-triangle" style="color:#f59e0b"></i><p>No suitable stock for <strong>${esc(material)}</strong> at width ≥ ${targetWidth}mm</p></div>`;
+    for (const paperQuery of materialQueries) {
+      const data = await apiGet('search_rolls_by_material', {
+        paper_type: paperQuery,
+        target_width: targetWidth,
+        target_length: 0,
+      });
+      if (!data.ok || !Array.isArray(data.options)) continue;
+      data.options.forEach(opt => {
+        const roll = opt.roll || {};
+        const key = String(roll.id || roll.roll_no || '') + '|' + String(opt.splits || '') + '|' + String(opt.waste_mm || '');
+        if (seenRollKeys.has(key)) return;
+        seenRollKeys.add(key);
+        mergedOptions.push(opt);
+      });
+    }
+
+    const materialLabel = twoPlyMode
+      ? 'Carbonless paper cb white + Carbonless paper cf yellow'
+      : material;
+
+    if (!mergedOptions.length) {
+      contentEl.innerHTML = `<div class="slt-empty"><i class="bi bi-exclamation-triangle" style="color:#f59e0b"></i><p>No suitable stock for <strong>${esc(materialLabel)}</strong> at width ≥ ${targetWidth}mm</p></div>`;
       document.getElementById('btnDeployTerminal').style.display = 'none';
       document.getElementById('stockModalSummary').innerHTML = '';
       return;
     }
 
-    allStockOptions = data.options;
+    allStockOptions = mergedOptions;
     allStockGroups = [];
     selectionMap = {};
     wastagePrefs = {};
@@ -1900,7 +1936,7 @@ const SLT = (() => {
     // Populate supplier dropdown
     const supplierSelect = document.getElementById('supplierFilter');
     const uniqueSuppliers = [];
-    data.options.forEach(opt => {
+    allStockOptions.forEach(opt => {
       const c = (opt.roll.company || '').trim();
       if (c && c !== 'Unknown' && !uniqueSuppliers.includes(c)) uniqueSuppliers.push(c);
     });
@@ -1919,7 +1955,7 @@ const SLT = (() => {
     // Store context on element for rendering/deploy
     contentEl._targetWidth = targetWidth;
     contentEl._reqMtrs = reqMtrs;
-    contentEl._material = material;
+    contentEl._material = materialLabel;
 
     renderStockOptions(targetWidth, reqMtrs);
   }
