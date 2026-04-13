@@ -851,6 +851,9 @@ function rbacPageCatalog() {
         '/modules/requisition-management/api.php' => 'Requisition Management API',
         '/modules/purchase/index.php' => 'Purchase Order',
 
+        '/modules/leave-management/index.php' => 'Leave Management',
+        '/modules/leave-management/api.php' => 'Leave Management API',
+
         '/modules/qc/index.php' => 'QC Report',
         '/modules/dispatch/index.php' => 'Dispatch',
         '/modules/billing/index.php' => 'Billing',
@@ -1035,6 +1038,11 @@ function canAccessPath($path) {
     // Requisition API follows same permission as requisition module page.
     if ($path === '/modules/requisition-management/api.php') {
         return canAccessPath('/modules/requisition-management/index.php');
+    }
+
+    // Leave API follows same permission as leave module page.
+    if ($path === '/modules/leave-management/api.php') {
+        return canAccessPath('/modules/leave-management/index.php');
     }
 
     $catalog = rbacPageCatalog();

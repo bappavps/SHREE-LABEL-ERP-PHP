@@ -515,6 +515,428 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
     redirectFromButton('topbarProfileBtn');
     redirectFromButton('topbarPowerBtn');
 
+    // PWA-style app minimize and floating restore widget (no page reload).
+    (function () {
+        var appShellNode = document.querySelector('.app-shell');
+        var minimizeBtn = document.getElementById('topbarMinimizeBtn');
+        if (!appShellNode || !minimizeBtn) return;
+
+        var minimizedStateKey = 'erp_pwa_minimized_v1';
+        var widgetPosStateKey = 'erp_pwa_widget_pos_v1';
+        var widgetJobStateKey = 'erp_pwa_widget_job_state_v1';
+        var miniHomeClockTimer = null;
+        var miniHomeScreen = document.createElement('div');
+        miniHomeScreen.id = 'erpMiniHomeScreen';
+        miniHomeScreen.className = 'erp-mini-home-screen';
+        miniHomeScreen.setAttribute('aria-hidden', 'true');
+        miniHomeScreen.innerHTML = [
+            '<div class="erp-mini-phone">',
+            '  <div class="erp-mini-status">',
+            '    <span class="erp-mini-time" id="erpMiniHomeTime">00:00</span>',
+            '    <span class="erp-mini-badge">Mobile Home</span>',
+            '  </div>',
+            '  <div class="erp-mini-app-grid" aria-hidden="true">',
+            '    <span class="erp-mini-app">ERP</span>',
+            '    <span class="erp-mini-app">Jobs</span>',
+            '    <span class="erp-mini-app">Stock</span>',
+            '    <span class="erp-mini-app">Users</span>',
+            '    <span class="erp-mini-app">Reports</span>',
+            '    <span class="erp-mini-app">Settings</span>',
+            '  </div>',
+            '</div>'
+        ].join('');
+        document.body.appendChild(miniHomeScreen);
+
+        var widget = document.createElement('button');
+        widget.type = 'button';
+        widget.id = 'erpFloatingWidget';
+        widget.className = 'erp-floating-widget';
+        widget.setAttribute('aria-label', 'Restore ERP');
+        widget.innerHTML = [
+            '<span class="erp-fw-core" aria-hidden="true"><span class="erp-fw-title">ERP</span><span class="erp-fw-live-dot"></span><span class="erp-fw-open">Live</span></span>',
+            '<span class="erp-fw-orbit-wrap" aria-hidden="true">',
+            '<svg class="erp-fw-orbit" viewBox="0 0 124 124" focusable="false">',
+            '<defs><path id="erpFwOrbitPath" d="M62,62 m-58,0 a58,58 0 1,1 116,0 a58,58 0 1,1 -116,0"></path></defs>',
+            '<text class="erp-fw-orbit-text"><textPath id="erpFwOrbitTextPath" href="#erpFwOrbitPath" startOffset="0%">JOB-0000 • JOB-0000 • JOB-0000 • </textPath></text>',
+            '</svg>',
+            '</span>',
+            '<span class="erp-fw-timer" id="erpFloatingTimer">00:00:00</span>'
+        ].join('');
+        document.body.appendChild(widget);
+
+        var miniHomeTimeNode = miniHomeScreen.querySelector('#erpMiniHomeTime');
+        var orbitTextPath = widget.querySelector('#erpFwOrbitTextPath');
+        var timerNode = widget.querySelector('#erpFloatingTimer');
+
+        var isMinimized = false;
+        var isPointerDown = false;
+        var isDragging = false;
+        var suppressClick = false;
+        var pointerId = null;
+        var dragOffsetX = 0;
+        var dragOffsetY = 0;
+        var dragThreshold = 6;
+        var viewportPad = 8;
+        var runningJobId = 'JOB-0000';
+        var runningJobStartTs = Date.now();
+        var isJobRunning = false;
+        var timerIntervalId = null;
+
+        function safeNumber(value, fallback) {
+            var n = parseFloat(value);
+            return isNaN(n) ? fallback : n;
+        }
+
+        function readWidgetPosition() {
+            try {
+                var raw = sessionStorage.getItem(widgetPosStateKey);
+                if (!raw) return null;
+                var parsed = JSON.parse(raw);
+                if (!parsed || typeof parsed !== 'object') return null;
+                return {
+                    left: safeNumber(parsed.left, 16),
+                    top: safeNumber(parsed.top, 120)
+                };
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function saveWidgetPosition(left, top) {
+            try {
+                sessionStorage.setItem(widgetPosStateKey, JSON.stringify({ left: left, top: top }));
+            } catch (e) {}
+        }
+
+        function readJobState() {
+            try {
+                var raw = sessionStorage.getItem(widgetJobStateKey);
+                if (!raw) return null;
+                var parsed = JSON.parse(raw);
+                if (!parsed || typeof parsed !== 'object') return null;
+                return {
+                    jobId: typeof parsed.jobId === 'string' ? parsed.jobId : '',
+                    startTs: safeNumber(parsed.startTs, 0),
+                    isRunning: parsed.isRunning === true
+                };
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function saveJobState(jobId, startTs, isRunning) {
+            try {
+                sessionStorage.setItem(widgetJobStateKey, JSON.stringify({
+                    jobId: jobId,
+                    startTs: startTs,
+                    isRunning: !!isRunning
+                }));
+            } catch (e) {}
+        }
+
+        function hasActiveJobId(jobId) {
+            var id = (jobId && String(jobId).trim()) || '';
+            return !!id && id !== 'JOB-0000';
+        }
+
+        function setRunningVisualState(flag) {
+            isJobRunning = !!flag;
+            widget.classList.toggle('has-running-job', isJobRunning);
+            if (!isJobRunning && timerNode) {
+                timerNode.textContent = '00:00:00';
+            }
+        }
+
+        function updateMiniHomeClock() {
+            if (!miniHomeTimeNode) return;
+            var now = new Date();
+            var hh = String(now.getHours()).padStart(2, '0');
+            var mm = String(now.getMinutes()).padStart(2, '0');
+            miniHomeTimeNode.textContent = hh + ':' + mm;
+        }
+
+        function formatElapsed(totalSeconds) {
+            var safe = Math.max(0, totalSeconds | 0);
+            var h = Math.floor(safe / 3600);
+            var m = Math.floor((safe % 3600) / 60);
+            var s = safe % 60;
+            return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+        }
+
+        function setOrbitJobText(jobId) {
+            if (!orbitTextPath) return;
+            var label = (jobId && String(jobId).trim()) || 'JOB-0000';
+            orbitTextPath.textContent = label + ' • ' + label + ' • ' + label + ' • ';
+        }
+
+        function updateTimerUi() {
+            if (!timerNode) return;
+            if (!isJobRunning) return;
+            var elapsed = Math.floor((Date.now() - runningJobStartTs) / 1000);
+            var timeText = formatElapsed(elapsed);
+            timerNode.textContent = timeText;
+            widget.setAttribute('aria-label', 'Restore ERP. ' + runningJobId + ' running for ' + timeText);
+        }
+
+        function startTimerLoop() {
+            if (timerIntervalId) {
+                clearInterval(timerIntervalId);
+                timerIntervalId = null;
+            }
+            if (!isJobRunning) return;
+            updateTimerUi();
+            timerIntervalId = setInterval(updateTimerUi, 1000);
+        }
+
+        function normalizeStartTimestamp(input) {
+            if (typeof input === 'number' && isFinite(input) && input > 0) {
+                return Math.floor(input);
+            }
+            if (typeof input === 'string') {
+                var numeric = parseInt(input, 10);
+                if (!isNaN(numeric) && numeric > 0) {
+                    return numeric;
+                }
+                var parsedDate = Date.parse(input);
+                if (!isNaN(parsedDate) && parsedDate > 0) {
+                    return parsedDate;
+                }
+            }
+            return Date.now();
+        }
+
+        function setRunningJob(payload, skipPersist) {
+            var nextJobId = runningJobId;
+            var nextStartTs = runningJobStartTs;
+
+            if (typeof payload === 'string') {
+                nextJobId = payload;
+            } else if (payload && typeof payload === 'object') {
+                nextJobId = payload.jobId || payload.id || payload.job || nextJobId;
+                nextStartTs = normalizeStartTimestamp(
+                    payload.startTs || payload.startAt || payload.startedAt || payload.started_on || nextStartTs
+                );
+            }
+
+            nextJobId = (nextJobId && String(nextJobId).trim()) || 'JOB-0000';
+            if (!hasActiveJobId(nextJobId)) {
+                clearRunningJob(skipPersist);
+                return;
+            }
+            nextStartTs = normalizeStartTimestamp(nextStartTs);
+
+            runningJobId = nextJobId;
+            runningJobStartTs = nextStartTs;
+            setRunningVisualState(true);
+            setOrbitJobText(runningJobId);
+            updateTimerUi();
+            startTimerLoop();
+
+            if (!skipPersist) {
+                saveJobState(runningJobId, runningJobStartTs, true);
+            }
+        }
+
+        function clearRunningJob(skipPersist) {
+            runningJobId = 'JOB-0000';
+            runningJobStartTs = Date.now();
+            setRunningVisualState(false);
+            setOrbitJobText(runningJobId);
+            if (timerIntervalId) {
+                clearInterval(timerIntervalId);
+                timerIntervalId = null;
+            }
+            if (!skipPersist) {
+                saveJobState(runningJobId, runningJobStartTs, false);
+            }
+            widget.setAttribute('aria-label', 'Restore ERP');
+        }
+
+        function clampWidgetPosition(left, top) {
+            var maxLeft = Math.max(viewportPad, window.innerWidth - widget.offsetWidth - viewportPad);
+            var maxTop = Math.max(viewportPad, window.innerHeight - widget.offsetHeight - viewportPad);
+            return {
+                left: Math.min(maxLeft, Math.max(viewportPad, left)),
+                top: Math.min(maxTop, Math.max(viewportPad, top))
+            };
+        }
+
+        function placeWidget(left, top, persist) {
+            var pos = clampWidgetPosition(left, top);
+            widget.style.left = Math.round(pos.left) + 'px';
+            widget.style.top = Math.round(pos.top) + 'px';
+            if (persist) {
+                saveWidgetPosition(pos.left, pos.top);
+            }
+        }
+
+        function ensureWidgetPosition() {
+            var saved = readWidgetPosition();
+            if (saved) {
+                placeWidget(saved.left, saved.top, false);
+            } else {
+                var defaultLeft = Math.max(viewportPad, window.innerWidth - widget.offsetWidth - 14);
+                var defaultTop = Math.max(viewportPad, window.innerHeight - widget.offsetHeight - 130);
+                placeWidget(defaultLeft, defaultTop, true);
+            }
+        }
+
+        function setMinimizedState(flag) {
+            isMinimized = !!flag;
+            if (isMinimized) {
+                document.body.classList.add('erp-minimized');
+                widget.classList.add('is-visible');
+                miniHomeScreen.setAttribute('aria-hidden', 'false');
+                updateMiniHomeClock();
+                if (!miniHomeClockTimer) {
+                    miniHomeClockTimer = setInterval(updateMiniHomeClock, 30000);
+                }
+                widget.setAttribute('aria-hidden', 'false');
+                minimizeBtn.setAttribute('aria-pressed', 'true');
+            } else {
+                document.body.classList.remove('erp-minimized');
+                widget.classList.remove('is-visible');
+                miniHomeScreen.setAttribute('aria-hidden', 'true');
+                if (miniHomeClockTimer) {
+                    clearInterval(miniHomeClockTimer);
+                    miniHomeClockTimer = null;
+                }
+                widget.setAttribute('aria-hidden', 'true');
+                minimizeBtn.setAttribute('aria-pressed', 'false');
+            }
+            try {
+                sessionStorage.setItem(minimizedStateKey, isMinimized ? '1' : '0');
+            } catch (e) {}
+        }
+
+        function minimizeApp() {
+            ensureWidgetPosition();
+            setMinimizedState(true);
+        }
+
+        function triggerRestoreAnimation() {
+            if (!document.body) return;
+            document.body.classList.remove('erp-restore-animating');
+            void document.body.offsetWidth;
+            document.body.classList.add('erp-restore-animating');
+            window.setTimeout(function () {
+                document.body.classList.remove('erp-restore-animating');
+            }, 260);
+        }
+
+        function triggerRestoreHaptic() {
+            if (!window.navigator || typeof window.navigator.vibrate !== 'function') return;
+            try {
+                window.navigator.vibrate(14);
+            } catch (e) {}
+        }
+
+        function restoreApp() {
+            setMinimizedState(false);
+            triggerRestoreAnimation();
+            triggerRestoreHaptic();
+        }
+
+        minimizeBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            minimizeApp();
+        });
+
+        widget.addEventListener('pointerdown', function (e) {
+            if (!isMinimized) return;
+            pointerId = e.pointerId;
+            isPointerDown = true;
+            isDragging = false;
+            suppressClick = false;
+
+            var rect = widget.getBoundingClientRect();
+            dragOffsetX = e.clientX - rect.left;
+            dragOffsetY = e.clientY - rect.top;
+            if (widget.setPointerCapture) {
+                widget.setPointerCapture(pointerId);
+            }
+        });
+
+        widget.addEventListener('pointermove', function (e) {
+            if (!isPointerDown || e.pointerId !== pointerId || !isMinimized) return;
+
+            var nextLeft = e.clientX - dragOffsetX;
+            var nextTop = e.clientY - dragOffsetY;
+            var currentLeft = safeNumber(widget.style.left, nextLeft);
+            var currentTop = safeNumber(widget.style.top, nextTop);
+
+            if (!isDragging) {
+                var movedX = Math.abs(nextLeft - currentLeft);
+                var movedY = Math.abs(nextTop - currentTop);
+                if (movedX >= dragThreshold || movedY >= dragThreshold) {
+                    isDragging = true;
+                }
+            }
+
+            if (isDragging) {
+                placeWidget(nextLeft, nextTop, false);
+            }
+        });
+
+        function handlePointerEnd(e) {
+            if (!isPointerDown || e.pointerId !== pointerId) return;
+
+            if (widget.releasePointerCapture && widget.hasPointerCapture && widget.hasPointerCapture(pointerId)) {
+                widget.releasePointerCapture(pointerId);
+            }
+
+            isPointerDown = false;
+            pointerId = null;
+
+            if (isDragging) {
+                suppressClick = true;
+                placeWidget(safeNumber(widget.style.left, 0), safeNumber(widget.style.top, 0), true);
+            }
+
+            isDragging = false;
+        }
+
+        widget.addEventListener('pointerup', handlePointerEnd);
+        widget.addEventListener('pointercancel', handlePointerEnd);
+
+        widget.addEventListener('click', function (e) {
+            if (suppressClick) {
+                suppressClick = false;
+                e.preventDefault();
+                return;
+            }
+            restoreApp();
+        });
+
+        window.addEventListener('resize', function () {
+            if (!isMinimized) return;
+            placeWidget(safeNumber(widget.style.left, 0), safeNumber(widget.style.top, 0), true);
+        });
+
+        window.erpAppMinimize = minimizeApp;
+        window.erpAppRestore = restoreApp;
+        window.erpFloatingSetRunningJob = setRunningJob;
+        window.erpFloatingClearRunningJob = clearRunningJob;
+
+        var storedJobState = readJobState();
+        if (storedJobState && storedJobState.isRunning && hasActiveJobId(storedJobState.jobId)) {
+            setRunningJob({ jobId: storedJobState.jobId, startTs: storedJobState.startTs }, true);
+        } else {
+            var bodyNode = document.body;
+            if (bodyNode && hasActiveJobId(bodyNode.getAttribute('data-running-job-id') || bodyNode.getAttribute('data-job-id'))) {
+                setRunningJob({
+                    jobId: bodyNode.getAttribute('data-running-job-id') || bodyNode.getAttribute('data-job-id'),
+                    startTs: bodyNode.getAttribute('data-running-job-start') || bodyNode.getAttribute('data-job-start') || Date.now()
+                });
+            } else {
+                clearRunningJob();
+            }
+        }
+
+        ensureWidgetPosition();
+        setMinimizedState(sessionStorage.getItem(minimizedStateKey) === '1');
+    })();
+
     // Topbar notifications (department-wise)
     (function () {
         var notifBtn = document.getElementById('topbarNotificationBtn');

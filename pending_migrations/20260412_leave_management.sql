@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS leaves (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    department VARCHAR(120) NOT NULL,
+    leave_type ENUM('Sick','Casual','Emergency','Other') NOT NULL DEFAULT 'Casual',
+    from_date DATE NOT NULL,
+    to_date DATE NOT NULL,
+    total_days INT NOT NULL DEFAULT 1,
+    reason_text TEXT NULL,
+    voice_file VARCHAR(255) NULL,
+    status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+    admin_remark TEXT NULL,
+    approved_by INT NULL,
+    approved_date DATETIME NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_leaves_user (user_id),
+    INDEX idx_leaves_status (status),
+    INDEX idx_leaves_date (from_date, to_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

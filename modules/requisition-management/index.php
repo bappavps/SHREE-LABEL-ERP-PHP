@@ -1150,6 +1150,9 @@ function rmPrintDetail() {
           th{background:#f8fafc;font-size:.64rem;text-transform:uppercase;letter-spacing:.04em;color:#334155}
           img{width:86px;height:86px;object-fit:cover;border:1px solid #cbd5e1;border-radius:6px;display:block}
           .foot-sign{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;border-top:2px solid #166534;background:#f0fdf4;color:#475569;font-size:.68rem}
+          .sign-box{flex:1}
+          .sign-line{padding-top:20px;border-bottom:1px solid #64748b;min-height:22px;margin-bottom:5px;font-size:.72rem;font-weight:700;color:#0f172a}
+          .sign-label{font-size:.64rem;color:#475569}
           .foot-doc{padding:6px 12px;font-size:.58rem;color:#64748b;display:flex;justify-content:space-between;border-top:1px solid #bbf7d0;background:#f8fffa}
         </style>
       </head>
@@ -1195,8 +1198,14 @@ function rmPrintDetail() {
           </div>
 
           <div class="foot-sign">
-            <div>Requested By Signature: _____________________</div>
-            <div>Approval Signature: _____________________</div>
+            <div class="sign-box">
+              <div class="sign-line">${rmEsc(requester)}</div>
+              <div class="sign-label">Requested By Signature</div>
+            </div>
+            <div class="sign-box">
+              <div class="sign-line">${rmEsc(approvedBy)}</div>
+              <div class="sign-label">Approval Signature</div>
+            </div>
           </div>
           <div class="foot-doc">
             <span>Document: Requisition Print | ${rmEsc(RM_COMPANY_NAME || '')}</span>

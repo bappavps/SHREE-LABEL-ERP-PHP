@@ -243,6 +243,16 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
 
     <div class="nav-group">
       <a href="#" class="nav-item nav-group-toggle" aria-expanded="false">
+        <span class="nav-item-main"><i class="bi bi-people"></i><span>HR &amp; Workforce</span></span>
+        <i class="bi bi-chevron-down"></i>
+      </a>
+      <div class="nav-sub">
+        <?= navSubItem('/modules/leave-management/index.php', 'Leave Management', $currentFile, [], '', 'calendar2-week') ?>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <a href="#" class="nav-item nav-group-toggle" aria-expanded="false">
         <span class="nav-item-main"><i class="bi bi-patch-check"></i><span>Quality &amp; Logistic</span></span>
         <i class="bi bi-chevron-down"></i>
       </a>

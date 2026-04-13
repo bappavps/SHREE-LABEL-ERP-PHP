@@ -211,6 +211,7 @@ $notificationDeptCsv = implode(',', $notificationDepartments);
           <div class="np-empty">No notifications</div>
         </div>
       </div>
+      <button type="button" id="topbarMinimizeBtn" class="topbar-icon-btn" aria-label="Minimize ERP" title="Minimize ERP"><i class="bi bi-dash-circle"></i></button>
       <button type="button" id="topbarFullscreenBtn" class="topbar-icon-btn" aria-label="Expand"><i class="bi bi-arrows-angle-expand"></i></button>
       <button type="button" id="topbarProfileBtn" class="topbar-icon-btn" data-href="<?= BASE_URL ?>/modules/users/index.php" aria-label="Profile"><i class="bi bi-person"></i></button>
       <button type="button" id="topbarPowerBtn" class="topbar-icon-btn" data-href="<?= BASE_URL ?>/auth/logout.php" aria-label="Power"><i class="bi bi-power"></i></button>

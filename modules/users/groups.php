@@ -31,6 +31,9 @@ function rbac_ui_section_for_path($path) {
     if (strpos($path, '/modules/purchase/') === 0 || strpos($path, '/modules/requisition-management/') === 0) {
         return 'Purchase';
     }
+    if (strpos($path, '/modules/leave-management/') === 0) {
+      return 'HR & Workforce';
+    }
     if (strpos($path, '/modules/qc/') === 0 || strpos($path, '/modules/dispatch/') === 0 || strpos($path, '/modules/billing/') === 0) {
         return 'Quality & Logistics';
     }
@@ -57,6 +60,7 @@ function rbac_ui_module_blurb($dir, $title) {
         '/modules/operators' => 'Operator workspaces for production teams.',
         '/modules/jobs' => 'Production job card execution screens.',
         '/modules/requisition-management' => 'Requisition request, approval, and PO preparation workflow.',
+        '/modules/leave-management' => 'Employee leave application, voice capture, approval, and print workflow.',
     ];
     if (isset($map[$dir])) return $map[$dir];
     return $title . ' access and allowed functions.';
@@ -169,6 +173,22 @@ function rbac_default_group_blueprints() {
                 '/modules/sales_order/index.php',
             ],
         ],
+            [
+              'name' => 'Leave Employee',
+              'description' => 'Employee self-service access for leave application and leave status tracking.',
+              'pages' => [
+                '/modules/dashboard/index.php',
+                '/modules/leave-management/index.php',
+              ],
+            ],
+            [
+              'name' => 'Leave Approver',
+              'description' => 'Manager or admin access for leave approval and printable leave documents.',
+              'pages' => [
+                '/modules/dashboard/index.php',
+                '/modules/leave-management/index.php',
+              ],
+            ],
     ];
 }
 
