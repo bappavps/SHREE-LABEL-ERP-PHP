@@ -311,6 +311,28 @@ function barcodePlanningMasterDistinctValues(mysqli $db, string $column): array 
     return array_values($values);
 }
 
+function paperRollConceptMasterRows(mysqli $db): array {
+    $rows = [];
+    $res = $db->query('SELECT id, item_name, item, width_mm, length_mtr, paper_type, gsm, dia, core, size, core_type FROM paper_roll_concept ORDER BY sl_no ASC, id ASC');
+    if (!$res) return $rows;
+    while ($r = $res->fetch_assoc()) {
+        $rows[] = [
+            'id'          => (int)$r['id'],
+            'item_name'   => trim((string)($r['item_name'] ?? '')),
+            'item'        => trim((string)($r['item'] ?? '')),
+            'width_mm'    => trim((string)($r['width_mm'] ?? '')),
+            'length_mtr'  => trim((string)($r['length_mtr'] ?? '')),
+            'paper_type'  => trim((string)($r['paper_type'] ?? '')),
+            'gsm'         => trim((string)($r['gsm'] ?? '')),
+            'dia'         => trim((string)($r['dia'] ?? '')),
+            'core'        => trim((string)($r['core'] ?? '')),
+            'size'        => trim((string)($r['size'] ?? '')),
+            'core_type'   => trim((string)($r['core_type'] ?? '')),
+        ];
+    }
+    return $rows;
+}
+
 function barcodePlanningFetchRows(mysqli $db): array {
     $rows = [];
     $sql = "SELECT p.id, p.job_no, p.job_name, p.scheduled_date, p.status, p.priority, p.notes, p.sequence_order, p.created_at, p.updated_at, p.extra_data, p.department,
@@ -425,6 +447,12 @@ function barcodePlanningFetchRows(mysqli $db): array {
             'planning_date' => trim((string)($extra['planning_date'] ?? '')),
             'dispatch_date' => trim((string)($extra['dispatch_date'] ?? ($row['scheduled_date'] ?? ''))),
             'material_type' => trim((string)($extra['material_type'] ?? '')),
+            'item_width'   => trim((string)($extra['item_width'] ?? '')),
+            'item_length'  => trim((string)($extra['item_length'] ?? '')),
+            'gsm'          => trim((string)($extra['gsm'] ?? '')),
+            'roll_dia'     => trim((string)($extra['roll_dia'] ?? '')),
+            'core_size'    => trim((string)($extra['core_size'] ?? ($extra['core'] ?? ''))),
+            'core_type'    => trim((string)($extra['core_type'] ?? '')),
             'order_quantity' => $orderQtyDisplay,
             'client_name' => trim((string)($extra['client_name'] ?? ($extra['customer_name'] ?? ($extra['party_name'] ?? '')))),
             'order_meter' => $orderMeterDisplay,
@@ -452,21 +480,19 @@ function barcodePlanningFetchRows(mysqli $db): array {
 
 function barcodePlanningExportHeaders(): array {
     return [
-        'SL.No.', 'Planning ID', 'Status', 'Job Name', 'Priority', 'Client Name', 'Order Quantity', 'Order Meter', 'PCS PER ROLL',
-        'Barcode Size', 'Up in Roll', 'Up in Production', 'Label Gap', 'Both Side Gap', 'Paper Size',
-        'Cylinder', 'Repeat', 'USE', 'Die Type', 'CORE',
+        'SL.No.', 'Planning ID', 'Status', 'Client Name', 'Order Date', 'Dispatch Date', 'Priority', 'Item Name',
+        'Order Quantity (Pcs)', 'Order Meter', 'Paper Size', 'Paper Type', 'Item Width', 'Item Length', 'GSM',
+        'Roll Dia', 'Core Size', 'Core Type', 'Action',
     ];
 }
 
 function barcodePlanningExportValues(array $row): array {
     return [
-        $row['sl_no'] ?? '', $row['planning_id'] ?? '', $row['status'] ?? '', $row['job_name'] ?? '',
-        $row['priority'] ?? '',
-        $row['client_name'] ?? '',
-        $row['order_quantity'] ?? '', $row['order_meter'] ?? '', $row['pcs_per_roll'] ?? '',
-        $row['barcode_size'] ?? '', $row['up_in_roll'] ?? '', $row['up_in_production'] ?? '',
-        $row['label_gap'] ?? '', $row['both_side_gap'] ?? '', $row['paper_size'] ?? '',
-        $row['cylinder'] ?? '', $row['repeat'] ?? '', $row['use'] ?? '', $row['die_type'] ?? '', $row['core'] ?? '',
+        $row['sl_no'] ?? '', $row['planning_id'] ?? '', $row['status'] ?? '', $row['client_name'] ?? '',
+        $row['planning_date'] ?? '', $row['dispatch_date'] ?? '', $row['priority'] ?? '', $row['job_name'] ?? '',
+        $row['order_quantity'] ?? '', $row['order_meter'] ?? '', $row['paper_size'] ?? '', $row['material_type'] ?? '',
+        $row['item_width'] ?? '', $row['item_length'] ?? '', $row['gsm'] ?? '', $row['roll_dia'] ?? '',
+        $row['core_size'] ?? '', $row['core_type'] ?? '', '', // Action column left blank for export
     ];
 }
 
@@ -576,7 +602,12 @@ $paperSizeOptions = barcodePlanningMasterDistinctValues($db, 'paper_size');
 $dieTypeOptions = barcodePlanningMasterDistinctValues($db, 'die_type');
 $useOptions = barcodePlanningMasterDistinctValues($db, 'used_for');
 $masterJobRows = barcodePlanningMasterJobRows($masterRows);
-$jobNameOptions = array_values(array_filter(array_map(static function (array $row): string {
+$prcMasterRows = paperRollConceptMasterRows($db);
+$jobNameOptions = array_values(array_unique(array_filter(array_map(static function (array $r): string {
+    return trim((string)($r['item_name'] ?? ''));
+}, $prcMasterRows))));
+// Legacy job-label list kept for backward compat (barcode autofill still works in JS)
+$_legacyJobLabelOptions = array_values(array_filter(array_map(static function (array $row): string {
     return trim((string)($row['job_label'] ?? ''));
 }, $masterJobRows)));
 
@@ -615,6 +646,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $use = trim((string)($_POST['use'] ?? ''));
                 $dieType = trim((string)($_POST['die_type'] ?? ''));
                 $core = trim((string)($_POST['core'] ?? ''));
+                $itemWidth  = trim((string)($_POST['item_width'] ?? ''));
+                $itemLength = trim((string)($_POST['item_length'] ?? ''));
+                $itemGsm    = trim((string)($_POST['gsm'] ?? ''));
+                $rollDia    = trim((string)($_POST['roll_dia'] ?? ''));
+                $coreSize   = trim((string)($_POST['core_size'] ?? ''));
+                $coreType   = trim((string)($_POST['core_type'] ?? ''));
                 $slNo = max(1, (int)($_POST['sl_no'] ?? 0));
                 $paperLayout = barcodePlanningResolvePaperAndMargin(
                     $barcodeSize,
@@ -637,18 +674,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($jobName === '') $errors[] = 'Job Name is required.';
                 if (!in_array($status, $statusOptions, true)) $errors[] = 'Invalid status selected.';
                 if (!in_array($priority, $priorityOptions, true)) $errors[] = 'Invalid priority selected.';
-                if ($pcsPerRoll === '') $errors[] = 'PCS PER ROLL is required.';
-                if ($barcodeSize === '') $errors[] = 'Barcode Size is required.';
-                if ($upInRoll === '') $errors[] = 'Up in Roll is required.';
-                if ($upInProduction === '') $errors[] = 'Up in Production is required.';
-                if ($labelGap === '') $errors[] = 'Label Gap is required.';
-                if ($bothSideGap === '') $errors[] = 'Both Side Gap is required.';
-                if ($paperSize === '') $errors[] = 'Paper Size is required.';
-                if ($cylinder === '') $errors[] = 'Cylinder is required.';
-                if ($repeat === '') $errors[] = 'Repeat is required.';
-                if ($use === '') $errors[] = 'USE is required.';
-                if ($dieType === '') $errors[] = 'Die Type is required.';
-                if ($core === '') $errors[] = 'CORE is required.';
 
                 $enteredQty = barcodePlanningNumber($orderQtyInput);
                 $enteredMeter = barcodePlanningNumber($orderMeterInput);
@@ -703,6 +728,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'use' => $use,
                         'die_type' => $dieType,
                         'core' => $core,
+                        'item_width'  => $itemWidth,
+                        'item_length' => $itemLength,
+                        'gsm'         => $itemGsm,
+                        'roll_dia'    => $rollDia,
+                        'core_size'   => $coreSize,
+                        'core_type'   => $coreType,
                     ];
                     $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                     $notes = 'PaperRoll planning entry';
@@ -825,6 +856,29 @@ include __DIR__ . '/../../../includes/header.php';
 
 <style>
 :root{--bc-brand:#0ea5a4;--bc-border:#d9edf0;--bc-muted:#64748b;--bc-text:#0f172a}
+.planning-grid > div {
+    background: #fffde7 !important; /* default yellow */
+    position: relative;
+}
+.planning-grid > div.bc-autofill-ok {
+    background: #e0ffe7 !important; /* green when filled */
+}
+.planning-grid > div.bc-autofill-ok label::after {
+    content: '\2713';
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin-left: 8px;
+    border-radius: 999px;
+    background: #16a34a;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 900;
+    line-height: 1;
+    box-shadow: 0 2px 6px rgba(22,163,74,.35);
+}
 .bc-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 .bc-header h1{font-size:1.45rem;font-weight:900;display:flex;align-items:center;gap:10px;color:var(--bc-text)}
 .bc-header h1 i{font-size:1.5rem;color:var(--bc-brand)}
@@ -873,7 +927,27 @@ include __DIR__ . '/../../../includes/header.php';
   <div class="card-header"><span class="card-title"><i class="bi bi-table"></i> PaperRoll Planning List</span></div>
   <div class="bc-table-wrap">
     <table class="bc-table">
-            <thead><tr><th>SL.No.</th><th>Planning ID</th><th>Status</th><th>Job Name</th><th>Priority</th><th>Client Name</th><th>Order Quantity</th><th>Order Meter</th><th>PCS PER ROLL</th><th>Barcode Size</th><th>Up in Roll</th><th>Up in Production</th><th>Label Gap</th><th>Both Side Gap</th><th>Paper Size</th><th>Cylinder</th><th>Repeat</th><th>USE</th><th>Die Type</th><th>CORE</th><th class="no-print">Action</th></tr></thead>
+            <thead><tr>
+                <th>SL.No.</th>
+                <th>Planning ID</th>
+                <th>Status</th>
+                <th>Client Name</th>
+                <th>Order Date</th>
+                <th>Dispatch Date</th>
+                <th>Priority</th>
+                <th>Item Name</th>
+                <th>Order Quantity (Pcs)</th>
+                <th>Order Meter</th>
+                <th>Paper Size</th>
+                <th>Paper Type</th>
+                <th>Item Width</th>
+                <th>Item Length</th>
+                <th>GSM</th>
+                <th>Roll Dia</th>
+                <th>Core Size</th>
+                <th>Core Type</th>
+                <th class="no-print">Action</th>
+            </tr></thead>
       <tbody>
         <?php if (empty($rows)): ?>
                     <tr><td colspan="21" class="bc-empty"><i class="bi bi-inbox"></i>No paperroll planning entries found yet.</td></tr>
@@ -894,7 +968,25 @@ include __DIR__ . '/../../../includes/header.php';
                             $rowCanManage = !empty($row['can_manage']);
                         ?>
             <tr data-row="<?= $rowPayload ?>">
-                            <td class="bc-num"><?= e((string)$row['sl_no']) ?></td><td class="bc-cell-strong"><?= e((string)$row['planning_id']) ?></td><td><span class="bc-status-badge" style="<?= e(barcodePlanningStatusStyle($statusRaw)) ?>"><?= e($statusRaw) ?></span></td><td><span class="bc-cell-strong"><?= e((string)$row['job_name']) ?></span></td><td><span class="bc-pri bc-pri-<?= e($priorityClass) ?>"><?= e($priorityRaw) ?></span></td><td><?= e((string)$row['client_name']) ?></td><td class="bc-num"><?= e((string)$row['order_quantity']) ?></td><td class="bc-num"><?= e((string)$row['order_meter']) ?></td><td class="bc-num"><?= e((string)$row['pcs_per_roll']) ?></td><td><?= e((string)$row['barcode_size']) ?></td><td class="bc-num"><?= e((string)$row['up_in_roll']) ?></td><td class="bc-num"><?= e((string)$row['up_in_production']) ?></td><td class="bc-num"><?= e((string)$row['label_gap']) ?></td><td class="bc-num"><?= e((string)$row['both_side_gap']) ?></td><td><?= e((string)$row['paper_size']) ?></td><td><?= e((string)$row['cylinder']) ?></td><td class="bc-num"><?= e((string)$row['repeat']) ?></td><td><?= e((string)$row['use']) ?></td><td><?= e((string)$row['die_type']) ?></td><td><?= e((string)$row['core']) ?></td>
+                            <td class="bc-num"><?= e((string)$row['sl_no']) ?></td>
+                            <td class="bc-cell-strong"><?= e((string)$row['planning_id']) ?></td>
+                            <td><span class="bc-status-badge" style="<?= e(barcodePlanningStatusStyle($statusRaw)) ?>"><?= e($statusRaw) ?></span></td>
+                            <td><?= e((string)$row['client_name']) ?></td>
+                            <td><?= e((string)$row['planning_date']) ?></td>
+                            <td><?= e((string)$row['dispatch_date']) ?></td>
+                            <td><span class="bc-pri bc-pri-<?= e($priorityClass) ?>"><?= e($priorityRaw) ?></span></td>
+                            <td><?= e((string)$row['job_name']) ?></td>
+                            <td class="bc-num"><?= e((string)$row['order_quantity']) ?></td>
+                            <td class="bc-num"><?= e((string)$row['order_meter']) ?></td>
+                            <td><?= e((string)$row['paper_size']) ?></td>
+                            <td><?= e((string)$row['material_type']) ?></td>
+                            <td><?= e((string)$row['item_width']) ?></td>
+                            <td><?= e((string)$row['item_length']) ?></td>
+                            <td><?= e((string)$row['gsm']) ?></td>
+                            <td><?= e((string)$row['roll_dia']) ?></td>
+                            <td><?= e((string)$row['core_size']) ?></td>
+                            <td><?= e((string)$row['core_type']) ?></td>
+                            <td class="no-print"><div class="bc-actions-cell"><button type="button" class="bc-icon-btn view btn-view-paperroll" title="View"><i class="bi bi-eye"></i></button><?php if ($canEdit && $rowCanManage): ?><button type="button" class="bc-icon-btn edit btn-edit-paperroll" title="Edit"><i class="bi bi-pencil"></i></button><?php endif; ?><?php if ($canDelete && $rowCanManage): ?><form method="post" class="bc-delete-form"><input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>"><input type="hidden" name="action" value="delete_paperroll_planning"><input type="hidden" name="id" value="<?= (int)$row['id'] ?>"><button type="submit" class="bc-icon-btn delete" title="Delete" data-confirm="Delete this paperroll planning entry?"><i class="bi bi-trash"></i></button></form><?php endif; ?></div></td>
                             <td class="no-print"><div class="bc-actions-cell"><button type="button" class="bc-icon-btn view btn-view-paperroll" title="View"><i class="bi bi-eye"></i></button><?php if ($canEdit && $rowCanManage): ?><button type="button" class="bc-icon-btn edit btn-edit-paperroll" title="Edit"><i class="bi bi-pencil"></i></button><?php endif; ?><?php if ($canDelete && $rowCanManage): ?><form method="post" class="bc-delete-form"><input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>"><input type="hidden" name="action" value="delete_paperroll_planning"><input type="hidden" name="id" value="<?= (int)$row['id'] ?>"><button type="submit" class="bc-icon-btn delete" title="Delete" data-confirm="Delete this paperroll planning entry?"><i class="bi bi-trash"></i></button></form><?php endif; ?></div></td>
             </tr>
           <?php endforeach; ?>
@@ -906,34 +998,28 @@ include __DIR__ . '/../../../includes/header.php';
 
 <?php if ($canAdd || $canEdit): ?>
 <div class="planning-modal" id="modal-paperroll-planning" style="display:none"><div class="planning-modal-card"><div class="planning-modal-head"><h3 id="paperroll-modal-title">Add PaperRoll Planning</h3><button type="button" class="btn btn-ghost btn-sm" id="btn-close-paperroll-modal"><i class="bi bi-x-lg"></i></button></div><form method="post" id="form-paperroll-planning"><input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>"><input type="hidden" name="action" value="save_paperroll_planning"><input type="hidden" name="edit_id" id="paperroll-edit-id" value="0"><div class="planning-job-preview-box"><div><span class="planning-job-preview-label">SL.No.</span><strong id="paperroll-preview-sl"><?= $previewSerial ?></strong><small>Auto serial number.</small></div><div><span class="planning-job-preview-label">Planning ID</span><strong id="paperroll-preview-id"><?= e($previewPlanningId) ?></strong><small>Unique auto-generated code.</small></div><div><span class="planning-job-preview-label">Record ID</span><strong id="paperroll-preview-record">#<?= $previewRecordId ?></strong><small>Database preview.</small></div></div><div class="planning-grid">
-        <div class="bc-section-title basic">Basic Info</div>
         <div><label for="barcode-sl-no">SL.No.</label><input type="number" class="form-control" id="barcode-sl-no" name="sl_no" min="1" value="<?= $previewSerial ?>" required></div>
         <div><label for="barcode-planning-id">Planning ID</label><input type="text" class="form-control" id="barcode-planning-id" name="planning_id" value="<?= e($previewPlanningId) ?>" readonly></div>
-        <div><label for="barcode-status">Status</label><select class="form-control" id="barcode-status" name="status"><?php foreach ($statusOptions as $statusOption): ?><option value="<?= e($statusOption) ?>" <?= $statusOption === $defaultStatus ? 'selected' : '' ?>><?= e($statusOption) ?></option><?php endforeach; ?></select></div>
+                <div><label for="barcode-status">Status</label><select class="form-control" id="barcode-status" name="status">
+                    <option value="Pending" selected>Pending</option>
+                    <option value="Slitting">Slitting</option>
+                    <option value="Complete">Complete</option>
+                </select></div>
+        <div><label for="barcode-client-name">Client Name</label><input type="text" class="form-control" id="barcode-client-name" name="client_name" placeholder="Client name"></div>
+        <div><label for="barcode-planning-date">Planning Date</label><input type="date" class="form-control" id="barcode-planning-date" name="planning_date" value="<?= e($today) ?>" required></div>
+        <div><label for="barcode-dispatch-date">Dispatch Date</label><input type="date" class="form-control" id="barcode-dispatch-date" name="dispatch_date" value="<?= e($dispatchDefault) ?>" required></div>
         <div><label for="barcode-priority">Priority</label><select class="form-control" id="barcode-priority" name="priority"><?php foreach ($priorityOptions as $priorityOption): ?><option value="<?= e($priorityOption) ?>" <?= $priorityOption === 'Normal' ? 'selected' : '' ?>><?= e($priorityOption) ?></option><?php endforeach; ?></select></div>
-        <div style="grid-column:1 / -1" data-autofill-field="job_name"><label for="barcode-job-name">Job Name</label><div class="bc-picker-inline"><input type="text" class="form-control" id="barcode-job-name" name="job_name" list="barcode-job-options" placeholder="Search job name from barcode master" required><button type="button" class="bc-picker-btn" id="barcode-job-picker-btn" title="Search job name"><i class="bi bi-search"></i></button></div><div class="bc-form-hint">Selecting Job Name from barcode master data auto-fills related fields. You can edit all fields before saving.</div><div class="bc-form-hint" id="barcode-size-indicator">Selected Size: —</div></div>
-        <div data-autofill-field="client_name"><label for="barcode-client-name">Client Name</label><input type="text" class="form-control" id="barcode-client-name" name="client_name" placeholder="Client name"></div>
-        <div class="bc-section-title order">Order & Planning</div>
-        <div data-autofill-field="planning_date"><label for="barcode-planning-date">Planning Date</label><input type="date" class="form-control" id="barcode-planning-date" name="planning_date" value="<?= e($today) ?>" required></div>
-        <div data-autofill-field="dispatch_date"><label for="barcode-dispatch-date">Dispatch Date</label><input type="date" class="form-control" id="barcode-dispatch-date" name="dispatch_date" value="<?= e($dispatchDefault) ?>" required><div class="bc-form-hint">Default is 12 days after planning date and remains editable.</div></div>
-        <div><label for="barcode-material-type">Material Type</label><input type="text" class="form-control" id="barcode-material-type" name="material_type" list="barcode-material-options" placeholder="Optional material type"></div>
-        <div><label for="barcode-order-qty">Order Quantity</label><input type="number" class="form-control" id="barcode-order-qty" name="order_quantity" list="barcode-order-qty-options" min="0" step="1" placeholder="Enter quantity" required></div>
+        <div><label for="barcode-job-name">Job Name</label><input type="text" class="form-control" id="barcode-job-name" name="job_name" list="barcode-job-options" placeholder="Search job name from barcode master"></div>
+        <div><label for="barcode-order-qty">Order Quantity</label><input type="number" class="form-control" id="barcode-order-qty" name="order_quantity" list="barcode-order-qty-options" min="0" step="1" placeholder="Enter quantity"></div>
         <div><label for="barcode-order-meter">Order Meter</label><input type="number" class="form-control" id="barcode-order-meter" name="order_meter" list="barcode-order-meter-options" min="0" step="0.01" placeholder="Enter meter"></div>
-        <div data-autofill-field="pcs_per_roll"><label for="barcode-pcs-per-roll">PCS PER ROLL</label><input type="text" inputmode="decimal" class="form-control" id="barcode-pcs-per-roll" name="pcs_per_roll" list="barcode-pcs-roll-options" placeholder="Pieces per roll" required></div>
-        <div class="bc-section-title barcode">Barcode Layout</div>
-        <div data-autofill-field="barcode_size"><label for="barcode-size">Barcode Size</label><input type="text" class="form-control" id="barcode-size" name="barcode_size" list="barcode-size-options" placeholder="e.g. 33mm x 15mm" required></div>
-        <div data-autofill-field="up_in_roll"><label for="barcode-up-roll">Up in Roll</label><input type="text" inputmode="decimal" class="form-control" id="barcode-up-roll" name="up_in_roll" list="barcode-up-roll-options" placeholder="Up in roll" required></div>
-        <div data-autofill-field="up_in_production"><label for="barcode-up-production">Up in Production</label><input type="text" inputmode="decimal" class="form-control" id="barcode-up-production" name="up_in_production" list="barcode-up-production-options" placeholder="Up in production" required></div>
-        <div data-autofill-field="label_gap"><label for="barcode-label-gap">Label Gap</label><input type="text" inputmode="decimal" class="form-control" id="barcode-label-gap" name="label_gap" list="barcode-label-gap-options" placeholder="Label gap" required></div>
-        <div data-autofill-field="both_side_gap"><label for="barcode-both-gap">Both Side Gap</label><input type="text" inputmode="decimal" class="form-control" id="barcode-both-gap" name="both_side_gap" list="barcode-both-gap-options" placeholder="Both side gap" required></div>
-        <div data-autofill-field="paper_size"><label for="barcode-paper-size">Paper Size</label><input type="text" class="form-control" id="barcode-paper-size" name="paper_size" list="barcode-paper-size-options" placeholder="Paper size" required></div>
-        <div class="bc-section-title tools">Die & Tooling</div>
-        <div data-autofill-field="cylinder"><label for="barcode-cylinder">Cylinder</label><input type="text" class="form-control" id="barcode-cylinder" name="cylinder" list="barcode-cylinder-options" placeholder="Cylinder" required></div>
-        <div data-autofill-field="repeat"><label for="barcode-repeat">Repeat</label><input type="text" inputmode="decimal" class="form-control" id="barcode-repeat" name="repeat" list="barcode-repeat-options" placeholder="Repeat" required></div>
-        <div data-autofill-field="use"><label for="barcode-use">USE</label><input type="text" class="form-control" id="barcode-use" name="use" list="barcode-use-options" placeholder="Use" required></div>
-        <div data-autofill-field="die_type"><label for="barcode-die-type">Die Type</label><input type="text" class="form-control" id="barcode-die-type" name="die_type" list="barcode-die-type-options" placeholder="Die type" required></div>
-        <div data-autofill-field="core"><label for="barcode-core">CORE</label><input type="text" class="form-control" id="barcode-core" name="core" list="barcode-core-options" placeholder="Core" required></div>
-        <div class="bc-calc-note">If Quantity is entered, Meter is auto-calculated. If Meter is entered, Quantity is auto-calculated. Formula: (Quantity / Up in Production) x (Repeat / 1000). If Up in Production or Repeat is missing, the calculation falls back to PCS PER ROLL. Paper Size and Both Side Gap also stay linked by the barcode width formula.</div>
+        <div><label for="barcode-paper-size">Paper Size</label><input type="text" class="form-control" id="barcode-paper-size" name="paper_size" list="barcode-paper-size-options" placeholder="Paper size"></div>
+        <div><label for="barcode-material-type">Material Type</label><input type="text" class="form-control" id="barcode-material-type" name="material_type" list="barcode-material-options" placeholder="Material type"></div>
+        <div><label for="barcode-item-width">Item Width</label><input type="text" class="form-control" id="barcode-item-width" name="item_width" placeholder="Item width"></div>
+        <div><label for="barcode-item-length">Item Length</label><input type="text" class="form-control" id="barcode-item-length" name="item_length" placeholder="Item length"></div>
+        <div><label for="barcode-gsm">GSM</label><input type="text" class="form-control" id="barcode-gsm" name="gsm" placeholder="GSM"></div>
+        <div><label for="barcode-roll-dia">Roll Dia</label><input type="text" class="form-control" id="barcode-roll-dia" name="roll_dia" placeholder="Roll Dia"></div>
+        <div><label for="barcode-core-size">Core Size</label><input type="text" class="form-control" id="barcode-core-size" name="core_size" placeholder="Core Size"></div>
+        <div><label for="barcode-core-type">Core Type</label><input type="text" class="form-control" id="barcode-core-type" name="core_type" placeholder="Core Type"></div>
       </div><div class="planning-modal-foot"><button type="button" class="btn btn-ghost" id="btn-cancel-paperroll-modal">Cancel</button><button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle"></i> Save PaperRoll Planning</button></div></form></div></div>
 <?php endif; ?>
 
@@ -966,6 +1052,25 @@ include __DIR__ . '/../../../includes/header.php';
 
 <script>
 (function(){
+    // Autofill color logic for modal fields
+    function updateFieldColors() {
+        var grid = document.querySelector('.planning-grid');
+        if (!grid) return;
+        Array.from(grid.children).forEach(function(div) {
+            var input = div.querySelector('input, select, textarea');
+            if (!input) return;
+            if (input.value && input.value.trim() !== '') {
+                div.classList.add('bc-autofill-ok');
+            } else {
+                div.classList.remove('bc-autofill-ok');
+            }
+        });
+    }
+    document.getElementById('form-paperroll-planning')?.addEventListener('input', updateFieldColors);
+    document.getElementById('form-paperroll-planning')?.addEventListener('change', updateFieldColors);
+    // Initial call on modal open
+    document.getElementById('modal-paperroll-planning')?.addEventListener('show', updateFieldColors);
+    setTimeout(updateFieldColors, 300);
   var modal = document.getElementById('modal-paperroll-planning');
   var viewModal = document.getElementById('modal-paperroll-view');
   var openBtn = document.getElementById('btn-open-paperroll-modal');
@@ -1001,6 +1106,7 @@ include __DIR__ . '/../../../includes/header.php';
   var viewGrid = document.getElementById('paperroll-view-grid');
   var masterRows = <?= json_encode($masterRows, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
     var masterJobRows = <?= json_encode($masterJobRows, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+  var prcMasterRows = <?= json_encode($prcMasterRows, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
   var hasErrors = <?= !empty($errors) ? 'true' : 'false' ?>;
         var defaultState = { sl_no: <?= (int)$previewSerial ?>, planning_id: <?= json_encode($previewPlanningId) ?>, record_label: <?= json_encode('#' . $previewRecordId) ?>, planning_date: <?= json_encode($today) ?>, dispatch_date: <?= json_encode($dispatchDefault) ?>, status: <?= json_encode($defaultStatus) ?>, priority: 'Normal' };
   var syncing = false;
@@ -1095,7 +1201,37 @@ include __DIR__ . '/../../../includes/header.php';
         function markAutofilledFields(){ if(!form) return; var tracked=form.querySelectorAll('[data-autofill-field]'); tracked.forEach(function(box){ var input=box.querySelector('input,select,textarea'); var hasValue=input&&String(input.value||'').trim()!==''; box.classList.toggle('bc-autofill-ok', !!hasValue); box.classList.toggle('bc-autofill-pending', !hasValue); }); }
         function applyMasterRow(row, updateJobName, applyMarks){ if(!row) return; var sizeVal=row.barcode_size||''; var labelGapVal=String(row.label_gap||'').trim()||masterValueBySize(sizeVal,'label_gap'); var paperVal=String(row.paper_size||'').trim()||masterValueBySize(sizeVal,'paper_size'); var cylVal=String(row.cylinder||'').trim()||masterValueBySize(sizeVal,'cylinder'); var repVal=String(row.repeat||'').trim()||masterValueBySize(sizeVal,'repeat'); var useVal=String(row.use||'').trim()||masterValueBySize(sizeVal,'use'); var dieVal=String(row.die_type||'').trim()||masterValueBySize(sizeVal,'die_type'); var coreVal=String(row.core||'').trim()||masterValueBySize(sizeVal,'core'); assignIfPresent('barcode-size', sizeVal); assignIfPresent('barcode-pcs-per-roll', row.pcs_per_roll||''); assignIfPresent('barcode-up-roll', row.up_in_roll||''); assignIfPresent('barcode-up-production', row.up_in_production||''); assignIfPresent('barcode-label-gap', labelGapVal); assignIfPresent('barcode-paper-size', paperVal); assignIfPresent('barcode-both-gap', ''); assignIfPresent('barcode-cylinder', cylVal); assignIfPresent('barcode-repeat', repVal); assignIfPresent('barcode-use', useVal); assignIfPresent('barcode-die-type', dieVal); assignIfPresent('barcode-core', coreVal); if(updateJobName){ assignIfPresent('barcode-job-name', buildJobLabel(useVal||row.use||'', sizeVal, row.up_in_production||'')); } lastLayoutSource='paper_size'; updateSizeIndicator(sizeVal); hydrateLayoutFields(); if(parseNum(qtyInput&&qtyInput.value)>0) syncFromQty(); else if(parseNum(meterInput&&meterInput.value)>0) syncFromMeter(); if(applyMarks){ markAutofilledFields(); } }
     function autofillFromMaster(){ var row=findMasterRowByBarcodeSize(barcodeSizeInput&&barcodeSizeInput.value); if(!row) return; applyMasterRow(row, false); }
-        function autofillFromJobName(){ var row=findMasterRowByJobName(jobNameInput&&jobNameInput.value); if(!row) return; assignIfPresent('barcode-size', row.barcode_size||''); applyMasterRow(row, true, true); }
+        function findPrcRowByItemName(name){
+        var n=normalizeText(name);
+        if(!n) return null;
+        for(var i=0;i<prcMasterRows.length;i++){
+            var r=prcMasterRows[i]||{};
+            if(normalizeText(r.item_name||'')===n) return r;
+        }
+        // partial match fallback
+        for(var j=0;j<prcMasterRows.length;j++){
+            var r2=prcMasterRows[j]||{};
+            if(normalizeText(r2.item_name||'').indexOf(n)!==-1) return r2;
+        }
+        return null;
+    }
+    function applyPrcMasterRow(prc){
+        if(!prc) return;
+        assignIfPresent('barcode-material-type', prc.paper_type||'');
+        assignIfPresent('barcode-item-width',    prc.width_mm||'');
+        assignIfPresent('barcode-item-length',   prc.length_mtr||'');
+        assignIfPresent('barcode-gsm',           prc.gsm||'');
+        assignIfPresent('barcode-roll-dia',      prc.dia||'');
+        assignIfPresent('barcode-core-size',     prc.core||'');
+        assignIfPresent('barcode-core-type',     prc.core_type||'');
+        assignIfPresent('barcode-paper-size',    prc.size||'');
+        markAutofilledFields();
+    }
+    function autofillFromJobName(){
+        var prc=findPrcRowByItemName(jobNameInput&&jobNameInput.value);
+        if(prc){ applyPrcMasterRow(prc); return; }
+        var row=findMasterRowByJobName(jobNameInput&&jobNameInput.value); if(!row) return; assignIfPresent('barcode-size', row.barcode_size||''); applyMasterRow(row, true, true);
+    }
     function openJobPicker(){ if(!jobPickerModal) return; renderJobPickerList(); jobPickerModal.style.display='flex'; document.body.style.overflow='hidden'; if(jobPickerSearch){ jobPickerSearch.value=''; jobPickerSearch.focus(); renderJobPickerList(); } }
     function closeJobPicker(){ if(!jobPickerModal) return; jobPickerModal.style.display='none'; document.body.style.overflow=''; }
     function renderJobPickerList(){ if(!jobPickerList) return; var needle=normalizeText(jobPickerSearch&&jobPickerSearch.value); var dir=String((jobPickerSort&&jobPickerSort.value)||'asc').trim()==='desc'?'desc':'asc'; var html=[]; var rowNo=0; var matches=[]; for(var i=0;i<masterJobRows.length;i++){ var item=masterJobRows[i]||{}; var hay=normalizeText(item.job_name)+' '+normalizeText(item.barcode_size)+' '+normalizeText(item.die_type)+' '+normalizeText(item.paper_size)+' '+normalizeText(item.up_in_roll)+' '+normalizeText(item.up_in_production); if(needle && hay.indexOf(needle)===-1) continue; matches.push({idx:i,item:item}); }
@@ -1105,8 +1241,8 @@ include __DIR__ . '/../../../includes/header.php';
         jobPickerList.innerHTML = html.length ? (head + html.join('')) : '<div class="bc-empty" style="padding:18px">No matching paperroll job name found.</div>';
     }
         function resetFormForAdd(){ if(!form) return; form.reset(); editIdInput.value='0'; if(modalTitle) modalTitle.textContent='Add PaperRoll Planning'; assignIfPresent('barcode-sl-no', defaultState.sl_no); assignIfPresent('barcode-planning-id', defaultState.planning_id); assignIfPresent('barcode-planning-date', defaultState.planning_date); assignIfPresent('barcode-dispatch-date', defaultState.dispatch_date); assignIfPresent('barcode-status', defaultState.status); assignIfPresent('barcode-priority', defaultState.priority || 'Normal'); lastLayoutSource='paper_size'; updateSizeIndicator(''); previewSl.textContent=String(defaultState.sl_no); previewId.textContent=defaultState.planning_id; previewRecord.textContent=defaultState.record_label; hydrateLayoutFields(); clearAutofillMarks(); markAutofilledFields(); }
-        function openEdit(row){ if(!form||!row) return; resetFormForAdd(); if(modalTitle) modalTitle.textContent='Edit PaperRoll Planning'; editIdInput.value=String(row.id||0); assignIfPresent('barcode-sl-no', row.sl_no||''); assignIfPresent('barcode-planning-id', row.planning_id||''); assignIfPresent('barcode-status', row.status||defaultState.status); assignIfPresent('barcode-priority', row.priority||'Normal'); assignIfPresent('barcode-job-name', row.job_name||''); assignIfPresent('barcode-client-name', row.client_name||''); assignIfPresent('barcode-planning-date', row.planning_date||defaultState.planning_date); assignIfPresent('barcode-dispatch-date', row.dispatch_date||defaultState.dispatch_date); assignIfPresent('barcode-material-type', row.material_type||''); assignIfPresent('barcode-order-qty', row.order_quantity||''); assignIfPresent('barcode-order-meter', row.order_meter||''); assignIfPresent('barcode-pcs-per-roll', row.pcs_per_roll||''); assignIfPresent('barcode-size', row.barcode_size||''); assignIfPresent('barcode-up-roll', row.up_in_roll||''); assignIfPresent('barcode-up-production', row.up_in_production||''); assignIfPresent('barcode-label-gap', row.label_gap||''); assignIfPresent('barcode-both-gap', row.both_side_gap||''); assignIfPresent('barcode-paper-size', row.paper_size||''); assignIfPresent('barcode-cylinder', row.cylinder||''); assignIfPresent('barcode-repeat', row.repeat||''); assignIfPresent('barcode-use', row.use||''); assignIfPresent('barcode-die-type', row.die_type||''); assignIfPresent('barcode-core', row.core||''); lastLayoutSource = String(row.both_side_gap||'').trim() !== '' && String(row.paper_size||'').trim() === '' ? 'both_side_gap' : 'paper_size'; hydrateLayoutFields(); updateSizeIndicator(row.barcode_size||''); previewSl.textContent=String(row.sl_no||''); previewId.textContent=String(row.planning_id||''); previewRecord.textContent='#'+String(row.id||''); markAutofilledFields(); openModal(); }
-    function openView(row){ if(!viewGrid||!row) return; var labels=[['SL.No.',row.sl_no],['Planning ID',row.planning_id],['Status',row.status],['Job Name',row.job_name],['Priority',row.priority],['Client Name',row.client_name],['Order Quantity',row.order_quantity],['Order Meter',row.order_meter],['PCS PER ROLL',row.pcs_per_roll],['Barcode Size',row.barcode_size],['Up in Roll',row.up_in_roll],['Up in Production',row.up_in_production],['Label Gap',row.label_gap],['Both Side Gap',row.both_side_gap],['Paper Size',row.paper_size],['Cylinder',row.cylinder],['Repeat',row.repeat],['USE',row.use],['Die Type',row.die_type],['CORE',row.core],['Planning Date',row.planning_date],['Dispatch Date',row.dispatch_date],['Material Type',row.material_type]]; var html=''; labels.forEach(function(item){ html+='<div class="bc-view-card"><span>'+item[0]+'</span><strong>'+(item[1]?String(item[1]):'—')+'</strong></div>'; }); viewGrid.innerHTML=html; openViewModal(); }
+        function openEdit(row){ if(!form||!row) return; resetFormForAdd(); if(modalTitle) modalTitle.textContent='Edit PaperRoll Planning'; editIdInput.value=String(row.id||0); assignIfPresent('barcode-sl-no', row.sl_no||''); assignIfPresent('barcode-planning-id', row.planning_id||''); assignIfPresent('barcode-status', row.status||defaultState.status); assignIfPresent('barcode-priority', row.priority||'Normal'); assignIfPresent('barcode-job-name', row.job_name||''); assignIfPresent('barcode-client-name', row.client_name||''); assignIfPresent('barcode-planning-date', row.planning_date||defaultState.planning_date); assignIfPresent('barcode-dispatch-date', row.dispatch_date||defaultState.dispatch_date); assignIfPresent('barcode-material-type', row.material_type||''); assignIfPresent('barcode-order-qty', row.order_quantity||''); assignIfPresent('barcode-order-meter', row.order_meter||''); assignIfPresent('barcode-pcs-per-roll', row.pcs_per_roll||''); assignIfPresent('barcode-size', row.barcode_size||''); assignIfPresent('barcode-up-roll', row.up_in_roll||''); assignIfPresent('barcode-up-production', row.up_in_production||''); assignIfPresent('barcode-label-gap', row.label_gap||''); assignIfPresent('barcode-both-gap', row.both_side_gap||''); assignIfPresent('barcode-paper-size', row.paper_size||''); assignIfPresent('barcode-cylinder', row.cylinder||''); assignIfPresent('barcode-repeat', row.repeat||''); assignIfPresent('barcode-use', row.use||''); assignIfPresent('barcode-die-type', row.die_type||''); assignIfPresent('barcode-core', row.core||''); assignIfPresent('barcode-item-width', row.item_width||''); assignIfPresent('barcode-item-length', row.item_length||''); assignIfPresent('barcode-gsm', row.gsm||''); assignIfPresent('barcode-roll-dia', row.roll_dia||''); assignIfPresent('barcode-core-size', row.core_size||''); assignIfPresent('barcode-core-type', row.core_type||''); lastLayoutSource = String(row.both_side_gap||'').trim() !== '' && String(row.paper_size||'').trim() === '' ? 'both_side_gap' : 'paper_size'; hydrateLayoutFields(); updateSizeIndicator(row.barcode_size||''); previewSl.textContent=String(row.sl_no||''); previewId.textContent=String(row.planning_id||''); previewRecord.textContent='#'+String(row.id||''); markAutofilledFields(); openModal(); }
+    function openView(row){ if(!viewGrid||!row) return; var labels=[['SL.No.',row.sl_no],['Planning ID',row.planning_id],['Status',row.status],['Job Name',row.job_name],['Priority',row.priority],['Client Name',row.client_name],['Order Quantity',row.order_quantity],['Order Meter',row.order_meter],['PCS PER ROLL',row.pcs_per_roll],['Barcode Size',row.barcode_size],['Up in Roll',row.up_in_roll],['Up in Production',row.up_in_production],['Label Gap',row.label_gap],['Both Side Gap',row.both_side_gap],['Paper Size',row.paper_size],['Cylinder',row.cylinder],['Repeat',row.repeat],['USE',row.use],['Die Type',row.die_type],['CORE',row.core],['Planning Date',row.planning_date],['Dispatch Date',row.dispatch_date],['Material Type',row.material_type],['Item Width',row.item_width],['Item Length',row.item_length],['GSM',row.gsm],['Roll Dia',row.roll_dia],['Core Size',row.core_size],['Core Type',row.core_type]]; var html=''; labels.forEach(function(item){ html+='<div class="bc-view-card"><span>'+item[0]+'</span><strong>'+(item[1]?String(item[1]):'—')+'</strong></div>'; }); viewGrid.innerHTML=html; openViewModal(); }
   if(openBtn) openBtn.addEventListener('click', function(){ resetFormForAdd(); openModal(); });
   if(closeBtn) closeBtn.addEventListener('click', closeModal);
   if(cancelBtn) cancelBtn.addEventListener('click', closeModal);
