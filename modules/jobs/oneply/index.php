@@ -1,37 +1,44 @@
 <?php
 require_once __DIR__ . '/../../../config/db.php';
 require_once __DIR__ . '/../../../includes/functions.php';
-require_once __DIR__ . '/../../../includes/auth_check.php';
+if (session_status() === PHP_SESSION_NONE) session_start();
 
-$pageTitle = 'One Ply';
-include __DIR__ . '/../../../includes/header.php';
-?>
+$dcPageTitleOperator = 'One Ply Operator';
+$dcPageTitleProduction = 'One Ply Job Cards';
+$dcOperatorBreadcrumb = 'One Ply Operator';
+$dcProductionBreadcrumb = 'One Ply';
+$dcHeaderIcon = 'bi-layers';
+$dcHeaderSubtitle = 'Auto-generated One Ply cards from paper roll slitting · Department-gated sequential queue';
+$dcDocumentTitle = 'One Ply Job Card';
+$dcBulkPrintTitle = 'One Ply Job Cards';
+$dcDetailsSectionLabel = 'One Ply Details';
+$dcCompareSectionTitle = 'One Ply Production vs Plan';
+$dcProducedQtyLabel = 'One Ply Production';
+$dcProducedQtySource = 'current';
+$dcShowWeightHeightFields = true;
+$dcWeightLabel = 'Width';
+$dcHeightLabel = 'Height';
+$dcPaperWidthLabel = 'Paper Width (mm)';
+$dcBrand = '#166534';
+$dcBrandLight = '#dcfce7';
+$dcBrandDark = '#14532d';
+$dcShowPaperCompanyInDetails = false;
+$dcDefaultFilter = 'Pending';
+$dcAutoFallbackToAllOnEmptyDefault = false;
+$dcEnableBulkSelection = false;
+$dcShowParentChildRollTables = true;
+$sessionRoleRaw = strtolower(trim((string)($_SESSION['role'] ?? '')));
+$isOnePlyPrivilegedRole = in_array($sessionRoleRaw, ['admin', 'system_admin', 'system admin', 'system-admin', 'super_admin', 'super admin', 'super-admin', 'manager'], true);
+$dcCanManualRollEntry = hasPageAction('/modules/jobs/oneply/index.php', 'edit')
+    || hasPageAction('/modules/operators/oneply/index.php', 'edit')
+    || hasRole('manager', 'system_admin', 'super_admin')
+    || $isOnePlyPrivilegedRole
+    || isAdmin();
+$dcRequireRollScan = true;
+$dcWhereClauseOverride = "(
+    LOWER(COALESCE(j.department, '')) IN ('oneply', 'one_ply', 'one-ply', '1-ply', '1ply')
+    OR LOWER(COALESCE(j.job_type, '')) IN ('oneply', 'one_ply', 'one-ply', '1-ply', '1ply')
+    OR (LOWER(COALESCE(j.job_type, '')) = 'finishing' AND LOWER(COALESCE(j.department, '')) IN ('oneply', 'one_ply', 'one-ply', '1-ply', '1ply'))
+)";
 
-<div class="breadcrumb">
-  <a href="<?= BASE_URL ?>/modules/dashboard/index.php">Dashboard</a>
-  <span class="breadcrumb-sep">&#8250;</span>
-  <span>Production</span>
-  <span class="breadcrumb-sep">&#8250;</span>
-  <span>Job Cards</span>
-  <span class="breadcrumb-sep">&#8250;</span>
-  <span>One Ply</span>
-</div>
-
-<div class="page-header">
-  <div>
-    <h1>One Ply</h1>
-    <p>This module is under development.</p>
-  </div>
-</div>
-
-<div class="card">
-  <div class="card-header">
-    <span class="card-title">One Ply</span>
-  </div>
-  <div style="padding:40px;text-align:center;color:#6b7280">
-    <i class="bi bi-tools" style="font-size:2.5rem;opacity:.3"></i>
-    <p style="margin-top:12px;font-size:.9rem">This page will be implemented in the next phase.</p>
-  </div>
-</div>
-
-<?php include __DIR__ . '/../../../includes/footer.php'; ?>
+require __DIR__ . '/../flatbed/index.php';

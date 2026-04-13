@@ -81,7 +81,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 26
+                "counter": 4
             },
             "sales_order": {
                 "prefix": "SO",
@@ -121,6 +121,14 @@
             },
             "paperroll_job": {
                 "prefix": "PRL",
+                "counter": 1
+            },
+            "pos_job": {
+                "prefix": "POS",
+                "counter": 0
+            },
+            "oneply_job": {
+                "prefix": "OPL",
                 "counter": 1
             }
         }

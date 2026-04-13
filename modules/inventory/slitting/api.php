@@ -153,7 +153,9 @@ function planningContainsPosMarker(array $planningExtra, string ...$texts): bool
     $directKeys = [
         'item', 'item_name', 'job_item', 'job_name', 'item_description',
         'product_name', 'label_item', 'job_label', 'label', 'label_name',
-        'label_code', 'item_code', 'sku', 'code', 'title', 'description'
+        'label_code', 'item_code', 'sku', 'code', 'title', 'description',
+        'material', 'material_type', 'paper_type', 'paper_name', 'paper',
+        'department', 'department_route', 'route', 'category', 'type'
     ];
     foreach ($directKeys as $k) {
         if (isset($planningExtra[$k]) && is_scalar($planningExtra[$k])) {
@@ -184,7 +186,7 @@ function planningContainsPosMarker(array $planningExtra, string ...$texts): bool
             }
             if (!is_scalar($value)) continue;
             $k = strtolower((string)$key);
-            if (preg_match('/item|product|job.*name|job.*label|label|name|description|title|sku|code/', $k)) {
+            if (preg_match('/item|product|job.*name|job.*label|label|name|description|title|sku|code|material|paper|department|route|category|type/', $k)) {
                 $candidates[] = (string)$value;
             }
         }
@@ -193,6 +195,68 @@ function planningContainsPosMarker(array $planningExtra, string ...$texts): bool
 
     foreach ($candidates as $candidate) {
         if (textContainsPosToken($candidate)) return true;
+    }
+
+    return false;
+}
+
+function textContainsOnePlyToken(string $text): bool {
+    $normalized = strtolower((string)preg_replace('/[^a-z0-9]+/', ' ', trim($text)));
+    if ($normalized === '') return false;
+    return (bool)preg_match('/\b(one\s*ply|oneply|one\sply|1\s*ply|1ply)\b/', $normalized);
+}
+
+function planningContainsOnePlyMarker(array $planningExtra, string ...$texts): bool {
+    foreach ($texts as $txt) {
+        if (textContainsOnePlyToken($txt)) return true;
+    }
+
+    $candidates = [];
+    $directKeys = [
+        'item', 'item_name', 'job_item', 'job_name', 'item_description',
+        'product_name', 'label_item', 'job_label', 'label', 'label_name',
+        'label_code', 'item_code', 'sku', 'code', 'title', 'description',
+        'material', 'material_type', 'paper_type', 'paper_name', 'paper',
+        'department', 'department_route', 'route', 'category', 'type'
+    ];
+    foreach ($directKeys as $k) {
+        if (isset($planningExtra[$k]) && is_scalar($planningExtra[$k])) {
+            $candidates[] = (string)$planningExtra[$k];
+        }
+    }
+
+    foreach (['items', 'rows', 'line_items', 'products'] as $listKey) {
+        $rows = $planningExtra[$listKey] ?? null;
+        if (!is_array($rows)) continue;
+        foreach ($rows as $row) {
+            if (!is_array($row)) continue;
+            foreach ($directKeys as $k) {
+                if (isset($row[$k]) && is_scalar($row[$k])) {
+                    $candidates[] = (string)$row[$k];
+                }
+            }
+        }
+    }
+
+    $scan = null;
+    $scan = static function($node, int $depth = 0) use (&$scan, &$candidates): void {
+        if ($depth > 4 || !is_array($node)) return;
+        foreach ($node as $key => $value) {
+            if (is_array($value)) {
+                $scan($value, $depth + 1);
+                continue;
+            }
+            if (!is_scalar($value)) continue;
+            $k = strtolower((string)$key);
+            if (preg_match('/item|product|job.*name|job.*label|label|name|description|title|sku|code|material|paper|department|route|category|type/', $k)) {
+                $candidates[] = (string)$value;
+            }
+        }
+    };
+    $scan($planningExtra, 0);
+
+    foreach ($candidates as $candidate) {
+        if (textContainsOnePlyToken($candidate)) return true;
     }
 
     return false;
@@ -885,8 +949,10 @@ try {
                 $allowPaperRollJob = false;
             }
             $hasPaperRollRoute = erp_department_selection_contains($selectedDepartments, 'PaperRoll', $departmentChoices, []);
-            $containsPosMarker = planningContainsPosMarker($planningExtra, $planningJobName, $jobName, $allocationJobName);
-            $allowPosJobFromPaperRoll = $allowPaperRollJob && $hasPaperRollRoute && !$isFlexoRequestAcceptFlow;
+            $containsPosMarker = planningContainsPosMarker($planningExtra, $planningJobName, $jobName, $allocationJobName, $allocationDepartmentRoute, (string)($parent['paper_type'] ?? ''));
+            $containsOnePlyMarker = planningContainsOnePlyMarker($planningExtra, $planningJobName, $jobName, $allocationJobName, $allocationDepartmentRoute, (string)($parent['paper_type'] ?? ''));
+            $allowPosJobFromPaperRoll = $allowPaperRollJob && $hasPaperRollRoute && !$isFlexoRequestAcceptFlow && $containsPosMarker;
+            $allowOnePlyJobFromPaperRoll = $allowPaperRollJob && $hasPaperRollRoute && !$isFlexoRequestAcceptFlow && !$containsPosMarker;
 
             $directFlexoBypass = ($allowPrintingJob && !$allowJumboJob) || ($isFlexoRequestAcceptFlow && $flexoRouteToPrinting);
 
@@ -1223,6 +1289,8 @@ try {
                     if ($paperRollPrefix === '') $paperRollPrefix = 'PRL';
                     $posPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['pos_job']['prefix'] ?? 'POS')));
                     if ($posPrefix === '') $posPrefix = 'POS';
+                    $onePlyPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['oneply_job']['prefix'] ?? 'OPL')));
+                    if ($onePlyPrefix === '') $onePlyPrefix = 'OPL';
 
                 $jumboRefNo = '';
                 if ($allowJumboJob) {
@@ -1976,6 +2044,173 @@ try {
                     }
                 }
 
+                if ($planningId > 0 && $allowOnePlyJobFromPaperRoll) {
+                    $onePlyAssignedRolls = [];
+                    foreach ($childRolls as $childRow) {
+                        $dest = strtoupper(trim((string)($childRow['dest'] ?? '')));
+                        if ($dest !== 'JOB') continue;
+                        $rollNoItem = trim((string)($childRow['roll_no'] ?? ''));
+                        if ($rollNoItem === '') continue;
+
+                        $onePlyAssignedRolls[] = [
+                            'roll_no' => $rollNoItem,
+                            'parent_roll_no' => trim((string)($childRow['parent_roll_no'] ?? $parentRollNo)),
+                            'width_mm' => (float)($childRow['width'] ?? 0),
+                            'length_mtr' => (float)($childRow['length'] ?? 0),
+                            'paper_type' => trim((string)($childRow['paper_type'] ?? '')),
+                            'company' => trim((string)($childRow['company'] ?? '')),
+                            'gsm' => (float)($childRow['gsm'] ?? 0),
+                            'status' => trim((string)($childRow['status'] ?? 'Slitting')),
+                            'job_no' => trim((string)($childRow['job_no'] ?? $planNo)),
+                            'job_name' => trim((string)($childRow['job_name'] ?? $displayJobName)),
+                        ];
+                    }
+
+                    $onePlyExtraBase = [
+                        'assigned_child_rolls' => $onePlyAssignedRolls,
+                        'assigned_child_roll_count' => count($onePlyAssignedRolls),
+                        'assigned_parent_roll_no' => $parentRollNo,
+                        'assigned_last_batch_no' => $batchNo,
+                        'assigned_updated_at' => date('c'),
+                        'machine' => trim((string)($currentMachine ?? '')),
+                        'plan_no' => $planNo,
+                        'auto_created_from_slitting' => true,
+                        'trigger' => 'paperroll_only_pln_prl_oneply',
+                    ];
+
+                    $mergeOnePlyAssignedRolls = static function(array $existing, array $incoming): array {
+                        $merged = [];
+                        foreach ($existing as $row) {
+                            if (!is_array($row)) continue;
+                            $rn = strtoupper(trim((string)($row['roll_no'] ?? '')));
+                            if ($rn === '') continue;
+                            $merged[$rn] = $row;
+                        }
+                        foreach ($incoming as $row) {
+                            if (!is_array($row)) continue;
+                            $rn = strtoupper(trim((string)($row['roll_no'] ?? '')));
+                            if ($rn === '') continue;
+                            $merged[$rn] = $row;
+                        }
+                        $out = array_values($merged);
+                        usort($out, static function($a, $b) {
+                            return strnatcasecmp((string)($a['roll_no'] ?? ''), (string)($b['roll_no'] ?? ''));
+                        });
+                        return $out;
+                    };
+
+                    $onePlyPrevId = 0;
+                    $onePlyFromRef = $parentRollNo;
+                    if ($newFlexJobId > 0 || $existingPrintId > 0) {
+                        $onePlyPrevId = $newFlexJobId > 0 ? $newFlexJobId : $existingPrintId;
+                        $onePlyFromRef = $jcNoFlex !== '' ? $jcNoFlex : ($existingFlexNo !== '' ? $existingFlexNo : 'N/A');
+                    } elseif ($jumboJobId > 0) {
+                        $onePlyPrevId = $jumboJobId;
+                        $onePlyFromRef = $jumboRefNo !== '' ? $jumboRefNo : 'N/A';
+                    } elseif ($paperRollRefNo !== '') {
+                        $onePlyFromRef = $paperRollRefNo;
+                    }
+
+                    $onePlyStatus = $onePlyPrevId <= 0 ? 'Pending' : 'Queued';
+                    $onePlyActionLabel = $onePlyPrevId <= 0 ? 'created directly' : 'queued from upstream';
+
+                    $chkOnePly = $db->prepare("SELECT id, job_no, extra_data FROM jobs WHERE department = 'oneply' AND planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
+                    $chkOnePly->bind_param('i', $planningId);
+                    $chkOnePly->execute();
+                    $existingOnePly = $chkOnePly->get_result()->fetch_assoc();
+
+                    if ($existingOnePly) {
+                        $onePlyId = (int)$existingOnePly['id'];
+                        $existingOnePlyExtra = json_decode((string)($existingOnePly['extra_data'] ?? '{}'), true);
+                        if (!is_array($existingOnePlyExtra)) $existingOnePlyExtra = [];
+                        $existingAssignedRolls = is_array($existingOnePlyExtra['assigned_child_rolls'] ?? null)
+                            ? $existingOnePlyExtra['assigned_child_rolls']
+                            : [];
+                        $mergedAssignedRolls = $mergeOnePlyAssignedRolls($existingAssignedRolls, $onePlyAssignedRolls);
+                        $existingOnePlyExtra = array_merge($existingOnePlyExtra, $onePlyExtraBase);
+                        $existingOnePlyExtra['assigned_child_rolls'] = $mergedAssignedRolls;
+                        $existingOnePlyExtra['assigned_child_roll_count'] = count($mergedAssignedRolls);
+                        $onePlyExtraJson = json_encode($existingOnePlyExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                        $onePlyNotes = 'One Ply job ' . $onePlyActionLabel
+                            . ' | Plan: ' . ($planNo ?: 'N/A')
+                            . ' | From: ' . $onePlyFromRef
+                            . ' | One Ply: ' . trim((string)($existingOnePly['job_no'] ?? 'N/A'));
+                        if ($displayJobName !== '') {
+                            $onePlyNotes .= ' | Job name: ' . $displayJobName;
+                        }
+
+                        if ($onePlyPrevId > 0) {
+                            $updOnePly = $db->prepare("UPDATE jobs SET previous_job_id = ?, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updOnePly->bind_param('isssi', $onePlyPrevId, $onePlyStatus, $onePlyNotes, $onePlyExtraJson, $onePlyId);
+                        } else {
+                            $updOnePly = $db->prepare("UPDATE jobs SET previous_job_id = NULL, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updOnePly->bind_param('sssi', $onePlyStatus, $onePlyNotes, $onePlyExtraJson, $onePlyId);
+                        }
+                        $updOnePly->execute();
+                    } else {
+                        for ($onePlyAttempt = 0; $onePlyAttempt < 30; $onePlyAttempt++) {
+                            $jcNoOnePly = (string)(generateUniqueIdForTable($db, 'oneply_job', 'jobs', 'job_no') ?? '');
+                            if ($jcNoOnePly === '') {
+                                $jcNoOnePly = deriveStageJobNo($planNo, $onePlyPrefix);
+                            }
+                            if ($jcNoOnePly === '') {
+                                $jcNoOnePly = $onePlyPrefix . '/' . date('Y') . '/' . str_pad((string)($batchId + $onePlyAttempt), 4, '0', STR_PAD_LEFT);
+                            }
+
+                            $onePlyNotesForInsert = 'One Ply job ' . $onePlyActionLabel
+                                . ' | Plan: ' . ($planNo ?: 'N/A')
+                                . ' | From: ' . $onePlyFromRef
+                                . ' | One Ply: ' . $jcNoOnePly;
+                            if ($displayJobName !== '') {
+                                $onePlyNotesForInsert .= ' | Job name: ' . $displayJobName;
+                            }
+
+                            $newOnePlyExtra = $onePlyExtraBase;
+                            $newOnePlyExtra['assigned_child_rolls'] = $onePlyAssignedRolls;
+                            $newOnePlyExtra['assigned_child_roll_count'] = count($onePlyAssignedRolls);
+                            $onePlyExtraJson = json_encode($newOnePlyExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                            if ($onePlyPrevId > 0) {
+                                $insOnePly = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'oneply', ?, 5, ?, ?, ?)");
+                                $insOnePly->bind_param('sississ', $jcNoOnePly, $planningId, $parentRollNo, $onePlyStatus, $onePlyPrevId, $onePlyNotesForInsert, $onePlyExtraJson);
+                            } else {
+                                $insOnePly = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'oneply', ?, 5, NULL, ?, ?)");
+                                $insOnePly->bind_param('sissss', $jcNoOnePly, $planningId, $parentRollNo, $onePlyStatus, $onePlyNotesForInsert, $onePlyExtraJson);
+                            }
+
+                            $okOnePly = false;
+                            try {
+                                $okOnePly = $insOnePly->execute();
+                            } catch (Throwable $insertErr) {
+                                if ((int)($insOnePly->errno ?? 0) === 1062 || stripos((string)$insertErr->getMessage(), 'Duplicate entry') !== false) {
+                                    $okOnePly = false;
+                                } else {
+                                    throw $insertErr;
+                                }
+                            }
+
+                            if ($okOnePly) {
+                                $onePlyId = (int)$db->insert_id;
+                                $createdJobCards[] = ['job_no' => $jcNoOnePly, 'type' => 'One Ply', 'roll' => $parentRollNo, 'id' => $onePlyId];
+                                $statusMsg = $onePlyPrevId <= 0 ? 'created directly' : 'queued';
+                                $nMsgOnePly = 'New One Ply job card ' . $statusMsg . ': ' . $jcNoOnePly . ' | From: ' . $onePlyFromRef;
+                                $nInsOnePly = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, 'oneply', ?, 'info')");
+                                if ($nInsOnePly) {
+                                    $nInsOnePly->bind_param('is', $onePlyId, $nMsgOnePly);
+                                    $nInsOnePly->execute();
+                                }
+                                break;
+                            }
+
+                            if ((int)$insOnePly->errno === 1062) continue;
+                            if ($onePlyAttempt >= 29) {
+                                throw new Exception('Unable to generate unique One Ply job number. Please try again.');
+                            }
+                        }
+                    }
+                }
+
                 // Keep one downstream die-cutting job per plan as queued (FlatBed variants only).
                 $dieValueNorm = strtolower(trim((string)($planningExtra['die'] ?? '')));
                 $isFlatbedLikeDie = ($dieValueNorm !== '') && (strpos($dieValueNorm, 'flatbed') !== false) && (strpos($dieValueNorm, 'rotary') === false);
@@ -2495,6 +2730,8 @@ try {
             if ($barcodePrefix === '') $barcodePrefix = 'BRC-BAR';
             $posPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['pos_job']['prefix'] ?? 'POS')));
             if ($posPrefix === '') $posPrefix = 'POS';
+            $onePlyPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['oneply_job']['prefix'] ?? 'OPL')));
+            if ($onePlyPrefix === '') $onePlyPrefix = 'OPL';
 
             $findExistingStageJob = static function (mysqli $dbConn, int $planningId, string $department): ?array {
                 if ($planningId <= 0) {
@@ -2823,9 +3060,19 @@ try {
                     $containsPos = planningContainsPosMarker(
                         $planCtxPos['planning_extra'] ?? [],
                         (string)($planCtxPos['planning_job_name'] ?? ''),
-                        (string)($a['job_name'] ?? '')
+                        (string)($a['job_name'] ?? ''),
+                        (string)($a['department_route'] ?? ''),
+                        (string)($parent['paper_type'] ?? '')
                     );
-                    $allowPosFromPaperRoll = $allowPaperRoll && $hasPaperRollRoute;
+                    $containsOnePly = planningContainsOnePlyMarker(
+                        $planCtxPos['planning_extra'] ?? [],
+                        (string)($planCtxPos['planning_job_name'] ?? ''),
+                        (string)($a['job_name'] ?? ''),
+                        (string)($a['department_route'] ?? ''),
+                        (string)($parent['paper_type'] ?? '')
+                    );
+                    $allowPosFromPaperRoll = $allowPaperRoll && $hasPaperRollRoute && $containsPos;
+                    $allowOnePlyFromPaperRoll = $allowPaperRoll && $hasPaperRollRoute && !$containsPos;
                     $directFlexoBypass = $allowPrinting && !$allowJumbo;
                     $resolvedMachine = $machine !== '' ? $machine : resolveMachineFromDepartmentRoute($db, (string)$a['department_route']);
 
@@ -3228,6 +3475,63 @@ try {
                         $insPos->execute();
                         $posJobId = (int)$db->insert_id;
                         $createdJobCards[] = ['job_no' => $jcNoPos, 'type' => 'POS Roll', 'action' => 'created', 'plan_no' => $a['plan_no'], 'allocation_id' => $allocationId, 'id' => $posJobId];
+                    }
+                }
+
+                if ($allowOnePlyFromPaperRoll && $a['planning_id'] > 0) {
+                    $onePlyUpstreamId = 0;
+                    $onePlyUpstreamRef = $parentRollNo !== '' ? $parentRollNo : 'N/A';
+                    if ($printingJobIdForChain > 0) {
+                        $onePlyUpstreamId = $printingJobIdForChain;
+                        $onePlyUpstreamRef = $printingJobNoForChain !== '' ? $printingJobNoForChain : 'N/A';
+                    } elseif ($jumboJobId > 0) {
+                        $onePlyUpstreamId = $jumboJobId;
+                        $onePlyUpstreamRef = $jumboJobNo !== '' ? $jumboJobNo : 'N/A';
+                    } elseif ($paperRollJobNo !== '') {
+                        $onePlyUpstreamRef = $paperRollJobNo;
+                    }
+                    $onePlyStatus = $onePlyUpstreamId <= 0 ? 'Pending' : 'Queued';
+                    $onePlyExtraData = [
+                        'assigned_child_rolls' => $jobAssignedRolls,
+                        'assigned_child_roll_count' => count($jobAssignedRolls),
+                        'assigned_parent_roll_no' => $parentRollNo,
+                        'assigned_last_batch_no' => $batchNo,
+                        'plan_no' => $a['plan_no'],
+                        'machine' => $resolvedMachine,
+                        'auto_created_from_slitting' => true,
+                        'trigger' => 'paperroll_only_pln_prl_oneply',
+                    ];
+                    $existingOnePly = $findExistingStageJob($db, (int)$a['planning_id'], 'oneply');
+                    if ($existingOnePly) {
+                        $onePlyJobId = (int)($existingOnePly['id'] ?? 0);
+                        $existingOnePlyExtra = $decodeJsonAssoc($existingOnePly['extra_data'] ?? '');
+                        $existingOnePlyRolls = is_array($existingOnePlyExtra['assigned_child_rolls'] ?? null) ? $existingOnePlyExtra['assigned_child_rolls'] : [];
+                        $onePlyExtraData['assigned_child_rolls'] = $mergeAssignedRolls($existingOnePlyRolls, $jobAssignedRolls);
+                        $onePlyExtraData['assigned_child_roll_count'] = count($onePlyExtraData['assigned_child_rolls']);
+                        $onePlyExtraJson = json_encode(array_merge($existingOnePlyExtra, $onePlyExtraData), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        $onePlyNotes = 'One Ply job updated | Plan: ' . $a['plan_no'] . ' | From: ' . $onePlyUpstreamRef;
+                        if ($onePlyUpstreamId > 0) {
+                            $updOnePly = $db->prepare("UPDATE jobs SET previous_job_id = ?, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updOnePly->bind_param('isssi', $onePlyUpstreamId, $onePlyStatus, $onePlyNotes, $onePlyExtraJson, $onePlyJobId);
+                        } else {
+                            $updOnePly = $db->prepare("UPDATE jobs SET previous_job_id = NULL, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updOnePly->bind_param('sssi', $onePlyStatus, $onePlyNotes, $onePlyExtraJson, $onePlyJobId);
+                        }
+                        $updOnePly->execute();
+                    } else {
+                        $jcNoOnePly = generateUniqueStageJobNo($db, $a['plan_no'], 'oneply_job', $onePlyPrefix, $batchId + 700 + $a['allocation_sequence']);
+                        $onePlyNotes = 'One Ply job queued | Plan: ' . $a['plan_no'] . ' | From: ' . $onePlyUpstreamRef . ' | One Ply: ' . $jcNoOnePly;
+                        $onePlyExtraJson = json_encode($onePlyExtraData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        if ($onePlyUpstreamId > 0) {
+                            $insOnePly = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'oneply', ?, 5, ?, ?, ?)");
+                            $insOnePly->bind_param('sississ', $jcNoOnePly, $a['planning_id'], $parentRollNo, $onePlyStatus, $onePlyUpstreamId, $onePlyNotes, $onePlyExtraJson);
+                        } else {
+                            $insOnePly = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'oneply', ?, 5, NULL, ?, ?)");
+                            $insOnePly->bind_param('sissss', $jcNoOnePly, $a['planning_id'], $parentRollNo, $onePlyStatus, $onePlyNotes, $onePlyExtraJson);
+                        }
+                        $insOnePly->execute();
+                        $onePlyJobId = (int)$db->insert_id;
+                        $createdJobCards[] = ['job_no' => $jcNoOnePly, 'type' => 'One Ply', 'action' => 'created', 'plan_no' => $a['plan_no'], 'allocation_id' => $allocationId, 'id' => $onePlyJobId];
                     }
                 }
 
