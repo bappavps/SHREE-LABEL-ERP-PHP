@@ -799,6 +799,7 @@ try {
             $allowDieCuttingJob = erp_department_selection_contains($selectedDepartments, 'Die-Cutting', $departmentChoices, []);
             $allowLabelSlittingJob = erp_department_selection_contains($selectedDepartments, 'Label Slitting', $departmentChoices, []);
             $allowBarcodeJob = erp_department_selection_contains($selectedDepartments, 'BarCode', $departmentChoices, []);
+            $allowPaperRollJob = erp_department_selection_contains($selectedDepartments, 'PaperRoll', $departmentChoices, []);
 
             if ($isFlexoRequestAcceptFlow) {
                 // Flexo request extra slitting must not create separate downstream cards.
@@ -807,12 +808,17 @@ try {
                 $allowDieCuttingJob = false;
                 $allowLabelSlittingJob = false;
                 $allowBarcodeJob = false;
+                $allowPaperRollJob = false;
             }
 
             // Barcode downstream card creation is reserved for PLN-BAR plans.
             $isBarcodePlanPrefix = stripos((string)$planNo, 'PLN-BAR/') === 0;
             if (!$isBarcodePlanPrefix) {
                 $allowBarcodeJob = false;
+            }
+            $isPaperRollPlanPrefix = stripos((string)$planNo, 'PLN-PRL/') === 0;
+            if (!$isPaperRollPlanPrefix) {
+                $allowPaperRollJob = false;
             }
 
             $directFlexoBypass = ($allowPrintingJob && !$allowJumboJob) || ($isFlexoRequestAcceptFlow && $flexoRouteToPrinting);
@@ -1146,6 +1152,8 @@ try {
                     if ($labelSlittingPrefix === '') $labelSlittingPrefix = 'LSL';
                     $barcodePrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['barcode_job']['prefix'] ?? 'BRC-BAR')));
                     if ($barcodePrefix === '') $barcodePrefix = 'BRC-BAR';
+                    $paperRollPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['paperroll_job']['prefix'] ?? 'PRL')));
+                    if ($paperRollPrefix === '') $paperRollPrefix = 'PRL';
 
                 $jumboRefNo = '';
                 if ($allowJumboJob) {
@@ -1290,7 +1298,7 @@ try {
                 }
 
                 // Keep one downstream printing job per plan as queued.
-                if ($planningId > 0 && ($allowPrintingJob || $allowDieCuttingJob || $allowBarcodeJob)) {
+                if ($planningId > 0 && ($allowPrintingJob || $allowDieCuttingJob || $allowBarcodeJob || $allowPaperRollJob)) {
                     $chkP = $db->prepare("SELECT id, job_no FROM jobs WHERE job_type = 'Printing' AND planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
                     $chkP->bind_param('i', $planningId);
                     $chkP->execute();
@@ -1558,6 +1566,171 @@ try {
                             if ((int)$insBarcode->errno === 1062) continue;
                             if ($barcodeAttempt >= 29) {
                                 throw new Exception('Unable to generate unique barcode job number. Please try again.');
+                            }
+                        }
+                    }
+                }
+
+                if ($planningId > 0 && $allowPaperRollJob) {
+                    $paperRollAssignedRolls = [];
+                    foreach ($childRolls as $childRow) {
+                        $dest = strtoupper(trim((string)($childRow['dest'] ?? '')));
+                        if ($dest !== 'JOB') continue;
+                        $rollNoItem = trim((string)($childRow['roll_no'] ?? ''));
+                        if ($rollNoItem === '') continue;
+
+                        $paperRollAssignedRolls[] = [
+                            'roll_no' => $rollNoItem,
+                            'parent_roll_no' => trim((string)($childRow['parent_roll_no'] ?? $parentRollNo)),
+                            'width_mm' => (float)($childRow['width'] ?? 0),
+                            'length_mtr' => (float)($childRow['length'] ?? 0),
+                            'paper_type' => trim((string)($childRow['paper_type'] ?? '')),
+                            'company' => trim((string)($childRow['company'] ?? '')),
+                            'gsm' => (float)($childRow['gsm'] ?? 0),
+                            'status' => trim((string)($childRow['status'] ?? 'Slitting')),
+                            'job_no' => trim((string)($childRow['job_no'] ?? $planNo)),
+                            'job_name' => trim((string)($childRow['job_name'] ?? $displayJobName)),
+                        ];
+                    }
+
+                    $paperRollExtraBase = [
+                        'assigned_child_rolls' => $paperRollAssignedRolls,
+                        'assigned_child_roll_count' => count($paperRollAssignedRolls),
+                        'assigned_parent_roll_no' => $parentRollNo,
+                        'assigned_last_batch_no' => $batchNo,
+                        'assigned_updated_at' => date('c'),
+                        'machine' => trim((string)($currentMachine ?? '')),
+                        'plan_no' => $planNo,
+                        'direct_paperroll_bypass' => false,
+                    ];
+
+                    $mergePaperRollAssignedRolls = static function(array $existing, array $incoming): array {
+                        $merged = [];
+                        foreach ($existing as $row) {
+                            if (!is_array($row)) continue;
+                            $rn = strtoupper(trim((string)($row['roll_no'] ?? '')));
+                            if ($rn === '') continue;
+                            $merged[$rn] = $row;
+                        }
+                        foreach ($incoming as $row) {
+                            if (!is_array($row)) continue;
+                            $rn = strtoupper(trim((string)($row['roll_no'] ?? '')));
+                            if ($rn === '') continue;
+                            $merged[$rn] = $row;
+                        }
+                        $out = array_values($merged);
+                        usort($out, static function($a, $b) {
+                            return strnatcasecmp((string)($a['roll_no'] ?? ''), (string)($b['roll_no'] ?? ''));
+                        });
+                        return $out;
+                    };
+
+                    $paperRollPrevId = 0;
+                    $paperRollFromRef = $parentRollNo;
+                    if ($newFlexJobId > 0 || $existingPrintId > 0) {
+                        $paperRollPrevId = $newFlexJobId > 0 ? $newFlexJobId : $existingPrintId;
+                        $paperRollFromRef = $jcNoFlex !== '' ? $jcNoFlex : ($existingFlexNo !== '' ? $existingFlexNo : 'N/A');
+                    } elseif ($jumboJobId > 0) {
+                        $paperRollPrevId = $jumboJobId;
+                        $paperRollFromRef = $jumboRefNo !== '' ? $jumboRefNo : 'N/A';
+                    }
+
+                    $paperRollStatus = $paperRollPrevId <= 0 ? 'Pending' : 'Queued';
+                    $paperRollActionLabel = $paperRollPrevId <= 0 ? 'created directly' : 'queued from upstream';
+
+                    $chkPR = $db->prepare("SELECT id, job_no, extra_data FROM jobs WHERE department = 'paperroll' AND planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
+                    $chkPR->bind_param('i', $planningId);
+                    $chkPR->execute();
+                    $existingPaperRoll = $chkPR->get_result()->fetch_assoc();
+
+                    $paperRollChainRef = trim((string)($existingPaperRoll['job_no'] ?? ''));
+                    $paperRollNotes = 'PaperRoll job ' . $paperRollActionLabel
+                        . ' | Plan: ' . ($planNo ?: 'N/A')
+                        . ' | From: ' . $paperRollFromRef
+                        . ' | PaperRoll: ' . ($paperRollChainRef !== '' ? $paperRollChainRef : 'N/A');
+                    if ($displayJobName !== '') {
+                        $paperRollNotes .= ' | Job name: ' . $displayJobName;
+                    }
+
+                    if ($existingPaperRoll) {
+                        $paperRollId = (int)$existingPaperRoll['id'];
+                        $existingPaperRollExtra = json_decode((string)($existingPaperRoll['extra_data'] ?? '{}'), true);
+                        if (!is_array($existingPaperRollExtra)) $existingPaperRollExtra = [];
+                        $existingAssignedRolls = is_array($existingPaperRollExtra['assigned_child_rolls'] ?? null)
+                            ? $existingPaperRollExtra['assigned_child_rolls']
+                            : [];
+                        $mergedAssignedRolls = $mergePaperRollAssignedRolls($existingAssignedRolls, $paperRollAssignedRolls);
+                        $existingPaperRollExtra = array_merge($existingPaperRollExtra, $paperRollExtraBase);
+                        $existingPaperRollExtra['assigned_child_rolls'] = $mergedAssignedRolls;
+                        $existingPaperRollExtra['assigned_child_roll_count'] = count($mergedAssignedRolls);
+                        $paperRollExtraJson = json_encode($existingPaperRollExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                        if ($paperRollPrevId > 0) {
+                            $updPaperRoll = $db->prepare("UPDATE jobs SET previous_job_id = ?, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updPaperRoll->bind_param('isssi', $paperRollPrevId, $paperRollStatus, $paperRollNotes, $paperRollExtraJson, $paperRollId);
+                        } else {
+                            $updPaperRoll = $db->prepare("UPDATE jobs SET previous_job_id = NULL, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updPaperRoll->bind_param('sssi', $paperRollStatus, $paperRollNotes, $paperRollExtraJson, $paperRollId);
+                        }
+                        $updPaperRoll->execute();
+                    } else {
+                        for ($paperRollAttempt = 0; $paperRollAttempt < 30; $paperRollAttempt++) {
+                            $jcNoPaperRoll = (string)(generateUniqueIdForTable($db, 'paperroll_job', 'jobs', 'job_no') ?? '');
+                            if ($jcNoPaperRoll === '') {
+                                $jcNoPaperRoll = deriveStageJobNo($planNo, $paperRollPrefix);
+                            }
+                            if ($jcNoPaperRoll === '') {
+                                $jcNoPaperRoll = $paperRollPrefix . '/' . date('Y') . '/' . str_pad((string)($batchId + $paperRollAttempt), 4, '0', STR_PAD_LEFT);
+                            }
+
+                            $paperRollNotesForInsert = 'PaperRoll job ' . $paperRollActionLabel
+                                . ' | Plan: ' . ($planNo ?: 'N/A')
+                                . ' | From: ' . $paperRollFromRef
+                                . ' | PaperRoll: ' . $jcNoPaperRoll;
+                            if ($displayJobName !== '') {
+                                $paperRollNotesForInsert .= ' | Job name: ' . $displayJobName;
+                            }
+
+                            $newPaperRollExtra = $paperRollExtraBase;
+                            $newPaperRollExtra['assigned_child_rolls'] = $paperRollAssignedRolls;
+                            $newPaperRollExtra['assigned_child_roll_count'] = count($paperRollAssignedRolls);
+                            $paperRollExtraJson = json_encode($newPaperRollExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                            if ($paperRollPrevId > 0) {
+                                $insPaperRoll = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'paperroll', ?, 4, ?, ?, ?)");
+                                $insPaperRoll->bind_param('sississ', $jcNoPaperRoll, $planningId, $parentRollNo, $paperRollStatus, $paperRollPrevId, $paperRollNotesForInsert, $paperRollExtraJson);
+                            } else {
+                                $insPaperRoll = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'paperroll', ?, 4, NULL, ?, ?)");
+                                $insPaperRoll->bind_param('sissss', $jcNoPaperRoll, $planningId, $parentRollNo, $paperRollStatus, $paperRollNotesForInsert, $paperRollExtraJson);
+                            }
+
+                            $okPaperRoll = false;
+                            try {
+                                $okPaperRoll = $insPaperRoll->execute();
+                            } catch (Throwable $insertErr) {
+                                if ((int)($insPaperRoll->errno ?? 0) === 1062 || stripos((string)$insertErr->getMessage(), 'Duplicate entry') !== false) {
+                                    $okPaperRoll = false;
+                                } else {
+                                    throw $insertErr;
+                                }
+                            }
+
+                            if ($okPaperRoll) {
+                                $paperRollId = (int)$db->insert_id;
+                                $createdJobCards[] = ['job_no' => $jcNoPaperRoll, 'type' => 'PaperRoll', 'roll' => $parentRollNo, 'id' => $paperRollId];
+                                $statusMsg = $paperRollPrevId <= 0 ? 'created directly' : 'queued';
+                                $nMsgPR = 'New PaperRoll job card ' . $statusMsg . ': ' . $jcNoPaperRoll . ' | From: ' . $paperRollFromRef;
+                                $nInsPR = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, 'paperroll', ?, 'info')");
+                                if ($nInsPR) {
+                                    $nInsPR->bind_param('is', $paperRollId, $nMsgPR);
+                                    $nInsPR->execute();
+                                }
+                                break;
+                            }
+
+                            if ((int)$insPaperRoll->errno === 1062) continue;
+                            if ($paperRollAttempt >= 29) {
+                                throw new Exception('Unable to generate unique paperroll job number. Please try again.');
                             }
                         }
                     }
@@ -2395,9 +2568,13 @@ try {
                     $allowDieCutting = erp_department_selection_contains($departments, 'Die-Cutting', $departmentChoices, []);
                     $allowLabelSlitting = erp_department_selection_contains($departments, 'Label Slitting', $departmentChoices, []);
                     $allowBarcode = erp_department_selection_contains($departments, 'BarCode', $departmentChoices, []);
+                    $allowPaperRoll = erp_department_selection_contains($departments, 'PaperRoll', $departmentChoices, []);
                     // Barcode downstream card creation is reserved for PLN-BAR plans
                     if (stripos((string)$a['plan_no'], 'PLN-BAR/') !== 0) {
                         $allowBarcode = false;
+                    }
+                    if (stripos((string)$a['plan_no'], 'PLN-PRL/') !== 0) {
+                        $allowPaperRoll = false;
                     }
                     $directFlexoBypass = $allowPrinting && !$allowJumbo;
                     $resolvedMachine = $machine !== '' ? $machine : resolveMachineFromDepartmentRoute($db, (string)$a['department_route']);
@@ -2686,6 +2863,60 @@ try {
                         $insB->execute();
                         $barcodeJobId = (int)$db->insert_id;
                         $createdJobCards[] = ['job_no' => $jcNoBarcode, 'type' => 'Barcode', 'action' => 'created', 'plan_no' => $a['plan_no'], 'allocation_id' => $allocationId, 'id' => $barcodeJobId];
+                    }
+                }
+
+                if ($allowPaperRoll && $a['planning_id'] > 0) {
+                    $paperRollUpstreamId = 0;
+                    $paperRollUpstreamRef = 'N/A';
+                    if ($printingJobIdForChain > 0) {
+                        $paperRollUpstreamId = $printingJobIdForChain;
+                        $paperRollUpstreamRef = $printingJobNoForChain !== '' ? $printingJobNoForChain : 'N/A';
+                    } elseif ($jumboJobId > 0) {
+                        $paperRollUpstreamId = $jumboJobId;
+                        $paperRollUpstreamRef = $jumboJobNo !== '' ? $jumboJobNo : 'N/A';
+                    }
+                    $paperRollStatus = $paperRollUpstreamId <= 0 ? 'Pending' : 'Queued';
+                    $paperRollExtraData = [
+                        'assigned_child_rolls' => $jobAssignedRolls,
+                        'assigned_child_roll_count' => count($jobAssignedRolls),
+                        'assigned_parent_roll_no' => $parentRollNo,
+                        'assigned_last_batch_no' => $batchNo,
+                        'plan_no' => $a['plan_no'],
+                        'machine' => $resolvedMachine,
+                        'direct_paperroll_bypass' => ($paperRollUpstreamId <= 0),
+                    ];
+                    $existingPaperRoll = $findExistingStageJob($db, (int)$a['planning_id'], 'paperroll');
+                    if ($existingPaperRoll) {
+                        $paperRollJobId = (int)($existingPaperRoll['id'] ?? 0);
+                        $existingPaperRollExtra = $decodeJsonAssoc($existingPaperRoll['extra_data'] ?? '');
+                        $existingPaperRollRolls = is_array($existingPaperRollExtra['assigned_child_rolls'] ?? null) ? $existingPaperRollExtra['assigned_child_rolls'] : [];
+                        $paperRollExtraData['assigned_child_rolls'] = $mergeAssignedRolls($existingPaperRollRolls, $jobAssignedRolls);
+                        $paperRollExtraData['assigned_child_roll_count'] = count($paperRollExtraData['assigned_child_rolls']);
+                        $paperRollExtraJson = json_encode(array_merge($existingPaperRollExtra, $paperRollExtraData), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        $paperRollNotes = 'PaperRoll job updated | Plan: ' . $a['plan_no'] . ' | From: ' . $paperRollUpstreamRef;
+                        if ($paperRollUpstreamId > 0) {
+                            $updPR = $db->prepare("UPDATE jobs SET previous_job_id = ?, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updPR->bind_param('isssi', $paperRollUpstreamId, $paperRollStatus, $paperRollNotes, $paperRollExtraJson, $paperRollJobId);
+                        } else {
+                            $updPR = $db->prepare("UPDATE jobs SET previous_job_id = NULL, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updPR->bind_param('sssi', $paperRollStatus, $paperRollNotes, $paperRollExtraJson, $paperRollJobId);
+                        }
+                        $updPR->execute();
+                    } else {
+                        $jcNoPaperRoll = generateUniqueStageJobNo($db, $a['plan_no'], 'paperroll_job', 'PRL', $batchId + 500 + $a['allocation_sequence']);
+                        $paperRollNotes = 'PaperRoll job queued | Plan: ' . $a['plan_no'] . ' | From: ' . $paperRollUpstreamRef . ' | PaperRoll: ' . $jcNoPaperRoll;
+                        $paperRollExtraJson = json_encode($paperRollExtraData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        if ($paperRollUpstreamId > 0) {
+                            $insPR = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'paperroll', ?, 4, ?, ?, ?)");
+                            $insPR->bind_param('sississ', $jcNoPaperRoll, $a['planning_id'], $parentRollNo, $paperRollStatus, $paperRollUpstreamId, $paperRollNotes, $paperRollExtraJson);
+                        } else {
+                            $insPR = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'paperroll', ?, 4, NULL, ?, ?)");
+                            $insPR->bind_param('sissss', $jcNoPaperRoll, $a['planning_id'], $parentRollNo, $paperRollStatus, $paperRollNotes, $paperRollExtraJson);
+                        }
+                        $insPR->execute();
+                        $paperRollJobId = (int)$db->insert_id;
+                        $createdJobCards[] = ['job_no' => $jcNoPaperRoll, 'type' => 'PaperRoll', 'action' => 'created', 'plan_no' => $a['plan_no'], 'allocation_id' => $allocationId, 'id' => $paperRollJobId];
                     }
                 }
 

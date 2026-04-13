@@ -111,6 +111,7 @@ function erp_configured_departments(): array {
         'Printing',
         'Die-Cutting',
         'BarCode',
+        'PaperRoll',
         'Label Slitting',
         'Batch Printing',
         'Packaging',
@@ -133,6 +134,7 @@ function erp_department_alias_map(): array {
         'Printing' => ['printing', 'label printing', 'label-printing', 'label_printing', 'printing label', 'flexo', 'flexo printing', 'flexo_printing', 'flexo-printing', 'markandy', 'mark andy', '8 color printing', '8.color printing'],
         'Die-Cutting' => ['die cutting', 'die-cutting', 'die_cutting', 'flatbed', 'flat bed'],
         'BarCode' => ['barcode', 'bar code', 'bar-code', 'bar_code'],
+        'PaperRoll' => ['paperroll', 'paper roll', 'paper-roll', 'paper_roll'],
         'Label Slitting' => ['label slitting', 'label-slitting', 'label_slitting', 'slitting'],
         'Batch Printing' => ['batch printing', 'batch-printing', 'batch_printing', 'one ply', 'oneply', 'one_ply', 'one-ply', 'pos', 'pos roll', 'pos_roll', 'pos-roll', 'posroll', 'rotery', 'rotery die', 'rotary die', 'rotary'],
         'Packaging' => ['packing', 'packaging', 'packing slip'],
@@ -402,6 +404,9 @@ function planningNotificationRouteInfo($planningDepartment = '') {
     }
     if (in_array($department, ['barcode', 'rotery', 'rotary'], true)) {
         return ['label' => 'barcode', 'path' => '/modules/planning/barcode/index.php'];
+    }
+    if (in_array($department, ['paperroll', 'paper-roll', 'paper_roll'], true)) {
+        return ['label' => 'paperroll', 'path' => '/modules/planning/paperroll/index.php'];
     }
     if (in_array($department, ['label_slitting', 'label-slitting', 'label slitting'], true)) {
         return ['label' => 'label slitting', 'path' => '/modules/planning/label-slitting/index.php'];
@@ -814,6 +819,7 @@ function rbacPageCatalog() {
         '/modules/planning/flatbed/index.php' => 'Planning - Die-Cutting',
         '/modules/planning/barcode/index.php' => 'Planning - Barcode',
         '/modules/planning/rotery/index.php' => 'Planning - Barcode (Legacy URL)',
+        '/modules/planning/paperroll/index.php' => 'Planning - PaperRoll',
         '/modules/planning/label-slitting/index.php' => 'Planning - Label Slitting',
         '/modules/planning/batch/index.php' => 'Planning - Batch Printing',
         '/modules/planning/packing/index.php' => 'Planning - Packaging',
@@ -1365,11 +1371,13 @@ function prefixSettingsDefaults() {
                 'sales_order' => ['prefix' => 'SO', 'counter' => 0],
                 'planning' => ['prefix' => 'PLN', 'counter' => 0],
                 'planning_barcode' => ['prefix' => 'PLN-BAR', 'counter' => 0],
+                'planning_paperroll' => ['prefix' => 'PLN-PRL', 'counter' => 0],
                 'jumbo_job' => ['prefix' => 'SLT', 'counter' => 0],
                 'printing_job' => ['prefix' => 'FLX', 'counter' => 0],
                 'die_cutting_job' => ['prefix' => 'DCT', 'counter' => 0],
                 'label_slitting_job' => ['prefix' => 'LSL', 'counter' => 0],
                 'barcode_job' => ['prefix' => 'BRC-BAR', 'counter' => 0],
+                'paperroll_job' => ['prefix' => 'PRL', 'counter' => 0],
             ],
         ],
     ];

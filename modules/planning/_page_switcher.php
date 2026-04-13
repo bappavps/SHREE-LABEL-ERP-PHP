@@ -21,6 +21,10 @@ $planningPageRoutes = [
       'label' => 'Barcode',
       'url' => appUrl('/modules/planning/barcode/index.php'),
     ],
+    'paperroll' => [
+      'label' => 'PaperRoll',
+      'url' => appUrl('/modules/planning/paperroll/index.php'),
+    ],
     'label-slitting' => [
         'label' => 'Label Slitting',
         'url' => appUrl('/modules/planning/label-slitting/index.php'),
