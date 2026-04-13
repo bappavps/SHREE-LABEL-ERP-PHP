@@ -120,6 +120,7 @@ rmEnsureSchema($db);
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 $userId = (int)($_SESSION['user_id'] ?? 0);
+$currentUserName = trim((string)($_SESSION['user_name'] ?? ($_SESSION['name'] ?? 'User')));
 
 if ($action === 'create_requisition') {
     if (!verifyCSRF($_POST['csrf_token'] ?? '')) rmJson(false, ['error' => 'Invalid CSRF token']);
@@ -269,6 +270,9 @@ if ($action === 'create_requisition') {
         }
     }
     $stmtItem->close();
+
+    $notificationMessage = 'New requisition submitted by ' . $currentUserName . ' for ' . $department . ': ' . $itemSummary;
+    createDepartmentNotifications($db, [erpNotificationAdminChannel('requisition')], 0, $notificationMessage, 'info');
 
     rmJson(true, ['message' => 'Requisition submitted']);
 }
@@ -652,6 +656,14 @@ if ($action === 'admin_decide') {
         rmJson(false, ['error' => 'Invalid request']);
     }
 
+    $stmtDetail = $db->prepare("SELECT r.user_id, r.item_name, r.department, u.name AS requester_name FROM requisitions r LEFT JOIN users u ON u.id = r.user_id WHERE r.id = ? LIMIT 1");
+    if (!$stmtDetail) rmJson(false, ['error' => 'Prepare failed']);
+    $stmtDetail->bind_param('i', $id);
+    $stmtDetail->execute();
+    $reqDetail = $stmtDetail->get_result()->fetch_assoc();
+    $stmtDetail->close();
+    if (!$reqDetail) rmJson(false, ['error' => 'Requisition not found']);
+
     $status = $decision;
     $approvedBy = (int)($_SESSION['user_id'] ?? 0);
 
@@ -678,6 +690,17 @@ if ($action === 'admin_decide') {
     $stmt->close();
 
     if ($affected <= 0) rmJson(false, ['error' => 'No pending requisition updated']);
+
+    $decisionLabel = $decision === 'approved' ? 'approved' : 'rejected';
+    $itemName = trim((string)($reqDetail['item_name'] ?? 'Requisition'));
+    $departmentName = trim((string)($reqDetail['department'] ?? ''));
+    $adminName = $currentUserName !== '' ? $currentUserName : 'Admin';
+    $userChannel = erpNotificationUserChannel('requisition', (int)($reqDetail['user_id'] ?? 0));
+    if ($userChannel !== '') {
+        $message = 'Your requisition ' . $itemName . ($departmentName !== '' ? ' (' . $departmentName . ')' : '') . ' was ' . $decisionLabel . ' by ' . $adminName . '.';
+        createDepartmentNotifications($db, [$userChannel], 0, $message, $decision === 'approved' ? 'success' : 'warning');
+    }
+
     rmJson(true, ['message' => 'Requisition updated']);
 }
 

@@ -1004,7 +1004,28 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             if (dept === 'packing') return withAppBase('modules/operators/packing/index.php');
             if (dept === 'dispatch') return withAppBase('modules/dispatch/index.php');
             if (dept === 'planning') return withAppBase('modules/planning/index.php');
+            if (dept === 'requisition_admin' || /^requisition_user_\d+$/i.test(dept)) return withAppBase('modules/requisition-management/index.php');
+            if (dept === 'leave_admin' || /^leave_user_\d+$/i.test(dept)) return withAppBase('modules/leave-management/index.php');
             return withAppBase('modules/approval/index.php');
+        }
+
+        function notificationDepartmentLabel(dept) {
+            var value = String(dept || '').trim();
+            if (!value) return 'Notification';
+            if (value === 'jumbo_slitting') return 'Jumbo Slitting';
+            if (value === 'flexo_printing') return 'Printing';
+            if (value === 'flatbed') return 'Flatbed';
+            if (value === 'rotery') return 'Rotary';
+            if (value === 'barcode') return 'Barcode';
+            if (value === 'label_slitting') return 'Label Slitting';
+            if (value === 'packing') return 'Packing';
+            if (value === 'dispatch') return 'Dispatch';
+            if (value === 'planning') return 'Planning';
+            if (value === 'requisition_admin') return 'Requisition Approval';
+            if (/^requisition_user_\d+$/i.test(value)) return 'Requisition Status';
+            if (value === 'leave_admin') return 'Leave Approval';
+            if (/^leave_user_\d+$/i.test(value)) return 'Leave Status';
+            return value.replace(/_/g, ' ').replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
         }
 
         function fetchNotifications(unreadOnly, done) {
@@ -1034,8 +1055,8 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                             var latestDept = String(latest.department || '').trim();
                             var latestTarget = String(latest.target_url || '').trim() || buildDeptUrl(latestDept);
                             window.erpCenterMessage(String(latest.message || 'New notification'), {
-                                title: String(latest.job_no || latest.department || 'New Notification'),
-                                okLabel: 'Open Job Card',
+                                title: String(latest.job_no || notificationDepartmentLabel(latestDept) || 'New Notification'),
+                                okLabel: 'Open',
                                 cancelLabel: 'Cancel',
                                 onOk: function () {
                                     markRead(latestId, function () {
@@ -1044,7 +1065,7 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                                 }
                             });
                         }
-                        firstUnreadFetch = false;
+                                var title = (n.job_no || notificationDepartmentLabel(n.department) || 'Notification');
                     }
                     if (typeof done === 'function') done(rows);
                 })

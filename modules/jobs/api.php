@@ -1062,6 +1062,14 @@ function jobs_notification_target_url(mysqli $db, array $notification): string {
     $message = strtolower(trim((string)($notification['message'] ?? '')));
     $notificationJobId = (int)($notification['job_id'] ?? 0);
 
+    if ($department === 'requisition_admin' || preg_match('/^requisition_user_\d+$/', $department)) {
+        return jobs_join_base_url('/modules/requisition-management/index.php');
+    }
+
+    if ($department === 'leave_admin' || preg_match('/^leave_user_\d+$/', $department)) {
+        return jobs_join_base_url('/modules/leave-management/index.php');
+    }
+
     if ($department === 'planning') {
         if (strpos($message, 'barcode planning') !== false || strpos($message, 'rotery planning') !== false || strpos($message, 'rotary planning') !== false) {
             return jobs_join_base_url('/modules/planning/barcode/index.php');

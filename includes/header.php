@@ -33,6 +33,7 @@ $companyLogoUrl = $uiLogoPath !== '' ? appUrl($uiLogoPath) : appUrl('assets/img/
 $themeColor = (string)($appSettings['sidebar_button_color'] ?? '#22c55e');
 $csrfToken = function_exists('generateCSRF') ? generateCSRF() : '';
 $currentPath = function_exists('rbacCurrentPath') ? rbacCurrentPath() : (string)($_SERVER['PHP_SELF'] ?? '');
+$currentUserId = (int)($_SESSION['user_id'] ?? 0);
 $notificationDepartments = [];
 if (strpos($currentPath, '/modules/operators/jumbo/') === 0 || strpos($currentPath, '/modules/jobs/jumbo/') === 0) {
   $notificationDepartments[] = 'jumbo_slitting';
@@ -57,6 +58,27 @@ if (strpos($currentPath, '/modules/operators/packing/') === 0 || strpos($current
 }
 if (strpos($currentPath, '/modules/planning/') === 0) {
   $notificationDepartments[] = 'planning';
+}
+if ($currentUserId > 0) {
+  $canRequisitionUser = !function_exists('canAccessPath') || canAccessPath('/modules/requisition-management/index.php');
+  if ($canRequisitionUser) {
+    $notificationDepartments[] = erpNotificationUserChannel('requisition', $currentUserId);
+  }
+
+  $canRequisitionAdmin = !function_exists('canAccessPath') || canAccessPath('/modules/requisition-management/admin.php');
+  if ($canRequisitionAdmin) {
+    $notificationDepartments[] = erpNotificationAdminChannel('requisition');
+  }
+
+  $canLeaveUser = !function_exists('canAccessPath') || canAccessPath('/modules/leave-management/index.php');
+  if ($canLeaveUser) {
+    $notificationDepartments[] = erpNotificationUserChannel('leave', $currentUserId);
+  }
+
+  $canLeaveAdmin = !function_exists('canAccessPath') || canAccessPath('/modules/leave-management/admin.php');
+  if ($canLeaveAdmin) {
+    $notificationDepartments[] = erpNotificationAdminChannel('leave');
+  }
 }
 $notificationDepartments = array_values(array_unique($notificationDepartments));
 $notificationDeptCsv = implode(',', $notificationDepartments);

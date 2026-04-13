@@ -442,6 +442,24 @@ function createDepartmentNotifications(mysqli $db, array $departments, $jobId, $
     }
 }
 
+function erpNotificationAdminChannel(string $scope): string {
+    $scope = strtolower(trim($scope));
+    $scope = preg_replace('/[^a-z0-9_]+/', '_', $scope);
+    $scope = trim((string)$scope, '_');
+    return $scope === '' ? '' : $scope . '_admin';
+}
+
+function erpNotificationUserChannel(string $scope, $userId): string {
+    $scope = strtolower(trim($scope));
+    $scope = preg_replace('/[^a-z0-9_]+/', '_', $scope);
+    $scope = trim((string)$scope, '_');
+    $userId = (int)$userId;
+    if ($scope === '' || $userId <= 0) {
+        return '';
+    }
+    return $scope . '_user_' . $userId;
+}
+
 function planningFabricationDepartmentFromDie($dieRaw = '') {
     $die = strtolower(trim((string)$dieRaw));
     if ($die === '') return 'flatbed';

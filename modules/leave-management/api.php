@@ -264,6 +264,7 @@ if (function_exists('canAccessPath') && !canAccessPath($currentPath)) {
 
 $action = trim((string)($_REQUEST['action'] ?? ''));
 $userId = (int)($_SESSION['user_id'] ?? 0);
+$currentUserName = trim((string)($_SESSION['user_name'] ?? ($_SESSION['name'] ?? 'Employee')));
 if ($userId <= 0) {
     lmFail('User session not found.', 401);
 }
@@ -309,6 +310,9 @@ if ($action === 'create_leave') {
     $stmt->close();
 
     $detail = lmFetchLeave($db, $leaveId, $userId, true);
+    $leaveCode = $detail['leave_code'] ?? ('LV-' . $leaveId);
+    $adminMessage = $currentUserName . ' submitted leave request ' . $leaveCode . ' for ' . $days . ' day(s).';
+    createDepartmentNotifications($db, [erpNotificationAdminChannel('leave')], 0, $adminMessage, 'info');
     lmRespond(true, 'Leave request submitted successfully.', $detail);
 }
 
@@ -414,6 +418,17 @@ if ($action === 'admin_update') {
     $message = $decision === 'save'
         ? 'Leave request updated.'
         : ('Leave request ' . ($decision === 'approved' ? 'approved.' : 'rejected.'));
+
+    if ($decision === 'approved' || $decision === 'rejected') {
+        $userChannel = erpNotificationUserChannel('leave', (int)($detail['user_id'] ?? 0));
+        if ($userChannel !== '') {
+            $leaveCode = $detail['leave_code'] ?? ('LV-' . $leaveId);
+            $statusLabel = $decision === 'approved' ? 'approved' : 'rejected';
+            $notifyMessage = 'Your leave application ' . $leaveCode . ' was ' . $statusLabel . ' by ' . ($currentUserName !== '' ? $currentUserName : 'Admin') . '.';
+            createDepartmentNotifications($db, [$userChannel], 0, $notifyMessage, $decision === 'approved' ? 'success' : 'warning');
+        }
+    }
+
     lmRespond(true, $message, lmFetchLeave($db, $leaveId, $userId, true));
 }
 

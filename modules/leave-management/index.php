@@ -618,6 +618,8 @@ include __DIR__ . '/../../includes/header.php';
     speechRecognitionEn: null,
     hiTranscript: '',
     enTranscript: '',
+    voiceBaseReason: '',
+    voiceInterimText: '',
     recording: false,
     speechSupported: !!(window.SpeechRecognition || window.webkitSpeechRecognition)
   };
@@ -1019,6 +1021,11 @@ include __DIR__ . '/../../includes/header.php';
     }
   }
 
+  function isMobileVoiceClient() {
+    var ua = String((navigator && navigator.userAgent) || '').toLowerCase();
+    return /android|iphone|ipad|ipod|mobile/i.test(ua);
+  }
+
   function setAdminTabBadge(count) {
     if (!els.adminTabBadge) return;
     var n = parseInt(count, 10) || 0;
@@ -1028,13 +1035,37 @@ include __DIR__ . '/../../includes/header.php';
   }
 
   async function startVoiceRecording() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof window.MediaRecorder === 'undefined') {
-      showToast('This browser does not support voice recording.', 'error');
+    clearVoiceRecording(false);
+    state.recording = true;
+    setSubmitState(true);
+    els.recordBtn.classList.add('is-recording');
+    els.recordBtn.querySelector('span').textContent = 'Stop Recording';
+    setVoiceStatus('Listening started. Speak clearly to see live text.', 'Recording...');
+
+    var sttStarted = startSpeechRecognition();
+    var canCaptureAudio = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && typeof window.MediaRecorder !== 'undefined');
+    var preferMobileTextOnly = isMobileVoiceClient() && sttStarted;
+
+    if (preferMobileTextOnly) {
+      state.voiceBlob = null;
+      setVoiceStatus('Mobile live typing mode active. Speak and watch text appear.', 'Text only mode');
+      return;
+    }
+
+    if (!canCaptureAudio) {
+      if (!sttStarted) {
+        state.recording = false;
+        setSubmitState(false);
+        els.recordBtn.classList.remove('is-recording');
+        els.recordBtn.querySelector('span').textContent = 'Record Voice';
+        showToast('Voice input is not supported in this browser.', 'error');
+        return;
+      }
+      setVoiceStatus('Speech-to-text is active. Audio file capture is not available.', 'Text only mode');
       return;
     }
 
     try {
-      clearVoiceRecording(false);
       var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       state.mediaStream = stream;
       state.voiceChunks = [];
@@ -1051,6 +1082,9 @@ include __DIR__ . '/../../includes/header.php';
         if (state.voiceChunks.length) {
           state.voiceBlob = new Blob(state.voiceChunks, { type: state.voiceMimeType });
           setVoiceStatus('Voice recorded successfully. It will be uploaded with the leave request.', 'Voice file ready');
+        } else if (sttStarted) {
+          state.voiceBlob = null;
+          setVoiceStatus('Live text captured. You can submit without audio file.', 'Text captured');
         } else {
           state.voiceBlob = null;
           setVoiceStatus('No audio was captured. Please record again.', 'No audio captured');
@@ -1058,15 +1092,17 @@ include __DIR__ . '/../../includes/header.php';
         releaseMediaStream();
       };
       recorder.start();
-      state.recording = true;
-      setSubmitState(true);
-      els.recordBtn.classList.add('is-recording');
-      els.recordBtn.querySelector('span').textContent = 'Stop Recording';
-      setVoiceStatus('Recording started. Speak in Hindi or English — both will be captured.', 'Recording...');
-      startSpeechRecognition();
     } catch (error) {
       releaseMediaStream();
-      showToast('Microphone permission was not granted.', 'error');
+      if (!sttStarted) {
+        state.recording = false;
+        setSubmitState(false);
+        els.recordBtn.classList.remove('is-recording');
+        els.recordBtn.querySelector('span').textContent = 'Record Voice';
+        showToast('Microphone permission was not granted.', 'error');
+      } else {
+        setVoiceStatus('Live text mode continues. Audio file recording is unavailable.', 'Text only mode');
+      }
     }
   }
 
@@ -1093,6 +1129,8 @@ include __DIR__ . '/../../includes/header.php';
     state.voiceMimeType = 'audio/webm';
     state.hiTranscript = '';
     state.enTranscript = '';
+    state.voiceBaseReason = '';
+    state.voiceInterimText = '';
     releaseMediaStream();
     if (showMessage !== false) {
       setVoiceStatus('Voice input cleared. You can record again.', 'Ready');
@@ -1112,17 +1150,19 @@ include __DIR__ . '/../../includes/header.php';
   function startSpeechRecognition() {
     stopSpeechRecognition();
     var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
+    if (!SpeechRecognition) return false;
     try {
       var lang = (els.voiceLanguage && els.voiceLanguage.value) ? els.voiceLanguage.value : 'hi-IN';
       var recognition = new SpeechRecognition();
       recognition.lang = lang;
       recognition.continuous = false;
       recognition.interimResults = true;
+      state.voiceBaseReason = els.reason ? String(els.reason.value || '').trim() : '';
+      state.voiceInterimText = '';
       recognition.onresult = function(event) {
         var finals = '';
         var interim = '';
-        for (var i = 0; i < event.results.length; i++) {
+        for (var i = event.resultIndex; i < event.results.length; i++) {
           if (event.results[i].isFinal) {
             finals += event.results[i][0].transcript + ' ';
           } else {
@@ -1133,8 +1173,11 @@ include __DIR__ . '/../../includes/header.php';
         if (finals) {
           state.hiTranscript = (state.hiTranscript ? state.hiTranscript + ' ' : '') + finals;
         }
-        var display = (state.hiTranscript + (interim ? ' ' + interim : '')).trim();
-        if (els.reason && display) {
+        state.voiceInterimText = interim.trim();
+        var mergedVoiceText = (state.hiTranscript + (state.voiceInterimText ? ' ' + state.voiceInterimText : '')).trim();
+        var display = (state.voiceBaseReason ? state.voiceBaseReason + ' ' : '') + mergedVoiceText;
+        display = display.trim();
+        if (els.reason) {
           els.reason.value = display;
         }
         if (finals) {
@@ -1148,13 +1191,16 @@ include __DIR__ . '/../../includes/header.php';
       };
       recognition.onend = function() {
         if (state.recording) {
+          state.voiceInterimText = '';
           try { recognition.start(); } catch(e) {}
         }
       };
       recognition.start();
       state.speechRecognition = recognition;
+      return true;
     } catch(error) {
       setVoiceStatus('Speech-to-text could not start. Audio file will still be saved.', 'Audio only');
+      return false;
     }
   }
 
