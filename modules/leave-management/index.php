@@ -6,7 +6,9 @@ require_once __DIR__ . '/../../includes/auth_check.php';
 $pageTitle = 'Leave Management System';
 $csrf = generateCSRF();
 
-$lmCanAdmin = hasRole('admin', 'manager', 'system_admin', 'super_admin') || isAdmin();
+$lmCanAdminByRole = hasRole('admin', 'manager', 'system_admin', 'super_admin') || isAdmin();
+$lmCanAdminByPolicy = function_exists('canAccessPath') ? canAccessPath('/modules/leave-management/admin.php') : true;
+$lmCanAdmin = $lmCanAdminByRole && $lmCanAdminByPolicy;
 $lmDepartments = erp_get_job_card_departments();
 if (!in_array('Others', $lmDepartments, true)) {
     $lmDepartments[] = 'Others';
@@ -167,6 +169,22 @@ include __DIR__ . '/../../includes/header.php';
   background:linear-gradient(96deg,#0f4c81,#0f766e);
   box-shadow:0 12px 24px rgba(15,76,129,.28);
 }
+.lm-tab-badge{
+  display:none;
+  margin-left:6px;
+  min-width:20px;
+  height:20px;
+  padding:0 6px;
+  border-radius:999px;
+  font-size:.68rem;
+  line-height:20px;
+  text-align:center;
+  font-weight:900;
+  background:#dc2626;
+  color:#fff;
+}
+.lm-tab-badge.is-visible{display:inline-block}
+.lm-tab-badge.is-alert{animation:lmBadgePulse 1.1s ease-in-out infinite}
 
 .rm-pane{display:none}
 .rm-pane.active{display:block;animation:lmFadeIn .2s ease}
@@ -418,6 +436,21 @@ include __DIR__ . '/../../includes/header.php';
 }
 .lm-detail-card small{display:block;color:#64748b;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}
 .lm-detail-card strong{display:block;margin-top:6px;font-size:.95rem;color:#0f172a}
+.lm-detail-status-pill{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  margin-top:6px;
+  padding:8px 14px;
+  border-radius:999px;
+  font-size:1rem;
+  font-weight:900;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.lm-detail-status-pill.approved{background:#dcfce7;color:#166534}
+.lm-detail-status-pill.rejected{background:#fee2e2;color:#991b1b}
+.lm-detail-status-pill.pending{background:#fef3c7;color:#92400e}
 .lm-detail-block{
   margin-top:14px;
   padding:14px;
@@ -464,6 +497,11 @@ include __DIR__ . '/../../includes/header.php';
 
 @keyframes lmFadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @keyframes lmToastIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes lmBadgePulse{
+  0%{transform:scale(1);box-shadow:0 0 0 0 rgba(220,38,38,.5)}
+  70%{transform:scale(1.08);box-shadow:0 0 0 9px rgba(220,38,38,0)}
+  100%{transform:scale(1);box-shadow:0 0 0 0 rgba(220,38,38,0)}
+}
 
 @media (max-width: 980px){
   .lm-hero{grid-template-columns:1fr}
@@ -518,7 +556,7 @@ include __DIR__ . '/../../includes/header.php';
     <button type="button" class="lm-tab active" data-pane="apply"><i class="bi bi-pencil-square"></i> Apply Leave</button>
     <button type="button" class="lm-tab" data-pane="my"><i class="bi bi-card-checklist"></i> My Leaves</button>
     <?php if ($lmCanAdmin): ?>
-      <button type="button" class="lm-tab" data-pane="admin"><i class="bi bi-shield-check"></i> Admin Approval Panel</button>
+      <button type="button" class="lm-tab" data-pane="admin"><i class="bi bi-shield-check"></i> Admin Approval Panel <span class="lm-tab-badge" id="lm-admin-tab-badge">0</span></button>
     <?php endif; ?>
   </div>
 
@@ -601,6 +639,7 @@ include __DIR__ . '/../../includes/header.php';
     voiceStatus: document.getElementById('lm-voice-status'),
     sttState: document.getElementById('lm-stt-state'),
     audioState: document.getElementById('lm-audio-state'),
+    adminTabBadge: document.getElementById('lm-admin-tab-badge'),
     toast: document.getElementById('lm-toast'),
     detailModal: document.getElementById('lm-detail-modal'),
     detailClose: document.getElementById('lm-detail-close'),
@@ -769,14 +808,14 @@ include __DIR__ . '/../../includes/header.php';
       renderAdminLeaves();
       updateSummary();
     } catch (error) {
-      renderErrorRow(els.adminTableBody, 8, error.message || 'Unable to load admin leave requests.');
+      renderErrorRow(els.adminTableBody, 9, error.message || 'Unable to load admin leave requests.');
     }
   }
 
   function renderMyLeaves() {
     if (!els.myTableBody) return;
     if (!state.myLeaves.length) {
-      els.myTableBody.innerHTML = '<tr><td colspan="7" class="lm-empty">No leave requests submitted yet.</td></tr>';
+      els.myTableBody.innerHTML = '<tr><td colspan="8" class="lm-empty">No leave requests submitted yet.</td></tr>';
       return;
     }
     els.myTableBody.innerHTML = state.myLeaves.map(function(item){
@@ -789,6 +828,7 @@ include __DIR__ . '/../../includes/header.php';
         '<td>' + escapeHtml(formatDate(item.from_date)) + ' - ' + escapeHtml(formatDate(item.to_date)) + '</td>' +
         '<td>' + escapeHtml(String(item.total_days)) + '</td>' +
         '<td>' + escapeHtml(item.leave_type) + '</td>' +
+        '<td>' + reasonPreview(item.reason_text) + '</td>' +
         '<td>' + statusBadge(item.status) + '</td>' +
         '<td><div class="lm-action-row">' +
           '<button type="button" class="lm-mini-btn view" data-action="view" data-id="' + item.id + '"><i class="bi bi-eye"></i> View</button>' +
@@ -802,7 +842,7 @@ include __DIR__ . '/../../includes/header.php';
   function renderAdminLeaves() {
     if (!els.adminTableBody) return;
     if (!state.adminLeaves.length) {
-      els.adminTableBody.innerHTML = '<tr><td colspan="8" class="lm-empty">No leave requests in the approval queue.</td></tr>';
+      els.adminTableBody.innerHTML = '<tr><td colspan="9" class="lm-empty">No leave requests in the approval queue.</td></tr>';
       return;
     }
     els.adminTableBody.innerHTML = state.adminLeaves.map(function(item){
@@ -813,6 +853,7 @@ include __DIR__ . '/../../includes/header.php';
         '<td>' + escapeHtml(item.leave_type) + '</td>' +
         '<td>' + escapeHtml(formatDate(item.from_date)) + ' - ' + escapeHtml(formatDate(item.to_date)) + '</td>' +
         '<td>' + escapeHtml(String(item.total_days)) + '</td>' +
+        '<td>' + reasonPreview(item.reason_text) + '</td>' +
         '<td>' + statusBadge(item.status) + '</td>' +
         '<td><div class="lm-action-row">' +
           '<button type="button" class="lm-mini-btn view" data-action="view" data-id="' + item.id + '"><i class="bi bi-search"></i> Open</button>' +
@@ -870,9 +911,13 @@ include __DIR__ . '/../../includes/header.php';
       { label: 'Leave Dates', value: formatDate(detail.from_date) + ' to ' + formatDate(detail.to_date) },
       { label: 'Total Days', value: String(detail.total_days) },
       { label: 'Employee Email', value: detail.employee_email || 'N/A' },
+      { label: 'Status', value: detail.status, isStatus: true },
       { label: 'Approved By', value: detail.approved_by_name || 'Pending review' }
     ];
     els.detailGrid.innerHTML = cards.map(function(card){
+      if (card.isStatus) {
+        return '<div class="lm-detail-card"><small>' + escapeHtml(card.label) + '</small><span class="lm-detail-status-pill ' + escapeHtml(String(card.value || '').toLowerCase()) + '">' + escapeHtml(capitalize(card.value)) + '</span></div>';
+      }
       return '<div class="lm-detail-card"><small>' + escapeHtml(card.label) + '</small><strong>' + escapeHtml(card.value) + '</strong></div>';
     }).join('');
 
@@ -918,7 +963,7 @@ include __DIR__ . '/../../includes/header.php';
       if (!response.ok) throw new Error(response.message || 'Delete failed.');
       showToast('Leave request deleted.', 'success');
       loadAdminLeaves();
-      updateStats();
+      updateSummary();
     } catch (error) {
       showToast(error.message || 'Could not delete leave request.', 'error');
     }
@@ -967,9 +1012,19 @@ include __DIR__ . '/../../includes/header.php';
         if (item.status === 'pending') reviewCount += 1;
       });
       els.statReview.textContent = String(reviewCount);
+      setAdminTabBadge(reviewCount);
     } else {
       els.statReview.textContent = '0';
+      setAdminTabBadge(0);
     }
+  }
+
+  function setAdminTabBadge(count) {
+    if (!els.adminTabBadge) return;
+    var n = parseInt(count, 10) || 0;
+    els.adminTabBadge.textContent = String(n);
+    els.adminTabBadge.classList.toggle('is-visible', n > 0);
+    els.adminTabBadge.classList.toggle('is-alert', n > 0);
   }
 
   async function startVoiceRecording() {
@@ -1207,6 +1262,18 @@ include __DIR__ . '/../../includes/header.php';
 
   function statusBadge(status) {
     return '<span class="lm-status ' + escapeHtml(status) + '">' + escapeHtml(capitalize(status)) + '</span>';
+  }
+
+  function reasonPreview(reasonText) {
+    var raw = String(reasonText || '');
+    var text = raw.trim();
+    if (!text) {
+      return '<span style="color:#64748b;font-weight:700;">Voice only</span>';
+    }
+    if (text.length > 72) {
+      text = text.slice(0, 72) + '...';
+    }
+    return '<span title="' + escapeHtml(raw) + '">' + escapeHtml(text) + '</span>';
   }
 
   function mimeToExtension(mimeType) {

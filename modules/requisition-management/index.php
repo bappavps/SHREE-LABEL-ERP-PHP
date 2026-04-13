@@ -6,7 +6,9 @@ require_once __DIR__ . '/../../includes/auth_check.php';
 $pageTitle = 'Requisition Management';
 $csrf = generateCSRF();
 
-$rmCanAdmin = hasRole('admin', 'manager', 'system_admin', 'super_admin') || isAdmin();
+$rmCanAdminByRole = hasRole('admin', 'manager', 'system_admin', 'super_admin') || isAdmin();
+$rmCanAdminByPolicy = function_exists('canAccessPath') ? canAccessPath('/modules/requisition-management/admin.php') : true;
+$rmCanAdmin = $rmCanAdminByRole && $rmCanAdminByPolicy;
 $rmCanAccounts = hasRole('accounts', 'account', 'purchase', 'admin', 'system_admin', 'super_admin') || isAdmin();
 
 $rmDepartments = erp_get_job_card_departments();
@@ -107,6 +109,22 @@ include __DIR__ . '/../../includes/header.php';
   border-color:#0f766e;
   box-shadow:0 8px 18px rgba(15,118,110,.35);
 }
+.rm-tab-badge{
+  display:none;
+  margin-left:6px;
+  min-width:20px;
+  height:20px;
+  line-height:20px;
+  padding:0 6px;
+  border-radius:999px;
+  font-size:.66rem;
+  font-weight:900;
+  text-align:center;
+  background:#dc2626;
+  color:#fff;
+}
+.rm-tab-badge.is-visible{display:inline-block}
+.rm-tab-badge.is-alert{animation:rmBadgePulse 1.1s ease-in-out infinite}
 .rm-tab.disabled{opacity:.55;cursor:not-allowed}
 
 .rm-pane{display:none}
@@ -286,6 +304,11 @@ include __DIR__ . '/../../includes/header.php';
 .rm-confirm-actions{display:flex;justify-content:flex-end;gap:8px;padding:0 14px 14px}
 
 @keyframes rmFadeIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
+@keyframes rmBadgePulse{
+  0%{transform:scale(1);box-shadow:0 0 0 0 rgba(220,38,38,.5)}
+  70%{transform:scale(1.08);box-shadow:0 0 0 9px rgba(220,38,38,0)}
+  100%{transform:scale(1);box-shadow:0 0 0 0 rgba(220,38,38,0)}
+}
 
 @media (max-width: 900px){
   .rm-shell{padding:11px}
@@ -350,7 +373,9 @@ include __DIR__ . '/../../includes/header.php';
     <button type="button" class="rm-tab active" data-pane="dashboard">Dashboard</button>
     <button type="button" class="rm-tab" data-pane="user">New Requisition</button>
     <button type="button" class="rm-tab" data-pane="my">My Requests</button>
-    <button type="button" class="rm-tab<?= $rmCanAdmin ? '' : ' disabled' ?>" data-pane="admin">Approval Panel (Admin)</button>
+    <?php if ($rmCanAdmin): ?>
+      <button type="button" class="rm-tab" data-pane="admin">Approval Panel (Admin) <span class="rm-tab-badge" id="rm-admin-tab-badge">0</span></button>
+    <?php endif; ?>
     <button type="button" class="rm-tab<?= $rmCanAccounts ? '' : ' disabled' ?>" data-pane="accounts">PO Management (Accounts)</button>
   </div>
 
@@ -363,9 +388,11 @@ include __DIR__ . '/../../includes/header.php';
   <div class="rm-pane" id="pane-my">
     <?php include __DIR__ . '/my.php'; ?>
   </div>
-  <div class="rm-pane" id="pane-admin">
-    <?php include __DIR__ . '/admin.php'; ?>
-  </div>
+  <?php if ($rmCanAdmin): ?>
+    <div class="rm-pane" id="pane-admin">
+      <?php include __DIR__ . '/admin.php'; ?>
+    </div>
+  <?php endif; ?>
   <div class="rm-pane" id="pane-accounts">
     <?php include __DIR__ . '/accounts.php'; ?>
   </div>
@@ -690,6 +717,15 @@ function rmSetText(id, value) {
   el.textContent = String(value ?? '0');
 }
 
+function rmSetAdminTabBadge(value) {
+  const badge = document.getElementById('rm-admin-tab-badge');
+  if (!badge) return;
+  const count = parseInt(value, 10) || 0;
+  badge.textContent = String(count);
+  badge.classList.toggle('is-visible', count > 0);
+  badge.classList.toggle('is-alert', count > 0);
+}
+
 function rmReindexItemRows() {
   document.querySelectorAll('#rm-item-rows .rm-item-row').forEach((row, i) => {
     const serial = row.querySelector('.rm-item-serial');
@@ -766,9 +802,12 @@ async function rmLoadDashboard() {
     if (adminWrap) {
       if (RM_CAN_ADMIN) {
         adminWrap.style.display = '';
-        rmSetText('rm-kpi-admin-pending', s.pending_admin_queue || 0);
+        const pendingQueue = s.pending_admin_queue || 0;
+        rmSetText('rm-kpi-admin-pending', pendingQueue);
+        rmSetAdminTabBadge(pendingQueue);
       } else {
         adminWrap.style.display = 'none';
+        rmSetAdminTabBadge(0);
       }
     }
 
@@ -832,13 +871,16 @@ async function rmLoadAdmin() {
   if (!RM_CAN_ADMIN) return;
   try {
     const data = await rmApiGet({ action: 'list_admin' });
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+    const pendingCount = rows.filter(r => String(r.status || '').toLowerCase() === 'pending').length;
+    rmSetAdminTabBadge(pendingCount);
     const body = document.querySelector('#rm-admin-table tbody');
     if (!body) return;
-    if (!data.rows.length) {
+    if (!rows.length) {
       body.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#64748b">No requisitions found.</td></tr>';
       return;
     }
-    body.innerHTML = data.rows.map(r => {
+    body.innerHTML = rows.map(r => {
       const pr = String(r.priority || '').toLowerCase() === 'urgent' ? 'urgent' : '';
       const attach = r.attachment
         ? `<a href="${r.attachment_url}" target="_blank" rel="noopener">View</a>`

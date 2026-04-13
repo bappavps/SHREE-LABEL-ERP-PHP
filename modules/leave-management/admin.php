@@ -17,12 +17,13 @@
               <th>Type</th>
               <th>From - To</th>
               <th>Days</th>
+              <th>Reason</th>
               <th>Status</th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody>
-            <tr><td colspan="8" class="lm-empty">Loading approval queue...</td></tr>
+            <tr><td colspan="9" class="lm-empty">Loading approval queue...</td></tr>
           </tbody>
         </table>
       </div>

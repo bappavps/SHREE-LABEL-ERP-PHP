@@ -16,12 +16,13 @@
               <th>From - To</th>
               <th>Days</th>
               <th>Type</th>
+              <th>Reason</th>
               <th>Status</th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody>
-            <tr><td colspan="7" class="lm-empty">Loading leave requests...</td></tr>
+            <tr><td colspan="8" class="lm-empty">Loading leave requests...</td></tr>
           </tbody>
         </table>
       </div>

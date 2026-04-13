@@ -117,7 +117,9 @@ function lmEnsureSchema() {
 }
 
 function lmCanAdmin() {
-    return hasRole('admin', 'manager', 'system_admin', 'super_admin') || isAdmin();
+    $byRole = hasRole('admin', 'manager', 'system_admin', 'super_admin') || isAdmin();
+    $byPolicy = function_exists('canAccessPath') ? canAccessPath('/modules/leave-management/admin.php') : true;
+    return $byRole && $byPolicy;
 }
 
 function lmAllowedDepartments() {
