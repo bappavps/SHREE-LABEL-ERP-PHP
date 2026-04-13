@@ -361,16 +361,7 @@ function barcodePlanningFetchRows(mysqli $db): array {
                                         GROUP BY planning_id
                                 ) latest ON latest.max_id = j.id
                         ) lsj ON lsj.planning_id = p.id
-            WHERE (
-                LOWER(COALESCE(p.department, '')) IN ('paperroll')
-                OR (
-                    LOWER(COALESCE(p.department, '')) = 'label-printing'
-                    AND (
-                        LOWER(COALESCE(p.status, '')) LIKE '%paperroll%'
-                        OR LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(p.extra_data, '$.printing_planning')), '')) LIKE '%paperroll%'
-                    )
-                )
-            )
+            WHERE LOWER(COALESCE(p.department, '')) IN ('paperroll')
             ORDER BY p.sequence_order ASC, p.id ASC";
     $res = $db->query($sql);
     if (!$res) {
@@ -593,7 +584,13 @@ $errors = [];
 $today = date('Y-m-d');
 $dispatchDefault = date('Y-m-d', strtotime('+12 days'));
 $statusOptions = barcodePlanningStatusOptions();
-$defaultStatus = barcodePlanningDefaultStatus();
+$defaultStatus = 'Pending';
+if (!in_array($defaultStatus, $statusOptions, true)) {
+    $defaultStatus = barcodePlanningNormalizeStatus(barcodePlanningDefaultStatus());
+}
+if (!in_array($defaultStatus, $statusOptions, true) && !empty($statusOptions)) {
+    $defaultStatus = (string)$statusOptions[0];
+}
 $priorityOptions = barcodePlanningPriorityOptions();
 $masterRows = barcodePlanningMasterRows($db);
 $coreOptions = barcodePlanningMasterDistinctValues($db, 'core');
@@ -601,15 +598,10 @@ $barcodeSizeOptions = barcodePlanningMasterDistinctValues($db, 'barcode_size');
 $paperSizeOptions = barcodePlanningMasterDistinctValues($db, 'paper_size');
 $dieTypeOptions = barcodePlanningMasterDistinctValues($db, 'die_type');
 $useOptions = barcodePlanningMasterDistinctValues($db, 'used_for');
-$masterJobRows = barcodePlanningMasterJobRows($masterRows);
 $prcMasterRows = paperRollConceptMasterRows($db);
-$jobNameOptions = array_values(array_unique(array_filter(array_map(static function (array $r): string {
+$jobNameOptions = array_values(array_filter(array_map(static function (array $r): string {
     return trim((string)($r['item_name'] ?? ''));
-}, $prcMasterRows))));
-// Legacy job-label list kept for backward compat (barcode autofill still works in JS)
-$_legacyJobLabelOptions = array_values(array_filter(array_map(static function (array $row): string {
-    return trim((string)($row['job_label'] ?? ''));
-}, $masterJobRows)));
+}, $prcMasterRows)));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = $_POST['csrf_token'] ?? '';
@@ -885,7 +877,7 @@ include __DIR__ . '/../../../includes/header.php';
 .bc-header p{margin-top:4px;color:var(--bc-muted);font-size:.82rem;font-weight:600}
 .bc-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.bc-toolbar-card{margin-bottom:14px;background:#f8fbff;border:1px solid var(--bc-border);border-radius:14px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .bc-toolbar-title{font-size:.9rem;font-weight:800;color:var(--bc-text)}.bc-toolbar-sub{font-size:.76rem;color:var(--bc-muted);font-weight:600;margin-top:2px}.bc-count{font-size:.82rem;color:#475569;font-weight:700}
-.bc-table-wrap{overflow:auto}.bc-table{width:100%;min-width:2220px;border-collapse:collapse;font-size:.77rem}.bc-table th{padding:10px 12px;text-align:left;border-bottom:2px solid #dbe7ef;background:#f8fbff;font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#5b6b82;white-space:nowrap}.bc-table td{padding:10px 12px;border-bottom:1px solid #eef2f7;vertical-align:middle;white-space:nowrap}.bc-table tbody tr:hover td{background:#fbfeff}
+.bc-table-wrap{overflow:auto}.bc-table{width:100%;min-width:2220px;border-collapse:collapse;font-size:.77rem}.bc-table th{padding:10px 12px;text-align:center;border-bottom:2px solid #dbe7ef;background:#f8fbff;font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#5b6b82;white-space:nowrap}.bc-table td{padding:10px 12px;border-bottom:1px solid #eef2f7;vertical-align:middle;white-space:nowrap;text-align:center}.bc-table tbody tr:hover td{background:#fbfeff}
 .bc-num{font-family:Consolas,monospace;font-weight:700;color:#0f172a}.bc-status-badge{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;font-size:.66rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
 .bc-pri{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;font-size:.64rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
 .bc-pri-low{background:#e2e8f0;color:#334155}.bc-pri-normal{background:#dbeafe;color:#1d4ed8}.bc-pri-high{background:#ffedd5;color:#9a3412}.bc-pri-urgent{background:#fee2e2;color:#991b1b}
@@ -901,6 +893,8 @@ include __DIR__ . '/../../../includes/header.php';
 .bc-section-title{grid-column:1/-1;font-size:.74rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#0f172a;padding:8px 12px;border-radius:10px;border:1px solid #cbd5e1}.bc-section-title.basic{background:#eff6ff;border-color:#bfdbfe;color:#1e40af}.bc-section-title.order{background:#ecfeff;border-color:#99f6e4;color:#0f766e}.bc-section-title.barcode{background:#fefce8;border-color:#fde68a;color:#a16207}.bc-section-title.tools{background:#f5f3ff;border-color:#ddd6fe;color:#6d28d9}
 .bc-picker-inline{display:flex;align-items:center;gap:8px}.bc-picker-inline .form-control{flex:1}.bc-picker-btn{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border:1px solid #cbd5e1;background:#fff;border-radius:10px;color:#334155;cursor:pointer}
 .bc-picker-search{padding:12px 16px;border-bottom:1px solid #eef2f7;display:grid;grid-template-columns:1fr 180px;gap:10px;align-items:center}.bc-picker-search input{width:100%}.bc-picker-search select{height:38px;border:1px solid #cbd5e1;border-radius:8px;padding:0 10px;background:#fff}.bc-picker-list{max-height:360px;overflow:auto;padding:10px 12px}.bc-picker-head,.bc-picker-item{display:grid;grid-template-columns:64px 1.4fr 1fr 1fr 1fr;gap:10px;align-items:center}.bc-picker-head{position:sticky;top:0;z-index:2;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 10px;font-size:.67rem;font-weight:800;letter-spacing:.04em;color:#1e3a8a;text-transform:uppercase}.bc-picker-item{width:100%;text-align:left;padding:10px;border:1px solid #dbeafe;background:#fff;border-radius:10px;cursor:pointer}.bc-picker-item + .bc-picker-item{margin-top:8px}.bc-picker-item .job{font-weight:700;color:#0f172a}.bc-picker-item .muted{font-size:.72rem;color:#64748b}
+.bc-calc-chip{display:inline-flex;align-items:center;padding:6px 12px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-weight:700;font-size:.92em;color:#1d4ed8;min-height:36px;letter-spacing:.02em}
+.bc-calc-chip.bc-calc-chip-ok{background:#f0fdf4;border-color:#86efac;color:#166534}
 .bc-field-suggest{position:fixed;z-index:1400;background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 10px 30px rgba(15,23,42,.18);max-height:220px;overflow:auto;min-width:220px}.bc-field-suggest-item{display:block;width:100%;text-align:left;padding:8px 10px;border:0;border-bottom:1px solid #eef2f7;background:#fff;cursor:pointer;font-size:.82rem;color:#0f172a}.bc-field-suggest-item:last-child{border-bottom:0}.bc-field-suggest-item:hover{background:#eff6ff}
 .bc-calc-note{grid-column:1/-1;padding:10px 12px;border:1px dashed #bae6fd;background:#f0f9ff;border-radius:10px;color:#0f766e;font-size:.76rem;font-weight:600}.bc-form-hint{font-size:.72rem;color:#94a3b8;margin-top:5px}.bc-view-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:16px}.bc-view-card{border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;background:#fff}.bc-view-card span{display:block;font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:5px}.bc-view-card strong{display:block;color:#0f172a;font-size:.86rem;word-break:break-word}
 @media(max-width:1100px){.planning-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.bc-view-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:800px){.planning-grid,.planning-job-preview-box,.bc-view-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.bc-actions{width:100%}.bc-picker-head,.bc-picker-item{grid-template-columns:60px 1.3fr 1fr 1fr}.bc-picker-search{grid-template-columns:1fr}}@media(max-width:640px){.planning-grid,.planning-job-preview-box,.bc-view-grid{grid-template-columns:1fr}.bc-actions .btn,.bc-actions a{flex:1 1 auto;justify-content:center}.bc-table{min-width:1800px}.bc-picker-head,.bc-picker-item{grid-template-columns:50px 1fr 1fr}.bc-picker-search{grid-template-columns:1fr}}
@@ -975,8 +969,8 @@ include __DIR__ . '/../../../includes/header.php';
                             <td><?= e((string)$row['planning_date']) ?></td>
                             <td><?= e((string)$row['dispatch_date']) ?></td>
                             <td><span class="bc-pri bc-pri-<?= e($priorityClass) ?>"><?= e($priorityRaw) ?></span></td>
-                            <td><?= e((string)$row['job_name']) ?></td>
-                            <td class="bc-num"><?= e((string)$row['order_quantity']) ?></td>
+                            <td class="bc-cell-strong"><?= e((string)$row['job_name']) ?></td>
+                            <td class="bc-num bc-cell-strong"><?= e((string)$row['order_quantity']) ?></td>
                             <td class="bc-num"><?= e((string)$row['order_meter']) ?></td>
                             <td><?= e((string)$row['paper_size']) ?></td>
                             <td><?= e((string)$row['material_type']) ?></td>
@@ -986,7 +980,6 @@ include __DIR__ . '/../../../includes/header.php';
                             <td><?= e((string)$row['roll_dia']) ?></td>
                             <td><?= e((string)$row['core_size']) ?></td>
                             <td><?= e((string)$row['core_type']) ?></td>
-                            <td class="no-print"><div class="bc-actions-cell"><button type="button" class="bc-icon-btn view btn-view-paperroll" title="View"><i class="bi bi-eye"></i></button><?php if ($canEdit && $rowCanManage): ?><button type="button" class="bc-icon-btn edit btn-edit-paperroll" title="Edit"><i class="bi bi-pencil"></i></button><?php endif; ?><?php if ($canDelete && $rowCanManage): ?><form method="post" class="bc-delete-form"><input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>"><input type="hidden" name="action" value="delete_paperroll_planning"><input type="hidden" name="id" value="<?= (int)$row['id'] ?>"><button type="submit" class="bc-icon-btn delete" title="Delete" data-confirm="Delete this paperroll planning entry?"><i class="bi bi-trash"></i></button></form><?php endif; ?></div></td>
                             <td class="no-print"><div class="bc-actions-cell"><button type="button" class="bc-icon-btn view btn-view-paperroll" title="View"><i class="bi bi-eye"></i></button><?php if ($canEdit && $rowCanManage): ?><button type="button" class="bc-icon-btn edit btn-edit-paperroll" title="Edit"><i class="bi bi-pencil"></i></button><?php endif; ?><?php if ($canDelete && $rowCanManage): ?><form method="post" class="bc-delete-form"><input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>"><input type="hidden" name="action" value="delete_paperroll_planning"><input type="hidden" name="id" value="<?= (int)$row['id'] ?>"><button type="submit" class="bc-icon-btn delete" title="Delete" data-confirm="Delete this paperroll planning entry?"><i class="bi bi-trash"></i></button></form><?php endif; ?></div></td>
             </tr>
           <?php endforeach; ?>
@@ -1000,18 +993,15 @@ include __DIR__ . '/../../../includes/header.php';
 <div class="planning-modal" id="modal-paperroll-planning" style="display:none"><div class="planning-modal-card"><div class="planning-modal-head"><h3 id="paperroll-modal-title">Add PaperRoll Planning</h3><button type="button" class="btn btn-ghost btn-sm" id="btn-close-paperroll-modal"><i class="bi bi-x-lg"></i></button></div><form method="post" id="form-paperroll-planning"><input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>"><input type="hidden" name="action" value="save_paperroll_planning"><input type="hidden" name="edit_id" id="paperroll-edit-id" value="0"><div class="planning-job-preview-box"><div><span class="planning-job-preview-label">SL.No.</span><strong id="paperroll-preview-sl"><?= $previewSerial ?></strong><small>Auto serial number.</small></div><div><span class="planning-job-preview-label">Planning ID</span><strong id="paperroll-preview-id"><?= e($previewPlanningId) ?></strong><small>Unique auto-generated code.</small></div><div><span class="planning-job-preview-label">Record ID</span><strong id="paperroll-preview-record">#<?= $previewRecordId ?></strong><small>Database preview.</small></div></div><div class="planning-grid">
         <div><label for="barcode-sl-no">SL.No.</label><input type="number" class="form-control" id="barcode-sl-no" name="sl_no" min="1" value="<?= $previewSerial ?>" required></div>
         <div><label for="barcode-planning-id">Planning ID</label><input type="text" class="form-control" id="barcode-planning-id" name="planning_id" value="<?= e($previewPlanningId) ?>" readonly></div>
-                <div><label for="barcode-status">Status</label><select class="form-control" id="barcode-status" name="status">
-                    <option value="Pending" selected>Pending</option>
-                    <option value="Slitting">Slitting</option>
-                    <option value="Complete">Complete</option>
-                </select></div>
+                <div><label for="barcode-status">Status</label><select class="form-control" id="barcode-status" name="status"><?php foreach ($statusOptions as $statusOpt): ?><option value="<?= e($statusOpt) ?>" <?= $statusOpt === $defaultStatus ? 'selected' : '' ?>><?= e($statusOpt) ?></option><?php endforeach; ?></select></div>
         <div><label for="barcode-client-name">Client Name</label><input type="text" class="form-control" id="barcode-client-name" name="client_name" placeholder="Client name"></div>
         <div><label for="barcode-planning-date">Planning Date</label><input type="date" class="form-control" id="barcode-planning-date" name="planning_date" value="<?= e($today) ?>" required></div>
         <div><label for="barcode-dispatch-date">Dispatch Date</label><input type="date" class="form-control" id="barcode-dispatch-date" name="dispatch_date" value="<?= e($dispatchDefault) ?>" required></div>
         <div><label for="barcode-priority">Priority</label><select class="form-control" id="barcode-priority" name="priority"><?php foreach ($priorityOptions as $priorityOption): ?><option value="<?= e($priorityOption) ?>" <?= $priorityOption === 'Normal' ? 'selected' : '' ?>><?= e($priorityOption) ?></option><?php endforeach; ?></select></div>
-        <div><label for="barcode-job-name">Job Name</label><input type="text" class="form-control" id="barcode-job-name" name="job_name" list="barcode-job-options" placeholder="Search job name from barcode master"></div>
+        <div><label for="barcode-job-name">Job Name</label><input type="text" class="form-control" id="barcode-job-name" name="job_name" list="barcode-job-options" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search job name from paper-roll master"></div>
         <div><label for="barcode-order-qty">Order Quantity</label><input type="number" class="form-control" id="barcode-order-qty" name="order_quantity" list="barcode-order-qty-options" min="0" step="1" placeholder="Enter quantity"></div>
         <div><label for="barcode-order-meter">Order Meter</label><input type="number" class="form-control" id="barcode-order-meter" name="order_meter" list="barcode-order-meter-options" min="0" step="0.01" placeholder="Enter meter"></div>
+        <div><label>Sqr Mtr</label><span id="barcode-sqr-mtr" class="bc-calc-chip">—</span></div>
         <div><label for="barcode-paper-size">Paper Size</label><input type="text" class="form-control" id="barcode-paper-size" name="paper_size" list="barcode-paper-size-options" placeholder="Paper size"></div>
         <div><label for="barcode-material-type">Material Type</label><input type="text" class="form-control" id="barcode-material-type" name="material_type" list="barcode-material-options" placeholder="Material type"></div>
         <div><label for="barcode-item-width">Item Width</label><input type="text" class="form-control" id="barcode-item-width" name="item_width" placeholder="Item width"></div>
@@ -1059,11 +1049,9 @@ include __DIR__ . '/../../../includes/header.php';
         Array.from(grid.children).forEach(function(div) {
             var input = div.querySelector('input, select, textarea');
             if (!input) return;
-            if (input.value && input.value.trim() !== '') {
-                div.classList.add('bc-autofill-ok');
-            } else {
-                div.classList.remove('bc-autofill-ok');
-            }
+            var hasValue = !!(input.value && input.value.trim() !== '');
+            div.classList.toggle('bc-autofill-ok', hasValue);
+            div.classList.toggle('bc-autofill-pending', !hasValue);
         });
     }
     document.getElementById('form-paperroll-planning')?.addEventListener('input', updateFieldColors);
@@ -1081,6 +1069,9 @@ include __DIR__ . '/../../../includes/header.php';
   var dispatchDateInput = document.getElementById('barcode-dispatch-date');
   var qtyInput = document.getElementById('barcode-order-qty');
   var meterInput = document.getElementById('barcode-order-meter');
+    var itemLengthInput = document.getElementById('barcode-item-length');
+    var itemWidthInput = document.getElementById('barcode-item-width');
+    var sqrMtrDisplay = document.getElementById('barcode-sqr-mtr');
   var pcsPerRollInput = document.getElementById('barcode-pcs-per-roll');
     var upInRollInput = document.getElementById('barcode-up-roll');
   var upInProductionInput = document.getElementById('barcode-up-production');
@@ -1104,8 +1095,7 @@ include __DIR__ . '/../../../includes/header.php';
   var modalTitle = document.getElementById('paperroll-modal-title');
   var editIdInput = document.getElementById('paperroll-edit-id');
   var viewGrid = document.getElementById('paperroll-view-grid');
-  var masterRows = <?= json_encode($masterRows, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
-    var masterJobRows = <?= json_encode($masterJobRows, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    var masterRows = <?= json_encode($masterRows, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
   var prcMasterRows = <?= json_encode($prcMasterRows, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
   var hasErrors = <?= !empty($errors) ? 'true' : 'false' ?>;
         var defaultState = { sl_no: <?= (int)$previewSerial ?>, planning_id: <?= json_encode($previewPlanningId) ?>, record_label: <?= json_encode('#' . $previewRecordId) ?>, planning_date: <?= json_encode($today) ?>, dispatch_date: <?= json_encode($dispatchDefault) ?>, status: <?= json_encode($defaultStatus) ?>, priority: 'Normal' };
@@ -1130,10 +1120,35 @@ include __DIR__ . '/../../../includes/header.php';
         function syncMarginFromPaper(){ if(layoutSyncing||!paperSizeInput||!bothGapInput) return; var layoutWidth=calcLayoutWidth(); var paper=parseNum(paperSizeInput.value); if(layoutWidth<=0||String(paperSizeInput.value||'').trim()==='') return; layoutSyncing=true; bothGapInput.value = formatDerivedNum(paper-layoutWidth,2); layoutSyncing=false; lastLayoutSource='paper_size'; }
         function syncPaperFromMargin(){ if(layoutSyncing||!paperSizeInput||!bothGapInput) return; var layoutWidth=calcLayoutWidth(); if(layoutWidth<=0||String(bothGapInput.value||'').trim()==='') return; var margin=parseNum(bothGapInput.value); layoutSyncing=true; paperSizeInput.value = formatDerivedNum(layoutWidth+margin,2); layoutSyncing=false; lastLayoutSource='both_side_gap'; }
         function hydrateLayoutFields(){ if(!paperSizeInput||!bothGapInput) return; var paperRaw=String(paperSizeInput.value||'').trim(); var marginRaw=String(bothGapInput.value||'').trim(); if(lastLayoutSource==='both_side_gap'&&marginRaw!==''){ syncPaperFromMargin(); } else if(paperRaw!==''){ syncMarginFromPaper(); } else if(marginRaw!==''){ syncPaperFromMargin(); } }
-    function calcMeterFromQty(){ var qty=parseNum(qtyInput&&qtyInput.value); var pcsPerRoll=parseNum(pcsPerRollInput&&pcsPerRollInput.value); var upInProduction=parseNum(upInProductionInput&&upInProductionInput.value); var repeat=parseNum(repeatInput&&repeatInput.value); if(qty<=0) return ''; if(upInProduction>0&&repeat>0) return formatNum((qty/upInProduction)*(repeat/1000),2); if(pcsPerRoll>0) return formatNum(qty/pcsPerRoll,2); return ''; }
-    function calcQtyFromMeter(){ var meter=parseNum(meterInput&&meterInput.value); var pcsPerRoll=parseNum(pcsPerRollInput&&pcsPerRollInput.value); var upInProduction=parseNum(upInProductionInput&&upInProductionInput.value); var repeat=parseNum(repeatInput&&repeatInput.value); if(meter<=0) return ''; if(upInProduction>0&&repeat>0) return formatNum((meter/(repeat/1000))*upInProduction,0); if(pcsPerRoll>0) return formatNum(meter*pcsPerRoll,0); return ''; }
-  function syncFromQty(){ if(syncing||!meterInput) return; syncing=true; meterInput.value=calcMeterFromQty(); syncing=false; }
-  function syncFromMeter(){ if(syncing||!qtyInput) return; syncing=true; qtyInput.value=calcQtyFromMeter(); syncing=false; }
+    function calcMeterFromQty(){
+        var qty=parseNum(qtyInput&&qtyInput.value);
+        var itemLength=firstNumber(itemLengthInput&&itemLengthInput.value);
+        var pcsPerRoll=parseNum(pcsPerRollInput&&pcsPerRollInput.value);
+        var upInProduction=parseNum(upInProductionInput&&upInProductionInput.value);
+        var repeat=parseNum(repeatInput&&repeatInput.value);
+        if(qty<=0) return '';
+        // Primary rule for paper-roll planning: Meter = Quantity * Item Length.
+        if(itemLength>0) return formatNum(qty*itemLength,2);
+        if(upInProduction>0&&repeat>0) return formatNum((qty/upInProduction)*(repeat/1000),2);
+        if(pcsPerRoll>0) return formatNum(qty/pcsPerRoll,2);
+        return '';
+    }
+    function calcQtyFromMeter(){
+        var meter=parseNum(meterInput&&meterInput.value);
+        var itemLength=firstNumber(itemLengthInput&&itemLengthInput.value);
+        var pcsPerRoll=parseNum(pcsPerRollInput&&pcsPerRollInput.value);
+        var upInProduction=parseNum(upInProductionInput&&upInProductionInput.value);
+        var repeat=parseNum(repeatInput&&repeatInput.value);
+        if(meter<=0) return '';
+        // Primary rule for paper-roll planning: Quantity = Meter / Item Length.
+        if(itemLength>0) return formatNum(meter/itemLength,0);
+        if(upInProduction>0&&repeat>0) return formatNum((meter/(repeat/1000))*upInProduction,0);
+        if(pcsPerRoll>0) return formatNum(meter*pcsPerRoll,0);
+        return '';
+    }
+  function syncFromQty(){ if(syncing||!meterInput) return; syncing=true; meterInput.value=calcMeterFromQty(); syncing=false; updateSqrMtr(); }
+  function syncFromMeter(){ if(syncing||!qtyInput) return; syncing=true; qtyInput.value=calcQtyFromMeter(); syncing=false; updateSqrMtr(); }
+    function updateSqrMtr(){ if(!sqrMtrDisplay) return; var m=parseNum(meterInput&&meterInput.value); var w=firstNumber(itemWidthInput&&itemWidthInput.value); if(m>0&&w>0){ sqrMtrDisplay.textContent=formatNum(m*w/1000,4)+' m²'; sqrMtrDisplay.classList.add('bc-calc-chip-ok'); } else { sqrMtrDisplay.textContent='—'; sqrMtrDisplay.classList.remove('bc-calc-chip-ok'); } }
     function findMasterRowByBarcodeSize(value){ var normalized=normalizeText(value); if(!normalized) return null; var wantedSig=sizeSignature(value); for(var i=0;i<masterRows.length;i++){ var row=masterRows[i]||{}; var rowSize=normalizeText(row.barcode_size||''); if(rowSize===normalized){ return row; } if(wantedSig!==''&&sizeSignature(row.barcode_size||'')===wantedSig){ return row; } } return null; }
     function masterValueBySize(sizeValue, key){ var wantedSig=sizeSignature(sizeValue); if(!wantedSig) return ''; for(var i=0;i<masterRows.length;i++){ var row=masterRows[i]||{}; if(sizeSignature(row.barcode_size||'')!==wantedSig) continue; var val=String(row[key]||'').trim(); if(val!=='') return val; } return ''; }
         function parseUpsToken(value){ var m=String(value||'').match(/-?\d+(?:\.\d+)?/); return m ? normalizeText(m[0]) : ''; }
@@ -1142,63 +1157,20 @@ include __DIR__ . '/../../../includes/header.php';
             if (!nums.length) return normalizeText(value).replace(/mm/g,'').replace(/\s+/g,' ').trim();
             return nums.slice(0, 3).map(function(n){ var x=parseFloat(n); return Number.isFinite(x) ? String(x) : normalizeText(n); }).join('x');
         }
-        function buildJobLabel(jobName,size,upsInProduction){ var j=String(jobName||'').trim(); var s=String(size||'').trim(); var u=String(upsInProduction||'').trim(); if(j===''&&s===''&&u==='') return ''; var out=j; if(s!==''){ out += (out!==''?' | ':'') + s; } if(u!==''){ out += (out!==''?' | ':'') + u + ' Ups'; } return out; }
-        function findMasterRowByJobName(value){
-            var raw = String(value||'').trim();
-            if(!raw) return null;
-            var normalizedRaw = normalizeText(raw);
-
-            for (var x = 0; x < masterJobRows.length; x++) {
-                var mj = masterJobRows[x] || {};
-                if (normalizeText(mj.job_label || '') === normalizedRaw) {
-                    var byLabel = (masterRows || []).find(function(r){
-                        return normalizeText(r.use||'') === normalizeText(mj.job_name||'')
-                            && normalizeText(r.barcode_size||'') === normalizeText(mj.barcode_size||'')
-                            && normalizeText(String(r.up_in_production||'')) === normalizeText(String(mj.up_in_production||''));
-                    });
-                    if (byLabel) return byLabel;
-                }
-            }
-
-            var parts = raw.split('|').map(function(p){ return String(p||'').trim(); });
-            var jobPart = normalizeText(parts[0] || raw);
-            var sizePart = normalizeText(parts[1] || '');
-            var upsPart = parseUpsToken(parts[2] || '');
-            if(!jobPart) return null;
-
-            var candidates = [];
-            for (var i=0;i<masterRows.length;i++) {
-                var row = masterRows[i] || {};
-                if (normalizeText(row.use||'') !== jobPart) continue;
-                candidates.push(row);
-            }
-            if (!candidates.length) {
-                for (var j=0;j<masterRows.length;j++) {
-                    var row2 = masterRows[j] || {};
-                    if (normalizeText(row2.use||'').indexOf(jobPart) !== -1) candidates.push(row2);
-                }
-            }
-            if (!candidates.length) return null;
-
-            if (sizePart) {
-                var wantedSig = sizeSignature(sizePart);
-                var sizeMatch = candidates.find(function(r){
-                    var rowSize = normalizeText(r.barcode_size||'');
-                    if (rowSize === sizePart) return true;
-                    var rowSig = sizeSignature(rowSize);
-                    return rowSig !== '' && wantedSig !== '' && rowSig === wantedSig;
-                });
-                if (sizeMatch) return sizeMatch;
-            }
-            if (upsPart) {
-                var upsMatch = candidates.find(function(r){ return parseUpsToken(r.up_in_production||'') === upsPart; });
-                if (upsMatch) return upsMatch;
-            }
-            return candidates[0] || null;
-        }
   function assignIfPresent(id,value){ var el=document.getElementById(id); if(!el) return; el.value=value==null?'':String(value); }
-        function clearAutofillMarks(){ if(!form) return; var tracked=form.querySelectorAll('[data-autofill-field]'); tracked.forEach(function(box){ box.classList.remove('bc-autofill-ok'); box.classList.remove('bc-autofill-pending'); }); }
-        function markAutofilledFields(){ if(!form) return; var tracked=form.querySelectorAll('[data-autofill-field]'); tracked.forEach(function(box){ var input=box.querySelector('input,select,textarea'); var hasValue=input&&String(input.value||'').trim()!==''; box.classList.toggle('bc-autofill-ok', !!hasValue); box.classList.toggle('bc-autofill-pending', !hasValue); }); }
+        function assignAutoIfAllowed(id,value){
+            var el=document.getElementById(id);
+            if(!el) return;
+            if(String(el.dataset.manualEntry||'')==='1') return;
+            var next=value==null?'':String(value);
+            el.value=next;
+        }
+        function clearManualFlags(){
+            if(!form) return;
+            form.querySelectorAll('input,select,textarea').forEach(function(el){ delete el.dataset.manualEntry; });
+        }
+        function clearAutofillMarks(){ if(!form) return; var tracked=form.querySelectorAll('.planning-grid > div'); tracked.forEach(function(box){ box.classList.remove('bc-autofill-ok'); box.classList.remove('bc-autofill-pending'); }); }
+        function markAutofilledFields(){ if(!form) return; var tracked=form.querySelectorAll('.planning-grid > div'); tracked.forEach(function(box){ var input=box.querySelector('input,select,textarea'); if(!input) return; var hasValue=String(input.value||'').trim()!==''; box.classList.toggle('bc-autofill-ok', !!hasValue); box.classList.toggle('bc-autofill-pending', !hasValue); }); }
         function applyMasterRow(row, updateJobName, applyMarks){ if(!row) return; var sizeVal=row.barcode_size||''; var labelGapVal=String(row.label_gap||'').trim()||masterValueBySize(sizeVal,'label_gap'); var paperVal=String(row.paper_size||'').trim()||masterValueBySize(sizeVal,'paper_size'); var cylVal=String(row.cylinder||'').trim()||masterValueBySize(sizeVal,'cylinder'); var repVal=String(row.repeat||'').trim()||masterValueBySize(sizeVal,'repeat'); var useVal=String(row.use||'').trim()||masterValueBySize(sizeVal,'use'); var dieVal=String(row.die_type||'').trim()||masterValueBySize(sizeVal,'die_type'); var coreVal=String(row.core||'').trim()||masterValueBySize(sizeVal,'core'); assignIfPresent('barcode-size', sizeVal); assignIfPresent('barcode-pcs-per-roll', row.pcs_per_roll||''); assignIfPresent('barcode-up-roll', row.up_in_roll||''); assignIfPresent('barcode-up-production', row.up_in_production||''); assignIfPresent('barcode-label-gap', labelGapVal); assignIfPresent('barcode-paper-size', paperVal); assignIfPresent('barcode-both-gap', ''); assignIfPresent('barcode-cylinder', cylVal); assignIfPresent('barcode-repeat', repVal); assignIfPresent('barcode-use', useVal); assignIfPresent('barcode-die-type', dieVal); assignIfPresent('barcode-core', coreVal); if(updateJobName){ assignIfPresent('barcode-job-name', buildJobLabel(useVal||row.use||'', sizeVal, row.up_in_production||'')); } lastLayoutSource='paper_size'; updateSizeIndicator(sizeVal); hydrateLayoutFields(); if(parseNum(qtyInput&&qtyInput.value)>0) syncFromQty(); else if(parseNum(meterInput&&meterInput.value)>0) syncFromMeter(); if(applyMarks){ markAutofilledFields(); } }
     function autofillFromMaster(){ var row=findMasterRowByBarcodeSize(barcodeSizeInput&&barcodeSizeInput.value); if(!row) return; applyMasterRow(row, false); }
         function findPrcRowByItemName(name){
@@ -1208,41 +1180,38 @@ include __DIR__ . '/../../../includes/header.php';
             var r=prcMasterRows[i]||{};
             if(normalizeText(r.item_name||'')===n) return r;
         }
-        // partial match fallback
-        for(var j=0;j<prcMasterRows.length;j++){
-            var r2=prcMasterRows[j]||{};
-            if(normalizeText(r2.item_name||'').indexOf(n)!==-1) return r2;
-        }
         return null;
     }
     function applyPrcMasterRow(prc){
         if(!prc) return;
-        assignIfPresent('barcode-material-type', prc.paper_type||'');
-        assignIfPresent('barcode-item-width',    prc.width_mm||'');
-        assignIfPresent('barcode-item-length',   prc.length_mtr||'');
-        assignIfPresent('barcode-gsm',           prc.gsm||'');
-        assignIfPresent('barcode-roll-dia',      prc.dia||'');
-        assignIfPresent('barcode-core-size',     prc.core||'');
-        assignIfPresent('barcode-core-type',     prc.core_type||'');
-        assignIfPresent('barcode-paper-size',    prc.size||'');
+        assignAutoIfAllowed('barcode-material-type', prc.paper_type||'');
+        assignAutoIfAllowed('barcode-item-width',    prc.width_mm||'');
+        assignAutoIfAllowed('barcode-item-length',   prc.length_mtr||'');
+        assignAutoIfAllowed('barcode-gsm',           prc.gsm||'');
+        assignAutoIfAllowed('barcode-roll-dia',      prc.dia||'');
+        assignAutoIfAllowed('barcode-core-size',     prc.core||'');
+        assignAutoIfAllowed('barcode-core-type',     prc.core_type||'');
+        assignAutoIfAllowed('barcode-paper-size',    prc.size||'');
         markAutofilledFields();
     }
     function autofillFromJobName(){
         var prc=findPrcRowByItemName(jobNameInput&&jobNameInput.value);
-        if(prc){ applyPrcMasterRow(prc); return; }
-        var row=findMasterRowByJobName(jobNameInput&&jobNameInput.value); if(!row) return; assignIfPresent('barcode-size', row.barcode_size||''); applyMasterRow(row, true, true);
+        if(prc){ applyPrcMasterRow(prc); }
     }
     function openJobPicker(){ if(!jobPickerModal) return; renderJobPickerList(); jobPickerModal.style.display='flex'; document.body.style.overflow='hidden'; if(jobPickerSearch){ jobPickerSearch.value=''; jobPickerSearch.focus(); renderJobPickerList(); } }
     function closeJobPicker(){ if(!jobPickerModal) return; jobPickerModal.style.display='none'; document.body.style.overflow=''; }
-    function renderJobPickerList(){ if(!jobPickerList) return; var needle=normalizeText(jobPickerSearch&&jobPickerSearch.value); var dir=String((jobPickerSort&&jobPickerSort.value)||'asc').trim()==='desc'?'desc':'asc'; var html=[]; var rowNo=0; var matches=[]; for(var i=0;i<masterJobRows.length;i++){ var item=masterJobRows[i]||{}; var hay=normalizeText(item.job_name)+' '+normalizeText(item.barcode_size)+' '+normalizeText(item.die_type)+' '+normalizeText(item.paper_size)+' '+normalizeText(item.up_in_roll)+' '+normalizeText(item.up_in_production); if(needle && hay.indexOf(needle)===-1) continue; matches.push({idx:i,item:item}); }
-        matches.sort(function(a,b){ var aj=normalizeText(a.item.job_name); var bj=normalizeText(b.item.job_name); var cmp=aj.localeCompare(bj, undefined, { numeric:true, sensitivity:'base' }); if(cmp===0){ cmp=normalizeText(a.item.barcode_size).localeCompare(normalizeText(b.item.barcode_size), undefined, { numeric:true, sensitivity:'base' }); } return dir==='asc' ? cmp : -cmp; });
-        matches.forEach(function(entry){ var item=entry.item||{}; rowNo += 1; html.push('<button type="button" class="bc-picker-item" data-idx="'+entry.idx+'"><span class="muted">'+rowNo+'</span><span class="job">'+safeText(item.job_name?String(item.job_name):'—')+'</span><span>'+safeText(item.barcode_size?String(item.barcode_size):'—')+'</span><span>'+safeText(item.up_in_roll?String(item.up_in_roll):'—')+'</span><span>'+safeText(item.up_in_production?String(item.up_in_production):'—')+'</span></button>'); });
-        var head = '<div class="bc-picker-head"><span>SL No.</span><span>Job Name</span><span>BarCode Size</span><span>Ups in Roll</span><span>UPS in Die</span></div>';
+    function renderJobPickerList(){ if(!jobPickerList) return; var needle=normalizeText(jobPickerSearch&&jobPickerSearch.value); var dir=String((jobPickerSort&&jobPickerSort.value)||'asc').trim()==='desc'?'desc':'asc'; var html=[]; var rowNo=0; var matches=[]; for(var i=0;i<prcMasterRows.length;i++){ var item=prcMasterRows[i]||{}; var hay=normalizeText(item.item_name)+' '+normalizeText(item.paper_type)+' '+normalizeText(item.size)+' '+normalizeText(item.gsm); if(needle && hay.indexOf(needle)===-1) continue; matches.push({idx:i,item:item}); }
+        matches.sort(function(a,b){ var aj=normalizeText(a.item.item_name); var bj=normalizeText(b.item.item_name); var cmp=aj.localeCompare(bj, undefined, { numeric:true, sensitivity:'base' }); return dir==='asc' ? cmp : -cmp; });
+        matches.forEach(function(entry){ var item=entry.item||{}; rowNo += 1; html.push('<button type="button" class="bc-picker-item" data-idx="'+entry.idx+'"><span class="muted">'+rowNo+'</span><span class="job">'+safeText(item.item_name?String(item.item_name):'—')+'</span><span>'+safeText(item.paper_type?String(item.paper_type):'—')+'</span><span>'+safeText(item.size?String(item.size):'—')+'</span><span>'+safeText(item.gsm?String(item.gsm):'—')+'</span></button>'); });
+        var head = '<div class="bc-picker-head"><span>SL No.</span><span>Job Name</span><span>Paper Type</span><span>Size</span><span>GSM</span></div>';
         jobPickerList.innerHTML = html.length ? (head + html.join('')) : '<div class="bc-empty" style="padding:18px">No matching paperroll job name found.</div>';
     }
-        function resetFormForAdd(){ if(!form) return; form.reset(); editIdInput.value='0'; if(modalTitle) modalTitle.textContent='Add PaperRoll Planning'; assignIfPresent('barcode-sl-no', defaultState.sl_no); assignIfPresent('barcode-planning-id', defaultState.planning_id); assignIfPresent('barcode-planning-date', defaultState.planning_date); assignIfPresent('barcode-dispatch-date', defaultState.dispatch_date); assignIfPresent('barcode-status', defaultState.status); assignIfPresent('barcode-priority', defaultState.priority || 'Normal'); lastLayoutSource='paper_size'; updateSizeIndicator(''); previewSl.textContent=String(defaultState.sl_no); previewId.textContent=defaultState.planning_id; previewRecord.textContent=defaultState.record_label; hydrateLayoutFields(); clearAutofillMarks(); markAutofilledFields(); }
-        function openEdit(row){ if(!form||!row) return; resetFormForAdd(); if(modalTitle) modalTitle.textContent='Edit PaperRoll Planning'; editIdInput.value=String(row.id||0); assignIfPresent('barcode-sl-no', row.sl_no||''); assignIfPresent('barcode-planning-id', row.planning_id||''); assignIfPresent('barcode-status', row.status||defaultState.status); assignIfPresent('barcode-priority', row.priority||'Normal'); assignIfPresent('barcode-job-name', row.job_name||''); assignIfPresent('barcode-client-name', row.client_name||''); assignIfPresent('barcode-planning-date', row.planning_date||defaultState.planning_date); assignIfPresent('barcode-dispatch-date', row.dispatch_date||defaultState.dispatch_date); assignIfPresent('barcode-material-type', row.material_type||''); assignIfPresent('barcode-order-qty', row.order_quantity||''); assignIfPresent('barcode-order-meter', row.order_meter||''); assignIfPresent('barcode-pcs-per-roll', row.pcs_per_roll||''); assignIfPresent('barcode-size', row.barcode_size||''); assignIfPresent('barcode-up-roll', row.up_in_roll||''); assignIfPresent('barcode-up-production', row.up_in_production||''); assignIfPresent('barcode-label-gap', row.label_gap||''); assignIfPresent('barcode-both-gap', row.both_side_gap||''); assignIfPresent('barcode-paper-size', row.paper_size||''); assignIfPresent('barcode-cylinder', row.cylinder||''); assignIfPresent('barcode-repeat', row.repeat||''); assignIfPresent('barcode-use', row.use||''); assignIfPresent('barcode-die-type', row.die_type||''); assignIfPresent('barcode-core', row.core||''); assignIfPresent('barcode-item-width', row.item_width||''); assignIfPresent('barcode-item-length', row.item_length||''); assignIfPresent('barcode-gsm', row.gsm||''); assignIfPresent('barcode-roll-dia', row.roll_dia||''); assignIfPresent('barcode-core-size', row.core_size||''); assignIfPresent('barcode-core-type', row.core_type||''); lastLayoutSource = String(row.both_side_gap||'').trim() !== '' && String(row.paper_size||'').trim() === '' ? 'both_side_gap' : 'paper_size'; hydrateLayoutFields(); updateSizeIndicator(row.barcode_size||''); previewSl.textContent=String(row.sl_no||''); previewId.textContent=String(row.planning_id||''); previewRecord.textContent='#'+String(row.id||''); markAutofilledFields(); openModal(); }
-    function openView(row){ if(!viewGrid||!row) return; var labels=[['SL.No.',row.sl_no],['Planning ID',row.planning_id],['Status',row.status],['Job Name',row.job_name],['Priority',row.priority],['Client Name',row.client_name],['Order Quantity',row.order_quantity],['Order Meter',row.order_meter],['PCS PER ROLL',row.pcs_per_roll],['Barcode Size',row.barcode_size],['Up in Roll',row.up_in_roll],['Up in Production',row.up_in_production],['Label Gap',row.label_gap],['Both Side Gap',row.both_side_gap],['Paper Size',row.paper_size],['Cylinder',row.cylinder],['Repeat',row.repeat],['USE',row.use],['Die Type',row.die_type],['CORE',row.core],['Planning Date',row.planning_date],['Dispatch Date',row.dispatch_date],['Material Type',row.material_type],['Item Width',row.item_width],['Item Length',row.item_length],['GSM',row.gsm],['Roll Dia',row.roll_dia],['Core Size',row.core_size],['Core Type',row.core_type]]; var html=''; labels.forEach(function(item){ html+='<div class="bc-view-card"><span>'+item[0]+'</span><strong>'+(item[1]?String(item[1]):'—')+'</strong></div>'; }); viewGrid.innerHTML=html; openViewModal(); }
+        function resetFormForAdd(){ if(!form) return; form.reset(); clearManualFlags(); editIdInput.value='0'; if(modalTitle) modalTitle.textContent='Add PaperRoll Planning'; assignIfPresent('barcode-sl-no', defaultState.sl_no); assignIfPresent('barcode-planning-id', defaultState.planning_id); assignIfPresent('barcode-planning-date', defaultState.planning_date); assignIfPresent('barcode-dispatch-date', defaultState.dispatch_date); assignIfPresent('barcode-status', defaultState.status); assignIfPresent('barcode-priority', defaultState.priority || 'Normal'); lastLayoutSource='paper_size'; updateSizeIndicator(''); previewSl.textContent=String(defaultState.sl_no); previewId.textContent=defaultState.planning_id; previewRecord.textContent=defaultState.record_label; hydrateLayoutFields(); clearAutofillMarks(); markAutofilledFields(); }
+        function openEdit(row){ if(!form||!row) return; resetFormForAdd(); if(modalTitle) modalTitle.textContent='Edit PaperRoll Planning'; editIdInput.value=String(row.id||0); assignIfPresent('barcode-sl-no', row.sl_no||''); assignIfPresent('barcode-planning-id', row.planning_id||''); assignIfPresent('barcode-status', row.status||defaultState.status); assignIfPresent('barcode-priority', row.priority||'Normal'); assignIfPresent('barcode-job-name', row.job_name||''); assignIfPresent('barcode-client-name', row.client_name||''); assignIfPresent('barcode-planning-date', row.planning_date||defaultState.planning_date); assignIfPresent('barcode-dispatch-date', row.dispatch_date||defaultState.dispatch_date); assignIfPresent('barcode-material-type', row.material_type||''); assignIfPresent('barcode-order-qty', row.order_quantity||''); assignIfPresent('barcode-order-meter', row.order_meter||''); assignIfPresent('barcode-pcs-per-roll', row.pcs_per_roll||''); assignIfPresent('barcode-size', row.barcode_size||''); assignIfPresent('barcode-up-roll', row.up_in_roll||''); assignIfPresent('barcode-up-production', row.up_in_production||''); assignIfPresent('barcode-label-gap', row.label_gap||''); assignIfPresent('barcode-both-gap', row.both_side_gap||''); assignIfPresent('barcode-paper-size', row.paper_size||''); assignIfPresent('barcode-cylinder', row.cylinder||''); assignIfPresent('barcode-repeat', row.repeat||''); assignIfPresent('barcode-use', row.use||''); assignIfPresent('barcode-die-type', row.die_type||''); assignIfPresent('barcode-core', row.core||''); assignIfPresent('barcode-item-width', row.item_width||''); assignIfPresent('barcode-item-length', row.item_length||''); assignIfPresent('barcode-gsm', row.gsm||''); assignIfPresent('barcode-roll-dia', row.roll_dia||''); assignIfPresent('barcode-core-size', row.core_size||''); assignIfPresent('barcode-core-type', row.core_type||''); lastLayoutSource = String(row.both_side_gap||'').trim() !== '' && String(row.paper_size||'').trim() === '' ? 'both_side_gap' : 'paper_size'; hydrateLayoutFields(); updateSizeIndicator(row.barcode_size||''); previewSl.textContent=String(row.sl_no||''); previewId.textContent=String(row.planning_id||''); previewRecord.textContent='#'+String(row.id||''); updateSqrMtr(); markAutofilledFields(); openModal(); }
+    function openView(row){ if(!viewGrid||!row) return;
+        var m=parseNum(row.order_meter); var w=firstNumber(row.item_width); var sqrMtr=(m>0&&w>0)?formatNum(m*w/1000,4)+' m²':'—';
+        var labels=[['SL.No.',row.sl_no],['Planning ID',row.planning_id],['Status',row.status],['Priority',row.priority],['Client Name',row.client_name],['Planning Date',row.planning_date],['Dispatch Date',row.dispatch_date],['Job Name',row.job_name],['Material Type',row.material_type],['Order Quantity',row.order_quantity],['Order Meter',row.order_meter],['Sqr Mtr',sqrMtr],['Item Width',row.item_width],['Item Length',row.item_length],['GSM',row.gsm],['Roll Dia',row.roll_dia],['Core Size',row.core_size],['Core Type',row.core_type]];
+        var html=''; labels.forEach(function(item){ html+='<div class="bc-view-card"><span>'+item[0]+'</span><strong>'+(item[1]?String(item[1]):'—')+'</strong></div>'; }); viewGrid.innerHTML=html; openViewModal(); }
   if(openBtn) openBtn.addEventListener('click', function(){ resetFormForAdd(); openModal(); });
   if(closeBtn) closeBtn.addEventListener('click', closeModal);
   if(cancelBtn) cancelBtn.addEventListener('click', closeModal);
@@ -1252,19 +1221,29 @@ include __DIR__ . '/../../../includes/header.php';
   if(planningDateInput&&dispatchDateInput){ planningDateInput.addEventListener('change', function(){ if(String(editIdInput&&editIdInput.value||'0')==='0'){ dispatchDateInput.value=addDays(planningDateInput.value,12); } }); }
   if(qtyInput) qtyInput.addEventListener('input', syncFromQty);
   if(meterInput) meterInput.addEventListener('input', syncFromMeter);
-    [pcsPerRollInput, upInProductionInput, repeatInput].forEach(function(el){ if(!el) return; el.addEventListener('input', function(){ if(parseNum(qtyInput&&qtyInput.value)>0) syncFromQty(); else if(parseNum(meterInput&&meterInput.value)>0) syncFromMeter(); }); });
+    if(itemWidthInput){ itemWidthInput.addEventListener('input', updateSqrMtr); itemWidthInput.addEventListener('change', updateSqrMtr); }
+    [itemLengthInput, pcsPerRollInput, upInProductionInput, repeatInput].forEach(function(el){ if(!el) return; el.addEventListener('input', function(){ if(parseNum(qtyInput&&qtyInput.value)>0) syncFromQty(); else if(parseNum(meterInput&&meterInput.value)>0) syncFromMeter(); }); });
     [barcodeSizeInput, upInRollInput, upInProductionInput, labelGapInput].forEach(function(el){ if(!el) return; el.addEventListener('input', hydrateLayoutFields); el.addEventListener('change', hydrateLayoutFields); });
-        if(barcodeSizeInput){ barcodeSizeInput.addEventListener('change', autofillFromMaster); barcodeSizeInput.addEventListener('blur', autofillFromMaster); barcodeSizeInput.addEventListener('input', function(){ updateSizeIndicator(barcodeSizeInput.value); autofillFromMaster(); hydrateLayoutFields(); }); }
+        if(barcodeSizeInput){ barcodeSizeInput.addEventListener('input', function(){ updateSizeIndicator(barcodeSizeInput.value); hydrateLayoutFields(); }); }
         if(paperSizeInput){ paperSizeInput.addEventListener('input', function(){ lastLayoutSource='paper_size'; syncMarginFromPaper(); }); paperSizeInput.addEventListener('change', function(){ lastLayoutSource='paper_size'; syncMarginFromPaper(); }); }
         if(bothGapInput){ bothGapInput.addEventListener('input', function(){ lastLayoutSource='both_side_gap'; syncPaperFromMargin(); }); bothGapInput.addEventListener('change', function(){ lastLayoutSource='both_side_gap'; syncPaperFromMargin(); }); }
-    if(jobNameInput){ jobNameInput.addEventListener('change', autofillFromJobName); jobNameInput.addEventListener('blur', autofillFromJobName); jobNameInput.addEventListener('input', autofillFromJobName); }
+    if(jobNameInput){ jobNameInput.addEventListener('change', autofillFromJobName); }
     if(jobPickerBtn){ jobPickerBtn.addEventListener('click', openJobPicker); }
     if(jobPickerCloseBtn){ jobPickerCloseBtn.addEventListener('click', closeJobPicker); }
     if(jobPickerSearch){ jobPickerSearch.addEventListener('input', renderJobPickerList); }
     if(jobPickerSort){ jobPickerSort.addEventListener('change', renderJobPickerList); }
     if(jobPickerModal){ jobPickerModal.addEventListener('click', function(event){ if(event.target===jobPickerModal) closeJobPicker(); }); }
-    if(jobPickerList){ jobPickerList.addEventListener('click', function(event){ var button=event.target&&event.target.closest?event.target.closest('.bc-picker-item'):null; if(!button) return; var idx=parseInt(button.getAttribute('data-idx')||'',10); if(!Number.isFinite(idx)||idx<0||idx>=masterJobRows.length) return; var picked=masterJobRows[idx]||{}; assignIfPresent('barcode-job-name', buildJobLabel(picked.job_name||'', picked.barcode_size||'', picked.up_in_production||'')); assignIfPresent('barcode-size', picked.barcode_size||''); autofillFromJobName(); closeJobPicker(); }); }
+    if(jobPickerList){ jobPickerList.addEventListener('click', function(event){ var button=event.target&&event.target.closest?event.target.closest('.bc-picker-item'):null; if(!button) return; var idx=parseInt(button.getAttribute('data-idx')||'',10); if(!Number.isFinite(idx)||idx<0||idx>=prcMasterRows.length) return; var picked=prcMasterRows[idx]||{}; assignIfPresent('barcode-job-name', picked.item_name||''); applyPrcMasterRow(picked); closeJobPicker(); }); }
     if(form){ form.addEventListener('submit', function(){ if(parseNum(qtyInput&&qtyInput.value)>0&&(!meterInput||parseNum(meterInput.value)<=0)){ syncFromQty(); } else if(parseNum(meterInput&&meterInput.value)>0&&(!qtyInput||parseNum(qtyInput.value)<=0)){ syncFromMeter(); } if(paperSizeInput&&String(paperSizeInput.value||'').trim()!==''){ syncMarginFromPaper(); } else if(bothGapInput&&String(bothGapInput.value||'').trim()!==''){ syncPaperFromMargin(); } }); }
+    if(form){
+        form.querySelectorAll('input,select,textarea').forEach(function(el){
+            if(!el || !el.id) return;
+            if(el.id==='barcode-job-name' || el.id==='barcode-planning-id') return;
+            var flagManual=function(){ el.dataset.manualEntry='1'; };
+            el.addEventListener('input', flagManual);
+            el.addEventListener('change', flagManual);
+        });
+    }
     if(form){ form.addEventListener('input', function(event){ var t=event&&event.target; if(t&&t.closest&&t.closest('[data-autofill-field]')){ markAutofilledFields(); } }); form.addEventListener('change', function(event){ var t=event&&event.target; if(t&&t.closest&&t.closest('[data-autofill-field]')){ markAutofilledFields(); } }); }
 
     var fieldSuggest=document.createElement('div');

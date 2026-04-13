@@ -138,6 +138,66 @@ function normalizeMaterial($str) {
     return strtolower(preg_replace('/[\s\-]+/', '', trim((string)$str)));
 }
 
+function textContainsPosToken(string $text): bool {
+    $normalized = strtolower((string)preg_replace('/[^a-z0-9]+/', ' ', trim($text)));
+    if ($normalized === '') return false;
+    return (bool)preg_match('/\bpos\b/', $normalized);
+}
+
+function planningContainsPosMarker(array $planningExtra, string ...$texts): bool {
+    foreach ($texts as $txt) {
+        if (textContainsPosToken($txt)) return true;
+    }
+
+    $candidates = [];
+    $directKeys = [
+        'item', 'item_name', 'job_item', 'job_name', 'item_description',
+        'product_name', 'label_item', 'job_label', 'label', 'label_name',
+        'label_code', 'item_code', 'sku', 'code', 'title', 'description'
+    ];
+    foreach ($directKeys as $k) {
+        if (isset($planningExtra[$k]) && is_scalar($planningExtra[$k])) {
+            $candidates[] = (string)$planningExtra[$k];
+        }
+    }
+
+    foreach (['items', 'rows', 'line_items', 'products'] as $listKey) {
+        $rows = $planningExtra[$listKey] ?? null;
+        if (!is_array($rows)) continue;
+        foreach ($rows as $row) {
+            if (!is_array($row)) continue;
+            foreach ($directKeys as $k) {
+                if (isset($row[$k]) && is_scalar($row[$k])) {
+                    $candidates[] = (string)$row[$k];
+                }
+            }
+        }
+    }
+
+    $scan = null;
+    $scan = static function($node, int $depth = 0) use (&$scan, &$candidates): void {
+        if ($depth > 4 || !is_array($node)) return;
+        foreach ($node as $key => $value) {
+            if (is_array($value)) {
+                $scan($value, $depth + 1);
+                continue;
+            }
+            if (!is_scalar($value)) continue;
+            $k = strtolower((string)$key);
+            if (preg_match('/item|product|job.*name|job.*label|label|name|description|title|sku|code/', $k)) {
+                $candidates[] = (string)$value;
+            }
+        }
+    };
+    $scan($planningExtra, 0);
+
+    foreach ($candidates as $candidate) {
+        if (textContainsPosToken($candidate)) return true;
+    }
+
+    return false;
+}
+
 // ─── Helper: Decide whether selected machine should bypass jumbo ─
 function shouldBypassJumboForMachine(mysqli $db, string $machine): bool {
     $machine = trim($machine);
@@ -506,6 +566,7 @@ try {
                     (
                         UPPER(TRIM(COALESCE(p.job_no, ''))) LIKE 'PLN/%'
                         OR UPPER(TRIM(COALESCE(p.job_no, ''))) LIKE 'PLN-BAR/%'
+                        OR UPPER(TRIM(COALESCE(p.job_no, ''))) LIKE 'PLN-PRL/%'
                     )
                     AND LOWER(TRIM(COALESCE(
                         NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.extra_data, '$.printing_planning')), ''),
@@ -527,16 +588,20 @@ try {
 
                 // Provide fallback values from extra_data when sales_order fields are empty
                 if (empty($row['material_type'])) {
-                    $row['material_type'] = (string)($extra['material_type'] ?? $extra['material'] ?? '');
+                    $row['material_type'] = (string)($extra['material_type'] ?? $extra['material'] ?? $extra['paper_type'] ?? $extra['substrate'] ?? $extra['paper'] ?? '');
                 }
                 if (empty($row['label_width_mm']) && !empty($extra['paper_size'])) {
                     $row['label_width_mm'] = $extra['paper_size'];
+                } elseif (empty($row['label_width_mm']) && !empty($extra['item_width'])) {
+                    $row['label_width_mm'] = $extra['item_width'];
                 }
                 if (empty($row['label_length_mm'])) {
                     if (!empty($extra['size'])) {
                         $row['label_length_mm'] = $extra['size'];
                     } elseif ($isBarcodePlanning && !empty($extra['barcode_size'])) {
                         $row['label_length_mm'] = $extra['barcode_size'];
+                    } elseif (!empty($extra['item_length'])) {
+                        $row['label_length_mm'] = $extra['item_length'];
                     }
                 }
                 if ($isBarcodePlanning) {
@@ -554,12 +619,12 @@ try {
 
                 // Expose extra planning fields
                 $row['allocate_mtrs'] = (string)($extra['allocate_mtrs'] ?? $extra['order_meter'] ?? $extra['meter'] ?? '');
-                $row['die_type'] = (string)($extra['die'] ?? $extra['die_type'] ?? '');
-                $row['core_size'] = (string)($extra['core_size'] ?? $extra['core'] ?? '');
+                $row['die_type'] = (string)($extra['die'] ?? $extra['die_type'] ?? $extra['die_no'] ?? '');
+                $row['core_size'] = (string)($extra['core_size'] ?? $extra['core'] ?? $extra['core_dia'] ?? '');
                 $row['dispatch_date'] = $extra['dispatch_date'] ?? ($row['scheduled_date'] ?? '');
                 $row['printing_planning'] = $extra['printing_planning'] ?? '';
-                $row['roll_direction'] = (string)($extra['roll_direction'] ?? $extra['direction'] ?? $extra['use'] ?? '');
-                $row['repeat_val'] = (string)($extra['repeat'] ?? $extra['repeat_val'] ?? '');
+                $row['roll_direction'] = (string)($extra['roll_direction'] ?? $extra['direction'] ?? $extra['use'] ?? $extra['run_direction'] ?? '');
+                $row['repeat_val'] = (string)($extra['repeat'] ?? $extra['repeat_val'] ?? $extra['cylinder_repeat'] ?? '');
                 $row['department_route'] = erp_normalize_department_selection(
                     $extra['department_route'] ?? '',
                     erp_get_machine_departments($db),
@@ -688,8 +753,7 @@ try {
         }
 
         if ($machine === '') {
-            echo json_encode(['ok' => false, 'error' => 'No active machine found for the selected department mapping']);
-            break;
+            $machine = 'MANUAL_TERMINAL';
         }
 
         if ($operatorName === '') {
@@ -820,6 +884,9 @@ try {
             if (!$isPaperRollPlanPrefix) {
                 $allowPaperRollJob = false;
             }
+            $hasPaperRollRoute = erp_department_selection_contains($selectedDepartments, 'PaperRoll', $departmentChoices, []);
+            $containsPosMarker = planningContainsPosMarker($planningExtra, $planningJobName, $jobName, $allocationJobName);
+            $allowPosJobFromPaperRoll = $allowPaperRollJob && $hasPaperRollRoute && !$isFlexoRequestAcceptFlow;
 
             $directFlexoBypass = ($allowPrintingJob && !$allowJumboJob) || ($isFlexoRequestAcceptFlow && $flexoRouteToPrinting);
 
@@ -1154,6 +1221,8 @@ try {
                     if ($barcodePrefix === '') $barcodePrefix = 'BRC-BAR';
                     $paperRollPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['paperroll_job']['prefix'] ?? 'PRL')));
                     if ($paperRollPrefix === '') $paperRollPrefix = 'PRL';
+                    $posPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['pos_job']['prefix'] ?? 'POS')));
+                    if ($posPrefix === '') $posPrefix = 'POS';
 
                 $jumboRefNo = '';
                 if ($allowJumboJob) {
@@ -1571,6 +1640,8 @@ try {
                     }
                 }
 
+                $paperRollId = 0;
+                $paperRollRefNo = '';
                 if ($planningId > 0 && $allowPaperRollJob) {
                     $paperRollAssignedRolls = [];
                     foreach ($childRolls as $childRow) {
@@ -1654,6 +1725,7 @@ try {
 
                     if ($existingPaperRoll) {
                         $paperRollId = (int)$existingPaperRoll['id'];
+                        $paperRollRefNo = trim((string)($existingPaperRoll['job_no'] ?? ''));
                         $existingPaperRollExtra = json_decode((string)($existingPaperRoll['extra_data'] ?? '{}'), true);
                         if (!is_array($existingPaperRollExtra)) $existingPaperRollExtra = [];
                         $existingAssignedRolls = is_array($existingPaperRollExtra['assigned_child_rolls'] ?? null)
@@ -1717,6 +1789,7 @@ try {
 
                             if ($okPaperRoll) {
                                 $paperRollId = (int)$db->insert_id;
+                                $paperRollRefNo = $jcNoPaperRoll;
                                 $createdJobCards[] = ['job_no' => $jcNoPaperRoll, 'type' => 'PaperRoll', 'roll' => $parentRollNo, 'id' => $paperRollId];
                                 $statusMsg = $paperRollPrevId <= 0 ? 'created directly' : 'queued';
                                 $nMsgPR = 'New PaperRoll job card ' . $statusMsg . ': ' . $jcNoPaperRoll . ' | From: ' . $paperRollFromRef;
@@ -1731,6 +1804,173 @@ try {
                             if ((int)$insPaperRoll->errno === 1062) continue;
                             if ($paperRollAttempt >= 29) {
                                 throw new Exception('Unable to generate unique paperroll job number. Please try again.');
+                            }
+                        }
+                    }
+                }
+
+                if ($planningId > 0 && $allowPosJobFromPaperRoll) {
+                    $posAssignedRolls = [];
+                    foreach ($childRolls as $childRow) {
+                        $dest = strtoupper(trim((string)($childRow['dest'] ?? '')));
+                        if ($dest !== 'JOB') continue;
+                        $rollNoItem = trim((string)($childRow['roll_no'] ?? ''));
+                        if ($rollNoItem === '') continue;
+
+                        $posAssignedRolls[] = [
+                            'roll_no' => $rollNoItem,
+                            'parent_roll_no' => trim((string)($childRow['parent_roll_no'] ?? $parentRollNo)),
+                            'width_mm' => (float)($childRow['width'] ?? 0),
+                            'length_mtr' => (float)($childRow['length'] ?? 0),
+                            'paper_type' => trim((string)($childRow['paper_type'] ?? '')),
+                            'company' => trim((string)($childRow['company'] ?? '')),
+                            'gsm' => (float)($childRow['gsm'] ?? 0),
+                            'status' => trim((string)($childRow['status'] ?? 'Slitting')),
+                            'job_no' => trim((string)($childRow['job_no'] ?? $planNo)),
+                            'job_name' => trim((string)($childRow['job_name'] ?? $displayJobName)),
+                        ];
+                    }
+
+                    $posExtraBase = [
+                        'assigned_child_rolls' => $posAssignedRolls,
+                        'assigned_child_roll_count' => count($posAssignedRolls),
+                        'assigned_parent_roll_no' => $parentRollNo,
+                        'assigned_last_batch_no' => $batchNo,
+                        'assigned_updated_at' => date('c'),
+                        'machine' => trim((string)($currentMachine ?? '')),
+                        'plan_no' => $planNo,
+                        'auto_created_from_slitting' => true,
+                        'trigger' => 'paperroll_only_pln_prl_pos',
+                    ];
+
+                    $mergePosAssignedRolls = static function(array $existing, array $incoming): array {
+                        $merged = [];
+                        foreach ($existing as $row) {
+                            if (!is_array($row)) continue;
+                            $rn = strtoupper(trim((string)($row['roll_no'] ?? '')));
+                            if ($rn === '') continue;
+                            $merged[$rn] = $row;
+                        }
+                        foreach ($incoming as $row) {
+                            if (!is_array($row)) continue;
+                            $rn = strtoupper(trim((string)($row['roll_no'] ?? '')));
+                            if ($rn === '') continue;
+                            $merged[$rn] = $row;
+                        }
+                        $out = array_values($merged);
+                        usort($out, static function($a, $b) {
+                            return strnatcasecmp((string)($a['roll_no'] ?? ''), (string)($b['roll_no'] ?? ''));
+                        });
+                        return $out;
+                    };
+
+                    $posPrevId = 0;
+                    $posFromRef = $parentRollNo;
+                    if ($newFlexJobId > 0 || $existingPrintId > 0) {
+                        $posPrevId = $newFlexJobId > 0 ? $newFlexJobId : $existingPrintId;
+                        $posFromRef = $jcNoFlex !== '' ? $jcNoFlex : ($existingFlexNo !== '' ? $existingFlexNo : 'N/A');
+                    } elseif ($jumboJobId > 0) {
+                        $posPrevId = $jumboJobId;
+                        $posFromRef = $jumboRefNo !== '' ? $jumboRefNo : 'N/A';
+                    } elseif ($paperRollRefNo !== '') {
+                        $posFromRef = $paperRollRefNo;
+                    }
+
+                    $posStatus = $posPrevId <= 0 ? 'Pending' : 'Queued';
+                    $posActionLabel = $posPrevId <= 0 ? 'created directly' : 'queued from upstream';
+
+                    $chkPos = $db->prepare("SELECT id, job_no, extra_data FROM jobs WHERE department = 'pos' AND planning_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY id DESC LIMIT 1");
+                    $chkPos->bind_param('i', $planningId);
+                    $chkPos->execute();
+                    $existingPos = $chkPos->get_result()->fetch_assoc();
+
+                    if ($existingPos) {
+                        $posId = (int)$existingPos['id'];
+                        $existingPosExtra = json_decode((string)($existingPos['extra_data'] ?? '{}'), true);
+                        if (!is_array($existingPosExtra)) $existingPosExtra = [];
+                        $existingAssignedRolls = is_array($existingPosExtra['assigned_child_rolls'] ?? null)
+                            ? $existingPosExtra['assigned_child_rolls']
+                            : [];
+                        $mergedAssignedRolls = $mergePosAssignedRolls($existingAssignedRolls, $posAssignedRolls);
+                        $existingPosExtra = array_merge($existingPosExtra, $posExtraBase);
+                        $existingPosExtra['assigned_child_rolls'] = $mergedAssignedRolls;
+                        $existingPosExtra['assigned_child_roll_count'] = count($mergedAssignedRolls);
+                        $posExtraJson = json_encode($existingPosExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                        $posNotes = 'POS Roll job ' . $posActionLabel
+                            . ' | Plan: ' . ($planNo ?: 'N/A')
+                            . ' | From: ' . $posFromRef
+                            . ' | POS: ' . trim((string)($existingPos['job_no'] ?? 'N/A'));
+                        if ($displayJobName !== '') {
+                            $posNotes .= ' | Job name: ' . $displayJobName;
+                        }
+
+                        if ($posPrevId > 0) {
+                            $updPos = $db->prepare("UPDATE jobs SET previous_job_id = ?, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updPos->bind_param('isssi', $posPrevId, $posStatus, $posNotes, $posExtraJson, $posId);
+                        } else {
+                            $updPos = $db->prepare("UPDATE jobs SET previous_job_id = NULL, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updPos->bind_param('sssi', $posStatus, $posNotes, $posExtraJson, $posId);
+                        }
+                        $updPos->execute();
+                    } else {
+                        for ($posAttempt = 0; $posAttempt < 30; $posAttempt++) {
+                            $jcNoPos = (string)(generateUniqueIdForTable($db, 'pos_job', 'jobs', 'job_no') ?? '');
+                            if ($jcNoPos === '') {
+                                $jcNoPos = deriveStageJobNo($planNo, $posPrefix);
+                            }
+                            if ($jcNoPos === '') {
+                                $jcNoPos = $posPrefix . '/' . date('Y') . '/' . str_pad((string)($batchId + $posAttempt), 4, '0', STR_PAD_LEFT);
+                            }
+
+                            $posNotesForInsert = 'POS Roll job ' . $posActionLabel
+                                . ' | Plan: ' . ($planNo ?: 'N/A')
+                                . ' | From: ' . $posFromRef
+                                . ' | POS: ' . $jcNoPos;
+                            if ($displayJobName !== '') {
+                                $posNotesForInsert .= ' | Job name: ' . $displayJobName;
+                            }
+
+                            $newPosExtra = $posExtraBase;
+                            $newPosExtra['assigned_child_rolls'] = $posAssignedRolls;
+                            $newPosExtra['assigned_child_roll_count'] = count($posAssignedRolls);
+                            $posExtraJson = json_encode($newPosExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                            if ($posPrevId > 0) {
+                                $insPos = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'pos', ?, 5, ?, ?, ?)");
+                                $insPos->bind_param('sississ', $jcNoPos, $planningId, $parentRollNo, $posStatus, $posPrevId, $posNotesForInsert, $posExtraJson);
+                            } else {
+                                $insPos = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'pos', ?, 5, NULL, ?, ?)");
+                                $insPos->bind_param('sissss', $jcNoPos, $planningId, $parentRollNo, $posStatus, $posNotesForInsert, $posExtraJson);
+                            }
+
+                            $okPos = false;
+                            try {
+                                $okPos = $insPos->execute();
+                            } catch (Throwable $insertErr) {
+                                if ((int)($insPos->errno ?? 0) === 1062 || stripos((string)$insertErr->getMessage(), 'Duplicate entry') !== false) {
+                                    $okPos = false;
+                                } else {
+                                    throw $insertErr;
+                                }
+                            }
+
+                            if ($okPos) {
+                                $posId = (int)$db->insert_id;
+                                $createdJobCards[] = ['job_no' => $jcNoPos, 'type' => 'POS Roll', 'roll' => $parentRollNo, 'id' => $posId];
+                                $statusMsg = $posPrevId <= 0 ? 'created directly' : 'queued';
+                                $nMsgPos = 'New POS Roll job card ' . $statusMsg . ': ' . $jcNoPos . ' | From: ' . $posFromRef;
+                                $nInsPos = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, 'pos', ?, 'info')");
+                                if ($nInsPos) {
+                                    $nInsPos->bind_param('is', $posId, $nMsgPos);
+                                    $nInsPos->execute();
+                                }
+                                break;
+                            }
+
+                            if ((int)$insPos->errno === 1062) continue;
+                            if ($posAttempt >= 29) {
+                                throw new Exception('Unable to generate unique POS job number. Please try again.');
                             }
                         }
                     }
@@ -2253,6 +2493,8 @@ try {
             if ($labelSlittingPrefix === '') $labelSlittingPrefix = 'LSL';
             $barcodePrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['barcode_job']['prefix'] ?? 'BRC-BAR')));
             if ($barcodePrefix === '') $barcodePrefix = 'BRC-BAR';
+            $posPrefix = strtoupper(trim((string)($prefixSettings['id_generation']['modules']['pos_job']['prefix'] ?? 'POS')));
+            if ($posPrefix === '') $posPrefix = 'POS';
 
             $findExistingStageJob = static function (mysqli $dbConn, int $planningId, string $department): ?array {
                 if ($planningId <= 0) {
@@ -2576,6 +2818,14 @@ try {
                     if (stripos((string)$a['plan_no'], 'PLN-PRL/') !== 0) {
                         $allowPaperRoll = false;
                     }
+                    $hasPaperRollRoute = erp_department_selection_contains($departments, 'PaperRoll', $departmentChoices, []);
+                    $planCtxPos = loadPlanningContext($db, (int)$a['planning_id'], (string)$a['plan_no']);
+                    $containsPos = planningContainsPosMarker(
+                        $planCtxPos['planning_extra'] ?? [],
+                        (string)($planCtxPos['planning_job_name'] ?? ''),
+                        (string)($a['job_name'] ?? '')
+                    );
+                    $allowPosFromPaperRoll = $allowPaperRoll && $hasPaperRollRoute;
                     $directFlexoBypass = $allowPrinting && !$allowJumbo;
                     $resolvedMachine = $machine !== '' ? $machine : resolveMachineFromDepartmentRoute($db, (string)$a['department_route']);
 
@@ -2866,6 +3116,8 @@ try {
                     }
                 }
 
+                $paperRollJobId = 0;
+                $paperRollJobNo = '';
                 if ($allowPaperRoll && $a['planning_id'] > 0) {
                     $paperRollUpstreamId = 0;
                     $paperRollUpstreamRef = 'N/A';
@@ -2889,6 +3141,7 @@ try {
                     $existingPaperRoll = $findExistingStageJob($db, (int)$a['planning_id'], 'paperroll');
                     if ($existingPaperRoll) {
                         $paperRollJobId = (int)($existingPaperRoll['id'] ?? 0);
+                        $paperRollJobNo = trim((string)($existingPaperRoll['job_no'] ?? ''));
                         $existingPaperRollExtra = $decodeJsonAssoc($existingPaperRoll['extra_data'] ?? '');
                         $existingPaperRollRolls = is_array($existingPaperRollExtra['assigned_child_rolls'] ?? null) ? $existingPaperRollExtra['assigned_child_rolls'] : [];
                         $paperRollExtraData['assigned_child_rolls'] = $mergeAssignedRolls($existingPaperRollRolls, $jobAssignedRolls);
@@ -2916,7 +3169,65 @@ try {
                         }
                         $insPR->execute();
                         $paperRollJobId = (int)$db->insert_id;
+                        $paperRollJobNo = $jcNoPaperRoll;
                         $createdJobCards[] = ['job_no' => $jcNoPaperRoll, 'type' => 'PaperRoll', 'action' => 'created', 'plan_no' => $a['plan_no'], 'allocation_id' => $allocationId, 'id' => $paperRollJobId];
+                    }
+                }
+
+                if ($allowPosFromPaperRoll && $a['planning_id'] > 0) {
+                    $posUpstreamId = 0;
+                    $posUpstreamRef = $parentRollNo !== '' ? $parentRollNo : 'N/A';
+                    if ($printingJobIdForChain > 0) {
+                        $posUpstreamId = $printingJobIdForChain;
+                        $posUpstreamRef = $printingJobNoForChain !== '' ? $printingJobNoForChain : 'N/A';
+                    } elseif ($jumboJobId > 0) {
+                        $posUpstreamId = $jumboJobId;
+                        $posUpstreamRef = $jumboJobNo !== '' ? $jumboJobNo : 'N/A';
+                    } elseif ($paperRollJobNo !== '') {
+                        $posUpstreamRef = $paperRollJobNo;
+                    }
+                    $posStatus = $posUpstreamId <= 0 ? 'Pending' : 'Queued';
+                    $posExtraData = [
+                        'assigned_child_rolls' => $jobAssignedRolls,
+                        'assigned_child_roll_count' => count($jobAssignedRolls),
+                        'assigned_parent_roll_no' => $parentRollNo,
+                        'assigned_last_batch_no' => $batchNo,
+                        'plan_no' => $a['plan_no'],
+                        'machine' => $resolvedMachine,
+                        'auto_created_from_slitting' => true,
+                        'trigger' => 'paperroll_only_pln_prl_pos',
+                    ];
+                    $existingPos = $findExistingStageJob($db, (int)$a['planning_id'], 'pos');
+                    if ($existingPos) {
+                        $posJobId = (int)($existingPos['id'] ?? 0);
+                        $existingPosExtra = $decodeJsonAssoc($existingPos['extra_data'] ?? '');
+                        $existingPosRolls = is_array($existingPosExtra['assigned_child_rolls'] ?? null) ? $existingPosExtra['assigned_child_rolls'] : [];
+                        $posExtraData['assigned_child_rolls'] = $mergeAssignedRolls($existingPosRolls, $jobAssignedRolls);
+                        $posExtraData['assigned_child_roll_count'] = count($posExtraData['assigned_child_rolls']);
+                        $posExtraJson = json_encode(array_merge($existingPosExtra, $posExtraData), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        $posNotes = 'POS Roll job updated | Plan: ' . $a['plan_no'] . ' | From: ' . $posUpstreamRef;
+                        if ($posUpstreamId > 0) {
+                            $updPos = $db->prepare("UPDATE jobs SET previous_job_id = ?, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updPos->bind_param('isssi', $posUpstreamId, $posStatus, $posNotes, $posExtraJson, $posJobId);
+                        } else {
+                            $updPos = $db->prepare("UPDATE jobs SET previous_job_id = NULL, status = ?, notes = ?, extra_data = ? WHERE id = ?");
+                            $updPos->bind_param('sssi', $posStatus, $posNotes, $posExtraJson, $posJobId);
+                        }
+                        $updPos->execute();
+                    } else {
+                        $jcNoPos = generateUniqueStageJobNo($db, $a['plan_no'], 'pos_job', $posPrefix, $batchId + 600 + $a['allocation_sequence']);
+                        $posNotes = 'POS Roll job queued | Plan: ' . $a['plan_no'] . ' | From: ' . $posUpstreamRef . ' | POS: ' . $jcNoPos;
+                        $posExtraJson = json_encode($posExtraData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        if ($posUpstreamId > 0) {
+                            $insPos = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'pos', ?, 5, ?, ?, ?)");
+                            $insPos->bind_param('sississ', $jcNoPos, $a['planning_id'], $parentRollNo, $posStatus, $posUpstreamId, $posNotes, $posExtraJson);
+                        } else {
+                            $insPos = $db->prepare("INSERT INTO jobs (job_no, planning_id, sales_order_id, roll_no, job_type, department, status, sequence_order, previous_job_id, notes, extra_data) VALUES (?, ?, NULL, ?, 'Finishing', 'pos', ?, 5, NULL, ?, ?)");
+                            $insPos->bind_param('sissss', $jcNoPos, $a['planning_id'], $parentRollNo, $posStatus, $posNotes, $posExtraJson);
+                        }
+                        $insPos->execute();
+                        $posJobId = (int)$db->insert_id;
+                        $createdJobCards[] = ['job_no' => $jcNoPos, 'type' => 'POS Roll', 'action' => 'created', 'plan_no' => $a['plan_no'], 'allocation_id' => $allocationId, 'id' => $posJobId];
                     }
                 }
 

@@ -57,6 +57,14 @@ include __DIR__ . '/../../../includes/header.php';
 .slt-job-item.selected{border-color:var(--brand);background:#f0fdf4;box-shadow:0 0 0 3px rgba(34,197,94,.12)}
 .slt-job-item .job-label{font-size:.82rem;font-weight:600}
 .slt-job-item .job-meta{font-size:.7rem;color:var(--text-muted)}
+.slt-job-item.src-pln{border-left:4px solid #0f766e}
+.slt-job-item.src-pln-bar{border-left:4px solid #be123c}
+.slt-job-item.src-pln-prl{border-left:4px solid #ea580c}
+.slt-source-chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:.58rem;font-weight:900;letter-spacing:.05em;text-transform:uppercase;border:1px solid transparent}
+.slt-source-chip.pln{background:#ccfbf1;color:#134e4a;border-color:#5eead4}
+.slt-source-chip.pln-bar{background:#ffe4e6;color:#881337;border-color:#fda4af}
+.slt-source-chip.pln-prl{background:#ffedd5;color:#9a3412;border-color:#fdba74}
+.slt-source-chip.other{background:#f1f5f9;color:#334155}
 .slt-job-detail{font-size:.82rem}
 .slt-job-detail .detail-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9}
 .slt-job-detail .detail-row:last-child{border:none}
@@ -481,6 +489,8 @@ include __DIR__ . '/../../../includes/header.php';
 
 </main>
 
+</main>
+
 <?php include __DIR__ . '/../../../includes/footer.php'; ?>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -562,7 +572,7 @@ const SLT = (() => {
     } catch (err) {
       const msg = 'Slitting init failed: ' + (err && err.message ? err.message : 'Unknown error');
       console.error(msg, err);
-      alert(msg);
+      showAcceptFlowMessage(msg, 'error', 'Initialization Error');
     }
   }
 
@@ -1177,11 +1187,11 @@ const SLT = (() => {
 
     if (cfg.slitMode === 'EQUAL_DIVIDE') {
       // ── Equal Divide: pieces-only input ─────────────────────
-      const eqWidth = (pw / (parseInt(cfg.equalPieces) || 2)).toFixed(2);
+      const eqWidth = (pw / (parseInt(cfg.equalPieces) || 1)).toFixed(2);
       html += `<div class="slt-equal-divide" style="padding:14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;margin-bottom:12px">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <label style="font-weight:700;font-size:.82rem;white-space:nowrap"><i class="bi bi-grid-3x3-gap"></i> Number of Pieces</label>
-          <input type="number" min="2" max="50" value="${cfg.equalPieces}" class="form-control" style="width:80px;text-align:center;font-weight:700;font-size:1rem" onchange="SLT.updateEqualPieces('${esc(activeRollNo)}',this.value)">
+          <input type="number" min="1" max="50" value="${cfg.equalPieces}" class="form-control" style="width:80px;text-align:center;font-weight:700;font-size:1rem" onchange="SLT.updateEqualPieces('${esc(activeRollNo)}',this.value)">
           <span style="font-size:.82rem;color:var(--text-muted)">→ <strong style="color:var(--brand)">${eqWidth}mm</strong> each</span>
         </div>
         <div style="margin-top:8px;font-size:.72rem;color:#6b7280"><i class="bi bi-info-circle"></i> Parent width (${pw}mm) ÷ ${cfg.equalPieces} pieces = ${eqWidth}mm per roll. Full length preserved.</div>
@@ -1582,7 +1592,7 @@ const SLT = (() => {
 
   function updateEqualPieces(rollNo, val) {
     if (!rollConfigs[rollNo]) return;
-    rollConfigs[rollNo].equalPieces = Math.max(2, parseInt(val) || 2);
+    rollConfigs[rollNo].equalPieces = Math.max(1, parseInt(val) || 1);
     syncEqualDivideRuns(rollNo);
     renderConfig();
     renderBatchStatus();
@@ -1594,7 +1604,7 @@ const SLT = (() => {
     if (!cfg || !roll) return;
     const pw = parseFloat(roll.width_mm) || 0;
     const pl = parseFloat(roll.length_mtr) || 0;
-    const pieces = parseInt(cfg.equalPieces) || 2;
+    const pieces = Math.max(1, parseInt(cfg.equalPieces) || 1);
     const eqWidth = parseFloat((pw / pieces).toFixed(2));
     cfg.runs = [{width: eqWidth, length: pl, qty: pieces}];
     cfg.remainderAction = 'ADJUST'; // no remainder in equal divide
@@ -1773,9 +1783,11 @@ const SLT = (() => {
     el.innerHTML = jobs.map(j => {
       const sel = selectedJob && selectedJob.id === j.id;
       const ppStatus = j.printing_planning || j.status || 'Pending';
-      return `<div class="slt-job-item${sel?' selected':''}" onclick="SLT.selectJob(${j.id})">
+      const sourceMeta = getPlanningSourceMeta(j.job_no || '');
+      return `<div class="slt-job-item${sel?' selected':''} ${sourceMeta.rowClass}" onclick="SLT.selectJob(${j.id})">
         <div>
           <div class="job-label">${esc(j.job_no || '—')} - ${esc(j.job_name || 'No Name')}</div>
+          <div class="job-meta"><span class="slt-source-chip ${sourceMeta.chipClass}">${esc(sourceMeta.label)}</span></div>
         </div>
         <div style="display:flex;align-items:center;gap:6px">
           ${statusBadge(ppStatus)}
@@ -1814,6 +1826,11 @@ const SLT = (() => {
     }
 
     const j = selectedJob;
+    const sourceMeta = getPlanningSourceMeta(j.job_no || '');
+    const isPaperRollBoard = sourceMeta.chipClass === 'pln-prl';
+    const dieVal = j.die_type || (isPaperRollBoard ? 'N/A (PaperRoll)' : '—');
+    const directionVal = j.roll_direction || (isPaperRollBoard ? 'N/A (PaperRoll)' : '—');
+    const repeatVal = j.repeat_val || (isPaperRollBoard ? 'N/A (PaperRoll)' : '—');
     el.innerHTML = `<div class="slt-job-detail">
       <div class="detail-row"><span class="detail-label">Plan No</span><span class="detail-value">${esc(j.job_no || '—')}</span></div>
       <div class="detail-row"><span class="detail-label">Job Name</span><span class="detail-value">${esc(j.job_name)}</span></div>
@@ -1822,10 +1839,10 @@ const SLT = (() => {
       <div class="detail-row"><span class="detail-label">Size</span><span class="detail-value">${esc(j.label_length_mm || '—')}</span></div>
       <div class="detail-row"><span class="detail-label">Allocated MTRS</span><span class="detail-value">${esc(j.allocate_mtrs || '—')}</span></div>
       <div class="detail-row"><span class="detail-label">Quantity</span><span class="detail-value">${esc(j.quantity || '—')}</span></div>
-      <div class="detail-row"><span class="detail-label">Die</span><span class="detail-value">${esc(j.die_type || '—')}</span></div>
+      <div class="detail-row"><span class="detail-label">Die</span><span class="detail-value">${esc(dieVal)}</span></div>
       <div class="detail-row"><span class="detail-label">Core</span><span class="detail-value">${esc(j.core_size || '—')}</span></div>
-      <div class="detail-row"><span class="detail-label">Direction</span><span class="detail-value">${esc(j.roll_direction || '—')}</span></div>
-      <div class="detail-row"><span class="detail-label">Repeat</span><span class="detail-value">${esc(j.repeat_val || '—')}</span></div>
+      <div class="detail-row"><span class="detail-label">Direction</span><span class="detail-value">${esc(directionVal)}</span></div>
+      <div class="detail-row"><span class="detail-label">Repeat</span><span class="detail-value">${esc(repeatVal)}</span></div>
       <div class="detail-row"><span class="detail-label">Dispatch Date</span><span class="detail-value">${esc(j.dispatch_date || '—')}</span></div>
       <div class="detail-row"><span class="detail-label">Priority</span><span class="detail-value">${statusBadge(j.priority || 'Normal')}</span></div>
       <div class="detail-row"><span class="detail-label">Status</span><span class="detail-value">${statusBadge(j.printing_planning || j.status || 'Pending')}</span></div>
@@ -1846,7 +1863,7 @@ const SLT = (() => {
     const planningWidth = parseFloat(j.label_width_mm) || parseFloat(j.paper_size) || 0;
     const requestWidth = isAcceptMode() ? (parseFloat(acceptRequestWidthMm) || 0) : 0;
     const targetWidth = requestWidth > 0 ? requestWidth : planningWidth;
-    const material = j.material_type || '';
+    const material = (j.material_type || j.paper_type || '').trim();
     const reqMtrs = parseFloat(j.allocate_mtrs) || 0;
 
     if (isAcceptMode() && requestWidth > 0 && planningWidth > 0 && Math.abs(requestWidth - planningWidth) > 0.5 && !acceptWidthMismatchWarned) {
@@ -1902,6 +1919,7 @@ const SLT = (() => {
     // Store context on element for rendering/deploy
     contentEl._targetWidth = targetWidth;
     contentEl._reqMtrs = reqMtrs;
+    contentEl._material = material;
 
     renderStockOptions(targetWidth, reqMtrs);
   }
@@ -1981,6 +1999,7 @@ const SLT = (() => {
         <div>
           <div style="font-weight:900;font-size:.8rem">${r.width_mm}mm × ${r.length_mtr}m</div>
           <div style="font-size:.6rem;color:var(--text-muted);margin-top:2px">${esc(r.roll_no)} · ${esc(r.company || '')}</div>
+          <div style="font-size:.62rem;color:#0f766e;font-weight:800;margin-top:3px">Paper Type: ${esc(r.paper_type || 'N/A')}</div>
           <span class="slt-priority-badge" style="background:${priBg}">${priority}</span>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px">
             ${ways || '<span style="font-size:.58rem;color:var(--text-muted)">Single feasible way</span>'}
@@ -2146,13 +2165,11 @@ const SLT = (() => {
       : '<i class="bi bi-hourglass-split"></i> Executing…';
 
     const operator = (document.getElementById('execOperator').value || CURRENT_OPERATOR).trim();
-    const machine  = document.getElementById('execMachine').value;
+    let machine  = String(document.getElementById('execMachine').value || '').trim();
 
     if (!machine) {
-      showToast('Selected department-er jonno kono active machine mapping paoa jayni', 'warning');
-      btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-play-circle"></i> ' + getExecuteButtonLabel();
-      return;
+      machine = 'MANUAL_TERMINAL';
+      showAcceptFlowMessage('No active machine mapping was found for the selected department. Continuing with fallback machine: MANUAL_TERMINAL.', 'warning', 'Machine Mapping Missing');
     }
 
     if (isJumboAcceptMode()) {
@@ -2771,6 +2788,20 @@ const SLT = (() => {
     };
     const cls = map[status] || 'draft';
     return '<span class="badge badge-' + cls + '">' + esc(status) + '</span>';
+  }
+
+  function getPlanningSourceMeta(jobNo) {
+    const no = String(jobNo || '').trim().toUpperCase();
+    if (no.startsWith('PLN-BAR/')) {
+      return { label: 'Barcode Board', chipClass: 'pln-bar', rowClass: 'src-pln-bar' };
+    }
+    if (no.startsWith('PLN-PRL/')) {
+      return { label: 'PaperRoll Board', chipClass: 'pln-prl', rowClass: 'src-pln-prl' };
+    }
+    if (no.startsWith('PLN/')) {
+      return { label: 'Standard Board', chipClass: 'pln', rowClass: 'src-pln' };
+    }
+    return { label: 'Other Board', chipClass: 'other', rowClass: '' };
   }
 
   function normalizePlannerStatus(status) {

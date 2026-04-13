@@ -23,7 +23,9 @@ $dcWeightLabel = trim((string)($dcWeightLabel ?? '')) ?: 'Weight';
 $dcHeightLabel = trim((string)($dcHeightLabel ?? '')) ?: 'Height';
 $dcPaperWidthLabel = trim((string)($dcPaperWidthLabel ?? '')) ?: 'Width (mm)';
 $dcShowPaperCompanyInDetails = isset($dcShowPaperCompanyInDetails) ? (bool)$dcShowPaperCompanyInDetails : true;
+$dcShowParentChildRollTables = isset($dcShowParentChildRollTables) ? (bool)$dcShowParentChildRollTables : false;
 $dcAutoFallbackToAllOnEmptyDefault = isset($dcAutoFallbackToAllOnEmptyDefault) ? (bool)$dcAutoFallbackToAllOnEmptyDefault : true;
+$dcEnableBulkSelection = isset($dcEnableBulkSelection) ? (bool)$dcEnableBulkSelection : true;
 $dcCanManualRollEntry = isset($dcCanManualRollEntry)
   ? (bool)$dcCanManualRollEntry
   : (
@@ -118,6 +120,28 @@ $jobsSql = "
 $jobsRes = $db->query($jobsSql);
 $jobs = $jobsRes instanceof mysqli_result ? $jobsRes->fetch_all(MYSQLI_ASSOC) : [];
 
+$jobParentRollNos = array_values(array_filter(array_unique(array_map(static function ($j) {
+  return trim((string)($j['roll_no'] ?? ''));
+}, $jobs))));
+
+$paperStockChildrenMap = []; // parent_roll_no => [child rows]
+if (!empty($jobParentRollNos)) {
+  $ph = implode(',', array_fill(0, count($jobParentRollNos), '?'));
+  $types = str_repeat('s', count($jobParentRollNos));
+  $psChildStmt = $db->prepare("SELECT roll_no, parent_roll_no, paper_type, company, width_mm, length_mtr, gsm, weight_kg, sqm, status, remarks FROM paper_stock WHERE parent_roll_no IN ($ph)");
+  if ($psChildStmt) {
+    $psChildStmt->bind_param($types, ...$jobParentRollNos);
+    $psChildStmt->execute();
+    $psChildRows = $psChildStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($psChildRows as $row) {
+      $parentRoll = trim((string)($row['parent_roll_no'] ?? ''));
+      if ($parentRoll === '') continue;
+      if (!isset($paperStockChildrenMap[$parentRoll])) $paperStockChildrenMap[$parentRoll] = [];
+      $paperStockChildrenMap[$parentRoll][] = $row;
+    }
+  }
+}
+
 // ── Process jobs ──────────────────────────────────────────
 $finishStates = ['Closed', 'Finalized', 'Completed', 'QC Passed'];
 foreach ($jobs as &$job) {
@@ -155,6 +179,15 @@ foreach ($jobs as &$job) {
   $job['planning_repeat'] = (string)($planningExtra['repeat'] ?? ($planningExtra['barcode_repeat'] ?? ($planningExtra['cylinder_repeat'] ?? ($planningExtra['pitch'] ?? ''))));
   $job['planning_order_qty'] = (string)($planningExtra['order_quantity_user'] ?? ($planningExtra['order_quantity'] ?? ($planningExtra['qty_pcs'] ?? '')));
   $job['planning_material'] = (string)($planningExtra['material_type'] ?? ($planningExtra['material'] ?? ($job['paper_type'] ?? '')));
+  $job['planning_paper_type'] = (string)($planningExtra['paper_type'] ?? ($planningExtra['paper_name'] ?? ($job['paper_type'] ?? ($job['planning_material'] ?? ''))));
+  $job['planning_paper_size'] = (string)($planningExtra['paper_size'] ?? ($planningExtra['paper_dimensions'] ?? ($planningExtra['paper_dim'] ?? '')));
+  $job['planning_item_width'] = (string)($planningExtra['item_width'] ?? ($planningExtra['label_width'] ?? ($planningExtra['barcode_width'] ?? ($planningExtra['width_mm'] ?? ($planningExtra['width'] ?? '')))));
+  $job['planning_item_length'] = (string)($planningExtra['item_length'] ?? ($planningExtra['label_length'] ?? ($planningExtra['barcode_height'] ?? ($planningExtra['height_mm'] ?? ($planningExtra['height'] ?? '')))));
+  $job['planning_dia'] = (string)($planningExtra['dia'] ?? ($planningExtra['diameter'] ?? ($planningExtra['roll_dia'] ?? ($planningExtra['od'] ?? ''))));
+  $job['planning_roll_dia'] = $job['planning_dia'];
+  $job['planning_core'] = (string)($planningExtra['core'] ?? ($planningExtra['core_size'] ?? ($planningExtra['core_mm'] ?? ($planningExtra['core_dia'] ?? ($planningExtra['core_inch'] ?? '')))));
+  $job['planning_core_size'] = (string)($planningExtra['core_size'] ?? ($planningExtra['core_mm'] ?? ($planningExtra['core_dia'] ?? ($planningExtra['core_inch'] ?? ($job['planning_core'] ?? '')))));
+  $job['planning_core_type'] = (string)($planningExtra['core_type'] ?? ($planningExtra['core_type_name'] ?? ($planningExtra['core_name'] ?? ($planningExtra['core'] ?? ''))));
   $job['paper_company_name'] = (string)($planningExtra['paper_company_name'] ?? ($planningExtra['paper_company'] ?? ($planningExtra['company_name'] ?? ($job['company'] ?? ''))));
   $job['planning_plate_no'] = (string)($planningExtra['plate_no'] ?? '');
   $job['planning_client_name'] = (string)($planningExtra['client_name'] ?? ($planningExtra['customer_name'] ?? ($planningExtra['party_name'] ?? '')));
@@ -367,25 +400,31 @@ foreach ($jobs as &$job) {
     }
     if ($rollNo === '') continue;
     $k = strtolower($rollNo);
+    $parentRollNo = trim((string)($row['parent_roll_no'] ?? ''));
     if (!isset($rollMap[$k])) {
       $rollMap[$k] = [
         'roll_no' => $rollNo,
-        'parent_roll_no' => trim((string)($row['parent_roll_no'] ?? '')),
+        'parent_roll_no' => $parentRollNo,
         'width_mm' => $row['width_mm'] ?? ($row['width'] ?? ''),
         'length_mtr' => $row['length_mtr'] ?? ($row['length'] ?? ''),
         'paper_type' => $row['paper_type'] ?? ($row['material'] ?? ''),
         'company' => $row['company'] ?? ($row['company_name'] ?? ''),
         'gsm' => $row['gsm'] ?? '',
+        'weight_kg' => $row['weight_kg'] ?? '',
+        'sqm' => $row['sqm'] ?? '',
+        'wastage' => $row['wastage'] ?? '',
+        'remarks' => $row['remarks'] ?? '',
         'status' => $row['status'] ?? '',
       ];
     } else {
-      foreach (['parent_roll_no', 'width_mm', 'length_mtr', 'paper_type', 'company', 'gsm', 'status'] as $f) {
+      foreach (['parent_roll_no', 'width_mm', 'length_mtr', 'paper_type', 'company', 'gsm', 'weight_kg', 'sqm', 'wastage', 'remarks', 'status'] as $f) {
         $old = trim((string)($rollMap[$k][$f] ?? ''));
         $new = trim((string)($row[$f] ?? ''));
         if ($old === '' && $new !== '') $rollMap[$k][$f] = $row[$f];
       }
     }
     $flatbedRollNos[$rollNo] = true;
+    if ($parentRollNo !== '') $flatbedRollNos[$parentRollNo] = true;
   }
 
   $job['flatbed_source_rolls'] = array_values($rollMap);
@@ -397,7 +436,7 @@ if (!empty($flatbedRollNos)) {
   $rollList = array_keys($flatbedRollNos);
   $ph = implode(',', array_fill(0, count($rollList), '?'));
   $types = str_repeat('s', count($rollList));
-  $psStmt = $db->prepare("SELECT roll_no, paper_type, company, width_mm, length_mtr, gsm, status FROM paper_stock WHERE roll_no IN ($ph)");
+  $psStmt = $db->prepare("SELECT roll_no, paper_type, company, width_mm, length_mtr, gsm, weight_kg, sqm, status, remarks FROM paper_stock WHERE roll_no IN ($ph)");
   if ($psStmt) {
     $psStmt->bind_param($types, ...$rollList);
     $psStmt->execute();
@@ -424,10 +463,52 @@ foreach ($jobs as &$job) {
       'paper_type' => (string)($ps['paper_type'] ?? ($row['paper_type'] ?? '')),
       'company' => (string)($ps['company'] ?? ($row['company'] ?? '')),
       'gsm' => (float)($ps['gsm'] ?? ($row['gsm'] ?? 0)),
+      'weight_kg' => (float)($ps['weight_kg'] ?? ($row['weight_kg'] ?? 0)),
+      'sqm' => (float)($ps['sqm'] ?? ($row['sqm'] ?? 0)),
+      'wastage' => (float)($row['wastage'] ?? 0),
+      'remarks' => (string)($ps['remarks'] ?? ($row['remarks'] ?? '')),
       'status' => (string)($ps['status'] ?? ($row['status'] ?? '')),
     ];
   }
   $job['flatbed_source_rolls'] = $enriched;
+
+  $parentRollCandidates = [];
+  $primaryParent = trim((string)($job['roll_no'] ?? ''));
+  if ($primaryParent !== '') $parentRollCandidates[$primaryParent] = true;
+  $extraParsed = is_array($job['extra_data_parsed'] ?? null) ? $job['extra_data_parsed'] : [];
+  $assignedParent = trim((string)($extraParsed['assigned_parent_roll_no'] ?? ($extraParsed['parent_roll'] ?? '')));
+  if ($assignedParent !== '') $parentRollCandidates[$assignedParent] = true;
+  foreach ($enriched as $er) {
+    $pr = trim((string)($er['parent_roll_no'] ?? ''));
+    if ($pr !== '') $parentRollCandidates[$pr] = true;
+  }
+  $parentRollStockMap = [];
+  foreach (array_keys($parentRollCandidates) as $pr) {
+    if ($pr === '') continue;
+    $parentRollStockMap[$pr] = $flatbedRollStockMap[$pr] ?? [];
+  }
+  $job['parent_roll_stock_map'] = $parentRollStockMap;
+
+  $parentRollNo = trim((string)($job['roll_no'] ?? ''));
+  $paperStockChildren = [];
+  if ($parentRollNo !== '' && !empty($paperStockChildrenMap[$parentRollNo])) {
+    foreach ($paperStockChildrenMap[$parentRollNo] as $childRow) {
+      $paperStockChildren[] = [
+        'roll_no' => (string)($childRow['roll_no'] ?? ''),
+        'parent_roll_no' => (string)($childRow['parent_roll_no'] ?? ''),
+        'width_mm' => (float)($childRow['width_mm'] ?? 0),
+        'length_mtr' => (float)($childRow['length_mtr'] ?? 0),
+        'paper_type' => (string)($childRow['paper_type'] ?? ''),
+        'company' => (string)($childRow['company'] ?? ''),
+        'gsm' => (float)($childRow['gsm'] ?? 0),
+        'weight_kg' => (float)($childRow['weight_kg'] ?? 0),
+        'sqm' => (float)($childRow['sqm'] ?? 0),
+        'remarks' => (string)($childRow['remarks'] ?? ''),
+        'status' => (string)($childRow['status'] ?? 'Stock'),
+      ];
+    }
+  }
+  $job['paper_stock_child_rolls'] = $paperStockChildren;
 }
 unset($job);
 
@@ -703,6 +784,7 @@ include __DIR__ . '/../../../includes/header.php';
 </div>
 
 <!-- ═══ BULK PRINT BAR ═══ -->
+<?php if ($dcEnableBulkSelection): ?>
 <div class="dc-bulk-bar no-print" id="dcBulkBar">
   <div style="display:flex;align-items:center;gap:10px">
     <i class="bi bi-check2-square" style="font-size:1.1rem"></i>
@@ -714,6 +796,7 @@ include __DIR__ . '/../../../includes/header.php';
     <button style="padding:7px 16px;background:#22c55e;color:#fff;border:none;border-radius:8px;font-weight:800;font-size:.74rem;cursor:pointer;display:flex;align-items:center;gap:5px" onclick="dcBulkPrint()"><i class="bi bi-printer-fill"></i> Print Selected</button>
   </div>
 </div>
+<?php endif; ?>
 
 <!-- ═══ STATS GRID ═══ -->
 <div class="dc-stats no-print">
@@ -787,7 +870,9 @@ include __DIR__ . '/../../../includes/header.php';
     $searchText = strtolower($job['job_no'] . ' ' . ($job['display_job_name'] ?? '') . ' ' . ($job['planning_material'] ?? '') . ' ' . ($job['planning_die_size'] ?? ''));
   ?>
   <div class="dc-card <?= $isQueued ? 'dc-queued' : '' ?>" data-status="<?= e($sts) ?>" data-lockstate="<?= $isLocked ? 'locked' : 'unlocked' ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" onclick="openJobDetail(<?= $job['id'] ?>)">
+    <?php if ($dcEnableBulkSelection): ?>
     <input type="checkbox" class="dc-select-check" data-job-id="<?= $job['id'] ?>" onclick="event.stopPropagation();dcUpdateBulkBar()" title="Select for bulk print">
+    <?php endif; ?>
     <div class="dc-card-head">
       <div class="dc-jobno"><i class="bi bi-scissors"></i> <?= e($job['job_no']) ?></div>
       <div style="display:flex;gap:6px;align-items:center">
@@ -847,7 +932,9 @@ include __DIR__ . '/../../../includes/header.php';
     $searchText = strtolower($job['job_no'] . ' ' . ($job['display_job_name'] ?? '') . ' ' . ($job['planning_material'] ?? '') . ' ' . ($job['planning_die_size'] ?? ''));
   ?>
   <div class="dc-card" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" data-finished-only="1" style="display:none" onclick="openJobDetail(<?= $job['id'] ?>)">
+    <?php if ($dcEnableBulkSelection): ?>
     <input type="checkbox" class="dc-select-check" data-job-id="<?= $job['id'] ?>" onclick="event.stopPropagation();dcUpdateBulkBar()" title="Select for bulk print">
+    <?php endif; ?>
     <div class="dc-card-head">
       <div class="dc-jobno"><i class="bi bi-scissors"></i> <?= e($job['job_no']) ?></div>
       <div style="display:flex;gap:6px;align-items:center">
@@ -1032,7 +1119,9 @@ const DC_WEIGHT_LABEL = <?= json_encode($dcWeightLabel, JSON_HEX_TAG|JSON_HEX_AP
 const DC_HEIGHT_LABEL = <?= json_encode($dcHeightLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const DC_PAPER_WIDTH_LABEL = <?= json_encode($dcPaperWidthLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const DC_SHOW_PAPER_COMPANY_IN_DETAILS = <?= $dcShowPaperCompanyInDetails ? 'true' : 'false' ?>;
+const DC_SHOW_PARENT_CHILD_TABLES = <?= $dcShowParentChildRollTables ? 'true' : 'false' ?>;
 const DC_AUTO_FALLBACK_TO_ALL_ON_EMPTY_DEFAULT = <?= $dcAutoFallbackToAllOnEmptyDefault ? 'true' : 'false' ?>;
+const DC_ENABLE_BULK_SELECTION = <?= $dcEnableBulkSelection ? 'true' : 'false' ?>;
 const DC_DEFAULT_VOICE_LANGUAGE = <?= json_encode($dcDefaultVoiceLanguage, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const CAN_MANUAL_ROLL_ENTRY = <?= $dcCanManualRollEntry ? 'true' : 'false' ?>;
 const DC_REQUIRE_ROLL_SCAN = <?= !empty($dcRequireRollScan) ? 'true' : 'false' ?>;
@@ -1059,18 +1148,23 @@ function dcNormalizeRollEntry(entry, fallbackStatus) {
   if (typeof entry === 'string' || typeof entry === 'number') {
     const rollNo = String(entry || '').trim();
     if (!rollNo) return null;
-    return { roll_no: rollNo, width_mm: '', length_mtr: '', paper_type: '', company: '', gsm: '', status: fb || '—' };
+    return { roll_no: rollNo, parent_roll_no: '', width_mm: '', length_mtr: '', paper_type: '', company: '', gsm: '', weight_kg: '', sqm: '', wastage: '', remarks: '', status: fb || '—' };
   }
   if (typeof entry !== 'object') return null;
   const rollNo = String(entry.roll_no || entry.roll || entry.roll_number || '').trim();
   if (!rollNo) return null;
   return {
     roll_no: rollNo,
+    parent_roll_no: entry.parent_roll_no ?? '',
     width_mm: entry.width_mm ?? entry.width ?? '',
     length_mtr: entry.length_mtr ?? entry.length ?? '',
     paper_type: entry.paper_type ?? entry.material ?? '',
     company: entry.company ?? entry.company_name ?? '',
     gsm: entry.gsm ?? '',
+    weight_kg: entry.weight_kg ?? '',
+    sqm: entry.sqm ?? '',
+    wastage: entry.wastage ?? '',
+    remarks: entry.remarks ?? '',
     status: entry.status || fb || '—'
   };
 }
@@ -1093,7 +1187,7 @@ function dcMergeRollRows(baseRows, incomingRows, fallbackStatus) {
       return;
     }
     const target = out[index[key]];
-    ['width_mm', 'length_mtr', 'paper_type', 'company', 'gsm', 'status'].forEach(function(field) {
+    ['parent_roll_no', 'width_mm', 'length_mtr', 'paper_type', 'company', 'gsm', 'weight_kg', 'sqm', 'wastage', 'remarks', 'status'].forEach(function(field) {
       const oldVal = String(target[field] ?? '').trim();
       const newVal = String(normalized[field] ?? '').trim();
       if (!oldVal && newVal) target[field] = normalized[field];
@@ -2285,33 +2379,175 @@ async function openJobDetail(id, mode) {
   </div></div>`;
 
   // ── Die-Cutting Details ──
-  const assignedChildRolls = dcCollectAssignedChildRolls(job);
+  const allRollRows = (() => {
+    const extra = (job && job.extra_data_parsed) ? job.extra_data_parsed : {};
+    let rows = [];
+    rows = dcMergeRollRows(rows, job && job.paper_stock_child_rolls, 'Stock');
+    rows = dcMergeRollRows(rows, extra.assigned_child_rolls, 'Job Assign');
+    rows = dcMergeRollRows(rows, extra.child_rolls, 'Job Assign');
+    rows = dcMergeRollRows(rows, extra.stock_rolls, 'Stock');
+    rows = dcMergeRollRows(rows, extra.remaining_rolls, 'Remaining');
+    rows = dcMergeRollRows(rows, job && job.flatbed_source_rolls, 'Job Assign');
+    rows = dcMergeRollRows(rows, job && job.prev_assigned_child_rolls, 'Job Assign');
+    return rows;
+  })();
+
+  let posParentChildTablesHtml = '';
+  if (DC_SHOW_PARENT_CHILD_TABLES) {
+    const parentRollMap = {};
+    const parentRollStockMap = (job && typeof job.parent_roll_stock_map === 'object' && job.parent_roll_stock_map) ? job.parent_roll_stock_map : {};
+    const primaryParentRoll = String(extra.assigned_parent_roll_no || extra.parent_roll || job.roll_no || '').trim();
+    function addParentCandidate(rollNo) {
+      const rn = String(rollNo || '').trim();
+      if (!rn) return;
+      if (!parentRollMap[rn]) parentRollMap[rn] = true;
+    }
+    addParentCandidate(primaryParentRoll);
+    allRollRows.forEach(function(r) { addParentCandidate(r && r.parent_roll_no); });
+
+    const parentRolls = Object.keys(parentRollMap);
+    if (parentRolls.length) {
+      let parentTableHtml = '<table style="width:100%;border-collapse:collapse;font-size:.75rem;min-width:860px"><thead><tr>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Roll No</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Paper Company</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Material</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Width</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Length</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Weight</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Sqr Mtr</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">GSM</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Status</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Remarks</th>'
+        + '</tr></thead><tbody>';
+      parentRolls.forEach(function(prn) {
+        const stock = parentRollStockMap[prn] || {};
+        const isPrimary = (prn === primaryParentRoll);
+        const company = stock.company || (isPrimary ? (job.paper_company_name || job.company || '') : '');
+        const material = stock.paper_type || (isPrimary ? (job.planning_material || job.paper_type || '') : '');
+        const width = (Number(stock.width_mm || 0) || 0) > 0 ? Number(stock.width_mm).toFixed(2) : '--';
+        const length = (Number(stock.length_mtr || 0) || 0) > 0 ? Number(stock.length_mtr).toFixed(2) : '--';
+        const weight = (Number(stock.weight_kg || 0) || 0) > 0 ? Number(stock.weight_kg).toFixed(2) : '--';
+        const sqm = (Number(stock.sqm || 0) || 0) > 0 ? Number(stock.sqm).toFixed(2) : '--';
+        const gsm = (Number(stock.gsm || 0) || 0) > 0 ? Number(stock.gsm).toString() : '--';
+        const status = String(stock.status || '--');
+        const remarks = String(stock.remarks || '--');
+        parentTableHtml += `<tr>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-weight:800;color:var(--dc-brand)">${esc(prn)}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(company || '--')}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(material || '--')}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(width)}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(length)}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(weight)}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(sqm)}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(gsm)}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(status)}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(remarks)}</td>
+        </tr>`;
+      });
+      parentTableHtml += '</tbody></table>';
+      posParentChildTablesHtml += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-inbox"></i> Parent Rolls</div><div class="dc-op-b" style="overflow:auto">${parentTableHtml}</div></div>`;
+    }
+
+    if (allRollRows.length) {
+      let allChildTableHtml = '<table style="width:100%;border-collapse:collapse;font-size:.75rem;min-width:980px"><thead><tr>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Parent Roll No</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Child Roll NO.</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Width</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Length</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Type</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Weight</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Sqr Mtr</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">GSM</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Wastage</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Status</th>'
+        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Remarks</th>'
+        + '</tr></thead><tbody>';
+      allRollRows.forEach(function(r) {
+        const width = (Number(r.width_mm || 0) || 0) > 0 ? Number(r.width_mm).toFixed(2) : '--';
+        const length = (Number(r.length_mtr || 0) || 0) > 0 ? Number(r.length_mtr).toFixed(2) : '--';
+        const weight = (Number(r.weight_kg || 0) || 0) > 0 ? Number(r.weight_kg).toFixed(2) : '--';
+        const sqm = (Number(r.sqm || 0) || 0) > 0 ? Number(r.sqm).toFixed(2) : '--';
+        const gsm = (Number(r.gsm || 0) || 0) > 0 ? Number(r.gsm).toString() : '--';
+        const wastage = (Number(r.wastage || 0) || 0) > 0 ? Number(r.wastage).toFixed(2) : (String(r.wastage || '').trim() || '0');
+        allChildTableHtml += `<tr>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-weight:700">${esc(r.parent_roll_no || primaryParentRoll || '--')}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-weight:800;color:var(--dc-brand)">${esc(r.roll_no || '--')}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(width)}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(length)}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(r.paper_type || '--')}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(weight)}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(sqm)}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(gsm)}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(wastage)}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(r.status || '--')}</td>
+          <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(r.remarks || '--')}</td>
+        </tr>`;
+      });
+      allChildTableHtml += '</tbody></table>';
+      posParentChildTablesHtml += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-table"></i> All Child Rolls</div><div class="dc-op-b" style="overflow:auto">${allChildTableHtml}</div></div>`;
+    }
+  }
+  const firstRollWithWidth = allRollRows.find(function(r) { return (Number(r && r.width_mm || 0) || 0) > 0; }) || null;
+  const sizeDimensions = getJobSizeDimensions(job);
+  const widthMmText = sizeDimensions.weight
+    ? `${sizeDimensions.weight}`
+    : ((Number(job.planning_size_width_mm || 0) || 0) > 0
+      ? String(job.planning_size_width_mm)
+      : ((Number(job.width_mm || 0) || 0) > 0
+        ? Number(job.width_mm).toFixed(2)
+        : (firstRollWithWidth ? Number(firstRollWithWidth.width_mm).toFixed(2) : '—')));
+  const paperWidthNum = Number(job.width_mm || (firstRollWithWidth ? firstRollWithWidth.width_mm : 0) || 0);
+  const paperWidthText = (paperWidthNum > 0) ? paperWidthNum.toFixed(2) : (String(job.width_mm || '').trim() || '—');
+  const paperTypeText = String(job.planning_paper_type || '').trim() || String(job.planning_material || '').trim() || String(job.paper_type || '').trim() || '—';
+  const itemWidthText = String(job.planning_item_width || '').trim() || widthMmText;
+  const itemLengthText = String(job.planning_item_length || '').trim() || (sizeDimensions.height ? `${sizeDimensions.height}` : '—');
+  const itemSizeText = String(job.planning_paper_size || '').trim() || ((itemWidthText !== '—' && itemLengthText !== '—') ? `${itemWidthText} x ${itemLengthText} mm` : '—');
+  const diaText = String(job.planning_roll_dia || '').trim() || String(job.planning_dia || '').trim() || '—';
+  const coreSizeText = String(job.planning_core_size || '').trim() || String(job.planning_core || '').trim() || '—';
+  const coreText = coreSizeText;
+  const coreTypeText = String(job.planning_core_type || '').trim() || '—';
+  const rollRows = [];
+  if (String(job.roll_no || '').trim() !== '') {
+    rollRows.push({
+      roll_type: 'Parent',
+      roll_no: job.roll_no || '',
+      width_mm: job.width_mm ?? '',
+      length_mtr: job.length_mtr ?? '',
+      paper_type: job.planning_material || job.paper_type || '',
+      company: job.paper_company_name || job.company || '',
+      gsm: job.gsm ?? '',
+      status: job.roll_status || '—'
+    });
+  }
+  allRollRows.forEach(function(r) {
+    rollRows.push(Object.assign({ roll_type: 'Child' }, r || {}));
+  });
 
   html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-scissors"></i> ${esc(DC_DETAILS_SECTION_LABEL || 'Die-Cutting Details')}</div><div class="dc-op-b dc-op-grid-2">
-    <div class="dc-op-field"><label>Material</label><div class="fv">${esc(job.planning_material || job.paper_type || '—')}</div></div>
-    ${DC_SHOW_PAPER_COMPANY_IN_DETAILS ? `<div class="dc-op-field"><label>Paper Company</label><div class="fv">${esc(job.paper_company_name || job.company || '—')}</div></div>` : ''}
-    <div class="dc-op-field"><label>Die Size</label><div class="fv" style="color:var(--dc-brand);font-weight:900">${esc(job.planning_die_size || '—')}</div></div>
-    <div class="dc-op-field"><label>Repeat</label><div class="fv">${esc(job.planning_repeat || '—')}</div></div>
+    <div class="dc-op-field"><label>Paper Type</label><div class="fv">${esc(paperTypeText)}</div></div>
+    <div class="dc-op-field"><label>Paper Company</label><div class="fv" style="font-size:1.04rem;font-weight:900;line-height:1.25;color:#0f172a">${esc(job.paper_company_name || job.company || '—')}</div></div>
+    <div class="dc-op-field"><label>Item Size</label><div class="fv">${esc(itemSizeText)}</div></div>
     <div class="dc-op-field"><label>Order Quantity (Pcs)</label><div class="fv">${esc(job.planning_order_qty || '—')}</div></div>
-    <div class="dc-op-field"><label>Total Length (Mtr)</label><div class="fv">${esc((job.length_mtr ?? '—') + '')}</div></div>
-    <div class="dc-op-field"><label>Parent Roll</label><div class="fv">${esc(job.roll_no || '—')}</div></div>
-    ${(() => {
-      if (!DC_SHOW_WEIGHT_HEIGHT_FIELDS) return '';
-      const dim = getJobSizeDimensions(job);
-      const weightValue = dim.weight ? `${dim.weight} mm` : '—';
-      const heightValue = dim.height ? `${dim.height} mm` : '—';
-      return `
-    <div class="dc-op-field"><label>${esc(DC_WEIGHT_LABEL || 'Weight')}</label><div class="fv">${esc(weightValue)}</div></div>
-    <div class="dc-op-field"><label>${esc(DC_HEIGHT_LABEL || 'Height')}</label><div class="fv">${esc(heightValue)}</div></div>`;
-    })()}
-    <div class="dc-op-field"><label>${esc(DC_PAPER_WIDTH_LABEL || 'Width (mm)')}</label><div class="fv">${esc((job.width_mm ?? '—') + '')}</div></div>
+    <div class="dc-op-field"><label>Paper Roll Length (mtr)</label><div class="fv">${esc((job.length_mtr ?? '—') + '')}</div></div>
+    <div class="dc-op-field"><label>Item Width</label><div class="fv">${esc(itemWidthText)}</div></div>
+    <div class="dc-op-field"><label>Item Length</label><div class="fv">${esc(itemLengthText)}</div></div>
+    <div class="dc-op-field"><label>Roll Dia</label><div class="fv">${esc(diaText)}</div></div>
+    <div class="dc-op-field"><label>Core Size</label><div class="fv">${esc(coreSizeText)}</div></div>
+    <div class="dc-op-field"><label>Core</label><div class="fv">${esc(coreText)}</div></div>
+    <div class="dc-op-field"><label>Core Type</label><div class="fv">${esc(coreTypeText)}</div></div>
+    <div class="dc-op-field"><label>Paper Roll Width (mm)</label><div class="fv">${esc(paperWidthText)}</div></div>
     <div class="dc-op-field"><label>GSM</label><div class="fv">${esc((job.gsm ?? '—') + '')}</div></div>
   </div></div>`;
 
-  if (assignedChildRolls.length) {
-    html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-list-check"></i> Assigned Child Rolls (${assignedChildRolls.length})</div><div class="dc-op-b" style="overflow:auto">
+  if (posParentChildTablesHtml) {
+    html += posParentChildTablesHtml;
+  }
+
+  if (rollRows.length && !DC_SHOW_PARENT_CHILD_TABLES) {
+    html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-list-check"></i> Roll Numbers (${rollRows.length})</div><div class="dc-op-b" style="overflow:auto">
       <table style="width:100%;border-collapse:collapse;font-size:.75rem;min-width:620px">
         <thead><tr>
+          <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Type</th>
           <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Roll No</th>
           <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Width (mm)</th>
           <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Length (m)</th>
@@ -2321,8 +2557,9 @@ async function openJobDetail(id, mode) {
           <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Status</th>
         </tr></thead>
         <tbody>
-          ${assignedChildRolls.map(function(r){
+          ${rollRows.map(function(r){
             return `<tr>
+              <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-weight:800">${esc(r.roll_type || '—')}</td>
               <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-weight:800">${esc(r.roll_no || '—')}</td>
               <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(((Number(r.width_mm || 0) || 0) > 0 ? Number(r.width_mm).toFixed(2) : '—'))}</td>
               <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(((Number(r.length_mtr || 0) || 0) > 0 ? Number(r.length_mtr).toFixed(2) : '—'))}</td>
@@ -2586,6 +2823,29 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
   const dur = Number(job.duration_minutes);
   const durText = Number.isFinite(dur) ? `${Math.floor(dur/60)}h ${dur%60}m` : '—';
 
+  // ── POS-specific field computations (used when DC_SHOW_PARENT_CHILD_TABLES is true) ──
+  const allRollRowsPrint = dcCollectAssignedChildRolls(job);
+  const firstRollWithWidthPrint = allRollRowsPrint.find(function(r){ return (Number(r && r.width_mm || 0) || 0) > 0; }) || null;
+  const sizeDimensionsPrint = getJobSizeDimensions(job);
+  const widthMmTextPrint = sizeDimensionsPrint.weight
+    ? String(sizeDimensionsPrint.weight)
+    : ((Number(job.planning_size_width_mm || 0) || 0) > 0
+      ? String(job.planning_size_width_mm)
+      : ((Number(job.width_mm || 0) || 0) > 0
+        ? Number(job.width_mm).toFixed(2)
+        : (firstRollWithWidthPrint ? Number(firstRollWithWidthPrint.width_mm).toFixed(2) : '—')));
+  const paperWidthNumPrint = Number(job.width_mm || (firstRollWithWidthPrint ? firstRollWithWidthPrint.width_mm : 0) || 0);
+  const paperWidthTextPrint = (paperWidthNumPrint > 0) ? paperWidthNumPrint.toFixed(2) : (String(job.width_mm || '').trim() || '—');
+  const paperTypeTextPrint = String(job.planning_paper_type || '').trim() || String(job.planning_material || '').trim() || String(job.paper_type || '').trim() || '—';
+  const itemWidthTextPrint = String(job.planning_item_width || '').trim() || widthMmTextPrint;
+  const itemLengthTextPrint = String(job.planning_item_length || '').trim() || (sizeDimensionsPrint.height ? String(sizeDimensionsPrint.height) : '—');
+  const itemSizeTextPrint = String(job.planning_paper_size || '').trim() || ((itemWidthTextPrint !== '—' && itemLengthTextPrint !== '—') ? `${itemWidthTextPrint} x ${itemLengthTextPrint} mm` : '—');
+  const diaTextPrint = String(job.planning_roll_dia || '').trim() || String(job.planning_dia || '').trim() || '—';
+  const coreSizeTextPrint = String(job.planning_core_size || '').trim() || String(job.planning_core || '').trim() || '—';
+  const coreTypeTextPrint = String(job.planning_core_type || '').trim() || '—';
+  const paperCompanyPrint = String(job.paper_company_name || job.company || '').trim() || '—';
+  const sequenceOrderPrint = job.sequence_order || 1;
+
   const qrHtml = qrDataUrl
     ? `<div style="text-align:center;margin-left:12px"><img src="${qrDataUrl}" style="width:90px;height:90px;display:block"><div style="font-size:.56rem;color:#64748b;margin-top:2px">Scan job card</div></div>`
     : '';
@@ -2662,8 +2922,23 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
         <div><div style="color:#64748b;text-transform:uppercase;font-weight:800;font-size:.58rem">Duration</div><div style="font-weight:700">${esc(durText)}</div></div>
       </div>
       <div style="padding:10px 12px">
+        <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#1e40af;background:#dbeafe;padding:5px 8px;border-radius:4px">Job Information</div>
+        <table style="width:100%;border-collapse:collapse;font-size:.72rem;margin-bottom:10px">
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job No</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#0f766e">${esc(job.job_no || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:900;color:#0f172a">${esc(job.planning_job_name || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Client Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_client_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Priority</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_priority || 'Normal')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Sequence</td><td style="padding:5px 7px;border:1px solid #cbd5e1">#${esc(String(sequenceOrderPrint))}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Status</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.status || '—')}</td></tr>
+        </table>
         <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#0f766e;background:#ccfbf1;padding:5px 8px;border-radius:4px">${esc(DC_DETAILS_SECTION_LABEL || 'Die-Cutting Details')}</div>
         <table style="width:100%;border-collapse:collapse;font-size:.72rem;margin-bottom:10px">
+          ${DC_SHOW_PARENT_CHILD_TABLES ? `
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Paper Type</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(paperTypeTextPrint)}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Paper Company</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:900">${esc(paperCompanyPrint)}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Item Size</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#0f766e">${esc(itemSizeTextPrint)}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Order Quantity (Pcs)</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_order_qty || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Paper Roll Length (mtr)</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.length_mtr || '—') + '')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Item Width</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(itemWidthTextPrint)}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Item Length</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(itemLengthTextPrint)}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Roll Dia</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(diaTextPrint)}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Core Size</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(coreSizeTextPrint)}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Core</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(coreSizeTextPrint)}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Core Type</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(coreTypeTextPrint)}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Paper Roll Width (mm)</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(paperWidthTextPrint)}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">GSM</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.gsm || '0.00') + '')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800"></td><td style="padding:5px 7px;border:1px solid #cbd5e1"></td></tr>
+          ` : `
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-size:.84rem;font-weight:900;color:#0f172a">${esc(job.planning_job_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job No</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#0f766e">${esc(job.job_no || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Client Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_client_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Material</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_material || job.paper_type || '—')}</td></tr>
           ${DC_SHOW_PAPER_COMPANY_IN_DETAILS ? `<tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Paper Company</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.paper_company_name || job.company || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800"></td><td style="padding:5px 7px;border:1px solid #cbd5e1"></td></tr>` : ''}
@@ -2673,7 +2948,8 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
           ${assignedRollRows}
           ${weightHeightRow}
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">${esc(DC_PAPER_WIDTH_LABEL || 'Width (mm)')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.width_mm || '—') + ' mm')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800"></td><td style="padding:5px 7px;border:1px solid #cbd5e1"></td></tr>
-        </table>
+            `}
+          </table>
         ${previewHtml ? `<table style="width:100%">${previewHtml}</table>` : ''}
         ${(() => {
           const rawPlanQty = String(job.planning_order_qty || '').trim();
@@ -2744,6 +3020,7 @@ async function printJobCard(id) {
 
 // ═══ MULTI-SELECT BULK ═══
 function dcUpdateBulkBar() {
+  if (!DC_ENABLE_BULK_SELECTION) return;
   const checked = document.querySelectorAll('.dc-select-check:checked');
   const bar = document.getElementById('dcBulkBar');
   const countEl = document.getElementById('dcSelectedCount');
@@ -2753,16 +3030,19 @@ function dcUpdateBulkBar() {
 }
 
 function dcSelectAll() {
+  if (!DC_ENABLE_BULK_SELECTION) return;
   document.querySelectorAll('.dc-card:not([style*="display: none"]):not([style*="display:none"]) .dc-select-check').forEach(cb => cb.checked = true);
   dcUpdateBulkBar();
 }
 
 function dcDeselectAll() {
+  if (!DC_ENABLE_BULK_SELECTION) return;
   document.querySelectorAll('.dc-select-check').forEach(cb => cb.checked = false);
   dcUpdateBulkBar();
 }
 
 function dcBulkPrint() {
+  if (!DC_ENABLE_BULK_SELECTION) return;
   const checkedIds = Array.from(document.querySelectorAll('.dc-select-check:checked')).map(cb => cb.dataset.jobId);
   if (!checkedIds.length) { alert('No job cards selected'); return; }
   const jobs = checkedIds.map(id => ALL_JOBS.find(j => j.id == id)).filter(Boolean);
@@ -2878,14 +3158,13 @@ function dcBuildRequiredRolls(job) {
 
   const extra = (job && job.extra_data_parsed) ? job.extra_data_parsed : {};
   const parent = extra.parent_details || {};
+  const hasPrevJob = (parseInt(job && job.previous_job_id || 0, 10)) > 0;
 
-  // If the job came from slitting, extra.parent_rolls contains the assigned child rolls
-  // that the operator must scan. For jobs that went directly from production (no slitting),
-  // extra.parent_rolls is empty, so we fall back to scanning the parent roll.
+  // Priority 1: extra.parent_rolls — set by jobs API on start (barcode/slitting flow)
   const childRolls = Array.isArray(extra.parent_rolls) ? extra.parent_rolls.filter(function(r) { return String(r || '').trim() !== ''; }) : [];
 
   if (childRolls.length > 0) {
-    // Job came via slitting — scan child (slit) rolls only
+    // Job came via slitting (parent_rolls path) — scan those child rolls
     childRolls.forEach(function(pr) {
       addRoll(pr, {
         paper_type: job?.paper_type || '',
@@ -2893,9 +3172,19 @@ function dcBuildRequiredRolls(job) {
         length: job?.length_mtr ?? ''
       });
     });
+  } else if (hasPrevJob && Array.isArray(extra.assigned_child_rolls) && extra.assigned_child_rolls.length > 0) {
+    // Job came after upstream (e.g. Jumbo / Printing) — scan the assigned child rolls
+    extra.assigned_child_rolls.forEach(function(r) {
+      if (!r || typeof r !== 'object') return;
+      addRoll(r.roll_no || '', {
+        paper_type: r.paper_type || job?.paper_type || '',
+        width: r.width_mm ?? job?.width_mm ?? '',
+        length: r.length_mtr ?? job?.length_mtr ?? ''
+      });
+    });
   } else {
-    // Job came directly from production — scan the parent roll
-    addRoll(job?.roll_no || parent.roll_no || '', {
+    // Job started directly (no upstream job) — scan the parent roll
+    addRoll(job?.roll_no || extra.assigned_parent_roll_no || parent.roll_no || '', {
       paper_type: job?.paper_type || parent.paper_type || '',
       width: job?.width_mm ?? parent.width_mm ?? '',
       length: job?.length_mtr ?? parent.length_mtr ?? ''

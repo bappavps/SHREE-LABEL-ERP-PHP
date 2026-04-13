@@ -1939,7 +1939,7 @@ try {
                 foreach ($assignedChildRolls as $assignedRoll) {
                     $assignedRollNo = trim((string)($assignedRoll['roll_no'] ?? ''));
                     if ($assignedRollNo === '') continue;
-                    $updAssigned = $db->prepare("UPDATE paper_stock SET status = 'Job Assign' WHERE roll_no = ? AND status = 'Slitting'");
+                    $updAssigned = $db->prepare("UPDATE paper_stock SET status = 'Job Assign', date_used = COALESCE(date_used, NOW()) WHERE roll_no = ? AND status IN ('Slitting','Main','Stock','Available')");
                     $updAssigned->bind_param('s', $assignedRollNo);
                     $updAssigned->execute();
                 }
@@ -1953,7 +1953,7 @@ try {
                 foreach ($assignedChildRolls as $assignedRoll) {
                     $assignedRollNo = trim((string)($assignedRoll['roll_no'] ?? ''));
                     if ($assignedRollNo === '') continue;
-                    $updAssigned = $db->prepare("UPDATE paper_stock SET status = 'Job Assign' WHERE roll_no = ? AND status = 'Slitting'");
+                    $updAssigned = $db->prepare("UPDATE paper_stock SET status = 'Job Assign', date_used = COALESCE(date_used, NOW()) WHERE roll_no = ? AND status IN ('Slitting','Main','Stock','Available')");
                     $updAssigned->bind_param('s', $assignedRollNo);
                     $updAssigned->execute();
                 }

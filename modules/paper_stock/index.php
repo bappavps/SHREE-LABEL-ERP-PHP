@@ -12,6 +12,16 @@ $csrf = generateCSRF();
 $isSysAdmin = isAdmin();
 $appSettings = getAppSettings();
 
+// Data self-heal: any roll tied to a job should not remain Main/Stock/Available.
+try {
+  $db->query("UPDATE paper_stock
+              SET status = 'Job Assign', date_used = COALESCE(date_used, CURDATE())
+              WHERE (COALESCE(TRIM(job_no), '') <> '' OR COALESCE(TRIM(job_name), '') <> '')
+                AND LOWER(COALESCE(status, '')) IN ('','main','stock','available')");
+} catch (Throwable $e) {
+  // Ignore auto-heal errors and continue rendering the page.
+}
+
 $allowedPerPage = [10, 20, 50, 100];
 $perPageRaw = strtolower(trim((string)($_GET['per_page'] ?? '20')));
 $isAllRows = ($perPageRaw === 'all');

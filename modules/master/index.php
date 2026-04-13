@@ -742,6 +742,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       'sales_order' => 'prefix_sales_order',
       'planning' => 'prefix_planning',
       'planning_barcode' => 'prefix_planning_barcode',
+      'planning_paperroll' => 'prefix_planning_paperroll',
       'jumbo_job' => 'prefix_jumbo_job',
       'printing_job' => 'prefix_printing_job',
       'die_cutting_job' => 'prefix_die_cutting_job',
@@ -804,7 +805,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isset($idg['modules']) || !is_array($idg['modules'])) {
       $idg['modules'] = [];
     }
-    foreach (['planning', 'planning_barcode', 'jumbo_job', 'printing_job', 'die_cutting_job', 'label_slitting_job', 'barcode_job'] as $type) {
+    foreach (['planning', 'planning_barcode', 'planning_paperroll', 'jumbo_job', 'printing_job', 'die_cutting_job', 'label_slitting_job', 'barcode_job'] as $type) {
       if (isset($idg['modules'][$type])) {
         $idg['modules'][$type]['counter'] = 0;
       }
@@ -1083,6 +1084,7 @@ $prefixModules = [
   'sales_order' => 'Sales Order Prefix',
   'planning' => 'Planning Job Prefix',
   'planning_barcode' => 'Barcode Planning Job Prefix',
+  'planning_paperroll' => 'PaperRoll Planning Job Prefix',
   'jumbo_job' => 'Jumbo Slitting Job Prefix',
   'printing_job' => 'Flexo Printing Job Prefix',
   'die_cutting_job' => 'Die Cutting Job Prefix',

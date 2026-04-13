@@ -174,6 +174,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
         <?= navSubItem('/modules/operators/jumbo/index.php',          'Jumbo Operator',           $currentFile, [], 'nav-sub-item-nested', 'device-ssd') ?>
         <?= navSubItem('/modules/operators/pos/index.php',            'POS Roll Operator',        $currentFile, [], 'nav-sub-item-nested', 'receipt') ?>
         <?= navSubItem('/modules/operators/oneply/index.php',         'Only Ply Operator',        $currentFile, [], 'nav-sub-item-nested', 'layers') ?>
+        <?= navSubItem('/modules/operators/twoply/index.php',         'Two Ply Operator',         $currentFile, [], 'nav-sub-item-nested', 'layers') ?>
         <?= navSubItem('/modules/operators/printing/index.php',       'Flexo Operator',           $currentFile, [], 'nav-sub-item-nested', 'printer') ?>
         <?= navSubItem('/modules/operators/flatbed/index.php',        'Die-Cutting Operator',     $currentFile, [], 'nav-sub-item-nested', 'layout-wtf') ?>
         <?= navSubItem('/modules/operators/barcode/index.php',        'Barcode Operator',         $currentFile, ['/modules/operators/rotery/index.php'], 'nav-sub-item-nested', 'upc-scan') ?>
@@ -219,6 +220,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
             <?= navSubItem('/modules/jobs/jumbo/index.php',          'Jumbo Job',       $currentFile, [], 'nav-sub-item-nested', 'device-ssd') ?>
             <?= navSubItem('/modules/jobs/pos/index.php',            'POS Roll',        $currentFile, [], 'nav-sub-item-nested', 'receipt') ?>
             <?= navSubItem('/modules/jobs/oneply/index.php',         'One Ply',         $currentFile, [], 'nav-sub-item-nested', 'layers') ?>
+            <?= navSubItem('/modules/jobs/twoply/index.php',         'Two Ply',         $currentFile, [], 'nav-sub-item-nested', 'layers') ?>
             <?= navSubItem('/modules/jobs/printing/index.php',       'Flexo Printing',  $currentFile, [], 'nav-sub-item-nested', 'printer') ?>
             <?= navSubItem('/modules/jobs/flatbed/index.php',        'Die-Cutting',     $currentFile, [], 'nav-sub-item-nested', 'layout-wtf') ?>
             <?= navSubItem('/modules/jobs/barcode/index.php',        'Barcode',         $currentFile, ['/modules/jobs/rotery/index.php'], 'nav-sub-item-nested', 'upc-scan') ?>
