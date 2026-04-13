@@ -427,6 +427,21 @@ foreach ($jobs as &$job) {
     if ($parentRollNo !== '') $flatbedRollNos[$parentRollNo] = true;
   }
 
+  // Also collect parent_roll_nos from this job's own extra_data (e.g. 2-ply/POS jobs created
+  // directly from slitting have no previous_job_id, so prevExtra is empty; their child rolls
+  // live in the job's own extra_data and carry parent_roll_no that we still need to look up).
+  $selfExtraParsed = is_array($job['extra_data_parsed'] ?? null) ? $job['extra_data_parsed'] : [];
+  foreach (['assigned_child_rolls', 'child_rolls'] as $_selfBucket) {
+    $selfBucketRows = $selfExtraParsed[$_selfBucket] ?? null;
+    if (is_array($selfBucketRows)) {
+      foreach ($selfBucketRows as $_sr) {
+        if (!is_array($_sr)) continue;
+        $_prn = trim((string)($_sr['parent_roll_no'] ?? ''));
+        if ($_prn !== '') $flatbedRollNos[$_prn] = true;
+      }
+    }
+  }
+
   $job['flatbed_source_rolls'] = array_values($rollMap);
 }
 unset($job);
@@ -481,6 +496,18 @@ foreach ($jobs as &$job) {
   foreach ($enriched as $er) {
     $pr = trim((string)($er['parent_roll_no'] ?? ''));
     if ($pr !== '') $parentRollCandidates[$pr] = true;
+  }
+  // Also pick up parent_roll_nos stored directly in this job's own extra_data
+  // (covers jobs created from slitting that carry no previous_job_id).
+  foreach (['assigned_child_rolls', 'child_rolls'] as $_sBucket) {
+    $sBucketRows = $extraParsed[$_sBucket] ?? null;
+    if (is_array($sBucketRows)) {
+      foreach ($sBucketRows as $_ecr) {
+        if (!is_array($_ecr)) continue;
+        $pr = trim((string)($_ecr['parent_roll_no'] ?? ''));
+        if ($pr !== '') $parentRollCandidates[$pr] = true;
+      }
+    }
   }
   $parentRollStockMap = [];
   foreach (array_keys($parentRollCandidates) as $pr) {
