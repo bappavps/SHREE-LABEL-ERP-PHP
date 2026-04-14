@@ -328,6 +328,20 @@ function planningContainsTwoPlyMarker(array $planningExtra, string ...$texts): b
     return false;
 }
 
+function resolvePaperRollSubtype(array $planningExtra, string ...$texts): string {
+    // Priority order is business-defined: POS, then 1Ply, then 2Ply.
+    if (planningContainsPosMarker($planningExtra, ...$texts)) {
+        return 'pos';
+    }
+    if (planningContainsOnePlyMarker($planningExtra, ...$texts)) {
+        return 'oneply';
+    }
+    if (planningContainsTwoPlyMarker($planningExtra, ...$texts)) {
+        return 'twoply';
+    }
+    return '';
+}
+
 // ─── Helper: Decide whether selected machine should bypass jumbo ─
 function shouldBypassJumboForMachine(mysqli $db, string $machine): bool {
     $machine = trim($machine);
@@ -1015,12 +1029,17 @@ try {
                 $allowPaperRollJob = false;
             }
             $hasPaperRollRoute = erp_department_selection_contains($selectedDepartments, 'PaperRoll', $departmentChoices, []);
-            $containsPosMarker = planningContainsPosMarker($planningExtra, $planningJobName, $jobName, $allocationJobName, $allocationDepartmentRoute, (string)($parent['paper_type'] ?? ''));
-            $containsOnePlyMarker = planningContainsOnePlyMarker($planningExtra, $planningJobName, $jobName, $allocationJobName, $allocationDepartmentRoute, (string)($parent['paper_type'] ?? ''));
-            $containsTwoPlyMarker = planningContainsTwoPlyMarker($planningExtra, $planningJobName, $jobName, $allocationJobName, $allocationDepartmentRoute, (string)($parent['paper_type'] ?? ''));
-            $allowPosJobFromPaperRoll = $allowPaperRollJob && $hasPaperRollRoute && !$isFlexoRequestAcceptFlow && $containsPosMarker;
-            $allowTwoPlyJobFromPaperRoll = $allowPaperRollJob && $hasPaperRollRoute && !$isFlexoRequestAcceptFlow && !$containsPosMarker && $containsTwoPlyMarker;
-            $allowOnePlyJobFromPaperRoll = $allowPaperRollJob && $hasPaperRollRoute && !$isFlexoRequestAcceptFlow && !$containsPosMarker && !$containsTwoPlyMarker && $containsOnePlyMarker;
+            $paperRollSubtype = resolvePaperRollSubtype(
+                $planningExtra,
+                $planningJobName,
+                $jobName,
+                $allocationJobName,
+                $allocationDepartmentRoute,
+                (string)($parent['paper_type'] ?? '')
+            );
+            $allowPosJobFromPaperRoll = $allowPaperRollJob && $hasPaperRollRoute && !$isFlexoRequestAcceptFlow && $paperRollSubtype === 'pos';
+            $allowOnePlyJobFromPaperRoll = $allowPaperRollJob && $hasPaperRollRoute && !$isFlexoRequestAcceptFlow && $paperRollSubtype === 'oneply';
+            $allowTwoPlyJobFromPaperRoll = $allowPaperRollJob && $hasPaperRollRoute && !$isFlexoRequestAcceptFlow && $paperRollSubtype === 'twoply';
 
             $directFlexoBypass = ($allowPrintingJob && !$allowJumboJob) || ($isFlexoRequestAcceptFlow && $flexoRouteToPrinting);
 
@@ -3296,30 +3315,16 @@ try {
                     }
                     $hasPaperRollRoute = erp_department_selection_contains($departments, 'PaperRoll', $departmentChoices, []);
                     $planCtxPos = loadPlanningContext($db, (int)$a['planning_id'], (string)$a['plan_no']);
-                    $containsPos = planningContainsPosMarker(
+                    $paperRollSubtype = resolvePaperRollSubtype(
                         $planCtxPos['planning_extra'] ?? [],
                         (string)($planCtxPos['planning_job_name'] ?? ''),
                         (string)($a['job_name'] ?? ''),
                         (string)($a['department_route'] ?? ''),
                         (string)($parent['paper_type'] ?? '')
                     );
-                    $containsOnePly = planningContainsOnePlyMarker(
-                        $planCtxPos['planning_extra'] ?? [],
-                        (string)($planCtxPos['planning_job_name'] ?? ''),
-                        (string)($a['job_name'] ?? ''),
-                        (string)($a['department_route'] ?? ''),
-                        (string)($parent['paper_type'] ?? '')
-                    );
-                    $containsTwoPly = planningContainsTwoPlyMarker(
-                        $planCtxPos['planning_extra'] ?? [],
-                        (string)($planCtxPos['planning_job_name'] ?? ''),
-                        (string)($a['job_name'] ?? ''),
-                        (string)($a['department_route'] ?? ''),
-                        (string)($parent['paper_type'] ?? '')
-                    );
-                    $allowPosFromPaperRoll = $allowPaperRoll && $hasPaperRollRoute && $containsPos;
-                    $allowTwoPlyFromPaperRoll = $allowPaperRoll && $hasPaperRollRoute && !$containsPos && $containsTwoPly;
-                    $allowOnePlyFromPaperRoll = $allowPaperRoll && $hasPaperRollRoute && !$containsPos && !$containsTwoPly && $containsOnePly;
+                    $allowPosFromPaperRoll = $allowPaperRoll && $hasPaperRollRoute && $paperRollSubtype === 'pos';
+                    $allowOnePlyFromPaperRoll = $allowPaperRoll && $hasPaperRollRoute && $paperRollSubtype === 'oneply';
+                    $allowTwoPlyFromPaperRoll = $allowPaperRoll && $hasPaperRollRoute && $paperRollSubtype === 'twoply';
                     $directFlexoBypass = $allowPrinting && !$allowJumbo;
                     $resolvedMachine = $machine !== '' ? $machine : resolveMachineFromDepartmentRoute($db, (string)$a['department_route']);
 
