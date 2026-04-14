@@ -69,6 +69,19 @@ function jrWastagePct(array $extra): ?float {
   return null;
 }
 
+function jrFirstNonEmpty(array $values, string $fallback = 'N/A'): string {
+  foreach ($values as $value) {
+    if (!is_string($value)) {
+      continue;
+    }
+    $value = trim($value);
+    if ($value !== '') {
+      return $value;
+    }
+  }
+  return $fallback;
+}
+
 // Date filters
 $dateFrom = $_GET['from'] ?? date('Y-m-01');
 $dateTo   = $_GET['to']   ?? date('Y-m-d');
@@ -89,11 +102,15 @@ if ($deptFilter === 'jumbo_slitting') {
 }
 
 $jobs = $db->query("
-    SELECT j.*, ps.paper_type, ps.company, ps.width_mm, ps.gsm, ps.weight_kg,
-           p.job_name AS planning_job_name, p.priority AS planning_priority
+  SELECT j.*, ps.paper_type, ps.company, ps.width_mm, ps.gsm, ps.weight_kg,
+       p.job_name AS planning_job_name, p.priority AS planning_priority,
+       p.machine AS planning_machine, p.operator_name AS planning_operator_name,
+       p.department AS planning_department,
+       u.name AS operator_user_name
     FROM jobs j
     LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no
     LEFT JOIN planning p ON j.planning_id = p.id
+  LEFT JOIN users u ON j.operator_id = u.id
     WHERE $where
     ORDER BY j.created_at DESC
     LIMIT 500
@@ -106,6 +123,17 @@ foreach ($jobs as &$j) {
   $j['report_dept_key'] = $deptInfo['key'];
   $j['report_dept_label'] = $deptInfo['label'];
   $j['report_dept_class'] = $deptInfo['class'];
+  $extra = $j['extra_data_parsed'];
+  $j['report_machine_name'] = jrFirstNonEmpty([
+    (string)($extra['machine'] ?? ''),
+    (string)($extra['machine_name'] ?? ''),
+    (string)($j['planning_machine'] ?? ''),
+  ], 'N/A');
+  $j['report_operator_name'] = jrFirstNonEmpty([
+    (string)($extra['operator_name'] ?? ''),
+    (string)($j['operator_user_name'] ?? ''),
+    (string)($j['planning_operator_name'] ?? ''),
+  ], 'Unassigned');
 }
 unset($j);
 
@@ -157,6 +185,51 @@ $utilizationRate = ($totalRunSeconds + $totalPauseSeconds) > 0
 $totalWastagePct = $wastageCount > 0 ? round($wastageSum / $wastageCount, 1) : 0.0;
 $runHoursText = floor($totalRunSeconds / 3600) . 'h ' . floor(($totalRunSeconds % 3600) / 60) . 'm';
 $pauseHoursText = floor($totalPauseSeconds / 3600) . 'h ' . floor(($totalPauseSeconds % 3600) / 60) . 'm';
+
+// Department/Machine/Manpower summary
+$departmentReport = [];
+$machineReport = [];
+$manpowerReport = [];
+foreach ($jobs as $j) {
+  $status = (string)($j['status'] ?? '');
+  $isCompleted = in_array($status, ['Completed', 'QC Passed'], true);
+
+  $deptLabel = (string)($j['report_dept_label'] ?? 'Unknown');
+  if (!isset($departmentReport[$deptLabel])) {
+    $departmentReport[$deptLabel] = ['total' => 0, 'completed' => 0];
+  }
+  $departmentReport[$deptLabel]['total']++;
+  if ($isCompleted) {
+    $departmentReport[$deptLabel]['completed']++;
+  }
+
+  $machineName = (string)($j['report_machine_name'] ?? 'N/A');
+  if (!isset($machineReport[$machineName])) {
+    $machineReport[$machineName] = ['total' => 0, 'completed' => 0];
+  }
+  $machineReport[$machineName]['total']++;
+  if ($isCompleted) {
+    $machineReport[$machineName]['completed']++;
+  }
+
+  $manName = (string)($j['report_operator_name'] ?? 'Unassigned');
+  if (!isset($manpowerReport[$manName])) {
+    $manpowerReport[$manName] = ['total' => 0, 'completed' => 0];
+  }
+  $manpowerReport[$manName]['total']++;
+  if ($isCompleted) {
+    $manpowerReport[$manName]['completed']++;
+  }
+}
+$summarySorter = static function(array $a, array $b): int {
+  if (($a['total'] ?? 0) === ($b['total'] ?? 0)) {
+    return ($b['completed'] ?? 0) <=> ($a['completed'] ?? 0);
+  }
+  return ($b['total'] ?? 0) <=> ($a['total'] ?? 0);
+};
+uasort($departmentReport, $summarySorter);
+uasort($machineReport, $summarySorter);
+uasort($manpowerReport, $summarySorter);
 
 // Department breakdown
 $slittingJobs = array_filter($jobs, fn($j) => in_array(($j['report_dept_key'] ?? ''), ['jumbo_slitting', 'flatbed', 'label_slitting'], true));
@@ -244,7 +317,17 @@ include __DIR__ . '/../../includes/header.php';
 .jr-badge-queued{background:#f1f5f9;color:#64748b}
 .jr-dept-slitting{color:var(--jr-green);font-weight:800}
 .jr-dept-printing{color:var(--jr-purple);font-weight:800}
+.jr-report-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:24px}
+.jr-report-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden}
+.jr-report-head{padding:12px 14px;border-bottom:1px solid #e2e8f0;font-size:.72rem;font-weight:800;text-transform:uppercase;color:#334155;display:flex;align-items:center;gap:8px}
+.jr-mini-table{width:100%;border-collapse:collapse}
+.jr-mini-table th,.jr-mini-table td{padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:.68rem}
+.jr-mini-table th{background:#f8fafc;color:#64748b;font-weight:800;text-transform:uppercase;font-size:.58rem}
+.jr-mini-table td{font-weight:600;color:#1e293b}
+.jr-mini-table tr:last-child td{border-bottom:none}
+.jr-cell-muted{color:#64748b;font-weight:700}
 @media(max-width:768px){.jr-charts{grid-template-columns:1fr}.jr-stats{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:980px){.jr-report-grid{grid-template-columns:1fr}}
 @media print{.no-print,.breadcrumb{display:none!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
 </style>
 
@@ -376,6 +459,74 @@ include __DIR__ . '/../../includes/header.php';
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="jr-report-grid">
+  <div class="jr-report-card">
+    <div class="jr-report-head"><i class="bi bi-building"></i> Department Report</div>
+    <table class="jr-mini-table">
+      <thead>
+        <tr><th>Department</th><th>Total</th><th>Done</th></tr>
+      </thead>
+      <tbody>
+        <?php if (empty($departmentReport)): ?>
+        <tr><td colspan="3" class="jr-cell-muted">No department data</td></tr>
+        <?php else: ?>
+        <?php foreach (array_slice($departmentReport, 0, 10, true) as $name => $vals): ?>
+        <tr>
+          <td><?= e($name) ?></td>
+          <td><?= (int)$vals['total'] ?></td>
+          <td><?= (int)$vals['completed'] ?></td>
+        </tr>
+        <?php endforeach; ?>
+        <?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="jr-report-card">
+    <div class="jr-report-head"><i class="bi bi-gear"></i> Machine Report</div>
+    <table class="jr-mini-table">
+      <thead>
+        <tr><th>Machine</th><th>Total</th><th>Done</th></tr>
+      </thead>
+      <tbody>
+        <?php if (empty($machineReport)): ?>
+        <tr><td colspan="3" class="jr-cell-muted">No machine data</td></tr>
+        <?php else: ?>
+        <?php foreach (array_slice($machineReport, 0, 10, true) as $name => $vals): ?>
+        <tr>
+          <td><?= e($name) ?></td>
+          <td><?= (int)$vals['total'] ?></td>
+          <td><?= (int)$vals['completed'] ?></td>
+        </tr>
+        <?php endforeach; ?>
+        <?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="jr-report-card">
+    <div class="jr-report-head"><i class="bi bi-people"></i> Manpower Report</div>
+    <table class="jr-mini-table">
+      <thead>
+        <tr><th>Operator</th><th>Total</th><th>Done</th></tr>
+      </thead>
+      <tbody>
+        <?php if (empty($manpowerReport)): ?>
+        <tr><td colspan="3" class="jr-cell-muted">No manpower data</td></tr>
+        <?php else: ?>
+        <?php foreach (array_slice($manpowerReport, 0, 10, true) as $name => $vals): ?>
+        <tr>
+          <td><?= e($name) ?></td>
+          <td><?= (int)$vals['total'] ?></td>
+          <td><?= (int)$vals['completed'] ?></td>
+        </tr>
+        <?php endforeach; ?>
+        <?php endif; ?>
+      </tbody>
+    </table>
   </div>
 </div>
 

@@ -246,6 +246,17 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
 
     <div class="nav-group">
       <a href="#" class="nav-item nav-group-toggle" aria-expanded="false">
+        <span class="nav-item-main"><i class="bi bi-box-seam"></i><span>Packaging and Dispatch</span></span>
+        <i class="bi bi-chevron-down"></i>
+      </a>
+      <div class="nav-sub">
+        <?= navSubItem('/modules/packing/index.php', 'Packing', $currentFile, ['/modules/jobs/packing/index.php'], '', 'box') ?>
+        <?= navSubItem('/modules/dispatch/index.php', 'Dispatch', $currentFile, [], '', 'truck') ?>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <a href="#" class="nav-item nav-group-toggle" aria-expanded="false">
         <span class="nav-item-main"><i class="bi bi-people"></i><span>HR &amp; Workforce</span></span>
         <i class="bi bi-chevron-down"></i>
       </a>
@@ -261,7 +272,6 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
       </a>
       <div class="nav-sub">
         <?= navSubItem('/modules/qc/index.php',       'QC Report', $currentFile, [], '', 'clipboard2-check') ?>
-        <?= navSubItem('/modules/dispatch/index.php', 'Dispatch',  $currentFile, [], '', 'truck') ?>
         <?= navSubItem('/modules/billing/index.php',  'Billing',   $currentFile, [], '', 'receipt-cutoff') ?>
       </div>
     </div>

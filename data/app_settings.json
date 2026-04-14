@@ -2,7 +2,7 @@
     "company_name": "Shree Label Creation",
     "company_legal_name": "",
     "contact_person": "",
-    "erp_display_name": "",
+    "erp_display_name": "e-Flexo Enterpices",
     "company_tagline": "ERP Master System",
     "company_email": "",
     "company_mobile": "",
@@ -10,22 +10,62 @@
     "company_currency": "INR",
     "company_address": "",
     "company_gst": "",
-    "erp_email": "",
-    "erp_phone": "",
-    "erp_address": "",
+    "erp_email": "debnathmriganka2010@gmail.com",
+    "erp_phone": "+917001449757",
+    "erp_address": "siliguri\r\nsiliguri",
     "erp_gst": "",
     "logo_path": "",
-    "erp_logo_path": "",
+    "erp_logo_path": "uploads/uploads/company/default/erp_logo_20260414_132519_b3a7521b.png",
     "flag_emoji": "🇮🇳",
     "animated_flag_path": "",
     "animated_flag_url": "",
-    "login_background_image": "",
+    "login_background_image": "uploads/uploads/library/default/lib_20260414_132546_cb70deb6.png",
     "theme_mode": "light",
     "sidebar_button_color": "#22c55e",
     "sidebar_hover_color": "rgba(255,255,255,.09)",
     "sidebar_active_bg": "rgba(34,197,94,.12)",
     "sidebar_active_text": "#bbf7d0",
-    "image_library": [],
+    "image_library": [
+        {
+            "path": "uploads/uploads/library/default/lib_20260414_132531_5e40f370.png",
+            "name": "lib_20260414_132531_5e40f370.png",
+            "uploaded_at": "2026-04-14 13:25:31",
+            "category": "company-logo"
+        },
+        {
+            "path": "uploads/uploads/library/default/lib_20260414_132539_4039cd92.png",
+            "name": "lib_20260414_132539_4039cd92.png",
+            "uploaded_at": "2026-04-14 13:25:39",
+            "category": "label-asset"
+        },
+        {
+            "path": "uploads/uploads/library/default/lib_20260414_132546_cb70deb6.png",
+            "name": "lib_20260414_132546_cb70deb6.png",
+            "uploaded_at": "2026-04-14 13:25:46",
+            "category": "background"
+        },
+        {
+            "path": "uploads/uploads/library/default/lib_20260414_132557_e03a7bb1.png",
+            "name": "lib_20260414_132557_e03a7bb1.png",
+            "uploaded_at": "2026-04-14 13:25:57",
+            "category": "product-type",
+            "paper_type": "chromo"
+        },
+        {
+            "path": "uploads/uploads/library/default/lib_20260414_132606_313359c2.png",
+            "name": "lib_20260414_132606_313359c2.png",
+            "uploaded_at": "2026-04-14 13:26:06",
+            "category": "product-type",
+            "paper_type": "PP-White"
+        },
+        {
+            "path": "uploads/uploads/library/default/lib_20260414_132615_e103ef6e.png",
+            "name": "lib_20260414_132615_e103ef6e.png",
+            "uploaded_at": "2026-04-14 13:26:15",
+            "category": "product-type",
+            "paper_type": "Thermal Paper"
+        }
+    ],
     "id_generation": {
         "year_format": "YYYY",
         "separator": "/",

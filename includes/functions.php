@@ -881,6 +881,8 @@ function rbacPageCatalog() {
         '/modules/leave-management/api.php' => 'Leave Management API',
 
         '/modules/qc/index.php' => 'QC Report',
+        '/modules/packing/index.php' => 'Packing',
+        '/modules/packing/export.php' => 'Packing Export',
         '/modules/dispatch/index.php' => 'Dispatch',
         '/modules/billing/index.php' => 'Billing',
 
@@ -1023,6 +1025,8 @@ function canAccessPath($path) {
     if ($path === '/modules/jobs/rotery/index.php') $aliases[] = '/modules/jobs/barcode/index.php';
     if ($path === '/modules/operators/barcode/index.php') $aliases[] = '/modules/operators/rotery/index.php';
     if ($path === '/modules/operators/rotery/index.php') $aliases[] = '/modules/operators/barcode/index.php';
+    if ($path === '/modules/packing/index.php') $aliases[] = '/modules/jobs/packing/index.php';
+    if ($path === '/modules/jobs/packing/index.php') $aliases[] = '/modules/packing/index.php';
     if ($path === '/modules/plate-tools/die-management/barcode/index.php') {
         $aliases[] = '/modules/plate-tools/die-management/barcode/flatbed-barcode-die.php';
         $aliases[] = '/modules/plate-tools/die-management/barcode/rotary-barcode-die.php';
@@ -1069,6 +1073,11 @@ function canAccessPath($path) {
     // Leave API follows same permission as leave module page.
     if ($path === '/modules/leave-management/api.php') {
         return canAccessPath('/modules/leave-management/index.php');
+    }
+
+    // Packing export endpoint follows packing page permission.
+    if ($path === '/modules/packing/export.php') {
+        return canAccessPath('/modules/packing/index.php');
     }
 
     $catalog = rbacPageCatalog();
@@ -1118,6 +1127,8 @@ function hasPageAction($path, $action) {
     if ($path === '/modules/jobs/rotery/index.php') $pathsToCheck[] = '/modules/jobs/barcode/index.php';
     if ($path === '/modules/operators/barcode/index.php') $pathsToCheck[] = '/modules/operators/rotery/index.php';
     if ($path === '/modules/operators/rotery/index.php') $pathsToCheck[] = '/modules/operators/barcode/index.php';
+    if ($path === '/modules/packing/index.php') $pathsToCheck[] = '/modules/jobs/packing/index.php';
+    if ($path === '/modules/jobs/packing/index.php') $pathsToCheck[] = '/modules/packing/index.php';
     if ($path === '/modules/plate-tools/die-management/barcode/index.php') {
         $pathsToCheck[] = '/modules/plate-tools/die-management/barcode/flatbed-barcode-die.php';
         $pathsToCheck[] = '/modules/plate-tools/die-management/barcode/rotary-barcode-die.php';
@@ -1374,6 +1385,7 @@ function prefixSettingsDefaults() {
                 'planning' => ['prefix' => 'PLN', 'counter' => 0],
                 'planning_barcode' => ['prefix' => 'PLN-BAR', 'counter' => 0],
                 'planning_paperroll' => ['prefix' => 'PLN-PRL', 'counter' => 0],
+                'packing' => ['prefix' => 'PKG', 'counter' => 0],
                 'jumbo_job' => ['prefix' => 'SLT', 'counter' => 0],
                 'printing_job' => ['prefix' => 'FLX', 'counter' => 0],
                 'die_cutting_job' => ['prefix' => 'DCT', 'counter' => 0],

@@ -210,8 +210,8 @@ if ($loginBg === '') {
     <div class="login-wrap">
       <div class="login-card">
     <div class="login-logo">
-      <?php if ($logoPath !== ''): ?>
-        <img src="<?= e(appUrl($logoPath)) ?>" alt="Logo">
+      <?php if ($uiLogoPath !== ''): ?>
+        <img src="<?= e(appUrl($uiLogoPath)) ?>" alt="Logo">
       <?php else: ?>
         <i class="bi bi-layers"></i>
       <?php endif; ?>

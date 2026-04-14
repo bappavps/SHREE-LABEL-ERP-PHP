@@ -1,0 +1,1796 @@
+<?php
+require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/functions.php';
+require_once __DIR__ . '/../../includes/auth_check.php';
+require_once __DIR__ . '/_data.php';
+
+$db = getDB();
+$pageTitle = 'Packing';
+
+$allowedTabs = packing_tab_keys();
+$currentTab = trim((string)($_GET['tab'] ?? 'printing_label'));
+if (!in_array($currentTab, $allowedTabs, true)) {
+  $currentTab = 'printing_label';
+}
+
+$search = trim((string)($_GET['q'] ?? ''));
+$from = trim((string)($_GET['from'] ?? ''));
+$to = trim((string)($_GET['to'] ?? ''));
+$period = trim((string)($_GET['period'] ?? 'custom'));
+
+$allowedPeriods = ['custom', 'day', 'week', 'month', 'year'];
+if (!in_array($period, $allowedPeriods, true)) {
+  $period = 'custom';
+}
+
+if ($period !== 'custom') {
+  $today = new DateTimeImmutable('today');
+
+  if ($period === 'day') {
+    $from = $today->format('Y-m-d');
+    $to = $today->format('Y-m-d');
+  } elseif ($period === 'week') {
+    $weekStart = $today->modify('monday this week');
+    $weekEnd = $today->modify('sunday this week');
+    $from = $weekStart->format('Y-m-d');
+    $to = $weekEnd->format('Y-m-d');
+  } elseif ($period === 'month') {
+    $monthStart = $today->modify('first day of this month');
+    $monthEnd = $today->modify('last day of this month');
+    $from = $monthStart->format('Y-m-d');
+    $to = $monthEnd->format('Y-m-d');
+  } elseif ($period === 'year') {
+    $yearStart = $today->setDate((int)$today->format('Y'), 1, 1);
+    $yearEnd = $today->setDate((int)$today->format('Y'), 12, 31);
+    $from = $yearStart->format('Y-m-d');
+    $to = $yearEnd->format('Y-m-d');
+  }
+}
+
+$data = packing_fetch_ready_rows($db, [
+  'search' => $search,
+  'from' => $from,
+  'to' => $to,
+]);
+
+$rowsByTab = $data['rows_by_tab'];
+$counts = $data['counts'];
+$canDeleteJobs = isAdmin();
+
+$statusClass = static function(string $status): string {
+  $status = strtolower(trim($status));
+  if (in_array($status, ['completed', 'complete', 'qc passed', 'finalized', 'closed', 'packing done'], true)) {
+    return 'ok';
+  }
+  return 'muted';
+};
+
+$formatDate = static function(string $value): string {
+  $value = trim($value);
+  if ($value === '') {
+    return '-';
+  }
+  $ts = strtotime($value);
+  if ($ts === false) {
+    return '-';
+  }
+  return date('d M Y', $ts);
+};
+
+$tabThemes = [
+  'printing_label' => [
+    'accent' => '#2563eb',
+    'soft' => '#dbeafe',
+    'border' => '#93c5fd',
+  ],
+  'pos_roll' => [
+    'accent' => '#0f766e',
+    'soft' => '#ccfbf1',
+    'border' => '#5eead4',
+  ],
+  'one_ply' => [
+    'accent' => '#c2410c',
+    'soft' => '#ffedd5',
+    'border' => '#fdba74',
+  ],
+  'two_ply' => [
+    'accent' => '#7c3aed',
+    'soft' => '#ede9fe',
+    'border' => '#c4b5fd',
+  ],
+  'barcode' => [
+    'accent' => '#be123c',
+    'soft' => '#ffe4e6',
+    'border' => '#fda4af',
+  ],
+];
+
+include __DIR__ . '/../../includes/header.php';
+?>
+
+<div class="breadcrumb">
+  <a href="<?= BASE_URL ?>/modules/dashboard/index.php">Dashboard</a>
+  <span class="breadcrumb-sep">&#8250;</span>
+  <span>Packaging and Dispatch</span>
+  <span class="breadcrumb-sep">&#8250;</span>
+  <span>Packing</span>
+</div>
+
+<style>
+.pk-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.pk-head h1{margin:0;font-size:1.45rem;font-weight:900;color:#f8fafc}
+.pk-head p{margin:5px 0 0;color:#dbeafe}
+.pk-actions{display:flex;gap:8px;flex-wrap:wrap}
+.pk-btn{border:1px solid #cbd5e1;background:#fff;color:#1f2937;border-radius:10px;padding:8px 12px;font-size:.78rem;font-weight:800;cursor:pointer;transition:all .18s ease}
+.pk-btn:hover{transform:translateY(-1px)}
+.pk-btn.primary{background:#0f172a;color:#fff;border-color:#0f172a;box-shadow:0 8px 16px rgba(15,23,42,.2)}
+.pk-btn[disabled]{opacity:.45;cursor:not-allowed}
+.pk-card{background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%);border:1px solid #dbe3f0;border-radius:14px;padding:14px;margin-top:14px;box-shadow:0 12px 30px rgba(15,23,42,.06)}
+.pk-filters{display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:10px;align-items:end}
+.pk-filters label{display:block;font-size:.63rem;text-transform:uppercase;letter-spacing:.06em;color:#64748b;font-weight:800;margin-bottom:4px}
+.pk-filters input{height:38px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font-size:.82rem}
+.pk-filters .pk-btn{height:38px}
+.pk-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.pk-tab{padding:8px 12px;border-radius:10px;border:1px solid var(--pk-border,#cbd5e1);background:var(--pk-soft,#fff);color:var(--pk-accent,#334155);font-size:.74rem;font-weight:800;cursor:pointer;transition:all .2s ease;box-shadow:0 2px 8px rgba(15,23,42,.06)}
+.pk-tab:hover{transform:translateY(-1px)}
+.pk-tab.active{background:var(--pk-accent,#0f172a);color:#fff;border-color:var(--pk-accent,#0f172a);box-shadow:0 10px 20px rgba(15,23,42,.16)}
+.pk-pane{display:none;margin-top:12px;--pk-accent:#1d4ed8;--pk-soft:#eff6ff;--pk-border:#bfdbfe}
+.pk-pane.active{display:block}
+.pk-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 8px;padding:10px;border:1px solid var(--pk-border);background:linear-gradient(135deg,var(--pk-soft) 0%,#ffffff 100%);border-radius:10px}
+.pk-bar .count{font-size:.78rem;font-weight:800;color:var(--pk-accent)}
+.pk-table-wrap{overflow:auto;border:1px solid var(--pk-border);border-radius:12px}
+.pk-table{width:100%;border-collapse:collapse;min-width:980px}
+.pk-table th{background:var(--pk-soft);color:#334155;font-size:.62rem;text-transform:uppercase;letter-spacing:.05em;padding:10px;border-bottom:1px solid var(--pk-border);text-align:left}
+.pk-table td{padding:9px;border-bottom:1px solid #f1f5f9;font-size:.77rem;color:#0f172a;font-weight:600}
+.pk-table tr:nth-child(even) td{background:#fcfdff}
+.pk-check-col{width:38px;text-align:center}
+.pk-badge{display:inline-flex;border-radius:999px;padding:2px 8px;font-size:.62rem;font-weight:800}
+.pk-badge.ok{background:#dcfce7;color:#166534}
+.pk-badge.muted{background:#e2e8f0;color:#475569}
+.pk-empty{padding:30px;text-align:center;color:#94a3b8}
+.pk-id-btn{border:1px solid var(--pk-border);background:var(--pk-soft);color:var(--pk-accent);padding:5px 9px;border-radius:999px;font-size:.7rem;font-weight:800;cursor:pointer}
+.pk-id-btn:hover{filter:brightness(.96)}
+.pk-modal{position:fixed;inset:0;z-index:1200;display:none}
+.pk-modal.show{display:block}
+.pk-modal-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.58);backdrop-filter:blur(2px)}
+.pk-modal-card{position:relative;margin:4vh auto 0;width:min(880px,94vw);max-height:90vh;overflow:auto;background:#fff;border-radius:16px;border:1px solid var(--pk-border,#cbd5e1);box-shadow:0 24px 48px rgba(15,23,42,.24)}
+.pk-modal-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:14px 16px;background:linear-gradient(120deg,var(--pk-soft,#eff6ff) 0%,#fff 90%);border-bottom:1px solid var(--pk-border,#cbd5e1)}
+.pk-modal-title{margin:0;font-size:1.02rem;font-weight:900;color:var(--pk-accent,#1d4ed8)}
+.pk-modal-sub{margin:3px 0 0;font-size:.75rem;color:#475569;font-weight:700}
+.pk-modal-body{padding:14px 16px 16px}
+.pk-modal-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;margin-bottom:12px}
+.pk-modal-item{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:8px 10px}
+.pk-modal-item b{display:block;font-size:.62rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin-bottom:2px}
+.pk-modal-item span{font-size:.8rem;color:#0f172a;font-weight:700;word-break:break-word}
+.pk-modal-photo{margin-top:6px;border:1px dashed var(--pk-border,#cbd5e1);border-radius:12px;padding:10px;background:#f8fafc;text-align:center}
+.pk-modal-photo img{max-width:100%;max-height:280px;border-radius:10px;border:1px solid #cbd5e1}
+.pk-modal-actions{display:flex;gap:8px;flex-wrap:wrap}
+.pk-jc-card{border:1px solid var(--pk-border,#cbd5e1);border-radius:12px;overflow:hidden;background:#fff}
+.pk-jc-head{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:12px;border-bottom:1px solid var(--pk-border,#cbd5e1);background:linear-gradient(120deg,var(--pk-soft,#eff6ff) 0%,#fff 86%)}
+.pk-jc-brand h4{margin:0;font-size:1rem;font-weight:900;color:var(--pk-accent,#1d4ed8)}
+.pk-jc-brand p{margin:4px 0 0;font-size:.74rem;color:#475569;font-weight:700}
+.pk-jc-qr{width:122px;min-height:122px;border:1px dashed var(--pk-border,#cbd5e1);background:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:6px}
+.pk-jc-meta{padding:10px 12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.pk-jc-meta-item{border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;padding:7px 8px}
+.pk-jc-meta-item b{display:block;font-size:.62rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin-bottom:2px}
+.pk-jc-meta-item span{font-size:.78rem;color:#0f172a;font-weight:800}
+.pk-jc-image{padding:10px 12px;border-top:1px solid #eef2f7;text-align:center}
+.pk-jc-image img{max-width:100%;max-height:230px;border:1px solid #cbd5e1;border-radius:10px}
+.pk-jc-foot{padding:9px 12px;border-top:1px solid var(--pk-border,#cbd5e1);background:#f8fafc;color:#475569;font-size:.72rem;font-weight:700;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.pk-jc-section{padding:10px 12px;border-top:1px solid #eef2f7}
+.pk-jc-section h5{margin:0 0 8px;font-size:.74rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#0f172a}
+.pk-jc-top-summary{padding:10px 12px;border-top:1px solid #eef2f7;background:linear-gradient(120deg,#fff 0%,#f8fafc 100%)}
+.pk-jc-top-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.pk-jc-top-item{border:1px solid var(--pk-border,#cbd5e1);border-radius:10px;padding:8px;background:#fff}
+.pk-jc-top-item b{display:block;font-size:.62rem;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:2px}
+.pk-jc-top-item span{display:block;font-size:1rem;font-weight:900;color:#0f172a;line-height:1.2}
+.pk-jc-top-item.dispatch span{color:#b91c1c}
+.pk-jc-top-item.metric-good span{color:#166534}
+.pk-jc-top-item.metric-bad span{color:#b91c1c}
+.pk-jc-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.pk-jc-detail-item{border:1px solid #e2e8f0;border-radius:10px;padding:8px;background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);box-shadow:0 2px 8px rgba(15,23,42,.04)}
+.pk-jc-detail-item b{display:block;font-size:.61rem;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:3px}
+.pk-jc-detail-item span{display:block;font-size:.8rem;color:#0f172a;font-weight:800;word-break:break-word}
+.pk-jc-detail-item.emphasis span{font-size:.95rem;font-weight:900;line-height:1.25}
+.pk-jc-detail-item.priority-normal span{color:#166534;background:#dcfce7;border:1px solid #86efac;display:inline-block;padding:3px 8px;border-radius:999px}
+.pk-jc-detail-item.priority-urgent span{color:#991b1b;background:#fee2e2;border:1px solid #fca5a5;display:inline-block;padding:3px 8px;border-radius:999px}
+.pk-jc-detail-item.dispatch-date span{color:#b91c1c;font-weight:900;font-size:1rem;line-height:1.2}
+.pk-dispatch-date{font-size:.92rem}
+.pk-dispatch-pill{display:inline-flex;align-items:center;border:1px solid #fda4af;background:#ffe4e6;color:#b91c1c;padding:4px 9px;border-radius:999px;font-weight:900;line-height:1}
+.pk-jc-rolls{width:100%;border-collapse:collapse;margin-top:6px}
+.pk-jc-rolls th,.pk-jc-rolls td{border:1px solid #e2e8f0;padding:6px 7px;font-size:.73rem;text-align:left}
+.pk-jc-rolls th{background:#f8fafc;color:#334155;font-weight:900}
+.pk-roll-even td{background:#f0fdfa;}
+.pk-roll-odd td{background:#f8fafc;}
+.pk-jc-rolls tr:hover td{background:#fef08a !important;}
+.pk-roll-highlight td{background:#fde047 !important; font-weight:900; color:#78350f;}
+.pk-jc-section-content.collapsed { display: none; }
+.pk-jc-section-content-b.collapsed { display: none; }
+.pk-jc-user-entry{border:1px dashed var(--pk-border,#cbd5e1);border-radius:10px;background:#f8fafc;padding:10px}
+.pk-jc-user-entry p{margin:0;color:#64748b;font-size:.77rem;font-weight:700}
+.pk-tab[data-theme="printing_label"],.pk-pane[data-theme="printing_label"]{--pk-accent:#2563eb;--pk-soft:#dbeafe;--pk-border:#93c5fd}
+.pk-tab[data-theme="pos_roll"],.pk-pane[data-theme="pos_roll"]{--pk-accent:#0f766e;--pk-soft:#ccfbf1;--pk-border:#5eead4}
+.pk-tab[data-theme="one_ply"],.pk-pane[data-theme="one_ply"]{--pk-accent:#c2410c;--pk-soft:#ffedd5;--pk-border:#fdba74}
+.pk-tab[data-theme="two_ply"],.pk-pane[data-theme="two_ply"]{--pk-accent:#7c3aed;--pk-soft:#ede9fe;--pk-border:#c4b5fd}
+.pk-tab[data-theme="barcode"],.pk-pane[data-theme="barcode"]{--pk-accent:#be123c;--pk-soft:#ffe4e6;--pk-border:#fda4af}
+.page-header{margin-top:12px;background:linear-gradient(120deg,#0f172a 0%,#1d4ed8 48%,#0ea5e9 100%);border-radius:14px;padding:14px;border:1px solid #1e3a8a;box-shadow:0 14px 30px rgba(30,58,138,.24)}
+@media (max-width:980px){.pk-filters{grid-template-columns:1fr 1fr}.pk-head{align-items:stretch}}
+@media (max-width:680px){.pk-filters{grid-template-columns:1fr}.pk-table{min-width:860px}.page-header{padding:12px}.pk-modal-grid{grid-template-columns:1fr}.pk-jc-head{grid-template-columns:1fr}.pk-jc-qr{width:100%;max-width:180px;margin:0 auto}.pk-jc-top-grid{grid-template-columns:1fr}.pk-jc-detail-grid{grid-template-columns:1fr}}
+</style>
+
+<div class="page-header">
+  <div class="pk-head">
+    <div>
+      <h1>Packing Dashboard</h1>
+      <p>Final-stage completed jobs ready for packing.</p>
+    </div>
+    <div class="pk-actions">
+      <button class="pk-btn" id="pkPrintSelected" disabled>Print All Selected</button>
+      <button class="pk-btn primary" id="pkExportSelected" disabled>Export PDF</button>
+    </div>
+  </div>
+</div>
+
+<div class="pk-card">
+  <form class="pk-filters" method="get">
+    <div>
+      <label>Search</label>
+      <input type="text" name="q" value="<?= e($search) ?>" placeholder="Plan no, job no, roll no, job name">
+    </div>
+    <div>
+      <label>Filter Type</label>
+      <select name="period" style="height:38px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font-size:.82rem;width:100%;background:#fff;">
+        <option value="custom" <?= $period === 'custom' ? 'selected' : '' ?>>Custom Date</option>
+        <option value="day" <?= $period === 'day' ? 'selected' : '' ?>>Day Wise (Today)</option>
+        <option value="week" <?= $period === 'week' ? 'selected' : '' ?>>Week Wise (This Week)</option>
+        <option value="month" <?= $period === 'month' ? 'selected' : '' ?>>Month Wise (This Month)</option>
+        <option value="year" <?= $period === 'year' ? 'selected' : '' ?>>Year Wise (This Year)</option>
+      </select>
+    </div>
+    <div>
+      <label>From Date</label>
+      <input type="date" name="from" value="<?= e($from) ?>">
+    </div>
+    <div>
+      <label>To Date</label>
+      <input type="date" name="to" value="<?= e($to) ?>">
+    </div>
+    <div style="display:flex;gap:8px;">
+      <input type="hidden" name="tab" id="pkTabInput" value="<?= e($currentTab) ?>">
+      <button class="pk-btn primary" type="submit">Apply</button>
+      <a class="pk-btn" href="<?= e(BASE_URL . '/modules/packing/index.php?tab=' . urlencode($currentTab)) ?>">Reset</a>
+    </div>
+  </form>
+
+  <div class="pk-tabs" id="pkTabs">
+    <?php foreach ($allowedTabs as $tabKey): ?>
+      <?php $theme = $tabThemes[$tabKey] ?? ['accent' => '#1d4ed8', 'soft' => '#eff6ff', 'border' => '#bfdbfe']; ?>
+      <button
+        class="pk-tab<?= $currentTab === $tabKey ? ' active' : '' ?>"
+        type="button"
+        data-tab="<?= e($tabKey) ?>"
+        data-theme="<?= e($tabKey) ?>"
+        style="--pk-accent:<?= e($theme['accent']) ?>;--pk-soft:<?= e($theme['soft']) ?>;--pk-border:<?= e($theme['border']) ?>;"
+      >
+        <?= e(packing_tab_label($tabKey)) ?> (<?= (int)($counts[$tabKey] ?? 0) ?>)
+      </button>
+    <?php endforeach; ?>
+  </div>
+
+  <?php foreach ($allowedTabs as $tabKey): ?>
+    <?php $tabRows = $rowsByTab[$tabKey] ?? []; ?>
+    <?php $theme = $tabThemes[$tabKey] ?? ['accent' => '#1d4ed8', 'soft' => '#eff6ff', 'border' => '#bfdbfe']; ?>
+    <div
+      class="pk-pane<?= $currentTab === $tabKey ? ' active' : '' ?>"
+      data-pane="<?= e($tabKey) ?>"
+      data-theme="<?= e($tabKey) ?>"
+      style="--pk-accent:<?= e($theme['accent']) ?>;--pk-soft:<?= e($theme['soft']) ?>;--pk-border:<?= e($theme['border']) ?>;"
+    >
+      <div class="pk-bar">
+        <div class="count"><span class="pk-selected">0</span> selected in <?= e(packing_tab_label($tabKey)) ?></div>
+        <div style="font-size:.74rem;color:#475569;">Ready rows: <?= count($tabRows) ?></div>
+      </div>
+
+      <div class="pk-table-wrap">
+        <table class="pk-table">
+          <thead>
+            <?php if ($tabKey === 'pos_roll'): ?>
+              <tr>
+                <th class="pk-check-col"><input type="checkbox" class="pk-select-all"></th>
+                <th>Sl No</th>
+                <th>Packing ID</th>
+                <th>Priority</th>
+                <th>Plan No</th>
+                <th>Last Job No</th>
+                <th>Job Name</th>
+                <th>Client Name</th>
+                <th>Order Date</th>
+                <th>Dispatch Date</th>
+                <th>Status</th>
+              </tr>
+            <?php else: ?>
+              <tr>
+                <th class="pk-check-col"><input type="checkbox" class="pk-select-all"></th>
+                <th>Plan No</th>
+                <th>Plan Name</th>
+                <th>Last Job No</th>
+                <th>Roll No</th>
+                <th>Type</th>
+                <th>Last Department</th>
+                <th>Status</th>
+                <th>Completed At</th>
+              </tr>
+            <?php endif; ?>
+          </thead>
+          <tbody>
+            <?php if (empty($tabRows)): ?>
+              <tr><td colspan="<?= $tabKey === 'pos_roll' ? '11' : '9' ?>" class="pk-empty">No packing-ready job found in this tab.</td></tr>
+            <?php else: ?>
+              <?php foreach ($tabRows as $idx => $row): ?>
+                <?php if ($tabKey === 'pos_roll'): ?>
+                  <tr data-row-id="<?= (int)$row['id'] ?>">
+                    <td class="pk-check-col"><input type="checkbox" class="pk-row-check" value="<?= (int)$row['id'] ?>"></td>
+                    <td><?= (int)$idx + 1 ?></td>
+                    <td>
+                      <button class="pk-id-btn pk-open-modal" type="button" data-job-id="<?= (int)$row['id'] ?>">
+                        <?= e($row['packing_display_id'] ?? ('PKG/' . (int)$row['id'])) ?>
+                      </button>
+                    </td>
+                    <td><?= e(($row['plan_priority'] ?? '') !== '' ? $row['plan_priority'] : '-') ?></td>
+                    <td><?= e(($row['plan_no'] ?? '') !== '' ? $row['plan_no'] : '-') ?></td>
+                    <td><?= e($row['job_no'] ?? '-') ?></td>
+                    <td><?= e(($row['plan_name'] ?? '') !== '' ? $row['plan_name'] : '-') ?></td>
+                    <td><?= e(($row['client_name'] ?? '') !== '' ? $row['client_name'] : '-') ?></td>
+                    <td><?= e($formatDate((string)($row['order_date'] ?? ''))) ?></td>
+                    <td class="pk-dispatch-date"><span class="pk-dispatch-pill"><?= e($formatDate((string)($row['dispatch_date'] ?? $row['event_time'] ?? ''))) ?></span></td>
+                    <td><span class="pk-badge <?= e($statusClass((string)($row['status'] ?? ''))) ?>"><?= e($row['status'] ?? '-') ?></span></td>
+                  </tr>
+                <?php else: ?>
+                  <tr>
+                    <td class="pk-check-col"><input type="checkbox" class="pk-row-check" value="<?= (int)$row['id'] ?>"></td>
+                    <td><?= e(($row['plan_no'] ?? '') !== '' ? $row['plan_no'] : '-') ?></td>
+                    <td><?= e(($row['plan_name'] ?? '') !== '' ? $row['plan_name'] : '-') ?></td>
+                    <td><?= e($row['job_no'] ?? '-') ?></td>
+                    <td><?= e(($row['roll_no'] ?? '') !== '' ? $row['roll_no'] : '-') ?></td>
+                    <td><?= e($row['tab_label'] ?? '-') ?></td>
+                    <td><?= e($row['last_department'] ?? '-') ?></td>
+                    <td><span class="pk-badge <?= e($statusClass((string)($row['status'] ?? ''))) ?>"><?= e($row['status'] ?? '-') ?></span></td>
+                    <td><?= e(($row['event_time'] ?? '') !== '' ? date('d M Y H:i', strtotime((string)$row['event_time'])) : '-') ?></td>
+                  </tr>
+                <?php endif; ?>
+              <?php endforeach; ?>
+            <?php endif; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  <?php endforeach; ?>
+
+  <div style="margin-top:10px;font-size:.74rem;color:#64748b;">
+    Rule: A row appears only when the latest final job-card stage for that section is in Completed/Closed/Finalized/QC Passed.
+  </div>
+</div>
+
+  <div class="pk-modal" id="pkJobModal" aria-hidden="true">
+    <div class="pk-modal-backdrop" data-close-modal="1"></div>
+    <div class="pk-modal-card">
+      <div class="pk-modal-head" id="pkModalHead">
+        <div>
+          <h3 class="pk-modal-title" id="pkModalTitle">Job Details</h3>
+          <p class="pk-modal-sub" id="pkModalSub">Packing details preview</p>
+        </div>
+        <div class="pk-modal-actions">
+          <?php if ($canDeleteJobs): ?>
+            <button class="pk-btn" id="pkDeleteJobBtn" type="button">Delete Job</button>
+          <?php endif; ?>
+          <button class="pk-btn primary" id="pkCloseModalBtn" type="button">Close</button>
+        </div>
+      </div>
+      <div class="pk-modal-body">
+        <div id="pkModalCardCanvas"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function() {
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.pk-tab'));
+  var panes = Array.prototype.slice.call(document.querySelectorAll('.pk-pane'));
+  var tabInput = document.getElementById('pkTabInput');
+  var exportBtn = document.getElementById('pkExportSelected');
+  var printBtn = document.getElementById('pkPrintSelected');
+  var activeTab = '<?= e($currentTab) ?>';
+  var baseUrl = '<?= e(BASE_URL) ?>';
+  var q = '<?= e($search) ?>';
+  var from = '<?= e($from) ?>';
+  var to = '<?= e($to) ?>';
+  var canDeleteJobs = <?= $canDeleteJobs ? 'true' : 'false' ?>;
+  var activeJobIdForModal = 0;
+
+  var modal = document.getElementById('pkJobModal');
+  var modalHead = document.getElementById('pkModalHead');
+  var modalTitle = document.getElementById('pkModalTitle');
+  var modalSub = document.getElementById('pkModalSub');
+  var modalCardCanvas = document.getElementById('pkModalCardCanvas');
+  var closeModalBtn = document.getElementById('pkCloseModalBtn');
+  var deleteBtn = document.getElementById('pkDeleteJobBtn');
+
+  function activePane() {
+    return document.querySelector('.pk-pane.active');
+  }
+
+  function activeIds() {
+    var pane = activePane();
+    if (!pane) return [];
+    return Array.prototype.slice.call(pane.querySelectorAll('.pk-row-check:checked')).map(function(el) {
+      return el.value;
+    });
+  }
+
+  function syncPaneState(pane) {
+    if (!pane) return;
+    var checks = Array.prototype.slice.call(pane.querySelectorAll('.pk-row-check'));
+    var selected = checks.filter(function(el) { return el.checked; }).length;
+    var allBox = pane.querySelector('.pk-select-all');
+    var countEl = pane.querySelector('.pk-selected');
+    if (countEl) countEl.textContent = String(selected);
+    if (allBox) {
+      allBox.checked = checks.length > 0 && selected === checks.length;
+      allBox.indeterminate = selected > 0 && selected < checks.length;
+    }
+
+    var hasSelection = selected > 0;
+    exportBtn.disabled = !hasSelection;
+    printBtn.disabled = !hasSelection;
+  }
+
+  function bindPane(pane) {
+    var allBox = pane.querySelector('.pk-select-all');
+    var checks = Array.prototype.slice.call(pane.querySelectorAll('.pk-row-check'));
+    if (allBox) {
+      allBox.addEventListener('change', function() {
+        checks.forEach(function(el) { el.checked = allBox.checked; });
+        syncPaneState(pane);
+      });
+    }
+    checks.forEach(function(el) {
+      el.addEventListener('change', function() { syncPaneState(pane); });
+    });
+    syncPaneState(pane);
+  }
+
+  function activateTab(tabKey) {
+    activeTab = tabKey;
+    tabs.forEach(function(btn) {
+      btn.classList.toggle('active', btn.getAttribute('data-tab') === tabKey);
+    });
+    panes.forEach(function(p) {
+      p.classList.toggle('active', p.getAttribute('data-pane') === tabKey);
+    });
+    if (tabInput) tabInput.value = tabKey;
+    syncPaneState(activePane());
+  }
+
+  function readThemeVars() {
+    var pane = activePane();
+    if (!pane) {
+      return { accent: '#1d4ed8', soft: '#eff6ff', border: '#bfdbfe' };
+    }
+    var styles = window.getComputedStyle(pane);
+    return {
+      accent: (styles.getPropertyValue('--pk-accent') || '#1d4ed8').trim(),
+      soft: (styles.getPropertyValue('--pk-soft') || '#eff6ff').trim(),
+      border: (styles.getPropertyValue('--pk-border') || '#bfdbfe').trim()
+    };
+  }
+
+  function closeModal() {
+    if (!modal) return;
+    modal.classList.remove('show');
+    modal.setAttribute('aria-hidden', 'true');
+    activeJobIdForModal = 0;
+  }
+
+  function openModal() {
+    if (!modal) return;
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+  }
+
+  function escHtml(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function toDisplayLabel(key) {
+    return String(key || '')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/\b\w/g, function(ch) { return ch.toUpperCase(); });
+  }
+
+  function stringifyValue(val) {
+    if (val === null || typeof val === 'undefined' || val === '') return '-';
+    if (typeof val === 'object') {
+      try { return JSON.stringify(val); } catch (e) { return '-'; }
+    }
+    return String(val);
+  }
+
+  function pickFirstValue(sources, keys) {
+    var keyList = Array.isArray(keys) ? keys : [keys];
+    for (var s = 0; s < sources.length; s++) {
+      var src = sources[s] || {};
+      for (var i = 0; i < keyList.length; i++) {
+        var k = keyList[i];
+        if (Object.prototype.hasOwnProperty.call(src, k)) {
+          var v = src[k];
+          if (v !== null && typeof v !== 'undefined' && String(v).trim() !== '') {
+            return String(v);
+          }
+        }
+      }
+    }
+    return '-';
+  }
+
+  function pickFirstValueLoose(sources, keys) {
+    var keyList = Array.isArray(keys) ? keys : [keys];
+    var lowerKeys = keyList.map(function(k) { return String(k || '').toLowerCase(); });
+
+    for (var s = 0; s < sources.length; s++) {
+      var src = sources[s] || {};
+      if (!src || typeof src !== 'object') continue;
+
+      var direct = pickFirstValue([src], keyList);
+      if (direct !== '-') return direct;
+
+      var lowerMap = {};
+      Object.keys(src).forEach(function(k) {
+        lowerMap[String(k).toLowerCase()] = src[k];
+      });
+
+      for (var i = 0; i < lowerKeys.length; i++) {
+        var lk = lowerKeys[i];
+        if (!Object.prototype.hasOwnProperty.call(lowerMap, lk)) continue;
+        var v = lowerMap[lk];
+        if (v !== null && typeof v !== 'undefined' && String(v).trim() !== '') {
+          return String(v);
+        }
+      }
+    }
+
+    return '-';
+  }
+
+  function expandMetricSources(baseSources) {
+    var out = [];
+    (baseSources || []).forEach(function(src) {
+      if (!src || typeof src !== 'object') return;
+      out.push(src);
+      Object.keys(src).forEach(function(k) {
+        var v = src[k];
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          out.push(v);
+        }
+      });
+    });
+    return out;
+  }
+
+  function toNumberOrNull(value) {
+    if (value === null || typeof value === 'undefined') return null;
+    var n = Number(String(value).replace(/,/g, '').trim());
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function buildTopSummary(job) {
+    var planExtra = (job && job.plan_extra_data && typeof job.plan_extra_data === 'object') ? job.plan_extra_data : {};
+    var jobExtra = (job && job.job_extra_data && typeof job.job_extra_data === 'object') ? job.job_extra_data : {};
+    var sources = expandMetricSources([job || {}, planExtra, jobExtra]);
+
+    var orderQtyRaw = pickFirstValueLoose(sources, [
+      'order_quantity',
+      'order_qty',
+      'quantity',
+      'qty_pcs',
+      'order_pcs',
+      'order_quantity_user',
+      'quantity_user',
+      'order_qty_user',
+      'total_order_qty'
+    ]);
+    var prodQtyRaw = pickFirstValueLoose(sources, [
+      'production_quantity',
+      'production_qty',
+      'produced_quantity',
+      'produced_qty',
+      'actual_qty',
+      'actual_quantity',
+      'output_qty',
+      'completed_qty',
+      'final_production_qty',
+      'up_in_production'
+    ]);
+    var wastageRaw = pickFirstValueLoose(sources, [
+      'wastage',
+      'wastage_qty',
+      'waste_qty',
+      'wastage_percent',
+      'wastage_percentage',
+      'label_slitting_wastage_percentage',
+      'die_cutting_wastage_percentage',
+      'total_wastage'
+    ]);
+    var storedPercentRaw = pickFirstValueLoose(sources, [
+      'production_percent',
+      'production_percentage',
+      'prod_percent',
+      'completion_percent'
+    ]);
+
+    var orderQtyNum = toNumberOrNull(orderQtyRaw);
+    var prodQtyNum = toNumberOrNull(prodQtyRaw);
+    var prodPercent = '-';
+    var percentClass = '';
+    var extraPcs = null;
+    if (orderQtyNum !== null && orderQtyNum > 0 && prodQtyNum !== null) {
+      var deltaPct = ((prodQtyNum - orderQtyNum) / orderQtyNum) * 100;
+      extraPcs = prodQtyNum - orderQtyNum;
+      var extraPcsStr = '';
+      if (extraPcs !== 0 && !isNaN(extraPcs)) {
+        extraPcsStr = ' (' + (extraPcs > 0 ? '+' : '') + extraPcs + ' pcs)';
+      }
+      prodPercent = (deltaPct > 0 ? '+' : '') + deltaPct.toFixed(1) + '%' + extraPcsStr;
+      percentClass = Math.abs(deltaPct) <= 10 ? 'metric-good' : 'metric-bad';
+    } else if (storedPercentRaw !== '-') {
+      var stored = String(storedPercentRaw).trim();
+      prodPercent = /%$/.test(stored) ? stored : (stored + '%');
+      var storedNum = toNumberOrNull(prodPercent);
+      if (storedNum !== null) {
+        percentClass = Math.abs(storedNum) <= 10 ? 'metric-good' : 'metric-bad';
+      }
+    }
+
+    return [
+      ['Job Name', pickFirstValueLoose(sources, ['plan_name', 'job_name', 'job_label']), ''],
+      ['Client Name', pickFirstValueLoose(sources, ['client_name', 'customer_name']), ''],
+      ['Dispatch Date', pickFirstValueLoose(sources, ['dispatch_date', 'due_date']), 'dispatch'],
+      ['Order Quantity', orderQtyRaw, ''],
+      ['Production Quantity', prodQtyRaw, ''],
+      ['Wastage', wastageRaw, ''],
+      ['Production Percent', prodPercent, percentClass]
+    ];
+  }
+
+  function buildPlanningRows(job) {
+    var planExtra = (job && job.plan_extra_data && typeof job.plan_extra_data === 'object') ? job.plan_extra_data : {};
+    var jobExtra = (job && job.job_extra_data && typeof job.job_extra_data === 'object') ? job.job_extra_data : {};
+    var sources = [job || {}, planExtra, jobExtra];
+
+    var defs = [
+      ['Packing ID', ['packing_display_id']],
+      ['Plan No', ['plan_no', 'plan_number']],
+      ['Last Job No', ['job_no', 'last_job_no']],
+      ['Job Name', ['plan_name', 'job_name', 'job_label']],
+      ['Client Name', ['client_name', 'customer_name']],
+      ['Order Date', ['order_date']],
+      ['Dispatch Date', ['dispatch_date', 'due_date']],
+      ['Roll No', ['roll_no', 'parent_roll']],
+      ['Department', ['department']],
+      ['Status', ['status']],
+      ['Planning Date', ['scheduled_date', 'planning_date', 'job_date']],
+      ['Priority', ['plan_priority', 'priority']],
+      ['Material Type', ['material_type', 'material_name', 'paper_type']],
+      ['Order Quantity', ['order_quantity', 'quantity']],
+      ['Order Meter', ['order_meter', 'meter']],
+      ['Order Quantity User', ['order_quantity_user', 'quantity_user']],
+      ['Order Meter User', ['order_meter_user', 'meter_user']],
+      ['Job Label', ['job_label']],
+      ['Item Width', ['item_width', 'width_mm', 'width']],
+      ['Item Length', ['item_length', 'length_mm', 'length']],
+      ['Gsm', ['gsm']],
+      ['Core Size', ['core_size']],
+      ['Core Type', ['core_type']],
+      ['Printing Planning', ['printing_planning', 'planning_status']]
+    ];
+
+    return defs.map(function(def) {
+      var val = pickFirstValue(sources, def[1]);
+      // If value is null/undefined/empty, show '-'
+      if (val === null || typeof val === 'undefined' || val === '') val = '-';
+      return [def[0], val];
+    });
+  }
+
+  function detailItemClass(label, value) {
+    var l = String(label || '').toLowerCase();
+    var v = String(value || '').toLowerCase();
+    var classes = [];
+
+    if (l === 'job name' || l === 'client name' || l === 'material type' || l === 'order quantity') {
+      classes.push('emphasis');
+    }
+
+    if (l === 'priority') {
+      if (v === 'urgent') {
+        classes.push('priority-urgent');
+      } else if (v === 'normal') {
+        classes.push('priority-normal');
+      }
+    }
+
+    if (l === 'dispatch date') {
+      classes.push('dispatch-date');
+    }
+
+    return classes.join(' ');
+  }
+
+  function buildRollItems(job) {
+    var items = [];
+    var jobExtra = (job && job.job_extra_data && typeof job.job_extra_data === 'object') ? job.job_extra_data : {};
+    var planExtra = (job && job.plan_extra_data && typeof job.plan_extra_data === 'object') ? job.plan_extra_data : {};
+
+    function addItem(src) {
+      if (!src || typeof src !== 'object') return;
+      var rollNo = src.roll_no || src.parent_roll || src.roll || '-';
+      var company = src.company || src.paper_company || src.material_company || src.client_name || '-';
+      var paperType = src.paper_type || src.material_name || src.paper || src.material_type || '-';
+      var width = src.width_mm || src.width || '-';
+      var length = src.length_mtr || src.length || src.length_meter || '-';
+      items.push({ rollNo: stringifyValue(rollNo), company: stringifyValue(company), paperType: stringifyValue(paperType), width: stringifyValue(width), length: stringifyValue(length) });
+    }
+
+    addItem(jobExtra.parent_details || {});
+    if (jobExtra.parent_roll && (!jobExtra.parent_details || typeof jobExtra.parent_details !== 'object')) {
+      addItem({ parent_roll: jobExtra.parent_roll });
+    }
+
+    if (Array.isArray(jobExtra.selected_rolls)) {
+      jobExtra.selected_rolls.forEach(addItem);
+    }
+    if (Array.isArray(planExtra.selected_rolls)) {
+      planExtra.selected_rolls.forEach(addItem);
+    }
+
+    var fallback = {
+      roll_no: job.roll_no || planExtra.roll_no || '',
+      paper_company: job.paper_company || planExtra.paper_company_name || planExtra.paper_company || planExtra.company_name || planExtra.material_company || '',
+      paper_type: job.paper_type || planExtra.paper_type || planExtra.paper_name || planExtra.material_name || planExtra.material_type || '',
+      width_mm: job.paper_width_mm || planExtra.paper_width_mm || planExtra.width_mm || planExtra.paper_width || planExtra.item_width || planExtra.width || '',
+      length_mtr: job.paper_length_mtr || planExtra.paper_length_mtr || planExtra.length_mtr || planExtra.paper_length || planExtra.order_meter_user || planExtra.order_meter || ''
+    };
+    addItem(fallback);
+
+    var seen = {};
+    return items.filter(function(it) {
+      var key = [it.rollNo, it.company, it.paperType, it.width, it.length].join('|');
+      if (seen[key]) return false;
+      seen[key] = true;
+      return !(it.rollNo === '-' && it.company === '-' && it.paperType === '-');
+    });
+  }
+
+  function renderModalQr(job) {
+    var target = document.getElementById('pkModalQrBox');
+    if (!target) return;
+    target.innerHTML = '';
+    var text = [job.packing_display_id || '', job.job_no || '', job.plan_no || ''].join('|');
+    if (typeof QRCode === 'function') {
+      try {
+        new QRCode(target, { text: text, width: 104, height: 104, colorDark: '#0f172a', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+      } catch (e) {
+        target.innerHTML = '<div style="font-size:.72rem;color:#64748b;font-weight:700">QR unavailable</div>';
+      }
+      return;
+    }
+    target.innerHTML = '<div style="font-size:.72rem;color:#64748b;font-weight:700">QR unavailable</div>';
+  }
+
+  function fillModal(job) {
+    if (!modalCardCanvas || !modalTitle || !modalSub || !modalHead) return;
+    var theme = readThemeVars();
+    modalHead.style.setProperty('--pk-accent', theme.accent);
+    modalHead.style.setProperty('--pk-soft', theme.soft);
+    modalHead.style.setProperty('--pk-border', theme.border);
+
+    modalTitle.textContent = 'Packing Job: ' + (job.packing_display_id || '-');
+    modalSub.textContent = (job.plan_name || '-') + ' | Job: ' + (job.job_no || '-');
+
+    var topSummary = buildTopSummary(job);
+    var planningRows = buildPlanningRows(job);
+    var rollItems = buildRollItems(job);
+    var jobStatusText = String(job.status || '').trim();
+    var isPackingDone = jobStatusText.toLowerCase() === 'packing done';
+    var sectionBLocked = isPackingDone && !canDeleteJobs;
+    var targetPaperStockId = Number(job.paper_stock_id || 0);
+
+    var imageHtml = job.image_url
+      ? '<div class="pk-jc-image"><div style="font-size:.72rem;font-weight:800;color:#475569;margin-bottom:6px">Assigned Image Preview</div><img src="' + escHtml(job.image_url) + '" alt="Assigned Job Image"></div>'
+      : '<div class="pk-jc-image"><div style="font-size:.74rem;color:#64748b">No image assigned for this job.</div></div>';
+
+    modalCardCanvas.innerHTML = '' +
+      '<div class="pk-jc-card" style="--pk-accent:' + escHtml(theme.accent) + ';--pk-soft:' + escHtml(theme.soft) + ';--pk-border:' + escHtml(theme.border) + '">' +
+      '  <div class="pk-jc-head">' +
+      '    <div class="pk-jc-brand">' +
+      '      <h4>Packing Job Card</h4>' +
+      '      <p>Generated from Packing Dashboard</p>' +
+      '    </div>' +
+      '    <div class="pk-jc-qr" id="pkModalQrBox"></div>' +
+      '  </div>' +
+      '  <div class="pk-jc-top-summary">' +
+      '    <div class="pk-jc-top-grid">' + topSummary.map(function(item){
+        var cls = item[2] ? (' ' + String(item[2])) : '';
+        return '<div class="pk-jc-top-item' + cls + '"><b>' + escHtml(item[0]) + '</b><span>' + escHtml(item[1]) + '</span></div>';
+          }).join('') + '</div>' +
+      '  </div>' +
+      '  <div class="pk-jc-section pk-jc-section-collapsible">' +
+      '    <h5 class="pk-jc-section-toggle" tabindex="0" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:7px;">' +
+      '      <span class="pk-jc-section-arrow" style="display:inline-block;transition:transform .18s;">&#9660;</span> Section A: Planning and Paper Roll Details' +
+      '    </h5>' +
+      '    <div class="pk-jc-section-content">' +
+      '      <div class="pk-jc-detail-grid pk-jc-detail-bg">' + planningRows.map(function(item){
+        var cls = detailItemClass(item[0], item[1]);
+        return '<div class="pk-jc-detail-item ' + escHtml(cls) + '"><b>' + escHtml(item[0]) + '</b><span>' + escHtml(item[1]) + '</span></div>';
+          }).join('') + '</div>' +
+      '      <table class="pk-jc-rolls">' +
+      '        <thead><tr><th>Roll No</th><th>Paper Company</th><th>Paper Type</th><th>Width</th><th>Length</th></tr></thead>' +
+      '        <tbody>' + (rollItems.length ? rollItems.map(function(it, idx){
+          var rowClass = (idx % 2 === 0 ? 'pk-roll-even' : 'pk-roll-odd');
+          var highlight = (it.rollNo === 'SLC/2026/0364-C') ? ' pk-roll-highlight' : '';
+          return '<tr class="' + rowClass + highlight + '"><td>' + escHtml(it.rollNo) + '</td><td>' + escHtml(it.company) + '</td><td>' + escHtml(it.paperType) + '</td><td>' + escHtml(it.width) + '</td><td>' + escHtml(it.length) + '</td></tr>';
+            }).join('') : '<tr><td colspan="5">No paper roll details found.</td></tr>') + '</tbody>' +
+      '      </table>' +
+      '    </div>' +
+      '  </div>' +
+          '  <div class="pk-jc-section pk-jc-section-collapsible-b">'
+          + '    <h5 class="pk-jc-section-toggle-b" tabindex="0" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:7px;">'
+          + '      <span class="pk-jc-section-arrow-b" style="display:inline-block;transition:transform .25s ease;font-size:1.1em;">▼</span> Section B: Wrapping and Packing Details'
+          + (isPackingDone ? '<span id="pkPackingDoneBadge" style="margin-left:8px;background:#22c55e;color:#fff;font-size:.72rem;font-weight:800;padding:3px 8px;border-radius:999px;">Packing Done</span>' : '')
+          + '    </h5>'
+          + '    <div class="pk-jc-section-content-b">'
+          + '      <div style="padding:14px 0;margin-bottom:14px;border-bottom:1px solid #eef2f7;">'
+          + '        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px 16px;align-items:end;">'
+            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
+            + '            <label style="font-size:.85em;font-weight:700;color:#64748b;">Order Qty</label>'
+            + '            <div style="font-size:1.15em;font-weight:900;color:#0f172a;">'
+            + '              <span id="pkDashOrderQty">-</span>'
+            + '            </div>'
+            + '          </div>'
+            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
+            + '            <label style="font-size:.85em;font-weight:700;color:#64748b;">Production Qty</label>'
+            + '            <div style="font-size:1.15em;font-weight:900;color:#0f172a;">'
+            + '              <span id="pkDashProdQty">-</span>'
+            + '            </div>'
+            + '          </div>'
+            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
+            + '            <label style="font-size:.85em;font-weight:700;color:#64748b;">Actual %</label>'
+            + '            <div style="font-size:1.15em;font-weight:900;color:#0f766e;">'
+            + '              <span id="pkDashActualPercent">-</span>'
+            + '            </div>'
+            + '          </div>'
+            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
+            + '            <label for="pkDeliveryPercent" style="font-size:.85em;font-weight:700;color:#64748b;">Delivery %</label>'
+            + '            <input type="number" id="pkDeliveryPercent" min="-100" max="1000" value="10" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #cbd5e1;font-size:.95em;">'
+            + '          </div>'
+            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
+            + '            <label for="pkDeliveryQty" style="font-size:.85em;font-weight:700;color:#64748b;">Delivery Qty</label>'
+            + '            <input type="number" id="pkDeliveryQty" min="0" value="0" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #cbd5e1;font-size:.95em;background-color:#f0fdf4;">'
+            + '          </div>'
+            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
+            + '            <label style="font-size:.85em;font-weight:700;color:#64748b;">Balance Stock</label>'
+            + '            <div style="font-size:1.15em;font-weight:900;color:#dc2626;padding:4px 0;">'
+            + '              <span id="pkBalanceStock">-</span>'
+            + '            </div>'
+            + '          </div>'
+          + '        </div>'
+          + '      </div>'
+          + '      <div style="padding:14px 0;margin-bottom:14px;border-bottom:1px solid #eef2f7;">'
+          + '        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px 18px;align-items:end;">'
+            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
+            + '            <label for="pkShrinkBundleInput" style="font-size:.85em;font-weight:700;color:#64748b;">Rolls per shrink wrap</label>'
+            + '            <input type="number" id="pkShrinkBundleInput" min="1" value="5" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #cbd5e1;font-size:.95em;">'
+            + '          </div>'
+            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
+            + '            <label for="pkBundlesPerCartonInput" style="font-size:.85em;font-weight:700;color:#64748b;">Bundles per carton</label>'
+            + '            <input type="number" id="pkBundlesPerCartonInput" min="1" value="10" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #cbd5e1;font-size:.95em;">'
+            + '          </div>'
+            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
+            + '            <label style="font-size:.85em;font-weight:700;color:#64748b;">Rolls per carton</label>'
+            + '            <div style="font-size:1em;font-weight:700;color:#0f172a;padding:6px 8px;background-color:#f1f5f9;border-radius:6px;border:1px solid #cbd5e1;">'
+            + '              <span id="pkRollsPerCarton">-</span>'
+            + '            </div>'
+            + '          </div>'
+            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
+            + '            <label for="pkCartonSizeInput" style="font-size:.85em;font-weight:700;color:#64748b;">Carton size (mm)</label>'
+            + '            <input type="number" id="pkCartonSizeInput" min="1" value="75" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #cbd5e1;font-size:.95em;">'
+            + '          </div>'
+          + '        </div>'
+          + '      </div>'
+          + '      <div style="padding:14px 0;">'
+          + '        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px 18px;align-items:center;">'
+            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
+            + '            <label style="font-size:.85em;font-weight:700;color:#64748b;">Shrink Bundles</label>'
+            + '            <div id="pkCalcBundlesContainer" style="font-size:1.15em;font-weight:900;color:#0c4169;background-color:#dbeafe;padding:8px 10px;border-radius:6px;border:1px solid #7dd3fc;">'
+            + '              <span id="pkCalcBundles">-</span>'
+            + '            </div>'
+            + '          </div>'
+            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
+            + '            <label style="font-size:.85em;font-weight:700;color:#64748b;">Cartons Required</label>'
+            + '            <div id="pkCalcCartonsContainer" style="font-size:1.15em;font-weight:900;color:#065f46;background-color:#dcfce7;padding:8px 10px;border-radius:6px;border:1px solid #86efac;">'
+            + '              <span id="pkCalcCartons">-</span>'
+            + '            </div>'
+            + '          </div>'
+            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
+            + '            <label style="font-size:.85em;font-weight:700;color:#64748b;">Loose Qty</label>'
+            + '            <div id="pkCalcLooseContainer" style="font-size:1.15em;font-weight:900;color:#78350f;background-color:#fed7aa;padding:8px 10px;border-radius:6px;border:1px solid #fdba74;">'
+            + '              <span id="pkCalcLoose">-</span>'
+            + '            </div>'
+            + '          </div>'
+          + '        </div>'
+          + '      </div>'
+          + '      <div style="padding:12px 0;border-top:1px solid #eef2f7;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-start;">'
+          + '        <button id="pkSectionBFinishedBtn" type="button" class="pk-action-btn pk-btn-finished" ' + (isPackingDone ? 'disabled ' : '') + 'style="background-color:' + (isPackingDone ? '#9ca3af' : '#22c55e') + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:' + (isPackingDone ? 'not-allowed' : 'pointer') + ';font-size:.95em;transition:all .2s ease;opacity:' + (isPackingDone ? '0.75' : '1') + ';">Finished</button>'
+          + '        <button id="pkSectionBCancelBtn" type="button" class="pk-action-btn pk-btn-cancel" style="background-color:#6b7280;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">Cancel</button>'
+          + '        <button class="pk-action-btn pk-btn-sticker" style="background-color:#3b82f6;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">Sticker Print</button>'
+          + '        <button class="pk-action-btn pk-btn-label" style="background-color:#f97316;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">Label Print</button>'
+          + '      </div>'
+          + '      <div id="pkSectionBMessage" style="min-height:20px;font-size:.82rem;color:#475569;font-weight:700;">' + (sectionBLocked ? 'Locked: Packing Done (non-admin view)' : '') + '</div>'
+          + '    </div>'
+          + '  </div>'
+              // Section B: Bidirectional sync logic
+              setTimeout(function() {
+                var orderQty = 0;
+                var prodQty = 0;
+                if (job && job.order_quantity) {
+                  var n = Number(String(job.order_quantity).replace(/,/g, ''));
+                  if (!isNaN(n)) orderQty = n;
+                }
+                if (job && job.production_quantity) {
+                  var n = Number(String(job.production_quantity).replace(/,/g, ''));
+                  if (!isNaN(n)) prodQty = n;
+                }
+                var dashOrderQtySpan = document.getElementById('pkDashOrderQty');
+                var dashProdQtySpan = document.getElementById('pkDashProdQty');
+                var dashActualPercentSpan = document.getElementById('pkDashActualPercent');
+                var deliveryPercentInput = document.getElementById('pkDeliveryPercent');
+                var deliveryQtyInput = document.getElementById('pkDeliveryQty');
+                var balanceStockSpan = document.getElementById('pkBalanceStock');
+                var shrinkBundleInput = document.getElementById('pkShrinkBundleInput');
+                var bundlesPerCartonInput = document.getElementById('pkBundlesPerCartonInput');
+                var rollsPerCartonSpan = document.getElementById('pkRollsPerCarton');
+                var calcBundlesSpan = document.getElementById('pkCalcBundles');
+                var calcCartonsSpan = document.getElementById('pkCalcCartons');
+                var calcLooseSpan = document.getElementById('pkCalcLoose');
+                
+                var lastChangedField = null; // Track which field was last modified to prevent loops
+                
+                // Display order and production quantities
+                dashOrderQtySpan.textContent = orderQty > 0 ? orderQty : '-';
+                dashProdQtySpan.textContent = prodQty > 0 ? prodQty : '-';
+                // Display actual percent
+                if (orderQty > 0 && prodQty > 0) {
+                  var deltaPct = ((prodQty - orderQty) / orderQty) * 100;
+                  dashActualPercentSpan.textContent = (deltaPct > 0 ? '+' : '') + deltaPct.toFixed(1) + '%';
+                } else {
+                  dashActualPercentSpan.textContent = '-';
+                }
+                
+                function recalc() {
+                  var deliveryPercent = Number(deliveryPercentInput.value) || 0;
+                  var deliveryQty = Number(deliveryQtyInput.value) || 0;
+                  var rollsPerShrinkWrap = Number(shrinkBundleInput.value) || 5;
+                  var bundlesPerCarton = Number(bundlesPerCartonInput.value) || 10;
+                  
+                  // Calculate rolls per carton (based on new field structure)
+                  var rollsPerCarton = rollsPerShrinkWrap * bundlesPerCarton;
+                  rollsPerCartonSpan.textContent = rollsPerCarton > 0 ? rollsPerCarton : '-';
+                  
+                  // Bidirectional sync with validation
+                  if (lastChangedField === 'percent') {
+                    // CASE 1: Delivery % changed → recalculate Delivery Qty
+                    deliveryQty = orderQty > 0 ? Math.round(orderQty * (1 + deliveryPercent / 100)) : 0;
+                    // Validate: Delivery Qty cannot exceed Production Qty
+                    if (deliveryQty > prodQty) {
+                      deliveryQty = prodQty;
+                      // Recalculate percent based on clamped qty
+                      deliveryPercent = orderQty > 0 ? (((deliveryQty - orderQty) / orderQty) * 100) : 0;
+                      deliveryPercentInput.value = deliveryPercent.toFixed(1);
+                    }
+                    deliveryQtyInput.value = deliveryQty > 0 ? deliveryQty : 0;
+                  } else if (lastChangedField === 'qty') {
+                    // CASE 2: Delivery Qty changed → recalculate Delivery %
+                    // Validate: Delivery Qty cannot exceed Production Qty
+                    if (deliveryQty > prodQty) {
+                      deliveryQty = prodQty;
+                      deliveryQtyInput.value = deliveryQty;
+                    }
+                    // Validate: Delivery Qty cannot be negative
+                    if (deliveryQty < 0) {
+                      deliveryQty = 0;
+                      deliveryQtyInput.value = 0;
+                    }
+                    // Recalculate percent
+                    deliveryPercent = (orderQty > 0 && deliveryQty > 0) ? (((deliveryQty - orderQty) / orderQty) * 100) : 0;
+                    if (deliveryPercent < 0 && deliveryPercent > -0.1) deliveryPercent = 0;
+                    deliveryPercentInput.value = deliveryPercent.toFixed(1);
+                  }
+                  
+                  // Calculate Balance Stock
+                  var balanceStock = prodQty > 0 ? (prodQty - deliveryQty) : 0;
+                  balanceStockSpan.textContent = balanceStock >= 0 ? balanceStock : 0;
+                  
+                  // Calculate carton metrics based on delivery qty and rolls per carton
+                  var totalBundles = (deliveryQty > 0 && rollsPerShrinkWrap > 0) ? Math.ceil(deliveryQty / rollsPerShrinkWrap) : '-';
+                  var totalCartons = (deliveryQty > 0 && rollsPerCarton > 0) ? Math.ceil(deliveryQty / rollsPerCarton) : '-';
+                  var looseQty = (deliveryQty > 0 && rollsPerCarton > 0) ? (deliveryQty % rollsPerCarton) : '-';
+                  
+                  calcBundlesSpan.textContent = totalBundles;
+                  calcCartonsSpan.textContent = totalCartons;
+                  calcLooseSpan.textContent = looseQty !== '-' ? looseQty : '-';
+                  
+                  // Update Loose Qty container background color based on value
+                  var looseContainer = document.getElementById('pkCalcLooseContainer');
+                  if (looseContainer) {
+                    if (looseQty === 0) {
+                      // Neutral light orange when zero
+                      looseContainer.style.backgroundColor = '#fed7aa';
+                      looseContainer.style.borderColor = '#fdba74';
+                      looseContainer.style.color = '#78350f';
+                    } else if (looseQty > 0) {
+                      // Warning red/orange when > 0
+                      looseContainer.style.backgroundColor = '#fee2e2';
+                      looseContainer.style.borderColor = '#fca5a5';
+                      looseContainer.style.color = '#7f1d1d';
+                    } else {
+                      // Dash means undefined
+                      looseContainer.style.backgroundColor = '#fed7aa';
+                      looseContainer.style.borderColor = '#fdba74';
+                      looseContainer.style.color = '#78350f';
+                    }
+                  }
+                  
+                  lastChangedField = null; // Reset after processing
+                }
+                
+                // Event listeners with source tracking
+                if (deliveryPercentInput) {
+                  deliveryPercentInput.addEventListener('input', function() {
+                    lastChangedField = 'percent';
+                    recalc();
+                  });
+                }
+                if (deliveryQtyInput) {
+                  deliveryQtyInput.addEventListener('input', function() {
+                    lastChangedField = 'qty';
+                    recalc();
+                  });
+                }
+                if (shrinkBundleInput) {
+                  shrinkBundleInput.addEventListener('input', recalc);
+                }
+                if (bundlesPerCartonInput) {
+                  bundlesPerCartonInput.addEventListener('input', recalc);
+                }
+                
+                // Default: Delivery Qty matches Production Qty on first load.
+                if (deliveryQtyInput && prodQty > 0) {
+                  deliveryQtyInput.value = String(prodQty);
+                }
+                // Initial calculation based on qty so Delivery % is derived.
+                lastChangedField = 'qty';
+                recalc();
+              }, 10);
+          + imageHtml
+          + '  <div class="pk-jc-foot">'
+          + '    <span>Job Card Footer: Packing Verification Copy</span>'
+          + '    <span>Printed At: ' + escHtml(new Date().toLocaleString()) + '</span>'
+          + '  </div>'
+          + '  <div id="pk-cancel-confirmation-modal" class="pk-modal-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background-color:rgba(0,0,0,0.5);z-index:10000;justify-content:center;align-items:center;opacity:0;transition:opacity .3s ease;">'
+          + '    <div class="pk-modal-content" style="background-color:#fff;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.2);max-width:450px;width:90%;padding:32px;text-align:center;transform:scale(0.95);transition:transform .3s ease;">'
+          + '      <h3 style="font-size:1.3em;font-weight:700;color:#1e293b;margin:0 0 12px 0;">Cancel Job</h3>'
+          + '      <p style="font-size:.95em;color:#64748b;margin:0 0 24px 0;line-height:1.5;">Are you sure you want to cancel this job?</p>'
+          + '      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">'
+          + '        <button id="pk-modal-btn-yes" type="button" class="pk-modal-btn pk-modal-btn-danger" style="background-color:#dc2626;color:#fff;border:none;padding:10px 20px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;flex:1;min-width:120px;">Yes, Cancel</button>'
+          + '        <button id="pk-modal-btn-no" type="button" class="pk-modal-btn pk-modal-btn-gray" style="background-color:#6b7280;color:#fff;border:none;padding:10px 20px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;flex:1;min-width:120px;">No / Close</button>'
+          + '      </div>'
+          + '    </div>'
+          + '  </div>'
+          + '  <div id="pk-delete-confirmation-modal" class="pk-modal-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background-color:rgba(0,0,0,0.5);z-index:10000;justify-content:center;align-items:center;opacity:0;transition:opacity .3s ease;">'
+          + '    <div class="pk-modal-content" style="background-color:#fff;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.2);max-width:460px;width:90%;padding:32px;text-align:center;transform:scale(0.95);transition:transform .3s ease;">'
+          + '      <h3 style="font-size:1.3em;font-weight:700;color:#1e293b;margin:0 0 12px 0;">Delete Job</h3>'
+          + '      <p style="font-size:.95em;color:#64748b;margin:0 0 24px 0;line-height:1.5;">This will permanently remove this job from packing list. Continue?</p>'
+          + '      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">'
+          + '        <button id="pk-delete-modal-btn-yes" type="button" class="pk-modal-btn pk-modal-btn-danger" style="background-color:#b91c1c;color:#fff;border:none;padding:10px 20px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;flex:1;min-width:130px;">Yes, Delete</button>'
+          + '        <button id="pk-delete-modal-btn-no" type="button" class="pk-modal-btn pk-modal-btn-gray" style="background-color:#6b7280;color:#fff;border:none;padding:10px 20px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;flex:1;min-width:130px;">No / Close</button>'
+          + '      </div>'
+          + '    </div>'
+          + '  </div>'
+          + '  <div id="pk-print-confirmation-modal" class="pk-modal-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background-color:rgba(0,0,0,0.5);z-index:10000;justify-content:center;align-items:center;opacity:0;transition:opacity .3s ease;">'
+          + '    <div class="pk-modal-content" style="background-color:#fff;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.2);max-width:480px;width:90%;padding:28px;text-align:left;transform:scale(0.95);transition:transform .3s ease;">'
+          + '      <h3 id="pk-print-confirm-title" style="font-size:1.2em;font-weight:800;color:#1e293b;margin:0 0 8px 0;">Print Confirmation</h3>'
+          + '      <p id="pk-print-confirm-message" style="font-size:.95em;color:#475569;margin:0 0 12px 0;line-height:1.5;">Do you want to print?</p>'
+          + '      <div style="display:grid;grid-template-columns:1fr;gap:10px;margin:0 0 16px 0;">'
+          + '        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px;">'
+          + '          <div style="font-size:.72em;font-weight:700;color:#64748b;">Required Qty</div>'
+          + '          <div id="pk-print-confirm-qty" style="font-size:1.05em;font-weight:900;color:#0f172a;">0</div>'
+          + '        </div>'
+          + '      </div>'
+          + '      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">'
+          + '        <button id="pk-print-modal-btn-cancel" type="button" class="pk-modal-btn pk-modal-btn-gray" style="background-color:#6b7280;color:#fff;border:none;padding:10px 18px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">Cancel</button>'
+          + '        <button id="pk-print-modal-btn-ok" type="button" class="pk-modal-btn pk-modal-btn-primary" style="background-color:#2563eb;color:#fff;border:none;padding:10px 18px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">OK</button>'
+          + '      </div>'
+          + '    </div>'
+          + '  </div>'
+          + '</div>';
+
+    // Safety: some older render paths may miss modal blocks; inject if missing.
+    if (!document.getElementById('pk-print-confirmation-modal')) {
+      modalCardCanvas.insertAdjacentHTML('beforeend',
+        '<div id="pk-print-confirmation-modal" class="pk-modal-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background-color:rgba(0,0,0,0.5);z-index:10000;justify-content:center;align-items:center;opacity:0;transition:opacity .3s ease;">'
+        + '<div class="pk-modal-content" style="background-color:#fff;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.2);max-width:480px;width:90%;padding:28px;text-align:left;transform:scale(0.95);transition:transform .3s ease;">'
+        + '<h3 id="pk-print-confirm-title" style="font-size:1.2em;font-weight:800;color:#1e293b;margin:0 0 8px 0;">Print Confirmation</h3>'
+        + '<p id="pk-print-confirm-message" style="font-size:.95em;color:#475569;margin:0 0 12px 0;line-height:1.5;">Do you want to print?</p>'
+        + '<div style="display:grid;grid-template-columns:1fr;gap:10px;margin:0 0 16px 0;">'
+        + '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px;"><div style="font-size:.72em;font-weight:700;color:#64748b;">Required Qty</div><div id="pk-print-confirm-qty" style="font-size:1.05em;font-weight:900;color:#0f172a;">0</div></div>'
+        + '</div>'
+        + '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">'
+        + '<button id="pk-print-modal-btn-cancel" type="button" class="pk-modal-btn pk-modal-btn-gray" style="background-color:#6b7280;color:#fff;border:none;padding:10px 18px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">Cancel</button>'
+        + '<button id="pk-print-modal-btn-ok" type="button" class="pk-modal-btn pk-modal-btn-primary" style="background-color:#2563eb;color:#fff;border:none;padding:10px 18px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">OK</button>'
+        + '</div>'
+        + '</div>'
+        + '</div>'
+      );
+    }
+
+    // Collapsible Section A logic
+    setTimeout(function() {
+      var sectionA = modalCardCanvas.querySelector('.pk-jc-section-collapsible');
+      if (!sectionA) return;
+      var toggleA = sectionA.querySelector('.pk-jc-section-toggle');
+      var contentA = sectionA.querySelector('.pk-jc-section-content');
+      var arrowA = sectionA.querySelector('.pk-jc-section-arrow');
+      if (!toggleA || !contentA || !arrowA) return;
+      toggleA.addEventListener('click', function() {
+        var isOpenA = !contentA.classList.contains('collapsed');
+        if (isOpenA) {
+          contentA.classList.add('collapsed');
+          arrowA.style.transform = 'rotate(-90deg)';
+        } else {
+          contentA.classList.remove('collapsed');
+          arrowA.style.transform = '';
+        }
+      });
+      toggleA.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') toggleA.click();
+      });
+      // Default expanded
+      contentA.classList.remove('collapsed');
+      arrowA.style.transform = '';
+    }, 0);
+
+    // Collapsible Section B logic
+    setTimeout(function() {
+      var section = modalCardCanvas.querySelector('.pk-jc-section-collapsible-b');
+      if (!section) return;
+      var toggle = section.querySelector('.pk-jc-section-toggle-b');
+      var content = section.querySelector('.pk-jc-section-content-b');
+      var arrow = section.querySelector('.pk-jc-section-arrow-b');
+      if (!toggle || !content || !arrow) return;
+      toggle.addEventListener('click', function() {
+        var isOpen = !content.classList.contains('collapsed');
+        if (isOpen) {
+          content.classList.add('collapsed');
+          arrow.style.transform = 'rotate(-90deg)';
+        } else {
+          content.classList.remove('collapsed');
+          arrow.style.transform = 'rotate(0deg)';
+        }
+      });
+      toggle.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') toggle.click();
+      });
+      // Default expanded
+      content.classList.remove('collapsed');
+      arrow.style.transform = 'rotate(0deg)';
+
+      var sectionMessage = document.getElementById('pkSectionBMessage');
+      var finishBtn = section.querySelector('.pk-btn-finished');
+      var sectionCancelBtn = section.querySelector('#pkSectionBCancelBtn');
+      var isAdminUser = !!canDeleteJobs;
+      var isPackingDoneNow = String(job.status || '').trim().toLowerCase() === 'packing done';
+      var pendingPrintType = '';
+
+      function setSectionMessage(text, isError) {
+        if (!sectionMessage) return;
+        sectionMessage.textContent = text || '';
+        sectionMessage.style.color = isError ? '#b91c1c' : '#475569';
+      }
+
+      function ensurePackingDoneBadge() {
+        if (!isPackingDoneNow) return;
+        var heading = section.querySelector('.pk-jc-section-toggle-b');
+        if (!heading || heading.querySelector('#pkPackingDoneBadge')) return;
+        var badge = document.createElement('span');
+        badge.id = 'pkPackingDoneBadge';
+        badge.textContent = 'Packing Done';
+        badge.style.marginLeft = '8px';
+        badge.style.background = '#22c55e';
+        badge.style.color = '#fff';
+        badge.style.fontSize = '.72rem';
+        badge.style.fontWeight = '800';
+        badge.style.padding = '3px 8px';
+        badge.style.borderRadius = '999px';
+        heading.appendChild(badge);
+      }
+
+      function getNumericValue(id) {
+        var node = document.getElementById(id);
+        if (!node) return 0;
+        var n = Number(String(node.textContent || '').replace(/,/g, '').trim());
+        return isNaN(n) ? 0 : n;
+      }
+
+      function resolvePaperStockId() {
+        if (targetPaperStockId > 0) {
+          return Promise.resolve(targetPaperStockId);
+        }
+        if (!activeJobIdForModal) {
+          return Promise.resolve(0);
+        }
+        var url = baseUrl + '/modules/packing/api.php?action=resolve_paper_stock_id&job_id=' + encodeURIComponent(String(activeJobIdForModal));
+        return fetch(url, { credentials: 'same-origin' })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (data && data.ok) {
+              targetPaperStockId = Number(data.paper_stock_id || 0);
+              return targetPaperStockId;
+            }
+            return 0;
+          })
+          .catch(function() {
+            return 0;
+          });
+      }
+
+      function openPrintConfirmModal(printType) {
+
+        var printModal = document.getElementById('pk-print-confirmation-modal');
+        var titleEl = document.getElementById('pk-print-confirm-title');
+        var msgEl = document.getElementById('pk-print-confirm-message');
+        var qtyEl = document.getElementById('pk-print-confirm-qty');
+        if (!printModal || !titleEl || !msgEl || !qtyEl) {
+          setSectionMessage('Print modal load failed. Please reopen this job modal.', true);
+          return;
+        }
+
+        var requiredQty = 0;
+        if (printType === 'sticker') {
+          requiredQty = getNumericValue('pkCalcBundles');
+          titleEl.textContent = 'Sticker Print';
+          msgEl.textContent = 'Do you want to print sticker?';
+        } else {
+          requiredQty = getNumericValue('pkCalcCartons');
+          titleEl.textContent = 'Label Print';
+          msgEl.textContent = 'Do you want to print label for each box?';
+        }
+
+        qtyEl.textContent = String(requiredQty);
+        pendingPrintType = printType;
+        printModal.style.display = 'flex';
+        printModal.style.opacity = '0';
+        var printContent = printModal.querySelector('.pk-modal-content');
+        if (printContent) printContent.style.transform = 'scale(0.95)';
+        setTimeout(function() {
+          printModal.style.opacity = '1';
+          if (printContent) printContent.style.transform = 'scale(1)';
+        }, 10);
+      }
+
+      function applySectionBLockState() {
+        var shouldLock = isPackingDoneNow && !isAdminUser;
+        var editableFields = section.querySelectorAll('.pk-jc-section-content-b input, .pk-jc-section-content-b select, .pk-jc-section-content-b textarea');
+        editableFields.forEach(function(field) {
+          if (shouldLock) {
+            field.setAttribute('disabled', 'disabled');
+            field.style.backgroundColor = '#e5e7eb';
+            field.style.color = '#6b7280';
+            field.style.cursor = 'not-allowed';
+            field.style.pointerEvents = 'none';
+          } else {
+            field.removeAttribute('disabled');
+            field.style.backgroundColor = '';
+            field.style.color = '';
+            field.style.cursor = '';
+            field.style.pointerEvents = '';
+          }
+        });
+
+        if (finishBtn) {
+          if (isPackingDoneNow) {
+            finishBtn.setAttribute('disabled', 'disabled');
+            finishBtn.style.backgroundColor = '#9ca3af';
+            finishBtn.style.cursor = 'not-allowed';
+            finishBtn.style.opacity = '0.75';
+          } else {
+            finishBtn.removeAttribute('disabled');
+            finishBtn.style.backgroundColor = '#22c55e';
+            finishBtn.style.cursor = 'pointer';
+            finishBtn.style.opacity = '1';
+          }
+        }
+
+        ensurePackingDoneBadge();
+        if (isPackingDoneNow && !isAdminUser) {
+          setSectionMessage('Locked: Packing Done (non-admin view)', false);
+        } else if (isPackingDoneNow && isAdminUser) {
+          setSectionMessage('Packing Done: admin override enabled for edits.', false);
+        }
+      }
+
+      applySectionBLockState();
+
+      // Footer Cancel uses same behavior as header Close button
+      if (sectionCancelBtn) {
+        sectionCancelBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          closeModal();
+        });
+      }
+
+      // Hard fallback bindings to ensure print buttons always respond.
+      var stickerBtn = section.querySelector('.pk-btn-sticker');
+      var labelBtn = section.querySelector('.pk-btn-label');
+      if (stickerBtn) {
+        stickerBtn.onclick = function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          openPrintConfirmModal('sticker');
+        };
+      }
+      if (labelBtn) {
+        labelBtn.onclick = function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          openPrintConfirmModal('label');
+        };
+      }
+      
+      // Add button hover and click effects
+      var buttons = section.querySelectorAll('.pk-action-btn');
+      buttons.forEach(function(btn) {
+        btn.addEventListener('mouseenter', function() {
+          this.style.opacity = '0.9';
+          this.style.transform = 'translateY(-1px)';
+        });
+        btn.addEventListener('mouseleave', function() {
+          this.style.opacity = '1';
+          this.style.transform = 'translateY(0)';
+        });
+        btn.addEventListener('mousedown', function() {
+          this.style.transform = 'translateY(1px)';
+        });
+        btn.addEventListener('mouseup', function() {
+          this.style.transform = 'translateY(-1px)';
+        });
+        
+        // Add click handler for each button
+        btn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          var buttonAction = '';
+          if (this.classList.contains('pk-btn-finished')) buttonAction = 'finished';
+          else if (this.classList.contains('pk-btn-cancel')) buttonAction = 'cancel';
+          else if (this.classList.contains('pk-btn-sticker')) buttonAction = 'sticker';
+          else if (this.classList.contains('pk-btn-label')) buttonAction = 'label';
+          if (!buttonAction) return;
+          var jobData = {
+            jobId: activeJobIdForModal,
+            action: buttonAction,
+            timestamp: new Date().toISOString()
+          };
+          
+          if (buttonAction === 'finished') {
+            if (isPackingDoneNow || (finishBtn && finishBtn.getAttribute('data-saving') === '1')) return;
+            if (finishBtn) {
+              finishBtn.setAttribute('data-saving', '1');
+              finishBtn.setAttribute('disabled', 'disabled');
+              finishBtn.textContent = 'Saving...';
+              finishBtn.style.backgroundColor = '#64748b';
+            }
+            setSectionMessage('Updating status to Packing Done...', false);
+
+            var fdFinish = new FormData();
+            fdFinish.append('action', 'mark_packing_done');
+            fdFinish.append('job_id', String(activeJobIdForModal));
+
+            fetch(baseUrl + '/modules/packing/api.php', {
+              method: 'POST',
+              body: fdFinish,
+              credentials: 'same-origin'
+            })
+              .then(function(r) { return r.json(); })
+              .then(function(resp) {
+                if (!resp || !resp.ok) {
+                  setSectionMessage((resp && resp.message) ? resp.message : 'Status update failed.', true);
+                  isPackingDoneNow = false;
+                  return;
+                }
+                isPackingDoneNow = true;
+                job.status = 'Packing Done';
+                applySectionBLockState();
+                setSectionMessage('Status updated: Packing Done', false);
+
+                var row = document.querySelector('tr[data-row-id="' + String(activeJobIdForModal) + '"]');
+                if (row) {
+                  var statusBadge = row.querySelector('span.pk-badge');
+                  if (statusBadge) {
+                    statusBadge.textContent = 'Packing Done';
+                    statusBadge.classList.remove('muted');
+                    statusBadge.classList.add('ok');
+                    statusBadge.style.background = '#dcfce7';
+                    statusBadge.style.color = '#166534';
+                    statusBadge.style.borderColor = '#86efac';
+                  }
+                }
+              })
+              .catch(function() {
+                setSectionMessage('Status update failed.', true);
+                isPackingDoneNow = false;
+              })
+              .finally(function() {
+                if (finishBtn) {
+                  finishBtn.removeAttribute('data-saving');
+                  finishBtn.textContent = 'Finished';
+                  applySectionBLockState();
+                }
+              });
+          } else if (buttonAction === 'cancel') {
+            closeModal();
+          } else if (buttonAction === 'sticker') {
+            openPrintConfirmModal('sticker');
+          } else if (buttonAction === 'label') {
+            openPrintConfirmModal('label');
+          }
+        });
+      });
+      
+      // Set up cancel confirmation modal
+      setTimeout(function() {
+        var modal = document.getElementById('pk-cancel-confirmation-modal');
+        var btnYes = document.getElementById('pk-modal-btn-yes');
+        var btnNo = document.getElementById('pk-modal-btn-no');
+        if (!modal || !btnYes || !btnNo) return;
+        var modalContent = modal.querySelector('.pk-modal-content');
+        
+        function closeCancelModal() {
+          modal.classList.remove('pk-modal-show');
+          modal.style.opacity = '0';
+          if (modalContent) {
+            modalContent.style.transform = 'scale(0.95)';
+          }
+          setTimeout(function() {
+            modal.style.display = 'none';
+          }, 300);
+        }
+        
+        function openCancelModal() {
+          modal.style.display = 'flex';
+          modal.style.opacity = '0';
+          if (modalContent) {
+            modalContent.style.transform = 'scale(0.95)';
+          }
+          setTimeout(function() {
+            modal.style.opacity = '1';
+            if (modalContent) {
+              modalContent.style.transform = 'scale(1)';
+            }
+          }, 10);
+        }
+        
+        // Store the original openModal function for the parent scope
+        window.pkOpenCancelModal = openCancelModal;
+        
+        // Yes button - proceed with cancel
+        btnYes.addEventListener('click', function() {
+          console.log('Job cancel confirmed');
+          closeCancelModal();
+          closeModal();
+        });
+        
+        // No button - close modal
+        btnNo.addEventListener('click', function() {
+          console.log('Job cancel cancelled');
+          closeCancelModal();
+        });
+        
+        // Click outside modal (on overlay) to close
+        modal.addEventListener('click', function(e) {
+          if (e.target === modal) {
+            closeCancelModal();
+          }
+        });
+        
+        // Add hover effects to modal buttons
+        var modalButtons = modal.querySelectorAll('.pk-modal-btn');
+        modalButtons.forEach(function(btn) {
+          btn.addEventListener('mouseenter', function() {
+            this.style.opacity = '0.9';
+            this.style.transform = 'translateY(-1px)';
+          });
+          btn.addEventListener('mouseleave', function() {
+            this.style.opacity = '1';
+            this.style.transform = 'translateY(0)';
+          });
+          btn.addEventListener('mousedown', function() {
+            this.style.transform = 'translateY(1px)';
+          });
+          btn.addEventListener('mouseup', function() {
+            this.style.transform = 'translateY(-1px)';
+          });
+        });
+        
+        // Keyboard support - Escape to close
+        document.addEventListener('keydown', function(e) {
+          if (e.key === 'Escape' && modal.style.display === 'flex') {
+            closeCancelModal();
+          }
+        });
+      }, 10);
+
+      // Set up sticker/label print confirmation modal
+      setTimeout(function() {
+        var printModal = document.getElementById('pk-print-confirmation-modal');
+        var btnPrintOk = document.getElementById('pk-print-modal-btn-ok');
+        var btnPrintCancel = document.getElementById('pk-print-modal-btn-cancel');
+        if (!printModal || !btnPrintOk || !btnPrintCancel) return;
+        var printContent = printModal.querySelector('.pk-modal-content');
+
+        function closePrintModal() {
+          printModal.style.opacity = '0';
+          if (printContent) printContent.style.transform = 'scale(0.95)';
+          setTimeout(function() {
+            printModal.style.display = 'none';
+          }, 300);
+        }
+
+        btnPrintCancel.addEventListener('click', function() {
+          closePrintModal();
+        });
+
+        btnPrintOk.addEventListener('click', function() {
+          if (!pendingPrintType) {
+            setSectionMessage('Print type missing.', true);
+            closePrintModal();
+            return;
+          }
+          var qty = pendingPrintType === 'sticker' ? getNumericValue('pkCalcBundles') : getNumericValue('pkCalcCartons');
+          var safeQty = qty > 0 ? qty : 1;
+          var sizeParam = pendingPrintType === 'sticker' ? '40x25' : '150x100';
+          resolvePaperStockId().then(function(resolvedId) {
+            if (!resolvedId) {
+              setSectionMessage('Paper stock id not found for this job.', true);
+              closePrintModal();
+              return;
+            }
+            var printUrl = baseUrl + '/modules/paper_stock/label.php?ids=' + encodeURIComponent(String(resolvedId))
+              + '&print_type=' + encodeURIComponent(pendingPrintType)
+              + '&required_qty=' + encodeURIComponent(String(safeQty))
+              + '&label_size=' + encodeURIComponent(sizeParam);
+            window.open(printUrl, '_blank');
+            setSectionMessage((pendingPrintType === 'sticker' ? 'Sticker' : 'Label') + ' Print opened.', false);
+            closePrintModal();
+          });
+        });
+
+        printModal.addEventListener('click', function(e) {
+          if (e.target === printModal) {
+            closePrintModal();
+          }
+        });
+
+        document.addEventListener('keydown', function(e) {
+          if (e.key === 'Escape' && printModal.style.display === 'flex') {
+            closePrintModal();
+          }
+        });
+      }, 10);
+
+      // Set up delete confirmation modal (admin only)
+      setTimeout(function() {
+        if (!isAdminUser) return;
+        var deleteModal = document.getElementById('pk-delete-confirmation-modal');
+        var btnDeleteYes = document.getElementById('pk-delete-modal-btn-yes');
+        var btnDeleteNo = document.getElementById('pk-delete-modal-btn-no');
+        if (!deleteModal || !btnDeleteYes || !btnDeleteNo) return;
+        var deleteContent = deleteModal.querySelector('.pk-modal-content');
+
+        function closeDeleteModal() {
+          deleteModal.style.opacity = '0';
+          if (deleteContent) deleteContent.style.transform = 'scale(0.95)';
+          setTimeout(function() {
+            deleteModal.style.display = 'none';
+          }, 300);
+        }
+
+        btnDeleteYes.addEventListener('click', function() {
+          closeDeleteModal();
+          deleteActiveJob(true);
+        });
+
+        btnDeleteNo.addEventListener('click', function() {
+          closeDeleteModal();
+        });
+
+        deleteModal.addEventListener('click', function(e) {
+          if (e.target === deleteModal) {
+            closeDeleteModal();
+          }
+        });
+
+        document.addEventListener('keydown', function(e) {
+          if (e.key === 'Escape' && deleteModal.style.display === 'flex') {
+            closeDeleteModal();
+          }
+        });
+      }, 10);
+    }, 0);
+
+    renderModalQr(job);
+  }
+
+  function openJobModal(jobId) {
+    if (!jobId) return;
+    activeJobIdForModal = Number(jobId) || 0;
+    var url = baseUrl + '/modules/packing/api.php?action=job_details&job_id=' + encodeURIComponent(String(jobId));
+    fetch(url, { credentials: 'same-origin' })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!data || !data.ok || !data.job) {
+          alert((data && data.message) ? data.message : 'Could not load job details.');
+          return;
+        }
+        fillModal(data.job);
+        openModal();
+      })
+      .catch(function() {
+        alert('Could not load job details.');
+      });
+  }
+
+  function deleteActiveJob(confirmedByModal) {
+    if (!canDeleteJobs || !activeJobIdForModal) return;
+    if (!confirmedByModal) return;
+
+    var messageEl = document.getElementById('pkSectionBMessage');
+    if (messageEl) {
+      messageEl.textContent = 'Deleting job...';
+      messageEl.style.color = '#475569';
+    }
+
+    var fd = new FormData();
+    fd.append('action', 'delete_job');
+    fd.append('job_id', String(activeJobIdForModal));
+
+    fetch(baseUrl + '/modules/packing/api.php', {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin'
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!data || !data.ok) {
+          if (messageEl) {
+            messageEl.textContent = (data && data.message) ? data.message : 'Delete failed.';
+            messageEl.style.color = '#b91c1c';
+          }
+          return;
+        }
+        var row = document.querySelector('tr[data-row-id="' + String(activeJobIdForModal) + '"]');
+        if (row && row.parentNode) {
+          row.parentNode.removeChild(row);
+        }
+        closeModal();
+      })
+      .catch(function() {
+        if (messageEl) {
+          messageEl.textContent = 'Delete failed.';
+          messageEl.style.color = '#b91c1c';
+        }
+      });
+  }
+
+  tabs.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var tab = btn.getAttribute('data-tab');
+      console.log('Tab clicked:', tab);
+      var pane = document.querySelector('.pk-pane[data-pane="' + tab + '"]');
+      if (!pane) {
+        alert('DEBUG: No pane found for tab: ' + tab);
+        return;
+      }
+      activateTab(tab);
+    });
+  });
+
+  panes.forEach(bindPane);
+  activateTab(activeTab);
+
+  function exportUrl(autoprint) {
+    var ids = activeIds();
+    if (!ids.length) {
+      return '';
+    }
+    var url = baseUrl + '/modules/packing/export.php?mode=selected';
+    url += '&tab=' + encodeURIComponent(activeTab);
+    url += '&ids=' + encodeURIComponent(ids.join(','));
+    if (q) url += '&search=' + encodeURIComponent(q);
+    if (from) url += '&from=' + encodeURIComponent(from);
+    if (to) url += '&to=' + encodeURIComponent(to);
+    if (autoprint) url += '&autoprint=1';
+    return url;
+  }
+
+  exportBtn.addEventListener('click', function() {
+    var url = exportUrl(false);
+    if (!url) return;
+    window.open(url, '_blank');
+  });
+
+  printBtn.addEventListener('click', function() {
+    var url = exportUrl(true);
+    if (!url) return;
+    window.open(url, '_blank');
+  });
+
+  document.querySelectorAll('.pk-open-modal').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      openJobModal(btn.getAttribute('data-job-id'));
+    });
+  });
+
+  if (modal) {
+    modal.addEventListener('click', function(ev) {
+      if (ev.target && ev.target.getAttribute('data-close-modal') === '1') {
+        closeModal();
+      }
+    });
+  }
+
+  if (closeModalBtn) {
+    closeModalBtn.addEventListener('click', closeModal);
+  }
+
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', function() {
+      if (!canDeleteJobs) return;
+      var deleteModal = document.getElementById('pk-delete-confirmation-modal');
+      if (!deleteModal) return;
+      var deleteContent = deleteModal.querySelector('.pk-modal-content');
+      deleteModal.style.display = 'flex';
+      deleteModal.style.opacity = '0';
+      if (deleteContent) deleteContent.style.transform = 'scale(0.95)';
+      setTimeout(function() {
+        deleteModal.style.opacity = '1';
+        if (deleteContent) deleteContent.style.transform = 'scale(1)';
+      }, 10);
+    });
+  }
+
+  document.addEventListener('keydown', function(ev) {
+    if (ev.key === 'Escape') {
+      closeModal();
+    }
+  });
+})();
+</script>
+<script src="<?= BASE_URL ?>/assets/js/qrcode.min.js"></script>
+
+<?php include __DIR__ . '/../../includes/footer.php'; ?>

@@ -34,7 +34,7 @@ function rbac_ui_section_for_path($path) {
     if (strpos($path, '/modules/leave-management/') === 0) {
       return 'HR & Workforce';
     }
-    if (strpos($path, '/modules/qc/') === 0 || strpos($path, '/modules/dispatch/') === 0 || strpos($path, '/modules/billing/') === 0) {
+    if (strpos($path, '/modules/qc/') === 0 || strpos($path, '/modules/packing/') === 0 || strpos($path, '/modules/dispatch/') === 0 || strpos($path, '/modules/billing/') === 0) {
         return 'Quality & Logistics';
     }
     if (strpos($path, '/modules/performance/') === 0 || strpos($path, '/modules/reports/') === 0) {
