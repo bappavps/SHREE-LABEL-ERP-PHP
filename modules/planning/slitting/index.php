@@ -46,36 +46,6 @@ $currentUrl = BASE_URL . '/modules/planning/slitting/index.php';
 $planningPageKey = 'jumbo-slitting';
 $defaultStatus = erp_status_page_default('planning.label-printing');
 
-// PaperRoll planning rows
-$prRows = [];
-$prRes = $db->query("SELECT id, job_no, job_name, status, priority, sequence_order, extra_data FROM planning WHERE LOWER(COALESCE(department,'')) = 'paperroll' ORDER BY sequence_order ASC, id ASC");
-if ($prRes) {
-    while ($pr = $prRes->fetch_assoc()) {
-        $ex = json_decode((string)($pr['extra_data'] ?? '{}'), true);
-        if (!is_array($ex)) $ex = [];
-        $m  = (float)($ex['order_meter'] ?? 0);
-        $w  = (float)(preg_match('/-?\d+(?:\.\d+)?/', (string)($ex['item_width'] ?? ''), $wm) ? $wm[0] : 0);
-        $prRows[] = [
-            'id'            => (int)$pr['id'],
-            'sl_no'         => max(1,(int)($pr['sequence_order']??0)),
-            'planning_id'   => trim((string)($pr['job_no']??'')),
-            'job_name'      => trim((string)($pr['job_name']??'')),
-            'client_name'   => trim((string)($ex['client_name']??($ex['customer_name']??''))),
-            'status'        => trim((string)($pr['status']??'Pending')) ?: 'Pending',
-            'priority'      => trim((string)($pr['priority']??($ex['priority']??'Normal'))) ?: 'Normal',
-            'order_quantity'=> trim((string)($ex['order_quantity']??'')),
-            'order_meter'   => trim((string)($ex['order_meter']??'')),
-            'sqr_mtr'       => ($m > 0 && $w > 0) ? round($m * $w / 1000, 4) : '',
-            'material_type' => trim((string)($ex['material_type']??'')),
-            'item_width'    => trim((string)($ex['item_width']??'')),
-            'item_length'   => trim((string)($ex['item_length']??'')),
-            'gsm'           => trim((string)($ex['gsm']??'')),
-            'planning_date' => trim((string)($ex['planning_date']??'')),
-            'dispatch_date' => trim((string)($ex['dispatch_date']??'')),
-        ];
-    }
-}
-
 include __DIR__ . '/../../../includes/header.php';
 ?>
 
@@ -267,76 +237,6 @@ function filterSlTable(q) {
   .print-only-header { display: block !important; }
   *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
 }
-.pr-section-title{display:flex;align-items:center;gap:10px;margin:28px 0 14px;font-size:1.1rem;font-weight:900;color:#0f172a}
-.pr-section-title i{color:#0ea5a4;font-size:1.25rem}
-.pr-tbl{width:100%;border-collapse:collapse;font-size:.77rem}
-.pr-tbl th{padding:10px 12px;text-align:center;border-bottom:2px solid #dbe7ef;background:#f8fbff;font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#5b6b82;white-space:nowrap}
-.pr-tbl td{padding:9px 12px;border-bottom:1px solid #eef2f7;vertical-align:middle;white-space:nowrap;text-align:center}
-.pr-tbl tbody tr:hover td{background:#f0fdf4}
-.pr-badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:12px;font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
 </style>
-
-<!-- PaperRoll Planning Section -->
-<div class="pr-section-title no-print">
-  <i class="bi bi-receipt-cutoff"></i>
-  PaperRoll Planning
-  <span style="font-size:.72rem;font-weight:700;color:#64748b;margin-left:6px"><?= count($prRows) ?> entries</span>
-  <a href="<?= BASE_URL ?>/modules/planning/paperroll/index.php" style="margin-left:auto;font-size:.72rem;font-weight:800;color:#0ea5a4;text-decoration:underline;text-underline-offset:3px">Manage &rarr;</a>
-</div>
-<div class="card" style="margin-bottom:24px">
-  <div style="overflow:auto">
-    <table class="pr-tbl" id="prTable">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Planning ID</th>
-          <th>Job Name</th>
-          <th>Client Name</th>
-          <th>Status</th>
-          <th>Priority</th>
-          <th>Order Qty</th>
-          <th>Order MTR</th>
-          <th>Sqr Mtr</th>
-          <th>Material Type</th>
-          <th>Width</th>
-          <th>Length</th>
-          <th>GSM</th>
-          <th>Planning Date</th>
-          <th>Dispatch Date</th>
-        </tr>
-      </thead>
-      <tbody>
-      <?php if (empty($prRows)): ?>
-        <tr><td colspan="15" style="padding:24px;text-align:center;color:#94a3b8"><i class="bi bi-inbox" style="font-size:2rem;opacity:.3;display:block;margin-bottom:8px"></i>No PaperRoll planning entries found.</td></tr>
-      <?php else: ?>
-        <?php foreach ($prRows as $pr):
-          $prSts = $pr['status'];
-          $prStsStyle = function_exists('barcodePlanningStatusStyle') ? barcodePlanningStatusStyle(strtolower($prSts)) : '';
-          $prPri = $pr['priority'];
-          $prPriCls = match(strtolower($prPri)) { 'urgent'=>'sl-pri-urgent', 'high'=>'sl-pri-high', default=>'sl-pri-normal' };
-        ?>
-        <tr>
-          <td style="color:#94a3b8;font-weight:700"><?= $pr['sl_no'] ?></td>
-          <td style="font-weight:800;color:#0ea5a4"><?= htmlspecialchars($pr['planning_id']) ?></td>
-          <td style="font-weight:800;color:#0f172a"><?= htmlspecialchars($pr['job_name'] ?: '—') ?></td>
-          <td><?= htmlspecialchars($pr['client_name'] ?: '—') ?></td>
-          <td><span class="pr-badge" style="<?= htmlspecialchars($prStsStyle) ?>"><?= htmlspecialchars($prSts) ?></span></td>
-          <td><span class="<?= $prPriCls ?>"><?= htmlspecialchars($prPri) ?></span></td>
-          <td style="font-weight:800"><?= htmlspecialchars($pr['order_quantity'] ?: '—') ?></td>
-          <td style="font-weight:800"><?= htmlspecialchars($pr['order_meter'] ?: '—') ?></td>
-          <td style="font-weight:700;color:#166534"><?= $pr['sqr_mtr'] !== '' ? htmlspecialchars((string)$pr['sqr_mtr']).' m²' : '—' ?></td>
-          <td><?= htmlspecialchars($pr['material_type'] ?: '—') ?></td>
-          <td><?= htmlspecialchars($pr['item_width'] ?: '—') ?></td>
-          <td><?= htmlspecialchars($pr['item_length'] ?: '—') ?></td>
-          <td><?= htmlspecialchars($pr['gsm'] ?: '—') ?></td>
-          <td><?= htmlspecialchars($pr['planning_date'] ?: '—') ?></td>
-          <td><?= htmlspecialchars($pr['dispatch_date'] ?: '—') ?></td>
-        </tr>
-        <?php endforeach; ?>
-      <?php endif; ?>
-      </tbody>
-    </table>
-  </div>
-</div>
 
 <?php include __DIR__ . '/../../../includes/footer.php'; ?>

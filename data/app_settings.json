@@ -121,7 +121,7 @@
             },
             "paperroll_job": {
                 "prefix": "PRL",
-                "counter": 1
+                "counter": 0
             },
             "pos_job": {
                 "prefix": "POS",
@@ -129,7 +129,7 @@
             },
             "oneply_job": {
                 "prefix": "OPL",
-                "counter": 1
+                "counter": 0
             }
         }
     },
