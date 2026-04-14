@@ -786,7 +786,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $settings['id_generation'] = $idg;
     if (saveAppSettings($settings)) {
-      setFlash('success', 'All prefix counters reset successfully. Next IDs will start from 0001.');
+      setFlash('success', 'Only counters were reset successfully. Existing job cards were not deleted.');
     } else {
       setFlash('error', 'Unable to reset prefix counters.');
     }
@@ -805,11 +805,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isset($idg['modules']) || !is_array($idg['modules'])) {
       $idg['modules'] = [];
     }
-    foreach (['planning', 'planning_barcode', 'planning_paperroll', 'jumbo_job', 'printing_job', 'die_cutting_job', 'label_slitting_job', 'barcode_job'] as $type) {
+    foreach (['planning', 'planning_barcode', 'planning_paperroll', 'batch', 'jumbo_job', 'printing_job', 'die_cutting_job', 'label_slitting_job', 'barcode_job', 'paperroll_job', 'pos_job', 'oneply_job', 'twoply_job'] as $type) {
       if (isset($idg['modules'][$type])) {
         $idg['modules'][$type]['counter'] = 0;
       }
     }
+    $idg['global_job_counter'] = 0;
     $settings['id_generation'] = $idg;
     if (!saveAppSettings($settings)) {
       $errors[] = 'Could not reset prefix counters.';
@@ -889,6 +890,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       // Live floor and production job-card cleanup.
       $runResetQuery($db, "DELETE FROM slitting_entries", 'Slitting entries cleanup');
+      $runResetQuery($db, "DELETE FROM roll_allocations", 'Roll allocations cleanup');
       $runResetQuery($db, "DELETE FROM slitting_batches", 'Slitting batches cleanup');
       $runResetQuery($db, "DELETE FROM job_change_requests", 'Job change requests cleanup');
       $runResetQuery($db, "DELETE FROM job_notifications", 'Job notifications cleanup');
@@ -2016,7 +2018,6 @@ if ($activeTab === 'clients' && $editClientId > 0) {
     <?php if ($activeTab === 'prefix'): ?>
       <form method="POST" class="form-grid-2" id="prefix-settings-form">
         <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
-        <input type="hidden" name="action" value="save_prefix">
 
         <div class="form-group">
           <label>Year Format</label>
@@ -2075,14 +2076,14 @@ if ($activeTab === 'clients' && $editClientId > 0) {
         </div>
 
         <div class="form-actions col-span-2">
-          <button class="btn btn-primary" type="submit"><i class="bi bi-save"></i> Save Prefix Settings</button>
+          <button class="btn btn-primary" type="submit" name="action" value="save_prefix"><i class="bi bi-save"></i> Save Prefix Settings</button>
           <button
             class="btn btn-secondary"
             type="submit"
             name="action"
             value="reset_prefix_counters"
-            data-confirm="Reset all prefix counters? Next generated IDs will start from 0001."
-          ><i class="bi bi-arrow-counterclockwise"></i> Reset All Counters to 0001</button>
+            data-confirm="Reset counters only? This will NOT delete existing job cards."
+          ><i class="bi bi-arrow-counterclockwise"></i> Reset Counters Only (No Job Delete)</button>
           <button
             class="btn btn-danger"
             type="submit"

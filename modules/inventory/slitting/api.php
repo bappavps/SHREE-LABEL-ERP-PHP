@@ -139,7 +139,7 @@ function normalizeMaterial($str) {
 }
 
 function textContainsPosToken(string $text): bool {
-    $normalized = strtolower((string)preg_replace('/[^a-z0-9]+/', ' ', trim($text)));
+    $normalized = (string)preg_replace('/[^a-z0-9]+/', ' ', strtolower(trim($text)));
     if ($normalized === '') return false;
     return (bool)preg_match('/\bpos\b/', $normalized);
 }
@@ -201,7 +201,7 @@ function planningContainsPosMarker(array $planningExtra, string ...$texts): bool
 }
 
 function textContainsOnePlyToken(string $text): bool {
-    $normalized = strtolower((string)preg_replace('/[^a-z0-9]+/', ' ', trim($text)));
+    $normalized = (string)preg_replace('/[^a-z0-9]+/', ' ', strtolower(trim($text)));
     if ($normalized === '') return false;
     return (bool)preg_match('/\b(one\s*ply|oneply|one\sply|1\s*ply|1ply)\b/', $normalized);
 }
@@ -263,7 +263,7 @@ function planningContainsOnePlyMarker(array $planningExtra, string ...$texts): b
 }
 
 function textContainsTwoPlyToken(string $text): bool {
-    $normalized = strtolower((string)preg_replace('/[^a-z0-9]+/', ' ', trim($text)));
+    $normalized = (string)preg_replace('/[^a-z0-9]+/', ' ', strtolower(trim($text)));
     if ($normalized === '') return false;
     if ((bool)preg_match('/\b(two\s*ply|twoply|2\s*ply|2ply)\b/', $normalized)) {
         return true;
@@ -1037,6 +1037,10 @@ try {
                 $allocationDepartmentRoute,
                 (string)($parent['paper_type'] ?? '')
             );
+            if ($paperRollSubtype === '' && $allowPaperRollJob && $isPaperRollPlanPrefix) {
+                // Default unclassified PLN-PRL plans to POS when no subtype marker is present.
+                $paperRollSubtype = 'pos';
+            }
             $allowPosJobFromPaperRoll = $allowPaperRollJob && $hasPaperRollRoute && !$isFlexoRequestAcceptFlow && $paperRollSubtype === 'pos';
             $allowOnePlyJobFromPaperRoll = $allowPaperRollJob && $hasPaperRollRoute && !$isFlexoRequestAcceptFlow && $paperRollSubtype === 'oneply';
             $allowTwoPlyJobFromPaperRoll = $allowPaperRollJob && $hasPaperRollRoute && !$isFlexoRequestAcceptFlow && $paperRollSubtype === 'twoply';
@@ -3322,6 +3326,10 @@ try {
                         (string)($a['department_route'] ?? ''),
                         (string)($parent['paper_type'] ?? '')
                     );
+                    if ($paperRollSubtype === '' && $allowPaperRoll && stripos((string)$a['plan_no'], 'PLN-PRL/') === 0) {
+                        // Default unclassified PLN-PRL plans to POS when no subtype marker is present.
+                        $paperRollSubtype = 'pos';
+                    }
                     $allowPosFromPaperRoll = $allowPaperRoll && $hasPaperRollRoute && $paperRollSubtype === 'pos';
                     $allowOnePlyFromPaperRoll = $allowPaperRoll && $hasPaperRollRoute && $paperRollSubtype === 'oneply';
                     $allowTwoPlyFromPaperRoll = $allowPaperRoll && $hasPaperRollRoute && $paperRollSubtype === 'twoply';

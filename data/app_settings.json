@@ -1,137 +1,101 @@
-﻿{
-    "company_name":  "Shree Label Creations",
-    "company_legal_name":  "Shree Label Creations Pvt. Ltd.",
-    "contact_person":  "Aditya Sitani",
-    "erp_display_name":  "e-Flexo Enterprices",
-    "company_tagline":  "A Flexo Printing ERP",
-    "company_email":  "gm.shreelabel@gmail.com",
-    "company_mobile":  "+917001449757",
-    "company_phone":  "+917001449757",
-    "company_currency":  "INR",
-    "company_address":  "Siliguri, West Bengal, India",
-    "company_gst":  "",
-    "erp_email":  "debnathmriganka2010@gmail.com",
-    "erp_phone":  "+917001449757",
-    "erp_address":  "siliguri\r\nsiliguri",
-    "erp_gst":  "",
-    "logo_path":  "uploads/company/logo_20260329_002856_3ee534f4.png",
-    "erp_logo_path":  "uploads/uploads/company/default/erp_logo_20260404_205743_39688c9a.png",
-    "flag_emoji":  "ðŸ‡®ðŸ‡³",
-    "animated_flag_path":  "",
-    "animated_flag_url":  "https://media1.tenor.com/m/f7t624exZA0AAAAC/india-india-flag.gif",
-    "login_background_image":  "uploads/library/lib_20260329_002923_aba77f4b.png",
-    "theme_mode":  "light",
-    "sidebar_button_color":  "#22C55E",
-    "sidebar_hover_color":  "#263445",
-    "sidebar_active_bg":  "#214036",
-    "sidebar_active_text":  "#BBF7D0",
-    "image_library":  [
-                          {
-                              "path":  "uploads/library/lib_20260329_002913_0e17e2b1.jpg",
-                              "name":  "lib_20260329_002913_0e17e2b1.jpg",
-                              "uploaded_at":  "2026-03-29 00:29:13",
-                              "category":  "label-asset"
-                          },
-                          {
-                              "path":  "uploads/library/lib_20260329_002923_aba77f4b.png",
-                              "name":  "lib_20260329_002923_aba77f4b.png",
-                              "uploaded_at":  "2026-03-29 00:29:23",
-                              "category":  "background"
-                          },
-                          {
-                              "path":  "uploads/library/lib_20260329_002939_0107db3a.png",
-                              "name":  "lib_20260329_002939_0107db3a.png",
-                              "uploaded_at":  "2026-03-29 00:29:39",
-                              "category":  "product-type",
-                              "paper_type":  "Chromo"
-                          },
-                          {
-                              "path":  "uploads/library/lib_20260329_002947_524eaa4a.png",
-                              "name":  "lib_20260329_002947_524eaa4a.png",
-                              "uploaded_at":  "2026-03-29 00:29:47",
-                              "category":  "product-type",
-                              "paper_type":  "PP-White"
-                          }
-                      ],
-    "id_generation":  {
-                          "year_format":  "YYYY",
-                          "separator":  "/",
-                          "padding":  4,
-                          "global_job_counter":  0,
-                          "modules":  {
-                                          "roll":  {
-                                                       "prefix":  "SLC",
-                                                       "counter":  0
-                                                   },
-                                          "job":  {
-                                                      "prefix":  "JOB",
-                                                      "counter":  0
-                                                  },
-                                          "invoice":  {
-                                                          "prefix":  "INV",
-                                                          "counter":  0
-                                                      },
-                                          "estimate":  {
-                                                           "prefix":  "EST",
-                                                           "counter":  0
-                                                       },
-                                          "quotation":  {
-                                                            "prefix":  "QTN",
-                                                            "counter":  0
-                                                        },
-                                          "batch":  {
-                                                        "prefix":  "BAT",
-                                                        "counter":  0
-                                                    },
-                                          "sales_order":  {
-                                                              "prefix":  "SO",
-                                                              "counter":  0
-                                                          },
-                                          "planning":  {
-                                                           "prefix":  "PLN",
-                                                           "counter":  0
-                                                       },
-                                          "jumbo_job":  {
-                                                            "prefix":  "SLT",
-                                                            "counter":  0
-                                                        },
-                                          "printing_job":  {
-                                                               "prefix":  "FLX",
-                                                               "counter":  0
-                                                           },
-                                          "die_cutting_job":  {
-                                                                  "prefix":  "DCT",
-                                                                  "counter":  0
-                                                              },
-                                          "planning_barcode":  {
-                                                                   "prefix":  "PLN-BAR",
-                                                                   "counter":  0
-                                                               },
-                                          "label_slitting_job":  {
-                                                                     "prefix":  "LSL",
-                                                                     "counter":  0
-                                                                 },
-                                          "barcode_job":  {
-                                                              "prefix":  "BRC-BAR",
-                                                              "counter":  0
-                                                          },
-                                          "planning_paperroll":  {
-                                                                     "prefix":  "PLN-PRL",
-                                                                     "counter":  0
-                                                                 },
-                                          "paperroll_job":  {
-                                                                "prefix":  "PRL",
-                                                                "counter":  0
-                                                            },
-                                          "pos_job":  {
-                                                          "prefix":  "POS",
-                                                          "counter":  0
-                                                      },
-                                          "oneply_job":  {
-                                                             "prefix":  "OPL",
-                                                             "counter":  0
-                                                         }
-                                      }
-                      },
-    "sidebar_collapse_delay_ms":  5000
+{
+    "company_name": "Shree Label Creation",
+    "company_legal_name": "",
+    "contact_person": "",
+    "erp_display_name": "",
+    "company_tagline": "ERP Master System",
+    "company_email": "",
+    "company_mobile": "",
+    "company_phone": "",
+    "company_currency": "INR",
+    "company_address": "",
+    "company_gst": "",
+    "erp_email": "",
+    "erp_phone": "",
+    "erp_address": "",
+    "erp_gst": "",
+    "logo_path": "",
+    "erp_logo_path": "",
+    "flag_emoji": "🇮🇳",
+    "animated_flag_path": "",
+    "animated_flag_url": "",
+    "login_background_image": "",
+    "theme_mode": "light",
+    "sidebar_button_color": "#22c55e",
+    "sidebar_hover_color": "rgba(255,255,255,.09)",
+    "sidebar_active_bg": "rgba(34,197,94,.12)",
+    "sidebar_active_text": "#bbf7d0",
+    "image_library": [],
+    "id_generation": {
+        "year_format": "YYYY",
+        "separator": "/",
+        "padding": 4,
+        "global_job_counter": 0,
+        "modules": {
+            "roll": {
+                "prefix": "SLC",
+                "counter": 0
+            },
+            "job": {
+                "prefix": "JOB",
+                "counter": 0
+            },
+            "invoice": {
+                "prefix": "INV",
+                "counter": 0
+            },
+            "estimate": {
+                "prefix": "EST",
+                "counter": 0
+            },
+            "quotation": {
+                "prefix": "QTN",
+                "counter": 0
+            },
+            "batch": {
+                "prefix": "BAT",
+                "counter": 8
+            },
+            "sales_order": {
+                "prefix": "SO",
+                "counter": 0
+            },
+            "planning": {
+                "prefix": "PLN",
+                "counter": 0
+            },
+            "planning_barcode": {
+                "prefix": "PLN-BAR",
+                "counter": 0
+            },
+            "planning_paperroll": {
+                "prefix": "PLN-PRL",
+                "counter": 0
+            },
+            "jumbo_job": {
+                "prefix": "SLT",
+                "counter": 0
+            },
+            "printing_job": {
+                "prefix": "FLX",
+                "counter": 0
+            },
+            "die_cutting_job": {
+                "prefix": "DCT",
+                "counter": 0
+            },
+            "label_slitting_job": {
+                "prefix": "LSL",
+                "counter": 0
+            },
+            "barcode_job": {
+                "prefix": "BRC-BAR",
+                "counter": 0
+            },
+            "paperroll_job": {
+                "prefix": "PRL",
+                "counter": 6
+            }
+        }
+    }
 }
