@@ -537,9 +537,17 @@ const DEPT_ICON  = {plan:'📋',slit:'🔪',print:'🖨️',die:'✂️',lsl:'�
 const DEPT_CLASS = {plan:'db-plan',slit:'db-slit',print:'db-print',die:'db-die',lsl:'db-lsl'};
 const CARD_CLASS = {plan:'dept-plan',slit:'dept-slit',print:'dept-print',die:'dept-die',lsl:'dept-lsl'};
 
+function normStatus(v){
+  return String(v||'').toLowerCase().replace(/[-_]/g,' ').trim();
+}
+
+function isDoneStatus(v){
+  return ['closed','finalized','completed','qc passed','qc failed','dispatched','packing done'].includes(normStatus(v));
+}
+
 /* ─── Stage Detection ─── */
 function getStageIdx(job){
-  const s   = (job.status||'').toLowerCase();
+  const s   = normStatus(job.status||'');
   const ps  = (job.planning_status||'').toLowerCase();
   const dept= (job.department||'').toLowerCase();
   const jn  = String(job.job_no||'').toUpperCase();
@@ -551,18 +559,18 @@ function getStageIdx(job){
 
   // Finishing jobs (die-cutting, label-slitting)
   if(jt==='finishing'){
-    if(s==='closed'||s==='finalized'||s==='completed'||s==='qc passed') return 4;
+    if(isDoneStatus(s)) return 4;
     return 3;
   }
 
   if(ps.includes('binding')||ps.includes('flat')) return 3;
   if(pp.includes('printing')&&(pp.includes('done')||pp.includes('completed'))) return 3;
-  if((dept.includes('print')||jn.startsWith('FLX/'))&&(s==='completed'||s==='closed'||s==='finalized')) return 3;
+  if((dept.includes('print')||jn.startsWith('FLX/'))&&isDoneStatus(s)) return 3;
   if(ps.includes('printing')) return 2;
   if(dept.includes('print')||jn.startsWith('FLX/')) return 2;
   if(s==='running') return 1;
   if(ps.includes('slitting')||ps.includes('preparing')) return 1;
-  if(s==='closed'||s==='finalized'||s==='completed'||s==='qc passed'||s==='qc failed') return 2;
+  if(isDoneStatus(s)) return 2;
   if(s==='queued') return 1;
   return 0;
 }
@@ -572,7 +580,7 @@ function fmtStageDate(dt){
 }
 
 function isDispatchDone(job){
-  return getStageIdx(job)>=5&&['Closed','Finalized','Completed','QC Passed','QC Failed','Dispatched'].includes(String(job.status||''));
+  return getStageIdx(job)>=5 && isDoneStatus(job.status||'');
 }
 
 function getDieStageName(job){
@@ -642,8 +650,8 @@ function getDisplayJobRef(job){
 }
 
 function stBadge(status){
-  const s=(status||'').toLowerCase();
-  const map={running:'background:#dbeafe;color:#1e40af',pending:'background:#fef3c7;color:#92400e',queued:'background:#fef3c7;color:#92400e',closed:'background:#dcfce7;color:#166534',finalized:'background:#dcfce7;color:#166534',completed:'background:#dcfce7;color:#166534','qc passed':'background:#dcfce7;color:#166534','qc failed':'background:#fee2e2;color:#dc2626'};
+  const s=normStatus(status||'');
+  const map={running:'background:#dbeafe;color:#1e40af',pending:'background:#fef3c7;color:#92400e',queued:'background:#fef3c7;color:#92400e',closed:'background:#dcfce7;color:#166534',finalized:'background:#dcfce7;color:#166534',completed:'background:#dcfce7;color:#166534','qc passed':'background:#dcfce7;color:#166534','qc failed':'background:#fee2e2;color:#dc2626','packing done':'background:#dcfce7;color:#166534',dispatched:'background:#dcfce7;color:#166534'};
   return map[s]||'background:#f1f5f9;color:#64748b';
 }
 
@@ -652,7 +660,7 @@ function esc(s){const d=document.createElement('div');d.textContent=s||'';return
 /* ─── Filter predicate ─── */
 function matchFilter(job){
   const dept=getDept(job);
-  const s=String(job.status||'').toLowerCase();
+  const s=normStatus(job.status||'');
   const pri=(job.planning_priority||'Normal').toLowerCase();
   if(FL_ACTIVE_FILTER==='plan'   && dept!=='plan') return false;
   if(FL_ACTIVE_FILTER==='slit'   && dept!=='slit') return false;
@@ -679,7 +687,15 @@ async function flLoad(){
     const today=new Date(); today.setHours(0,0,0,0);
     const isVisible=(j)=>{
       if(j.deleted_at) return false;
-      if(['Pending','Running','Queued'].includes(j.status)) return true;
+      // Normalize status for this page; keep durable packing flag authoritative.
+      if (j && j.extra_data_parsed && Number(j.extra_data_parsed.packing_done_flag||0) === 1) {
+        j.status = 'Packing Done';
+        if (!j.completed_at && j.extra_data_parsed.packing_done_at) {
+          j.completed_at = j.extra_data_parsed.packing_done_at;
+        }
+      }
+
+      if(['pending','running','queued'].includes(normStatus(j.status))) return true;
       if(j.completed_at){const cd=new Date(j.completed_at);cd.setHours(0,0,0,0);return cd.getTime()===today.getTime();}
       return true;
     };
@@ -692,8 +708,7 @@ async function flLoad(){
 
     const printByPrevId=new Set(printing.map(j=>Number(j.previous_job_id||0)).filter(v=>v>0));
     const slittingVis=slitting.filter(j=>{
-      const s=String(j.status||'');
-      const done=['Closed','Finalized','Completed','QC Passed','QC Failed'].includes(s);
+      const done=isDoneStatus(j.status||'');
       if(!done) return true;
       return !printByPrevId.has(Number(j.id||0));
     });
@@ -717,7 +732,7 @@ function renderJobs(jobs){
 
   const priOrd={Urgent:0,High:1,Normal:2,Low:3};
   jobs.sort((a,b)=>{
-    const ra=a.status==='Running'?0:1,rb=b.status==='Running'?0:1;
+    const ra=normStatus(a.status)==='running'?0:1,rb=normStatus(b.status)==='running'?0:1;
     if(ra!==rb) return ra-rb;
     const sa=getStageIdx(a),sb=getStageIdx(b);
     if(sa!==sb) return sb-sa;

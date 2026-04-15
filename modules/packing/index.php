@@ -7,7 +7,7 @@ require_once __DIR__ . '/_data.php';
 $db = getDB();
 $pageTitle = 'Packing';
 
-$allowedTabs = packing_tab_keys();
+$allowedTabs = array_merge(packing_tab_keys(), ['history']);
 $currentTab = trim((string)($_GET['tab'] ?? 'printing_label'));
 if (!in_array($currentTab, $allowedTabs, true)) {
   $currentTab = 'printing_label';
@@ -18,6 +18,7 @@ $from   = trim((string)($_GET['from']   ?? ''));
 $to     = trim((string)($_GET['to']     ?? ''));
 $period = trim((string)($_GET['period'] ?? 'custom'));
 $status = trim((string)($_GET['status'] ?? '')); // Default: all statuses (empty string)
+$historyDept = trim((string)($_GET['hist_dept'] ?? '')); // History department filter
 
 $allowedPeriods = ['custom', 'day', 'week', 'month', 'year'];
 if (!in_array($period, $allowedPeriods, true)) {
@@ -54,10 +55,25 @@ $data = packing_fetch_ready_rows($db, [
   'to' => $to,
   'status' => $status,
 ]);
-
 $rowsByTab = $data['rows_by_tab'];
 $counts = $data['counts'];
+
+$historyData = [];
+if ($currentTab === 'history') {
+  $historyData = packing_fetch_history_rows($db, [
+    'search' => $search,
+    'from' => $from,
+    'to' => $to,
+    'dept' => $historyDept,
+  ]);
+}
 $canDeleteJobs = isAdmin();
+$appSettings = getAppSettings();
+$printCompanyName = trim((string)($appSettings['company_name'] ?? APP_NAME));
+$printLogoPath = trim((string)($appSettings['logo_path'] ?? ''));
+$printLogoUrl = $printLogoPath !== ''
+  ? (rtrim((string)BASE_URL, '/') . '/' . ltrim($printLogoPath, '/'))
+  : '';
 
 $statusClass = static function(string $status): string {
   return strtolower(trim($status)) === 'packing done' ? 'ok' : 'muted';
@@ -104,6 +120,11 @@ $tabThemes = [
     'accent' => '#be123c',
     'soft' => '#ffe4e6',
     'border' => '#fda4af',
+  ],
+  'history' => [
+    'accent' => '#7c3aed',
+    'soft' => '#f3e8ff',
+    'border' => '#ddd6fe',
   ],
 ];
 
@@ -215,6 +236,7 @@ include __DIR__ . '/../../includes/header.php';
 .pk-tab[data-theme="one_ply"],.pk-pane[data-theme="one_ply"]{--pk-accent:#c2410c;--pk-soft:#ffedd5;--pk-border:#fdba74}
 .pk-tab[data-theme="two_ply"],.pk-pane[data-theme="two_ply"]{--pk-accent:#7c3aed;--pk-soft:#ede9fe;--pk-border:#c4b5fd}
 .pk-tab[data-theme="barcode"],.pk-pane[data-theme="barcode"]{--pk-accent:#be123c;--pk-soft:#ffe4e6;--pk-border:#fda4af}
+.pk-tab[data-theme="history"],.pk-pane[data-theme="history"]{--pk-accent:#7c3aed;--pk-soft:#f3e8ff;--pk-border:#ddd6fe}
 .page-header{margin-top:12px;background:linear-gradient(120deg,#0f172a 0%,#1d4ed8 48%,#0ea5e9 100%);border-radius:14px;padding:14px;border:1px solid #1e3a8a;box-shadow:0 14px 30px rgba(30,58,138,.24)}
 @media (max-width:980px){.pk-filters{grid-template-columns:1fr 1fr}.pk-head{align-items:stretch}}
 @media (max-width:680px){.pk-filters{grid-template-columns:1fr}.pk-table{min-width:860px}.page-header{padding:12px}.pk-modal-grid{grid-template-columns:1fr}.pk-jc-head{grid-template-columns:1fr}.pk-jc-qr{width:100%;max-width:180px;margin:0 auto}.pk-jc-top-grid{grid-template-columns:1fr}.pk-jc-detail-grid{grid-template-columns:1fr}}
@@ -282,29 +304,86 @@ include __DIR__ . '/../../includes/header.php';
         data-theme="<?= e($tabKey) ?>"
         style="--pk-accent:<?= e($theme['accent']) ?>;--pk-soft:<?= e($theme['soft']) ?>;--pk-border:<?= e($theme['border']) ?>;"
       >
-        <?= e(packing_tab_label($tabKey)) ?> (<?= (int)($counts[$tabKey] ?? 0) ?>)
+        <?php if ($tabKey === 'history'): ?>
+          <i class="bi bi-clock-history" style="margin-right:3px"></i> History
+        <?php else: ?>
+          <?= e(packing_tab_label($tabKey)) ?> (<?= (int)($counts[$tabKey] ?? 0) ?>)
+        <?php endif; ?>
       </button>
     <?php endforeach; ?>
   </div>
 
   <?php foreach ($allowedTabs as $tabKey): ?>
-    <?php $tabRows = $rowsByTab[$tabKey] ?? []; ?>
-    <?php $theme = $tabThemes[$tabKey] ?? ['accent' => '#1d4ed8', 'soft' => '#eff6ff', 'border' => '#bfdbfe']; ?>
+    <?php 
+      $tabRows = $tabKey === 'history' ? $historyData : ($rowsByTab[$tabKey] ?? []);
+      $theme = $tabThemes[$tabKey] ?? ['accent' => '#1d4ed8', 'soft' => '#eff6ff', 'border' => '#bfdbfe']; 
+    ?>
     <div
       class="pk-pane<?= $currentTab === $tabKey ? ' active' : '' ?>"
       data-pane="<?= e($tabKey) ?>"
       data-theme="<?= e($tabKey) ?>"
       style="--pk-accent:<?= e($theme['accent']) ?>;--pk-soft:<?= e($theme['soft']) ?>;--pk-border:<?= e($theme['border']) ?>;"
     >
-      <div class="pk-bar">
-        <div class="count"><span class="pk-selected">0</span> selected in <?= e(packing_tab_label($tabKey)) ?></div>
-        <div style="font-size:.74rem;color:#475569;">Ready rows: <?= count($tabRows) ?></div>
-      </div>
+      <?php if ($tabKey === 'history'): ?>
+        <!-- History Filters -->
+        <div class="pk-card">
+          <form method="get" style="margin:0">
+            <input type="hidden" name="tab" value="history">
+            <div class="pk-filters">
+              <div>
+                <label>Search (Plan No / Job Name / Client)</label>
+                <input type="text" name="q" placeholder="Search..." value="<?= e($search) ?>">
+              </div>
+              <div>
+                <label>From Date</label>
+                <input type="date" name="from" value="<?= e($from) ?>">
+              </div>
+              <div>
+                <label>To Date</label>
+                <input type="date" name="to" value="<?= e($to) ?>">
+              </div>
+              <div>
+                <label>Department</label>
+                <select name="hist_dept">
+                  <option value="">All Departments</option>
+                  <?php foreach (packing_department_type_map() as $deptKey => $deptCfg): ?>
+                    <option value="<?= strtolower(trim($deptCfg['departments'][0] ?? '')) ?>"<?= $historyDept === strtolower(trim($deptCfg['departments'][0] ?? '')) ? ' selected' : '' ?>>
+                      <?= e($deptCfg['department_label'] ?? $deptKey) ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+              <button type="submit" class="pk-btn primary" style="align-self:flex-end"><i class="bi bi-search"></i> Search</button>
+            </div>
+          </form>
+        </div>
+        <div class="pk-bar">
+          <div class="count">Total: <?= count($tabRows) ?> completed jobs</div>
+        </div>
+      <?php else: ?>
+        <div class="pk-bar">
+          <div class="count"><span class="pk-selected">0</span> selected in <?= e(packing_tab_label($tabKey)) ?></div>
+          <div style="font-size:.74rem;color:#475569;">Ready rows: <?= count($tabRows) ?></div>
+        </div>
+      <?php endif; ?>
 
       <div class="pk-table-wrap">
         <table class="pk-table">
           <thead>
-            <?php if ($tabKey === 'pos_roll'): ?>
+            <?php if ($tabKey === 'history'): ?>
+              <tr>
+                <th>Sl</th>
+                <th>Packing ID</th>
+                <th>Plan No</th>
+                <th>Plan Name</th>
+                <th>Job No</th>
+                <th>Client</th>
+                <th>Department</th>
+                <th>Status</th>
+                <th>Completed Date</th>
+                <th>Action</th>
+              </tr>
+            <?php elseif ($tabKey === 'pos_roll'): ?>
               <tr>
                 <th class="pk-check-col"><input type="checkbox" class="pk-select-all"></th>
                 <th>Sl No</th>
@@ -334,10 +413,33 @@ include __DIR__ . '/../../includes/header.php';
           </thead>
           <tbody>
             <?php if (empty($tabRows)): ?>
-              <tr><td colspan="<?= $tabKey === 'pos_roll' ? '11' : '9' ?>" class="pk-empty">No packing-ready job found in this tab.</td></tr>
+              <tr><td colspan="<?= $tabKey === 'history' ? '10' : ($tabKey === 'pos_roll' ? '11' : '9') ?>" class="pk-empty">
+                <?= $tabKey === 'history' ? 'No completed jobs found.' : 'No packing-ready job found in this tab.' ?>
+              </td></tr>
             <?php else: ?>
               <?php foreach ($tabRows as $idx => $row): ?>
-                <?php if ($tabKey === 'pos_roll'): ?>
+                <?php if ($tabKey === 'history'): ?>
+                  <tr data-row-id="<?= (int)$row['id'] ?>">
+                    <td><?= (int)$idx + 1 ?></td>
+                    <td>
+                      <button class="pk-id-btn pk-open-modal" type="button" data-job-id="<?= (int)$row['id'] ?>">
+                        <?= e($row['packing_display_id'] ?? ('PKG/' . (int)$row['id'])) ?>
+                      </button>
+                    </td>
+                    <td><?= e(($row['plan_no'] ?? '') !== '' ? $row['plan_no'] : '-') ?></td>
+                    <td><?= e(($row['plan_name'] ?? '') !== '' ? $row['plan_name'] : '-') ?></td>
+                    <td><?= e($row['job_no'] ?? '-') ?></td>
+                    <td><?= e(($row['client_name'] ?? '') !== '' ? $row['client_name'] : '-') ?></td>
+                    <td><?= e($row['last_department'] ?? '-') ?></td>
+                    <td><span class="pk-badge <?= e($statusClass((string)($row['status'] ?? ''))) ?>"><?= e($row['status'] ?? '-') ?></span></td>
+                    <td><?= e(($row['event_time'] ?? '') !== '' ? date('d M Y H:i', strtotime((string)$row['event_time'])) : '-') ?></td>
+                    <td style="text-align:center">
+                      <button class="pk-id-btn pk-open-modal" type="button" data-job-id="<?= (int)$row['id'] ?>" title="View Details" style="padding:3px 6px;font-size:.68rem">
+                        <i class="bi bi-eye"></i> View
+                      </button>
+                    </td>
+                  </tr>
+                <?php elseif ($tabKey === 'pos_roll'): ?>
                   <tr data-row-id="<?= (int)$row['id'] ?>">
                     <td class="pk-check-col"><input type="checkbox" class="pk-row-check" value="<?= (int)$row['id'] ?>"></td>
                     <td><?= (int)$idx + 1 ?></td>
@@ -393,6 +495,7 @@ include __DIR__ . '/../../includes/header.php';
           <?php if ($canDeleteJobs): ?>
             <button class="pk-btn" id="pkDeleteJobBtn" type="button">Delete Job</button>
           <?php endif; ?>
+          <button class="pk-btn" id="pkPrintDetailsBtn" type="button"><i class="bi bi-printer"></i> Print All Details</button>
           <button class="pk-btn primary" id="pkCloseModalBtn" type="button">Close</button>
         </div>
       </div>
@@ -415,7 +518,10 @@ include __DIR__ . '/../../includes/header.php';
   var from = '<?= e($from) ?>';
   var to = '<?= e($to) ?>';
   var canDeleteJobs = <?= $canDeleteJobs ? 'true' : 'false' ?>;
+  var printCompanyName = '<?= e($printCompanyName) ?>';
+  var printCompanyLogo = '<?= e($printLogoUrl) ?>';
   var activeJobIdForModal = 0;
+  var activeModalJob = null;
 
   var modal = document.getElementById('pkJobModal');
   var modalHead = document.getElementById('pkModalHead');
@@ -499,12 +605,221 @@ include __DIR__ . '/../../includes/header.php';
     modal.classList.remove('show');
     modal.setAttribute('aria-hidden', 'true');
     activeJobIdForModal = 0;
+    activeModalJob = null;
   }
 
   function openModal() {
     if (!modal) return;
     modal.classList.add('show');
     modal.setAttribute('aria-hidden', 'false');
+  }
+
+  function printJobDetails() {
+    if (!activeModalJob || !modalTitle) return;
+
+    var printTitle = modalTitle.textContent || 'Packing Job Details';
+    var planningRows = buildPlanningRows(activeModalJob);
+    var rollInfoRows = buildRollItems(activeModalJob);
+    var rollProdRows = buildPrintRollProductionRows(activeModalJob);
+
+    var operatorEntry = (activeModalJob && activeModalJob.operator_entry && typeof activeModalJob.operator_entry === 'object') ? activeModalJob.operator_entry : null;
+    var packedQtySubmitted = Math.max(0, safeNum(operatorEntry && operatorEntry.packed_qty ? operatorEntry.packed_qty : 0));
+    var orderQty = safeNum(activeModalJob.order_quantity || 0);
+    var prodQty = packedQtySubmitted > 0 ? packedQtySubmitted : safeNum(activeModalJob.production_quantity || 0);
+    var wastage = safeNum(activeModalJob.wastage || 0);
+    var deltaQty = prodQty - orderQty;
+    var deltaText = (deltaQty > 0 ? '+' : '') + String(deltaQty);
+
+    var totalPhysical = 0;
+    var totalCartons = 0;
+    var totalBundles = 0;
+    rollProdRows.forEach(function(row) {
+      totalPhysical += safeNum(row.physical);
+      totalCartons += safeNum(row.cartons);
+      totalBundles += safeNum(row.bundles);
+    });
+
+    var metricCards = [
+      ['Order Qty', orderQty > 0 ? String(orderQty) : '-'],
+      ['Production Qty', prodQty > 0 ? String(prodQty) : '-'],
+      ['Wastage', wastage > 0 ? String(wastage) : '0'],
+      ['Extra / Short', deltaText],
+      ['Total Physical', totalPhysical > 0 ? String(totalPhysical) : '-'],
+      ['Total Cartons', totalCartons > 0 ? String(totalCartons) : '-'],
+      ['Total Bundles', totalBundles > 0 ? String(totalBundles) : '-'],
+      ['Roll Count', String(rollProdRows.length || 0)]
+    ];
+    var statusRaw = String(activeModalJob.status || '').trim();
+    var statusLower = statusRaw.toLowerCase().replace(/[-_]/g, ' ').trim();
+    var statusText = (statusLower === 'packing done') ? 'Packing Done' : 'Packing';
+    var completedAtRaw = String(activeModalJob.completed_at || activeModalJob.updated_at || activeModalJob.created_at || '').trim();
+    var completedText = '-';
+    if (completedAtRaw !== '') {
+      var completedTs = new Date(completedAtRaw);
+      if (!isNaN(completedTs.getTime())) {
+        completedText = completedTs.toLocaleString();
+      }
+    }
+
+    var summaryHtml = metricCards.map(function(item) {
+      return ''
+        + '<div class="a4-card">'
+        + '  <div class="a4-label">' + escHtml(item[0] || '-') + '</div>'
+        + '  <div class="a4-value">' + escHtml(item[1] || '-') + '</div>'
+        + '</div>';
+    }).join('');
+
+    var planningHtml = planningRows.slice(0, 14).map(function(item) {
+      return ''
+        + '<tr>'
+        + '  <td>' + escHtml(item[0] || '-') + '</td>'
+        + '  <td>' + escHtml(item[1] || '-') + '</td>'
+        + '</tr>';
+    }).join('');
+
+    var rollInfoLimit = 8;
+    var rollInfoMore = Math.max(0, rollInfoRows.length - rollInfoLimit);
+    var rollsInfoHtml = rollInfoRows.length ? rollInfoRows.slice(0, rollInfoLimit).map(function(roll, idx) {
+      return ''
+        + '<tr>'
+        + '  <td>' + String(idx + 1) + '</td>'
+        + '  <td>' + escHtml(roll.rollNo || '-') + '</td>'
+        + '  <td>' + escHtml(roll.paperType || '-') + '</td>'
+        + '  <td>' + escHtml(roll.company || '-') + '</td>'
+        + '  <td>' + escHtml(roll.width || '-') + '</td>'
+        + '  <td>' + escHtml(roll.length || '-') + '</td>'
+        + '</tr>';
+    }).join('') : '<tr><td colspan="6" style="text-align:center;color:#64748b">No roll info found</td></tr>';
+
+    var rollProdLimit = 8;
+    var rollProdMore = Math.max(0, rollProdRows.length - rollProdLimit);
+    var rollsProdHtml = rollProdRows.length ? rollProdRows.slice(0, rollProdLimit).map(function(roll, idx) {
+      return ''
+        + '<tr>'
+        + '  <td>' + String(idx + 1) + '</td>'
+        + '  <td>' + escHtml(roll.rollNo || '-') + '</td>'
+        + '  <td>' + escHtml(roll.width || '-') + '</td>'
+        + '  <td>' + escHtml(String(roll.sizeMm || '-')) + '</td>'
+        + '  <td>' + escHtml(String(roll.productionQty || 0)) + '</td>'
+        + '  <td>' + escHtml(String(roll.cartons || 0)) + '</td>'
+        + '  <td>' + escHtml(String(roll.extra || 0)) + '</td>'
+        + '  <td>' + escHtml(String(roll.physical || 0)) + '</td>'
+        + '</tr>';
+    }).join('') : '<tr><td colspan="8" style="text-align:center;color:#64748b">No roll-wise production data found</td></tr>';
+
+    var printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Popup blocked. Please allow popups for printing.');
+      return;
+    }
+
+    var logoFallback = (printCompanyName || 'ERP').replace(/\s+/g, ' ').trim().slice(0, 2).toUpperCase() || 'ER';
+    var logoHtml = printCompanyLogo
+      ? '<img src="' + escHtml(printCompanyLogo) + '" alt="Company Logo" class="a4-logo">'
+      : '<div class="a4-logo-fallback">' + escHtml(logoFallback) + '</div>';
+
+    var printHtml = '<!DOCTYPE html>' +
+      '<html>' +
+      '<head>' +
+      '<meta charset="UTF-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+      '<title>' + escHtml(printTitle) + '</title>' +
+      '<style>' +
+      '@page { size: A4; margin: 7mm; }' +
+      'body { font-family: "Segoe UI", Arial, sans-serif; margin: 0; color: #0f172a; background: #ffffff; }' +
+      '.a4-sheet { width: 100%; max-width: 196mm; margin: 0 auto; }' +
+      '.a4-head { border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 10px; background: linear-gradient(135deg,#f8fafc 0%,#eef2ff 100%); display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }' +
+      '.a4-brand { display:flex; align-items:center; gap:8px; }' +
+      '.a4-logo { width: 34px; height: 34px; object-fit: contain; border: 1px solid #dbeafe; border-radius: 6px; background:#fff; padding:2px; }' +
+      '.a4-logo-fallback { width:34px; height:34px; border-radius:6px; border:1px solid #cbd5e1; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:900; background:#fff; color:#334155; }' +
+      '.a4-company { font-size: 11px; color:#1e293b; font-weight: 800; margin: 0 0 2px; text-transform: uppercase; letter-spacing:.04em; }' +
+      '.a4-title { font-size: 15px; font-weight: 800; margin: 0; color: #111827; }' +
+      '.a4-sub { margin: 2px 0 0; font-size: 10px; color: #475569; font-weight: 600; }' +
+      '.a4-badge { font-size: 10px; padding: 5px 8px; border-radius: 999px; font-weight: 800; border: 1px solid #cbd5e1; background: #eef2ff; color: #3730a3; text-transform: uppercase; }' +
+      '.a4-badge.ok { background: #dcfce7; color: #166534; border-color: #86efac; }' +
+      '.a4-grid { margin-top: 6px; display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 5px; }' +
+      '.a4-card { border: 1px solid #e2e8f0; border-radius: 7px; background: #ffffff; padding: 5px 7px; min-height: 40px; }' +
+      '.a4-label { font-size: 9px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 3px; }' +
+      '.a4-value { font-size: 11px; color: #0f172a; font-weight: 700; line-height: 1.2; }' +
+      '.a4-row { margin-top: 6px; display:grid; grid-template-columns: 1fr 1fr; gap: 6px; }' +
+      '.a4-sec { border: 1px solid #e2e8f0; border-radius: 7px; overflow: hidden; }' +
+      '.a4-sec-title { background: #f8fafc; border-bottom: 1px solid #e2e8f0; padding: 5px 7px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: #334155; }' +
+      'table { width: 100%; border-collapse: collapse; }' +
+      'th, td { border-bottom: 1px solid #f1f5f9; padding: 5px 7px; text-align: left; font-size: 9.5px; }' +
+      'th { background: #f8fafc; color: #475569; font-weight: 800; text-transform: uppercase; font-size: 9px; }' +
+      'tr:last-child td { border-bottom: none; }' +
+      '.a4-note { margin-top: 3px; font-size: 8.5px; color: #64748b; text-align: right; }' +
+      '.a4-sign { margin-top: 8px; border: 1px solid #e2e8f0; border-radius: 7px; padding: 8px 10px 12px; }' +
+      '.a4-sign-title { font-size: 9px; font-weight: 800; color:#64748b; text-transform: uppercase; letter-spacing:.05em; margin-bottom: 10px; }' +
+      '.a4-sign-grid { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }' +
+      '.a4-sign-col { text-align:center; }' +
+      '.a4-sign-line { border-top: 1px solid #94a3b8; margin-top: 22px; }' +
+      '.a4-sign-label { margin-top: 4px; font-size: 9px; color:#334155; font-weight: 700; text-transform: uppercase; }' +
+      '.a4-foot { margin-top: 5px; font-size: 8.5px; color: #64748b; text-align: right; }' +
+      '@media print { .a4-sheet { max-width: 100%; } .a4-sign { margin-top: 6px; } }' +
+      '</style>' +
+      '</head>' +
+      '<body>' +
+      '<div class="a4-sheet">' +
+      '  <div class="a4-head">' +
+      '    <div class="a4-brand">' +
+      '      ' + logoHtml +
+      '      <div>' +
+      '        <p class="a4-company">' + escHtml(printCompanyName || 'Company') + '</p>' +
+      '        <h1 class="a4-title">' + escHtml(printTitle) + '</h1>' +
+      '      </div>' +
+      '    </div>' +
+      '    <div>' +
+      '      <p class="a4-sub">' + escHtml(modalSub ? modalSub.textContent : '-') + '</p>' +
+      '      <p class="a4-sub">Completed: ' + escHtml(completedText) + '</p>' +
+      '      <div style="margin-top:4px;text-align:right"><span class="a4-badge ' + ((statusLower === 'packing done' || statusLower === 'completed' || statusLower === 'closed' || statusLower === 'finalized' || statusLower === 'qc passed') ? 'ok' : '') + '">' + escHtml(statusText) + '</span></div>' +
+      '    </div>' +
+      '  </div>' +
+      '  <div class="a4-grid">' + summaryHtml + '</div>' +
+      '  <div class="a4-row">' +
+      '    <div class="a4-sec">' +
+      '      <div class="a4-sec-title">Planning & Job Details</div>' +
+      '      <table>' +
+      '        <tbody>' + planningHtml + '</tbody>' +
+      '      </table>' +
+      '    </div>' +
+      '    <div class="a4-sec">' +
+      '      <div class="a4-sec-title">Roll Source Details</div>' +
+      '      <table>' +
+      '        <thead><tr><th>#</th><th>Roll No</th><th>Paper Type</th><th>Company</th><th>Width</th><th>Length</th></tr></thead>' +
+      '        <tbody>' + rollsInfoHtml + '</tbody>' +
+      '      </table>' +
+      (rollInfoMore > 0 ? '<div class="a4-note">+' + String(rollInfoMore) + ' more roll rows</div>' : '') +
+      '    </div>' +
+      '  </div>' +
+      '  <div class="a4-sec" style="margin-top:6px">' +
+      '    <div class="a4-sec-title">Roll-wise Physical Production</div>' +
+      '    <table>' +
+      '      <thead><tr><th>#</th><th>Roll No</th><th>Width</th><th>Size(mm)</th><th>Prod Qty</th><th>Cartons</th><th>Extra</th><th>Physical</th></tr></thead>' +
+      '      <tbody>' + rollsProdHtml + '</tbody>' +
+      '    </table>' +
+      (rollProdMore > 0 ? '<div class="a4-note">+' + String(rollProdMore) + ' more production rows</div>' : '') +
+      '  </div>' +
+      '  <div class="a4-sign">' +
+      '    <div class="a4-sign-title">Approval Signatures</div>' +
+      '    <div class="a4-sign-grid">' +
+      '      <div class="a4-sign-col"><div class="a4-sign-line"></div><div class="a4-sign-label">Prepared By</div></div>' +
+      '      <div class="a4-sign-col"><div class="a4-sign-line"></div><div class="a4-sign-label">Checked By</div></div>' +
+      '      <div class="a4-sign-col"><div class="a4-sign-line"></div><div class="a4-sign-label">Authorized Signature</div></div>' +
+      '    </div>' +
+      '  </div>' +
+      '  <div class="a4-foot">Generated from Packing Dashboard on ' + escHtml(new Date().toLocaleString()) + '</div>' +
+      '</div>' +
+      '</body>' +
+      '</html>';
+    
+    printWindow.document.write(printHtml);
+    printWindow.document.close();
+    
+    setTimeout(function() {
+      printWindow.focus();
+      printWindow.print();
+    }, 250);
   }
 
   function escHtml(value) {
@@ -1010,6 +1325,135 @@ include __DIR__ . '/../../includes/header.php';
     return out;
   }
 
+  function parseOperatorRollPayload(job) {
+    var operatorEntry = (job && job.operator_entry && typeof job.operator_entry === 'object') ? job.operator_entry : null;
+    var payload = {};
+    if (operatorEntry && operatorEntry.roll_payload_json) {
+      if (typeof operatorEntry.roll_payload_json === 'object') {
+        payload = operatorEntry.roll_payload_json;
+      } else if (typeof operatorEntry.roll_payload_json === 'string') {
+        try {
+          var parsed = JSON.parse(operatorEntry.roll_payload_json);
+          if (parsed && typeof parsed === 'object') {
+            payload = parsed;
+          }
+        } catch (e) {}
+      }
+    }
+
+    var selectedRollKeys = Array.isArray(payload.selected_roll_keys)
+      ? payload.selected_roll_keys.map(function(v) { return String(v == null ? '' : v).trim(); }).filter(function(v) { return v !== ''; })
+      : [];
+
+    var overrides = (payload.roll_overrides && typeof payload.roll_overrides === 'object') ? payload.roll_overrides : {};
+    return {
+      selectedRollKeys: selectedRollKeys,
+      rollOverrides: overrides
+    };
+  }
+
+  function buildPrintRollProductionRows(job) {
+    var prodBaseline = safeNum(job && job.production_quantity ? job.production_quantity : 0);
+    var rollLots = normalizeRollLots(job, prodBaseline);
+    var rollItems = buildRollItems(job);
+    var payload = parseOperatorRollPayload(job || {});
+    var operatorEntry = (job && job.operator_entry && typeof job.operator_entry === 'object') ? job.operator_entry : null;
+    var packedQtySubmitted = Math.max(0, safeNum(operatorEntry && operatorEntry.packed_qty ? operatorEntry.packed_qty : 0));
+    var selectedSet = {};
+    payload.selectedRollKeys.forEach(function(k) { selectedSet[k] = true; });
+    var hasSelection = payload.selectedRollKeys.length > 0;
+
+    var rollMeta = {};
+    rollItems.forEach(function(item) {
+      var key = String(item.rollNo || '').trim();
+      if (!key) return;
+      rollMeta[key] = {
+        paperType: String(item.paperType || '-'),
+        company: String(item.company || '-'),
+        width: String(item.width || '-'),
+        length: String(item.length || '-')
+      };
+    });
+
+    var rows = [];
+    rollLots.forEach(function(roll, idx) {
+      var rollKey = String(roll.rollNo || ('roll-' + String(idx))).trim();
+      if (!rollKey) return;
+      if (hasSelection && !selectedSet[rollKey]) return;
+
+      var st = (payload.rollOverrides[rollKey] && typeof payload.rollOverrides[rollKey] === 'object')
+        ? payload.rollOverrides[rollKey]
+        : {};
+
+      var qty = Math.max(0, Math.min(safeNum(roll.productionQty), safeNum(roll.availableQty)));
+      var rpc = Math.max(1, Math.floor(safeNum(Object.prototype.hasOwnProperty.call(st, 'rpc') ? st.rpc : 50)));
+      var rps = Math.max(1, Math.floor(safeNum(Object.prototype.hasOwnProperty.call(st, 'rps') ? st.rps : 5)));
+      var cartons = Object.prototype.hasOwnProperty.call(st, 'cartons')
+        ? Math.max(0, Math.floor(safeNum(st.cartons)))
+        : Math.floor(qty / rpc);
+      var extra = Object.prototype.hasOwnProperty.call(st, 'extra')
+        ? Math.max(0, Math.floor(safeNum(st.extra)))
+        : (qty % rpc);
+      var sizeMm = Object.prototype.hasOwnProperty.call(st, 'csize')
+        ? Math.max(1, Math.floor(safeNum(st.csize)))
+        : 75;
+      var physical = Math.max(0, (cartons * rpc) + extra);
+      var bundles = Math.floor(physical / rps);
+      var meta = rollMeta[rollKey] || { paperType: '-', company: '-', width: '-', length: '-' };
+
+      rows.push({
+        rollNo: rollKey,
+        paperType: meta.paperType,
+        company: meta.company,
+        width: meta.width,
+        length: meta.length,
+        sizeMm: sizeMm,
+        availableQty: Math.max(0, safeNum(roll.availableQty)),
+        productionQty: Math.max(0, safeNum(roll.productionQty)),
+        rps: rps,
+        rpc: rpc,
+        cartons: cartons,
+        extra: extra,
+        bundles: bundles,
+        physical: physical
+      });
+    });
+
+    if (packedQtySubmitted > 0 && rows.length === 1) {
+      var one = rows[0];
+      one.productionQty = packedQtySubmitted;
+      one.availableQty = Math.max(one.availableQty, packedQtySubmitted);
+      one.cartons = Math.floor(packedQtySubmitted / Math.max(1, one.rpc));
+      one.extra = packedQtySubmitted % Math.max(1, one.rpc);
+      one.physical = packedQtySubmitted;
+      one.bundles = Math.floor(packedQtySubmitted / Math.max(1, one.rps));
+    }
+
+    if (!rows.length && rollItems.length) {
+      rollItems.forEach(function(item, idx) {
+        var fallbackPhysical = idx === 0 ? prodBaseline : 0;
+        rows.push({
+          rollNo: String(item.rollNo || ('ROLL-' + String(idx + 1))),
+          paperType: String(item.paperType || '-'),
+          company: String(item.company || '-'),
+          width: String(item.width || '-'),
+          length: String(item.length || '-'),
+          sizeMm: 75,
+          availableQty: fallbackPhysical,
+          productionQty: fallbackPhysical,
+          rps: 5,
+          rpc: 50,
+          cartons: fallbackPhysical > 0 ? Math.floor(fallbackPhysical / 50) : 0,
+          extra: fallbackPhysical > 0 ? (fallbackPhysical % 50) : 0,
+          bundles: fallbackPhysical > 0 ? Math.floor(fallbackPhysical / 5) : 0,
+          physical: fallbackPhysical
+        });
+      });
+    }
+
+    return rows;
+  }
+
   function renderModalQr(job) {
     var target = document.getElementById('pkModalQrBox');
     if (!target) return;
@@ -1032,6 +1476,7 @@ include __DIR__ . '/../../includes/header.php';
 
   function fillModal(job) {
     if (!modalCardCanvas || !modalTitle || !modalSub || !modalHead) return;
+    activeModalJob = job || null;
     var theme = readThemeVars();
     modalHead.style.setProperty('--pk-accent', theme.accent);
     modalHead.style.setProperty('--pk-soft', theme.soft);
@@ -1043,8 +1488,10 @@ include __DIR__ . '/../../includes/header.php';
     var topSummary = buildTopSummary(job);
     var planningRows = buildPlanningRows(job);
     var rollItems = buildRollItems(job);
-    var jobStatusText = String(job.status || '').trim();
-    var isPackingDone = jobStatusText.toLowerCase() === 'packing done';
+    var jobStatusRaw = String(job.status || '').trim();
+    var jobStatusNorm = jobStatusRaw.toLowerCase().replace(/[-_]/g, ' ').trim();
+    var isPackingDone = jobStatusNorm === 'packing done';
+    var jobStatusText = isPackingDone ? 'Packing Done' : 'Packing';
     var sectionBLocked = isPackingDone && !canDeleteJobs;
     var targetPaperStockId = Number(job.paper_stock_id || 0);
     var operatorEntry = (job.operator_entry && typeof job.operator_entry === 'object') ? job.operator_entry : null;
@@ -2133,20 +2580,15 @@ include __DIR__ . '/../../includes/header.php';
                 isPackingDoneNow = true;
                 job.status = 'Packing Done';
                 applySectionBLockState();
-                setSectionMessage('Status updated: Packing Done', false);
+                setSectionMessage('Status updated: Packing Done ✓ Moving to History...', false);
 
+                // Remove row from active tab and reload page so History is updated.
                 var row = document.querySelector('tr[data-row-id="' + String(activeJobIdForModal) + '"]');
-                if (row) {
-                  var statusBadge = row.querySelector('span.pk-badge');
-                  if (statusBadge) {
-                    statusBadge.textContent = 'Packing Done';
-                    statusBadge.classList.remove('muted');
-                    statusBadge.classList.add('ok');
-                    statusBadge.style.background = '#dcfce7';
-                    statusBadge.style.color = '#166534';
-                    statusBadge.style.borderColor = '#86efac';
-                  }
+                if (row && row.parentNode) {
+                  row.parentNode.removeChild(row);
                 }
+                closeModal();
+                setTimeout(function() { window.location.href = window.location.pathname + '?tab=history'; }, 800);
               })
               .catch(function() {
                 setSectionMessage('Status update failed.', true);
@@ -2428,13 +2870,12 @@ include __DIR__ . '/../../includes/header.php';
   tabs.forEach(function(btn) {
     btn.addEventListener('click', function() {
       var tab = btn.getAttribute('data-tab');
-      console.log('Tab clicked:', tab);
-      var pane = document.querySelector('.pk-pane[data-pane="' + tab + '"]');
-      if (!pane) {
-        alert('DEBUG: No pane found for tab: ' + tab);
-        return;
-      }
-      activateTab(tab);
+      // Full page reload on tab click so PHP fetches correct data for each tab.
+      var url = window.location.pathname + '?tab=' + encodeURIComponent(tab);
+      if (q) url += '&q=' + encodeURIComponent(q);
+      if (from) url += '&from=' + encodeURIComponent(from);
+      if (to) url += '&to=' + encodeURIComponent(to);
+      window.location.href = url;
     });
   });
 
@@ -2499,6 +2940,13 @@ include __DIR__ . '/../../includes/header.php';
         deleteModal.style.opacity = '1';
         if (deleteContent) deleteContent.style.transform = 'scale(1)';
       }, 10);
+    });
+  }
+
+  var printBtn = document.getElementById('pkPrintDetailsBtn');
+  if (printBtn) {
+    printBtn.addEventListener('click', function() {
+      printJobDetails();
     });
   }
 

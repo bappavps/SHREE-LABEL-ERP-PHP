@@ -125,26 +125,71 @@ try {
             packing_api_respond(['ok' => false, 'message' => 'Job not found'], 404);
         }
 
-        $currentStatus = strtolower(trim((string)($statusRow['status'] ?? '')));
+        $currentStatusRaw = (string)($statusRow['status'] ?? '');
+        $currentStatus = strtolower(trim(str_replace(['-', '_'], ' ', $currentStatusRaw)));
         if ($currentStatus === 'packing done') {
             packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Packing Done']);
         }
 
-        if (!in_array($currentStatus, ['complete', 'completed'], true)) {
-            packing_api_respond(['ok' => false, 'message' => 'Only Complete jobs can be marked as Packing Done'], 409);
-        }
-
-        $stmt = $db->prepare("\n        UPDATE jobs\n        SET status = 'Packing Done', completed_at = COALESCE(completed_at, NOW()), updated_at = NOW()\n        WHERE id = ?\n          AND LOWER(TRIM(status)) IN ('complete', 'completed')\n          AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')\n        LIMIT 1\n    ");
+        // Force status to 'Packing Done' for the target active job.
+        // This avoids silent no-op updates when status text formatting differs.
+        $stmt = $db->prepare("
+        UPDATE jobs
+        SET status = 'Packing Done', completed_at = COALESCE(completed_at, NOW()), updated_at = NOW()
+        WHERE id = ?
+          AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
+        LIMIT 1
+    ");
         if (!$stmt) {
             packing_api_respond(['ok' => false, 'message' => 'Update prepare failed'], 500);
         }
         $stmt->bind_param('i', $jobId);
-        $stmt->execute();
+        $okExec = $stmt->execute();
+        if (!$okExec) {
+            $err = (string)$stmt->error;
+            $stmt->close();
+            packing_api_respond(['ok' => false, 'message' => 'Update failed: ' . $err], 500);
+        }
         $affected = (int)$stmt->affected_rows;
         $stmt->close();
 
         if ($affected < 1) {
-            packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Packing Done']);
+            $recheck = $db->prepare("SELECT status FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+            if ($recheck) {
+                $recheck->bind_param('i', $jobId);
+                $recheck->execute();
+                $reRes = $recheck->get_result();
+                $reRow = $reRes ? $reRes->fetch_assoc() : null;
+                $recheck->close();
+                $reStatus = strtolower(trim(str_replace(['-', '_'], ' ', (string)($reRow['status'] ?? ''))));
+                if ($reStatus === 'packing done') {
+                    packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Packing Done']);
+                }
+            }
+            packing_api_respond(['ok' => false, 'message' => 'Status update did not apply.'], 409);
+        }
+
+        // Persist a durable packing flag in extra_data so global status rewrites
+        // from other modules cannot move this job back to active packing tabs.
+        $extraSel = $db->prepare("SELECT extra_data FROM jobs WHERE id = ? LIMIT 1");
+        if ($extraSel) {
+            $extraSel->bind_param('i', $jobId);
+            $extraSel->execute();
+            $extraRow = $extraSel->get_result()->fetch_assoc();
+            $extraSel->close();
+
+            $extra = packing_decode_json($extraRow['extra_data'] ?? null);
+            $extra['packing_done_flag'] = 1;
+            $extra['packing_done_at'] = date('Y-m-d H:i:s');
+            $extraJson = json_encode($extra, JSON_UNESCAPED_UNICODE);
+            if ($extraJson !== false) {
+                $extraUpd = $db->prepare("UPDATE jobs SET extra_data = ? WHERE id = ? LIMIT 1");
+                if ($extraUpd) {
+                    $extraUpd->bind_param('si', $extraJson, $jobId);
+                    $extraUpd->execute();
+                    $extraUpd->close();
+                }
+            }
         }
 
         packing_api_respond(['ok' => true, 'already_done' => false, 'status' => 'Packing Done']);
@@ -266,6 +311,26 @@ try {
 
         if ($err !== '') {
             packing_api_respond(['ok' => false, 'message' => 'DB error: ' . $err], 500);
+        }
+
+        // Auto-promote job status to 'Packing Done' on operator submission.
+        // Applies to any status that is not already 'Packing Done'.
+        if ($jobId > 0) {
+            $autoStmt = $db->prepare("
+                UPDATE jobs
+                SET status = 'Packing Done',
+                    completed_at = COALESCE(completed_at, NOW()),
+                    updated_at = NOW()
+                WHERE id = ?
+                  AND LOWER(TRIM(REPLACE(REPLACE(COALESCE(status,''),'-',' '),'_',' '))) != 'packing done'
+                  AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
+                LIMIT 1
+            ");
+            if ($autoStmt) {
+                $autoStmt->bind_param('i', $jobId);
+                $autoStmt->execute();
+                $autoStmt->close();
+            }
         }
 
         $entry = packing_fetch_operator_entry($db, $jobNo);

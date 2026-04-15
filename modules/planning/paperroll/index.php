@@ -375,35 +375,39 @@ function barcodePlanningFetchRows(mysqli $db): array {
         $departmentRaw = strtolower(trim((string)($row['department'] ?? '')));
         $canManage = in_array($departmentRaw, ['paperroll'], true);
         $statusSource = trim((string)($extra['printing_planning'] ?? ''));
-        $labelJobStatus = strtolower(trim((string)($row['label_job_status'] ?? '')));
+        $labelJobStatusRaw = (string)($row['label_job_status'] ?? '');
+        $labelJobStatus = strtolower(trim(str_replace(['-', '_'], ' ', $labelJobStatusRaw)));
         if ($labelJobStatus !== '') {
             $labelJobExtra = json_decode((string)($row['label_job_extra'] ?? '{}'), true);
             if (!is_array($labelJobExtra)) {
                 $labelJobExtra = [];
             }
+            $labelPackingDoneFlag = !empty($labelJobExtra['packing_done_flag']);
             $labelTimerState = strtolower(trim((string)($labelJobExtra['timer_state'] ?? '')));
             if ($labelJobStatus === 'running' && $labelTimerState === 'paused') {
                 $statusSource = 'Label Slitting Pause';
             } elseif ($labelJobStatus === 'running') {
                 $statusSource = 'Label Slitting';
-            } elseif (in_array($labelJobStatus, ['closed', 'finalized', 'completed', 'qc passed'], true)) {
+            } elseif ($labelPackingDoneFlag || in_array($labelJobStatus, ['closed', 'finalized', 'completed', 'qc passed', 'packing done'], true)) {
                 $statusSource = 'Label Slitted';
             } elseif (in_array($labelJobStatus, ['queued', 'pending'], true)) {
                 $statusSource = 'Pending - Label Slitting';
             }
         }
-        $barcodeJobStatus = strtolower(trim((string)($row['barcode_job_status'] ?? '')));
+        $barcodeJobStatusRaw = (string)($row['barcode_job_status'] ?? '');
+        $barcodeJobStatus = strtolower(trim(str_replace(['-', '_'], ' ', $barcodeJobStatusRaw)));
         if ($barcodeJobStatus !== '' && $labelJobStatus === '') {
             $barcodeJobExtra = json_decode((string)($row['barcode_job_extra'] ?? '{}'), true);
             if (!is_array($barcodeJobExtra)) {
                 $barcodeJobExtra = [];
             }
+            $barcodePackingDoneFlag = !empty($barcodeJobExtra['packing_done_flag']);
             $timerState = strtolower(trim((string)($barcodeJobExtra['timer_state'] ?? '')));
             if ($barcodeJobStatus === 'running' && $timerState === 'paused') {
                 $statusSource = 'Barcode Pause';
             } elseif ($barcodeJobStatus === 'running') {
                 $statusSource = 'Barcode';
-            } elseif (in_array($barcodeJobStatus, ['closed', 'finalized', 'completed', 'qc passed'], true)) {
+            } elseif ($barcodePackingDoneFlag || in_array($barcodeJobStatus, ['closed', 'finalized', 'completed', 'qc passed', 'packing done'], true)) {
                 $statusSource = 'Barcoded';
             } elseif (in_array($barcodeJobStatus, ['queued', 'pending'], true)) {
                 $statusSource = 'Pending - Barcode';

@@ -1,11 +1,34 @@
 <?php
 
 function packing_completed_statuses(): array {
-    return ['closed', 'finalized', 'completed', 'qc passed'];
+    return [
+        'closed',
+        'finalized',
+        'completed',
+        'complete',
+        'qc passed',
+        'qc_passed',
+        'packing done',
+        'packing_done',
+    ];
 }
 
 function packing_is_completed_status(string $status): bool {
-    return in_array(strtolower(trim($status)), packing_completed_statuses(), true);
+    $norm = strtolower(trim($status));
+    $norm = preg_replace('/\s+/', ' ', str_replace(['-', '_'], ' ', $norm));
+    if ($norm === null) {
+        $norm = '';
+    }
+
+    if (in_array($norm, packing_completed_statuses(), true)) {
+        return true;
+    }
+
+    return str_starts_with($norm, 'packing done')
+        || str_starts_with($norm, 'completed')
+        || str_starts_with($norm, 'qc passed')
+        || str_starts_with($norm, 'finalized')
+        || str_starts_with($norm, 'closed');
 }
 
 function packing_department_type_map(): array {
@@ -482,7 +505,10 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
 
     $where = "(j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')";
     $where .= " AND LOWER(COALESCE(j.department, '')) IN (" . implode(',', $quotedDepartments) . ")";
-    
+
+    // Never show 'Packing Done' jobs in active tabs — they belong to History only.
+    $where .= " AND LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status,''),'-',' '),'_',' '))) != 'packing done'";
+
     // Status filter: if provided, filter by exact status match
     if ($status !== '') {
         $statusEsc = $db->real_escape_string($status);
@@ -523,7 +549,10 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     $result = $db->query($sql);
     $rows = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
 
-    $latestByPlanAndType = [];
+    // Group by plan+tab, keeping the latest job that is NOT 'Packing Done'.
+    // If the latest is 'Packing Done', try to keep the most recent non-done job.
+    $activeByGroup  = []; // best active (complete/completed) job per group
+    $doneByGroup    = []; // best packing-done job per group (for history fallback)
     foreach ($rows as $row) {
         $tabKey = packing_department_to_tab((string)($row['department'] ?? ''));
         if ($tabKey === null) {
@@ -534,19 +563,33 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
         $planGroup = $planningId > 0
             ? ('plan:' . $planningId)
             : ('job:' . strtolower(trim((string)($row['job_no'] ?? ''))));
-
         $groupKey = $planGroup . '|' . $tabKey;
-        if (!isset($latestByPlanAndType[$groupKey])) {
-            $latestByPlanAndType[$groupKey] = $row;
-            $latestByPlanAndType[$groupKey]['packing_tab'] = $tabKey;
+
+        $rawStatus  = (string)($row['status'] ?? '');
+        $normStatus = strtolower(trim(str_replace(['-', '_'], ' ', $rawStatus)));
+        $jobExtraStatus = packing_decode_json($row['extra_data'] ?? null);
+        $isPackingDoneFlag = !empty($jobExtraStatus['packing_done_flag']);
+
+        $row['packing_tab'] = $tabKey;
+
+        if ($normStatus === 'packing done' || $isPackingDoneFlag) {
+            // Store done group (for reference); will NOT go to active tabs
+            if (!isset($doneByGroup[$groupKey])) {
+                $doneByGroup[$groupKey] = $row;
+            }
+        } else {
+            // Keep the most recent non-done completed job per group
+            if (!isset($activeByGroup[$groupKey])) {
+                $activeByGroup[$groupKey] = $row;
+            }
         }
     }
 
     $readyRows = [];
-    foreach ($latestByPlanAndType as $row) {
-        if (!packing_is_completed_status((string)($row['status'] ?? ''))) {
-            continue;
-        }
+    foreach ($activeByGroup as $row) {
+        // Show ALL non-"Packing Done" jobs in packing departments.
+        // Packing finishing jobs (pos, oneply, twoply, etc.) may have empty/Queued/Pending
+        // status at creation — we still want them visible so the manager can act on them.
 
         $completedAt = (string)($row['completed_at'] ?? '');
         $fallbackAt = (string)($row['updated_at'] ?? ($row['created_at'] ?? ''));
@@ -642,4 +685,138 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
         'rows_by_tab' => $byTab,
         'counts' => $counts,
     ];
+}
+
+function packing_fetch_history_rows(mysqli $db, array $filters = []): array {
+    $search = trim((string)($filters['search'] ?? ''));
+    $from = trim((string)($filters['from'] ?? ''));
+    $to = trim((string)($filters['to'] ?? ''));
+    $deptFilter = trim((string)($filters['dept'] ?? '')); // Filter by department
+
+    // No SQL status filter — filter in PHP for reliability.
+    $where = "(j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')";
+    
+    // Department filter
+    if ($deptFilter !== '') {
+        $deptEsc = $db->real_escape_string($deptFilter);
+        $where .= " AND (LOWER(COALESCE(j.department, '')) = '" . $deptEsc . "' OR LOWER(COALESCE(p.department, '')) = '" . $deptEsc . "')";
+    }
+
+    $sql = "
+        SELECT
+            j.id,
+            j.planning_id,
+            j.sales_order_id,
+            j.job_no,
+            j.roll_no,
+            j.job_type,
+            j.department,
+            j.status,
+            j.notes,
+            j.completed_at,
+            j.updated_at,
+            j.created_at,
+            j.extra_data,
+            p.job_no AS plan_no,
+            p.job_name AS plan_name,
+            p.priority AS plan_priority,
+            p.department AS plan_department,
+            p.scheduled_date,
+            p.extra_data AS plan_extra_data,
+            so.client_name,
+            so.created_at AS so_created_at,
+            so.due_date AS so_due_date
+        FROM jobs j
+        LEFT JOIN planning p ON p.id = j.planning_id
+        LEFT JOIN sales_orders so ON so.id = COALESCE(j.sales_order_id, p.sales_order_id)
+        WHERE {$where}
+        ORDER BY j.completed_at DESC, j.updated_at DESC, j.id DESC
+    ";
+
+    $result = $db->query($sql);
+    $rows = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
+
+    $historyRows = [];
+    foreach ($rows as $row) {
+        // Show jobs marked as packing done either by status text or durable flag.
+        $rawStatus  = (string)($row['status'] ?? '');
+        $normStatus = strtolower(trim(str_replace(['-', '_'], ' ', $rawStatus)));
+        $jobExtraStatus = packing_decode_json($row['extra_data'] ?? null);
+        $isPackingDoneFlag = !empty($jobExtraStatus['packing_done_flag']);
+        if ($normStatus !== 'packing done' && !$isPackingDoneFlag) {
+            continue;
+        }
+
+        $tabKey = packing_department_to_tab((string)($row['department'] ?? ''));
+        if ($tabKey === null) {
+            $tabKey = packing_department_to_tab((string)($row['plan_department'] ?? ''));
+        }
+
+        $jobExtra = packing_decode_json($row['extra_data'] ?? null);
+        $planExtra = packing_decode_json($row['plan_extra_data'] ?? null);
+        $completedAt = (string)($row['completed_at'] ?? '');
+        $fallbackAt = (string)($row['updated_at'] ?? ($row['created_at'] ?? ''));
+        $eventTime = $completedAt !== '' ? $completedAt : $fallbackAt;
+
+        if ($from !== '') {
+            $eventDate = date('Y-m-d', strtotime($eventTime));
+            if ($eventDate < $from) {
+                continue;
+            }
+        }
+        if ($to !== '') {
+            $eventDate = date('Y-m-d', strtotime($eventTime));
+            if ($eventDate > $to) {
+                continue;
+            }
+        }
+
+        if ($search !== '') {
+            $hay = strtolower(
+                (string)($row['plan_no'] ?? '') . ' ' .
+                (string)($row['plan_name'] ?? '') . ' ' .
+                (string)($row['job_no'] ?? '') . ' ' .
+                (string)($row['roll_no'] ?? '') . ' ' .
+                (string)($row['client_name'] ?? '') . ' ' .
+                (string)($jobExtra['client_name'] ?? '') . ' ' .
+                (string)($planExtra['client_name'] ?? '')
+            );
+            if (strpos($hay, strtolower($search)) === false) {
+                continue;
+            }
+        }
+
+        $orderDate = trim((string)(
+            $planExtra['order_date']
+            ?? $planExtra['job_date']
+            ?? $planExtra['planning_date']
+            ?? ($row['scheduled_date'] ?? '')
+            ?? ($row['so_created_at'] ?? '')
+        ));
+        $dispatchDate = trim((string)($planExtra['dispatch_date'] ?? ($row['so_due_date'] ?? $eventTime)));
+        $clientName = trim((string)($row['client_name'] ?? ($planExtra['client_name'] ?? ($jobExtra['client_name'] ?? ''))));
+        
+        $historyRows[] = [
+            'id' => (int)$row['id'],
+            'packing_display_id' => packing_build_display_id((int)$row['id'], (string)($row['plan_no'] ?? '')),
+            'tab' => $tabKey ?? 'history_unknown',
+            'tab_label' => $tabKey ? packing_tab_label($tabKey) : (trim((string)($row['department'] ?? '')) !== '' ? (string)$row['department'] : 'Unknown'),
+            'plan_no' => (string)($row['plan_no'] ?? ''),
+            'plan_name' => (string)($row['plan_name'] ?? ''),
+            'plan_priority' => (string)($row['plan_priority'] ?? 'Normal'),
+            'job_type' => (string)($row['job_type'] ?? ''),
+            'job_no' => (string)($row['job_no'] ?? ''),
+            'roll_no' => (string)($row['roll_no'] ?? ''),
+            'client_name' => $clientName,
+            'order_date' => $orderDate,
+            'dispatch_date' => $dispatchDate,
+            'last_department' => $tabKey ? packing_department_display_for_tab($tabKey) : (trim((string)($row['department'] ?? '')) !== '' ? (string)$row['department'] : '-'),
+            'status' => $isPackingDoneFlag ? 'Packing Done' : (string)($row['status'] ?? ''),
+            'notes' => (string)($row['notes'] ?? ''),
+            'image_url' => packing_extract_image_url($jobExtra, $planExtra),
+            'event_time' => $eventTime,
+        ];
+    }
+
+    return $historyRows;
 }

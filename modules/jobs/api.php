@@ -1597,6 +1597,13 @@ try {
             break;
         }
 
+        $currentStatusNorm = strtolower(trim(str_replace(['-', '_'], ' ', (string)($job['status'] ?? ''))));
+        // Global safeguard: once packing marks a job done, do not let generic jobs API downgrade it.
+        if ($currentStatusNorm === 'packing done') {
+            echo json_encode(['ok' => false, 'error' => 'This job is already Packing Done and is locked for status changes from this module.']);
+            break;
+        }
+
         $jobExtra = jobs_decode_extra_data($job['extra_data'] ?? '{}');
         $isFinishStatus = in_array($newStatus, ['Closed', 'Finalized', 'Completed', 'QC Passed', 'QC Failed'], true);
         $timerIsActive = !empty($jobExtra['timer_active']);
@@ -2150,6 +2157,12 @@ try {
 
         if (!$job) {
             echo json_encode(['ok' => false, 'error' => 'Job not found']);
+            break;
+        }
+
+        $currentStatusNorm = strtolower(trim(str_replace(['-', '_'], ' ', (string)($job['status'] ?? ''))));
+        if ($currentStatusNorm === 'packing done') {
+            echo json_encode(['ok' => false, 'error' => 'Packing Done job cannot be reset to Pending.']);
             break;
         }
         if (strcasecmp((string)($job['status'] ?? ''), 'Running') !== 0) {
