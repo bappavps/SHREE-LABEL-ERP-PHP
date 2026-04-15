@@ -418,6 +418,81 @@ include __DIR__ . '/../../../includes/header.php';
 
     var opEntry = (job.operator_entry && typeof job.operator_entry==='object') ? job.operator_entry : null;
     var lockSubmittedForOperator = !!opEntry && !opCanAdminOverrideEdit;
+    var currentOpBatches = [];
+
+    function numFromAny(v) {
+      var n = parseFloat(String(v == null ? '' : v).replace(/,/g, ''));
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    function pickRollLots() {
+      var out = [];
+      var seen = {};
+      var fallbackQty = prodQty > 0 ? prodQty : 0;
+
+      function firstPresent(src, keys) {
+        if (!src || typeof src !== 'object') return '';
+        for (var i = 0; i < keys.length; i++) {
+          var v = src[keys[i]];
+          if (v !== null && typeof v !== 'undefined' && String(v).trim() !== '') return v;
+        }
+        return '';
+      }
+
+      function push(src) {
+        if (!src || typeof src !== 'object') return;
+        var rollNo = String(firstPresent(src, ['roll_no', 'roll', 'parent_roll', 'roll_number', 'rollNumber']) || '').trim();
+        if (!rollNo || seen[rollNo]) return;
+        var p = numFromAny(firstPresent(src, ['production_qty', 'produced_qty', 'qty', 'quantity', 'total_qty', 'roll_qty']));
+        var a = numFromAny(firstPresent(src, ['available_qty', 'available', 'avail_qty', 'qty_available', 'balance_qty']));
+        if (p <= 0) p = fallbackQty;
+        if (a <= 0) a = p;
+        if (p <= 0 && a <= 0) return;
+        seen[rollNo] = true;
+        out.push({ rollNo: rollNo, productionQty: Math.max(0, p), availableQty: Math.max(0, a) });
+      }
+
+      if (Array.isArray(jobExtra.selected_rolls)) jobExtra.selected_rolls.forEach(push);
+      if (Array.isArray(planExtra.selected_rolls)) planExtra.selected_rolls.forEach(push);
+      if (!out.length) {
+        push({ roll_no: pickFirst(sources, ['roll_no']), production_qty: fallbackQty, available_qty: fallbackQty });
+      }
+      return out;
+    }
+
+    var rollLots = pickRollLots();
+    var rollLooseOverrides = {};
+    if (opEntry && rollLots.length) {
+      var firstKey = String(rollLots[0].rollNo || 'roll-0');
+      var submittedPacked = Math.max(0, numFromAny(opEntry.packed_qty));
+      var submittedBundles = Math.max(0, Math.floor(numFromAny(opEntry.bundles_count)));
+      var submittedCartons = Math.max(0, Math.floor(numFromAny(opEntry.cartons_count)));
+      var submittedLoose = Math.max(0, Math.floor(numFromAny(opEntry.loose_qty)));
+      var derivedRps = (submittedBundles > 0 && submittedPacked > 0)
+        ? Math.max(1, Math.round(submittedPacked / submittedBundles))
+        : 5;
+      var derivedRpc = (submittedCartons > 0)
+        ? Math.max(1, Math.floor(Math.max(0, submittedPacked - submittedLoose) / submittedCartons))
+        : 50;
+      rollLooseOverrides[firstKey] = {
+        rps: derivedRps,
+        rpc: derivedRpc,
+        csize: 75,
+        cartons: submittedCartons,
+        extra: submittedLoose
+      };
+    }
+    var rollSelectionHtml = rollLots.length ? rollLots.map(function(roll, idx) {
+      return ''
+        + '<label style="display:flex;align-items:flex-start;gap:8px;border:1px solid #fdba74;border-radius:10px;padding:8px;background:#fff;cursor:pointer">'
+        + '  <input type="checkbox" class="op-roll-select" data-roll-index="' + String(idx) + '" checked style="margin-top:2px">'
+        + '  <span style="display:flex;flex-direction:column;gap:2px">'
+        + '    <b style="font-size:.78rem;color:#7c2d12">' + escHtml(roll.rollNo) + '</b>'
+        + '    <span style="font-size:.7rem;color:#475569">Production: ' + escHtml(String(roll.productionQty)) + '</span>'
+        + '    <span style="font-size:.7rem;color:#9a3412">Available: ' + escHtml(String(roll.availableQty)) + '</span>'
+        + '  </span>'
+        + '</label>';
+    }).join('') : '<div style="font-size:.78rem;color:#64748b">No roll data found.</div>';
 
     // Build section A detail items
     var detailKeys = [
@@ -452,12 +527,14 @@ include __DIR__ . '/../../../includes/header.php';
         ' <span style="color:#64748b;font-weight:700">' + escHtml(opEntry.submitted_at||'') + '</span>' +
         '</div>' +
         '<div class="op-sb-grid">' +
-        '<div class="op-sb-item"><b>Packed Qty</b><span>'+escHtml(String(opEntry.packed_qty||'-'))+'</span></div>' +
+        '<div class="op-sb-item"><b>Physical Production</b><span>'+escHtml(String(opEntry.packed_qty||'-'))+'</span></div>' +
         '<div class="op-sb-item"><b>Bundles</b><span>'+escHtml(String(opEntry.bundles_count||'-'))+'</span></div>' +
         '<div class="op-sb-item"><b>Cartons</b><span>'+escHtml(String(opEntry.cartons_count||'-'))+'</span></div>' +
         '<div class="op-sb-item"><b>Wastage</b><span>'+escHtml(String(opEntry.wastage_qty||'-'))+'</span></div>' +
         '<div class="op-sb-item"><b>Loose Qty</b><span>'+escHtml(String(opEntry.loose_qty||'-'))+'</span></div>' +
         '<div class="op-sb-item"><b>Notes</b><span>'+escHtml(opEntry.notes||'-')+'</span></div>' +
+        '<div class="op-sb-item"><b>Submitted By</b><span>'+escHtml(String(opEntry.operator_name||'-'))+'</span></div>' +
+        '<div class="op-sb-item"><b>Submitted At</b><span>'+escHtml(String(opEntry.submitted_at||'-'))+'</span></div>' +
         '</div>' +
         (lockSubmittedForOperator ? '<div style="margin-top:8px;font-size:.76rem;font-weight:800;color:#b91c1c">Locked: already submitted. Only admin can edit or delete this entry.</div>' : '') +
         '</div>';
@@ -486,47 +563,50 @@ include __DIR__ . '/../../../includes/header.php';
       '<div class="op-section">' +
         '<h5>&#9660; Section B: Operator Packing Entry</h5>' +
         '<div class="op-section-content">' +
-          submittedBoxHtml +
-          // STEP 1: Helper calculation fields (top)
-          '<div style="margin-bottom:14px;padding:12px;border:1px solid #fed7aa;border-radius:10px;background:linear-gradient(120deg,#fff7ed 0%,#fff 100%)"><div style="font-size:.74rem;font-weight:900;color:#c2410c;margin-bottom:8px">Packing Calculation Helpers</div><div class="op-entry-form">' +
-            '<div class="op-field"><label>Rolls per shrink wrap</label>' +
-              '<input type="number" id="opRollsPerShrink" class="op-calc-field" min="1" step="1" value="5">' +
-            '</div>' +
-            '<div class="op-field"><label>Bundles per carton</label>' +
-              '<input type="number" id="opBundlesPerCarton" class="op-calc-field" min="1" step="1" value="10">' +
-            '</div>' +
-            '<div class="op-field"><label>Rolls per carton</label>' +
-              '<input type="number" id="opRollsPerCarton" class="op-calc-field" min="1" step="1" value="50">' +
-            '</div>' +
-            '<div class="op-field"><label>Carton size (mm)</label>' +
-              '<input type="number" id="opCartonSize" class="op-calc-field" min="1" step="1" value="75">' +
-            '</div>' +
-            '<div class="op-field"><label>Carton Lagbe (calculated)</label>' +
-              '<input type="text" id="opCalcCartonsNeeded" readonly value="-" style="background:#fff7ed;font-weight:900;color:#9a3412;cursor:not-allowed">' +
-            '</div>' +
-            '<div class="op-field"><label>Physical Production (calculated)</label>' +
-              '<input type="text" id="opCalcPhysicalProduction" readonly value="-" style="background:#fff7ed;font-weight:900;color:#9a3412;cursor:not-allowed">' +
-            '</div>' +
-          '</div></div>' +
-          // STEP 2: Live display metrics
+          // STEP 1: Live display metrics (always at top)
           '<div style="margin-bottom:14px;padding:12px;border:1px solid #fef3c7;border-radius:10px;background:linear-gradient(120deg,#fffbeb 0%,#fff 100%)"><div style="font-size:.74rem;font-weight:900;color:#92400e;margin-bottom:8px">Live Production Metrics</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">' +
             '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Order Qty</b><span style="font-size:.95rem;font-weight:900;color:#0f172a">' + escHtml(orderQtyRaw) + '</span></div>' +
             '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Production Qty</b><span style="font-size:.95rem;font-weight:900;color:#0f172a">' + escHtml(prodQtyRaw) + '</span></div>' +
             '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Shrink Bundles</b><span id="opLiveShrinkBundles" style="font-size:.95rem;font-weight:900;color:#7c3aed">-</span></div>' +
             '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Cartons Required</b><span id="opLiveCartonsRequired" style="font-size:.95rem;font-weight:900;color:#9a3412">-</span></div>' +
-            '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Physical Qty</b><span id="opLivePhysicalQty" style="font-size:.95rem;font-weight:900;color:#0c4169">-</span></div>' +
+            '<div style="border:1px solid #bbf7d0;border-radius:8px;padding:8px;background:#f0fdf4"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#166534;margin-bottom:2px">Physical Qty</b><span id="opLivePhysicalQty" style="font-size:.95rem;font-weight:900;color:#166534">-</span></div>' +
             '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Physical %</b><span id="opLivePhysicalPct" style="font-size:.95rem;font-weight:900;color:#0f766e">-</span></div>' +
-            '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Loose Baki</b><span id="opLiveLooseQty" style="font-size:.95rem;font-weight:900;color:#7c2d12">-</span></div>' +
+            '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Loose</b><span id="opLiveLooseQty" style="font-size:.95rem;font-weight:900;color:#7c2d12">-</span></div>' +
           '</div></div>' +
+
+          // STEP 2: Roll selection
+          '<div style="margin-bottom:14px;padding:12px;border:1px solid #fdba74;border-radius:10px;background:linear-gradient(120deg,#fff7ed 0%,#fff 100%)">'
+          + '<div style="font-size:.74rem;font-weight:900;color:#c2410c;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Roll Selection</div>'
+          + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px">' + rollSelectionHtml + '</div>'
+          + '</div>' +
+
+          // STEP 3: Per-roll helpers (conditional)
+          '<div id="opHelpersSection" style="margin-bottom:14px;padding:12px;border:1px solid #fed7aa;border-radius:10px;background:linear-gradient(120deg,#fff7ed 0%,#fff 100%)">'
+          + '<div style="font-size:.74rem;font-weight:900;color:#c2410c;margin-bottom:8px">Packing Calculation Helpers</div>'
+          + '<div id="opPerRollOutput" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px"></div>'
+          + '<div class="op-entry-form" style="margin-top:10px">'
+          +   '<div class="op-field"><label>Physical Production (calculated)</label><input type="text" id="opCalcPhysicalProduction" readonly value="-" style="background:#fff7ed;font-weight:900;color:#166534;cursor:not-allowed"></div>'
+          + '</div>'
+          + '</div>'
+          + '<div id="opHelpersHiddenMsg" style="display:none;margin:-2px 0 14px;padding:10px;border:1px dashed #fca5a5;border-radius:10px;background:#fff7ed;color:#9a3412;font-size:.8rem;font-weight:700">Select at least one roll to view Packing Calculation Helpers.</div>' +
+          '<div id="opCleanSummarySection" style="margin-bottom:14px;padding:12px;border:1px solid #bbf7d0;border-radius:10px;background:linear-gradient(120deg,#f0fdf4 0%,#fff 100%)">'
+          + '<div style="font-size:.74rem;font-weight:900;color:#166534;margin-bottom:8px">Clean Summary</div>'
+          + '<div id="opCleanSummaryHead" style="font-size:.8rem;color:#14532d;font-weight:700;margin-bottom:8px"></div>'
+          + '<div style="overflow:auto">'
+          + '  <table style="width:100%;border-collapse:collapse;min-width:520px;border:1px solid #bbf7d0">'
+          + '    <thead><tr style="background:#dcfce7;color:#14532d"><th style="padding:7px;border:1px solid #bbf7d0;text-align:left;font-size:.72rem">Roll</th><th style="padding:7px;border:1px solid #bbf7d0;text-align:left;font-size:.72rem">Production Received</th><th style="padding:7px;border:1px solid #bbf7d0;text-align:left;font-size:.72rem">Carton Build Formula</th><th style="padding:7px;border:1px solid #bbf7d0;text-align:left;font-size:.72rem">Physical Output</th></tr></thead>'
+          + '    <tbody id="opCleanSummaryBody"></tbody>'
+          + '  </table>'
+          + '</div>'
+          + '</div>' +
+
           // STEP 3: Operator entry fields
           '<div class="op-entry-form" id="opEntryForm">' +
             '<input type="hidden" id="opPackedQty" value="' + escHtml(opEntry?String(opEntry.packed_qty||''):'') + '">' +
             '<input type="hidden" id="opBundlesCount" value="' + escHtml(opEntry?String(opEntry.bundles_count||''):'') + '">' +
             '<input type="hidden" id="opCartonsCount" value="' + escHtml(opEntry?String(opEntry.cartons_count||''):'') + '">' +
             '<input type="hidden" id="opWastageQty" value="' + escHtml(opEntry?String(opEntry.wastage_qty||''):'') + '">' +
-            '<div class="op-field"><label>Loose Qty (editable)</label>' +
-              '<input type="number" id="opLooseQty" min="0" step="1" value="' + escHtml(opEntry?String(opEntry.loose_qty||''):'') + '" placeholder="Auto calculated, editable">' +
-            '</div>' +
+            '<input type="hidden" id="opLooseQty" value="' + escHtml(opEntry?String(opEntry.loose_qty||''):'') + '">' +
             '<div class="op-field" style="grid-column:1/-1"><label>Notes / Remarks</label>' +
               '<textarea id="opNotes">' + escHtml(opEntry?(opEntry.notes||''):'') + '</textarea>' +
             '</div>' +
@@ -561,9 +641,6 @@ include __DIR__ . '/../../../includes/header.php';
     // Live metrics update
     var packedQtyInput = document.getElementById('opPackedQty');
     var bundlesCountInput = document.getElementById('opBundlesCount');
-    var rollsPerShrinkInput = document.getElementById('opRollsPerShrink');
-    var bundlesPerCartonInput = document.getElementById('opBundlesPerCarton');
-    var rollsPerCartonInput = document.getElementById('opRollsPerCarton');
     var looseQtyInput = document.getElementById('opLooseQty');
     var cartonsCountInput = document.getElementById('opCartonsCount');
     var wastageQtyInput = document.getElementById('opWastageQty');
@@ -574,69 +651,204 @@ include __DIR__ . '/../../../includes/header.php';
     var liveLooseQty = document.getElementById('opLiveLooseQty');
     var calcCartonsNeeded = document.getElementById('opCalcCartonsNeeded');
     var calcPhysicalProduction = document.getElementById('opCalcPhysicalProduction');
+    var helpersSection = document.getElementById('opHelpersSection');
+    var helpersHiddenMsg = document.getElementById('opHelpersHiddenMsg');
+    var perRollOutput = document.getElementById('opPerRollOutput');
+    var cleanSummarySection = document.getElementById('opCleanSummarySection');
+    var cleanSummaryHead = document.getElementById('opCleanSummaryHead');
+    var cleanSummaryBody = document.getElementById('opCleanSummaryBody');
+    var rollSelectNodes = Array.prototype.slice.call(document.querySelectorAll('.op-roll-select'));
     var orderQtyNum = parseFloat(String(orderQtyRaw || '').replace(/,/g, '')) || 0;
     var prodQtyNum = parseFloat(String(prodQtyRaw || '').replace(/,/g, '')) || 0;
-    var looseEditedManually = false;
 
     function toNum(v) {
       var n = parseFloat(String(v || '').replace(/,/g, ''));
       return Number.isFinite(n) ? n : 0;
     }
 
-    function updateLiveMetrics() {
-      if (!rollsPerCartonInput) return;
+    function renderPerRollCards(selectedRolls) {
+      if (!perRollOutput) return;
+      var htmlCards = selectedRolls.map(function(roll, idx) {
+        var key = String(roll.rollNo || ('roll-' + String(idx)));
+        var st = rollLooseOverrides[key] || {};
+        var rps = Math.max(1, Math.floor(toNum(st.rps || 5)));
+        var rpc = Math.max(1, Math.floor(toNum(st.rpc || 50)));
+        var csize = 75;
+        var qty = Math.max(0, Math.min(toNum(roll.productionQty), toNum(roll.availableQty)));
+        var autoExtra = qty % rpc;
+        var cartons = Object.prototype.hasOwnProperty.call(st, 'cartons') ? Math.max(0, Math.floor(toNum(st.cartons))) : Math.floor(qty / rpc);
+        var extra = Object.prototype.hasOwnProperty.call(st, 'extra') ? Math.max(0, Math.floor(toNum(st.extra))) : autoExtra;
+        var totalRolls = Math.max(0, cartons * rpc + extra);
+        return ''
+          + '<div style="border:1px solid #fdba74;border-radius:10px;padding:10px;background:#fff">'
+          + '  <div style="font-size:.74rem;font-weight:900;color:#9a3412;margin-bottom:8px">Roll: ' + escHtml(String(roll.rollNo || '-')) + '</div>'
+          + '  <div style="display:grid;grid-template-columns:repeat(2,minmax(110px,1fr));gap:8px">'
+          + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Rolls per shrink wrap</label><input type="number" class="op-roll-rps" data-roll-key="' + escHtml(key) + '" min="1" step="1" value="' + String(rps) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
+          + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Rolls per carton</label><input type="number" class="op-roll-rpc-input" data-roll-key="' + escHtml(key) + '" min="1" step="1" value="' + String(rpc) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
+          + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Carton size (mm)</label><select class="op-roll-csize" data-roll-key="' + escHtml(key) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc"><option value="75" selected>75 mm</option></select></div>'
+          + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Cartons</label><input type="number" class="op-roll-cartons-input" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(cartons) + '" style="width:100%;padding:5px 6px;border:1px solid #86efac;border-radius:6px"></div>'
+          + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#92400e">Extra rolls</label><input type="number" class="op-roll-extra-input" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(extra) + '" style="width:100%;padding:5px 6px;border:1px solid #fdba74;border-radius:6px"></div>'
+          + '  </div>'
+          + '  <div style="margin-top:8px;padding:7px 9px;border:1px solid #86efac;border-radius:7px;background:#dcfce7;color:#166534;font-size:.8rem;font-weight:900">Total Rolls: <span class="op-roll-total-rolls" data-roll-key="' + escHtml(key) + '">' + String(totalRolls) + '</span></div>'
+          + '</div>';
+      }).join('');
+      perRollOutput.innerHTML = htmlCards;
+    }
 
-      var packed = prodQtyNum;
-      var rollsPerShrink = Math.max(1, toNum(rollsPerShrinkInput ? rollsPerShrinkInput.value : 0) || 1);
-      var bundlesPerCarton = Math.max(1, toNum(bundlesPerCartonInput ? bundlesPerCartonInput.value : 0) || 1);
-      var rollsPerCarton = Math.max(1, toNum(rollsPerCartonInput.value) || 1);
-      var looseAuto = Math.max(0, packed % rollsPerCarton);
-
-      if (looseQtyInput && (!looseEditedManually || String(looseQtyInput.value || '').trim() === '')) {
-        looseQtyInput.value = String(looseAuto);
+    function bindPerRollCardEvents() {
+      if (!perRollOutput) return;
+      function saveAndRecalc(input, field) {
+        var key = String(input.getAttribute('data-roll-key') || '').trim();
+        if (!key) return;
+        if (!rollLooseOverrides[key] || typeof rollLooseOverrides[key] !== 'object') rollLooseOverrides[key] = {};
+        var raw = Math.floor(toNum(input.value));
+        if (field === 'rps' || field === 'rpc' || field === 'csize') {
+          rollLooseOverrides[key][field] = Math.max(1, raw);
+        } else {
+          rollLooseOverrides[key][field] = Math.max(0, raw);
+        }
+        updateLiveMetrics();
       }
 
-      var looseNow = looseQtyInput ? toNum(looseQtyInput.value) : looseAuto;
-      var physicalProduction = packed + looseNow;
-      var shrinkBundles = Math.floor(physicalProduction / rollsPerShrink);
-      var cartonsNeeded = Math.floor(shrinkBundles / bundlesPerCarton);
+      Array.prototype.slice.call(perRollOutput.querySelectorAll('.op-roll-rps')).forEach(function(input) {
+        input.addEventListener('change', function() { saveAndRecalc(input, 'rps'); });
+      });
+      Array.prototype.slice.call(perRollOutput.querySelectorAll('.op-roll-rpc-input')).forEach(function(input) {
+        input.addEventListener('change', function() { saveAndRecalc(input, 'rpc'); });
+      });
+      Array.prototype.slice.call(perRollOutput.querySelectorAll('.op-roll-csize')).forEach(function(input) {
+        input.addEventListener('change', function() { saveAndRecalc(input, 'csize'); });
+      });
+      Array.prototype.slice.call(perRollOutput.querySelectorAll('.op-roll-cartons-input')).forEach(function(input) {
+        input.addEventListener('change', function() { saveAndRecalc(input, 'cartons'); });
+      });
+      Array.prototype.slice.call(perRollOutput.querySelectorAll('.op-roll-extra-input')).forEach(function(input) {
+        input.addEventListener('change', function() { saveAndRecalc(input, 'extra'); });
+      });
+    }
+
+    function updateLiveMetrics() {
+
+      var selectedRolls = [];
+      if (rollSelectNodes.length) {
+        rollSelectNodes.forEach(function(node) {
+          if (!node.checked) return;
+          var idx = Number(node.getAttribute('data-roll-index'));
+          if (isNaN(idx) || idx < 0 || idx >= rollLots.length) return;
+          selectedRolls.push(rollLots[idx]);
+        });
+      }
+
+      if (!selectedRolls.length) {
+        if (helpersSection) helpersSection.style.display = 'none';
+        if (helpersHiddenMsg) helpersHiddenMsg.style.display = 'block';
+        if (cleanSummarySection) cleanSummarySection.style.display = 'none';
+        if (calcCartonsNeeded) calcCartonsNeeded.value = '-';
+        if (calcPhysicalProduction) calcPhysicalProduction.value = '-';
+        if (liveShrinkBundles) liveShrinkBundles.textContent = '-';
+        if (liveCartonsRequired) liveCartonsRequired.textContent = '-';
+        if (livePhysicalQty) livePhysicalQty.textContent = '-';
+        if (livePhysicalPct) livePhysicalPct.textContent = '-';
+        if (liveLooseQty) liveLooseQty.textContent = '-';
+        if (packedQtyInput) packedQtyInput.value = '';
+        if (cartonsCountInput) cartonsCountInput.value = '';
+        if (bundlesCountInput) bundlesCountInput.value = '';
+        if (looseQtyInput) looseQtyInput.value = '';
+        if (perRollOutput) perRollOutput.innerHTML = '';
+        currentOpBatches = [];
+        return;
+      }
+
+      if (helpersSection) helpersSection.style.display = '';
+      if (helpersHiddenMsg) helpersHiddenMsg.style.display = 'none';
+      if (cleanSummarySection) cleanSummarySection.style.display = '';
+      renderPerRollCards(selectedRolls);
+      bindPerRollCardEvents();
+
+      var totalCartons = 0;
+      var totalLoose = 0;
+      var totalShrinkBundles = 0;
+      var physicalProduction = 0;
+      var totalProductionReceived = 0;
+      var batches = [];
+      var summaryRows = [];
+
+      selectedRolls.forEach(function(roll, rollIdx) {
+        var rollKey = String(roll.rollNo || ('roll-' + String(rollIdx)));
+        var st = rollLooseOverrides[rollKey] || {};
+        var rps = Math.max(1, Math.floor(toNum(st.rps || 5)));
+        var rpc = Math.max(1, Math.floor(toNum(st.rpc || 50)));
+        var qty = Math.max(0, Math.min(toNum(roll.productionQty), toNum(roll.availableQty)));
+        totalProductionReceived += qty;
+        var autoExtra = qty % rpc;
+        var rollCartons = Object.prototype.hasOwnProperty.call(st, 'cartons') ? Math.max(0, Math.floor(toNum(st.cartons))) : Math.floor(qty / rpc);
+        var rollExtra = Object.prototype.hasOwnProperty.call(st, 'extra') ? Math.max(0, Math.floor(toNum(st.extra))) : autoExtra;
+        var rollTotalRolls = Math.max(0, rollCartons * rpc + rollExtra);
+        var rollShrink = Math.floor(rollTotalRolls / rps);
+        totalShrinkBundles += rollShrink;
+        totalCartons += rollCartons;
+        totalLoose += rollExtra;
+        physicalProduction += rollTotalRolls;
+
+        var totalRollsSpan = perRollOutput ? perRollOutput.querySelector('.op-roll-total-rolls[data-roll-key="' + rollKey.replace(/"/g, '\\"') + '"]') : null;
+        if (totalRollsSpan) totalRollsSpan.textContent = String(rollTotalRolls);
+
+        summaryRows.push(
+          '<tr>'
+          + '<td style="padding:7px;border:1px solid #dcfce7;font-size:.78rem;color:#14532d;font-weight:700">' + escHtml(String(roll.rollNo || '-')) + '</td>'
+          + '<td style="padding:7px;border:1px solid #dcfce7;font-size:.78rem;color:#0f172a">' + escHtml(String(qty)) + '</td>'
+          + '<td style="padding:7px;border:1px solid #dcfce7;font-size:.78rem;color:#334155">' + escHtml(String(rollCartons)) + ' x ' + escHtml(String(rpc)) + ' + ' + escHtml(String(rollExtra)) + '</td>'
+          + '<td style="padding:7px;border:1px solid #dcfce7;font-size:.78rem;color:#166534;font-weight:900">' + escHtml(String(rollTotalRolls)) + '</td>'
+          + '</tr>'
+        );
+
+        batches.push({
+          batchNo: rollIdx + 1,
+          label: String(roll.rollNo || '-'),
+          type: 'ROLL',
+          cartons: rollCartons,
+          shrinkBundles: rollShrink,
+          looseUsed: rollExtra,
+          shortage: 0
+        });
+      });
+
       var physicalPct = orderQtyNum > 0 ? ((physicalProduction / orderQtyNum) * 100) : 0;
 
-      if (packedQtyInput) packedQtyInput.value = String(physicalProduction);
-      if (cartonsCountInput) cartonsCountInput.value = String(cartonsNeeded);
-      if (bundlesCountInput) bundlesCountInput.value = String(shrinkBundles);
-      if (wastageQtyInput) wastageQtyInput.value = '';
+      if (cleanSummaryBody) {
+        summaryRows.push(
+          '<tr style="background:#f0fdf4">'
+          + '<td style="padding:7px;border:1px solid #bbf7d0;font-size:.8rem;color:#14532d;font-weight:900">TOTAL</td>'
+          + '<td style="padding:7px;border:1px solid #bbf7d0;font-size:.8rem;color:#14532d;font-weight:900">' + escHtml(String(totalProductionReceived)) + '</td>'
+          + '<td style="padding:7px;border:1px solid #bbf7d0;font-size:.8rem;color:#14532d;font-weight:900">-</td>'
+          + '<td style="padding:7px;border:1px solid #bbf7d0;font-size:.8rem;color:#166534;font-weight:900">' + escHtml(String(physicalProduction)) + '</td>'
+          + '</tr>'
+        );
+        cleanSummaryBody.innerHTML = summaryRows.join('');
+      }
+      if (cleanSummaryHead) {
+        cleanSummaryHead.textContent = 'Production Received: ' + String(totalProductionReceived) + ' | Physical Output: ' + String(physicalProduction) + ' | Difference: ' + String(totalProductionReceived - physicalProduction);
+      }
 
-      if (calcCartonsNeeded) calcCartonsNeeded.value = cartonsNeeded.toLocaleString('en-IN');
+      if (packedQtyInput) packedQtyInput.value = String(physicalProduction);
+      if (cartonsCountInput) cartonsCountInput.value = String(totalCartons);
+      if (bundlesCountInput) bundlesCountInput.value = String(totalShrinkBundles);
+      if (wastageQtyInput) wastageQtyInput.value = '';
+      currentOpBatches = batches;
+
+      if (calcCartonsNeeded) calcCartonsNeeded.value = totalCartons.toLocaleString('en-IN');
       if (calcPhysicalProduction) calcPhysicalProduction.value = physicalProduction.toLocaleString('en-IN');
-      if (liveShrinkBundles) liveShrinkBundles.textContent = shrinkBundles.toLocaleString('en-IN');
-      if (liveCartonsRequired) liveCartonsRequired.textContent = cartonsNeeded.toLocaleString('en-IN');
+      if (liveShrinkBundles) liveShrinkBundles.textContent = totalShrinkBundles.toLocaleString('en-IN');
+      if (liveCartonsRequired) liveCartonsRequired.textContent = totalCartons.toLocaleString('en-IN');
       if (livePhysicalQty) livePhysicalQty.textContent = physicalProduction.toLocaleString('en-IN');
       if (livePhysicalPct) livePhysicalPct.textContent = physicalPct.toFixed(1) + '%';
-      if (liveLooseQty) liveLooseQty.textContent = looseNow.toLocaleString('en-IN');
+      if (liveLooseQty) liveLooseQty.textContent = totalLoose.toLocaleString('en-IN');
+      if (looseQtyInput) looseQtyInput.value = String(totalLoose);
     }
 
-    if (rollsPerShrinkInput) {
-      rollsPerShrinkInput.addEventListener('input', updateLiveMetrics);
-      rollsPerShrinkInput.addEventListener('change', updateLiveMetrics);
-    }
-    if (bundlesPerCartonInput) {
-      bundlesPerCartonInput.addEventListener('input', updateLiveMetrics);
-      bundlesPerCartonInput.addEventListener('change', updateLiveMetrics);
-    }
-
-    if (rollsPerCartonInput) {
-      rollsPerCartonInput.addEventListener('input', updateLiveMetrics);
-      rollsPerCartonInput.addEventListener('change', updateLiveMetrics);
-    }
-    if (looseQtyInput) {
-      looseQtyInput.addEventListener('input', function() {
-        looseEditedManually = true;
-        updateLiveMetrics();
-      });
-      looseQtyInput.addEventListener('change', function() {
-        looseEditedManually = true;
-        updateLiveMetrics();
+    if (rollSelectNodes.length) {
+      rollSelectNodes.forEach(function(node) {
+        node.addEventListener('change', updateLiveMetrics);
       });
     }
     updateLiveMetrics();
@@ -647,10 +859,13 @@ include __DIR__ . '/../../../includes/header.php';
     var cancelBtn = document.getElementById('opCancelBtn');
     var msgDiv    = document.getElementById('opMsg');
     if (lockSubmittedForOperator) {
-      var lockIds = ['opRollsPerShrink','opBundlesPerCarton','opRollsPerCarton','opCartonSize','opLooseQty','opNotes','opPhoto'];
+      var lockIds = ['opLooseQty','opNotes','opPhoto'];
       lockIds.forEach(function(id) {
         var el = document.getElementById(id);
         if (el) el.disabled = true;
+      });
+      Array.prototype.slice.call(document.querySelectorAll('.op-roll-rps,.op-roll-rpc-input,.op-roll-csize,.op-roll-cartons-input,.op-roll-extra-input,.op-roll-select')).forEach(function(el) {
+        el.disabled = true;
       });
     }
 
@@ -672,19 +887,90 @@ include __DIR__ . '/../../../includes/header.php';
       var physicalPctText = livePhysicalPct ? String(livePhysicalPct.textContent || '-') : '-';
       var looseQtyText = liveLooseQty ? String(liveLooseQty.textContent || '-') : '-';
       var notesText = String((document.getElementById('opNotes')?.value || '').trim() || '-');
-      var rollsPerShrinkText = String((document.getElementById('opRollsPerShrink')?.value || '').trim() || '-');
-      var bundlesPerCartonText = String((document.getElementById('opBundlesPerCarton')?.value || '').trim() || '-');
-      var rollsPerCartonText = String((document.getElementById('opRollsPerCarton')?.value || '').trim() || '-');
-      var cartonSizeText = String((document.getElementById('opCartonSize')?.value || '').trim() || '-');
-      var cartonLagbeText = String((document.getElementById('opCalcCartonsNeeded')?.value || '').trim() || '-');
-      var physicalProductionCalcText = String((document.getElementById('opCalcPhysicalProduction')?.value || '').trim() || '-');
+      var firstSelectedRoll = null;
+      if (rollSelectNodes.length) {
+        rollSelectNodes.some(function(node) {
+          if (!node.checked) return false;
+          var idx = Number(node.getAttribute('data-roll-index'));
+          if (isNaN(idx) || idx < 0 || idx >= rollLots.length) return false;
+          firstSelectedRoll = rollLots[idx];
+          return true;
+        });
+      }
+      var firstKey = firstSelectedRoll ? String(firstSelectedRoll.rollNo || 'roll-0') : '';
+      var firstState = (firstKey && rollLooseOverrides[firstKey] && typeof rollLooseOverrides[firstKey] === 'object') ? rollLooseOverrides[firstKey] : {};
+      var rollsPerShrinkText = String(Math.max(1, Math.floor(toNum(firstState.rps || 5))));
+      var rollsPerCartonText = String(Math.max(1, Math.floor(toNum(firstState.rpc || 50))));
+      var cartonSizeText = '75';
+      var cartonsInputText = String(Math.max(0, Math.floor(toNum(firstState.cartons != null ? firstState.cartons : cartonsRequiredText || 0))));
       var looseQtyEditableText = String((document.getElementById('opLooseQty')?.value || '').trim() || '-');
+      var extraRollsText = String(Math.max(0, Math.floor(toNum(firstState.extra != null ? firstState.extra : looseQtyEditableText || 0))));
+      var physicalProductionCalcText = String((document.getElementById('opCalcPhysicalProduction')?.value || '').trim() || '-');
+      var selectedRollRows = [];
+      if (rollSelectNodes.length) {
+        rollSelectNodes.forEach(function(node) {
+          if (!node.checked) return;
+          var idx = Number(node.getAttribute('data-roll-index'));
+          if (isNaN(idx) || idx < 0 || idx >= rollLots.length) return;
+          var lot = rollLots[idx] || {};
+          var lotKey = String(lot.rollNo || ('roll-' + String(idx)));
+          var lotState = (rollLooseOverrides[lotKey] && typeof rollLooseOverrides[lotKey] === 'object') ? rollLooseOverrides[lotKey] : {};
+          var lotProdQty = Math.max(0, Math.floor(toNum(lot.productionQty || lot.qty || 0)));
+          var lotRpc = Math.max(1, Math.floor(toNum(lotState.rpc || 50)));
+          var lotCartons = Math.max(0, Math.floor(toNum(lotState.cartons || 0)));
+          var lotExtra = Math.max(0, Math.floor(toNum(lotState.extra || 0)));
+          var lotPhysical = (lotCartons * lotRpc) + lotExtra;
+          selectedRollRows.push({
+            rollNo: String(lot.rollNo || ('Roll ' + String(idx + 1))),
+            prodQty: String(lotProdQty),
+            formula: String(lotCartons) + ' x ' + String(lotRpc) + ' + ' + String(lotExtra),
+            physical: String(lotPhysical)
+          });
+        });
+      }
+      var rollWiseSeparationHtml = selectedRollRows.length
+        ? (
+          '  <div class="block"><p class="title">Roll-wise Separation</p>' +
+          '    <table><thead><tr><th>Roll No</th><th>Production Received</th><th>Packing Formula (Cartons x Rolls/Carton + Extra)</th><th>Physical Output</th></tr></thead><tbody>' +
+          selectedRollRows.map(function(row) {
+            return '<tr><td>' + escHtml(row.rollNo) + '</td><td>' + escHtml(row.prodQty) + '</td><td>' + escHtml(row.formula) + '</td><td>' + escHtml(row.physical) + '</td></tr>';
+          }).join('') +
+          '    </tbody></table>' +
+          '  </div>'
+        )
+        : '';
+      var batchRows = (Array.isArray(currentOpBatches) && currentOpBatches.length) ? currentOpBatches : [{ batchNo: 1, label: jobNo, cartons: cartonsRequiredText, shrinkBundles: shrinkBundlesText, shortage: 0 }];
 
       var submittedBy = opEntry && opEntry.operator_name ? String(opEntry.operator_name) : currentOperatorName;
       var submittedAt = opEntry && opEntry.submitted_at ? String(opEntry.submitted_at) : new Date().toLocaleString();
       var qrDataUrl = buildSlipQrDataUrl(jobNo);
 
-      var slipHtml = '' +
+      var multiBatchSheets = batchRows.map(function(batch, idx) {
+        var batchLabel = String(batch.label || ('Batch ' + String(idx + 1)));
+        var batchCartons = String(batch.cartons == null ? '-' : batch.cartons);
+        var batchBundles = String(batch.shrinkBundles == null ? '-' : batch.shrinkBundles);
+        var batchExtraRolls = String(batch.looseUsed == null ? '-' : batch.looseUsed);
+        var batchShortage = Number(batch.shortage || 0);
+        return ''
+          + '<div class="sheet" style="' + (idx < batchRows.length - 1 ? 'margin-bottom:12px;page-break-after:always;' : '') + '">'
+          + '  <div class="hdr"><div><h1>Packing Job Card</h1><div class="sub">Batch Slip</div><div style="margin-top:8px"><span class="pill">' + escHtml(batchLabel) + '</span></div></div><div class="qr-wrap">' + (qrDataUrl ? ('<img src="' + escHtml(qrDataUrl) + '" alt="Job QR">') : '<div class="qr-na">QR unavailable</div>') + '</div></div>'
+          + '  <div class="meta">'
+          + '    <div class="m"><b>Job No</b><span>' + escHtml(jobNo) + '</span></div>'
+          + '    <div class="m"><b>Batch</b><span>' + escHtml(batchLabel) + '</span></div>'
+          + '    <div class="m"><b>Client</b><span>' + escHtml(clientName) + '</span></div>'
+          + '  </div>'
+          + '  <div class="block"><p class="title">Batch Summary</p>'
+          + '    <table><thead><tr><th>Metric</th><th>Value</th><th>Metric</th><th>Value</th></tr></thead><tbody>'
+          + '      <tr><td>Batch Cartons</td><td>' + escHtml(batchCartons) + '</td><td>Batch Bundles</td><td>' + escHtml(batchBundles) + '</td></tr>'
+          + '      <tr><td>Extra Rolls</td><td>' + escHtml(batchExtraRolls) + '</td><td>Submitted By</td><td>' + escHtml(submittedBy) + '</td></tr>'
+          + '      <tr><td>Shortage Qty</td><td style="color:' + (batchShortage > 0 ? '#991b1b' : '#166534') + ';font-weight:900">' + escHtml(String(batchShortage)) + '</td><td>Submitted At</td><td>' + escHtml(submittedAt) + '</td></tr>'
+          + '    </tbody></table>'
+          + '  </div>'
+          + '  <div class="ftr"><span>Shree Label ERP - Packing Slip</span><span>Printed: ' + escHtml(new Date().toLocaleString()) + '</span></div>'
+          + '</div>';
+      }).join('');
+
+      var slipHtml = (batchRows.length > 1 ? '' : '') +
         '<!doctype html><html><head><meta charset="utf-8"><title>Packing Slip - ' + escHtml(jobNo) + '</title>' +
         '<style>' +
         ':root{--brand:#c2410c;--brand-soft:#fff7ed;--line:#e2e8f0;--text:#0f172a;--muted:#64748b;--accent:#0ea5e9;--ok:#16a34a}*{box-sizing:border-box}' +
@@ -713,7 +999,7 @@ include __DIR__ . '/../../../includes/header.php';
         '.ftr{padding:10px 16px;border-top:1px solid var(--line);background:#fff7ed;display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#7c2d12;font-weight:700}' +
         '@media print{@page{size:A4;margin:10mm}body{padding:0}.sheet{border:none;border-radius:0}.ftr{position:fixed;left:0;right:0;bottom:0}}' +
         '</style></head><body>' +
-        '<div class="sheet">' +
+        (batchRows.length > 1 ? multiBatchSheets : '<div class="sheet">' +
         '  <div class="hdr"><div><h1>Packing Job Card</h1><div class="sub">Generated from Packing Dashboard</div><div style="margin-top:8px"><span class="pill">POS Roll Packing</span></div></div><div class="qr-wrap">' + (qrDataUrl ? ('<img src="' + escHtml(qrDataUrl) + '" alt="Job QR">') : '<div class="qr-na">QR unavailable</div>') + '</div></div>' +
         '  <div class="meta">' +
         '    <div class="m"><b>Packing ID</b><span>' + escHtml(packingId) + '</span></div>' +
@@ -734,20 +1020,18 @@ include __DIR__ . '/../../../includes/header.php';
         '  </div>' +
         '  <div class="block"><p class="title">Packing Calculation Helpers</p>' +
         '    <table><thead><tr><th>Helper Field</th><th>Value</th><th>Helper Field</th><th>Value</th></tr></thead><tbody>' +
-        '      <tr><td>Rolls per shrink wrap</td><td>' + escHtml(rollsPerShrinkText) + '</td><td>Bundles per carton</td><td>' + escHtml(bundlesPerCartonText) + '</td></tr>' +
-        '      <tr><td>Rolls per carton</td><td>' + escHtml(rollsPerCartonText) + '</td><td>Carton size (mm)</td><td>' + escHtml(cartonSizeText) + '</td></tr>' +
-        '      <tr><td>Carton Lagbe (calculated)</td><td>' + escHtml(cartonLagbeText) + '</td><td>Physical Production (calculated)</td><td>' + escHtml(physicalProductionCalcText) + '</td></tr>' +
+        '      <tr><td>Rolls per shrink wrap</td><td>' + escHtml(rollsPerShrinkText) + '</td><td>Rolls per carton</td><td>' + escHtml(rollsPerCartonText) + '</td></tr>' +
+        '      <tr><td>Carton size (mm)</td><td>' + escHtml(cartonSizeText) + '</td><td>Cartons</td><td>' + escHtml(cartonsInputText) + '</td></tr>' +
+        '      <tr><td>Extra rolls</td><td>' + escHtml(extraRollsText) + '</td><td>Physical Production (calculated)</td><td>' + escHtml(physicalProductionCalcText) + '</td></tr>' +
         '    </tbody></table>' +
         '  </div>' +
-        '  <div class="block"><p class="title">Live Production Inputs</p>' +
-        '    <table><thead><tr><th>Metric</th><th>Value</th><th>Metric</th><th>Value</th></tr></thead><tbody>' +
-        '      <tr><td>Loose Baki</td><td>' + escHtml(looseQtyText) + '</td><td>Loose Qty (editable)</td><td>' + escHtml(looseQtyEditableText) + '</td></tr>' +
-        '      <tr><td>Notes / Remarks</td><td colspan="3">' + escHtml(notesText) + '</td></tr>' +
-        '    </tbody></table>' +
+        rollWiseSeparationHtml +
+        '  <div class="block"><p class="title">Operator Notes</p>' +
+        '    <div class="notes">' + escHtml(notesText) + '</div>' +
         '  </div>' +
         '  <div class="sig"><div class="sig-box">Operator Signature</div><div class="sig-box">Manager Signature</div></div>' +
         '  <div class="ftr"><span>Shree Label ERP - Packing Slip</span><span>Printed: ' + escHtml(new Date().toLocaleString()) + '</span></div>' +
-        '</div>' +
+        '</div>') +
         '</body></html>';
 
       // Print from hidden iframe only to avoid opening blank popup pages in Chrome.
@@ -785,6 +1069,56 @@ include __DIR__ . '/../../../includes/header.php';
       }, 180);
       msgDiv.textContent = '';
     });
+
+    function showSubmitSuccessModalAndClose() {
+      var existing = document.getElementById('opSubmitSuccessModal');
+      if (existing) existing.remove();
+
+      var wrap = document.createElement('div');
+      wrap.id = 'opSubmitSuccessModal';
+      wrap.style.position = 'fixed';
+      wrap.style.inset = '0';
+      wrap.style.background = 'rgba(15,23,42,.45)';
+      wrap.style.display = 'flex';
+      wrap.style.alignItems = 'center';
+      wrap.style.justifyContent = 'center';
+      wrap.style.zIndex = '99999';
+
+      var card = document.createElement('div');
+      card.style.width = 'min(92vw,420px)';
+      card.style.border = '1px solid #86efac';
+      card.style.borderRadius = '14px';
+      card.style.background = '#ffffff';
+      card.style.boxShadow = '0 18px 50px rgba(2,132,199,.22)';
+      card.style.padding = '18px 16px';
+      card.innerHTML = ''
+        + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+        + '  <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:999px;background:#dcfce7;color:#166534;font-weight:900">&#10003;</span>'
+        + '  <h4 style="margin:0;font-size:1rem;color:#166534;font-weight:900">Entry Submitted</h4>'
+        + '</div>'
+        + '<p style="margin:0 0 12px;color:#334155;font-size:.9rem;line-height:1.45">Submission successful. This window will close automatically.</p>'
+        + '<div style="display:flex;justify-content:flex-end;gap:8px">'
+        + '  <button type="button" id="opSubmitSuccessOk" style="border:1px solid #16a34a;background:#16a34a;color:#fff;border-radius:9px;padding:7px 12px;font-size:.82rem;font-weight:800;cursor:pointer">OK</button>'
+        + '</div>';
+
+      wrap.appendChild(card);
+      document.body.appendChild(wrap);
+
+      var closed = false;
+      function finalizeClose() {
+        if (closed) return;
+        closed = true;
+        wrap.remove();
+        closeModal();
+      }
+
+      var okBtn = card.querySelector('#opSubmitSuccessOk');
+      if (okBtn) okBtn.addEventListener('click', finalizeClose);
+      wrap.addEventListener('click', function(e) {
+        if (e.target === wrap) finalizeClose();
+      });
+      setTimeout(finalizeClose, 1300);
+    }
 
     submitBtn.addEventListener('click', function() {
       if (lockSubmittedForOperator) {
@@ -841,9 +1175,12 @@ include __DIR__ . '/../../../includes/header.php';
           } else {
             submitBtn.textContent = 'Submitted (Locked)';
             submitBtn.disabled = true;
-            ['opRollsPerShrink','opBundlesPerCarton','opRollsPerCarton','opCartonSize','opLooseQty','opNotes','opPhoto'].forEach(function(id) {
+            ['opLooseQty','opNotes','opPhoto'].forEach(function(id) {
               var el = document.getElementById(id);
               if (el) el.disabled = true;
+            });
+            Array.prototype.slice.call(document.querySelectorAll('.op-roll-rps,.op-roll-rpc-input,.op-roll-csize,.op-roll-cartons-input,.op-roll-extra-input,.op-roll-select')).forEach(function(el) {
+              el.disabled = true;
             });
             msgDiv.textContent = 'Entry submitted and locked. Only admin can edit or delete.';
           }
@@ -858,6 +1195,7 @@ include __DIR__ . '/../../../includes/header.php';
               }
             });
           }
+          showSubmitSuccessModalAndClose();
         })
         .catch(function() {
           msgDiv.textContent = 'Network error. Please try again.';

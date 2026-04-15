@@ -787,6 +787,61 @@ include __DIR__ . '/../../includes/header.php';
     });
   }
 
+  function safeNum(val) {
+    var n = Number(String(val == null ? '' : val).replace(/,/g, '').trim());
+    return isNaN(n) ? 0 : n;
+  }
+
+  function normalizeRollLots(job, fallbackQty) {
+    var out = [];
+    var seen = {};
+    var jobExtra = (job && job.job_extra_data && typeof job.job_extra_data === 'object') ? job.job_extra_data : {};
+    var planExtra = (job && job.plan_extra_data && typeof job.plan_extra_data === 'object') ? job.plan_extra_data : {};
+
+    function firstPresent(src, keys) {
+      if (!src || typeof src !== 'object') return '';
+      for (var i = 0; i < keys.length; i++) {
+        var v = src[keys[i]];
+        if (v !== null && typeof v !== 'undefined' && String(v).trim() !== '') return v;
+      }
+      return '';
+    }
+
+    function pushLot(src) {
+      if (!src || typeof src !== 'object') return;
+      var rollNoRaw = firstPresent(src, ['roll_no', 'parent_roll', 'roll', 'rollNumber', 'roll_number']);
+      var rollNo = String(rollNoRaw || '').trim();
+      if (!rollNo) return;
+      if (seen[rollNo]) return;
+
+      var prod = safeNum(firstPresent(src, ['production_qty', 'produced_qty', 'qty', 'quantity', 'total_qty', 'roll_qty']));
+      var avail = safeNum(firstPresent(src, ['available_qty', 'available', 'avail_qty', 'qty_available', 'balance_qty']));
+      if (prod <= 0) prod = safeNum(fallbackQty);
+      if (avail <= 0) avail = prod;
+      if (prod <= 0 && avail <= 0) return;
+
+      seen[rollNo] = true;
+      out.push({
+        rollNo: rollNo,
+        productionQty: Math.max(0, prod),
+        availableQty: Math.max(0, avail)
+      });
+    }
+
+    if (Array.isArray(jobExtra.selected_rolls)) jobExtra.selected_rolls.forEach(pushLot);
+    if (Array.isArray(planExtra.selected_rolls)) planExtra.selected_rolls.forEach(pushLot);
+
+    if (!out.length) {
+      pushLot({
+        roll_no: job && job.roll_no ? job.roll_no : '',
+        production_qty: fallbackQty,
+        available_qty: fallbackQty
+      });
+    }
+
+    return out;
+  }
+
   function renderModalQr(job) {
     var target = document.getElementById('pkModalQrBox');
     if (!target) return;
@@ -826,6 +881,18 @@ include __DIR__ . '/../../includes/header.php';
     var targetPaperStockId = Number(job.paper_stock_id || 0);
     var operatorEntry = (job.operator_entry && typeof job.operator_entry === 'object') ? job.operator_entry : null;
     var operatorHasSubmitted = !!operatorEntry;
+    var prodQtyBaseline = safeNum(job && job.production_quantity ? job.production_quantity : 0);
+    var rollLots = normalizeRollLots(job, prodQtyBaseline);
+    var rollSelectionHtml = rollLots.length ? rollLots.map(function(roll, idx) {
+      return ''
+        + '<label style="display:flex;align-items:flex-start;gap:8px;border:1px solid #bae6fd;border-radius:10px;padding:8px;background:#fff;cursor:pointer">'
+        + '  <input type="checkbox" class="pk-roll-select" data-roll-index="' + String(idx) + '" checked style="margin-top:2px">'
+        + '  <span style="display:flex;flex-direction:column;gap:2px">'
+        + '    <b style="font-size:.78rem;color:#0f172a">' + escHtml(roll.rollNo) + '</b>'
+        + '  </span>'
+        + '</label>';
+    }).join('') : '<div style="font-size:.78rem;color:#64748b">No roll sources found.</div>';
+    var currentPackingBatches = [];
     // Finish active only if operator submitted AND job not already finished
     var finishShouldBeActive = !isPackingDone && operatorHasSubmitted;
 
@@ -875,10 +942,16 @@ include __DIR__ . '/../../includes/header.php';
           + '    </h5>'
           + '    <div class="pk-jc-section-content-b">'
           + '      <div style="padding:14px 12px;margin-bottom:14px;border:1px solid #bae6fd;border-radius:12px;background:linear-gradient(120deg,#ecfeff 0%,#f0f9ff 100%);">'
-          + '        <div style="font-size:.74rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#0284c7;margin-bottom:12px">'
-          + '          <i class="bi bi-box"></i> From Production Department'
-          + '        </div>'
-          + '        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px 16px;align-items:end;">'
+          + '        <div style="font-size:.74rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#0284c7;margin-bottom:10px">From Production Department</div>'
+          + '        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px 12px;align-items:end;">'
+            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
+            + '            <label style="font-size:.85em;font-weight:700;color:#64748b;">Production</label>'
+            + '            <div style="font-size:1.05em;font-weight:900;color:#0f172a;"><span id="pkDashProduction">-</span></div>'
+            + '          </div>'
+            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
+            + '            <label style="font-size:.85em;font-weight:700;color:#64748b;">Available</label>'
+            + '            <div style="font-size:1.05em;font-weight:900;color:#0f172a;"><span id="pkDashAvailable">-</span></div>'
+            + '          </div>'
             + '          <div style="display:flex;flex-direction:column;gap:4px;">'
             + '            <label style="font-size:.85em;font-weight:700;color:#64748b;">Order Qty</label>'
             + '            <div style="font-size:1.15em;font-weight:900;color:#0f172a;">'
@@ -899,49 +972,14 @@ include __DIR__ . '/../../includes/header.php';
             + '          </div>'
           + '        </div>'
           + '      </div>'
-          // Operator entry data block (moved directly under summary)
-          + '      <div style="margin:10px 0;padding:12px;border:1px solid #fed7aa;border-radius:10px;background:linear-gradient(120deg,#fff7ed 0%,#fff 100%)">'
-          + '        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
-          + '          <div style="font-size:.74rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#c2410c">'
-          + '            <i class="bi bi-person-check"></i> Operator Packing Entry'
-          + (operatorHasSubmitted ? ' <span style="margin-left:6px;background:#22c55e;color:#fff;font-size:.65rem;font-weight:800;padding:2px 7px;border-radius:999px">&#10003; Submitted</span>' : ' <span style="margin-left:6px;background:#f97316;color:#fff;font-size:.65rem;font-weight:800;padding:2px 7px;border-radius:999px">&#9679; Waiting</span>')
-          + '          </div>'
-          + '        </div>'
-          + (operatorHasSubmitted && operatorEntry ? (
-              '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">'
-            + '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;background:#fff"><b style="display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:#78350f">Physical Production</b><span style="font-size:1rem;font-weight:900;color:#0f172a">'  + escHtml(String(operatorEntry.packed_qty    || '-')) + '</span></div>'
-            + '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;background:#fff"><b style="display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:#78350f">Bundles</b><span style="font-size:1rem;font-weight:900;color:#0f172a">'   + escHtml(String(operatorEntry.bundles_count  || '-')) + '</span></div>'
-            + '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;background:#fff"><b style="display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:#78350f">Cartons</b><span style="font-size:1rem;font-weight:900;color:#0f172a">'   + escHtml(String(operatorEntry.cartons_count  || '-')) + '</span></div>'
-            + '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;background:#fff"><b style="display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:#78350f">Wastage</b><span style="font-size:1rem;font-weight:900;color:#0f172a">'   + escHtml(String(operatorEntry.wastage_qty    || '-')) + '</span></div>'
-            + '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;background:#fff"><b style="display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:#78350f">Loose Qty</b><span style="font-size:1rem;font-weight:900;color:#0f172a">' + escHtml(String(operatorEntry.loose_qty      || '-')) + '</span></div>'
-            + '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;background:#fff"><b style="display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:#78350f">Notes</b><span style="font-size:.8rem;font-weight:700;color:#0f172a">'    + escHtml(operatorEntry.notes            || '-') + '</span></div>'
-            + '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;background:#fff"><b style="display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:#78350f">Submitted By</b><span style="font-size:.8rem;font-weight:700;color:#0f172a">'+escHtml(operatorEntry.operator_name||'-')+'</span></div>'
-            + '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;background:#fff"><b style="display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:#78350f">Submitted At</b><span style="font-size:.8rem;font-weight:700;color:#0f172a">'  + escHtml(operatorEntry.submitted_at||'-')   + '</span></div>'
-            + '</div>'
-          ) : '<div style="color:#78350f;font-size:.82rem;font-weight:700">Waiting for operator to submit packing quantities.</div>')
+          + '      <div style="margin-bottom:14px;padding:10px;border:1px solid #bfdbfe;border-radius:10px;background:#f8fbff">'
+          + '        <div style="font-size:.72rem;font-weight:900;color:#1d4ed8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Roll Selection</div>'
+          + '        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">' + rollSelectionHtml + '</div>'
           + '      </div>'
           + '      <div style="padding:14px 12px;margin-bottom:14px;border:1px solid #d9f99d;border-radius:12px;background:linear-gradient(120deg,#f7fee7 0%,#fff 100%);">'
-          + '        <div style="font-size:.72rem;font-weight:900;color:#3f6212;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Packing Calculation Helpers + Output (from Operator Physical Production)</div>'
-          + '        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px 18px;align-items:end;">'
-            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
-            + '            <label for="pkShrinkBundleInput" style="font-size:.85em;font-weight:700;color:#64748b;">Rolls per shrink wrap</label>'
-            + '            <input type="number" id="pkShrinkBundleInput" min="1" value="5" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #cbd5e1;font-size:.95em;">'
-            + '          </div>'
-            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
-            + '            <label for="pkBundlesPerCartonInput" style="font-size:.85em;font-weight:700;color:#64748b;">Bundles per carton</label>'
-            + '            <input type="number" id="pkBundlesPerCartonInput" min="1" value="10" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #cbd5e1;font-size:.95em;">'
-            + '          </div>'
-            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
-            + '            <label style="font-size:.85em;font-weight:700;color:#64748b;">Rolls per carton</label>'
-            + '            <div style="font-size:1em;font-weight:700;color:#0f172a;padding:6px 8px;background-color:#f1f5f9;border-radius:6px;border:1px solid #cbd5e1;">'
-            + '              <span id="pkRollsPerCarton">-</span>'
-            + '            </div>'
-            + '          </div>'
-            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
-            + '            <label for="pkCartonSizeInput" style="font-size:.85em;font-weight:700;color:#64748b;">Carton size (mm)</label>'
-            + '            <input type="number" id="pkCartonSizeInput" min="1" value="75" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #cbd5e1;font-size:.95em;">'
-            + '          </div>'
-          + '        </div>'
+          + '        <div style="font-size:.72rem;font-weight:900;color:#3f6212;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Roll Data (Selected Roll Only)</div>'
+          + '        <div id="pkHelpersRollCards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px"></div>'
+          + '        <div id="pkHelpersHiddenMsg" style="display:none;margin-top:8px;padding:8px;border:1px dashed #fca5a5;border-radius:8px;background:#fff7ed;color:#9a3412;font-size:.76rem;font-weight:700">Select at least one roll to view helpers.</div>'
           + '      </div>'
           + '      <div style="padding:14px 0;">'
           + '        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px 18px;align-items:center;">'
@@ -963,6 +1001,16 @@ include __DIR__ . '/../../includes/header.php';
             + '              <span id="pkCalcLoose">-</span>'
             + '            </div>'
             + '          </div>'
+            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
+            + '            <label style="font-size:.85em;font-weight:700;color:#64748b;">Physical Production</label>'
+            + '            <div style="font-size:1.15em;font-weight:900;color:#166534;background-color:#dcfce7;padding:8px 10px;border-radius:6px;border:1px solid #86efac;">'
+            + '              <span id="pkCalcPhysicalProduction">-</span>'
+            + '            </div>'
+            + '          </div>'
+          + '        </div>'
+          + '        <div style="margin-top:12px;border:1px solid #e2e8f0;border-radius:10px;padding:10px;background:#fff">'
+          + '          <div style="font-size:.72rem;font-weight:900;color:#334155;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Per-Roll Batch Output</div>'
+          + '          <div id="pkPerRollOutput" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px"></div>'
           + '        </div>'
           + '      </div>'
           + '      <div style="padding:12px 0;border-top:1px solid #eef2f7;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-start;">'
@@ -994,16 +1042,29 @@ include __DIR__ . '/../../includes/header.php';
                 var dashOrderQtySpan = document.getElementById('pkDashOrderQty');
                 var dashProdQtySpan = document.getElementById('pkDashProdQty');
                 var dashActualPercentSpan = document.getElementById('pkDashActualPercent');
-                var shrinkBundleInput = document.getElementById('pkShrinkBundleInput');
-                var bundlesPerCartonInput = document.getElementById('pkBundlesPerCartonInput');
-                var rollsPerCartonSpan = document.getElementById('pkRollsPerCarton');
+                var dashProductionSpan = document.getElementById('pkDashProduction');
+                var dashAvailableSpan = document.getElementById('pkDashAvailable');
+                var helperCardsWrap = document.getElementById('pkHelpersRollCards');
+                var helperHiddenMsg = document.getElementById('pkHelpersHiddenMsg');
                 var calcBundlesSpan = document.getElementById('pkCalcBundles');
                 var calcCartonsSpan = document.getElementById('pkCalcCartons');
                 var calcLooseSpan = document.getElementById('pkCalcLoose');
+                var calcPhysicalSpan = document.getElementById('pkCalcPhysicalProduction');
+                var perRollOutput = document.getElementById('pkPerRollOutput');
+                var rollSelectNodes = Array.prototype.slice.call(document.querySelectorAll('.pk-roll-select'));
+                var rollHelperOverrides = {};
+
+                if (rollSelectNodes.length) {
+                  rollSelectNodes.forEach(function(node, idx) {
+                    node.checked = idx === 0;
+                  });
+                }
                 
                 // Display order and production quantities
                 dashOrderQtySpan.textContent = orderQty > 0 ? orderQty : '-';
                 dashProdQtySpan.textContent = prodQty > 0 ? prodQty : '-';
+                if (dashProductionSpan) dashProductionSpan.textContent = prodQty > 0 ? prodQty : '-';
+                if (dashAvailableSpan) dashAvailableSpan.textContent = prodQty > 0 ? prodQty : '-';
                 // Display actual percent
                 if (orderQty > 0 && prodQty > 0) {
                   var deltaPct = ((prodQty - orderQty) / orderQty) * 100;
@@ -1012,33 +1073,176 @@ include __DIR__ . '/../../includes/header.php';
                   dashActualPercentSpan.textContent = '-';
                 }
                 
-                function recalc() {
-                  var rollsPerShrinkWrap = Number(shrinkBundleInput.value) || 5;
-                  var bundlesPerCarton = Number(bundlesPerCartonInput.value) || 10;
-                  
-                  // Calculate rolls per carton (based on new field structure)
-                  var rollsPerCarton = rollsPerShrinkWrap * bundlesPerCarton;
-                  rollsPerCartonSpan.textContent = rollsPerCarton > 0 ? rollsPerCarton : '-';
+                function toNum(v) {
+                  var n = Number(String(v || '').replace(/,/g, '').trim());
+                  return isNaN(n) ? 0 : n;
+                }
 
-                  // Last section values are derived from operator physical production (fallback: production qty).
-                  var calcBaseQty = operatorPhysicalQty > 0 ? operatorPhysicalQty : prodQty;
-                  var totalBundles = (calcBaseQty > 0 && rollsPerShrinkWrap > 0) ? Math.ceil(calcBaseQty / rollsPerShrinkWrap) : '-';
-                  var totalCartons = (totalBundles > 0 && bundlesPerCarton > 0) ? Math.ceil(totalBundles / bundlesPerCarton) : '-';
-                  var looseQty = (calcBaseQty > 0 && rollsPerCarton > 0) ? (calcBaseQty % rollsPerCarton) : '-';
-                  
-                  calcBundlesSpan.textContent = totalBundles;
-                  calcCartonsSpan.textContent = totalCartons;
-                  calcLooseSpan.textContent = looseQty !== '-' ? looseQty : '-';
+                function seedSubmittedDefaultsForSelection(selectedRolls) {
+                  if (!operatorHasSubmitted || !operatorEntry || !Array.isArray(selectedRolls) || selectedRolls.length !== 1) return;
+                  var roll = selectedRolls[0] || {};
+                  var key = String(roll.rollNo || 'roll-0');
+                  if (!rollHelperOverrides[key] || typeof rollHelperOverrides[key] !== 'object') rollHelperOverrides[key] = {};
+                  var state = rollHelperOverrides[key];
+
+                  var submittedPacked = Math.max(0, Math.floor(toNum(operatorEntry.packed_qty)));
+                  var submittedCartons = Math.max(0, Math.floor(toNum(operatorEntry.cartons_count)));
+                  var submittedLoose = Math.max(0, Math.floor(toNum(operatorEntry.loose_qty)));
+                  var submittedBundles = Math.max(0, Math.floor(toNum(operatorEntry.bundles_count)));
+
+                  if (!Object.prototype.hasOwnProperty.call(state, 'cartons')) state.cartons = submittedCartons;
+                  if (!Object.prototype.hasOwnProperty.call(state, 'extra')) state.extra = submittedLoose;
+
+                  if (!Object.prototype.hasOwnProperty.call(state, 'rpc')) {
+                    var derivedRpc = 0;
+                    if (submittedCartons > 0 && submittedPacked >= submittedLoose) {
+                      derivedRpc = Math.floor((submittedPacked - submittedLoose) / submittedCartons);
+                    }
+                    state.rpc = Math.max(1, derivedRpc || 50);
+                  }
+
+                  if (!Object.prototype.hasOwnProperty.call(state, 'rps')) {
+                    var derivedRps = 0;
+                    if (submittedBundles > 0 && submittedPacked > 0) {
+                      derivedRps = Math.floor(submittedPacked / submittedBundles);
+                    }
+                    state.rps = Math.max(1, derivedRps || 5);
+                  }
+                }
+
+                function renderHelperCards(selectedRolls) {
+                  if (!helperCardsWrap) return;
+                  helperCardsWrap.innerHTML = selectedRolls.map(function(roll, idx) {
+                    var key = String(roll.rollNo || ('roll-' + String(idx)));
+                    var st = rollHelperOverrides[key] || {};
+                    var qty = Math.max(0, Math.min(toNum(roll.productionQty), toNum(roll.availableQty)));
+                    var rps = Math.max(1, Math.floor(toNum(st.rps || 5)));
+                    var rpc = Math.max(1, Math.floor(toNum(st.rpc || 50)));
+                    var cartons = Object.prototype.hasOwnProperty.call(st, 'cartons') ? Math.max(0, Math.floor(toNum(st.cartons))) : Math.floor(qty / rpc);
+                    var extra = Object.prototype.hasOwnProperty.call(st, 'extra') ? Math.max(0, Math.floor(toNum(st.extra))) : (qty % rpc);
+                    var totalRolls = Math.max(0, cartons * rpc + extra);
+                    return ''
+                      + '<div style="border:1px solid #bbf7d0;border-radius:10px;padding:10px;background:#fff">'
+                      + '  <div style="font-size:.74rem;font-weight:900;color:#166534;margin-bottom:8px">Roll: ' + escHtml(String(roll.rollNo || '-')) + '</div>'
+                      + '  <div style="display:grid;grid-template-columns:repeat(2,minmax(110px,1fr));gap:8px">'
+                      + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Rolls per shrink wrap</label><input type="number" class="pk-roll-rps" data-roll-key="' + escHtml(key) + '" min="1" step="1" value="' + String(rps) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
+                      + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Rolls per carton</label><input type="number" class="pk-roll-rpc" data-roll-key="' + escHtml(key) + '" min="1" step="1" value="' + String(rpc) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
+                      + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Carton size (mm)</label><select disabled style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc"><option value="75" selected>75 mm</option></select></div>'
+                      + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Cartons</label><input type="number" class="pk-roll-cartons" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(cartons) + '" style="width:100%;padding:5px 6px;border:1px solid #86efac;border-radius:6px"></div>'
+                      + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#92400e">Extra rolls</label><input type="number" class="pk-roll-extra" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(extra) + '" style="width:100%;padding:5px 6px;border:1px solid #fdba74;border-radius:6px"></div>'
+                      + '  </div>'
+                      + '  <div style="margin-top:8px;padding:7px 9px;border:1px solid #86efac;border-radius:7px;background:#dcfce7;color:#166534;font-size:.8rem;font-weight:900">Total Rolls: <span class="pk-roll-total" data-roll-key="' + escHtml(key) + '">' + String(totalRolls) + '</span></div>'
+                      + '</div>';
+                  }).join('');
+                }
+
+                function bindHelperCardEvents() {
+                  if (!helperCardsWrap) return;
+                  function saveAndRecalc(node, field) {
+                    var key = String(node.getAttribute('data-roll-key') || '').trim();
+                    if (!key) return;
+                    if (!rollHelperOverrides[key] || typeof rollHelperOverrides[key] !== 'object') rollHelperOverrides[key] = {};
+                    var raw = Math.floor(toNum(node.value));
+                    rollHelperOverrides[key][field] = field === 'rps' || field === 'rpc' ? Math.max(1, raw) : Math.max(0, raw);
+                    recalc();
+                  }
+                  Array.prototype.slice.call(helperCardsWrap.querySelectorAll('.pk-roll-rps')).forEach(function(node) {
+                    node.addEventListener('change', function() { saveAndRecalc(node, 'rps'); });
+                  });
+                  Array.prototype.slice.call(helperCardsWrap.querySelectorAll('.pk-roll-rpc')).forEach(function(node) {
+                    node.addEventListener('change', function() { saveAndRecalc(node, 'rpc'); });
+                  });
+                  Array.prototype.slice.call(helperCardsWrap.querySelectorAll('.pk-roll-cartons')).forEach(function(node) {
+                    node.addEventListener('change', function() { saveAndRecalc(node, 'cartons'); });
+                  });
+                  Array.prototype.slice.call(helperCardsWrap.querySelectorAll('.pk-roll-extra')).forEach(function(node) {
+                    node.addEventListener('change', function() { saveAndRecalc(node, 'extra'); });
+                  });
+                }
+
+                function recalc() {
+
+                  var selectedRolls = [];
+                  if (rollSelectNodes.length) {
+                    rollSelectNodes.forEach(function(node) {
+                      if (!node.checked) return;
+                      var idx = Number(node.getAttribute('data-roll-index'));
+                      if (isNaN(idx) || idx < 0 || idx >= rollLots.length) return;
+                      selectedRolls.push(rollLots[idx]);
+                    });
+                  }
+                  if (!selectedRolls.length) {
+                    if (helperCardsWrap) helperCardsWrap.innerHTML = '';
+                    if (helperHiddenMsg) helperHiddenMsg.style.display = 'block';
+                    if (calcBundlesSpan) calcBundlesSpan.textContent = '-';
+                    if (calcCartonsSpan) calcCartonsSpan.textContent = '-';
+                    if (calcLooseSpan) calcLooseSpan.textContent = '-';
+                    if (calcPhysicalSpan) calcPhysicalSpan.textContent = '-';
+                    if (perRollOutput) perRollOutput.innerHTML = '<div style="font-size:.75rem;color:#64748b">No roll selected.</div>';
+                    currentPackingBatches = [];
+                    return;
+                  }
+                  seedSubmittedDefaultsForSelection(selectedRolls);
+                  if (helperHiddenMsg) helperHiddenMsg.style.display = 'none';
+                  renderHelperCards(selectedRolls);
+                  bindHelperCardEvents();
+
+                  var totalBundlesNum = 0;
+                  var totalCartonsNum = 0;
+                  var totalLooseNum = 0;
+                  var totalPhysicalNum = 0;
+                  var resultCards = [];
+                  var rollBatches = [];
+
+                  selectedRolls.forEach(function(roll, rollIdx) {
+                    var rollKey = String(roll.rollNo || ('roll-' + String(rollIdx)));
+                    var st = rollHelperOverrides[rollKey] || {};
+                    var qty = Math.max(0, Math.min(toNum(roll.productionQty), toNum(roll.availableQty)));
+                    var rollRps = Math.max(1, Math.floor(toNum(st.rps || 5)));
+                    var rollRpc = Math.max(1, Math.floor(toNum(st.rpc || 50)));
+                    var rollCartons = Object.prototype.hasOwnProperty.call(st, 'cartons') ? Math.max(0, Math.floor(toNum(st.cartons))) : Math.floor(qty / rollRpc);
+                    var rollLoose = Object.prototype.hasOwnProperty.call(st, 'extra') ? Math.max(0, Math.floor(toNum(st.extra))) : (qty % rollRpc);
+                    var rollPhysical = Math.max(0, (rollCartons * rollRpc) + rollLoose);
+                    var rollBundles = Math.floor(rollPhysical / rollRps);
+                    totalBundlesNum += rollBundles;
+                    totalCartonsNum += rollCartons;
+                    totalLooseNum += rollLoose;
+                    totalPhysicalNum += rollPhysical;
+                    var totalRollsNode = helperCardsWrap ? helperCardsWrap.querySelector('.pk-roll-total[data-roll-key="' + rollKey.replace(/"/g, '\\"') + '"]') : null;
+                    if (totalRollsNode) totalRollsNode.textContent = String(rollPhysical);
+                    rollBatches.push({
+                      batchNo: rollIdx + 1,
+                      type: 'ROLL',
+                      label: String(roll.rollNo || '-'),
+                      cartons: rollCartons,
+                      shrinkBundles: rollBundles,
+                      looseUsed: rollLoose,
+                      shortage: 0
+                    });
+                    resultCards.push(
+                      '<div style="border:1px solid #cbd5e1;border-radius:8px;padding:8px;background:#f8fafc">'
+                      + '<b style="display:block;font-size:.73rem;color:#0f172a;margin-bottom:4px">' + escHtml(String(roll.rollNo || '-')) + '</b>'
+                      + '<div style="font-size:.72rem;color:#334155">Cartons: <b>' + String(rollCartons) + '</b> | Extra: <b>' + String(rollLoose) + '</b></div>'
+                      + '<div style="font-size:.72rem;color:#166534">Physical Output: <b>' + String(rollPhysical) + '</b></div>'
+                      + '</div>'
+                    );
+                  });
+                  calcBundlesSpan.textContent = totalBundlesNum;
+                  calcCartonsSpan.textContent = totalCartonsNum;
+                  calcLooseSpan.textContent = totalLooseNum;
+                  if (calcPhysicalSpan) calcPhysicalSpan.textContent = String(totalPhysicalNum);
+                  if (perRollOutput) perRollOutput.innerHTML = resultCards.join('') || '<div style="font-size:.75rem;color:#64748b">No roll selected.</div>';
+                  currentPackingBatches = rollBatches;
                   
                   // Update Loose Qty container background color based on value
                   var looseContainer = document.getElementById('pkCalcLooseContainer');
                   if (looseContainer) {
-                    if (looseQty === 0) {
+                    if (totalLooseNum === 0) {
                       // Neutral light orange when zero
                       looseContainer.style.backgroundColor = '#fed7aa';
                       looseContainer.style.borderColor = '#fdba74';
                       looseContainer.style.color = '#78350f';
-                    } else if (looseQty > 0) {
+                    } else if (totalLooseNum > 0) {
                       // Warning red/orange when > 0
                       looseContainer.style.backgroundColor = '#fee2e2';
                       looseContainer.style.borderColor = '#fca5a5';
@@ -1050,15 +1254,20 @@ include __DIR__ . '/../../includes/header.php';
                       looseContainer.style.color = '#78350f';
                     }
                   }
-                  
                 }
 
                 // Event listeners
-                if (shrinkBundleInput) {
-                  shrinkBundleInput.addEventListener('input', recalc);
-                }
-                if (bundlesPerCartonInput) {
-                  bundlesPerCartonInput.addEventListener('input', recalc);
+                if (rollSelectNodes.length) {
+                  rollSelectNodes.forEach(function(node) {
+                    node.addEventListener('change', function() {
+                      if (node.checked) {
+                        rollSelectNodes.forEach(function(other) {
+                          if (other !== node) other.checked = false;
+                        });
+                      }
+                      recalc();
+                    });
+                  });
                 }
 
                 // Initial calculation.
@@ -1215,6 +1424,41 @@ include __DIR__ . '/../../includes/header.php';
         return isNaN(n) ? 0 : n;
       }
 
+      function getSelectedRollNodes() {
+        return Array.prototype.slice.call(section.querySelectorAll('.pk-roll-select:checked'));
+      }
+
+      function getSelectedRollInfo() {
+        var selected = getSelectedRollNodes();
+        if (selected.length !== 1) return null;
+        var idx = Number(selected[0].getAttribute('data-roll-index'));
+        if (isNaN(idx) || idx < 0 || idx >= rollLots.length) return null;
+        var lot = rollLots[idx] || {};
+        return {
+          index: idx,
+          rollNo: String(lot.rollNo || ('ROLL-' + String(idx + 1))),
+          batchNo: 'BATCH-' + String(idx + 1).padStart(3, '0')
+        };
+      }
+
+      function updateStickerButtonState() {
+        var stickerBtn = section.querySelector('.pk-btn-sticker');
+        if (!stickerBtn) return;
+        var selectedCount = getSelectedRollNodes().length;
+        var shouldDisable = selectedCount !== 1;
+        if (shouldDisable) {
+          stickerBtn.setAttribute('disabled', 'disabled');
+          stickerBtn.style.opacity = '0.55';
+          stickerBtn.style.cursor = 'not-allowed';
+          stickerBtn.title = selectedCount > 1 ? 'Only one roll can be selected for sticker print.' : 'Select one roll for sticker print.';
+        } else {
+          stickerBtn.removeAttribute('disabled');
+          stickerBtn.style.opacity = '1';
+          stickerBtn.style.cursor = 'pointer';
+          stickerBtn.title = '';
+        }
+      }
+
       function getStickerItemWidth() {
         function normalizeWidth(v) {
           if (v === null || typeof v === 'undefined') return '';
@@ -1295,6 +1539,11 @@ include __DIR__ . '/../../includes/header.php';
       }
 
       function openPrintConfirmModal(printType) {
+        if (printType === 'sticker' && !getSelectedRollInfo()) {
+          updateStickerButtonState();
+          setSectionMessage('Sticker print requires exactly one selected roll.', true);
+          return;
+        }
 
         var printModal = document.getElementById('pk-print-confirmation-modal');
         var titleEl = document.getElementById('pk-print-confirm-title');
@@ -1398,6 +1647,7 @@ include __DIR__ . '/../../includes/header.php';
         stickerBtn.onclick = function(e) {
           e.preventDefault();
           e.stopPropagation();
+          if (stickerBtn.hasAttribute('disabled')) return;
           openPrintConfirmModal('sticker');
         };
       }
@@ -1431,6 +1681,7 @@ include __DIR__ . '/../../includes/header.php';
         btn.addEventListener('click', function(e) {
           e.preventDefault();
           e.stopPropagation();
+          if (this.hasAttribute('disabled')) return;
           var buttonAction = '';
           if (this.classList.contains('pk-btn-finished')) buttonAction = 'finished';
           else if (this.classList.contains('pk-btn-cancel')) buttonAction = 'cancel';
@@ -1507,6 +1758,14 @@ include __DIR__ . '/../../includes/header.php';
           }
         });
       });
+
+      var rollSelectForPrintState = Array.prototype.slice.call(section.querySelectorAll('.pk-roll-select'));
+      if (rollSelectForPrintState.length) {
+        rollSelectForPrintState.forEach(function(node) {
+          node.addEventListener('change', updateStickerButtonState);
+        });
+      }
+      updateStickerButtonState();
       
       // Set up cancel confirmation modal
       setTimeout(function() {
@@ -1620,7 +1879,13 @@ include __DIR__ . '/../../includes/header.php';
           var qty = pendingPrintType === 'sticker' ? getNumericValue('pkCalcBundles') : getNumericValue('pkCalcCartons');
           var safeQty = qty > 0 ? qty : 1;
           var sizeParam = pendingPrintType === 'sticker' ? '40x25' : '150x100';
-          var rollsPerShrinkWrap = Number((document.getElementById('pkShrinkBundleInput') || {}).value || 0);
+          var selectedRollInfo = pendingPrintType === 'sticker' ? getSelectedRollInfo() : null;
+          if (pendingPrintType === 'sticker' && !selectedRollInfo) {
+            setSectionMessage('Sticker print requires exactly one selected roll.', true);
+            closePrintModal();
+            return;
+          }
+          var rollsPerShrinkWrap = Number((document.querySelector('.pk-roll-rps') || {}).value || 0);
           if (!rollsPerShrinkWrap || rollsPerShrinkWrap < 1) rollsPerShrinkWrap = 5;
           var stickerItemWidth = getStickerItemWidth();
           resolvePaperStockId().then(function(resolvedId) {
@@ -1629,13 +1894,33 @@ include __DIR__ . '/../../includes/header.php';
               closePrintModal();
               return;
             }
-            var printUrl = baseUrl + '/modules/paper_stock/label.php?ids=' + encodeURIComponent(String(resolvedId))
-              + '&print_type=' + encodeURIComponent(pendingPrintType)
-              + '&required_qty=' + encodeURIComponent(String(safeQty))
-              + '&label_size=' + encodeURIComponent(sizeParam)
-              + '&bundle_pcs=' + encodeURIComponent(String(rollsPerShrinkWrap))
-              + '&item_width=' + encodeURIComponent(String(stickerItemWidth || ''));
-            window.open(printUrl, '_blank');
+            var batches = (Array.isArray(currentPackingBatches) && currentPackingBatches.length) ? currentPackingBatches : null;
+            if (!batches || batches.length <= 1) {
+              var printUrl = baseUrl + '/modules/paper_stock/label.php?ids=' + encodeURIComponent(String(resolvedId))
+                + '&print_type=' + encodeURIComponent(pendingPrintType)
+                + '&required_qty=' + encodeURIComponent(String(safeQty))
+                + '&label_size=' + encodeURIComponent(sizeParam)
+                + '&bundle_pcs=' + encodeURIComponent(String(rollsPerShrinkWrap))
+                + '&item_width=' + encodeURIComponent(String(stickerItemWidth || ''))
+                + (selectedRollInfo ? ('&batch_no=' + encodeURIComponent(selectedRollInfo.batchNo) + '&batch_label=' + encodeURIComponent(selectedRollInfo.rollNo)) : '');
+              window.open(printUrl, '_blank');
+            } else {
+              batches.forEach(function(batch) {
+                var batchQty = pendingPrintType === 'sticker'
+                  ? Math.max(0, Number(batch.shrinkBundles || 0))
+                  : Math.max(0, Number(batch.cartons || 0));
+                if (batchQty <= 0) return;
+                var batchLabel = String(batch.label || ('Batch ' + String(batch.batchNo || '')));
+                var printUrl = baseUrl + '/modules/paper_stock/label.php?ids=' + encodeURIComponent(String(resolvedId))
+                  + '&print_type=' + encodeURIComponent(pendingPrintType)
+                  + '&required_qty=' + encodeURIComponent(String(batchQty))
+                  + '&label_size=' + encodeURIComponent(sizeParam)
+                  + '&bundle_pcs=' + encodeURIComponent(String(rollsPerShrinkWrap))
+                  + '&item_width=' + encodeURIComponent(String(stickerItemWidth || ''))
+                  + '&batch_label=' + encodeURIComponent(batchLabel);
+                window.open(printUrl, '_blank');
+              });
+            }
             setSectionMessage((pendingPrintType === 'sticker' ? 'Sticker' : 'Label') + ' Print opened.', false);
             closePrintModal();
           });
