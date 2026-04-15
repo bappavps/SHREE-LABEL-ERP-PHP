@@ -295,6 +295,7 @@ function packing_ensure_operator_entries_table(mysqli $db): void {
             `wastage_qty`   DECIMAL(12,2) DEFAULT NULL,
             `loose_qty`     DECIMAL(12,2) DEFAULT NULL,
             `notes`         TEXT DEFAULT NULL,
+            `roll_payload_json` LONGTEXT DEFAULT NULL,
             `photo_path`    VARCHAR(255) DEFAULT NULL,
             `submitted_at`  DATETIME DEFAULT NULL,
             `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -313,6 +314,17 @@ function packing_ensure_operator_entries_table(mysqli $db): void {
     }
     if (!$hasLooseQty) {
         $db->query("ALTER TABLE `packing_operator_entries` ADD COLUMN `loose_qty` DECIMAL(12,2) DEFAULT NULL AFTER `wastage_qty`");
+    }
+
+    // Backward compatibility for installations created before roll_payload_json field.
+    $hasRollPayloadJson = false;
+    $res = $db->query("SHOW COLUMNS FROM `packing_operator_entries` LIKE 'roll_payload_json'");
+    if ($res instanceof mysqli_result) {
+        $hasRollPayloadJson = ($res->num_rows > 0);
+        $res->close();
+    }
+    if (!$hasRollPayloadJson) {
+        $db->query("ALTER TABLE `packing_operator_entries` ADD COLUMN `roll_payload_json` LONGTEXT DEFAULT NULL AFTER `notes`");
     }
 }
 

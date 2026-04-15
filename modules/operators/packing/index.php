@@ -341,7 +341,14 @@ include __DIR__ . '/../../../includes/header.php';
   var modalBody = document.getElementById('opModalBody');
 
   function openModal()  { modal.classList.add('show');    modal.setAttribute('aria-hidden','false'); }
-  function closeModal() { modal.classList.remove('show'); modal.setAttribute('aria-hidden','true');  activeJobId = 0; activeJobNo = ''; activeJobData = null; }
+  function closeModal() {
+    if (document.getElementById('opSubmitSuccessModal')) return;
+    modal.classList.remove('show');
+    modal.setAttribute('aria-hidden','true');
+    activeJobId = 0;
+    activeJobNo = '';
+    activeJobData = null;
+  }
   function loadingHtml() { return '<div style="padding:30px;text-align:center;color:#92400e;font-weight:700">Loading job details...</div>'; }
 
   document.getElementById('opCloseModalBtn').addEventListener('click', closeModal);
@@ -407,9 +414,22 @@ include __DIR__ . '/../../../includes/header.php';
 
   // ── Render modal from job data ──
   function renderModal(job) {
-    var planExtra = (job.plan_extra_data&&typeof job.plan_extra_data==='object')?job.plan_extra_data:{};
-    var jobExtra  = (job.job_extra_data &&typeof job.job_extra_data ==='object')?job.job_extra_data :{};
-    var sources   = [job, planExtra, jobExtra];
+    function parseExtraData(raw) {
+      if (raw && typeof raw === 'object') return raw;
+      if (typeof raw === 'string') {
+        try {
+          var parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') return parsed;
+        } catch (e) {}
+      }
+      return {};
+    }
+
+    var planExtra = parseExtraData(job.plan_extra_data);
+    var jobExtra  = parseExtraData(job.job_extra_data);
+    var prevExtra = parseExtraData(job.prev_job_extra_data);
+    var grandPrevExtra = parseExtraData(job.grandprev_job_extra_data);
+    var sources   = [job, planExtra, jobExtra, prevExtra, grandPrevExtra];
 
     var orderQtyRaw = pickFirstLoose(sources, ['order_quantity','order_qty','quantity','qty_pcs']);
     var prodQtyRaw  = pickFirstLoose(sources, ['production_quantity','production_qty','produced_quantity','actual_qty','output_qty','completed_qty']);
@@ -419,6 +439,7 @@ include __DIR__ . '/../../../includes/header.php';
     var opEntry = (job.operator_entry && typeof job.operator_entry==='object') ? job.operator_entry : null;
     var lockSubmittedForOperator = !!opEntry && !opCanAdminOverrideEdit;
     var currentOpBatches = [];
+    var opEntryRollPayload = parseExtraData(opEntry ? opEntry.roll_payload_json : null);
 
     function numFromAny(v) {
       var n = parseFloat(String(v == null ? '' : v).replace(/,/g, ''));
@@ -440,6 +461,10 @@ include __DIR__ . '/../../../includes/header.php';
       }
 
       function push(src) {
+        if (src == null) return;
+        if (typeof src === 'string' || typeof src === 'number') {
+          src = { roll_no: String(src) };
+        }
         if (!src || typeof src !== 'object') return;
         var rollNo = String(firstPresent(src, ['roll_no', 'roll', 'parent_roll', 'roll_number', 'rollNumber']) || '').trim();
         if (!rollNo || seen[rollNo]) return;
@@ -452,8 +477,37 @@ include __DIR__ . '/../../../includes/header.php';
         out.push({ rollNo: rollNo, productionQty: Math.max(0, p), availableQty: Math.max(0, a) });
       }
 
+      function pushFromArrayMaybe(container, key) {
+        if (!container || typeof container !== 'object') return;
+        var arr = container[key];
+        if (!Array.isArray(arr)) return;
+        arr.forEach(push);
+      }
+
       if (Array.isArray(jobExtra.selected_rolls)) jobExtra.selected_rolls.forEach(push);
       if (Array.isArray(planExtra.selected_rolls)) planExtra.selected_rolls.forEach(push);
+      if (Array.isArray(prevExtra.selected_rolls)) prevExtra.selected_rolls.forEach(push);
+      if (Array.isArray(grandPrevExtra.selected_rolls)) grandPrevExtra.selected_rolls.forEach(push);
+      pushFromArrayMaybe(jobExtra, 'parent_details');
+      pushFromArrayMaybe(planExtra, 'parent_details');
+      pushFromArrayMaybe(prevExtra, 'parent_details');
+      pushFromArrayMaybe(grandPrevExtra, 'parent_details');
+      pushFromArrayMaybe(jobExtra, 'roll_details');
+      pushFromArrayMaybe(planExtra, 'roll_details');
+      pushFromArrayMaybe(prevExtra, 'roll_details');
+      pushFromArrayMaybe(grandPrevExtra, 'roll_details');
+      pushFromArrayMaybe(jobExtra, 'child_rolls');
+      pushFromArrayMaybe(planExtra, 'child_rolls');
+      pushFromArrayMaybe(prevExtra, 'child_rolls');
+      pushFromArrayMaybe(grandPrevExtra, 'child_rolls');
+      pushFromArrayMaybe(jobExtra, 'split_rolls');
+      pushFromArrayMaybe(planExtra, 'split_rolls');
+      pushFromArrayMaybe(prevExtra, 'split_rolls');
+      pushFromArrayMaybe(grandPrevExtra, 'split_rolls');
+      pushFromArrayMaybe(jobExtra, 'rolls');
+      pushFromArrayMaybe(planExtra, 'rolls');
+      pushFromArrayMaybe(prevExtra, 'rolls');
+      pushFromArrayMaybe(grandPrevExtra, 'rolls');
       if (!out.length) {
         push({ roll_no: pickFirst(sources, ['roll_no']), production_qty: fallbackQty, available_qty: fallbackQty });
       }
@@ -462,30 +516,59 @@ include __DIR__ . '/../../../includes/header.php';
 
     var rollLots = pickRollLots();
     var rollLooseOverrides = {};
+    var submittedSelectedRollKeys = [];
+    if (opEntryRollPayload && typeof opEntryRollPayload === 'object') {
+      var payloadSelected = Array.isArray(opEntryRollPayload.selected_roll_keys) ? opEntryRollPayload.selected_roll_keys : [];
+      submittedSelectedRollKeys = payloadSelected.map(function(v) { return String(v || '').trim(); }).filter(function(v) { return v !== ''; });
+      var payloadOverrides = (opEntryRollPayload.roll_overrides && typeof opEntryRollPayload.roll_overrides === 'object')
+        ? opEntryRollPayload.roll_overrides
+        : {};
+      Object.keys(payloadOverrides).forEach(function(key) {
+        var src = payloadOverrides[key];
+        if (!src || typeof src !== 'object') return;
+        var dst = {};
+        ['rps','rpc','csize','cartons','extra'].forEach(function(field) {
+          var raw = Math.floor(toNum(src[field]));
+          if (!Number.isFinite(raw)) return;
+          if (field === 'rps' || field === 'rpc' || field === 'csize') {
+            dst[field] = Math.max(1, raw);
+          } else {
+            dst[field] = Math.max(0, raw);
+          }
+        });
+        if (Object.keys(dst).length) {
+          rollLooseOverrides[String(key)] = dst;
+        }
+      });
+    }
     if (opEntry && rollLots.length) {
       var firstKey = String(rollLots[0].rollNo || 'roll-0');
-      var submittedPacked = Math.max(0, numFromAny(opEntry.packed_qty));
-      var submittedBundles = Math.max(0, Math.floor(numFromAny(opEntry.bundles_count)));
-      var submittedCartons = Math.max(0, Math.floor(numFromAny(opEntry.cartons_count)));
-      var submittedLoose = Math.max(0, Math.floor(numFromAny(opEntry.loose_qty)));
-      var derivedRps = (submittedBundles > 0 && submittedPacked > 0)
-        ? Math.max(1, Math.round(submittedPacked / submittedBundles))
-        : 5;
-      var derivedRpc = (submittedCartons > 0)
-        ? Math.max(1, Math.floor(Math.max(0, submittedPacked - submittedLoose) / submittedCartons))
-        : 50;
-      rollLooseOverrides[firstKey] = {
-        rps: derivedRps,
-        rpc: derivedRpc,
-        csize: 75,
-        cartons: submittedCartons,
-        extra: submittedLoose
-      };
+      if (!rollLooseOverrides[firstKey] || typeof rollLooseOverrides[firstKey] !== 'object') {
+        var submittedPacked = Math.max(0, numFromAny(opEntry.packed_qty));
+        var submittedBundles = Math.max(0, Math.floor(numFromAny(opEntry.bundles_count)));
+        var submittedCartons = Math.max(0, Math.floor(numFromAny(opEntry.cartons_count)));
+        var submittedLoose = Math.max(0, Math.floor(numFromAny(opEntry.loose_qty)));
+        var derivedRps = (submittedBundles > 0 && submittedPacked > 0)
+          ? Math.max(1, Math.round(submittedPacked / submittedBundles))
+          : 5;
+        var derivedRpc = (submittedCartons > 0)
+          ? Math.max(1, Math.floor(Math.max(0, submittedPacked - submittedLoose) / submittedCartons))
+          : 50;
+        rollLooseOverrides[firstKey] = {
+          rps: derivedRps,
+          rpc: derivedRpc,
+          csize: 75,
+          cartons: submittedCartons,
+          extra: submittedLoose
+        };
+      }
     }
     var rollSelectionHtml = rollLots.length ? rollLots.map(function(roll, idx) {
+      var rollKey = String(roll.rollNo || ('roll-' + String(idx)));
+      var isChecked = !submittedSelectedRollKeys.length || submittedSelectedRollKeys.indexOf(rollKey) !== -1;
       return ''
         + '<label style="display:flex;align-items:flex-start;gap:8px;border:1px solid #fdba74;border-radius:10px;padding:8px;background:#fff;cursor:pointer">'
-        + '  <input type="checkbox" class="op-roll-select" data-roll-index="' + String(idx) + '" checked style="margin-top:2px">'
+        + '  <input type="checkbox" class="op-roll-select" data-roll-index="' + String(idx) + '"' + (isChecked ? ' checked' : '') + ' style="margin-top:2px">'
         + '  <span style="display:flex;flex-direction:column;gap:2px">'
         + '    <b style="font-size:.78rem;color:#7c2d12">' + escHtml(roll.rollNo) + '</b>'
         + '    <span style="font-size:.7rem;color:#475569">Production: ' + escHtml(String(roll.productionQty)) + '</span>'
@@ -493,6 +576,9 @@ include __DIR__ . '/../../../includes/header.php';
         + '  </span>'
         + '</label>';
     }).join('') : '<div style="font-size:.78rem;color:#64748b">No roll data found.</div>';
+    var rollNoSummary = rollLots.length
+      ? rollLots.map(function(r) { return String(r.rollNo || '').trim(); }).filter(function(v) { return v !== ''; }).join(', ')
+      : pickFirst(sources, ['roll_no']);
 
     // Build section A detail items
     var detailKeys = [
@@ -503,7 +589,7 @@ include __DIR__ . '/../../../includes/header.php';
       ['Client Name',    pickFirst(sources,['client_name','customer_name'])],
       ['Order Date',     pickFirst(sources,['order_date'])],
       ['Dispatch Date',  pickFirst(sources,['dispatch_date','due_date'])],
-      ['Roll No',        pickFirst(sources,['roll_no'])],
+      ['Roll No',        rollNoSummary],
       ['Department',     pickFirst(sources,['department'])],
       ['Status',         pickFirst(sources,['status'])],
       ['Order Quantity', orderQtyRaw],
@@ -773,13 +859,30 @@ include __DIR__ . '/../../../includes/header.php';
       var batches = [];
       var summaryRows = [];
 
+      var splitMeta = selectedRolls.map(function(roll) {
+        var rollNo = String(roll && roll.rollNo ? roll.rollNo : '').trim();
+        var qtyVal = Math.max(0, Math.min(toNum(roll.productionQty), toNum(roll.availableQty)));
+        var parentKey = rollNo.replace(/-[A-Za-z0-9]+$/, '');
+        return { rollNo: rollNo, qty: qtyVal, parentKey: parentKey };
+      });
+      var parentKeySet = {};
+      var qtySet = {};
+      splitMeta.forEach(function(m) {
+        if (m.parentKey) parentKeySet[m.parentKey] = true;
+        qtySet[String(m.qty)] = true;
+      });
+      var parentKeyCount = Object.keys(parentKeySet).length;
+      var qtyCount = Object.keys(qtySet).length;
+      var sharedSplitMode = selectedRolls.length > 1 && parentKeyCount === 1 && qtyCount === 1;
+      var sharedReceivedQty = sharedSplitMode && splitMeta.length ? splitMeta[0].qty : 0;
+
       selectedRolls.forEach(function(roll, rollIdx) {
         var rollKey = String(roll.rollNo || ('roll-' + String(rollIdx)));
         var st = rollLooseOverrides[rollKey] || {};
         var rps = Math.max(1, Math.floor(toNum(st.rps || 5)));
         var rpc = Math.max(1, Math.floor(toNum(st.rpc || 50)));
         var qty = Math.max(0, Math.min(toNum(roll.productionQty), toNum(roll.availableQty)));
-        totalProductionReceived += qty;
+        if (!sharedSplitMode) totalProductionReceived += qty;
         var autoExtra = qty % rpc;
         var rollCartons = Object.prototype.hasOwnProperty.call(st, 'cartons') ? Math.max(0, Math.floor(toNum(st.cartons))) : Math.floor(qty / rpc);
         var rollExtra = Object.prototype.hasOwnProperty.call(st, 'extra') ? Math.max(0, Math.floor(toNum(st.extra))) : autoExtra;
@@ -796,7 +899,7 @@ include __DIR__ . '/../../../includes/header.php';
         summaryRows.push(
           '<tr>'
           + '<td style="padding:7px;border:1px solid #dcfce7;font-size:.78rem;color:#14532d;font-weight:700">' + escHtml(String(roll.rollNo || '-')) + '</td>'
-          + '<td style="padding:7px;border:1px solid #dcfce7;font-size:.78rem;color:#0f172a">' + escHtml(String(qty)) + '</td>'
+          + '<td style="padding:7px;border:1px solid #dcfce7;font-size:.78rem;color:#0f172a">' + escHtml(sharedSplitMode ? '_' : String(qty)) + '</td>'
           + '<td style="padding:7px;border:1px solid #dcfce7;font-size:.78rem;color:#334155">' + escHtml(String(rollCartons)) + ' x ' + escHtml(String(rpc)) + ' + ' + escHtml(String(rollExtra)) + '</td>'
           + '<td style="padding:7px;border:1px solid #dcfce7;font-size:.78rem;color:#166534;font-weight:900">' + escHtml(String(rollTotalRolls)) + '</td>'
           + '</tr>'
@@ -812,6 +915,8 @@ include __DIR__ . '/../../../includes/header.php';
           shortage: 0
         });
       });
+
+      if (sharedSplitMode) totalProductionReceived = sharedReceivedQty;
 
       var physicalPct = orderQtyNum > 0 ? ((physicalProduction / orderQtyNum) * 100) : 0;
 
@@ -1096,7 +1201,7 @@ include __DIR__ . '/../../../includes/header.php';
         + '  <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:999px;background:#dcfce7;color:#166534;font-weight:900">&#10003;</span>'
         + '  <h4 style="margin:0;font-size:1rem;color:#166534;font-weight:900">Entry Submitted</h4>'
         + '</div>'
-        + '<p style="margin:0 0 12px;color:#334155;font-size:.9rem;line-height:1.45">Submission successful. This window will close automatically.</p>'
+        + '<p style="margin:0 0 12px;color:#334155;font-size:.9rem;line-height:1.45">Submission successful. Press OK to close this window.</p>'
         + '<div style="display:flex;justify-content:flex-end;gap:8px">'
         + '  <button type="button" id="opSubmitSuccessOk" style="border:1px solid #16a34a;background:#16a34a;color:#fff;border-radius:9px;padding:7px 12px;font-size:.82rem;font-weight:800;cursor:pointer">OK</button>'
         + '</div>';
@@ -1114,10 +1219,6 @@ include __DIR__ . '/../../../includes/header.php';
 
       var okBtn = card.querySelector('#opSubmitSuccessOk');
       if (okBtn) okBtn.addEventListener('click', finalizeClose);
-      wrap.addEventListener('click', function(e) {
-        if (e.target === wrap) finalizeClose();
-      });
-      setTimeout(finalizeClose, 1300);
     }
 
     submitBtn.addEventListener('click', function() {
@@ -1156,6 +1257,44 @@ include __DIR__ . '/../../../includes/header.php';
       fd.append('wastage_qty',   wastageQty);
       fd.append('loose_qty',     looseQty);
       fd.append('notes',         notes);
+      var selectedRollPayloadKeys = [];
+      if (rollSelectNodes.length) {
+        rollSelectNodes.forEach(function(node) {
+          if (!node.checked) return;
+          var idx = Number(node.getAttribute('data-roll-index'));
+          if (isNaN(idx) || idx < 0 || idx >= rollLots.length) return;
+          selectedRollPayloadKeys.push(String(rollLots[idx].rollNo || ('roll-' + String(idx))));
+        });
+      }
+      var payloadOverrides = {};
+      selectedRollPayloadKeys.forEach(function(key) {
+        var lot = null;
+        for (var i = 0; i < rollLots.length; i++) {
+          if (String(rollLots[i].rollNo || ('roll-' + String(i))) === key) {
+            lot = rollLots[i];
+            break;
+          }
+        }
+        var lotQty = lot ? Math.max(0, Math.min(toNum(lot.productionQty), toNum(lot.availableQty))) : 0;
+        var st = (rollLooseOverrides[key] && typeof rollLooseOverrides[key] === 'object') ? rollLooseOverrides[key] : {};
+        var rps = Math.max(1, Math.floor(toNum(st.rps || 5)));
+        var rpc = Math.max(1, Math.floor(toNum(st.rpc || 50)));
+        var cartons = Object.prototype.hasOwnProperty.call(st, 'cartons') ? Math.max(0, Math.floor(toNum(st.cartons))) : Math.floor(lotQty / rpc);
+        var autoExtra = lotQty % rpc;
+        var extra = Object.prototype.hasOwnProperty.call(st, 'extra') ? Math.max(0, Math.floor(toNum(st.extra))) : autoExtra;
+        payloadOverrides[key] = {
+          rps: rps,
+          rpc: rpc,
+          csize: 75,
+          cartons: cartons,
+          extra: extra
+        };
+      });
+      fd.append('roll_payload_json', JSON.stringify({
+        v: 1,
+        selected_roll_keys: selectedRollPayloadKeys,
+        roll_overrides: payloadOverrides
+      }));
       if (photoInput && photoInput.files && photoInput.files[0]) {
         fd.append('photo', photoInput.files[0]);
       }

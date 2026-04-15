@@ -52,6 +52,7 @@ if ($printType === '' && in_array($sizeParam, ['40x25', '40×25', '40*25'], true
 $bundlePcsParam = trim((string)($_GET['bundle_pcs'] ?? ''));
 $bundlePcs = is_numeric($bundlePcsParam) ? (string)(int)$bundlePcsParam : '';
 $itemWidthParam = trim((string)($_GET['item_width'] ?? ''));
+$batchNoParam = trim((string)($_GET['batch_no'] ?? ''));
 
 // ── Auto-create print_templates table if missing ──────────────
 @$db->query("CREATE TABLE IF NOT EXISTS print_templates (
@@ -229,7 +230,7 @@ $printDateSlash = $printNow->format('n/j/Y');
 $printDateFormatted = $printNow->format('d M Y');
 $printDateDdMmYyyy = $printNow->format('d/m/Y');
 $printDateYmd = $printNow->format('Y-m-d');
-$jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSlash, $printDateFormatted, $printDateDdMmYyyy, $printDateYmd, $bundlePcs, $itemWidthParam, $jobNoToId, $rollNoToJobNo) {
+$jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSlash, $printDateFormatted, $printDateDdMmYyyy, $printDateYmd, $bundlePcs, $itemWidthParam, $batchNoParam, $jobNoToId, $rollNoToJobNo) {
     $dateFormatted  = ($r['date_received'] ?? '') ? date('d M Y', strtotime($r['date_received'])) : '';
     $dateSlash      = ($r['date_received'] ?? '') ? date('n/j/Y', strtotime($r['date_received'])) : '';
     $dateDdMmYyyy   = ($r['date_received'] ?? '') ? date('d/m/Y', strtotime($r['date_received'])) : '';
@@ -259,7 +260,8 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSla
     $companySource  = $companyRollNo !== '' ? $companyRollNo : $paperCompany;
     $companyCodeRaw = strtoupper(preg_replace('/[^A-Za-z]/', '', (string)$companySource));
     $companyCode    = $companyCodeRaw !== '' ? substr($companyCodeRaw, 0, 2) : 'NA';
-    $posBatchNo     = $rollNo !== '' ? ($rollNo . '/' . $companyCode) : ('NA/' . $companyCode);
+    $batchBaseRaw   = trim((string)$batchNoParam) !== '' ? trim((string)$batchNoParam) : $rollNo;
+    $posBatchNo     = $batchBaseRaw !== '' ? ($batchBaseRaw . ' / ' . $companyCode) : ('NA / ' . $companyCode);
     $itemWidthVal   = trim((string)$itemWidthParam) !== '' ? trim((string)$itemWidthParam) : $widthVal;
     $bundlePcsVal   = trim((string)$bundlePcs) !== '' ? trim((string)$bundlePcs) : '0';
     return [
@@ -289,6 +291,7 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSla
         'item_width'      => $itemWidthVal,
         'bundle_pcs'      => $bundlePcsVal,
         'rolls_per_shrink_wrap' => $bundlePcsVal,
+        'batch_no'        => $posBatchNo,
         'pos_batch_no'    => $posBatchNo,
         'job_token'       => $jobToken,
         'roll_token'      => $rollToken,
@@ -645,6 +648,7 @@ var baseUrl = <?= json_encode(BASE_URL, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 var printType = <?= json_encode($printType, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 var bundlePcs = <?= json_encode($bundlePcs, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 var itemWidthParam = <?= json_encode($itemWidthParam, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+var batchNoParam = <?= json_encode($batchNoParam, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 var previewZoom = 100;
 var activeTemplateId = 0;
 
@@ -792,7 +796,8 @@ function renderBuiltinLabel(roll, tpl) {
             var companySource = String(roll.company_roll_no || roll.company || '');
             var companyCodeRaw = companySource.replace(/[^A-Za-z]/g, '').toUpperCase();
             var companyCode = companyCodeRaw ? companyCodeRaw.substring(0, 2) : 'NA';
-            var batchNo = String(roll.roll_no || '') + '/' + companyCode;
+            var batchBase = String(roll.pos_batch_no || roll.batch_no || batchNoParam || '').trim() || String(roll.roll_no || '').trim() || 'NA';
+            var batchNo = /\/\s*[A-Za-z]{2,}$/.test(batchBase) ? batchBase : (batchBase + ' / ' + companyCode);
             var widthSource = normalizeStickerWidth(itemWidthParam) || normalizeStickerWidth(roll.width_mm) || '0';
             var sizeText = (widthSource || '0') + ' mm';
             var bundleText = bundlePcs && String(bundlePcs).trim() !== '' ? String(bundlePcs) : '0';

@@ -681,8 +681,73 @@ include __DIR__ . '/../../includes/header.php';
   function buildPlanningRows(job) {
     var planExtra = (job && job.plan_extra_data && typeof job.plan_extra_data === 'object') ? job.plan_extra_data : {};
     var jobExtra = (job && job.job_extra_data && typeof job.job_extra_data === 'object') ? job.job_extra_data : {};
-    var sources = [job || {}, planExtra, jobExtra];
+    var prevExtra = (job && job.prev_job_extra_data && typeof job.prev_job_extra_data === 'object') ? job.prev_job_extra_data : {};
+    var grandPrevExtra = (job && job.grandprev_job_extra_data && typeof job.grandprev_job_extra_data === 'object') ? job.grandprev_job_extra_data : {};
+    var sourceObjects = [job || {}, planExtra, jobExtra, prevExtra, grandPrevExtra];
 
+    var rollSeen = {};
+    var rollList = [];
+    function addRoll(raw) {
+      if (raw === null || typeof raw === 'undefined') return;
+      var rollNo = String(raw).trim();
+      if (!rollNo || rollSeen[rollNo]) return;
+      rollSeen[rollNo] = true;
+      rollList.push(rollNo);
+    }
+    function addFromSource(src) {
+      if (!src || typeof src !== 'object') return;
+      addRoll(src.roll_no || src.parent_roll || src.roll || src.rollNumber || src.roll_number);
+      ['selected_rolls', 'split_rolls', 'child_rolls', 'rolls'].forEach(function(key) {
+        var arr = src[key];
+        if (!Array.isArray(arr)) return;
+        arr.forEach(function(it) {
+          if (it && typeof it === 'object') addRoll(it.roll_no || it.parent_roll || it.roll || it.rollNumber || it.roll_number);
+          else addRoll(it);
+        });
+      });
+    }
+    sourceObjects.forEach(addFromSource);
+
+    function collectAssignedFromSource(src) {
+      if (!src || typeof src !== 'object') return [];
+      var out = [];
+      ['selected_rolls', 'split_rolls', 'child_rolls', 'rolls'].forEach(function(key) {
+        var arr = src[key];
+        if (!Array.isArray(arr)) return;
+        arr.forEach(function(it) {
+          var raw = (it && typeof it === 'object') ? (it.roll_no || it.parent_roll || it.roll || it.rollNumber || it.roll_number) : it;
+          var rollNo = String(raw == null ? '' : raw).trim();
+          if (rollNo) out.push(rollNo);
+        });
+      });
+      return out;
+    }
+
+    function stripParentRolls(list) {
+      var arr = Array.isArray(list) ? list.slice() : [];
+      return arr.filter(function(rollNo) {
+        var base = String(rollNo || '').trim();
+        if (!base) return false;
+        return !arr.some(function(other) {
+          var o = String(other || '').trim();
+          return o !== base && o.indexOf(base + '-') === 0;
+        });
+      });
+    }
+
+    var assignedSeen = {};
+    var assignedRolls = [];
+    [jobExtra, planExtra, prevExtra, grandPrevExtra].forEach(function(src) {
+      collectAssignedFromSource(src).forEach(function(rn) {
+        if (assignedSeen[rn]) return;
+        assignedSeen[rn] = true;
+        assignedRolls.push(rn);
+      });
+    });
+    assignedRolls = stripParentRolls(assignedRolls);
+    rollList = stripParentRolls(rollList);
+    var rollNoSummary = assignedRolls.length ? assignedRolls.join(', ') : (rollList.length ? rollList.join(', ') : '-');
+    var sources = [{ __roll_no_summary__: rollNoSummary }].concat(sourceObjects);
     var defs = [
       ['Packing ID', ['packing_display_id']],
       ['Plan No', ['plan_no', 'plan_number']],
@@ -691,7 +756,7 @@ include __DIR__ . '/../../includes/header.php';
       ['Client Name', ['client_name', 'customer_name']],
       ['Order Date', ['order_date']],
       ['Dispatch Date', ['dispatch_date', 'due_date']],
-      ['Roll No', ['roll_no', 'parent_roll']],
+      ['Roll No', ['__roll_no_summary__']],
       ['Department', ['department']],
       ['Status', ['status']],
       ['Planning Date', ['scheduled_date', 'planning_date', 'job_date']],
@@ -746,10 +811,59 @@ include __DIR__ . '/../../includes/header.php';
     var items = [];
     var jobExtra = (job && job.job_extra_data && typeof job.job_extra_data === 'object') ? job.job_extra_data : {};
     var planExtra = (job && job.plan_extra_data && typeof job.plan_extra_data === 'object') ? job.plan_extra_data : {};
+    var prevExtra = (job && job.prev_job_extra_data && typeof job.prev_job_extra_data === 'object') ? job.prev_job_extra_data : {};
+    var grandPrevExtra = (job && job.grandprev_job_extra_data && typeof job.grandprev_job_extra_data === 'object') ? job.grandprev_job_extra_data : {};
+
+    function extractRollNo(src) {
+      if (!src || typeof src !== 'object') return '';
+      return String(src.roll_no || src.parent_roll || src.roll || src.rollNumber || src.roll_number || '').trim();
+    }
+
+    function collectAssignedRolls(src) {
+      var out = [];
+      if (!src || typeof src !== 'object') return out;
+      ['selected_rolls', 'split_rolls', 'child_rolls', 'rolls'].forEach(function(key) {
+        var arr = src[key];
+        if (!Array.isArray(arr)) return;
+        arr.forEach(function(it) {
+          var rn = (it && typeof it === 'object') ? extractRollNo(it) : String(it == null ? '' : it).trim();
+          if (rn) out.push(rn);
+        });
+      });
+      return out;
+    }
+
+    function stripParentRolls(list) {
+      var arr = Array.isArray(list) ? list.slice() : [];
+      return arr.filter(function(rollNo) {
+        var base = String(rollNo || '').trim();
+        if (!base) return false;
+        return !arr.some(function(other) {
+          var o = String(other || '').trim();
+          return o !== base && o.indexOf(base + '-') === 0;
+        });
+      });
+    }
+
+    var assignedRollSeen = {};
+    var assignedRollList = [];
+    [jobExtra, planExtra, prevExtra, grandPrevExtra].forEach(function(src) {
+      collectAssignedRolls(src).forEach(function(rn) {
+        if (assignedRollSeen[rn]) return;
+        assignedRollSeen[rn] = true;
+        assignedRollList.push(rn);
+      });
+    });
+    assignedRollList = stripParentRolls(assignedRollList);
+    assignedRollSeen = {};
+    assignedRollList.forEach(function(rn) { assignedRollSeen[rn] = true; });
+    var hasAssignedRolls = assignedRollList.length > 0;
 
     function addItem(src) {
       if (!src || typeof src !== 'object') return;
       var rollNo = src.roll_no || src.parent_roll || src.roll || '-';
+      var rollNoNorm = String(rollNo).trim();
+      if (hasAssignedRolls && (!rollNoNorm || !assignedRollSeen[rollNoNorm])) return;
       var company = src.company || src.paper_company || src.material_company || src.client_name || '-';
       var paperType = src.paper_type || src.material_name || src.paper || src.material_type || '-';
       var width = src.width_mm || src.width || '-';
@@ -758,8 +872,16 @@ include __DIR__ . '/../../includes/header.php';
     }
 
     addItem(jobExtra.parent_details || {});
+    addItem(prevExtra.parent_details || {});
+    addItem(grandPrevExtra.parent_details || {});
     if (jobExtra.parent_roll && (!jobExtra.parent_details || typeof jobExtra.parent_details !== 'object')) {
       addItem({ parent_roll: jobExtra.parent_roll });
+    }
+    if (prevExtra.parent_roll && (!prevExtra.parent_details || typeof prevExtra.parent_details !== 'object')) {
+      addItem({ parent_roll: prevExtra.parent_roll });
+    }
+    if (grandPrevExtra.parent_roll && (!grandPrevExtra.parent_details || typeof grandPrevExtra.parent_details !== 'object')) {
+      addItem({ parent_roll: grandPrevExtra.parent_roll });
     }
 
     if (Array.isArray(jobExtra.selected_rolls)) {
@@ -768,9 +890,23 @@ include __DIR__ . '/../../includes/header.php';
     if (Array.isArray(planExtra.selected_rolls)) {
       planExtra.selected_rolls.forEach(addItem);
     }
+    if (Array.isArray(prevExtra.selected_rolls)) {
+      prevExtra.selected_rolls.forEach(addItem);
+    }
+    if (Array.isArray(grandPrevExtra.selected_rolls)) {
+      grandPrevExtra.selected_rolls.forEach(addItem);
+    }
+    if (Array.isArray(jobExtra.split_rolls)) jobExtra.split_rolls.forEach(addItem);
+    if (Array.isArray(planExtra.split_rolls)) planExtra.split_rolls.forEach(addItem);
+    if (Array.isArray(prevExtra.split_rolls)) prevExtra.split_rolls.forEach(addItem);
+    if (Array.isArray(grandPrevExtra.split_rolls)) grandPrevExtra.split_rolls.forEach(addItem);
+    if (Array.isArray(jobExtra.child_rolls)) jobExtra.child_rolls.forEach(addItem);
+    if (Array.isArray(planExtra.child_rolls)) planExtra.child_rolls.forEach(addItem);
+    if (Array.isArray(prevExtra.child_rolls)) prevExtra.child_rolls.forEach(addItem);
+    if (Array.isArray(grandPrevExtra.child_rolls)) grandPrevExtra.child_rolls.forEach(addItem);
 
     var fallback = {
-      roll_no: job.roll_no || planExtra.roll_no || '',
+      roll_no: hasAssignedRolls ? '' : (job.roll_no || planExtra.roll_no || prevExtra.roll_no || grandPrevExtra.roll_no || ''),
       paper_company: job.paper_company || planExtra.paper_company_name || planExtra.paper_company || planExtra.company_name || planExtra.material_company || '',
       paper_type: job.paper_type || planExtra.paper_type || planExtra.paper_name || planExtra.material_name || planExtra.material_type || '',
       width_mm: job.paper_width_mm || planExtra.paper_width_mm || planExtra.width_mm || planExtra.paper_width || planExtra.item_width || planExtra.width || '',
@@ -778,9 +914,29 @@ include __DIR__ . '/../../includes/header.php';
     };
     addItem(fallback);
 
+    function normNumText(v) {
+      var s = String(v == null ? '' : v).trim();
+      var n = Number(s.replace(/,/g, ''));
+      if (!isNaN(n)) return String(n);
+      return s;
+    }
+
+    function suppressParentRows(rows) {
+      var allRolls = rows.map(function(r) { return String(r.rollNo || '').trim(); }).filter(function(v) { return v !== ''; });
+      return rows.filter(function(r) {
+        var base = String(r.rollNo || '').trim();
+        if (!base) return false;
+        return !allRolls.some(function(other) {
+          return other !== base && other.indexOf(base + '-') === 0;
+        });
+      });
+    }
+
+    items = suppressParentRows(items);
+
     var seen = {};
     return items.filter(function(it) {
-      var key = [it.rollNo, it.company, it.paperType, it.width, it.length].join('|');
+      var key = [it.rollNo, it.company, it.paperType, normNumText(it.width), normNumText(it.length)].join('|');
       if (seen[key]) return false;
       seen[key] = true;
       return !(it.rollNo === '-' && it.company === '-' && it.paperType === '-');
@@ -797,6 +953,8 @@ include __DIR__ . '/../../includes/header.php';
     var seen = {};
     var jobExtra = (job && job.job_extra_data && typeof job.job_extra_data === 'object') ? job.job_extra_data : {};
     var planExtra = (job && job.plan_extra_data && typeof job.plan_extra_data === 'object') ? job.plan_extra_data : {};
+    var prevExtra = (job && job.prev_job_extra_data && typeof job.prev_job_extra_data === 'object') ? job.prev_job_extra_data : {};
+    var grandPrevExtra = (job && job.grandprev_job_extra_data && typeof job.grandprev_job_extra_data === 'object') ? job.grandprev_job_extra_data : {};
 
     function firstPresent(src, keys) {
       if (!src || typeof src !== 'object') return '';
@@ -830,10 +988,20 @@ include __DIR__ . '/../../includes/header.php';
 
     if (Array.isArray(jobExtra.selected_rolls)) jobExtra.selected_rolls.forEach(pushLot);
     if (Array.isArray(planExtra.selected_rolls)) planExtra.selected_rolls.forEach(pushLot);
+    if (Array.isArray(prevExtra.selected_rolls)) prevExtra.selected_rolls.forEach(pushLot);
+    if (Array.isArray(grandPrevExtra.selected_rolls)) grandPrevExtra.selected_rolls.forEach(pushLot);
+    if (Array.isArray(jobExtra.split_rolls)) jobExtra.split_rolls.forEach(pushLot);
+    if (Array.isArray(planExtra.split_rolls)) planExtra.split_rolls.forEach(pushLot);
+    if (Array.isArray(prevExtra.split_rolls)) prevExtra.split_rolls.forEach(pushLot);
+    if (Array.isArray(grandPrevExtra.split_rolls)) grandPrevExtra.split_rolls.forEach(pushLot);
+    if (Array.isArray(jobExtra.child_rolls)) jobExtra.child_rolls.forEach(pushLot);
+    if (Array.isArray(planExtra.child_rolls)) planExtra.child_rolls.forEach(pushLot);
+    if (Array.isArray(prevExtra.child_rolls)) prevExtra.child_rolls.forEach(pushLot);
+    if (Array.isArray(grandPrevExtra.child_rolls)) grandPrevExtra.child_rolls.forEach(pushLot);
 
     if (!out.length) {
       pushLot({
-        roll_no: job && job.roll_no ? job.roll_no : '',
+        roll_no: (job && job.roll_no ? job.roll_no : '') || prevExtra.roll_no || grandPrevExtra.roll_no || '',
         production_qty: fallbackQty,
         available_qty: fallbackQty
       });
@@ -881,12 +1049,33 @@ include __DIR__ . '/../../includes/header.php';
     var targetPaperStockId = Number(job.paper_stock_id || 0);
     var operatorEntry = (job.operator_entry && typeof job.operator_entry === 'object') ? job.operator_entry : null;
     var operatorHasSubmitted = !!operatorEntry;
+    var operatorRollPayload = {};
+    if (operatorEntry && operatorEntry.roll_payload_json) {
+      if (typeof operatorEntry.roll_payload_json === 'object') {
+        operatorRollPayload = operatorEntry.roll_payload_json;
+      } else if (typeof operatorEntry.roll_payload_json === 'string') {
+        try {
+          var parsedRollPayload = JSON.parse(operatorEntry.roll_payload_json);
+          if (parsedRollPayload && typeof parsedRollPayload === 'object') {
+            operatorRollPayload = parsedRollPayload;
+          }
+        } catch (e) {}
+      }
+    }
+    var operatorSelectedRollKeys = Array.isArray(operatorRollPayload.selected_roll_keys)
+      ? operatorRollPayload.selected_roll_keys.map(function(v) { return String(v == null ? '' : v).trim(); }).filter(function(v) { return v !== ''; })
+      : [];
+    var operatorRollOverrides = (operatorRollPayload.roll_overrides && typeof operatorRollPayload.roll_overrides === 'object')
+      ? operatorRollPayload.roll_overrides
+      : {};
     var prodQtyBaseline = safeNum(job && job.production_quantity ? job.production_quantity : 0);
     var rollLots = normalizeRollLots(job, prodQtyBaseline);
     var rollSelectionHtml = rollLots.length ? rollLots.map(function(roll, idx) {
+      var rollKey = String(roll.rollNo || ('roll-' + String(idx)));
+      var isChecked = !operatorSelectedRollKeys.length || operatorSelectedRollKeys.indexOf(rollKey) !== -1;
       return ''
         + '<label style="display:flex;align-items:flex-start;gap:8px;border:1px solid #bae6fd;border-radius:10px;padding:8px;background:#fff;cursor:pointer">'
-        + '  <input type="checkbox" class="pk-roll-select" data-roll-index="' + String(idx) + '" checked style="margin-top:2px">'
+        + '  <input type="checkbox" class="pk-roll-select" data-roll-index="' + String(idx) + '"' + (isChecked ? ' checked' : '') + ' style="margin-top:2px">'
         + '  <span style="display:flex;flex-direction:column;gap:2px">'
         + '    <b style="font-size:.78rem;color:#0f172a">' + escHtml(roll.rollNo) + '</b>'
         + '  </span>'
@@ -1053,12 +1242,21 @@ include __DIR__ . '/../../includes/header.php';
                 var perRollOutput = document.getElementById('pkPerRollOutput');
                 var rollSelectNodes = Array.prototype.slice.call(document.querySelectorAll('.pk-roll-select'));
                 var rollHelperOverrides = {};
-
-                if (rollSelectNodes.length) {
-                  rollSelectNodes.forEach(function(node, idx) {
-                    node.checked = idx === 0;
+                Object.keys(operatorRollOverrides).forEach(function(k) {
+                  var src = operatorRollOverrides[k];
+                  if (!src || typeof src !== 'object') return;
+                  var state = {};
+                  ['rps', 'rpc', 'cartons', 'extra', 'csize'].forEach(function(field) {
+                    if (!Object.prototype.hasOwnProperty.call(src, field)) return;
+                    var raw = Math.floor(toNum(src[field]));
+                    if (!isNaN(raw)) {
+                      state[field] = (field === 'rps' || field === 'rpc' || field === 'csize') ? Math.max(1, raw) : Math.max(0, raw);
+                    }
                   });
-                }
+                  if (Object.keys(state).length) {
+                    rollHelperOverrides[String(k)] = state;
+                  }
+                });
                 
                 // Display order and production quantities
                 dashOrderQtySpan.textContent = orderQty > 0 ? orderQty : '-';
@@ -1260,11 +1458,6 @@ include __DIR__ . '/../../includes/header.php';
                 if (rollSelectNodes.length) {
                   rollSelectNodes.forEach(function(node) {
                     node.addEventListener('change', function() {
-                      if (node.checked) {
-                        rollSelectNodes.forEach(function(other) {
-                          if (other !== node) other.checked = false;
-                        });
-                      }
                       recalc();
                     });
                   });
@@ -1437,7 +1630,7 @@ include __DIR__ . '/../../includes/header.php';
         return {
           index: idx,
           rollNo: String(lot.rollNo || ('ROLL-' + String(idx + 1))),
-          batchNo: 'BATCH-' + String(idx + 1).padStart(3, '0')
+          batchNo: String(lot.rollNo || ('ROLL-' + String(idx + 1)))
         };
       }
 

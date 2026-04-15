@@ -169,12 +169,21 @@ try {
         $wastageQty   = trim((string)($_POST['wastage_qty'] ?? ''));
         $looseQty     = trim((string)($_POST['loose_qty'] ?? ''));
         $notes        = trim((string)($_POST['notes'] ?? ''));
+        $rollPayloadJsonRaw = trim((string)($_POST['roll_payload_json'] ?? ''));
 
         $packedQtyVal    = is_numeric($packedQty)    ? (float)$packedQty    : null;
         $bundlesCountVal = is_numeric($bundlesCount) ? (int)$bundlesCount   : null;
         $cartonsCountVal = is_numeric($cartonsCount) ? (int)$cartonsCount   : null;
         $wastageQtyVal   = is_numeric($wastageQty)   ? (float)$wastageQty   : null;
         $looseQtyVal     = is_numeric($looseQty)     ? (float)$looseQty     : null;
+        $rollPayloadJsonVal = null;
+        if ($rollPayloadJsonRaw !== '') {
+            $decodedRollPayload = json_decode($rollPayloadJsonRaw, true);
+            if (!is_array($decodedRollPayload)) {
+                packing_api_respond(['ok' => false, 'message' => 'Invalid roll payload JSON'], 400);
+            }
+            $rollPayloadJsonVal = json_encode($decodedRollPayload, JSON_UNESCAPED_UNICODE);
+        }
 
         $operatorId   = (int)($_SESSION['user_id']   ?? 0);
         $operatorName = trim((string)($_SESSION['user_name'] ?? ''));
@@ -226,28 +235,28 @@ try {
                 UPDATE packing_operator_entries
                 SET job_id=?, planning_id=?, operator_id=?, operator_name=?,
                     packed_qty=?, bundles_count=?, cartons_count=?, wastage_qty=?, loose_qty=?,
-                    notes=?, photo_path=COALESCE(?,photo_path), submitted_at=?, updated_at=NOW()
+                    notes=?, roll_payload_json=COALESCE(?,roll_payload_json), photo_path=COALESCE(?,photo_path), submitted_at=?, updated_at=NOW()
                 WHERE job_no=?
             ");
             if (!$stmt) packing_api_respond(['ok' => false, 'message' => 'Prepare failed'], 500);
-            $stmt->bind_param('iiisdiiddssss',
+            $stmt->bind_param('iiisdiiddsssss',
                 $jobId, $planId, $operatorId, $operatorName,
                 $packedQtyVal, $bundlesCountVal, $cartonsCountVal, $wastageQtyVal, $looseQtyVal,
-                $notes, $photoPath, $submittedAt, $jobNo
+                $notes, $rollPayloadJsonVal, $photoPath, $submittedAt, $jobNo
             );
         } else {
             $stmt = $db->prepare("
                 INSERT INTO packing_operator_entries
                     (job_no, job_id, planning_id, operator_id, operator_name,
                      packed_qty, bundles_count, cartons_count, wastage_qty, loose_qty,
-                     notes, photo_path, submitted_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                     notes, roll_payload_json, photo_path, submitted_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ");
             if (!$stmt) packing_api_respond(['ok' => false, 'message' => 'Prepare failed'], 500);
-            $stmt->bind_param('siiisdiiddsss',
+            $stmt->bind_param('siiisdiiddssss',
                 $jobNo, $jobId, $planId, $operatorId, $operatorName,
                 $packedQtyVal, $bundlesCountVal, $cartonsCountVal, $wastageQtyVal, $looseQtyVal,
-                $notes, $photoPath, $submittedAt
+                $notes, $rollPayloadJsonVal, $photoPath, $submittedAt
             );
         }
 
