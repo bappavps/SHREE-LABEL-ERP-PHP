@@ -1080,6 +1080,11 @@ function canAccessPath($path) {
         return canAccessPath('/modules/packing/index.php');
     }
 
+    // Packing API follows packing page permission.
+    if ($path === '/modules/packing/api.php') {
+        return canAccessPath('/modules/packing/index.php');
+    }
+
     $catalog = rbacPageCatalog();
     if (!isset($catalog[$path])) {
         // If page is not cataloged, deny by default for non-admin.

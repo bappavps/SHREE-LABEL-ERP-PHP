@@ -450,6 +450,7 @@ textarea.ps-prop-input { resize:vertical;min-height:50px; }
 const MM_TO_PX = 3.78;
 const CSRF_TOKEN = '<?= e($csrf) ?>';
 const PAGE_URL = '<?= BASE_URL ?>/modules/print/index.php';
+const ERP_BASE_URL = '<?= e(BASE_URL) ?>';
 const AUTO_EDIT_ID = <?= $autoEditId ?>;
 const TEMPLATES_DATA = <?= json_encode($jsTemplates, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 
@@ -513,6 +514,19 @@ const PLACEHOLDERS = {
     { key:'{{job.operator}}', label:'Operator', icon:'bi-person', preview:'Mriganka Debnath' },
     { key:'{{sourceMaterials}}', label:'Source Material Grid', icon:'bi-grid-3x3', preview:'TABLE' },
     { key:'{{slittingOutputs}}', label:'Slitting Output Grid', icon:'bi-grid-3x3', preview:'TABLE' }
+  ],
+  'POS Roll Sticker': [
+    { key:'{{paper_roll_title}}', label:'Paper Roll Title', icon:'bi-type-h1', preview:'PAPER ROLL' },
+    { key:'{{paper_type}}', label:'Material Type', icon:'bi-file-text', preview:'THERMAL PAPER' },
+    { key:'{{item_width}}', label:'Item Width (MM)', icon:'bi-arrows-expand', preview:'78' },
+    { key:'{{bundle_pcs}}', label:'Rolls per Shrink Wrap', icon:'bi-123', preview:'5' },
+    { key:'{{pos_batch_no}}', label:'POS Batch No', icon:'bi-upc', preview:'SLC/2026/0364-C/AB' },
+    { key:'{{job_no}}', label:'Job Number', icon:'bi-briefcase', preview:'OPL-PRL/2026/0006' },
+    { key:'{{job_token}}', label:'Compact Job Token (Code128)', icon:'bi-upc-scan', preview:'J6' },
+    { key:'{{scan_job_url}}', label:'Job Scan URL', icon:'bi-link-45deg', preview:(ERP_BASE_URL + '/modules/scan/job.php?jn=OPL-PRL%2F2026%2F0006') },
+    { key:'{{roll_no}}', label:'Roll Number', icon:'bi-box', preview:'SLC/2026/0364-C' },
+    { key:'{{company_code}}', label:'Company Code (2 letters)', icon:'bi-building', preview:'AB' },
+    { key:'{{barcode_value}}', label:'Barcode Value', icon:'bi-upc-scan', preview:'J6' }
   ]
 };
 
@@ -824,7 +838,10 @@ function psRenderErpFields() {
     html += '<div style="padding:8px"><p style="font-size:8px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;padding:0 6px;margin:0 0 4px">'+group+'</p>';
     fields.forEach(f => {
       const isTable = f.preview === 'TABLE';
-      const onclick = isTable ? "psAddElement('table','"+f.key.replace(/[{}]/g,'')+"')" : "psAddElement('text',null,'"+f.key+"')";
+      const isBarcodeField = String(f.key || '').toLowerCase() === '{{barcode_value}}';
+      const onclick = isTable
+        ? "psAddElement('table','"+f.key.replace(/[{}]/g,'')+"')"
+        : (isBarcodeField ? "psAddElement('barcode',null,'"+f.key+"')" : "psAddElement('text',null,'"+f.key+"')");
       html += '<button class="ps-field-btn" onclick="'+onclick+'"><i class="bi '+f.icon+'"></i><span>'+f.label+'</span></button>';
     });
     html += '</div>';
@@ -1078,7 +1095,20 @@ function psRenderBarcode(el) {
     let val = psProcessText(el.content || el.placeholder || 'PREVIEW');
     const fmt = el.barcodeType || 'CODE128';
     if (fmt==='EAN13'||fmt==='UPC') val = '123456789012';
-    JsBarcode(svg, val, { format:fmt, height:Math.max(20,el.height-30), width:1.5, fontSize:10, displayValue:true, margin:4 });
+    const compact = (fmt === 'CODE128') && ((el.width || 0) <= 90 || (el.height || 0) <= 30 || String(val).length <= 10);
+    JsBarcode(svg, val, {
+      format: fmt,
+      height: compact ? Math.max(12, (el.height || 24) - 4) : Math.max(20, (el.height || 50) - 30),
+      width: compact ? 0.9 : 1.5,
+      fontSize: compact ? 0 : 10,
+      displayValue: !compact,
+      margin: compact ? 1 : 4
+    });
+    // Keep barcode responsive to element resize/rotate without overflow glitches.
+    svg.style.width = '100%';
+    svg.style.height = '100%';
+    svg.style.display = 'block';
+    svg.setAttribute('preserveAspectRatio', 'none');
   } catch(e) {}
 }
 
@@ -1127,8 +1157,10 @@ function psStartResize(e, el) {
     let nw = origW + (me.clientX - startX) / psZoom;
     let nh = el.type==='line' ? el.height : origH + (me.clientY - startY) / psZoom;
     if (psGridSnap > 0) { nw = Math.round(nw/psGridSnap)*psGridSnap; nh = Math.round(nh/psGridSnap)*psGridSnap; }
-    el.width = Math.max(10, nw);
-    el.height = Math.max(el.type==='line'?1:10, nh);
+    const minW = el.type === 'barcode' ? 40 : 10;
+    const minH = el.type === 'barcode' ? 16 : (el.type==='line' ? 1 : 10);
+    el.width = Math.max(minW, nw);
+    el.height = Math.max(minH, nh);
     const div = document.querySelector('[data-element-id="'+el.id+'"]');
     if (div) { div.style.width = el.width+'px'; div.style.height = el.height+'px'; }
   }
@@ -1217,7 +1249,8 @@ function psRenderProps() {
     h += '<div style="margin-bottom:20px">';
     h += '<label style="font-size:10px;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:1px;display:block;padding-bottom:8px;border-bottom:1px solid #f1f5f9;margin-bottom:12px">Barcode</label>';
     h += '<div style="margin-bottom:10px"><label style="font-size:9px;font-weight:700;text-transform:uppercase">Value</label><input type="text" class="ps-prop-input" value="'+psEscHtml(el.content||el.placeholder||'')+'" onchange="psUpdateProp(\''+el.id+'\',\'content\',this.value)"></div>';
-    h += '<div><label style="font-size:9px;font-weight:700;text-transform:uppercase">Format</label><select class="ps-prop-input" onchange="psUpdateProp(\''+el.id+'\',\'barcodeType\',this.value)"><option value="CODE128"'+(el.barcodeType==='CODE128'?' selected':'')+'>CODE 128</option><option value="CODE39"'+(el.barcodeType==='CODE39'?' selected':'')+'>CODE 39</option><option value="EAN13"'+(el.barcodeType==='EAN13'?' selected':'')+'>EAN-13</option></select></div>';
+    h += '<div><label style="font-size:9px;font-weight:700;text-transform:uppercase">Format</label><select class="ps-prop-input" onchange="psUpdateProp(\''+el.id+'\',\'barcodeType\',this.value)"><option value="CODE128"'+(el.barcodeType==='CODE128'?' selected':'')+'>CODE 128 (small label recommended)</option><option value="CODE39"'+(el.barcodeType==='CODE39'?' selected':'')+'>CODE 39</option><option value="EAN13"'+(el.barcodeType==='EAN13'?' selected':'')+'>EAN-13</option></select></div>';
+    h += '<div style="margin-top:8px;font-size:9px;color:#64748b;line-height:1.4">For 20x6mm barcode zone, use short token like <strong>J6</strong> and keep format as CODE 128.</div>';
     h += '</div>';
   }
 

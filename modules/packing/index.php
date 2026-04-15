@@ -781,9 +781,13 @@ include __DIR__ . '/../../includes/header.php';
     var target = document.getElementById('pkModalQrBox');
     if (!target) return;
     target.innerHTML = '';
-    var text = [job.packing_display_id || '', job.job_no || '', job.plan_no || ''].join('|');
+    var jobNo = String(job && job.job_no ? job.job_no : '').trim();
+    var text = jobNo ? (baseUrl + '/modules/scan/job.php?jn=' + encodeURIComponent(jobNo)) : '';
     if (typeof QRCode === 'function') {
       try {
+        if (!text) {
+          throw new Error('Missing job number for QR');
+        }
         new QRCode(target, { text: text, width: 104, height: 104, colorDark: '#0f172a', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
       } catch (e) {
         target.innerHTML = '<div style="font-size:.72rem;color:#64748b;font-weight:700">QR unavailable</div>';
@@ -1237,6 +1241,63 @@ include __DIR__ . '/../../includes/header.php';
         return isNaN(n) ? 0 : n;
       }
 
+      function getStickerItemWidth() {
+        function normalizeWidth(v) {
+          if (v === null || typeof v === 'undefined') return '';
+          var raw = String(v).replace(/\s*mm$/i, '').trim();
+          if (!raw) return '';
+          var n = Number(raw.replace(/,/g, ''));
+          // Guardrail: sticker item width should be realistic, not long meter values.
+          if (isNaN(n) || n <= 0 || n > 2000) return '';
+          return Math.abs(n - Math.round(n)) < 0.001 ? String(Math.round(n)) : String(n.toFixed(2)).replace(/\.00$/, '');
+        }
+
+        var candidate = '';
+        var jobExtra = (job && job.job_extra_data && typeof job.job_extra_data === 'object') ? job.job_extra_data : {};
+        var planExtra = (job && job.plan_extra_data && typeof job.plan_extra_data === 'object') ? job.plan_extra_data : {};
+
+        // First priority: "Item Width" value from Section A detail grid.
+        var detailItems = section.querySelectorAll('.pk-jc-detail-item');
+        for (var d = 0; d < detailItems.length; d++) {
+          var labelNode = detailItems[d].querySelector('b');
+          var valueNode = detailItems[d].querySelector('span');
+          var label = labelNode ? String(labelNode.textContent || '').trim().toLowerCase() : '';
+          if (label === 'item width') {
+            candidate = normalizeWidth(valueNode ? valueNode.textContent : '');
+            if (candidate) return candidate;
+          }
+        }
+
+        // Second priority: width shown in roll table.
+        var widthCell = section.querySelector('.pk-jc-rolls tbody tr td:nth-child(4)');
+        if (widthCell) {
+          candidate = normalizeWidth(widthCell.textContent || '');
+          if (candidate) return candidate;
+        }
+
+        var picks = [
+          job && job.item_width,
+          job && job.width_mm,
+          job && job.paper_width_mm,
+          job && job.paper_width,
+          planExtra.item_width,
+          planExtra.width_mm,
+          planExtra.paper_width_mm,
+          planExtra.paper_width,
+          planExtra.width,
+          jobExtra.item_width,
+          jobExtra.width_mm,
+          jobExtra.width
+        ];
+
+        for (var i = 0; i < picks.length; i++) {
+          candidate = normalizeWidth(picks[i]);
+          if (candidate) return candidate;
+        }
+
+        return '';
+      }
+
       function resolvePaperStockId() {
         if (targetPaperStockId > 0) {
           return Promise.resolve(targetPaperStockId);
@@ -1574,6 +1635,9 @@ include __DIR__ . '/../../includes/header.php';
           var qty = pendingPrintType === 'sticker' ? getNumericValue('pkCalcBundles') : getNumericValue('pkCalcCartons');
           var safeQty = qty > 0 ? qty : 1;
           var sizeParam = pendingPrintType === 'sticker' ? '40x25' : '150x100';
+          var rollsPerShrinkWrap = Number((document.getElementById('pkShrinkBundleInput') || {}).value || 0);
+          if (!rollsPerShrinkWrap || rollsPerShrinkWrap < 1) rollsPerShrinkWrap = 5;
+          var stickerItemWidth = getStickerItemWidth();
           resolvePaperStockId().then(function(resolvedId) {
             if (!resolvedId) {
               setSectionMessage('Paper stock id not found for this job.', true);
@@ -1583,7 +1647,9 @@ include __DIR__ . '/../../includes/header.php';
             var printUrl = baseUrl + '/modules/paper_stock/label.php?ids=' + encodeURIComponent(String(resolvedId))
               + '&print_type=' + encodeURIComponent(pendingPrintType)
               + '&required_qty=' + encodeURIComponent(String(safeQty))
-              + '&label_size=' + encodeURIComponent(sizeParam);
+              + '&label_size=' + encodeURIComponent(sizeParam)
+              + '&bundle_pcs=' + encodeURIComponent(String(rollsPerShrinkWrap))
+              + '&item_width=' + encodeURIComponent(String(stickerItemWidth || ''));
             window.open(printUrl, '_blank');
             setSectionMessage((pendingPrintType === 'sticker' ? 'Sticker' : 'Label') + ' Print opened.', false);
             closePrintModal();
@@ -1651,7 +1717,23 @@ include __DIR__ . '/../../includes/header.php';
     activeJobIdForModal = Number(jobId) || 0;
     var url = baseUrl + '/modules/packing/api.php?action=job_details&job_id=' + encodeURIComponent(String(jobId));
     fetch(url, { credentials: 'same-origin' })
-      .then(function(r) { return r.json(); })
+      .then(function(r) {
+        return r.text().then(function(text) {
+          var data = null;
+          try {
+            data = text ? JSON.parse(text) : null;
+          } catch (err) {
+            throw new Error('Server returned an invalid response for job details.');
+          }
+          if (!r.ok && data && data.message) {
+            throw new Error(data.message);
+          }
+          if (!r.ok) {
+            throw new Error('Could not load job details.');
+          }
+          return data;
+        });
+      })
       .then(function(data) {
         if (!data || !data.ok || !data.job) {
           alert((data && data.message) ? data.message : 'Could not load job details.');
@@ -1660,8 +1742,8 @@ include __DIR__ . '/../../includes/header.php';
         fillModal(data.job);
         openModal();
       })
-      .catch(function() {
-        alert('Could not load job details.');
+      .catch(function(err) {
+        alert((err && err.message) ? err.message : 'Could not load job details.');
       });
   }
 

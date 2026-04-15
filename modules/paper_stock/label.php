@@ -44,6 +44,14 @@ if (!function_exists('resolveLabelBackUrl')) {
 }
 
 $cancelBackUrl = resolveLabelBackUrl((string)($_GET['back_url'] ?? ''));
+$printType = strtolower(trim((string)($_GET['print_type'] ?? '')));
+$sizeParam = strtolower(trim((string)($_GET['size'] ?? '')));
+if ($printType === '' && in_array($sizeParam, ['40x25', '40×25', '40*25'], true)) {
+    $printType = 'sticker';
+}
+$bundlePcsParam = trim((string)($_GET['bundle_pcs'] ?? ''));
+$bundlePcs = is_numeric($bundlePcsParam) ? (string)(int)$bundlePcsParam : '';
+$itemWidthParam = trim((string)($_GET['item_width'] ?? ''));
 
 // ── Auto-create print_templates table if missing ──────────────
 @$db->query("CREATE TABLE IF NOT EXISTS print_templates (
@@ -92,6 +100,26 @@ if (!$chk || $chk->num_rows === 0) {
     $db->query("UPDATE print_templates SET elements = '" . $db->real_escape_string($builtinElements) . "' WHERE id = {$sysId} AND (elements IS NULL OR elements NOT LIKE '%builtin%')");
 }
 
+// ── Ensure POS sticker template (40mm x 25mm) exists ───────────────────────
+$posTplName = 'POS Roll Sticker 40x25';
+$posChk = $db->query("SELECT id FROM print_templates WHERE name = '" . $db->real_escape_string($posTplName) . "' AND document_type = 'Industrial Label' LIMIT 1");
+if (!$posChk || $posChk->num_rows === 0) {
+    $posElements = json_encode([['type'=>'builtin','layout'=>'pos_roll_sticker_40x25']]);
+    $posBg = json_encode(['image'=>'','opacity'=>1]);
+    $posDocType = 'Industrial Label';
+    $posPw = 40;
+    $posPh = 25;
+    $posDefault = 0;
+    $posSystem = 1;
+    $stmtPos = $db->prepare("INSERT INTO print_templates (name, document_type, paper_width, paper_height, elements, background, is_default, is_system) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmtPos->bind_param('ssddssii', $posTplName, $posDocType, $posPw, $posPh, $posElements, $posBg, $posDefault, $posSystem);
+    $stmtPos->execute();
+} else {
+    $posId = (int)$posChk->fetch_assoc()['id'];
+    $posElements = json_encode([['type'=>'builtin','layout'=>'pos_roll_sticker_40x25']]);
+    $db->query("UPDATE print_templates SET paper_width = 40, paper_height = 25, is_system = 1, elements = '" . $db->real_escape_string($posElements) . "' WHERE id = {$posId}");
+}
+
 // ── Get roll data ─────────────────────────────────────────────
 $idsParam = trim($_GET['ids'] ?? '');
 if ($idsParam === '') {
@@ -108,6 +136,76 @@ $stmt = $db->prepare("SELECT * FROM paper_stock WHERE id IN ($placeholders) ORDE
 $stmt->bind_param(str_repeat('i', count($ids)), ...$ids);
 $stmt->execute();
 $rolls = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+$jobNoToId = [];
+$rollNoToJobNo = [];
+$jobNos = [];
+foreach ($rolls as $rJob) {
+    $jn = trim((string)($rJob['job_no'] ?? ''));
+    if ($jn !== '') {
+        $jobNos[] = $jn;
+    }
+}
+$jobNos = array_values(array_unique($jobNos));
+if (!empty($jobNos)) {
+    $jobPlaceholders = implode(',', array_fill(0, count($jobNos), '?'));
+    $sqlJobMap = "SELECT id, job_no FROM jobs WHERE job_no IN ($jobPlaceholders) AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')";
+    $stmtJobMap = $db->prepare($sqlJobMap);
+    if ($stmtJobMap) {
+        $stmtJobMap->bind_param(str_repeat('s', count($jobNos)), ...$jobNos);
+        $stmtJobMap->execute();
+        $resJobMap = $stmtJobMap->get_result();
+        while ($rowJob = $resJobMap->fetch_assoc()) {
+            $key = strtoupper(trim((string)($rowJob['job_no'] ?? '')));
+            if ($key !== '') {
+                $jobNoToId[$key] = (int)($rowJob['id'] ?? 0);
+            }
+        }
+        $stmtJobMap->close();
+    }
+}
+
+$rollNos = [];
+foreach ($rolls as $rRoll) {
+    $rn = trim((string)($rRoll['roll_no'] ?? ''));
+    if ($rn !== '') {
+        $rollNos[] = $rn;
+    }
+}
+$rollNos = array_values(array_unique($rollNos));
+if (!empty($rollNos)) {
+    $rollPlaceholders = implode(',', array_fill(0, count($rollNos), '?'));
+    $sqlRollMap = "
+        SELECT j.roll_no, j.job_no, j.id
+        FROM jobs j
+        INNER JOIN (
+            SELECT roll_no, MAX(id) AS max_id
+            FROM jobs
+            WHERE roll_no IN ($rollPlaceholders)
+              AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
+              AND TRIM(COALESCE(job_no, '')) <> ''
+            GROUP BY roll_no
+        ) latest ON latest.max_id = j.id
+    ";
+    $stmtRollMap = $db->prepare($sqlRollMap);
+    if ($stmtRollMap) {
+        $stmtRollMap->bind_param(str_repeat('s', count($rollNos)), ...$rollNos);
+        $stmtRollMap->execute();
+        $resRollMap = $stmtRollMap->get_result();
+        while ($rowRoll = $resRollMap->fetch_assoc()) {
+            $rollKey = strtoupper(trim((string)($rowRoll['roll_no'] ?? '')));
+            $jn = trim((string)($rowRoll['job_no'] ?? ''));
+            if ($rollKey !== '' && $jn !== '') {
+                $rollNoToJobNo[$rollKey] = $jn;
+                $jnKey = strtoupper($jn);
+                if (!isset($jobNoToId[$jnKey])) {
+                    $jobNoToId[$jnKey] = (int)($rowRoll['id'] ?? 0);
+                }
+            }
+        }
+        $stmtRollMap->close();
+    }
+}
 
 foreach ($rolls as &$r) {
     $r['sqm'] = round(((float)($r['width_mm'] ?? 0) / 1000) * (float)($r['length_mtr'] ?? 0), 2);
@@ -131,7 +229,7 @@ $printDateSlash = $printNow->format('n/j/Y');
 $printDateFormatted = $printNow->format('d M Y');
 $printDateDdMmYyyy = $printNow->format('d/m/Y');
 $printDateYmd = $printNow->format('Y-m-d');
-$jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSlash, $printDateFormatted, $printDateDdMmYyyy, $printDateYmd) {
+$jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSlash, $printDateFormatted, $printDateDdMmYyyy, $printDateYmd, $bundlePcs, $itemWidthParam, $jobNoToId, $rollNoToJobNo) {
     $dateFormatted  = ($r['date_received'] ?? '') ? date('d M Y', strtotime($r['date_received'])) : '';
     $dateSlash      = ($r['date_received'] ?? '') ? date('n/j/Y', strtotime($r['date_received'])) : '';
     $dateDdMmYyyy   = ($r['date_received'] ?? '') ? date('d/m/Y', strtotime($r['date_received'])) : '';
@@ -144,8 +242,26 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSla
     $rollNo         = $r['roll_no'] ?? '';
     $paperType      = $r['paper_type'] ?? '';
     $paperCompany   = $r['company'] ?? '';
-    $jobNo          = $r['job_no'] ?? '';
+    $companyRollNo  = $r['company_roll_no'] ?? '';
+    $jobNoRaw       = trim((string)($r['job_no'] ?? ''));
+    $rollNoForMap   = strtoupper(trim((string)($r['roll_no'] ?? '')));
+    $jobNo          = $jobNoRaw !== '' ? $jobNoRaw : (string)($rollNoToJobNo[$rollNoForMap] ?? '');
+    $jobNoKey       = strtoupper(trim((string)$jobNo));
+    $mappedJobId    = (int)($jobNoToId[$jobNoKey] ?? 0);
+    $jobToken       = '';
+    if ($mappedJobId > 0) {
+        $jobToken = 'J' . strtoupper(base_convert((string)$mappedJobId, 10, 36));
+    } elseif ($jobNo !== '') {
+        $jobToken = 'JOB:' . $jobNo;
+    }
+    $rollToken = 'R' . strtoupper(base_convert((string)((int)$r['id']), 10, 36));
     $lotBatch       = $r['lot_batch_no'] ?? '';
+    $companySource  = $companyRollNo !== '' ? $companyRollNo : $paperCompany;
+    $companyCodeRaw = strtoupper(preg_replace('/[^A-Za-z]/', '', (string)$companySource));
+    $companyCode    = $companyCodeRaw !== '' ? substr($companyCodeRaw, 0, 2) : 'NA';
+    $posBatchNo     = $rollNo !== '' ? ($rollNo . '/' . $companyCode) : ('NA/' . $companyCode);
+    $itemWidthVal   = trim((string)$itemWidthParam) !== '' ? trim((string)$itemWidthParam) : $widthVal;
+    $bundlePcsVal   = trim((string)$bundlePcs) !== '' ? trim((string)$bundlePcs) : '0';
     return [
         // ── Original PHP keys ──
         'id'              => (int)$r['id'],
@@ -165,9 +281,20 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSla
         'job_size'        => $r['job_size'] ?? '',
         'job_name'        => $r['job_name'] ?? '',
         'lot_batch_no'    => $lotBatch,
-        'company_roll_no' => $r['company_roll_no'] ?? '',
+        'company_roll_no' => $companyRollNo,
+        'company_code'    => $companyCode,
         'remarks'         => $r['remarks'] ?? '',
         'company_name'    => $companyName,
+        'paper_roll_title'=> 'PAPER ROLL',
+        'item_width'      => $itemWidthVal,
+        'bundle_pcs'      => $bundlePcsVal,
+        'rolls_per_shrink_wrap' => $bundlePcsVal,
+        'pos_batch_no'    => $posBatchNo,
+        'job_token'       => $jobToken,
+        'roll_token'      => $rollToken,
+        'scan_job_url'    => $jobNo !== '' ? (BASE_URL . '/modules/scan/job.php?jn=' . rawurlencode($jobNo)) : '',
+        // Prefer job-target payload so sticker barcode resolves like job QR flow.
+        'barcode_value'   => $jobToken !== '' ? $jobToken : ($jobNo !== '' ? ('JOB:' . $jobNo) : $rollToken),
         // ── Firebase Print Studio aliases ──
         'paper_company'       => $paperCompany,
         'width'               => $widthVal,
@@ -175,6 +302,7 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSla
         'weight'              => $weightVal,
         'roll_url'            => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$r['id'],
         'view_url'            => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$r['id'],
+        'job_card_url'        => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$r['id'],
         'job.companyName'     => $companyName,
         'job.companyAddress'  => $companyAddr,
         // Use actual print date for template field job.date.
@@ -281,6 +409,9 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f1f5f9; color: #
     padding: 8px 16px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer;
     border: 1px solid var(--border); background: #fff; display: inline-flex; align-items: center; gap: 6px;
 }
+.zoom-controls { display:inline-flex; align-items:center; gap:6px; padding:4px; border:1px solid var(--border); border-radius:10px; background:#fff; }
+.zoom-controls .zoom-btn { min-width:34px; justify-content:center; padding:8px 10px; }
+.zoom-controls .zoom-label { min-width:54px; text-align:center; font-size:11px; font-weight:800; color:#475569; }
 .toolbar-actions .btn-print { background: var(--dark); color: #fff; border-color: var(--dark); }
 .toolbar-actions .btn-print:hover { background: #1e293b; }
 .toolbar-actions .btn-close { color: #64748b; }
@@ -351,6 +482,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f1f5f9; color: #
         padding: 0 !important; margin: 0 !important; gap: 0 !important;
         display: block !important; overflow: visible !important;
         background: #fff !important;
+        zoom: 1 !important;
     }
     .label-card {
         box-shadow: none !important; border: none !important; border-radius: 0 !important;
@@ -393,6 +525,28 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f1f5f9; color: #
 .bl-status.reserved { background: #fef3c7; color: #d97706; }
 .bl-status.default-status { background: #f1f5f9; color: #64748b; }
 .bl-date { font-size: 8px; color: #94a3b8; font-weight: 600; }
+
+/* ── Built-in POS Roll Sticker 40x25 ── */
+.pos-label {
+    width: 100%; height: 100%;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    padding: 2px 3px;
+    display: flex;
+    flex-direction: column;
+    color: #000;
+}
+.pos-title { font-size: 8px; font-weight: 900; line-height: 1; letter-spacing: .2px; }
+.pos-line { font-size: 6.2px; font-weight: 700; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pos-spacer { flex: 1; }
+.pos-batch { font-size: 6px; font-weight: 800; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pos-barcode {
+    height: 38%;
+    margin-top: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.pos-barcode svg { width: 100% !important; height: 100% !important; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
@@ -421,6 +575,12 @@ if (typeof qrcode === 'undefined') {
         <span class="count-badge"><?= count($rolls) ?> roll<?= count($rolls) > 1 ? 's' : '' ?></span>
     </h1>
     <div class="toolbar-actions">
+        <div class="zoom-controls no-print" title="Preview zoom only">
+            <button type="button" class="zoom-btn" onclick="adjustPreviewZoom(-10)"><i class="bi bi-dash-lg"></i></button>
+            <span class="zoom-label" id="zoom-label">100%</span>
+            <button type="button" class="zoom-btn" onclick="adjustPreviewZoom(10)"><i class="bi bi-plus-lg"></i></button>
+            <button type="button" class="zoom-btn" onclick="resetPreviewZoom()" title="Reset zoom"><i class="bi bi-arrow-counterclockwise"></i></button>
+        </div>
         <select id="tpl-quick-select" onchange="selectTemplateById(this.value)">
             <?php foreach ($templates as $t): ?>
             <option value="<?= $t['id'] ?>" <?= $t['is_default'] ? 'selected' : '' ?>><?= e($t['name']) ?> (<?= $t['paper_width'] ?>×<?= $t['paper_height'] ?>mm)</option>
@@ -482,6 +642,10 @@ var rolls = <?= json_encode($jsRolls, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 var templates = <?= json_encode($jsTemplates, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 var cancelBackUrl = <?= json_encode($cancelBackUrl, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 var baseUrl = <?= json_encode(BASE_URL, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+var printType = <?= json_encode($printType, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+var bundlePcs = <?= json_encode($bundlePcs, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+var itemWidthParam = <?= json_encode($itemWidthParam, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+var previewZoom = 100;
 var activeTemplateId = 0;
 
 // Find default template
@@ -489,6 +653,15 @@ for (var i = 0; i < templates.length; i++) {
     if (templates[i].isDefault) { activeTemplateId = templates[i].id; break; }
 }
 if (!activeTemplateId && templates.length) activeTemplateId = templates[0].id;
+
+if (printType === 'sticker') {
+    for (var j = 0; j < templates.length; j++) {
+        if (String(templates[j].name || '').toLowerCase() === 'pos roll sticker 40x25') {
+            activeTemplateId = templates[j].id;
+            break;
+        }
+    }
+}
 
 /* ── Font ID → CSS family mapping (matches Firebase Print Studio) ── */
 var FONT_MAP = {
@@ -523,6 +696,26 @@ function getSelectedRollIds() {
     });
     return out;
 }
+
+function applyPreviewZoom() {
+    var area = document.getElementById('label-preview-area');
+    if (!area) return;
+    var z = Math.max(50, Math.min(300, previewZoom));
+    previewZoom = z;
+    area.style.zoom = (z / 100);
+    var lbl = document.getElementById('zoom-label');
+    if (lbl) lbl.textContent = z + '%';
+}
+
+window.adjustPreviewZoom = function(step) {
+    previewZoom = (previewZoom || 100) + (Number(step) || 0);
+    applyPreviewZoom();
+};
+
+window.resetPreviewZoom = function() {
+    previewZoom = 100;
+    applyPreviewZoom();
+};
 
 function escHtml(s) {
     var d = document.createElement('div');
@@ -565,6 +758,22 @@ function replacePlaceholders(text, roll) {
     });
 }
 
+function getBuiltinLayout(tpl) {
+    var els = (tpl && tpl.elements) ? tpl.elements : [];
+    for (var i = 0; i < els.length; i++) {
+        if (els[i].type === 'builtin') return String(els[i].layout || 'default_stock_label');
+    }
+    return 'default_stock_label';
+}
+
+function normalizeStickerWidth(v) {
+    var raw = String(v || '').replace(/\s*mm$/i, '').trim();
+    if (!raw) return '';
+    var n = Number(raw.replace(/,/g, ''));
+    if (isNaN(n) || n <= 0 || n > 2000) return '';
+    return Math.abs(n - Math.round(n)) < 0.001 ? String(Math.round(n)) : String(n.toFixed(2)).replace(/\.00$/, '');
+}
+
 /* ── Built-in Professional Label (for system/default template) ── */
 function renderBuiltinLabel(roll, tpl) {
     var scale = 3.78;
@@ -577,6 +786,51 @@ function renderBuiltinLabel(roll, tpl) {
     card.style.height = h + 'px';
 
     try {
+        var builtinLayout = getBuiltinLayout(tpl);
+
+        if (builtinLayout === 'pos_roll_sticker_40x25') {
+            var companySource = String(roll.company_roll_no || roll.company || '');
+            var companyCodeRaw = companySource.replace(/[^A-Za-z]/g, '').toUpperCase();
+            var companyCode = companyCodeRaw ? companyCodeRaw.substring(0, 2) : 'NA';
+            var batchNo = String(roll.roll_no || '') + '/' + companyCode;
+            var widthSource = normalizeStickerWidth(itemWidthParam) || normalizeStickerWidth(roll.width_mm) || '0';
+            var sizeText = (widthSource || '0') + ' mm';
+            var bundleText = bundlePcs && String(bundlePcs).trim() !== '' ? String(bundlePcs) : '0';
+            var materialText = String(roll.paper_type || 'THERMAL PAPER').toUpperCase();
+            var barcodeValue = String(roll.barcode_value || roll.job_token || roll.view_url || (window.location.origin + '/modules/paper_stock/view.php?id=' + roll.id));
+            var barcodeId = 'pos-bc-' + String(roll.id || Math.floor(Math.random() * 100000));
+
+            var posHtml = '';
+            posHtml += '<div class="pos-label">';
+            posHtml += '<div class="pos-title">PAPER ROLL</div>';
+            posHtml += '<div class="pos-line">' + escHtml(materialText) + '</div>';
+            posHtml += '<div class="pos-line">Size: ' + escHtml(sizeText) + '</div>';
+            posHtml += '<div class="pos-line">Bundle: ' + escHtml(bundleText) + ' PCS</div>';
+            posHtml += '<div class="pos-spacer"></div>';
+            posHtml += '<div class="pos-batch">Batch No: ' + escHtml(batchNo) + '</div>';
+            posHtml += '<div class="pos-barcode"><svg id="' + escHtml(barcodeId) + '"></svg></div>';
+            posHtml += '</div>';
+            card.innerHTML = posHtml;
+
+            if (typeof JsBarcode !== 'undefined') {
+                var posSvg = card.querySelector('#' + barcodeId);
+                if (posSvg) {
+                    try {
+                        JsBarcode(posSvg, barcodeValue, {
+                            format: 'CODE128',
+                            width: 0.9,
+                            height: 16,
+                            displayValue: false,
+                            margin: 1
+                        });
+                    } catch (e) {
+                        posSvg.outerHTML = '<div style="font-size:6px;color:#999">Barcode Error</div>';
+                    }
+                }
+            }
+            return card;
+        }
+
         var qrData = roll.view_url || (window.location.origin + '/modules/paper_stock/view.php?id=' + roll.id);
 
         var qrSvg = generateQR(qrData);
@@ -733,7 +987,22 @@ function renderCustomLabel(roll, tpl) {
             bcWrap.style.zIndex = '1';
             if (rot) bcWrap.style.transform = 'rotate(' + rot + 'deg)';
             var bcVal = replacePlaceholders(el.content || el.placeholder || '', roll);
-            if (!bcVal || bcVal === '') bcVal = roll.roll_no || 'PREVIEW';
+            if (!bcVal || bcVal === '') bcVal = roll.view_url || (window.location.origin + '/modules/paper_stock/view.php?id=' + roll.id);
+
+            // For sticker print mode, force barcode payload to compact scan token for reliable tiny-label scanning.
+            if (printType === 'sticker') {
+                var rollUrl = String(roll.view_url || roll.roll_url || '');
+                var preferredStickerPayload = String(roll.barcode_value || roll.job_token || '');
+                if (preferredStickerPayload) {
+                    var normalizedBc = String(bcVal || '').trim();
+                    var normalizedRollUrl = String(rollUrl || '').trim();
+                    var looksLikePaperStockUrl = normalizedBc.indexOf('/modules/paper_stock/view.php?id=') !== -1;
+                    if (!normalizedBc || looksLikePaperStockUrl || (normalizedRollUrl !== '' && normalizedBc === normalizedRollUrl)) {
+                        bcVal = preferredStickerPayload;
+                    }
+                }
+            }
+
             var bcFmt = el.barcodeType || 'CODE128';
             if (bcFmt === 'EAN13' || bcFmt === 'UPC') bcVal = '123456789012';
             if (typeof JsBarcode !== 'undefined') {
@@ -741,7 +1010,14 @@ function renderCustomLabel(roll, tpl) {
                 var bcSvg = document.createElementNS(svgNS, 'svg');
                 bcWrap.appendChild(bcSvg);
                 try {
-                    JsBarcode(bcSvg, bcVal, { format: bcFmt, height: Math.max(20, ph - 30), width: 1.5, fontSize: 10, displayValue: true, margin: 4 });
+                    JsBarcode(bcSvg, bcVal, {
+                        format: bcFmt,
+                        height: Math.max(24, ph - 10),
+                        width: Math.max(1, Math.min(2, pw / 160)),
+                        fontSize: 10,
+                        displayValue: false,
+                        margin: 0
+                    });
                 } catch(e) {
                     bcWrap.innerHTML = '<div style="font-size:10px;color:#94a3b8;text-align:center">Barcode Error</div>';
                 }
@@ -979,14 +1255,14 @@ function buildCancelTarget() {
     if (ref) {
         try {
             var ru = new URL(ref);
-            if (ru.origin === window.location.origin && ru.pathname.indexOf('/modules/jobs/') !== -1) {
+            if (ru.origin === window.location.origin) {
                 ru.searchParams.set('label_cancelled', '1');
                 return ru.toString();
             }
         } catch (e) {}
     }
 
-    return String(baseUrl || '') + '/modules/jobs/printing/index.php?label_cancelled=1';
+    return String(baseUrl || '') + '/modules/dashboard/index.php?label_cancelled=1';
 }
 
 window.handleLabelCancel = function() {
@@ -996,7 +1272,11 @@ window.handleLabelCancel = function() {
     setTimeout(function() {
         try {
             if (window.opener && !window.opener.closed) {
-                window.opener.location.href = target;
+                // Keep user on the exact opener page unless explicit back_url was provided.
+                if (cancelBackUrl) {
+                    window.opener.location.href = target;
+                }
+                try { window.opener.focus(); } catch (ef) {}
                 window.close();
                 return;
             }
@@ -1006,7 +1286,8 @@ window.handleLabelCancel = function() {
 };
 
 // Initial render
-updatePreview();
+selectTemplateById(activeTemplateId);
+applyPreviewZoom();
 
 })();
 </script>

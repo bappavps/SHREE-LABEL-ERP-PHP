@@ -22,12 +22,57 @@ if (($_GET['action'] ?? '') === 'resolve') {
     $raw = trim((string)($_POST['qr'] ?? $_GET['qr'] ?? ''));
     if ($raw === '') { echo json_encode(['ok' => false, 'error' => 'Empty QR']); exit; }
 
+    $emitJobByNo = static function(string $jobNo) {
+      echo json_encode([
+        'ok' => true,
+        'type' => 'job',
+        'label' => 'Job Journey: ' . $jobNo,
+        'url' => BASE_URL . '/modules/scan/dossier.php?jn=' . urlencode($jobNo),
+      ]);
+      exit;
+    };
+
     // 1. Job card URL: contains modules/scan/job.php?jn= OR dossier.php?jn=
     if (preg_match('/modules\/scan\/(?:job|dossier)\.php\?jn=(.+)$/i', $raw, $m)) {
         $jn = urldecode($m[1]);
-        echo json_encode(['ok' => true, 'type' => 'job',
-            'label' => 'Job Journey: ' . $jn,
-            'url'   => BASE_URL . '/modules/scan/dossier.php?jn=' . urlencode($jn)]); exit;
+      $emitJobByNo($jn);
+    }
+    // 1.1 Compact job token for tiny Code128 labels: J + base36(job_id)
+    if (preg_match('/^J([0-9A-Z]{1,10})$/i', strtoupper($raw), $m)) {
+      $jobId = (int)base_convert($m[1], 36, 10);
+      if ($jobId > 0) {
+        $stmt = $db->prepare("SELECT job_no FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        if ($stmt) {
+          $stmt->bind_param('i', $jobId);
+          $stmt->execute();
+          $row = $stmt->get_result()->fetch_assoc();
+          $stmt->close();
+          if ($row && trim((string)($row['job_no'] ?? '')) !== '') {
+            $emitJobByNo((string)$row['job_no']);
+          }
+        }
+      }
+    }
+    // 1.2 JOB: prefixed token (works well in 1D barcode scanners)
+    if (preg_match('/^JOB\s*:\s*(.+)$/i', $raw, $m)) {
+      $jn = trim((string)$m[1]);
+      if ($jn !== '') {
+        $emitJobByNo($jn);
+      }
+    }
+    // 1.3 Direct job_no fallback (e.g. OPL-PRL/2026/0006)
+    if (preg_match('/^[A-Z0-9][A-Z0-9\/_\-]{4,60}$/i', $raw)) {
+      $jobNoRaw = trim((string)$raw);
+      $stmt = $db->prepare("SELECT job_no FROM jobs WHERE UPPER(TRIM(job_no)) = UPPER(TRIM(?)) AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+      if ($stmt) {
+        $stmt->bind_param('s', $jobNoRaw);
+        $stmt->execute();
+        $jobRow = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($jobRow && trim((string)($jobRow['job_no'] ?? '')) !== '') {
+          $emitJobByNo((string)$jobRow['job_no']);
+        }
+      }
     }
     // 2. Roll view URL (from printed label QR): .../paper_stock/view.php?id=N
     if (preg_match('/modules\/paper_stock\/view\.php\?id=(\d+)/i', $raw, $m)) {
@@ -84,6 +129,25 @@ if (($_GET['action'] ?? '') === 'resolve') {
                 'url'   => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$row['id']]); exit;
         }
     }
+      // 1.15 Compact roll token for tiny stickers: R + base36(paper_stock.id)
+      if (preg_match('/^R([0-9A-Z]{1,10})$/i', strtoupper($raw), $m)) {
+        $rollId = (int)base_convert($m[1], 36, 10);
+        if ($rollId > 0) {
+          $stmt = $db->prepare("SELECT id, roll_no, paper_type, status FROM paper_stock WHERE id = ? LIMIT 1");
+          if ($stmt) {
+            $stmt->bind_param('i', $rollId);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if ($row) {
+              echo json_encode(['ok' => true, 'type' => 'roll',
+                'label' => 'Roll ' . $row['roll_no'] . ' — ' . ($row['paper_type'] ?? '') . ' (' . ($row['status'] ?? '') . ')',
+                'url'   => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$row['id']]);
+              exit;
+            }
+          }
+        }
+      }
     echo json_encode(['ok' => false, 'type' => 'unknown',
         'error' => 'QR not recognised. Scanned: ' . htmlspecialchars(mb_substr($raw, 0, 80), ENT_QUOTES)]);
     exit;
