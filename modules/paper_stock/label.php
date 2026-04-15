@@ -53,6 +53,10 @@ $bundlePcsParam = trim((string)($_GET['bundle_pcs'] ?? ''));
 $bundlePcs = is_numeric($bundlePcsParam) ? (string)(int)$bundlePcsParam : '';
 $itemWidthParam = trim((string)($_GET['item_width'] ?? ''));
 $batchNoParam = trim((string)($_GET['batch_no'] ?? ''));
+$batchLabelsParam = trim((string)($_GET['batch_labels'] ?? ''));
+$jobNameParam = trim((string)($_GET['job_name'] ?? ''));
+$rollsPerCartonParam = trim((string)($_GET['rolls_per_carton'] ?? ''));
+$rollsPerCarton = is_numeric($rollsPerCartonParam) ? (string)(int)$rollsPerCartonParam : '';
 
 // ── Auto-create print_templates table if missing ──────────────
 @$db->query("CREATE TABLE IF NOT EXISTS print_templates (
@@ -119,6 +123,26 @@ if (!$posChk || $posChk->num_rows === 0) {
     $posId = (int)$posChk->fetch_assoc()['id'];
     $posElements = json_encode([['type'=>'builtin','layout'=>'pos_roll_sticker_40x25']]);
     $db->query("UPDATE print_templates SET paper_width = 40, paper_height = 25, is_system = 1, elements = '" . $db->real_escape_string($posElements) . "' WHERE id = {$posId}");
+}
+
+// ── Ensure Packing label template (150mm x 100mm) exists ───────────────────
+$packingTplName = 'Packing Label 150x100';
+$packingChk = $db->query("SELECT id FROM print_templates WHERE name = '" . $db->real_escape_string($packingTplName) . "' AND document_type = 'Industrial Label' LIMIT 1");
+if (!$packingChk || $packingChk->num_rows === 0) {
+    $packingElements = json_encode([['type'=>'builtin','layout'=>'packing_label_150x100']]);
+    $packingBg = json_encode(['image'=>'','opacity'=>1]);
+    $packingDocType = 'Industrial Label';
+    $packingPw = 150;
+    $packingPh = 100;
+    $packingDefault = 0;
+    $packingSystem = 1;
+    $stmtPacking = $db->prepare("INSERT INTO print_templates (name, document_type, paper_width, paper_height, elements, background, is_default, is_system) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmtPacking->bind_param('ssddssii', $packingTplName, $packingDocType, $packingPw, $packingPh, $packingElements, $packingBg, $packingDefault, $packingSystem);
+    $stmtPacking->execute();
+} else {
+    $packingId = (int)$packingChk->fetch_assoc()['id'];
+    $packingElements = json_encode([['type'=>'builtin','layout'=>'packing_label_150x100']]);
+    $db->query("UPDATE print_templates SET paper_width = 150, paper_height = 100, is_system = 1, elements = '" . $db->real_escape_string($packingElements) . "' WHERE id = {$packingId}");
 }
 
 // ── Get roll data ─────────────────────────────────────────────
@@ -230,7 +254,7 @@ $printDateSlash = $printNow->format('n/j/Y');
 $printDateFormatted = $printNow->format('d M Y');
 $printDateDdMmYyyy = $printNow->format('d/m/Y');
 $printDateYmd = $printNow->format('Y-m-d');
-$jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSlash, $printDateFormatted, $printDateDdMmYyyy, $printDateYmd, $bundlePcs, $itemWidthParam, $batchNoParam, $jobNoToId, $rollNoToJobNo) {
+$jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSlash, $printDateFormatted, $printDateDdMmYyyy, $printDateYmd, $bundlePcs, $itemWidthParam, $batchNoParam, $batchLabelsParam, $jobNameParam, $rollsPerCarton, $jobNoToId, $rollNoToJobNo) {
     $dateFormatted  = ($r['date_received'] ?? '') ? date('d M Y', strtotime($r['date_received'])) : '';
     $dateSlash      = ($r['date_received'] ?? '') ? date('n/j/Y', strtotime($r['date_received'])) : '';
     $dateDdMmYyyy   = ($r['date_received'] ?? '') ? date('d/m/Y', strtotime($r['date_received'])) : '';
@@ -262,8 +286,12 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSla
     $companyCode    = $companyCodeRaw !== '' ? substr($companyCodeRaw, 0, 2) : 'NA';
     $batchBaseRaw   = trim((string)$batchNoParam) !== '' ? trim((string)$batchNoParam) : $rollNo;
     $posBatchNo     = $batchBaseRaw !== '' ? ($batchBaseRaw . ' / ' . $companyCode) : ('NA / ' . $companyCode);
+    $batchLabelsVal = trim((string)$batchLabelsParam);
     $itemWidthVal   = trim((string)$itemWidthParam) !== '' ? trim((string)$itemWidthParam) : $widthVal;
     $bundlePcsVal   = trim((string)$bundlePcs) !== '' ? trim((string)$bundlePcs) : '0';
+    $rollsPerCartonVal = trim((string)$rollsPerCarton) !== '' ? trim((string)$rollsPerCarton) : '0';
+    $resolvedJobName = trim((string)$jobNameParam) !== '' ? trim((string)$jobNameParam) : (string)($r['job_name'] ?? '');
+    $productTitle = 'SLC - ' . ($resolvedJobName !== '' ? $resolvedJobName : '-');
     return [
         // ── Original PHP keys ──
         'id'              => (int)$r['id'],
@@ -281,18 +309,27 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSla
         'date_used'       => ($r['date_used'] ?? '') ? date('d M Y', strtotime($r['date_used'])) : '',
         'job_no'          => $jobNo,
         'job_size'        => $r['job_size'] ?? '',
-        'job_name'        => $r['job_name'] ?? '',
+        'job_name'        => $resolvedJobName,
         'lot_batch_no'    => $lotBatch,
         'company_roll_no' => $companyRollNo,
         'company_code'    => $companyCode,
         'remarks'         => $r['remarks'] ?? '',
         'company_name'    => $companyName,
+        'company_address' => $companyAddr,
         'paper_roll_title'=> 'PAPER ROLL',
         'item_width'      => $itemWidthVal,
         'bundle_pcs'      => $bundlePcsVal,
         'rolls_per_shrink_wrap' => $bundlePcsVal,
+        'rolls_per_carton' => $rollsPerCartonVal,
         'batch_no'        => $posBatchNo,
+        'batch_labels'    => $batchLabelsVal,
+        'batch_display'   => $batchLabelsVal !== '' ? ($batchLabelsVal . ' / ' . $companyCode) : $posBatchNo,
         'pos_batch_no'    => $posBatchNo,
+        'product_title'   => $productTitle,
+        'size_mm'         => $itemWidthVal,
+        'total_quantity_pcs' => $rollsPerCartonVal,
+        'manufacturer_label' => 'Manufacturere by :',
+        'made_in_country' => 'MADE IN INDIA',
         'job_token'       => $jobToken,
         'roll_token'      => $rollToken,
         'scan_job_url'    => $jobNo !== '' ? (BASE_URL . '/modules/scan/job.php?jn=' . rawurlencode($jobNo)) : '',
@@ -326,7 +363,7 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSla
         'job.status'          => $r['status'] ?? '',
         'job.notes'           => $r['remarks'] ?? '',
         'job.planningId'      => '',
-        'job.planningJobName' => $r['job_name'] ?? '',
+        'job.planningJobName' => $resolvedJobName,
         'job.planningStatus'  => '',
         'job.planningPriority'=> '',
         'job.planningDate'    => '',
@@ -550,6 +587,97 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f1f5f9; color: #
     justify-content: center;
 }
 .pos-barcode svg { width: 100% !important; height: 100% !important; }
+
+/* ── Built-in Packing Label 150x100 ── */
+.pk-label-150x100 {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    text-align: center;
+    font-family: Arial, Helvetica, sans-serif;
+    color: #000;
+    padding: 12px 14px;
+    gap: 0;
+    background: #fff;
+}
+.pk150-title { 
+    font-size: 20px; 
+    font-weight: bold; 
+    line-height: 1.1; 
+    text-transform: uppercase; 
+    color: #000;
+    margin: 0;
+}
+.pk150-line { 
+    font-size: 13px; 
+    font-weight: bold; 
+    line-height: 1.2; 
+    color: #000;
+    margin: 2px 0 0 0;
+}
+.pk150-divider {
+    height: 2px;
+    background: #000;
+    margin: 6px 0;
+    flex: 0 0 auto;
+}
+.pk150-barcode-wrap {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 4px 0;
+    flex: 0 0 auto;
+}
+.pk150-barcode-wrap svg {
+    max-width: 95%;
+    height: auto;
+}
+.pk150-product { 
+    font-size: 13px; 
+    font-weight: bold; 
+    line-height: 1.1; 
+    color: #000;
+    margin: 2px 0 0 0;
+}
+.pk150-meta { 
+    font-size: 11px; 
+    font-weight: bold; 
+    line-height: 1.1; 
+    color: #000;
+    margin: 1px 0 0 0;
+}
+.pk150-mfg-label { 
+    font-size: 10px; 
+    font-weight: bold; 
+    line-height: 1.1; 
+    color: #000;
+    margin-top: 2px;
+}
+.pk150-company { 
+    font-size: 13px; 
+    font-weight: bold; 
+    line-height: 1.1; 
+    text-transform: uppercase; 
+    color: #000;
+    margin: 1px 0 0 0;
+}
+.pk150-address { 
+    font-size: 9px; 
+    font-weight: normal; 
+    line-height: 1.2; 
+    color: #000;
+    max-width: 95%; 
+    margin: 1px auto 0;
+}
+.pk150-origin { 
+    font-size: 12px; 
+    font-weight: bold; 
+    line-height: 1.1; 
+    color: #000;
+    margin-top: 2px;
+}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
@@ -649,6 +777,9 @@ var printType = <?= json_encode($printType, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 var bundlePcs = <?= json_encode($bundlePcs, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 var itemWidthParam = <?= json_encode($itemWidthParam, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 var batchNoParam = <?= json_encode($batchNoParam, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+var batchLabelsParam = <?= json_encode($batchLabelsParam, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+var jobNameParam = <?= json_encode($jobNameParam, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+var rollsPerCarton = <?= json_encode($rollsPerCarton, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 var previewZoom = 100;
 var activeTemplateId = 0;
 
@@ -662,6 +793,13 @@ if (printType === 'sticker') {
     for (var j = 0; j < templates.length; j++) {
         if (String(templates[j].name || '').toLowerCase() === 'pos roll sticker 40x25') {
             activeTemplateId = templates[j].id;
+            break;
+        }
+    }
+} else if (printType === 'label') {
+    for (var k = 0; k < templates.length; k++) {
+        if (String(templates[k].name || '').toLowerCase() === 'packing label 150x100') {
+            activeTemplateId = templates[k].id;
             break;
         }
     }
@@ -798,6 +936,7 @@ function renderBuiltinLabel(roll, tpl) {
             var companyCode = companyCodeRaw ? companyCodeRaw.substring(0, 2) : 'NA';
             var batchBase = String(roll.pos_batch_no || roll.batch_no || batchNoParam || '').trim() || String(roll.roll_no || '').trim() || 'NA';
             var batchNo = /\/\s*[A-Za-z]{2,}$/.test(batchBase) ? batchBase : (batchBase + ' / ' + companyCode);
+            var batchDisplay = String(roll.batch_display || batchNo);
             var widthSource = normalizeStickerWidth(itemWidthParam) || normalizeStickerWidth(roll.width_mm) || '0';
             var sizeText = (widthSource || '0') + ' mm';
             var bundleText = bundlePcs && String(bundlePcs).trim() !== '' ? String(bundlePcs) : '0';
@@ -812,7 +951,7 @@ function renderBuiltinLabel(roll, tpl) {
             posHtml += '<div class="pos-line">Size: ' + escHtml(sizeText) + '</div>';
             posHtml += '<div class="pos-line">Bundle: ' + escHtml(bundleText) + ' PCS</div>';
             posHtml += '<div class="pos-spacer"></div>';
-            posHtml += '<div class="pos-batch">Batch No: ' + escHtml(batchNo) + '</div>';
+            posHtml += '<div class="pos-batch">' + escHtml(batchDisplay) + '</div>';
             posHtml += '<div class="pos-barcode"><svg id="' + escHtml(barcodeId) + '"></svg></div>';
             posHtml += '</div>';
             card.innerHTML = posHtml;
@@ -830,6 +969,62 @@ function renderBuiltinLabel(roll, tpl) {
                         });
                     } catch (e) {
                         posSvg.outerHTML = '<div style="font-size:6px;color:#999">Barcode Error</div>';
+                    }
+                }
+            }
+            return card;
+        }
+
+        if (builtinLayout === 'packing_label_150x100') {
+            var labelCompanySource = String(roll.company_roll_no || roll.company || '');
+            var labelCompanyCodeRaw = labelCompanySource.replace(/[^A-Za-z]/g, '').toUpperCase();
+            var labelCompanyCode = labelCompanyCodeRaw ? labelCompanyCodeRaw.substring(0, 2) : 'NA';
+            var rawBatchLabels = String(roll.batch_labels || batchLabelsParam || '').trim();
+            var batchTextBase = rawBatchLabels !== '' ? rawBatchLabels : String(batchNoParam || roll.batch_no || roll.roll_no || 'NA').trim();
+            var batchText = batchTextBase + ' / ' + labelCompanyCode;
+            var labelPaperType = String(roll.paper_type || 'PAPER').trim().toUpperCase();
+            var labelJobName = String(roll.job_name || jobNameParam || '-').trim();
+            var labelWidth = normalizeStickerWidth(itemWidthParam) || normalizeStickerWidth(roll.item_width) || normalizeStickerWidth(roll.width_mm) || '0';
+            var labelRpc = String(roll.rolls_per_carton || rollsPerCarton || '0').trim();
+            if (!labelRpc || labelRpc === '0') {
+                labelRpc = String(bundlePcs || roll.bundle_pcs || '0').trim();
+            }
+            var labelCompanyName = String(roll.company_name || '').trim() || 'COMPANY';
+            var labelCompanyAddress = String(roll.company_address || roll['job.companyAddress'] || '').trim() || '-';
+            var barcodeValue = String(batchTextBase && batchTextBase !== 'NA' ? batchTextBase : roll.roll_no || roll.id);
+            var barcodeId = 'pk150-bc-' + String(roll.id || Math.floor(Math.random() * 100000));
+
+            var html150 = '';
+            html150 += '<div class="pk-label-150x100">';
+            html150 += '<div class="pk150-title">' + escHtml(labelPaperType) + '</div>';
+            html150 += '<div class="pk150-line">' + escHtml(batchText) + '</div>';
+            html150 += '<div class="pk150-divider"></div>';
+            html150 += '<div class="pk150-barcode-wrap"><svg id="' + escHtml(barcodeId) + '"></svg></div>';
+            html150 += '<div class="pk150-divider"></div>';
+            html150 += '<div class="pk150-product">' + escHtml(labelJobName || '-') + '</div>';
+            html150 += '<div class="pk150-meta">Qty: ' + escHtml(labelRpc || '0') + ' Pcs | ' + escHtml(labelWidth) + ' mm</div>';
+            html150 += '<div class="pk150-mfg-label">Manufactured by:</div>';
+            html150 += '<div class="pk150-company">' + escHtml(labelCompanyName) + '</div>';
+            html150 += '<div class="pk150-address">' + escHtml(labelCompanyAddress) + '</div>';
+            html150 += '<div class="pk150-origin">MADE IN INDIA</div>';
+            html150 += '</div>';
+            card.innerHTML = html150;
+
+            // Generate barcode
+            if (typeof JsBarcode !== 'undefined') {
+                var pk150Svg = card.querySelector('#' + barcodeId);
+                if (pk150Svg) {
+                    try {
+                        JsBarcode(pk150Svg, barcodeValue, {
+                            format: 'CODE128',
+                            width: 1.2,
+                            height: 28,
+                            displayValue: true,
+                            fontSize: 10,
+                            margin: 2
+                        });
+                    } catch (e) {
+                        pk150Svg.outerHTML = '<div style="font-size:9px;color:#000;padding:4px">Barcode Error</div>';
                     }
                 }
             }

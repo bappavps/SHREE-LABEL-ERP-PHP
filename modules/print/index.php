@@ -241,19 +241,22 @@ include __DIR__ . '/../../includes/header.php';
       </div>
     <?php else: ?>
       <?php foreach ($filteredTemplates as $tpl): ?>
-        <div class="card ps-tpl-card" style="overflow:hidden;border:2px solid transparent;transition:all .2s;cursor:default">
+        <div class="card ps-tpl-card" style="overflow:hidden;border:2px solid transparent;transition:all .2s;cursor:default;<?= ($tpl['is_system'] ?? false) ? 'border-color:#2563eb;' : '' ?>">
           <div style="background:#f1f5f9;aspect-ratio:3/4;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden">
             <?php if (!empty($tpl['thumbnail'])): ?>
               <img src="<?= e($tpl['thumbnail']) ?>" style="width:100%;height:100%;object-fit:contain" alt="Preview">
             <?php else: ?>
               <div style="text-align:center;opacity:.25"><i class="bi bi-file-earmark-text" style="font-size:2.5rem"></i><p style="font-size:.7rem;margin-top:8px;font-weight:700;text-transform:uppercase">No Preview</p></div>
             <?php endif; ?>
+            <?php if ($tpl['is_system'] ?? false): ?>
+              <div style="position:absolute;top:8px;right:8px;background:#2563eb;color:white;padding:4px 10px;border-radius:6px;font-size:.65rem;font-weight:800;text-transform:uppercase">System</div>
+            <?php endif; ?>
             <div class="ps-card-overlay">
               <button class="btn btn-sm" style="background:white;color:#0f172a;width:100%;font-weight:700;font-size:.8rem" onclick="openEditor(<?= $tpl['id'] ?>)"><i class="bi bi-pencil-square"></i> Edit Layout</button>
               <div style="display:flex;gap:6px;width:100%">
                 <form method="POST" style="flex:1"><input type="hidden" name="csrf_token" value="<?= e($csrf) ?>"><input type="hidden" name="action" value="duplicate_template"><input type="hidden" name="template_id" value="<?= $tpl['id'] ?>"><button type="submit" class="btn btn-xs" style="background:rgba(255,255,255,.15);color:white;border:1px solid rgba(255,255,255,.25);width:100%" title="Duplicate"><i class="bi bi-copy"></i></button></form>
                 <button class="btn btn-xs" style="background:rgba(255,255,255,.15);color:white;border:1px solid rgba(255,255,255,.25);flex:1" title="Export JSON" onclick="exportTemplate(<?= $tpl['id'] ?>)"><i class="bi bi-download"></i></button>
-                <button class="btn btn-xs" style="background:#ef4444;color:white;flex:1" title="Delete" onclick="confirmDeleteTpl(<?= $tpl['id'] ?>)"><i class="bi bi-trash"></i></button>
+                <button class="btn btn-xs" style="background:<?= ($tpl['is_system'] ?? false) ? '#ccc;cursor:not-allowed' : '#ef4444' ?>;color:<?= ($tpl['is_system'] ?? false) ? '#999' : 'white' ?>;flex:1" title="<?= ($tpl['is_system'] ?? false) ? 'Cannot delete system templates' : 'Delete' ?>" onclick="<?= ($tpl['is_system'] ?? false) ? 'return false' : 'confirmDeleteTpl(' . $tpl['id'] . ')' ?>" <?= ($tpl['is_system'] ?? false) ? 'disabled' : '' ?>><i class="bi bi-trash"></i></button>
               </div>
             </div>
           </div>
@@ -261,6 +264,9 @@ include __DIR__ . '/../../includes/header.php';
             <div style="font-size:.8rem;font-weight:800;text-transform:uppercase;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= e($tpl['name']) ?></div>
             <div style="font-size:.7rem;color:#6366f1;font-weight:700;text-transform:uppercase"><?= e($tpl['document_type']) ?></div>
             <div style="font-size:.65rem;color:#94a3b8;margin-top:2px"><?= e($tpl['paper_width']) ?> &times; <?= e($tpl['paper_height']) ?>mm</div>
+            <?php if ($tpl['is_system'] ?? false): ?>
+              <div style="font-size:.65rem;color:#2563eb;margin-top:4px;font-weight:700">✓ Built-in System Template</div>
+            <?php endif; ?>
           </div>
         </div>
       <?php endforeach; ?>
@@ -521,6 +527,7 @@ const PLACEHOLDERS = {
     { key:'{{item_width}}', label:'Item Width (MM)', icon:'bi-arrows-expand', preview:'78' },
     { key:'{{bundle_pcs}}', label:'Rolls per Shrink Wrap', icon:'bi-123', preview:'5' },
     { key:'{{pos_batch_no}}', label:'POS Batch No', icon:'bi-upc', preview:'SLC/2026/0364-C/AB' },
+    { key:'{{batch_display}}', label:'Batch Display (Multi-Roll)', icon:'bi-upc', preview:'SLC/2026/0365-B-A, SLC/2026/0365-B-B / AB' },
     { key:'{{job_no}}', label:'Job Number', icon:'bi-briefcase', preview:'OPL-PRL/2026/0006' },
     { key:'{{job_token}}', label:'Compact Job Token (Code128)', icon:'bi-upc-scan', preview:'J6' },
     { key:'{{scan_job_url}}', label:'Job Scan URL', icon:'bi-link-45deg', preview:(ERP_BASE_URL + '/modules/scan/job.php?jn=OPL-PRL%2F2026%2F0006') },
@@ -779,6 +786,31 @@ function openEditor(templateId) {
   document.getElementById('ps-editor').style.display = 'flex';
   document.getElementById('ps-editor-name').textContent = currentTemplate.name;
   document.getElementById('ps-editor-info').textContent = currentTemplate.documentType + ' \u2022 ' + currentTemplate.paperWidth + '\u00D7' + currentTemplate.paperHeight + 'mm';
+  
+  // Show message if system template
+  if (currentTemplate.isSystem) {
+    var sysMsg = document.getElementById('ps-system-template-notice');
+    if (!sysMsg) {
+      sysMsg = document.createElement('div');
+      sysMsg.id = 'ps-system-template-notice';
+      sysMsg.style.position = 'fixed';
+      sysMsg.style.top = '80px';
+      sysMsg.style.right = '20px';
+      sysMsg.style.backgroundColor = '#dbeafe';
+      sysMsg.style.color = '#1e40af';
+      sysMsg.style.border = '2px solid #2563eb';
+      sysMsg.style.borderRadius = '8px';
+      sysMsg.style.padding = '12px 16px';
+      sysMsg.style.fontSize = '12px';
+      sysMsg.style.fontWeight = '700';
+      sysMsg.style.zIndex = '9999';
+      sysMsg.style.maxWidth = '300px';
+      sysMsg.textContent = '✓ System Template: This template uses built-in layout. Use ERP Fields section to customize.';
+      document.body.appendChild(sysMsg);
+      setTimeout(function() { if (sysMsg) sysMsg.remove(); }, 5000);
+    }
+  }
+  
   psRenderComponents();
   psRenderErpFields();
   psRenderCanvas();

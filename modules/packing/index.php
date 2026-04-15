@@ -1068,6 +1068,28 @@ include __DIR__ . '/../../includes/header.php';
     var operatorRollOverrides = (operatorRollPayload.roll_overrides && typeof operatorRollPayload.roll_overrides === 'object')
       ? operatorRollPayload.roll_overrides
       : {};
+    var rollHelperOverrides = {};
+
+    function toNum(v) {
+      var n = Number(String(v || '').replace(/,/g, '').trim());
+      return isNaN(n) ? 0 : n;
+    }
+
+    Object.keys(operatorRollOverrides).forEach(function(k) {
+      var src = operatorRollOverrides[k];
+      if (!src || typeof src !== 'object') return;
+      var state = {};
+      ['rps', 'rpc', 'cartons', 'extra', 'csize'].forEach(function(field) {
+        if (!Object.prototype.hasOwnProperty.call(src, field)) return;
+        var raw = Math.floor(toNum(src[field]));
+        if (!isNaN(raw)) {
+          state[field] = (field === 'rps' || field === 'rpc' || field === 'csize') ? Math.max(1, raw) : Math.max(0, raw);
+        }
+      });
+      if (Object.keys(state).length) {
+        rollHelperOverrides[String(k)] = state;
+      }
+    });
     var prodQtyBaseline = safeNum(job && job.production_quantity ? job.production_quantity : 0);
     var rollLots = normalizeRollLots(job, prodQtyBaseline);
     var rollSelectionHtml = rollLots.length ? rollLots.map(function(roll, idx) {
@@ -1241,22 +1263,6 @@ include __DIR__ . '/../../includes/header.php';
                 var calcPhysicalSpan = document.getElementById('pkCalcPhysicalProduction');
                 var perRollOutput = document.getElementById('pkPerRollOutput');
                 var rollSelectNodes = Array.prototype.slice.call(document.querySelectorAll('.pk-roll-select'));
-                var rollHelperOverrides = {};
-                Object.keys(operatorRollOverrides).forEach(function(k) {
-                  var src = operatorRollOverrides[k];
-                  if (!src || typeof src !== 'object') return;
-                  var state = {};
-                  ['rps', 'rpc', 'cartons', 'extra', 'csize'].forEach(function(field) {
-                    if (!Object.prototype.hasOwnProperty.call(src, field)) return;
-                    var raw = Math.floor(toNum(src[field]));
-                    if (!isNaN(raw)) {
-                      state[field] = (field === 'rps' || field === 'rpc' || field === 'csize') ? Math.max(1, raw) : Math.max(0, raw);
-                    }
-                  });
-                  if (Object.keys(state).length) {
-                    rollHelperOverrides[String(k)] = state;
-                  }
-                });
                 
                 // Display order and production quantities
                 dashOrderQtySpan.textContent = orderQty > 0 ? orderQty : '-';
@@ -1271,11 +1277,6 @@ include __DIR__ . '/../../includes/header.php';
                   dashActualPercentSpan.textContent = '-';
                 }
                 
-                function toNum(v) {
-                  var n = Number(String(v || '').replace(/,/g, '').trim());
-                  return isNaN(n) ? 0 : n;
-                }
-
                 function seedSubmittedDefaultsForSelection(selectedRolls) {
                   if (!operatorHasSubmitted || !operatorEntry || !Array.isArray(selectedRolls) || selectedRolls.length !== 1) return;
                   var roll = selectedRolls[0] || {};
@@ -1586,6 +1587,7 @@ include __DIR__ . '/../../includes/header.php';
       var isPackingDoneNow = String(job.status || '').trim().toLowerCase() === 'packing done';
       var operatorSubmittedNow = operatorHasSubmitted;
       var pendingPrintType = '';
+      var pendingPrintUrls = [];
 
       function setSectionMessage(text, isError) {
         if (!sectionMessage) return;
@@ -1634,6 +1636,31 @@ include __DIR__ . '/../../includes/header.php';
         };
       }
 
+      function getSelectedRollLabels() {
+        var selected = getSelectedRollNodes();
+        if (!selected.length) return [];
+        return selected.map(function(node) {
+          var idx = Number(node.getAttribute('data-roll-index'));
+          if (isNaN(idx) || idx < 0 || idx >= rollLots.length) return '';
+          var lot = rollLots[idx] || {};
+          return String(lot.rollNo || ('ROLL-' + String(idx + 1))).trim();
+        }).filter(function(v) { return v !== ''; });
+      }
+
+      function getFirstSelectedRollRpc() {
+        var selected = getSelectedRollNodes();
+        if (!selected.length) return 50;
+        var idx = Number(selected[0].getAttribute('data-roll-index'));
+        if (isNaN(idx) || idx < 0 || idx >= rollLots.length) return 50;
+        var rollKey = String((rollLots[idx] || {}).rollNo || ('roll-' + String(idx)));
+        var st = (rollHelperOverrides[rollKey] && typeof rollHelperOverrides[rollKey] === 'object') ? rollHelperOverrides[rollKey] : {};
+        var rpc = Number(String(st.rpc == null ? '' : st.rpc));
+        if (!isNaN(rpc) && rpc > 0) return Math.floor(rpc);
+        var rpcInput = section.querySelector('.pk-roll-rpc');
+        var rpcVal = rpcInput ? Number(String(rpcInput.value || '').trim()) : 0;
+        return (!isNaN(rpcVal) && rpcVal > 0) ? Math.floor(rpcVal) : 50;
+      }
+
       function updateStickerButtonState() {
         var stickerBtn = section.querySelector('.pk-btn-sticker');
         if (!stickerBtn) return;
@@ -1649,6 +1676,24 @@ include __DIR__ . '/../../includes/header.php';
           stickerBtn.style.opacity = '1';
           stickerBtn.style.cursor = 'pointer';
           stickerBtn.title = '';
+        }
+      }
+
+      function updateLabelButtonState() {
+        var labelBtn = section.querySelector('.pk-btn-label');
+        if (!labelBtn) return;
+        var selectedCount = getSelectedRollNodes().length;
+        var shouldDisable = selectedCount < 1;
+        if (shouldDisable) {
+          labelBtn.setAttribute('disabled', 'disabled');
+          labelBtn.style.opacity = '0.55';
+          labelBtn.style.cursor = 'not-allowed';
+          labelBtn.title = 'Select at least one roll for label print.';
+        } else {
+          labelBtn.removeAttribute('disabled');
+          labelBtn.style.opacity = '1';
+          labelBtn.style.cursor = 'pointer';
+          labelBtn.title = '';
         }
       }
 
@@ -1731,17 +1776,46 @@ include __DIR__ . '/../../includes/header.php';
           });
       }
 
+      function executePendingPrint(printModal) {
+        if (!pendingPrintType || !Array.isArray(pendingPrintUrls) || !pendingPrintUrls.length) {
+          setSectionMessage('Print type missing.', true);
+          if (printModal) {
+            printModal.style.opacity = '0';
+            var missingTypeContent = printModal.querySelector('.pk-modal-content');
+            if (missingTypeContent) missingTypeContent.style.transform = 'scale(0.95)';
+            setTimeout(function() {
+              printModal.style.display = 'none';
+            }, 300);
+          }
+          return;
+        }
+
+        pendingPrintUrls.forEach(function(url) {
+          window.open(url, '_blank');
+        });
+        setSectionMessage((pendingPrintType === 'sticker' ? 'Sticker' : 'Label') + ' Print opened.', false);
+        if (printModal) {
+          printModal.style.opacity = '0';
+          var doneContent = printModal.querySelector('.pk-modal-content');
+          if (doneContent) doneContent.style.transform = 'scale(0.95)';
+          setTimeout(function() {
+            printModal.style.display = 'none';
+          }, 300);
+        }
+      }
+
       function openPrintConfirmModal(printType) {
         if (printType === 'sticker' && !getSelectedRollInfo()) {
           updateStickerButtonState();
+          updateLabelButtonState();
           setSectionMessage('Sticker print requires exactly one selected roll.', true);
           return;
         }
 
-        var printModal = document.getElementById('pk-print-confirmation-modal');
-        var titleEl = document.getElementById('pk-print-confirm-title');
-        var msgEl = document.getElementById('pk-print-confirm-message');
-        var qtyEl = document.getElementById('pk-print-confirm-qty');
+        var printModal = modalCardCanvas.querySelector('#pk-print-confirmation-modal') || document.getElementById('pk-print-confirmation-modal');
+        var titleEl = printModal ? printModal.querySelector('#pk-print-confirm-title') : null;
+        var msgEl = printModal ? printModal.querySelector('#pk-print-confirm-message') : null;
+        var qtyEl = printModal ? printModal.querySelector('#pk-print-confirm-qty') : null;
         if (!printModal || !titleEl || !msgEl || !qtyEl) {
           setSectionMessage('Print modal load failed. Please reopen this job modal.', true);
           return;
@@ -1760,10 +1834,108 @@ include __DIR__ . '/../../includes/header.php';
 
         qtyEl.textContent = String(requiredQty);
         pendingPrintType = printType;
+        pendingPrintUrls = [];
+        var btnPrintOk = printModal.querySelector('#pk-print-modal-btn-ok');
+        var btnPrintCancel = printModal.querySelector('#pk-print-modal-btn-cancel');
+        if (btnPrintOk) btnPrintOk.onclick = function(e) {
+          if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          executePendingPrint(printModal);
+        };
+        if (btnPrintOk) btnPrintOk.setAttribute('data-print-type', printType);
+        if (btnPrintOk) btnPrintOk.disabled = true;
+        if (btnPrintCancel) btnPrintCancel.onclick = function() {
+          printModal.style.opacity = '0';
+          var cancelContent = printModal.querySelector('.pk-modal-content');
+          if (cancelContent) cancelContent.style.transform = 'scale(0.95)';
+          setTimeout(function() {
+            printModal.style.display = 'none';
+          }, 300);
+        };
         printModal.style.display = 'flex';
         printModal.style.opacity = '0';
         var printContent = printModal.querySelector('.pk-modal-content');
         if (printContent) printContent.style.transform = 'scale(0.95)';
+        msgEl.textContent = printType === 'sticker' ? 'Preparing sticker print preview...' : 'Preparing label print preview...';
+
+        var safeQty = requiredQty > 0 ? requiredQty : 1;
+        var sizeParam = printType === 'sticker' ? '40x25' : '150x100';
+        var selectedRollInfo = printType === 'sticker' ? getSelectedRollInfo() : null;
+        var selectedRollLabels = printType === 'label' ? getSelectedRollLabels() : [];
+        var rollsPerCarton = printType === 'label' ? getFirstSelectedRollRpc() : 0;
+        var labelJobName = String(job && job.plan_name ? job.plan_name : (job && job.job_name ? job.job_name : ''));
+        var rollsPerShrinkWrap = Number((section.querySelector('.pk-roll-rps') || {}).value || 0);
+        if (!rollsPerShrinkWrap || rollsPerShrinkWrap < 1) rollsPerShrinkWrap = 5;
+        var stickerItemWidth = getStickerItemWidth();
+        var batches = (Array.isArray(currentPackingBatches) && currentPackingBatches.length) ? currentPackingBatches : null;
+        var backUrl = window.location.href;
+
+        resolvePaperStockId().then(function(resolvedId) {
+          if (!resolvedId) {
+            msgEl.textContent = 'Paper stock id not found for this job.';
+            setSectionMessage('Paper stock id not found for this job.', true);
+            return;
+          }
+
+          if (printType === 'label') {
+            var labelBatchNo = selectedRollLabels.length ? selectedRollLabels.join(', ') : '';
+            pendingPrintUrls = [
+              baseUrl + '/modules/paper_stock/label.php?ids=' + encodeURIComponent(String(resolvedId))
+                + '&print_type=' + encodeURIComponent(printType)
+                + '&required_qty=' + encodeURIComponent(String(safeQty))
+                + '&label_size=' + encodeURIComponent(sizeParam)
+                + '&bundle_pcs=' + encodeURIComponent(String(rollsPerShrinkWrap))
+                + '&rolls_per_carton=' + encodeURIComponent(String(rollsPerCarton || 0))
+                + '&item_width=' + encodeURIComponent(String(stickerItemWidth || ''))
+                + '&job_name=' + encodeURIComponent(labelJobName)
+                + '&batch_labels=' + encodeURIComponent(labelBatchNo)
+                + '&batch_no=' + encodeURIComponent(labelBatchNo)
+                + '&back_url=' + encodeURIComponent(backUrl)
+            ];
+          } else if (!batches || batches.length <= 1) {
+            pendingPrintUrls = [
+              baseUrl + '/modules/paper_stock/label.php?ids=' + encodeURIComponent(String(resolvedId))
+                + '&print_type=' + encodeURIComponent(printType)
+                + '&required_qty=' + encodeURIComponent(String(safeQty))
+                + '&label_size=' + encodeURIComponent(sizeParam)
+                + '&bundle_pcs=' + encodeURIComponent(String(rollsPerShrinkWrap))
+                + '&item_width=' + encodeURIComponent(String(stickerItemWidth || ''))
+                + (selectedRollInfo ? ('&batch_no=' + encodeURIComponent(selectedRollInfo.batchNo) + '&batch_label=' + encodeURIComponent(selectedRollInfo.rollNo)) : '')
+            ];
+          } else {
+            pendingPrintUrls = batches.map(function(batch) {
+              var batchQty = printType === 'sticker'
+                ? Math.max(0, Number(batch.shrinkBundles || 0))
+                : Math.max(0, Number(batch.cartons || 0));
+              if (batchQty <= 0) return '';
+              var batchLabel = String(batch.label || ('Batch ' + String(batch.batchNo || '')));
+              return baseUrl + '/modules/paper_stock/label.php?ids=' + encodeURIComponent(String(resolvedId))
+                + '&print_type=' + encodeURIComponent(printType)
+                + '&required_qty=' + encodeURIComponent(String(batchQty))
+                + '&label_size=' + encodeURIComponent(sizeParam)
+                + '&bundle_pcs=' + encodeURIComponent(String(rollsPerShrinkWrap))
+                + '&item_width=' + encodeURIComponent(String(stickerItemWidth || ''))
+                + '&batch_label=' + encodeURIComponent(batchLabel);
+            }).filter(function(v) { return v !== ''; });
+          }
+
+          if (!pendingPrintUrls.length) {
+            msgEl.textContent = 'Nothing available to print.';
+            setSectionMessage('Nothing available to print.', true);
+            return;
+          }
+
+          if (btnPrintOk) btnPrintOk.disabled = false;
+          msgEl.textContent = printType === 'sticker'
+            ? 'Sticker print preview is ready. Press OK to open.'
+            : 'Label print preview is ready. Press OK to open.';
+        }).catch(function() {
+          msgEl.textContent = 'Print preview prepare failed. Please try again.';
+          setSectionMessage('Print preview prepare failed. Please try again.', true);
+        });
+
         setTimeout(function() {
           printModal.style.opacity = '1';
           if (printContent) printContent.style.transform = 'scale(1)';
@@ -1833,6 +2005,50 @@ include __DIR__ . '/../../includes/header.php';
         });
       }
 
+      function openDirectLabelPreview() {
+        var requiredQty = getNumericValue('pkCalcCartons');
+        var safeQty = requiredQty > 0 ? requiredQty : 1;
+        var selectedRollLabels = getSelectedRollLabels();
+        var rollsPerCarton = getFirstSelectedRollRpc();
+        var labelJobName = String(job && job.plan_name ? job.plan_name : (job && job.job_name ? job.job_name : ''));
+        var rollsPerShrinkWrap = Number((section.querySelector('.pk-roll-rps') || {}).value || 0);
+        if (!rollsPerShrinkWrap || rollsPerShrinkWrap < 1) rollsPerShrinkWrap = 5;
+        var stickerItemWidth = getStickerItemWidth();
+        var backUrl = window.location.href;
+        
+        var labelWin = window.open('about:blank', '_blank');
+        if (!labelWin) {
+          setSectionMessage('Popup blocked. Please allow popups for label print.', true);
+          return;
+        }
+
+        setSectionMessage('Preparing label print preview...', false);
+        resolvePaperStockId().then(function(resolvedId) {
+          if (!resolvedId) {
+            if (!labelWin.closed) labelWin.close();
+            setSectionMessage('Paper stock id not found for this job.', true);
+            return;
+          }
+          var labelBatchNo = selectedRollLabels.length ? selectedRollLabels.join(', ') : '';
+          var labelPrintUrl = baseUrl + '/modules/paper_stock/label.php?ids=' + encodeURIComponent(String(resolvedId))
+            + '&print_type=label'
+            + '&required_qty=' + encodeURIComponent(String(safeQty))
+            + '&label_size=150x100'
+            + '&bundle_pcs=' + encodeURIComponent(String(rollsPerShrinkWrap))
+            + '&rolls_per_carton=' + encodeURIComponent(String(rollsPerCarton || 0))
+            + '&item_width=' + encodeURIComponent(String(stickerItemWidth || ''))
+            + '&job_name=' + encodeURIComponent(labelJobName)
+            + '&batch_labels=' + encodeURIComponent(labelBatchNo)
+            + '&batch_no=' + encodeURIComponent(labelBatchNo)
+            + '&back_url=' + encodeURIComponent(backUrl);
+          labelWin.location.href = labelPrintUrl;
+          setSectionMessage('Label print preview opened.', false);
+        }).catch(function(err) {
+          if (!labelWin.closed) labelWin.close();
+          setSectionMessage('Label print preview failed to open.', true);
+        });
+      }
+
       // Hard fallback bindings to ensure print buttons always respond.
       var stickerBtn = section.querySelector('.pk-btn-sticker');
       var labelBtn = section.querySelector('.pk-btn-label');
@@ -1848,7 +2064,8 @@ include __DIR__ . '/../../includes/header.php';
         labelBtn.onclick = function(e) {
           e.preventDefault();
           e.stopPropagation();
-          openPrintConfirmModal('label');
+          if (labelBtn.hasAttribute('disabled')) return;
+          openDirectLabelPreview();
         };
       }
       
@@ -1947,7 +2164,7 @@ include __DIR__ . '/../../includes/header.php';
           } else if (buttonAction === 'sticker') {
             openPrintConfirmModal('sticker');
           } else if (buttonAction === 'label') {
-            openPrintConfirmModal('label');
+            openDirectLabelPreview();
           }
         });
       });
@@ -1955,10 +2172,14 @@ include __DIR__ . '/../../includes/header.php';
       var rollSelectForPrintState = Array.prototype.slice.call(section.querySelectorAll('.pk-roll-select'));
       if (rollSelectForPrintState.length) {
         rollSelectForPrintState.forEach(function(node) {
-          node.addEventListener('change', updateStickerButtonState);
+          node.addEventListener('change', function() {
+            updateStickerButtonState();
+            updateLabelButtonState();
+          });
         });
       }
       updateStickerButtonState();
+      updateLabelButtonState();
       
       // Set up cancel confirmation modal
       setTimeout(function() {
@@ -2045,9 +2266,9 @@ include __DIR__ . '/../../includes/header.php';
 
       // Set up sticker/label print confirmation modal
       setTimeout(function() {
-        var printModal = document.getElementById('pk-print-confirmation-modal');
-        var btnPrintOk = document.getElementById('pk-print-modal-btn-ok');
-        var btnPrintCancel = document.getElementById('pk-print-modal-btn-cancel');
+        var printModal = modalCardCanvas.querySelector('#pk-print-confirmation-modal') || document.getElementById('pk-print-confirmation-modal');
+        var btnPrintOk = printModal ? printModal.querySelector('#pk-print-modal-btn-ok') : null;
+        var btnPrintCancel = printModal ? printModal.querySelector('#pk-print-modal-btn-cancel') : null;
         if (!printModal || !btnPrintOk || !btnPrintCancel) return;
         var printContent = printModal.querySelector('.pk-modal-content');
 
@@ -2059,71 +2280,23 @@ include __DIR__ . '/../../includes/header.php';
           }, 300);
         }
 
-        btnPrintCancel.addEventListener('click', function() {
+        btnPrintCancel.onclick = function() {
           closePrintModal();
-        });
+        };
 
-        btnPrintOk.addEventListener('click', function() {
-          if (!pendingPrintType) {
-            setSectionMessage('Print type missing.', true);
-            closePrintModal();
-            return;
+        btnPrintOk.onclick = function(e) {
+          if (e) {
+            e.preventDefault();
+            e.stopPropagation();
           }
-          var qty = pendingPrintType === 'sticker' ? getNumericValue('pkCalcBundles') : getNumericValue('pkCalcCartons');
-          var safeQty = qty > 0 ? qty : 1;
-          var sizeParam = pendingPrintType === 'sticker' ? '40x25' : '150x100';
-          var selectedRollInfo = pendingPrintType === 'sticker' ? getSelectedRollInfo() : null;
-          if (pendingPrintType === 'sticker' && !selectedRollInfo) {
-            setSectionMessage('Sticker print requires exactly one selected roll.', true);
-            closePrintModal();
-            return;
-          }
-          var rollsPerShrinkWrap = Number((document.querySelector('.pk-roll-rps') || {}).value || 0);
-          if (!rollsPerShrinkWrap || rollsPerShrinkWrap < 1) rollsPerShrinkWrap = 5;
-          var stickerItemWidth = getStickerItemWidth();
-          resolvePaperStockId().then(function(resolvedId) {
-            if (!resolvedId) {
-              setSectionMessage('Paper stock id not found for this job.', true);
-              closePrintModal();
-              return;
-            }
-            var batches = (Array.isArray(currentPackingBatches) && currentPackingBatches.length) ? currentPackingBatches : null;
-            if (!batches || batches.length <= 1) {
-              var printUrl = baseUrl + '/modules/paper_stock/label.php?ids=' + encodeURIComponent(String(resolvedId))
-                + '&print_type=' + encodeURIComponent(pendingPrintType)
-                + '&required_qty=' + encodeURIComponent(String(safeQty))
-                + '&label_size=' + encodeURIComponent(sizeParam)
-                + '&bundle_pcs=' + encodeURIComponent(String(rollsPerShrinkWrap))
-                + '&item_width=' + encodeURIComponent(String(stickerItemWidth || ''))
-                + (selectedRollInfo ? ('&batch_no=' + encodeURIComponent(selectedRollInfo.batchNo) + '&batch_label=' + encodeURIComponent(selectedRollInfo.rollNo)) : '');
-              window.open(printUrl, '_blank');
-            } else {
-              batches.forEach(function(batch) {
-                var batchQty = pendingPrintType === 'sticker'
-                  ? Math.max(0, Number(batch.shrinkBundles || 0))
-                  : Math.max(0, Number(batch.cartons || 0));
-                if (batchQty <= 0) return;
-                var batchLabel = String(batch.label || ('Batch ' + String(batch.batchNo || '')));
-                var printUrl = baseUrl + '/modules/paper_stock/label.php?ids=' + encodeURIComponent(String(resolvedId))
-                  + '&print_type=' + encodeURIComponent(pendingPrintType)
-                  + '&required_qty=' + encodeURIComponent(String(batchQty))
-                  + '&label_size=' + encodeURIComponent(sizeParam)
-                  + '&bundle_pcs=' + encodeURIComponent(String(rollsPerShrinkWrap))
-                  + '&item_width=' + encodeURIComponent(String(stickerItemWidth || ''))
-                  + '&batch_label=' + encodeURIComponent(batchLabel);
-                window.open(printUrl, '_blank');
-              });
-            }
-            setSectionMessage((pendingPrintType === 'sticker' ? 'Sticker' : 'Label') + ' Print opened.', false);
-            closePrintModal();
-          });
-        });
+          executePendingPrint(printModal);
+        };
 
-        printModal.addEventListener('click', function(e) {
+        printModal.onclick = function(e) {
           if (e.target === printModal) {
             closePrintModal();
           }
-        });
+        };
 
         document.addEventListener('keydown', function(e) {
           if (e.key === 'Escape' && printModal.style.display === 'flex') {
