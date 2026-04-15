@@ -280,6 +280,55 @@ function packing_build_display_id(int $jobId, string $planNo = ''): string {
     return $prefix . '/' . date('Y') . '/' . str_pad((string)max(1, $jobId), 4, '0', STR_PAD_LEFT);
 }
 
+function packing_ensure_operator_entries_table(mysqli $db): void {
+    $db->query("
+        CREATE TABLE IF NOT EXISTS `packing_operator_entries` (
+            `id`            INT(11) NOT NULL AUTO_INCREMENT,
+            `job_no`        VARCHAR(64) NOT NULL,
+            `job_id`        INT(11) DEFAULT NULL,
+            `planning_id`   INT(11) DEFAULT NULL,
+            `operator_id`   INT(11) DEFAULT NULL,
+            `operator_name` VARCHAR(128) DEFAULT NULL,
+            `packed_qty`    DECIMAL(12,2) DEFAULT NULL,
+            `bundles_count` INT(11) DEFAULT NULL,
+            `cartons_count` INT(11) DEFAULT NULL,
+            `wastage_qty`   DECIMAL(12,2) DEFAULT NULL,
+            `loose_qty`     DECIMAL(12,2) DEFAULT NULL,
+            `notes`         TEXT DEFAULT NULL,
+            `photo_path`    VARCHAR(255) DEFAULT NULL,
+            `submitted_at`  DATETIME DEFAULT NULL,
+            `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uq_packing_op_job_no` (`job_no`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    // Backward compatibility for existing installations created before loose_qty field.
+    $hasLooseQty = false;
+    $res = $db->query("SHOW COLUMNS FROM `packing_operator_entries` LIKE 'loose_qty'");
+    if ($res instanceof mysqli_result) {
+        $hasLooseQty = ($res->num_rows > 0);
+        $res->close();
+    }
+    if (!$hasLooseQty) {
+        $db->query("ALTER TABLE `packing_operator_entries` ADD COLUMN `loose_qty` DECIMAL(12,2) DEFAULT NULL AFTER `wastage_qty`");
+    }
+}
+
+function packing_fetch_operator_entry(mysqli $db, string $jobNo): ?array {
+    $jobNo = trim($jobNo);
+    if ($jobNo === '') return null;
+    $stmt = $db->prepare("SELECT * FROM packing_operator_entries WHERE job_no = ? LIMIT 1");
+    if (!$stmt) return null;
+    $stmt->bind_param('s', $jobNo);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $stmt->close();
+    return $row ?: null;
+}
+
 function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
     $jobId = (int)$jobId;
     if ($jobId <= 0) {
@@ -396,6 +445,7 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
         'plan_extra_data' => $planExtra,
         'prev_job_extra_data' => $prevExtra,
         'grandprev_job_extra_data' => $grandPrevExtra,
+        'operator_entry' => packing_fetch_operator_entry($db, (string)($row['job_no'] ?? '')),
     ];
 }
 
@@ -403,6 +453,7 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     $search = trim((string)($filters['search'] ?? ''));
     $from = trim((string)($filters['from'] ?? ''));
     $to = trim((string)($filters['to'] ?? ''));
+    $status = trim((string)($filters['status'] ?? ''));
 
     $allDepartments = [];
     foreach (packing_department_type_map() as $cfg) {
@@ -419,6 +470,12 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
 
     $where = "(j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')";
     $where .= " AND LOWER(COALESCE(j.department, '')) IN (" . implode(',', $quotedDepartments) . ")";
+    
+    // Status filter: if provided, filter by exact status match
+    if ($status !== '') {
+        $statusEsc = $db->real_escape_string($status);
+        $where .= " AND j.status = '" . $statusEsc . "'";
+    }
 
     $sql = "
         SELECT

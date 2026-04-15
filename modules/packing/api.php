@@ -18,6 +18,7 @@ function packing_api_respond(array $payload, int $status = 200): void {
 }
 
 $db = getDB();
+packing_ensure_operator_entries_table($db);
 $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 $action = trim((string)($_REQUEST['action'] ?? ''));
 try {
@@ -147,6 +148,119 @@ try {
         }
 
         packing_api_respond(['ok' => true, 'already_done' => false, 'status' => 'Packing Done']);
+    }
+
+    if ($action === 'operator_submit') {
+        if ($method !== 'POST') {
+            packing_api_respond(['ok' => false, 'message' => 'Method not allowed'], 405);
+        }
+
+        $jobId   = (int)($_POST['job_id'] ?? 0);
+        $jobNo   = trim((string)($_POST['job_no'] ?? ''));
+        $planId  = (int)($_POST['planning_id'] ?? 0);
+
+        if ($jobNo === '') {
+            packing_api_respond(['ok' => false, 'message' => 'job_no is required'], 400);
+        }
+
+        $packedQty    = trim((string)($_POST['packed_qty'] ?? ''));
+        $bundlesCount = trim((string)($_POST['bundles_count'] ?? ''));
+        $cartonsCount = trim((string)($_POST['cartons_count'] ?? ''));
+        $wastageQty   = trim((string)($_POST['wastage_qty'] ?? ''));
+        $looseQty     = trim((string)($_POST['loose_qty'] ?? ''));
+        $notes        = trim((string)($_POST['notes'] ?? ''));
+
+        $packedQtyVal    = is_numeric($packedQty)    ? (float)$packedQty    : null;
+        $bundlesCountVal = is_numeric($bundlesCount) ? (int)$bundlesCount   : null;
+        $cartonsCountVal = is_numeric($cartonsCount) ? (int)$cartonsCount   : null;
+        $wastageQtyVal   = is_numeric($wastageQty)   ? (float)$wastageQty   : null;
+        $looseQtyVal     = is_numeric($looseQty)     ? (float)$looseQty     : null;
+
+        $operatorId   = (int)($_SESSION['user_id']   ?? 0);
+        $operatorName = trim((string)($_SESSION['user_name'] ?? ''));
+        if ($operatorName === '') $operatorName = 'Operator';
+
+        $canAdminOverrideEditLock = false;
+        if (function_exists('isAdmin') && isAdmin()) {
+            $canAdminOverrideEditLock = true;
+        } elseif (function_exists('hasRole') && hasRole('system_admin', 'super_admin')) {
+            $canAdminOverrideEditLock = true;
+        }
+
+        // Handle optional photo upload
+        $photoPath = null;
+        if (!empty($_FILES['photo']['tmp_name'])) {
+            $uploadDir = __DIR__ . '/../../uploads/packing/';
+            if (!is_dir($uploadDir)) {
+                @mkdir($uploadDir, 0755, true);
+            }
+            $ext = strtolower(pathinfo((string)($_FILES['photo']['name'] ?? ''), PATHINFO_EXTENSION));
+            $allowedExts = ['jpg', 'jpeg', 'png', 'webp'];
+            if (!in_array($ext, $allowedExts, true)) {
+                packing_api_respond(['ok' => false, 'message' => 'Photo must be jpg/jpeg/png/webp'], 400);
+            }
+            $maxSize = 5 * 1024 * 1024; // 5 MB
+            if ((int)($_FILES['photo']['size'] ?? 0) > $maxSize) {
+                packing_api_respond(['ok' => false, 'message' => 'Photo must be under 5 MB'], 400);
+            }
+            $safeName = 'pkg_' . preg_replace('/[^a-z0-9]/', '', strtolower($jobNo)) . '_' . time() . '.' . $ext;
+            $dest = $uploadDir . $safeName;
+            if (move_uploaded_file($_FILES['photo']['tmp_name'], $dest)) {
+                $photoPath = 'uploads/packing/' . $safeName;
+            }
+        }
+
+        $submittedAt = date('Y-m-d H:i:s');
+
+        // Upsert into packing_operator_entries
+        $existing = packing_fetch_operator_entry($db, $jobNo);
+        if ($existing) {
+            if (!$canAdminOverrideEditLock) {
+                packing_api_respond([
+                    'ok' => false,
+                    'message' => 'Entry already submitted. Only admin can edit or delete it.'
+                ], 403);
+            }
+
+            $stmt = $db->prepare("
+                UPDATE packing_operator_entries
+                SET job_id=?, planning_id=?, operator_id=?, operator_name=?,
+                    packed_qty=?, bundles_count=?, cartons_count=?, wastage_qty=?, loose_qty=?,
+                    notes=?, photo_path=COALESCE(?,photo_path), submitted_at=?, updated_at=NOW()
+                WHERE job_no=?
+            ");
+            if (!$stmt) packing_api_respond(['ok' => false, 'message' => 'Prepare failed'], 500);
+            $stmt->bind_param('iiisdiiddssss',
+                $jobId, $planId, $operatorId, $operatorName,
+                $packedQtyVal, $bundlesCountVal, $cartonsCountVal, $wastageQtyVal, $looseQtyVal,
+                $notes, $photoPath, $submittedAt, $jobNo
+            );
+        } else {
+            $stmt = $db->prepare("
+                INSERT INTO packing_operator_entries
+                    (job_no, job_id, planning_id, operator_id, operator_name,
+                     packed_qty, bundles_count, cartons_count, wastage_qty, loose_qty,
+                     notes, photo_path, submitted_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ");
+            if (!$stmt) packing_api_respond(['ok' => false, 'message' => 'Prepare failed'], 500);
+            $stmt->bind_param('siiisdiiddsss',
+                $jobNo, $jobId, $planId, $operatorId, $operatorName,
+                $packedQtyVal, $bundlesCountVal, $cartonsCountVal, $wastageQtyVal, $looseQtyVal,
+                $notes, $photoPath, $submittedAt
+            );
+        }
+
+        $stmt->execute();
+        $err = $stmt->error;
+        $stmt->close();
+
+        if ($err !== '') {
+            packing_api_respond(['ok' => false, 'message' => 'DB error: ' . $err], 500);
+        }
+
+        $entry = packing_fetch_operator_entry($db, $jobNo);
+        packing_api_respond(['ok' => true, 'message' => 'Packing entry submitted successfully', 'entry' => $entry]);
     }
 
     packing_api_respond(['ok' => false, 'message' => 'Invalid action'], 400);

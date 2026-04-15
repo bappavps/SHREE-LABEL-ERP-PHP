@@ -13,10 +13,11 @@ if (!in_array($currentTab, $allowedTabs, true)) {
   $currentTab = 'printing_label';
 }
 
-$search = trim((string)($_GET['q'] ?? ''));
-$from = trim((string)($_GET['from'] ?? ''));
-$to = trim((string)($_GET['to'] ?? ''));
+$search = trim((string)($_GET['q']      ?? ''));
+$from   = trim((string)($_GET['from']   ?? ''));
+$to     = trim((string)($_GET['to']     ?? ''));
 $period = trim((string)($_GET['period'] ?? 'custom'));
+$status = trim((string)($_GET['status'] ?? '')); // Default: all statuses (empty string)
 
 $allowedPeriods = ['custom', 'day', 'week', 'month', 'year'];
 if (!in_array($period, $allowedPeriods, true)) {
@@ -51,6 +52,7 @@ $data = packing_fetch_ready_rows($db, [
   'search' => $search,
   'from' => $from,
   'to' => $to,
+  'status' => $status,
 ]);
 
 $rowsByTab = $data['rows_by_tab'];
@@ -58,11 +60,11 @@ $counts = $data['counts'];
 $canDeleteJobs = isAdmin();
 
 $statusClass = static function(string $status): string {
-  $status = strtolower(trim($status));
-  if (in_array($status, ['completed', 'complete', 'qc passed', 'finalized', 'closed', 'packing done'], true)) {
-    return 'ok';
-  }
-  return 'muted';
+  return strtolower(trim($status)) === 'packing done' ? 'ok' : 'muted';
+};
+
+$displayPackingStatus = static function(string $status): string {
+  return strtolower(trim($status)) === 'packing done' ? 'Packing Done' : 'Packing';
 };
 
 $formatDate = static function(string $value): string {
@@ -126,7 +128,7 @@ include __DIR__ . '/../../includes/header.php';
 .pk-btn.primary{background:#0f172a;color:#fff;border-color:#0f172a;box-shadow:0 8px 16px rgba(15,23,42,.2)}
 .pk-btn[disabled]{opacity:.45;cursor:not-allowed}
 .pk-card{background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%);border:1px solid #dbe3f0;border-radius:14px;padding:14px;margin-top:14px;box-shadow:0 12px 30px rgba(15,23,42,.06)}
-.pk-filters{display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:10px;align-items:end}
+.pk-filters{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr auto;gap:10px;align-items:end}
 .pk-filters label{display:block;font-size:.63rem;text-transform:uppercase;letter-spacing:.06em;color:#64748b;font-weight:800;margin-bottom:4px}
 .pk-filters input{height:38px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font-size:.82rem}
 .pk-filters .pk-btn{height:38px}
@@ -255,6 +257,14 @@ include __DIR__ . '/../../includes/header.php';
       <label>To Date</label>
       <input type="date" name="to" value="<?= e($to) ?>">
     </div>
+    <div>
+      <label>Status</label>
+      <select name="status" style="height:38px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font-size:.82rem;width:100%;background:#fff;">
+        <option value="" <?= $status === '' ? 'selected' : '' ?>>All Statuses</option>
+        <option value="Completed" <?= $status === 'Completed' ? 'selected' : '' ?>>Completed</option>
+        <option value="Packing Done" <?= $status === 'Packing Done' ? 'selected' : '' ?>>Packing Done</option>
+      </select>
+    </div>
     <div style="display:flex;gap:8px;">
       <input type="hidden" name="tab" id="pkTabInput" value="<?= e($currentTab) ?>">
       <button class="pk-btn primary" type="submit">Apply</button>
@@ -343,7 +353,7 @@ include __DIR__ . '/../../includes/header.php';
                     <td><?= e(($row['client_name'] ?? '') !== '' ? $row['client_name'] : '-') ?></td>
                     <td><?= e($formatDate((string)($row['order_date'] ?? ''))) ?></td>
                     <td class="pk-dispatch-date"><span class="pk-dispatch-pill"><?= e($formatDate((string)($row['dispatch_date'] ?? $row['event_time'] ?? ''))) ?></span></td>
-                    <td><span class="pk-badge <?= e($statusClass((string)($row['status'] ?? ''))) ?>"><?= e($row['status'] ?? '-') ?></span></td>
+                    <td><span class="pk-badge <?= e($statusClass((string)($row['status'] ?? ''))) ?>"><?= e($displayPackingStatus((string)($row['status'] ?? ''))) ?></span></td>
                   </tr>
                 <?php else: ?>
                   <tr>
@@ -354,7 +364,7 @@ include __DIR__ . '/../../includes/header.php';
                     <td><?= e(($row['roll_no'] ?? '') !== '' ? $row['roll_no'] : '-') ?></td>
                     <td><?= e($row['tab_label'] ?? '-') ?></td>
                     <td><?= e($row['last_department'] ?? '-') ?></td>
-                    <td><span class="pk-badge <?= e($statusClass((string)($row['status'] ?? ''))) ?>"><?= e($row['status'] ?? '-') ?></span></td>
+                    <td><span class="pk-badge <?= e($statusClass((string)($row['status'] ?? ''))) ?>"><?= e($displayPackingStatus((string)($row['status'] ?? ''))) ?></span></td>
                     <td><?= e(($row['event_time'] ?? '') !== '' ? date('d M Y H:i', strtotime((string)$row['event_time'])) : '-') ?></td>
                   </tr>
                 <?php endif; ?>
@@ -814,6 +824,10 @@ include __DIR__ . '/../../includes/header.php';
     var isPackingDone = jobStatusText.toLowerCase() === 'packing done';
     var sectionBLocked = isPackingDone && !canDeleteJobs;
     var targetPaperStockId = Number(job.paper_stock_id || 0);
+    var operatorEntry = (job.operator_entry && typeof job.operator_entry === 'object') ? job.operator_entry : null;
+    var operatorHasSubmitted = !!operatorEntry;
+    // Finish active only if operator submitted AND job not already finished
+    var finishShouldBeActive = !isPackingDone && operatorHasSubmitted;
 
     var imageHtml = job.image_url
       ? '<div class="pk-jc-image"><div style="font-size:.72rem;font-weight:800;color:#475569;margin-bottom:6px">Assigned Image Preview</div><img src="' + escHtml(job.image_url) + '" alt="Assigned Job Image"></div>'
@@ -843,6 +857,7 @@ include __DIR__ . '/../../includes/header.php';
         var cls = detailItemClass(item[0], item[1]);
         return '<div class="pk-jc-detail-item ' + escHtml(cls) + '"><b>' + escHtml(item[0]) + '</b><span>' + escHtml(item[1]) + '</span></div>';
           }).join('') + '</div>' +
+        (job.image_url ? '<div style="margin-top:12px;text-align:center;border-top:1px solid #e2e8f0;padding-top:12px"><div style="font-size:.74rem;font-weight:900;color:#0f172a;margin-bottom:8px">Job Image</div><img src="' + escHtml(job.image_url) + '" alt="Job Image" style="max-width:100%;max-height:200px;border-radius:8px;border:1px solid #cbd5e1"></div>' : '') +
       '      <table class="pk-jc-rolls">' +
       '        <thead><tr><th>Roll No</th><th>Paper Company</th><th>Paper Type</th><th>Width</th><th>Length</th></tr></thead>' +
       '        <tbody>' + (rollItems.length ? rollItems.map(function(it, idx){
@@ -859,7 +874,10 @@ include __DIR__ . '/../../includes/header.php';
           + (isPackingDone ? '<span id="pkPackingDoneBadge" style="margin-left:8px;background:#22c55e;color:#fff;font-size:.72rem;font-weight:800;padding:3px 8px;border-radius:999px;">Packing Done</span>' : '')
           + '    </h5>'
           + '    <div class="pk-jc-section-content-b">'
-          + '      <div style="padding:14px 0;margin-bottom:14px;border-bottom:1px solid #eef2f7;">'
+          + '      <div style="padding:14px 12px;margin-bottom:14px;border:1px solid #bae6fd;border-radius:12px;background:linear-gradient(120deg,#ecfeff 0%,#f0f9ff 100%);">'
+          + '        <div style="font-size:.74rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#0284c7;margin-bottom:12px">'
+          + '          <i class="bi bi-box"></i> From Production Department'
+          + '        </div>'
           + '        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px 16px;align-items:end;">'
             + '          <div style="display:flex;flex-direction:column;gap:4px;">'
             + '            <label style="font-size:.85em;font-weight:700;color:#64748b;">Order Qty</label>'
@@ -879,23 +897,31 @@ include __DIR__ . '/../../includes/header.php';
             + '              <span id="pkDashActualPercent">-</span>'
             + '            </div>'
             + '          </div>'
-            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
-            + '            <label for="pkDeliveryPercent" style="font-size:.85em;font-weight:700;color:#64748b;">Delivery %</label>'
-            + '            <input type="number" id="pkDeliveryPercent" min="-100" max="1000" value="10" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #cbd5e1;font-size:.95em;">'
-            + '          </div>'
-            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
-            + '            <label for="pkDeliveryQty" style="font-size:.85em;font-weight:700;color:#64748b;">Delivery Qty</label>'
-            + '            <input type="number" id="pkDeliveryQty" min="0" value="0" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #cbd5e1;font-size:.95em;background-color:#f0fdf4;">'
-            + '          </div>'
-            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
-            + '            <label style="font-size:.85em;font-weight:700;color:#64748b;">Balance Stock</label>'
-            + '            <div style="font-size:1.15em;font-weight:900;color:#dc2626;padding:4px 0;">'
-            + '              <span id="pkBalanceStock">-</span>'
-            + '            </div>'
-            + '          </div>'
           + '        </div>'
           + '      </div>'
-          + '      <div style="padding:14px 0;margin-bottom:14px;border-bottom:1px solid #eef2f7;">'
+          // Operator entry data block (moved directly under summary)
+          + '      <div style="margin:10px 0;padding:12px;border:1px solid #fed7aa;border-radius:10px;background:linear-gradient(120deg,#fff7ed 0%,#fff 100%)">'
+          + '        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+          + '          <div style="font-size:.74rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#c2410c">'
+          + '            <i class="bi bi-person-check"></i> Operator Packing Entry'
+          + (operatorHasSubmitted ? ' <span style="margin-left:6px;background:#22c55e;color:#fff;font-size:.65rem;font-weight:800;padding:2px 7px;border-radius:999px">&#10003; Submitted</span>' : ' <span style="margin-left:6px;background:#f97316;color:#fff;font-size:.65rem;font-weight:800;padding:2px 7px;border-radius:999px">&#9679; Waiting</span>')
+          + '          </div>'
+          + '        </div>'
+          + (operatorHasSubmitted && operatorEntry ? (
+              '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">'
+            + '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;background:#fff"><b style="display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:#78350f">Physical Production</b><span style="font-size:1rem;font-weight:900;color:#0f172a">'  + escHtml(String(operatorEntry.packed_qty    || '-')) + '</span></div>'
+            + '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;background:#fff"><b style="display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:#78350f">Bundles</b><span style="font-size:1rem;font-weight:900;color:#0f172a">'   + escHtml(String(operatorEntry.bundles_count  || '-')) + '</span></div>'
+            + '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;background:#fff"><b style="display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:#78350f">Cartons</b><span style="font-size:1rem;font-weight:900;color:#0f172a">'   + escHtml(String(operatorEntry.cartons_count  || '-')) + '</span></div>'
+            + '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;background:#fff"><b style="display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:#78350f">Wastage</b><span style="font-size:1rem;font-weight:900;color:#0f172a">'   + escHtml(String(operatorEntry.wastage_qty    || '-')) + '</span></div>'
+            + '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;background:#fff"><b style="display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:#78350f">Loose Qty</b><span style="font-size:1rem;font-weight:900;color:#0f172a">' + escHtml(String(operatorEntry.loose_qty      || '-')) + '</span></div>'
+            + '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;background:#fff"><b style="display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:#78350f">Notes</b><span style="font-size:.8rem;font-weight:700;color:#0f172a">'    + escHtml(operatorEntry.notes            || '-') + '</span></div>'
+            + '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;background:#fff"><b style="display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:#78350f">Submitted By</b><span style="font-size:.8rem;font-weight:700;color:#0f172a">'+escHtml(operatorEntry.operator_name||'-')+'</span></div>'
+            + '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;background:#fff"><b style="display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:#78350f">Submitted At</b><span style="font-size:.8rem;font-weight:700;color:#0f172a">'  + escHtml(operatorEntry.submitted_at||'-')   + '</span></div>'
+            + '</div>'
+          ) : '<div style="color:#78350f;font-size:.82rem;font-weight:700">Waiting for operator to submit packing quantities.</div>')
+          + '      </div>'
+          + '      <div style="padding:14px 12px;margin-bottom:14px;border:1px solid #d9f99d;border-radius:12px;background:linear-gradient(120deg,#f7fee7 0%,#fff 100%);">'
+          + '        <div style="font-size:.72rem;font-weight:900;color:#3f6212;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Packing Calculation Helpers + Output (from Operator Physical Production)</div>'
           + '        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px 18px;align-items:end;">'
             + '          <div style="display:flex;flex-direction:column;gap:4px;">'
             + '            <label for="pkShrinkBundleInput" style="font-size:.85em;font-weight:700;color:#64748b;">Rolls per shrink wrap</label>'
@@ -940,7 +966,7 @@ include __DIR__ . '/../../includes/header.php';
           + '        </div>'
           + '      </div>'
           + '      <div style="padding:12px 0;border-top:1px solid #eef2f7;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-start;">'
-          + '        <button id="pkSectionBFinishedBtn" type="button" class="pk-action-btn pk-btn-finished" ' + (isPackingDone ? 'disabled ' : '') + 'style="background-color:' + (isPackingDone ? '#9ca3af' : '#22c55e') + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:' + (isPackingDone ? 'not-allowed' : 'pointer') + ';font-size:.95em;transition:all .2s ease;opacity:' + (isPackingDone ? '0.75' : '1') + ';">Finished</button>'
+          + '        <button id="pkSectionBFinishedBtn" type="button" class="pk-action-btn pk-btn-finished" ' + (!finishShouldBeActive ? 'disabled ' : '') + 'title="' + (!finishShouldBeActive && !isPackingDone ? 'Waiting for operator to submit packing entry' : '') + '" style="background-color:' + (isPackingDone ? '#9ca3af' : (operatorHasSubmitted ? '#22c55e' : '#f97316')) + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:' + (!finishShouldBeActive ? 'not-allowed' : 'pointer') + ';font-size:.95em;transition:all .2s ease;opacity:' + (!finishShouldBeActive ? '0.65' : '1') + ';">Packing Done</button>'
           + '        <button id="pkSectionBCancelBtn" type="button" class="pk-action-btn pk-btn-cancel" style="background-color:#6b7280;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">Cancel</button>'
           + '        <button class="pk-action-btn pk-btn-sticker" style="background-color:#3b82f6;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">Sticker Print</button>'
           + '        <button class="pk-action-btn pk-btn-label" style="background-color:#f97316;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">Label Print</button>'
@@ -952,6 +978,7 @@ include __DIR__ . '/../../includes/header.php';
               setTimeout(function() {
                 var orderQty = 0;
                 var prodQty = 0;
+                var operatorPhysicalQty = 0;
                 if (job && job.order_quantity) {
                   var n = Number(String(job.order_quantity).replace(/,/g, ''));
                   if (!isNaN(n)) orderQty = n;
@@ -960,20 +987,19 @@ include __DIR__ . '/../../includes/header.php';
                   var n = Number(String(job.production_quantity).replace(/,/g, ''));
                   if (!isNaN(n)) prodQty = n;
                 }
+                if (operatorEntry && operatorEntry.packed_qty) {
+                  var pn = Number(String(operatorEntry.packed_qty).replace(/,/g, ''));
+                  if (!isNaN(pn) && pn > 0) operatorPhysicalQty = pn;
+                }
                 var dashOrderQtySpan = document.getElementById('pkDashOrderQty');
                 var dashProdQtySpan = document.getElementById('pkDashProdQty');
                 var dashActualPercentSpan = document.getElementById('pkDashActualPercent');
-                var deliveryPercentInput = document.getElementById('pkDeliveryPercent');
-                var deliveryQtyInput = document.getElementById('pkDeliveryQty');
-                var balanceStockSpan = document.getElementById('pkBalanceStock');
                 var shrinkBundleInput = document.getElementById('pkShrinkBundleInput');
                 var bundlesPerCartonInput = document.getElementById('pkBundlesPerCartonInput');
                 var rollsPerCartonSpan = document.getElementById('pkRollsPerCarton');
                 var calcBundlesSpan = document.getElementById('pkCalcBundles');
                 var calcCartonsSpan = document.getElementById('pkCalcCartons');
                 var calcLooseSpan = document.getElementById('pkCalcLoose');
-                
-                var lastChangedField = null; // Track which field was last modified to prevent loops
                 
                 // Display order and production quantities
                 dashOrderQtySpan.textContent = orderQty > 0 ? orderQty : '-';
@@ -987,53 +1013,18 @@ include __DIR__ . '/../../includes/header.php';
                 }
                 
                 function recalc() {
-                  var deliveryPercent = Number(deliveryPercentInput.value) || 0;
-                  var deliveryQty = Number(deliveryQtyInput.value) || 0;
                   var rollsPerShrinkWrap = Number(shrinkBundleInput.value) || 5;
                   var bundlesPerCarton = Number(bundlesPerCartonInput.value) || 10;
                   
                   // Calculate rolls per carton (based on new field structure)
                   var rollsPerCarton = rollsPerShrinkWrap * bundlesPerCarton;
                   rollsPerCartonSpan.textContent = rollsPerCarton > 0 ? rollsPerCarton : '-';
-                  
-                  // Bidirectional sync with validation
-                  if (lastChangedField === 'percent') {
-                    // CASE 1: Delivery % changed → recalculate Delivery Qty
-                    deliveryQty = orderQty > 0 ? Math.round(orderQty * (1 + deliveryPercent / 100)) : 0;
-                    // Validate: Delivery Qty cannot exceed Production Qty
-                    if (deliveryQty > prodQty) {
-                      deliveryQty = prodQty;
-                      // Recalculate percent based on clamped qty
-                      deliveryPercent = orderQty > 0 ? (((deliveryQty - orderQty) / orderQty) * 100) : 0;
-                      deliveryPercentInput.value = deliveryPercent.toFixed(1);
-                    }
-                    deliveryQtyInput.value = deliveryQty > 0 ? deliveryQty : 0;
-                  } else if (lastChangedField === 'qty') {
-                    // CASE 2: Delivery Qty changed → recalculate Delivery %
-                    // Validate: Delivery Qty cannot exceed Production Qty
-                    if (deliveryQty > prodQty) {
-                      deliveryQty = prodQty;
-                      deliveryQtyInput.value = deliveryQty;
-                    }
-                    // Validate: Delivery Qty cannot be negative
-                    if (deliveryQty < 0) {
-                      deliveryQty = 0;
-                      deliveryQtyInput.value = 0;
-                    }
-                    // Recalculate percent
-                    deliveryPercent = (orderQty > 0 && deliveryQty > 0) ? (((deliveryQty - orderQty) / orderQty) * 100) : 0;
-                    if (deliveryPercent < 0 && deliveryPercent > -0.1) deliveryPercent = 0;
-                    deliveryPercentInput.value = deliveryPercent.toFixed(1);
-                  }
-                  
-                  // Calculate Balance Stock
-                  var balanceStock = prodQty > 0 ? (prodQty - deliveryQty) : 0;
-                  balanceStockSpan.textContent = balanceStock >= 0 ? balanceStock : 0;
-                  
-                  // Calculate carton metrics based on delivery qty and rolls per carton
-                  var totalBundles = (deliveryQty > 0 && rollsPerShrinkWrap > 0) ? Math.ceil(deliveryQty / rollsPerShrinkWrap) : '-';
-                  var totalCartons = (deliveryQty > 0 && rollsPerCarton > 0) ? Math.ceil(deliveryQty / rollsPerCarton) : '-';
-                  var looseQty = (deliveryQty > 0 && rollsPerCarton > 0) ? (deliveryQty % rollsPerCarton) : '-';
+
+                  // Last section values are derived from operator physical production (fallback: production qty).
+                  var calcBaseQty = operatorPhysicalQty > 0 ? operatorPhysicalQty : prodQty;
+                  var totalBundles = (calcBaseQty > 0 && rollsPerShrinkWrap > 0) ? Math.ceil(calcBaseQty / rollsPerShrinkWrap) : '-';
+                  var totalCartons = (totalBundles > 0 && bundlesPerCarton > 0) ? Math.ceil(totalBundles / bundlesPerCarton) : '-';
+                  var looseQty = (calcBaseQty > 0 && rollsPerCarton > 0) ? (calcBaseQty % rollsPerCarton) : '-';
                   
                   calcBundlesSpan.textContent = totalBundles;
                   calcCartonsSpan.textContent = totalCartons;
@@ -1060,35 +1051,17 @@ include __DIR__ . '/../../includes/header.php';
                     }
                   }
                   
-                  lastChangedField = null; // Reset after processing
                 }
-                
-                // Event listeners with source tracking
-                if (deliveryPercentInput) {
-                  deliveryPercentInput.addEventListener('input', function() {
-                    lastChangedField = 'percent';
-                    recalc();
-                  });
-                }
-                if (deliveryQtyInput) {
-                  deliveryQtyInput.addEventListener('input', function() {
-                    lastChangedField = 'qty';
-                    recalc();
-                  });
-                }
+
+                // Event listeners
                 if (shrinkBundleInput) {
                   shrinkBundleInput.addEventListener('input', recalc);
                 }
                 if (bundlesPerCartonInput) {
                   bundlesPerCartonInput.addEventListener('input', recalc);
                 }
-                
-                // Default: Delivery Qty matches Production Qty on first load.
-                if (deliveryQtyInput && prodQty > 0) {
-                  deliveryQtyInput.value = String(prodQty);
-                }
-                // Initial calculation based on qty so Delivery % is derived.
-                lastChangedField = 'qty';
+
+                // Initial calculation.
                 recalc();
               }, 10);
           + imageHtml
@@ -1209,6 +1182,7 @@ include __DIR__ . '/../../includes/header.php';
       var sectionCancelBtn = section.querySelector('#pkSectionBCancelBtn');
       var isAdminUser = !!canDeleteJobs;
       var isPackingDoneNow = String(job.status || '').trim().toLowerCase() === 'packing done';
+      var operatorSubmittedNow = operatorHasSubmitted;
       var pendingPrintType = '';
 
       function setSectionMessage(text, isError) {
@@ -1374,16 +1348,25 @@ include __DIR__ . '/../../includes/header.php';
         });
 
         if (finishBtn) {
+          var canFinishNow = !isPackingDoneNow && operatorSubmittedNow;
           if (isPackingDoneNow) {
             finishBtn.setAttribute('disabled', 'disabled');
             finishBtn.style.backgroundColor = '#9ca3af';
             finishBtn.style.cursor = 'not-allowed';
             finishBtn.style.opacity = '0.75';
+            finishBtn.title = '';
+          } else if (!operatorSubmittedNow) {
+            finishBtn.setAttribute('disabled', 'disabled');
+            finishBtn.style.backgroundColor = '#f97316';
+            finishBtn.style.cursor = 'not-allowed';
+            finishBtn.style.opacity = '0.65';
+            finishBtn.title = 'Waiting for operator to submit packing entry';
           } else {
             finishBtn.removeAttribute('disabled');
             finishBtn.style.backgroundColor = '#22c55e';
             finishBtn.style.cursor = 'pointer';
             finishBtn.style.opacity = '1';
+            finishBtn.title = '';
           }
         }
 
@@ -1392,6 +1375,8 @@ include __DIR__ . '/../../includes/header.php';
           setSectionMessage('Locked: Packing Done (non-admin view)', false);
         } else if (isPackingDoneNow && isAdminUser) {
           setSectionMessage('Packing Done: admin override enabled for edits.', false);
+        } else if (!operatorSubmittedNow) {
+          setSectionMessage('&#9679; Waiting: Operator has not yet submitted packing quantities. Finish button will activate once submitted.', false);
         }
       }
 
@@ -1459,7 +1444,7 @@ include __DIR__ . '/../../includes/header.php';
           };
           
           if (buttonAction === 'finished') {
-            if (isPackingDoneNow || (finishBtn && finishBtn.getAttribute('data-saving') === '1')) return;
+            if (isPackingDoneNow || !operatorSubmittedNow || (finishBtn && finishBtn.getAttribute('data-saving') === '1')) return;
             if (finishBtn) {
               finishBtn.setAttribute('data-saving', '1');
               finishBtn.setAttribute('disabled', 'disabled');
