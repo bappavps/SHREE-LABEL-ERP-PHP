@@ -443,6 +443,8 @@ function planning_get_rows(mysqli $db, $department) {
         LEFT JOIN sales_orders so ON so.id = p.sales_order_id
         WHERE p.department = ?
           AND LOWER(TRIM(COALESCE(p.status, ''))) <> 'finished'
+          AND LOWER(TRIM(COALESCE(p.status, ''))) <> 'complete'
+          AND LOWER(TRIM(COALESCE(p.status, ''))) <> 'completed'
         ORDER BY
           CASE WHEN p.sequence_order > 0 THEN 0 ELSE 1 END ASC,
           p.sequence_order ASC,
@@ -456,6 +458,70 @@ function planning_get_rows(mysqli $db, $department) {
 
 function planning_normalize_status($status) {
   return erp_status_page_normalize($status, 'planning.label-printing');
+}
+
+function planning_status_transition_map(): array {
+  return [
+    'Pending' => ['Preparing Slitting', 'Pending - Jumbo Slitting', 'Pending - Printing', 'Pending - Die Cutting', 'Pending - Barcode', 'Pending - Label Slitting', 'Pending - Packing'],
+    'Preparing Slitting' => ['Slitting'],
+    'Slitting' => ['Slitting Pause', 'Slitted', 'Jumbo Slitted'],
+    'Slitting Pause' => ['Slitting'],
+    'Slitted' => ['Pending - Printing'],
+    'Pending - Jumbo Slitting' => ['Preparing Jumbo Slitting'],
+    'Preparing Jumbo Slitting' => ['Slitting'],
+    'Jumbo Slitted' => ['Pending - Printing'],
+    'Pending - Printing' => ['Printing'],
+    'Printing' => ['Printing Pause', 'Printed'],
+    'Printing Pause' => ['Printing'],
+    'Printed' => ['Pending - Die Cutting'],
+    'Pending - Die Cutting' => ['Preparing Die Cutting'],
+    'Preparing Die Cutting' => ['Die Cutting'],
+    'Die Cutting' => ['Die Cutting Pause', 'Die Cut'],
+    'Die Cutting Pause' => ['Die Cutting'],
+    'Die Cut' => ['Pending - Barcode'],
+    'Pending - Barcode' => ['Preparing Barcode'],
+    'Preparing Barcode' => ['Barcode'],
+    'Barcode' => ['Barcode Pause', 'Barcoded'],
+    'Barcode Pause' => ['Barcode'],
+    'Barcoded' => ['Pending - Label Slitting'],
+    'Pending - Label Slitting' => ['Preparing Label Slitting'],
+    'Preparing Label Slitting' => ['Label Slitting'],
+    'Label Slitting' => ['Label Slitting Pause', 'Label Slitted'],
+    'Label Slitting Pause' => ['Label Slitting'],
+    'Label Slitted' => ['Pending - Packing'],
+    'Pending - Packing' => ['Preparing Packing'],
+    'Preparing Packing' => ['Packing'],
+    'Packing' => ['Packing Pause', 'Packed'],
+    'Packing Pause' => ['Packing'],
+    'Packed' => ['Dispatched'],
+    'Dispatched' => ['Complete'],
+    'Complete' => [],
+  ];
+}
+
+function planning_allowed_next_statuses($currentStatus): array {
+  $current = planning_normalize_status($currentStatus);
+  $map = planning_status_transition_map();
+  if (!isset($map[$current])) {
+    return [];
+  }
+  $next = [];
+  foreach ($map[$current] as $candidate) {
+    $candidateNorm = planning_normalize_status($candidate);
+    if ($candidateNorm !== '' && !in_array($candidateNorm, $next, true)) {
+      $next[] = $candidateNorm;
+    }
+  }
+  return $next;
+}
+
+function planning_status_change_allowed($currentStatus, $targetStatus): bool {
+  $current = planning_normalize_status($currentStatus);
+  $target = planning_normalize_status($targetStatus);
+  if ($current === $target) {
+    return true;
+  }
+  return in_array($target, planning_allowed_next_statuses($current), true);
 }
 
 function planning_status_badge($status) {
@@ -734,10 +800,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
       $scheduled = $rowValues['dispatch_date'];
 
       // Preserve uploaded image metadata stored in extra_data when saving row fields.
-      $selExtra = $db->prepare("SELECT job_no, job_name, extra_data FROM planning WHERE id = ? AND department = ? LIMIT 1");
-      $selExtra->bind_param('is', $id, $department);
+      // Lookup by id only so department-column mismatches (legacy rows) don't block saves.
+      $selExtra = $db->prepare("SELECT job_no, job_name, status, extra_data FROM planning WHERE id = ? LIMIT 1");
+      $selExtra->bind_param('i', $id);
       $selExtra->execute();
       $existingRow = $selExtra->get_result()->fetch_assoc();
+
+      $currentStatus = planning_normalize_status((string)($existingRow['status'] ?? $defaultStatus));
+      if (!planning_status_change_allowed($currentStatus, $status)) {
+        $allowedNext = planning_allowed_next_statuses($currentStatus);
+        $allowedLabel = !empty($allowedNext) ? implode(', ', $allowedNext) : 'No further status';
+        planning_json_response([
+          'ok' => false,
+          'message' => 'Invalid status transition from "' . $currentStatus . '" to "' . $status . '". Allowed next: ' . $allowedLabel,
+          'current_status' => $currentStatus,
+          'allowed_next' => $allowedNext,
+        ], 409);
+      }
+
       $existingExtra = json_decode((string)($existingRow['extra_data'] ?? '{}'), true);
       if (!is_array($existingExtra)) $existingExtra = [];
       foreach (['image_path', 'image_name', 'image_uploaded_at'] as $imgKey) {
@@ -793,13 +873,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         planning_json_response(['ok' => false, 'message' => 'No image selected.'], 400);
       }
 
-      $sel = $db->prepare("SELECT extra_data FROM planning WHERE id = ? AND department = ? LIMIT 1");
-      $sel->bind_param('is', $id, $department);
+      $sel = $db->prepare("SELECT extra_data FROM planning WHERE id = ? LIMIT 1");
+      $sel->bind_param('i', $id);
       $sel->execute();
       $row = $sel->get_result()->fetch_assoc();
-      if (!$row) {
-        planning_json_response(['ok' => false, 'message' => 'Planning row not found.'], 404);
-      }
 
       $extra = json_decode((string)($row['extra_data'] ?? '{}'), true);
       if (!is_array($extra)) $extra = [];
@@ -837,13 +914,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
       $id = (int)($_POST['id'] ?? 0);
       if ($id <= 0) planning_json_response(['ok' => false, 'message' => 'Invalid row id.'], 400);
 
-      $sel = $db->prepare("SELECT extra_data FROM planning WHERE id = ? AND department = ? LIMIT 1");
-      $sel->bind_param('is', $id, $department);
+      $sel = $db->prepare("SELECT extra_data FROM planning WHERE id = ? LIMIT 1");
+      $sel->bind_param('i', $id);
       $sel->execute();
       $row = $sel->get_result()->fetch_assoc();
-      if (!$row) {
-        planning_json_response(['ok' => false, 'message' => 'Planning row not found.'], 404);
-      }
 
       $extra = json_decode((string)($row['extra_data'] ?? '{}'), true);
       if (!is_array($extra)) $extra = [];
@@ -1108,6 +1182,7 @@ foreach (planning_plate_records($db) as $plateRow) {
 }
 $planningPlateSuggestionList = array_values(array_unique($planningPlateSuggestionList));
 $planningJobSuggestionList = array_values(array_unique($planningJobSuggestionList));
+$planningStatusTransitionMap = planning_status_transition_map();
 $boardUrl = appUrl('modules/planning/index.php?department=' . rawurlencode($department));
 $historyUrl = appUrl('modules/planning/history.php?department=' . rawurlencode($department));
 
@@ -1531,6 +1606,7 @@ include __DIR__ . '/../../includes/header.php';
   var planningPickerItems = <?= json_encode($planningPickerItems, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
   var materialSuggestions = <?= json_encode($planningMaterialSuggestions, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
   var planningStatusStyleMap = <?= json_encode(planning_status_style_map_data(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+  var planningStatusTransitions = <?= json_encode($planningStatusTransitionMap, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
   var defaultPlanningStatus = <?= json_encode($defaultStatus, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
   var defaultPlanningStatusKey = String(defaultPlanningStatus || '').trim().toLowerCase();
   var csrfToken = document.querySelector('#csrf-form [name="csrf_token"]').value;
@@ -2467,6 +2543,36 @@ include __DIR__ . '/../../includes/header.php';
     return planningStatusStyleMap[key] || planningStatusStyleMap[defaultPlanningStatusKey] || '';
   }
 
+  function getAllowedNextStatuses(currentStatus) {
+    var current = String(currentStatus || defaultPlanningStatus).trim();
+    if (!current) current = defaultPlanningStatus;
+    var next = planningStatusTransitions[current];
+    return Array.isArray(next) ? next.slice() : [];
+  }
+
+  function rebuildStatusSelectOptions(selectEl, currentStatus, selectedStatus) {
+    if (!selectEl) return;
+    var current = String(currentStatus || defaultPlanningStatus).trim();
+    var selected = String(selectedStatus || current || defaultPlanningStatus).trim();
+    if (!current) current = defaultPlanningStatus;
+    if (!selected) selected = current;
+
+    var allowed = getAllowedNextStatuses(current);
+    var options = [current].concat(allowed);
+    if (options.indexOf(selected) === -1) {
+      options.push(selected);
+    }
+
+    selectEl.innerHTML = '';
+    options.forEach(function(statusText) {
+      var op = document.createElement('option');
+      op.value = statusText;
+      op.textContent = statusText;
+      if (statusText === selected) op.selected = true;
+      selectEl.appendChild(op);
+    });
+  }
+
   function applyPriorityStyle(sel) {
     var v = String(sel.value || 'Normal').trim().toLowerCase();
     sel.className = 'cell-input cell-select-priority form-control psel-' + v;
@@ -2623,6 +2729,8 @@ include __DIR__ . '/../../includes/header.php';
         if (current === '—') current = '';
         input.value = current;
         if (type === 'Status' && input.tagName === 'SELECT') {
+          var currentStatus = String(td.getAttribute('data-raw') || current || defaultPlanningStatus).trim();
+          rebuildStatusSelectOptions(input, currentStatus, current);
           applyStatusStyle(input);
           input.onchange = function(){ applyStatusStyle(this); };
         }

@@ -3135,8 +3135,8 @@ function buildPrintingExtraDataFromForm(job, form) {
     colour_lanes: laneRows.map(r => String(r.color_code || '').trim()),
     anilox_lanes: laneRows.map(r => String(normalizeAniloxLaneValue(r.anilox_value || 'None')).trim()),
     color_anilox_rows: laneRows,
-    physical_print_photo_url: getFieldVal(form, 'physical_print_photo_url'),
-    physical_print_photo_path: getFieldVal(form, 'physical_print_photo_path')
+    physical_print_photo_url: getFieldVal(form, 'physical_print_photo_url') || String((job.extra_data_parsed && job.extra_data_parsed.physical_print_photo_url) || '').trim(),
+    physical_print_photo_path: getFieldVal(form, 'physical_print_photo_path') || String((job.extra_data_parsed && job.extra_data_parsed.physical_print_photo_path) || '').trim()
   });
 
   return extraData;
@@ -3255,11 +3255,19 @@ async function handlePrintingPhotoUpload(input, jobId) {
       return;
     }
     const img = document.getElementById('physical-photo-preview');
-    if (img) img.src = data.photo_url || '';
+    if (img) { img.src = data.photo_url || ''; img.style.opacity = '1'; }
     const f1 = document.querySelector('[name=physical_print_photo_url]');
     const f2 = document.querySelector('[name=physical_print_photo_path]');
     if (f1) f1.value = data.photo_url || '';
     if (f2) f2.value = data.photo_path || '';
+    // Update in-memory job so re-opens reflect the uploaded photo
+    const jj = ALL_JOBS.find(function(x) { return x.id == jobId; });
+    if (jj) {
+      if (!jj.extra_data_parsed) jj.extra_data_parsed = {};
+      jj.extra_data_parsed.physical_print_photo_url = data.photo_url || '';
+      jj.extra_data_parsed.physical_print_photo_path = data.photo_path || '';
+    }
+    erpToast('Photo uploaded successfully.', 'success');
   } catch (err) {
     erpToast('Image upload network error: ' + err.message, 'error');
   } finally {
@@ -3503,7 +3511,7 @@ async function openPrintDetail(id, mode) {
         ${laneRows.map((r, idx) => `<div class="fp-op-lane-row" data-lane-row><div class="fp-op-mini"><strong>Color ${idx+1}</strong></div><div style="display:grid;gap:6px"><select data-role="color-select" name="color_lane_code_${idx}">${renderLaneSelectOptions(r.color_code)}</select><input data-role="color-name" type="text" name="color_lane_name_${idx}" value="${esc(r.color_name||'')}" placeholder="Color name" style="display:none"></div><div style="display:grid;gap:6px"><select data-role="anilox-select" name="anilox_lane_value_${idx}">${renderAniloxOptions(r.anilox_value)}</select><input data-role="anilox-custom" type="text" name="anilox_lane_custom_${idx}" value="" placeholder="Custom anilox" style="display:none"></div></div>`).join('')}
       </div></div>
 
-      <div class="fp-op-section"><div class="fp-op-h">Planning / Plate vs Physical Print Image</div><div class="fp-op-b"><div class="fp-photo-grid"><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Reference Image</strong></div><img class="fp-photo-preview" src="${esc(referenceImage || '')}" alt="Reference image" onerror="this.style.opacity='0.4';this.alt='Reference image not available'"></div><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Physical Image</strong></div><img id="physical-photo-preview" class="fp-photo-preview" src="${esc(physicalImage || '')}" alt="Physical image" onerror="this.style.opacity='0.4';this.alt='Physical image not available'"><input type="hidden" name="physical_print_photo_url" value="${esc(physicalImage || '')}"><input type="hidden" name="physical_print_photo_path" value="${esc(card.physical_print_photo_path || '')}"><input type="file" id="fp-camera-input" accept="image/*" capture="environment" style="display:none" onchange="handlePrintingPhotoUpload(this, ${job.id})"></div></div></div></div>
+      <div class="fp-op-section"><div class="fp-op-h">Planning / Plate vs Physical Print Image</div><div class="fp-op-b"><div class="fp-photo-grid"><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px"><strong>Reference Image</strong></div><img class="fp-photo-preview" src="${esc(referenceImage || '')}" alt="Reference image" onerror="this.style.opacity='0.4';this.alt='Reference image not available'"></div><div class="fp-photo-card"><div class="fp-op-mini" style="margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><strong>Physical Image</strong><button type="button" class="fp-action-btn fp-btn-view" style="padding:4px 10px;font-size:.72rem" onclick="document.getElementById('fp-camera-input').click()"><i class="bi bi-camera"></i> Upload Photo</button></div><img id="physical-photo-preview" class="fp-photo-preview" src="${esc(physicalImage || '')}" alt="Physical image" onerror="this.style.opacity='0.4';this.alt='Physical image not available'" style="cursor:pointer" onclick="document.getElementById('fp-camera-input').click()"><input type="hidden" name="physical_print_photo_url" value="${esc(physicalImage || '')}"><input type="hidden" name="physical_print_photo_path" value="${esc(card.physical_print_photo_path || '')}"><input type="file" id="fp-camera-input" accept="image/*" capture="environment" style="display:none" onchange="handlePrintingPhotoUpload(this, ${job.id})"></div></div></div></div>
 
       <div class="fp-op-section"><div class="fp-op-h">Production and Signoff</div><div class="fp-op-b fp-op-grid-2">
         <div class="fp-op-field"><label>Production Total Quantity</label><input type="number" step="1" name="actual_qty" value="${esc(card.actual_qty||'')}"></div>

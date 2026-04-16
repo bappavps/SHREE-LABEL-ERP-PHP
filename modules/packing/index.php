@@ -95,6 +95,40 @@ $formatDate = static function(string $value): string {
   return date('d M Y', $ts);
 };
 
+$resolvePlanUrl = static function(string $planNo): string {
+  $planNo = trim($planNo);
+  if ($planNo === '') {
+    return '';
+  }
+
+  $upperPlanNo = strtoupper($planNo);
+  if (str_starts_with($upperPlanNo, 'PLN-PRL/')) {
+    return BASE_URL . '/modules/planning/paperroll/index.php';
+  }
+
+  return BASE_URL . '/modules/planning/board.php?plan_no=' . urlencode($planNo);
+};
+
+$resolveJobUrl = static function(string $jobNo, int $jobId = 0): string {
+  $jobNo = trim($jobNo);
+  if ($jobNo === '') {
+    return '';
+  }
+
+  $upperJobNo = strtoupper($jobNo);
+  if (str_starts_with($upperJobNo, 'POS-PRL/')) {
+    $url = BASE_URL . '/modules/jobs/pos/index.php';
+    $query = [];
+    if ($jobId > 0) {
+      $query['auto_job'] = (string)$jobId;
+    }
+    $query['auto_job_no'] = $jobNo;
+    return $url . '?' . http_build_query($query);
+  }
+
+  return BASE_URL . '/modules/pos_roll/job_card.php?job_no=' . urlencode($jobNo);
+};
+
 $tabThemes = [
   'printing_label' => [
     'accent' => '#2563eb',
@@ -428,7 +462,7 @@ include __DIR__ . '/../../includes/header.php';
                     </td>
                     <td>
                       <?php if (!empty($row['plan_no'])): ?>
-                        <a href="<?= e(BASE_URL . '/modules/planning/board.php?plan_no=' . urlencode($row['plan_no'])) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
+                        <a href="<?= e($resolvePlanUrl((string)$row['plan_no'])) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
                           <?= e($row['plan_no']) ?>
                         </a>
                       <?php else: ?>
@@ -438,7 +472,7 @@ include __DIR__ . '/../../includes/header.php';
                     <td><?= e(($row['plan_name'] ?? '') !== '' ? $row['plan_name'] : '-') ?></td>
                     <td>
                       <?php if (!empty($row['job_no'])): ?>
-                        <a href="<?= e(BASE_URL . '/modules/pos_roll/job_card.php?job_no=' . urlencode($row['job_no'])) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
+                        <a href="<?= e($resolveJobUrl((string)$row['job_no'], (int)($row['id'] ?? 0))) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
                           <?= e($row['job_no']) ?>
                         </a>
                       <?php else: ?>
@@ -467,18 +501,18 @@ include __DIR__ . '/../../includes/header.php';
                     <td><?= e(($row['plan_priority'] ?? '') !== '' ? $row['plan_priority'] : '-') ?></td>
                     <td>
                       <?php if (!empty($row['plan_no'])): ?>
-                        <button class="pk-id-btn pk-open-modal" type="button" data-job-id="<?= (int)$row['id'] ?>" title="Open Job Modal" style="text-decoration:underline;color:#2563eb;background:none;border:none;padding:0;font-size:inherit;cursor:pointer;">
+                        <a href="<?= e($resolvePlanUrl((string)$row['plan_no'])) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
                           <?= e($row['plan_no']) ?>
-                        </button>
+                        </a>
                       <?php else: ?>
                         -
                       <?php endif; ?>
                     </td>
                     <td>
                       <?php if (!empty($row['job_no'])): ?>
-                        <button class="pk-id-btn pk-open-modal" type="button" data-job-id="<?= (int)$row['id'] ?>" title="Open Job Modal" style="text-decoration:underline;color:#2563eb;background:none;border:none;padding:0;font-size:inherit;cursor:pointer;">
+                        <a href="<?= e($resolveJobUrl((string)$row['job_no'], (int)($row['id'] ?? 0))) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
                           <?= e($row['job_no']) ?>
-                        </button>
+                        </a>
                       <?php else: ?>
                         -
                       <?php endif; ?>
@@ -492,9 +526,25 @@ include __DIR__ . '/../../includes/header.php';
                 <?php else: ?>
                   <tr>
                     <td class="pk-check-col"><input type="checkbox" class="pk-row-check" value="<?= (int)$row['id'] ?>"></td>
-                    <td><?= e(($row['plan_no'] ?? '') !== '' ? $row['plan_no'] : '-') ?></td>
+                    <td>
+                      <?php if (!empty($row['plan_no'])): ?>
+                        <a href="<?= e($resolvePlanUrl((string)$row['plan_no'])) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
+                          <?= e($row['plan_no']) ?>
+                        </a>
+                      <?php else: ?>
+                        -
+                      <?php endif; ?>
+                    </td>
                     <td><?= e(($row['plan_name'] ?? '') !== '' ? $row['plan_name'] : '-') ?></td>
-                    <td><?= e($row['job_no'] ?? '-') ?></td>
+                    <td>
+                      <?php if (!empty($row['job_no'])): ?>
+                        <a href="<?= e($resolveJobUrl((string)$row['job_no'], (int)($row['id'] ?? 0))) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
+                          <?= e($row['job_no']) ?>
+                        </a>
+                      <?php else: ?>
+                        -
+                      <?php endif; ?>
+                    </td>
                     <td><?= e(($row['roll_no'] ?? '') !== '' ? $row['roll_no'] : '-') ?></td>
                     <td><?= e($row['tab_label'] ?? '-') ?></td>
                     <td><?= e($row['last_department'] ?? '-') ?></td>

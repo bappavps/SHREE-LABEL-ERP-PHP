@@ -96,13 +96,13 @@ include __DIR__ . '/../../includes/header.php';
 
 .fl-track{
   display:flex;align-items:flex-start;justify-content:center;
-  min-width:520px;position:relative;padding:0 6px;
+  min-width:620px;position:relative;padding:0 10px;
 }
 
 /* Single Stage Node */
 .fl-node{
   display:flex;flex-direction:column;align-items:center;
-  position:relative;flex:1;min-width:80px;
+  position:relative;flex:1;min-width:96px;
 }
 
 /* Connecting line */
@@ -125,12 +125,18 @@ include __DIR__ . '/../../includes/header.php';
   display:flex;align-items:center;justify-content:center;
   position:relative;z-index:5;transition:all .3s;
   font-size:.85rem;
+  box-shadow:inset 0 0 0 1px rgba(148,163,184,.25);
+}
+.fl-circle::before{
+  content:'';width:8px;height:8px;border-radius:50%;
+  background:#94a3b8;
 }
 
 /* Completed */
 .fl-node.done .fl-circle{
   border-color:#4caf50;background:#e8f5e9;
 }
+.fl-node.done .fl-circle::before{background:#2e7d32}
 .fl-node.done .fl-circle::after{
   content:'✓';font-size:.85rem;font-weight:900;color:#2e7d32;
 }
@@ -141,6 +147,7 @@ include __DIR__ . '/../../includes/header.php';
   box-shadow:0 0 0 0 rgba(220,38,38,.4);
   animation:flPulse 1.8s ease-out infinite;
 }
+.fl-node.now .fl-circle::before{background:#dc2626}
 @keyframes flPulse{
   0%{box-shadow:0 0 0 0 rgba(220,38,38,.45)}
   40%{box-shadow:0 0 0 10px rgba(220,38,38,.1)}
@@ -503,7 +510,7 @@ console.log('Live Floor v3 — Full Pipeline');
 
 const FL_API  = '<?= BASE_URL ?>/modules/jobs/api.php';
 const FL_CSRF = '<?= e($csrf) ?>';
-const FL_STAGES = ['Planning','Slitting','Printing','Die / LSL','Packaging','Dispatch'];
+const FL_STAGES = ['Planning','Jumbo Slitting','Flexo Printing','Diecutting / Barcode','Label Slitting','Packing','Dispatched'];
 
 /* ─── Global state ─── */
 let FL_ALL_JOBS      = [];
@@ -547,31 +554,31 @@ function isDoneStatus(v){
 
 /* ─── Stage Detection ─── */
 function getStageIdx(job){
-  const s   = normStatus(job.status||'');
-  const ps  = (job.planning_status||'').toLowerCase();
-  const dept= (job.department||'').toLowerCase();
-  const jn  = String(job.job_no||'').toUpperCase();
-  const pp  = (job.printing_planning||'').toLowerCase();
-  const jt  = (job.job_type||'').toLowerCase();
+  const s    = normStatus(job.status||'');
+  const ps   = normStatus(job.planning_status||'');
+  const dept = getDept(job);
 
-  if(ps.includes('dispatch')) return 5;
-  if(ps.includes('packaging')||ps.includes('packing')) return 4;
+  if(ps.includes('dispatch') || s==='dispatched') return 6;
+  if(ps.includes('packing') || s==='packing done' || s==='packed') return 5;
 
-  // Finishing jobs (die-cutting, label-slitting)
-  if(jt==='finishing'){
-    if(isDoneStatus(s)) return 4;
-    return 3;
+  if(dept==='lsl'){
+    return isDoneStatus(s) ? 5 : 4;
+  }
+  if(dept==='die'){
+    return isDoneStatus(s) ? 4 : 3;
+  }
+  if(dept==='print'){
+    return isDoneStatus(s) ? 3 : 2;
+  }
+  if(dept==='slit'){
+    return isDoneStatus(s) ? 2 : 1;
   }
 
-  if(ps.includes('binding')||ps.includes('flat')) return 3;
-  if(pp.includes('printing')&&(pp.includes('done')||pp.includes('completed'))) return 3;
-  if((dept.includes('print')||jn.startsWith('FLX/'))&&isDoneStatus(s)) return 3;
+  // Planning-status fallback for rows that are not stage job cards.
+  if(ps.includes('label slitting')) return 4;
+  if(ps.includes('barcode')||ps.includes('die')||ps.includes('flat')||ps.includes('binding')) return 3;
   if(ps.includes('printing')) return 2;
-  if(dept.includes('print')||jn.startsWith('FLX/')) return 2;
-  if(s==='running') return 1;
   if(ps.includes('slitting')||ps.includes('preparing')) return 1;
-  if(isDoneStatus(s)) return 2;
-  if(s==='queued') return 1;
   return 0;
 }
 
@@ -580,38 +587,41 @@ function fmtStageDate(dt){
 }
 
 function isDispatchDone(job){
-  return getStageIdx(job)>=5 && isDoneStatus(job.status||'');
+  return getStageIdx(job)>=6 && isDoneStatus(job.status||'');
 }
 
 function getDieStageName(job){
+  const dept=String(job.department||'').toLowerCase();
+  if(dept.includes('label')||String(job.job_no||'').toUpperCase().startsWith('LSL/')) return 'Label Slitting';
   const die=String(job.planning_die||'').toLowerCase();
   if(die.includes('rotary')) return 'Rotary Die';
   if(die.includes('flat'))   return 'Flatbed';
-  const dept=String(job.department||'').toLowerCase();
-  if(dept.includes('label')||String(job.job_no||'').toUpperCase().startsWith('LSL/')) return 'Label Slit';
   return 'Die / LSL';
 }
 
 function isRunningStage(job,idx){
-  const s   =String(job.status||'').toLowerCase();
-  const jt  =String(job.job_type||'').toLowerCase();
-  const dept=String(job.department||'').toLowerCase();
+  const s   = normStatus(job.status||'');
+  const dept= getDept(job);
   if(s!=='running') return false;
-  if(idx===1) return jt==='slitting'||dept.includes('slitting')||dept.includes('jumbo');
-  if(idx===2) return jt==='printing'||dept.includes('print')||String(job.job_no||'').toUpperCase().startsWith('FLX/');
-  if(idx===3) return jt==='finishing'||dept.includes('die')||dept.includes('flatbed')||dept.includes('label');
-  if(idx===4) return dept.includes('pack')||dept.includes('dispatch');
+  if(idx===1) return dept==='slit';
+  if(idx===2) return dept==='print';
+  if(idx===3) return dept==='die';
+  if(idx===4) return dept==='lsl';
+  if(idx===5) return s==='running' && (String(job.department||'').toLowerCase().includes('pack')||String(job.department||'').toLowerCase().includes('dispatch'));
   return false;
 }
 
 function getStageName(job,idx){
   const cur=getStageIdx(job);
-  const die=getDieStageName(job);
-  const doneNames=['Planned','Slitted','Printed',die+' Done','Packed','Dispatched'];
+  const doneNames=['Planned','Jumbo Slitted','Flexo Printed','Die/Barcode Done','Label Slitted','Packed','Dispatched'];
   if(idx<cur) return doneNames[idx]||'Done';
-  const active  =['Planning','Slitting','Printing',die,'Packaging','Dispatch'];
-  const inactive=['Planning','Slitting','Printing','Die / LSL','Packaging','Dispatch'];
-  if(idx===cur) return isRunningStage(job,idx) ? active[idx]||'' : 'Preparing '+active[idx];
+  const active  =['Planning','Jumbo Slitting','Flexo Printing','Diecutting / Barcode','Label Slitting','Packing','Dispatched'];
+  const inactive=['Planning','Jumbo Slitting','Flexo Printing','Diecutting / Barcode','Label Slitting','Packing','Dispatched'];
+  if(idx===cur){
+    if(idx===0) return 'Planning';
+    if(idx===6) return isDispatchDone(job) ? 'Dispatched' : 'Preparing Dispatch';
+    return isRunningStage(job,idx) ? active[idx]||'' : 'Preparing '+active[idx];
+  }
   return inactive[idx]||'—';
 }
 
@@ -619,10 +629,10 @@ function stageTime(job,idx){
   const cur=getStageIdx(job);
   const planDate=job.planning_created_at||job.created_at||new Date();
   if(idx===0) return fmtStageDate(planDate);
-  if(idx===5) return isDispatchDone(job)?fmtStageDate(job.completed_at):fmtStageDate(job.planning_dispatch_date||planDate);
+  if(idx===6) return isDispatchDone(job)?fmtStageDate(job.completed_at):fmtStageDate(job.planning_dispatch_date||planDate);
   if(idx<=cur){
     if(idx===1&&job.started_at) return fmtStageDate(job.started_at);
-    if(idx===2&&job.completed_at&&cur>2) return fmtStageDate(job.completed_at);
+    if(idx>=2&&job.completed_at&&cur>idx) return fmtStageDate(job.completed_at);
     return fmtStageDate(new Date());
   }
   return fmtStageDate(new Date());
@@ -932,187 +942,6 @@ function getDisplayJobRef(job,cur){
   if(cur===1) return jumboRef||String(job.job_no||'').trim()||'—';
   if(cur>=2) return flexoRef||jumboRef||String(job.job_no||'').trim()||'—';
   return String(job.job_no||'').trim()||'—';
-}
-
-function getDieStageName(job){
-  const die=String(job.planning_die||'').trim().toLowerCase();
-  if(die.includes('rotary')) return 'Rotary Die';
-  if(die.includes('flat')) return 'FlatBed';
-  return 'FlatBed';
-}
-
-function isRunningStage(job, idx){
-  const s=String(job.status||'').toLowerCase();
-  const jt=String(job.job_type||'').toLowerCase();
-  const dept=String(job.department||'').toLowerCase();
-
-  if(s!=='running') return false;
-  if(idx===1) return jt==='slitting'||dept.includes('slitting')||dept.includes('jumbo');
-  if(idx===2) return jt==='printing'||dept.includes('print')||String(job.job_no||'').toUpperCase().startsWith('FLX/');
-  if(idx===3) return jt==='finishing'||dept.includes('binding')||dept.includes('finishing')||dept.includes('die');
-  if(idx===4) return dept.includes('pack')||dept.includes('dispatch');
-  return false;
-}
-
-function getPreparingLabel(stageName){
-  if(stageName==='Slitting') return 'Preparing Slitting';
-  if(stageName==='Printing') return 'Preparing Printing';
-  if(stageName==='Packaging') return 'Preparing Packaging';
-  if(stageName==='Dispatch') return 'Preparing Dispatch';
-  if(stageName==='FlatBed'||stageName==='Rotary Die') return 'Preparing Flat Binding';
-  return 'Preparing ' + stageName;
-}
-
-function getStageName(job,idx){
-  const cur=getStageIdx(job);
-  const dieStageName=getDieStageName(job);
-  if(idx<cur){
-    if(idx===0) return 'Planned';
-    if(idx===1) return 'Slitted';
-    if(idx===2) return 'Printing Done';
-    if(idx===3) return dieStageName + ' Done';
-    if(idx===4) return 'Packaging Done';
-    if(idx===5) return 'Dispatched';
-    return 'Done';
-  }
-
-  if(idx===0) return 'Planning';
-  if(idx===1){
-    return isRunningStage(job, idx) ? 'Slitting' : 'Preparing Slitting';
-  }
-  if(idx===2){
-    return isRunningStage(job, idx) ? 'Printing' : 'Preparing Printing';
-  }
-  if(idx===3){
-    return isRunningStage(job, idx) ? dieStageName : 'Preparing Flat Binding';
-  }
-  if(idx===4){
-    return isRunningStage(job, idx) ? 'Packaging' : 'Preparing Packaging';
-  }
-  if(idx===5){
-    return isRunningStage(job, idx) ? 'Dispatch' : 'Preparing Dispatch';
-  }
-  return 'In Progress';
-}
-
-function stageTime(job,idx){
-  const cur=getStageIdx(job);
-  const planDate=job.planning_created_at||job.created_at||new Date();
-  if(idx===0) return fmtStageDate(planDate);
-  if(idx===5) return isDispatchDone(job) ? fmtStageDate(job.completed_at||new Date()) : fmtStageDate(job.planning_dispatch_date||planDate);
-  if(idx<=cur){
-    if(idx===1 && job.started_at) return fmtStageDate(job.started_at);
-    if(idx===2 && job.completed_at && cur>2) return fmtStageDate(job.completed_at);
-    return fmtStageDate(new Date());
-  }
-  return fmtStageDate(new Date());
-}
-
-function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
-
-/* ─── Fetch & Render ─── */
-async function flLoad(){
-  try{
-    const pLive=new URLSearchParams({action:'list_live_floor',csrf_token:FL_CSRF,limit:'600'});
-    const rLive=await fetch(FL_API+'?'+pLive.toString(), { cache:'no-store' });
-    const dLive=await rLive.json();
-    if(!dLive.ok||!Array.isArray(dLive.jobs))throw new Error('Live API error');
-
-    const today=new Date();today.setHours(0,0,0,0);
-    const isVisibleJob=(j)=>{
-      if(j.deleted_at)return false;
-      if(['Pending','Running','Queued'].includes(j.status))return true;
-      if(j.completed_at){const cd=new Date(j.completed_at);cd.setHours(0,0,0,0);return cd.getTime()===today.getTime();}
-      return true;
-    };
-
-    const allJobs=(dLive.jobs||[]).filter(isVisibleJob);
-    const slittingJobs=allJobs.filter(j=>String(j.job_type||'')==='Slitting');
-    const printingJobs=allJobs.filter(j=>String(j.job_type||'')==='Printing');
-    const planningOnlyJobs=allJobs.filter(j=>{
-      const jt=String(j.job_type||'');
-      return jt!=='Slitting'&&jt!=='Printing';
-    });
-
-    // If a slitting job is already completed and has a linked printing job, show the printing card only.
-    const printByPrevId=new Set(
-      printingJobs
-        .map(j=>Number(j.previous_job_id||0))
-        .filter(v=>Number.isFinite(v)&&v>0)
-    );
-    const slittingVisible=slittingJobs.filter(j=>{
-      const s=String(j.status||'');
-      const done=['Closed','Finalized','Completed','QC Passed','QC Failed'].includes(s);
-      if(!done) return true;
-      return !printByPrevId.has(Number(j.id||0));
-    });
-
-    const jobs=[...slittingVisible,...printingJobs,...planningOnlyJobs];
-
-    renderJobs(jobs);
-    renderStats(jobs);
-  }catch(e){
-    document.getElementById('flJobs').innerHTML='<div class="fl-empty"><div class="fl-empty-icon">⚠️</div><p>Unable to load production data</p></div>';
-  }
-}
-
-function renderJobs(jobs){
-  const box=document.getElementById('flJobs');
-  if(!jobs.length){box.innerHTML='<div class="fl-empty"><div class="fl-empty-icon">🏭</div><p>No active jobs on the floor right now</p></div>';return;}
-
-  const priOrd={Urgent:0,High:1,Normal:2,Low:3};
-  jobs.sort((a,b)=>{
-    const ra=a.status==='Running'?0:1,rb=b.status==='Running'?0:1;
-    if(ra!==rb)return ra-rb;
-    const sa=getStageIdx(a),sb=getStageIdx(b);
-    if(sa!==sb)return sb-sa;
-    return(priOrd[a.planning_priority]||2)-(priOrd[b.planning_priority]||2);
-  });
-
-  let html='';
-  jobs.forEach((job,i)=>{
-    const cur=getStageIdx(job);
-    const pri=(job.planning_priority||'Normal').toLowerCase();
-    const displayRef=getDisplayJobRef(job,cur);
-
-    // Timeline nodes
-    let nodes='';
-    FL_STAGES.forEach((stage,idx)=>{
-      let cls='later';
-      if(idx<cur)cls='done';
-      else if(idx===cur)cls='now';
-      nodes+=`<div class="fl-node ${cls}"><div class="fl-circle"></div><div class="fl-stage-name">${getStageName(job,idx)}</div><div class="fl-stage-time">${stageTime(job,idx)}</div></div>`;
-    });
-
-    // Details
-    let det=[];
-    if(job.roll_no)det.push('Roll: '+job.roll_no);
-    if(job.paper_type)det.push(job.paper_type);
-    if(job.gsm)det.push(job.gsm+'gsm');
-    if(job.width_mm)det.push(job.width_mm+'mm');
-    const detStr=det.join(' • ')||'Jumbo Slitting Job';
-
-    html+=`<div class="fl-card" style="animation-delay:${i*0.05}s">
-      <div class="fl-card-head">
-        <div class="fl-card-jobno">${esc(displayRef)} <span style="display:inline-block;font-size:.58rem;font-weight:800;padding:1px 8px;border-radius:10px;margin-left:6px;vertical-align:middle;${job.status==='Running'?'background:#dbeafe;color:#1e40af':job.status==='Pending'||job.status==='Queued'?'background:#fef3c7;color:#92400e':'background:#dcfce7;color:#166534'}">${esc(job.status)}</span></div>
-        <div class="fl-card-name">${esc(job.planning_job_name||'Job Card')}</div>
-        <div class="fl-card-detail">${esc(detStr)}</div>
-        ${pri!=='normal'?`<div class="fl-card-pri ${pri}">${pri}</div>`:''}
-      </div>
-      <div class="fl-timeline"><div class="fl-track">${nodes}</div></div>
-    </div>`;
-  });
-  box.innerHTML=html;
-}
-
-function renderStats(jobs){
-  const pendingCount=jobs.filter(j=>getStageIdx(j)===0).length;
-  const completedCount=jobs.filter(j=>isDispatchDone(j)).length;
-  const inProgressCount=jobs.filter(j=>getStageIdx(j)>0 && !isDispatchDone(j)).length;
-  document.getElementById('sTotal').textContent=jobs.length;
-  document.getElementById('sPend').textContent=pendingCount;
-  document.getElementById('sRun').textContent=inProgressCount;
-  document.getElementById('sDone').textContent=completedCount;
 }
 
 /* ─── Init ─── */

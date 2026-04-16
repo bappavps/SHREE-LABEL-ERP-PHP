@@ -587,9 +587,11 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
 
     $readyRows = [];
     foreach ($activeByGroup as $row) {
-        // Show ALL non-"Packing Done" jobs in packing departments.
-        // Packing finishing jobs (pos, oneply, twoply, etc.) may have empty/Queued/Pending
-        // status at creation — we still want them visible so the manager can act on them.
+        // Only show jobs whose previous section is actually finished.
+        // Keep packing queue clean by excluding queued/pending/in-progress rows.
+        if (!packing_is_completed_status((string)($row['status'] ?? ''))) {
+            continue;
+        }
 
         $completedAt = (string)($row['completed_at'] ?? '');
         $fallbackAt = (string)($row['updated_at'] ?? ($row['created_at'] ?? ''));

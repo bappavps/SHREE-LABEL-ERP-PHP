@@ -67,6 +67,337 @@ function parseCsvList(string $csv): array {
   return array_values(array_unique($out));
 }
 
+function statusWorkflowDefaults(): array {
+  return [
+    'version' => 1,
+    'updated_at' => '',
+    'sections' => [
+      [
+        'section_key' => 'planning',
+        'section_name' => 'Planning',
+        'description' => 'Statuses used while planning and stage readiness is tracked.',
+        'pages' => [
+          [
+            'page_key' => 'paperroll_planning',
+            'page_name' => 'Paperroll Planning',
+            'page_path' => '/modules/planning/paperroll/index.php',
+            'statuses' => [
+              ['code' => 'Draft', 'label' => 'Draft', 'when' => 'New planning created but not started.', 'concept' => 'Initial planning state', 'bg_color' => '#94A3B8', 'text_color' => '#FFFFFF'],
+              ['code' => 'Preparing Slitting', 'label' => 'Preparing Slitting', 'when' => 'Waiting to start slitting preparation.', 'concept' => 'Pre-production setup', 'bg_color' => '#0EA5E9', 'text_color' => '#FFFFFF'],
+              ['code' => 'Barcode', 'label' => 'Barcode', 'when' => 'Barcode stage is currently in progress.', 'concept' => 'In-progress barcode work', 'bg_color' => '#7C3AED', 'text_color' => '#FFFFFF'],
+              ['code' => 'Barcoded', 'label' => 'Barcoded', 'when' => 'Barcode stage completed successfully.', 'concept' => 'Barcode completed', 'bg_color' => '#16A34A', 'text_color' => '#FFFFFF'],
+            ],
+          ],
+          [
+            'page_key' => 'barcode_planning',
+            'page_name' => 'Barcode Planning',
+            'page_path' => '/modules/planning/barcode/index.php',
+            'statuses' => [
+              ['code' => 'Pending', 'label' => 'Pending', 'when' => 'Barcode planning is not started.', 'concept' => 'Queue stage', 'bg_color' => '#F59E0B', 'text_color' => '#111827'],
+              ['code' => 'Running', 'label' => 'Running', 'when' => 'Barcode planning execution is active.', 'concept' => 'Active work', 'bg_color' => '#2563EB', 'text_color' => '#FFFFFF'],
+              ['code' => 'Completed', 'label' => 'Completed', 'when' => 'Barcode planning completed.', 'concept' => 'Finished stage', 'bg_color' => '#16A34A', 'text_color' => '#FFFFFF'],
+            ],
+          ],
+        ],
+      ],
+      [
+        'section_key' => 'inventory',
+        'section_name' => 'Inventory',
+        'description' => 'Statuses used for stock monitoring and material availability.',
+        'pages' => [
+          [
+            'page_key' => 'paper_stock',
+            'page_name' => 'Paper Stock',
+            'page_path' => '/modules/paper_stock/index.php',
+            'statuses' => [
+              ['code' => 'Available', 'label' => 'Available', 'when' => 'Stock is healthy and ready for use.', 'concept' => 'Normal inventory level', 'bg_color' => '#16A34A', 'text_color' => '#FFFFFF'],
+              ['code' => 'Low Stock', 'label' => 'Low Stock', 'when' => 'Stock is below safety threshold and should be replenished.', 'concept' => 'Reorder alert', 'bg_color' => '#F59E0B', 'text_color' => '#111827'],
+              ['code' => 'Out of Stock', 'label' => 'Out of Stock', 'when' => 'No usable stock remains for production.', 'concept' => 'Critical inventory shortage', 'bg_color' => '#DC2626', 'text_color' => '#FFFFFF'],
+            ],
+          ],
+        ],
+      ],
+      [
+        'section_key' => 'job_cards',
+        'section_name' => 'Job Cards',
+        'description' => 'Statuses used in operator-facing job card life cycle.',
+        'pages' => [
+          [
+            'page_key' => 'paperroll_jobs',
+            'page_name' => 'Paperroll Jobs',
+            'page_path' => '/modules/jobs/paperroll/index.php',
+            'statuses' => [
+              ['code' => 'Pending', 'label' => 'Pending', 'when' => 'Job card assigned but not started.', 'concept' => 'Ready for operator', 'bg_color' => '#F59E0B', 'text_color' => '#111827'],
+              ['code' => 'Running', 'label' => 'Running', 'when' => 'Operator has started the job.', 'concept' => 'Work in progress', 'bg_color' => '#0EA5E9', 'text_color' => '#FFFFFF'],
+              ['code' => 'Paused', 'label' => 'Paused', 'when' => 'Work temporarily stopped.', 'concept' => 'Temporary stop', 'bg_color' => '#FB7185', 'text_color' => '#FFFFFF'],
+              ['code' => 'Completed', 'label' => 'Completed', 'when' => 'Operator marked process complete.', 'concept' => 'Stage complete', 'bg_color' => '#16A34A', 'text_color' => '#FFFFFF'],
+            ],
+          ],
+          [
+            'page_key' => 'pos_jobs',
+            'page_name' => 'POS Jobs',
+            'page_path' => '/modules/jobs/pos/index.php',
+            'statuses' => [
+              ['code' => 'Barcode', 'label' => 'Barcode', 'when' => 'POS work running in barcode stage.', 'concept' => 'POS active stage', 'bg_color' => '#6D28D9', 'text_color' => '#FFFFFF'],
+              ['code' => 'Barcode Pause', 'label' => 'Barcode Pause', 'when' => 'POS paused in barcode stage.', 'concept' => 'POS temporary hold', 'bg_color' => '#A855F7', 'text_color' => '#FFFFFF'],
+              ['code' => 'Barcoded', 'label' => 'Barcoded', 'when' => 'POS completed and barcoding done.', 'concept' => 'POS completed stage', 'bg_color' => '#15803D', 'text_color' => '#FFFFFF'],
+            ],
+          ],
+        ],
+      ],
+      [
+        'section_key' => 'quality',
+        'section_name' => 'Quality Check',
+        'description' => 'Statuses used in QC and closure gates.',
+        'pages' => [
+          [
+            'page_key' => 'qc_panel',
+            'page_name' => 'QC Panel',
+            'page_path' => '/modules/jobs/api.php',
+            'statuses' => [
+              ['code' => 'QC Pending', 'label' => 'QC Pending', 'when' => 'Output is waiting for quality check.', 'concept' => 'Awaiting QC', 'bg_color' => '#F97316', 'text_color' => '#FFFFFF'],
+              ['code' => 'QC Passed', 'label' => 'QC Passed', 'when' => 'Quality check is approved.', 'concept' => 'Approved output', 'bg_color' => '#16A34A', 'text_color' => '#FFFFFF'],
+              ['code' => 'QC Failed', 'label' => 'QC Failed', 'when' => 'Quality check rejected the output.', 'concept' => 'Rework required', 'bg_color' => '#DC2626', 'text_color' => '#FFFFFF'],
+            ],
+          ],
+        ],
+      ],
+      [
+        'section_key' => 'packing_dispatch',
+        'section_name' => 'Packing & Dispatch',
+        'description' => 'Statuses used after production while preparing and dispatching material.',
+        'pages' => [
+          [
+            'page_key' => 'packing_module',
+            'page_name' => 'Packing Module',
+            'page_path' => '/modules/packing/index.php',
+            'statuses' => [
+              ['code' => 'Unpacked', 'label' => 'Unpacked', 'when' => 'Item is not packed yet.', 'concept' => 'Pre-pack stage', 'bg_color' => '#64748B', 'text_color' => '#FFFFFF'],
+              ['code' => 'Packed', 'label' => 'Packed', 'when' => 'Packing has been completed.', 'concept' => 'Pack complete', 'bg_color' => '#059669', 'text_color' => '#FFFFFF'],
+              ['code' => 'Dispatched', 'label' => 'Dispatched', 'when' => 'Material has left facility.', 'concept' => 'Final shipment', 'bg_color' => '#1D4ED8', 'text_color' => '#FFFFFF'],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ];
+}
+
+function sanitizeStatusWorkflowPayload($payload): array {
+  $defaults = statusWorkflowDefaults();
+  if (!is_array($payload)) {
+    return $defaults;
+  }
+
+  $out = [
+    'version' => 1,
+    'updated_at' => date('Y-m-d H:i:s'),
+    'sections' => [],
+  ];
+
+  $sections = $payload['sections'] ?? [];
+  if (!is_array($sections)) {
+    return $defaults;
+  }
+
+  foreach ($sections as $sIdx => $section) {
+    if (!is_array($section)) {
+      continue;
+    }
+    $sectionName = trim((string)($section['section_name'] ?? ''));
+    if ($sectionName === '') {
+      $sectionName = 'Section ' . ((int)$sIdx + 1);
+    }
+
+    $sectionKey = trim((string)($section['section_key'] ?? ''));
+    if ($sectionKey === '') {
+      $sectionKey = strtolower(preg_replace('/[^a-z0-9]+/i', '_', $sectionName));
+    }
+    $sectionKey = trim($sectionKey, '_');
+    if ($sectionKey === '') {
+      $sectionKey = 'section_' . ((int)$sIdx + 1);
+    }
+
+    $cleanSection = [
+      'section_key' => $sectionKey,
+      'section_name' => $sectionName,
+      'description' => trim((string)($section['description'] ?? '')),
+      'pages' => [],
+    ];
+
+    $pages = $section['pages'] ?? [];
+    if (!is_array($pages)) {
+      continue;
+    }
+
+    foreach ($pages as $pIdx => $page) {
+      if (!is_array($page)) {
+        continue;
+      }
+      $pageName = trim((string)($page['page_name'] ?? ''));
+      if ($pageName === '') {
+        $pageName = 'Page ' . ((int)$pIdx + 1);
+      }
+      $pagePath = trim((string)($page['page_path'] ?? ''));
+
+      $pageKey = trim((string)($page['page_key'] ?? ''));
+      if ($pageKey === '') {
+        $pageKey = strtolower(preg_replace('/[^a-z0-9]+/i', '_', $pageName));
+      }
+      $pageKey = trim($pageKey, '_');
+      if ($pageKey === '') {
+        $pageKey = 'page_' . ((int)$pIdx + 1);
+      }
+
+      $cleanPage = [
+        'page_key' => $pageKey,
+        'page_name' => $pageName,
+        'page_path' => $pagePath,
+        'statuses' => [],
+      ];
+
+      $statuses = $page['statuses'] ?? [];
+      if (!is_array($statuses)) {
+        continue;
+      }
+
+      foreach ($statuses as $stIdx => $status) {
+        if (!is_array($status)) {
+          continue;
+        }
+
+        $code = trim((string)($status['code'] ?? ''));
+        $label = trim((string)($status['label'] ?? ''));
+        if ($code === '' && $label === '') {
+          continue;
+        }
+        if ($code === '') {
+          $code = $label;
+        }
+        if ($label === '') {
+          $label = $code;
+        }
+
+        $bg = normalizeHexColor((string)($status['bg_color'] ?? ''), '#64748B');
+        $tx = normalizeHexColor((string)($status['text_color'] ?? ''), '#FFFFFF');
+        $conceptDefaults = statusConceptDefaults($code);
+        $whenText = trim((string)($status['when'] ?? ''));
+        $conceptText = trim((string)($status['concept'] ?? ''));
+        if ($whenText === '') {
+          $whenText = $conceptDefaults['when'];
+        }
+        if ($conceptText === '') {
+          $conceptText = $conceptDefaults['concept'];
+        }
+
+        $cleanPage['statuses'][] = [
+          'code' => $code,
+          'label' => $label,
+          'when' => $whenText,
+          'concept' => $conceptText,
+          'bg_color' => $bg,
+          'text_color' => $tx,
+        ];
+
+        if (count($cleanPage['statuses']) >= 120) {
+          break;
+        }
+      }
+
+      if (!empty($cleanPage['statuses'])) {
+        $cleanSection['pages'][] = $cleanPage;
+      }
+
+      if (count($cleanSection['pages']) >= 60) {
+        break;
+      }
+    }
+
+    if (!empty($cleanSection['pages'])) {
+      $out['sections'][] = $cleanSection;
+    }
+
+    if (count($out['sections']) >= 30) {
+      break;
+    }
+  }
+
+  if (empty($out['sections'])) {
+    return $defaults;
+  }
+  return $out;
+}
+
+function statusConceptDefaults(string $status): array {
+  $code = trim($status);
+  $norm = strtolower(preg_replace('/[^a-z0-9]+/', ' ', $code));
+  $norm = trim(preg_replace('/\s+/', ' ', $norm));
+
+  $when = 'Use this status as per defined stage transition.';
+  $concept = 'General workflow state';
+
+  if ($norm === 'main' || $norm === 'available') {
+    $when = 'Use when item or stock is available and free for planning/use.';
+    $concept = 'Ready and available state';
+  } elseif (strpos($norm, 'pending') !== false || strpos($norm, 'queue') !== false) {
+    $when = 'Use when work is waiting to start in queue.';
+    $concept = 'Waiting stage';
+  } elseif (strpos($norm, 'preparing') !== false) {
+    $when = 'Use when pre-stage setup is in progress before main processing.';
+    $concept = 'Preparation stage';
+  } elseif (strpos($norm, 'pause') !== false || strpos($norm, 'hold') !== false) {
+    $when = 'Use when work is temporarily stopped.';
+    $concept = 'Temporary hold stage';
+  } elseif (strpos($norm, 'running') !== false || strpos($norm, 'progress') !== false || strpos($norm, 'printing') !== false || strpos($norm, 'slitting') !== false || strpos($norm, 'cutting') !== false || strpos($norm, 'barcode') !== false || strpos($norm, 'packing') !== false) {
+    $when = 'Use when this process is currently active.';
+    $concept = 'Active processing stage';
+  } elseif (strpos($norm, 'completed') !== false || strpos($norm, 'complete') !== false || strpos($norm, 'printed') !== false || strpos($norm, 'slitted') !== false || strpos($norm, 'barcoded') !== false || strpos($norm, 'packed') !== false || strpos($norm, 'die cut') !== false) {
+    $when = 'Use when this process/stage has finished successfully.';
+    $concept = 'Completed stage';
+  } elseif (strpos($norm, 'dispatch') !== false) {
+    $when = 'Use when goods leave the facility for delivery.';
+    $concept = 'Post-production dispatch stage';
+  } elseif (strpos($norm, 'qc passed') !== false || strpos($norm, 'approved') !== false) {
+    $when = 'Use when quality validation is successful.';
+    $concept = 'Quality approved';
+  } elseif (strpos($norm, 'qc failed') !== false || strpos($norm, 'reject') !== false) {
+    $when = 'Use when quality validation fails and rework is required.';
+    $concept = 'Quality rejected';
+  } elseif (strpos($norm, 'consume') !== false || strpos($norm, 'consumed') !== false) {
+    $when = 'Use when stock has been consumed in production.';
+    $concept = 'Consumed inventory state';
+  } elseif (strpos($norm, 'job assign') !== false || strpos($norm, 'assigned') !== false) {
+    $when = 'Use when material/job has been assigned for operation.';
+    $concept = 'Assignment state';
+  } elseif (strpos($norm, 'stock') !== false) {
+    $when = 'Use for stock-level visibility and inventory tracking.';
+    $concept = 'Inventory tracking state';
+  }
+
+  return ['when' => $when, 'concept' => $concept];
+}
+
+function statusRowsFromCodes(array $codes): array {
+  $rows = [];
+  foreach ($codes as $code) {
+    $label = trim((string)$code);
+    if ($label === '') {
+      continue;
+    }
+    $palette = erp_status_palette($label);
+    $concept = statusConceptDefaults($label);
+    $rows[] = [
+      'code' => $label,
+      'label' => $label,
+      'when' => $concept['when'],
+      'concept' => $concept['concept'],
+      'bg_color' => normalizeHexColor((string)($palette['background'] ?? ''), '#64748B'),
+      'text_color' => normalizeHexColor((string)($palette['color'] ?? ''), '#FFFFFF'),
+    ];
+  }
+  return $rows;
+}
+
 function collectProvisionMigrationFiles(string $migrationDir): array {
   if (!is_dir($migrationDir)) {
     return [];
@@ -372,8 +703,28 @@ $tenantSettingsZipPath = tenantSettingsZipPath($projectRoot, $tenantSettingsPath
 $tenantSettingsDisplayPath = str_replace($projectRoot . '/', '', str_replace('\\', '/', $tenantSettingsPath));
 
 $activeTab = $_GET['tab'] ?? 'company';
-$allowedTabs = ['company', 'library', 'theme', 'backup', 'update', 'tenant'];
+$allowedTabs = ['company', 'library', 'theme', 'status-workflow', 'backup', 'update', 'tenant'];
 if (!in_array($activeTab, $allowedTabs, true)) $activeTab = 'company';
+
+$statusWorkflowSettings = sanitizeStatusWorkflowPayload($settings['status_workflow_matrix'] ?? statusWorkflowDefaults());
+$statusWorkflowGlobalReference = [
+  '/modules/paper_stock/index.php' => statusRowsFromCodes(erp_paper_stock_status_options()),
+  '/modules/planning/paperroll/index.php' => statusRowsFromCodes(erp_label_planning_status_options()),
+  '/modules/planning/barcode/index.php' => statusRowsFromCodes(erp_label_planning_status_options()),
+  '/modules/jobs/pos/index.php' => statusRowsFromCodes(['Pending', 'Running', 'Barcode', 'Barcode Pause', 'Barcoded', 'Completed', 'QC Passed', 'QC Failed']),
+  '/modules/packing/index.php' => statusRowsFromCodes(['Pending', 'Preparing Packing', 'Packing', 'Packing Pause', 'Packed', 'Dispatched']),
+];
+$statusWorkflowGlobalFlat = [];
+foreach ($statusWorkflowGlobalReference as $path => $statuses) {
+  foreach ($statuses as $statusRow) {
+    $k = strtolower(trim((string)($statusRow['code'] ?? '')));
+    if ($k === '' || isset($statusWorkflowGlobalFlat[$k])) {
+      continue;
+    }
+    $statusWorkflowGlobalFlat[$k] = $statusRow;
+  }
+}
+$statusWorkflowGlobalFlat = array_values($statusWorkflowGlobalFlat);
 
 // Support paper_type parameter from paper stock view
 $targetPaperType = trim((string)($_GET['paper_type'] ?? ''));
@@ -781,6 +1132,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       setFlash('error', 'Unable to save theme settings.');
     }
     redirect(BASE_URL . '/modules/settings/index.php?tab=theme');
+  }
+
+  if ($action === 'save_status_workflow') {
+    $jsonPayload = trim((string)($_POST['status_workflow_json'] ?? ''));
+    if ($jsonPayload === '') {
+      setFlash('error', 'Status workflow payload is empty.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=status-workflow');
+    }
+
+    $decoded = json_decode($jsonPayload, true);
+    if (!is_array($decoded)) {
+      setFlash('error', 'Invalid workflow payload format. Please retry.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=status-workflow');
+    }
+
+    $settings['status_workflow_matrix'] = sanitizeStatusWorkflowPayload($decoded);
+
+    if (saveAppSettings($settings)) {
+      setFlash('success', 'Status workflow configuration saved successfully.');
+    } else {
+      setFlash('error', 'Unable to save status workflow configuration.');
+    }
+    redirect(BASE_URL . '/modules/settings/index.php?tab=status-workflow');
   }
 
 
@@ -1294,6 +1668,7 @@ include __DIR__ . '/../../includes/header.php';
     <a class="settings-tab <?= $activeTab==='company'?'active':'' ?>" href="?tab=company">ERP Profile</a>
     <a class="settings-tab <?= $activeTab==='library'?'active':'' ?>" href="?tab=library">Image Library</a>
     <a class="settings-tab <?= $activeTab==='theme'?'active':'' ?>" href="?tab=theme">Color Theme</a>
+    <a class="settings-tab <?= $activeTab==='status-workflow'?'active':'' ?>" href="?tab=status-workflow">Status Workflow</a>
     <a class="settings-tab <?= $activeTab==='tenant'?'active':'' ?>" href="?tab=tenant">Tenant Provision</a>
     <a class="settings-tab <?= $activeTab==='backup'?'active':'' ?>" href="?tab=backup">Backup &amp; Restore</a>
     <a class="settings-tab <?= $activeTab==='update'?'active':'' ?>" href="?tab=update">System Update</a>
@@ -1496,6 +1871,432 @@ include __DIR__ . '/../../includes/header.php';
           <button class="btn btn-primary" type="submit"><i class="bi bi-palette"></i> Save Theme</button>
         </div>
       </form>
+    <?php endif; ?>
+
+    <?php if ($activeTab === 'status-workflow'): ?>
+      <style>
+      .status-workflow-shell { display: grid; gap: 14px; }
+      .status-hero {
+        border: 1px solid #dbeafe;
+        background: linear-gradient(120deg, #eff6ff 0%, #ecfeff 100%);
+        border-radius: 12px;
+        padding: 14px;
+      }
+      .status-hero h3 { margin: 0 0 5px; color: #0f172a; font-size: 1.05rem; }
+      .status-hero p { margin: 0; color: #334155; font-size: .88rem; }
+      .status-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: space-between;
+        align-items: center;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 10px 12px;
+        background: #fff;
+      }
+      .status-toolbar .left,
+      .status-toolbar .right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .status-toolbar input[type="text"] { min-width: 210px; }
+      .status-section-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        background: #ffffff;
+        overflow: hidden;
+      }
+      .status-section-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        padding: 12px;
+        background: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .status-section-head h4 { margin: 0; color: #0f172a; font-size: .95rem; }
+      .status-section-head p { margin: 3px 0 0; color: #64748b; font-size: .78rem; }
+      .status-section-body { padding: 12px; display: grid; gap: 10px; }
+      .status-page-card {
+        border: 1px solid #dbe2ea;
+        border-radius: 12px;
+        padding: 10px;
+        background: #ffffff;
+      }
+      .status-page-head {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 1fr 1.1fr auto;
+        margin-bottom: 8px;
+      }
+      .status-table { width: 100%; border-collapse: collapse; }
+      .status-table th,
+      .status-table td { border: 1px solid #e2e8f0; padding: 6px; vertical-align: top; font-size: .78rem; }
+      .status-table th { background: #f8fafc; text-align: left; color: #334155; }
+      .status-table input,
+      .status-table textarea { width: 100%; font-size: .78rem; }
+      .status-table textarea { min-height: 46px; resize: vertical; }
+      .status-badge-preview {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        min-width: 88px;
+        height: 28px;
+        font-weight: 700;
+        font-size: .72rem;
+        padding: 0 10px;
+      }
+      .status-actions-row { display: flex; justify-content: space-between; margin-top: 8px; gap: 8px; }
+      .status-muted { color: #64748b; font-size: .76rem; }
+      .status-empty {
+        border: 1px dashed #cbd5e1;
+        border-radius: 10px;
+        padding: 18px;
+        text-align: center;
+        color: #64748b;
+        font-size: .82rem;
+      }
+      .status-reference-card {
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        padding: 12px;
+      }
+      .status-reference-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 8px;
+      }
+      .status-reference-item {
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 8px;
+        background: #fff;
+      }
+      .status-reference-item p { margin: 4px 0 0; font-size: .75rem; color: #475569; line-height: 1.35; }
+      @media (max-width: 900px) {
+        .status-page-head { grid-template-columns: 1fr; }
+        .status-toolbar { flex-direction: column; align-items: stretch; }
+      }
+      </style>
+
+      <div class="status-workflow-shell">
+        <div class="status-hero">
+          <h3><i class="bi bi-diagram-3"></i> Status Workflow Configuration</h3>
+          <p>Define exactly which status appears in which page/section, when it should be used, and what color concept it carries. This is your single reference board to reduce status confusion across ERP.</p>
+        </div>
+
+        <form method="POST" id="status-workflow-form">
+          <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
+          <input type="hidden" name="action" value="save_status_workflow">
+          <textarea name="status_workflow_json" id="status-workflow-json" style="display:none"></textarea>
+
+          <div class="status-toolbar">
+            <div class="left">
+              <button type="button" class="btn btn-secondary btn-sm" id="sw-add-section"><i class="bi bi-plus-circle"></i> Add Section</button>
+              <button type="button" class="btn btn-light btn-sm" id="sw-reset-default"><i class="bi bi-arrow-counterclockwise"></i> Reset To Default</button>
+            </div>
+            <div class="right">
+              <input type="text" id="sw-search" placeholder="Search page or status...">
+              <button class="btn btn-primary" type="submit"><i class="bi bi-save"></i> Save Status Workflow</button>
+            </div>
+          </div>
+
+          <div class="status-muted">Tip: Keep each status concept short and business-friendly. Example concept: "QC approved, ready for packing".</div>
+
+          <div class="status-reference-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+              <strong style="font-size:.86rem;color:#0f172a">Global Status Reference (with concept templates)</strong>
+              <span class="status-muted">Use page card button "Use Global Statuses" for one-click fill.</span>
+            </div>
+            <div class="status-reference-grid">
+              <?php foreach ($statusWorkflowGlobalFlat as $refStatus): ?>
+                <div class="status-reference-item">
+                  <span class="status-badge-preview" style="background:<?= e($refStatus['bg_color']) ?>;color:<?= e($refStatus['text_color']) ?>"><?= e($refStatus['label']) ?></span>
+                  <p><strong>When:</strong> <?= e($refStatus['when']) ?></p>
+                  <p><strong>Concept:</strong> <?= e($refStatus['concept']) ?></p>
+                </div>
+              <?php endforeach; ?>
+            </div>
+          </div>
+
+          <div id="sw-sections-root"></div>
+        </form>
+      </div>
+
+      <script>
+      (function () {
+        var defaults = <?= json_encode(statusWorkflowDefaults(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+        var loaded = <?= json_encode($statusWorkflowSettings, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+        var globalReference = <?= json_encode($statusWorkflowGlobalReference, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+        var state = JSON.parse(JSON.stringify((loaded && loaded.sections && loaded.sections.length) ? loaded : defaults));
+
+        var root = document.getElementById('sw-sections-root');
+        var searchInput = document.getElementById('sw-search');
+        var hiddenJson = document.getElementById('status-workflow-json');
+        var form = document.getElementById('status-workflow-form');
+        var btnAddSection = document.getElementById('sw-add-section');
+        var btnResetDefault = document.getElementById('sw-reset-default');
+
+        function escHtml(v) {
+          return String(v || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        }
+
+        function randomKey(prefix) {
+          return prefix + '_' + Math.random().toString(36).slice(2, 8);
+        }
+
+        function normalizePath(path) {
+          return String(path || '').trim().toLowerCase();
+        }
+
+        function ensureStateShape() {
+          if (!state || typeof state !== 'object') {
+            state = JSON.parse(JSON.stringify(defaults));
+          }
+          if (!Array.isArray(state.sections)) {
+            state.sections = [];
+          }
+        }
+
+        function statusRowMarkup(sIdx, pIdx, stIdx, st) {
+          var bg = st.bg_color || '#64748B';
+          var tx = st.text_color || '#FFFFFF';
+          var label = st.label || st.code || 'Status';
+          return '' +
+            '<tr data-status-row="1">' +
+              '<td><input data-bind="code" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" type="text" value="' + escHtml(st.code || '') + '" placeholder="Status code"></td>' +
+              '<td><input data-bind="label" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" type="text" value="' + escHtml(st.label || '') + '" placeholder="Label"></td>' +
+              '<td><textarea data-bind="when" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" placeholder="When this status should appear">' + escHtml(st.when || '') + '</textarea></td>' +
+              '<td><textarea data-bind="concept" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" placeholder="Business concept / meaning">' + escHtml(st.concept || '') + '</textarea></td>' +
+              '<td><input data-bind="bg_color" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" type="color" value="' + escHtml(bg) + '"></td>' +
+              '<td><input data-bind="text_color" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" type="color" value="' + escHtml(tx) + '"></td>' +
+              '<td><span class="status-badge-preview" style="background:' + escHtml(bg) + ';color:' + escHtml(tx) + '">' + escHtml(label) + '</span></td>' +
+              '<td><button type="button" class="btn btn-danger btn-sm" data-remove-status="1" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '"><i class="bi bi-trash"></i></button></td>' +
+            '</tr>';
+        }
+
+        function pageCardMarkup(sIdx, pIdx, page) {
+          var rows = '';
+          var list = Array.isArray(page.statuses) ? page.statuses : [];
+          var canUseGlobal = !!globalReference[normalizePath(page.page_path || '')];
+          for (var i = 0; i < list.length; i += 1) {
+            rows += statusRowMarkup(sIdx, pIdx, i, list[i]);
+          }
+          if (!rows) {
+            rows = '<tr><td colspan="8" class="status-empty">No statuses in this page yet.</td></tr>';
+          }
+
+          return '' +
+            '<div class="status-page-card" data-page-card="1">' +
+              '<div class="status-page-head">' +
+                '<input data-page-bind="page_name" data-s="' + sIdx + '" data-p="' + pIdx + '" type="text" value="' + escHtml(page.page_name || '') + '" placeholder="Page name (e.g. Paperroll Planning)">' +
+                '<input data-page-bind="page_path" data-s="' + sIdx + '" data-p="' + pIdx + '" type="text" value="' + escHtml(page.page_path || '') + '" placeholder="Path (e.g. /modules/planning/paperroll/index.php)">' +
+                '<button type="button" class="btn btn-danger btn-sm" data-remove-page="1" data-s="' + sIdx + '" data-p="' + pIdx + '"><i class="bi bi-trash"></i> Remove Page</button>' +
+              '</div>' +
+              '<table class="status-table">' +
+                '<thead>' +
+                  '<tr>' +
+                    '<th style="width:12%">Code</th>' +
+                    '<th style="width:12%">Label</th>' +
+                    '<th style="width:24%">When To Use</th>' +
+                    '<th style="width:24%">Concept</th>' +
+                    '<th style="width:7%">BG</th>' +
+                    '<th style="width:7%">Text</th>' +
+                    '<th style="width:10%">Preview</th>' +
+                    '<th style="width:4%"></th>' +
+                  '</tr>' +
+                '</thead>' +
+                '<tbody>' + rows + '</tbody>' +
+              '</table>' +
+              '<div class="status-actions-row">' +
+                '<div class="status-muted">Page key: ' + escHtml(page.page_key || '') + '</div>' +
+                '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">' +
+                  (canUseGlobal ? '<button type="button" class="btn btn-light btn-sm" data-use-global-statuses="1" data-s="' + sIdx + '" data-p="' + pIdx + '"><i class="bi bi-stars"></i> Use Global Statuses</button>' : '') +
+                  '<button type="button" class="btn btn-secondary btn-sm" data-add-status="1" data-s="' + sIdx + '" data-p="' + pIdx + '"><i class="bi bi-plus"></i> Add Status</button>' +
+                '</div>' +
+              '</div>' +
+            '</div>';
+        }
+
+        function sectionCardMarkup(sIdx, section) {
+          var pagesHtml = '';
+          var pages = Array.isArray(section.pages) ? section.pages : [];
+          for (var i = 0; i < pages.length; i += 1) {
+            pagesHtml += pageCardMarkup(sIdx, i, pages[i]);
+          }
+          if (!pagesHtml) {
+            pagesHtml = '<div class="status-empty">No pages in this section yet.</div>';
+          }
+
+          return '' +
+            '<section class="status-section-card" data-section-card="1">' +
+              '<div class="status-section-head">' +
+                '<div>' +
+                  '<h4>' + escHtml(section.section_name || '') + '</h4>' +
+                  '<p>' + escHtml(section.description || '') + '</p>' +
+                '</div>' +
+                '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">' +
+                  '<button type="button" class="btn btn-secondary btn-sm" data-add-page="1" data-s="' + sIdx + '"><i class="bi bi-plus"></i> Add Page</button>' +
+                  '<button type="button" class="btn btn-danger btn-sm" data-remove-section="1" data-s="' + sIdx + '"><i class="bi bi-trash"></i> Remove Section</button>' +
+                '</div>' +
+              '</div>' +
+              '<div class="status-section-body">' +
+                '<div class="status-page-head" style="margin-bottom:2px;grid-template-columns: 1fr 1fr;">' +
+                  '<input data-section-bind="section_name" data-s="' + sIdx + '" type="text" value="' + escHtml(section.section_name || '') + '" placeholder="Section name (e.g. Planning)">' +
+                  '<input data-section-bind="description" data-s="' + sIdx + '" type="text" value="' + escHtml(section.description || '') + '" placeholder="Section description">' +
+                '</div>' +
+                '<div class="status-muted">Section key: ' + escHtml(section.section_key || '') + '</div>' +
+                '<div data-pages-wrapper="1">' + pagesHtml + '</div>' +
+              '</div>' +
+            '</section>';
+        }
+
+        function render() {
+          ensureStateShape();
+          var html = '';
+          for (var i = 0; i < state.sections.length; i += 1) {
+            html += sectionCardMarkup(i, state.sections[i]);
+          }
+          if (!html) {
+            html = '<div class="status-empty">No workflow sections found. Click "Add Section" to begin.</div>';
+          }
+          root.innerHTML = html;
+          applyFilter();
+        }
+
+        function applyFilter() {
+          var q = (searchInput.value || '').trim().toLowerCase();
+          var sections = root.querySelectorAll('[data-section-card="1"]');
+          sections.forEach(function (sec) {
+            if (!q) {
+              sec.style.display = '';
+              return;
+            }
+            var txt = (sec.textContent || '').toLowerCase();
+            sec.style.display = txt.indexOf(q) >= 0 ? '' : 'none';
+          });
+        }
+
+        function addSection() {
+          state.sections.push({
+            section_key: randomKey('section'),
+            section_name: 'New Section',
+            description: 'Describe this stage group',
+            pages: [{
+              page_key: randomKey('page'),
+              page_name: 'New Page',
+              page_path: '',
+              statuses: [{ code: 'Pending', label: 'Pending', when: '', concept: '', bg_color: '#64748B', text_color: '#FFFFFF' }]
+            }]
+          });
+          render();
+        }
+
+        function buildSubmitPayload() {
+          hiddenJson.value = JSON.stringify(state);
+        }
+
+        root.addEventListener('input', function (ev) {
+          var t = ev.target;
+          var s = parseInt(t.getAttribute('data-s') || '-1', 10);
+          var p = parseInt(t.getAttribute('data-p') || '-1', 10);
+          var st = parseInt(t.getAttribute('data-st') || '-1', 10);
+
+          var secBind = t.getAttribute('data-section-bind');
+          if (secBind && state.sections[s]) {
+            state.sections[s][secBind] = t.value;
+            return;
+          }
+
+          var pageBind = t.getAttribute('data-page-bind');
+          if (pageBind && state.sections[s] && state.sections[s].pages && state.sections[s].pages[p]) {
+            state.sections[s].pages[p][pageBind] = t.value;
+            return;
+          }
+
+          var bind = t.getAttribute('data-bind');
+          if (bind && state.sections[s] && state.sections[s].pages && state.sections[s].pages[p] && state.sections[s].pages[p].statuses && state.sections[s].pages[p].statuses[st]) {
+            state.sections[s].pages[p].statuses[st][bind] = t.value;
+            if (bind === 'label' || bind === 'bg_color' || bind === 'text_color') {
+              render();
+            }
+          }
+        });
+
+        root.addEventListener('click', function (ev) {
+          var btn = ev.target.closest('button');
+          if (!btn) return;
+
+          var s = parseInt(btn.getAttribute('data-s') || '-1', 10);
+          var p = parseInt(btn.getAttribute('data-p') || '-1', 10);
+          var st = parseInt(btn.getAttribute('data-st') || '-1', 10);
+
+          if (btn.hasAttribute('data-remove-section')) {
+            state.sections.splice(s, 1);
+            render();
+            return;
+          }
+          if (btn.hasAttribute('data-add-page') && state.sections[s]) {
+            state.sections[s].pages = state.sections[s].pages || [];
+            state.sections[s].pages.push({
+              page_key: randomKey('page'),
+              page_name: 'New Page',
+              page_path: '',
+              statuses: [{ code: 'Pending', label: 'Pending', when: '', concept: '', bg_color: '#64748B', text_color: '#FFFFFF' }]
+            });
+            render();
+            return;
+          }
+          if (btn.hasAttribute('data-remove-page') && state.sections[s] && state.sections[s].pages) {
+            state.sections[s].pages.splice(p, 1);
+            render();
+            return;
+          }
+          if (btn.hasAttribute('data-add-status') && state.sections[s] && state.sections[s].pages && state.sections[s].pages[p]) {
+            state.sections[s].pages[p].statuses = state.sections[s].pages[p].statuses || [];
+            state.sections[s].pages[p].statuses.push({ code: 'New Status', label: 'New Status', when: '', concept: '', bg_color: '#64748B', text_color: '#FFFFFF' });
+            render();
+            return;
+          }
+          if (btn.hasAttribute('data-use-global-statuses') && state.sections[s] && state.sections[s].pages && state.sections[s].pages[p]) {
+            var pagePath = normalizePath(state.sections[s].pages[p].page_path || '');
+            var refRows = globalReference[pagePath] || [];
+            if (!Array.isArray(refRows) || !refRows.length) {
+              window.alert('No global status reference mapped for this page path yet.');
+              return;
+            }
+            state.sections[s].pages[p].statuses = JSON.parse(JSON.stringify(refRows));
+            render();
+            return;
+          }
+          if (btn.hasAttribute('data-remove-status') && state.sections[s] && state.sections[s].pages && state.sections[s].pages[p] && state.sections[s].pages[p].statuses) {
+            state.sections[s].pages[p].statuses.splice(st, 1);
+            render();
+          }
+        });
+
+        btnAddSection.addEventListener('click', addSection);
+        btnResetDefault.addEventListener('click', function () {
+          if (!window.confirm('Reset workflow matrix to default values?')) {
+            return;
+          }
+          state = JSON.parse(JSON.stringify(defaults));
+          render();
+        });
+        searchInput.addEventListener('input', applyFilter);
+        form.addEventListener('submit', function () {
+          buildSubmitPayload();
+        });
+
+        render();
+      })();
+      </script>
     <?php endif; ?>
 
     <?php if ($activeTab === 'tenant'): ?>

@@ -48,6 +48,10 @@ function barcodePlanningPriorityOptions(): array {
     return ['Low', 'Normal', 'High', 'Urgent'];
 }
 
+function barcodePlanningTypeOptions(): array {
+    return ['Regular', 'Repeat', 'Sampling', 'Correction', 'Urgent'];
+}
+
 function barcodePlanningIdMeta(): array {
     $idg = getPrefixSettings();
     $barcodePrefix = strtoupper(trim((string)($idg['modules']['planning_barcode']['prefix'] ?? 'PLN-BAR')));
@@ -422,6 +426,7 @@ function barcodePlanningFetchRows(mysqli $db): array {
             'status' => barcodePlanningNormalizeStatus($statusSource),
             'job_name' => trim((string)($row['job_name'] ?? '')),
             'priority' => trim((string)($row['priority'] ?? ($extra['priority'] ?? 'Normal'))) ?: 'Normal',
+            'planning_type' => trim((string)($extra['planning_type'] ?? 'Regular')) ?: 'Regular',
             'planning_date' => trim((string)($extra['planning_date'] ?? '')),
             'dispatch_date' => trim((string)($extra['dispatch_date'] ?? ($row['scheduled_date'] ?? ''))),
             'material_type' => trim((string)($extra['material_type'] ?? '')),
@@ -452,7 +457,7 @@ function barcodePlanningFetchRows(mysqli $db): array {
 
 function barcodePlanningExportHeaders(): array {
     return [
-        'SL.No.', 'Planning ID', 'Status', 'Job Name', 'Planning Date', 'Dispatch Date', 'Priority', 'Client Name', 'Order Quantity', 'Order Meter', 'PCS PER ROLL',
+        'SL.No.', 'Planning ID', 'Status', 'Planning Type', 'Job Name', 'Planning Date', 'Dispatch Date', 'Priority', 'Client Name', 'Order Quantity', 'Order Meter', 'PCS PER ROLL',
         'Barcode Size', 'Up in Roll', 'Up in Production', 'Label Gap', 'Both Side Gap', 'Paper Size',
         'Cylinder', 'Repeat', 'USE', 'Die Type', 'CORE',
     ];
@@ -460,7 +465,7 @@ function barcodePlanningExportHeaders(): array {
 
 function barcodePlanningExportValues(array $row): array {
     return [
-        $row['sl_no'] ?? '', $row['planning_id'] ?? '', $row['status'] ?? '', $row['job_name'] ?? '',
+        $row['sl_no'] ?? '', $row['planning_id'] ?? '', $row['status'] ?? '', $row['planning_type'] ?? '', $row['job_name'] ?? '',
         $row['planning_date'] ?? '', $row['dispatch_date'] ?? '',
         $row['priority'] ?? '',
         $row['client_name'] ?? '',
@@ -570,6 +575,7 @@ $dispatchDefault = date('Y-m-d', strtotime('+12 days'));
 $statusOptions = barcodePlanningStatusOptions();
 $defaultStatus = barcodePlanningDefaultStatus();
 $priorityOptions = barcodePlanningPriorityOptions();
+$planningTypeOptions = barcodePlanningTypeOptions();
 $masterRows = barcodePlanningMasterRows($db);
 $coreOptions = barcodePlanningMasterDistinctValues($db, 'core');
 $barcodeSizeOptions = barcodePlanningMasterDistinctValues($db, 'barcode_size');
@@ -597,6 +603,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $dispatchDate = trim((string)($_POST['dispatch_date'] ?? $dispatchDefault));
                 $status = barcodePlanningNormalizeStatus((string)($_POST['status'] ?? $defaultStatus));
                 $priority = trim((string)($_POST['priority'] ?? 'Normal')) ?: 'Normal';
+                $planningType = trim((string)($_POST['planning_type'] ?? 'Regular')) ?: 'Regular';
                 $jobName = trim((string)($_POST['job_name'] ?? ''));
                 $clientName = trim((string)($_POST['client_name'] ?? ''));
                 $materialType = trim((string)($_POST['material_type'] ?? ''));
@@ -638,6 +645,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($jobName === '') $errors[] = 'Job Name is required.';
                 if (!in_array($status, $statusOptions, true)) $errors[] = 'Invalid status selected.';
                 if (!in_array($priority, $priorityOptions, true)) $errors[] = 'Invalid priority selected.';
+                if (!in_array($planningType, $planningTypeOptions, true)) $errors[] = 'Invalid planning type selected.';
                 if ($pcsPerRoll === '') $errors[] = 'PCS PER ROLL is required.';
                 if ($barcodeSize === '') $errors[] = 'Barcode Size is required.';
                 if ($upInRoll === '') $errors[] = 'Up in Roll is required.';
@@ -683,6 +691,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'planning_date' => $planningDate,
                         'dispatch_date' => $dispatchDate,
                         'priority' => $priority,
+                        'planning_type' => $planningType,
                         'client_name' => $clientName,
                         'material_type' => $materialType,
                         'order_quantity' => barcodePlanningFormatNumber($finalQty, 0),
@@ -836,6 +845,8 @@ include __DIR__ . '/../../../includes/header.php';
 .bc-num{font-family:Consolas,monospace;font-weight:700;color:#0f172a}.bc-status-badge{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;font-size:.66rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
 .bc-pri{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;font-size:.64rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
 .bc-pri-low{background:#e2e8f0;color:#334155}.bc-pri-normal{background:#dbeafe;color:#1d4ed8}.bc-pri-high{background:#ffedd5;color:#9a3412}.bc-pri-urgent{background:#fee2e2;color:#991b1b}
+.bc-type{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;font-size:.64rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.bc-type-regular{background:#e2e8f0;color:#334155}.bc-type-repeat{background:#dcfce7;color:#166534}.bc-type-sampling{background:#fef3c7;color:#92400e}.bc-type-correction{background:#ede9fe;color:#5b21b6}.bc-type-urgent{background:#fee2e2;color:#991b1b}
 .bc-cell-strong{font-weight:800;color:#0f172a}.bc-empty{padding:42px 18px;text-align:center;color:#94a3b8}.bc-empty i{display:block;font-size:2.4rem;opacity:.3;margin-bottom:8px}.bc-actions-cell{display:flex;gap:6px;align-items:center}.bc-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:10px;border:1px solid #dbe4f0;background:#fff;color:#475569;cursor:pointer}.bc-icon-btn.view{color:#0369a1;border-color:#bae6fd}.bc-icon-btn.edit{color:#2563eb;border-color:#bfdbfe}.bc-icon-btn.delete{color:#dc2626;border-color:#fecaca}.bc-delete-form{display:inline}
 .planning-modal{position:fixed;inset:0;background:rgba(15,23,42,.42);z-index:1200;align-items:center;justify-content:center;padding:20px}.planning-modal-card{width:min(1160px,100%);max-height:88vh;overflow:auto;background:#fff;border-radius:12px;box-shadow:0 22px 54px rgba(0,0,0,.22);border:1px solid #e5e7eb}.planning-modal-head,.planning-modal-foot{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #eef2f7}.planning-modal-foot{border-bottom:none;border-top:1px solid #eef2f7}.planning-modal-head h3{font-size:1.05rem}
 .planning-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding:14px 16px}.planning-grid > div{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px}.planning-grid > div:nth-child(4n+1){background:#f0f9ff;border-color:#bfdbfe}.planning-grid > div:nth-child(4n+2){background:#ecfeff;border-color:#99f6e4}.planning-grid > div:nth-child(4n+3){background:#fefce8;border-color:#fde68a}.planning-grid > div:nth-child(4n){background:#f8fafc;border-color:#e2e8f0}.planning-grid label{display:block;margin-bottom:5px;font-size:.75rem;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.04em}.planning-job-preview-box{margin:14px 16px 0;padding:12px 14px;border:1px solid #dbeafe;background:#eff6ff;border-radius:10px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.planning-job-preview-box strong{display:block;font-size:1rem;color:#0f172a}.planning-job-preview-label{font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#1d4ed8;display:block;margin-bottom:5px}.planning-job-preview-box small{color:#475569;display:block;font-size:.74rem}
@@ -874,20 +885,28 @@ include __DIR__ . '/../../../includes/header.php';
   <div class="card-header"><span class="card-title"><i class="bi bi-table"></i> Barcode Planning List</span></div>
   <div class="bc-table-wrap">
     <table class="bc-table">
-            <thead><tr><th>SL.No.</th><th>Planning ID</th><th>Status</th><th>Job Name</th><th>Planning Date</th><th>Dispatch Date</th><th>Priority</th><th>Client Name</th><th>Order Quantity</th><th>Order Meter</th><th>PCS PER ROLL</th><th>Barcode Size</th><th>Up in Roll</th><th>Up in Production</th><th>Label Gap</th><th>Both Side Gap</th><th>Paper Size</th><th>Cylinder</th><th>Repeat</th><th>USE</th><th>Die Type</th><th>CORE</th><th class="no-print">Action</th></tr></thead>
+            <thead><tr><th>SL.No.</th><th>Planning ID</th><th>Status</th><th>Planning Type</th><th>Job Name</th><th>Planning Date</th><th>Dispatch Date</th><th>Priority</th><th>Client Name</th><th>Order Quantity</th><th>Order Meter</th><th>PCS PER ROLL</th><th>Barcode Size</th><th>Up in Roll</th><th>Up in Production</th><th>Label Gap</th><th>Both Side Gap</th><th>Paper Size</th><th>Cylinder</th><th>Repeat</th><th>USE</th><th>Die Type</th><th>CORE</th><th class="no-print">Action</th></tr></thead>
       <tbody>
         <?php if (empty($rows)): ?>
-                    <tr><td colspan="23" class="bc-empty"><i class="bi bi-inbox"></i>No barcode planning entries found yet.</td></tr>
+                    <tr><td colspan="24" class="bc-empty"><i class="bi bi-inbox"></i>No barcode planning entries found yet.</td></tr>
         <?php else: ?>
           <?php foreach ($rows as $row): ?>
                         <?php
                             $statusRaw = barcodePlanningNormalizeStatus((string)($row['status'] ?? $defaultStatus));
                             $priorityRaw = trim((string)($row['priority'] ?? 'Normal')) ?: 'Normal';
+                            $planningTypeRaw = trim((string)($row['planning_type'] ?? 'Regular')) ?: 'Regular';
                             $priorityClass = match (strtolower($priorityRaw)) {
                                 'low' => 'low',
                                 'high' => 'high',
                                 'urgent' => 'urgent',
                                 default => 'normal',
+                            };
+                            $planningTypeClass = match (strtolower($planningTypeRaw)) {
+                                'repeat' => 'repeat',
+                                'sampling' => 'sampling',
+                                'correction' => 'correction',
+                                'urgent' => 'urgent',
+                                default => 'regular',
                             };
                             $rowPayloadData = $row;
                             $rowPayloadData['status'] = $statusRaw;
@@ -895,7 +914,7 @@ include __DIR__ . '/../../../includes/header.php';
                             $rowCanManage = !empty($row['can_manage']);
                         ?>
             <tr data-row="<?= $rowPayload ?>">
-                            <td class="bc-num"><?= e((string)$row['sl_no']) ?></td><td class="bc-cell-strong"><?= e((string)$row['planning_id']) ?></td><td><span class="bc-status-badge" style="<?= e(barcodePlanningStatusStyle($statusRaw)) ?>"><?= e($statusRaw) ?></span></td><td><span class="bc-cell-strong"><?= e((string)$row['job_name']) ?></span></td><td><strong><?= e((string)$row['planning_date']) ?></strong></td><td><strong><?= e((string)$row['dispatch_date']) ?></strong></td><td><span class="bc-pri bc-pri-<?= e($priorityClass) ?>"><?= e($priorityRaw) ?></span></td><td><?= e((string)$row['client_name']) ?></td><td class="bc-num"><?= e((string)$row['order_quantity']) ?></td><td class="bc-num"><?= e((string)$row['order_meter']) ?></td><td class="bc-num"><?= e((string)$row['pcs_per_roll']) ?></td><td><?= e((string)$row['barcode_size']) ?></td><td class="bc-num"><?= e((string)$row['up_in_roll']) ?></td><td class="bc-num"><?= e((string)$row['up_in_production']) ?></td><td class="bc-num"><?= e((string)$row['label_gap']) ?></td><td class="bc-num"><?= e((string)$row['both_side_gap']) ?></td><td><?= e((string)$row['paper_size']) ?></td><td><?= e((string)$row['cylinder']) ?></td><td class="bc-num"><?= e((string)$row['repeat']) ?></td><td><?= e((string)$row['use']) ?></td><td><?= e((string)$row['die_type']) ?></td><td><?= e((string)$row['core']) ?></td>
+                            <td class="bc-num"><?= e((string)$row['sl_no']) ?></td><td class="bc-cell-strong"><?= e((string)$row['planning_id']) ?></td><td><span class="bc-status-badge" style="<?= e(barcodePlanningStatusStyle($statusRaw)) ?>"><?= e($statusRaw) ?></span></td><td><span class="bc-type bc-type-<?= e($planningTypeClass) ?>"><?= e($planningTypeRaw) ?></span></td><td><span class="bc-cell-strong"><?= e((string)$row['job_name']) ?></span></td><td><strong><?= e((string)$row['planning_date']) ?></strong></td><td><strong><?= e((string)$row['dispatch_date']) ?></strong></td><td><span class="bc-pri bc-pri-<?= e($priorityClass) ?>"><?= e($priorityRaw) ?></span></td><td><?= e((string)$row['client_name']) ?></td><td class="bc-num"><?= e((string)$row['order_quantity']) ?></td><td class="bc-num"><?= e((string)$row['order_meter']) ?></td><td class="bc-num"><?= e((string)$row['pcs_per_roll']) ?></td><td><?= e((string)$row['barcode_size']) ?></td><td class="bc-num"><?= e((string)$row['up_in_roll']) ?></td><td class="bc-num"><?= e((string)$row['up_in_production']) ?></td><td class="bc-num"><?= e((string)$row['label_gap']) ?></td><td class="bc-num"><?= e((string)$row['both_side_gap']) ?></td><td><?= e((string)$row['paper_size']) ?></td><td><?= e((string)$row['cylinder']) ?></td><td class="bc-num"><?= e((string)$row['repeat']) ?></td><td><?= e((string)$row['use']) ?></td><td><?= e((string)$row['die_type']) ?></td><td><?= e((string)$row['core']) ?></td>
                             <td class="no-print"><div class="bc-actions-cell"><button type="button" class="bc-icon-btn view btn-view-barcode" title="View"><i class="bi bi-eye"></i></button><?php if ($canEdit && $rowCanManage): ?><button type="button" class="bc-icon-btn edit btn-edit-barcode" title="Edit"><i class="bi bi-pencil"></i></button><?php endif; ?><?php if ($canDelete && $rowCanManage): ?><form method="post" class="bc-delete-form"><input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>"><input type="hidden" name="action" value="delete_barcode_planning"><input type="hidden" name="id" value="<?= (int)$row['id'] ?>"><button type="submit" class="bc-icon-btn delete" title="Delete" data-confirm="Delete this barcode planning entry?"><i class="bi bi-trash"></i></button></form><?php endif; ?></div></td>
             </tr>
           <?php endforeach; ?>
@@ -912,6 +931,7 @@ include __DIR__ . '/../../../includes/header.php';
         <div><label for="barcode-planning-id">Planning ID</label><input type="text" class="form-control" id="barcode-planning-id" name="planning_id" value="<?= e($previewPlanningId) ?>" readonly></div>
         <div><label for="barcode-status">Status</label><select class="form-control" id="barcode-status" name="status"><?php foreach ($statusOptions as $statusOption): ?><option value="<?= e($statusOption) ?>" <?= $statusOption === $defaultStatus ? 'selected' : '' ?>><?= e($statusOption) ?></option><?php endforeach; ?></select></div>
         <div><label for="barcode-priority">Priority</label><select class="form-control" id="barcode-priority" name="priority"><?php foreach ($priorityOptions as $priorityOption): ?><option value="<?= e($priorityOption) ?>" <?= $priorityOption === 'Normal' ? 'selected' : '' ?>><?= e($priorityOption) ?></option><?php endforeach; ?></select></div>
+        <div><label for="barcode-planning-type">Planning Type</label><select class="form-control" id="barcode-planning-type" name="planning_type"><?php foreach ($planningTypeOptions as $typeOption): ?><option value="<?= e($typeOption) ?>" <?= $typeOption === 'Regular' ? 'selected' : '' ?>><?= e($typeOption) ?></option><?php endforeach; ?></select></div>
         <div style="grid-column:1 / -1" data-autofill-field="job_name"><label for="barcode-job-name">Job Name</label><div class="bc-picker-inline"><input type="text" class="form-control" id="barcode-job-name" name="job_name" list="barcode-job-options" placeholder="Search job name from barcode master" required><button type="button" class="bc-picker-btn" id="barcode-job-picker-btn" title="Search job name"><i class="bi bi-search"></i></button></div><div class="bc-form-hint">Selecting Job Name from barcode master data auto-fills related fields. You can edit all fields before saving.</div><div class="bc-form-hint" id="barcode-size-indicator">Selected Size: —</div></div>
         <div data-autofill-field="client_name"><label for="barcode-client-name">Client Name</label><input type="text" class="form-control" id="barcode-client-name" name="client_name" placeholder="Client name"></div>
         <div class="bc-section-title order">Order & Planning</div>
@@ -1003,7 +1023,7 @@ include __DIR__ . '/../../../includes/header.php';
   var masterRows = <?= json_encode($masterRows, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
     var masterJobRows = <?= json_encode($masterJobRows, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
   var hasErrors = <?= !empty($errors) ? 'true' : 'false' ?>;
-        var defaultState = { sl_no: <?= (int)$previewSerial ?>, planning_id: <?= json_encode($previewPlanningId) ?>, record_label: <?= json_encode('#' . $previewRecordId) ?>, planning_date: <?= json_encode($today) ?>, dispatch_date: <?= json_encode($dispatchDefault) ?>, status: <?= json_encode($defaultStatus) ?>, priority: 'Normal' };
+                var defaultState = { sl_no: <?= (int)$previewSerial ?>, planning_id: <?= json_encode($previewPlanningId) ?>, record_label: <?= json_encode('#' . $previewRecordId) ?>, planning_date: <?= json_encode($today) ?>, dispatch_date: <?= json_encode($dispatchDefault) ?>, status: <?= json_encode($defaultStatus) ?>, priority: 'Normal', planning_type: 'Regular' };
   var syncing = false;
     var layoutSyncing = false;
         var lastLayoutSource = 'paper_size';
@@ -1105,9 +1125,9 @@ include __DIR__ . '/../../../includes/header.php';
         var head = '<div class="bc-picker-head"><span>SL No.</span><span>Job Name</span><span>BarCode Size</span><span>Ups in Roll</span><span>UPS in Die</span></div>';
         jobPickerList.innerHTML = html.length ? (head + html.join('')) : '<div class="bc-empty" style="padding:18px">No matching barcode job name found.</div>';
     }
-        function resetFormForAdd(){ if(!form) return; form.reset(); editIdInput.value='0'; if(modalTitle) modalTitle.textContent='Add Barcode Planning'; assignIfPresent('barcode-sl-no', defaultState.sl_no); assignIfPresent('barcode-planning-id', defaultState.planning_id); assignIfPresent('barcode-planning-date', defaultState.planning_date); assignIfPresent('barcode-dispatch-date', defaultState.dispatch_date); assignIfPresent('barcode-status', defaultState.status); assignIfPresent('barcode-priority', defaultState.priority || 'Normal'); lastLayoutSource='paper_size'; updateSizeIndicator(''); previewSl.textContent=String(defaultState.sl_no); previewId.textContent=defaultState.planning_id; previewRecord.textContent=defaultState.record_label; hydrateLayoutFields(); clearAutofillMarks(); markAutofilledFields(); }
-        function openEdit(row){ if(!form||!row) return; resetFormForAdd(); if(modalTitle) modalTitle.textContent='Edit Barcode Planning'; editIdInput.value=String(row.id||0); assignIfPresent('barcode-sl-no', row.sl_no||''); assignIfPresent('barcode-planning-id', row.planning_id||''); assignIfPresent('barcode-status', row.status||defaultState.status); assignIfPresent('barcode-priority', row.priority||'Normal'); assignIfPresent('barcode-job-name', row.job_name||''); assignIfPresent('barcode-client-name', row.client_name||''); assignIfPresent('barcode-planning-date', row.planning_date||defaultState.planning_date); assignIfPresent('barcode-dispatch-date', row.dispatch_date||defaultState.dispatch_date); assignIfPresent('barcode-material-type', row.material_type||''); assignIfPresent('barcode-order-qty', row.order_quantity||''); assignIfPresent('barcode-order-meter', row.order_meter||''); assignIfPresent('barcode-pcs-per-roll', row.pcs_per_roll||''); assignIfPresent('barcode-size', row.barcode_size||''); assignIfPresent('barcode-up-roll', row.up_in_roll||''); assignIfPresent('barcode-up-production', row.up_in_production||''); assignIfPresent('barcode-label-gap', row.label_gap||''); assignIfPresent('barcode-both-gap', row.both_side_gap||''); assignIfPresent('barcode-paper-size', row.paper_size||''); assignIfPresent('barcode-cylinder', row.cylinder||''); assignIfPresent('barcode-repeat', row.repeat||''); assignIfPresent('barcode-use', row.use||''); assignIfPresent('barcode-die-type', row.die_type||''); assignIfPresent('barcode-core', row.core||''); lastLayoutSource = String(row.both_side_gap||'').trim() !== '' && String(row.paper_size||'').trim() === '' ? 'both_side_gap' : 'paper_size'; hydrateLayoutFields(); updateSizeIndicator(row.barcode_size||''); previewSl.textContent=String(row.sl_no||''); previewId.textContent=String(row.planning_id||''); previewRecord.textContent='#'+String(row.id||''); markAutofilledFields(); openModal(); }
-    function openView(row){ if(!viewGrid||!row) return; var labels=[['SL.No.',row.sl_no],['Planning ID',row.planning_id],['Status',row.status],['Job Name',row.job_name],['Priority',row.priority],['Client Name',row.client_name],['Order Quantity',row.order_quantity],['Order Meter',row.order_meter],['PCS PER ROLL',row.pcs_per_roll],['Barcode Size',row.barcode_size],['Up in Roll',row.up_in_roll],['Up in Production',row.up_in_production],['Label Gap',row.label_gap],['Both Side Gap',row.both_side_gap],['Paper Size',row.paper_size],['Cylinder',row.cylinder],['Repeat',row.repeat],['USE',row.use],['Die Type',row.die_type],['CORE',row.core],['Planning Date',row.planning_date],['Dispatch Date',row.dispatch_date],['Material Type',row.material_type]]; var html=''; labels.forEach(function(item){ html+='<div class="bc-view-card"><span>'+item[0]+'</span><strong>'+(item[1]?String(item[1]):'—')+'</strong></div>'; }); viewGrid.innerHTML=html; openViewModal(); }
+        function resetFormForAdd(){ if(!form) return; form.reset(); editIdInput.value='0'; if(modalTitle) modalTitle.textContent='Add Barcode Planning'; assignIfPresent('barcode-sl-no', defaultState.sl_no); assignIfPresent('barcode-planning-id', defaultState.planning_id); assignIfPresent('barcode-planning-date', defaultState.planning_date); assignIfPresent('barcode-dispatch-date', defaultState.dispatch_date); assignIfPresent('barcode-status', defaultState.status); assignIfPresent('barcode-priority', defaultState.priority || 'Normal'); assignIfPresent('barcode-planning-type', defaultState.planning_type || 'Regular'); lastLayoutSource='paper_size'; updateSizeIndicator(''); previewSl.textContent=String(defaultState.sl_no); previewId.textContent=defaultState.planning_id; previewRecord.textContent=defaultState.record_label; hydrateLayoutFields(); clearAutofillMarks(); markAutofilledFields(); }
+        function openEdit(row){ if(!form||!row) return; resetFormForAdd(); if(modalTitle) modalTitle.textContent='Edit Barcode Planning'; editIdInput.value=String(row.id||0); assignIfPresent('barcode-sl-no', row.sl_no||''); assignIfPresent('barcode-planning-id', row.planning_id||''); assignIfPresent('barcode-status', row.status||defaultState.status); assignIfPresent('barcode-priority', row.priority||'Normal'); assignIfPresent('barcode-planning-type', row.planning_type||'Regular'); assignIfPresent('barcode-job-name', row.job_name||''); assignIfPresent('barcode-client-name', row.client_name||''); assignIfPresent('barcode-planning-date', row.planning_date||defaultState.planning_date); assignIfPresent('barcode-dispatch-date', row.dispatch_date||defaultState.dispatch_date); assignIfPresent('barcode-material-type', row.material_type||''); assignIfPresent('barcode-order-qty', row.order_quantity||''); assignIfPresent('barcode-order-meter', row.order_meter||''); assignIfPresent('barcode-pcs-per-roll', row.pcs_per_roll||''); assignIfPresent('barcode-size', row.barcode_size||''); assignIfPresent('barcode-up-roll', row.up_in_roll||''); assignIfPresent('barcode-up-production', row.up_in_production||''); assignIfPresent('barcode-label-gap', row.label_gap||''); assignIfPresent('barcode-both-gap', row.both_side_gap||''); assignIfPresent('barcode-paper-size', row.paper_size||''); assignIfPresent('barcode-cylinder', row.cylinder||''); assignIfPresent('barcode-repeat', row.repeat||''); assignIfPresent('barcode-use', row.use||''); assignIfPresent('barcode-die-type', row.die_type||''); assignIfPresent('barcode-core', row.core||''); lastLayoutSource = String(row.both_side_gap||'').trim() !== '' && String(row.paper_size||'').trim() === '' ? 'both_side_gap' : 'paper_size'; hydrateLayoutFields(); updateSizeIndicator(row.barcode_size||''); previewSl.textContent=String(row.sl_no||''); previewId.textContent=String(row.planning_id||''); previewRecord.textContent='#'+String(row.id||''); markAutofilledFields(); openModal(); }
+    function openView(row){ if(!viewGrid||!row) return; var labels=[['SL.No.',row.sl_no],['Planning ID',row.planning_id],['Status',row.status],['Planning Type',row.planning_type],['Job Name',row.job_name],['Priority',row.priority],['Client Name',row.client_name],['Order Quantity',row.order_quantity],['Order Meter',row.order_meter],['PCS PER ROLL',row.pcs_per_roll],['Barcode Size',row.barcode_size],['Up in Roll',row.up_in_roll],['Up in Production',row.up_in_production],['Label Gap',row.label_gap],['Both Side Gap',row.both_side_gap],['Paper Size',row.paper_size],['Cylinder',row.cylinder],['Repeat',row.repeat],['USE',row.use],['Die Type',row.die_type],['CORE',row.core],['Planning Date',row.planning_date],['Dispatch Date',row.dispatch_date],['Material Type',row.material_type]]; var html=''; labels.forEach(function(item){ html+='<div class="bc-view-card"><span>'+item[0]+'</span><strong>'+(item[1]?String(item[1]):'—')+'</strong></div>'; }); viewGrid.innerHTML=html; openViewModal(); }
   if(openBtn) openBtn.addEventListener('click', function(){ resetFormForAdd(); openModal(); });
   if(closeBtn) closeBtn.addEventListener('click', closeModal);
   if(cancelBtn) cancelBtn.addEventListener('click', closeModal);

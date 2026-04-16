@@ -2547,6 +2547,24 @@ async function endTimer() {
   const ov = document.getElementById('jcTimerOverlay');
   if (ov) ov.remove();
   _timerJobId = null;
+
+  // Freeze the job card's live elapsed timer — set resumed-at to 0 so
+  // the global updateTimers() interval shows a fixed value instead of
+  // incrementing forever (which confuses operators into thinking the timer
+  // is still running after End is clicked).
+  (function freezeCardTimer(jId) {
+    var card = document.querySelector('.jc-card[data-id="' + jId + '"]');
+    if (!card) return;
+    var timerEl = card.querySelector('.jc-timer');
+    if (!timerEl) return;
+    var accJob = getJobById(jId);
+    var accSec = accJob && accJob.extra_data_parsed
+      ? Math.floor(Number(accJob.extra_data_parsed.timer_accumulated_seconds || 0))
+      : Math.floor(Number(timerEl.dataset.baseSeconds || 0));
+    timerEl.setAttribute('data-resumed-at', '0');
+    timerEl.setAttribute('data-base-seconds', String(accSec));
+  }(jobId));
+
   openJobDetail(jobId, 'complete');
 }
 

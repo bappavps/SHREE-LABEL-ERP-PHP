@@ -336,16 +336,16 @@ function paperRollConceptMasterRows(mysqli $db): array {
 function barcodePlanningFetchRows(mysqli $db): array {
     $rows = [];
     $sql = "SELECT p.id, p.job_no, p.job_name, p.scheduled_date, p.status, p.priority, p.notes, p.sequence_order, p.created_at, p.updated_at, p.extra_data, p.department,
-                   bj.status AS barcode_job_status, bj.extra_data AS barcode_job_extra,
+                   bj.status AS barcode_job_status, bj.extra_data AS barcode_job_extra, bj.department AS barcode_job_department,
                    lsj.status AS label_job_status, lsj.extra_data AS label_job_extra
             FROM planning p
             LEFT JOIN (
-                SELECT j.id, j.planning_id, j.status, j.extra_data
+                SELECT j.id, j.planning_id, j.status, j.extra_data, j.department
                 FROM jobs j
                 INNER JOIN (
                     SELECT planning_id, MAX(id) AS max_id
                     FROM jobs
-                                        WHERE LOWER(COALESCE(department, '')) = 'paperroll'
+                                        WHERE LOWER(COALESCE(department, '')) IN ('paperroll', 'pos')
                       AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
                     GROUP BY planning_id
                 ) latest ON latest.max_id = j.id
@@ -375,9 +375,21 @@ function barcodePlanningFetchRows(mysqli $db): array {
         $departmentRaw = strtolower(trim((string)($row['department'] ?? '')));
         $canManage = in_array($departmentRaw, ['paperroll'], true);
         $statusSource = trim((string)($extra['printing_planning'] ?? ''));
+        $hasLinkedStageJob = trim((string)($row['label_job_status'] ?? '')) !== ''
+            || trim((string)($row['barcode_job_status'] ?? '')) !== '';
+        $statusSeed = $statusSource !== '' ? $statusSource : (string)($row['status'] ?? '');
+        $statusSeedNorm = strtolower(trim(str_replace(['-', '_'], ' ', $statusSeed)));
+        $isWorkflowManaged = !empty($extra['workflow_managed'])
+            || !empty($extra['generated_from_barcode'])
+            || !empty($extra['linked_job_flow'])
+            || $hasLinkedStageJob
+            || strpos($statusSeedNorm, 'barcode') !== false
+            || strpos($statusSeedNorm, 'label') !== false
+            || strpos($statusSeedNorm, 'pack') !== false
+            || strpos($statusSeedNorm, 'dispatch') !== false;
         $labelJobStatusRaw = (string)($row['label_job_status'] ?? '');
         $labelJobStatus = strtolower(trim(str_replace(['-', '_'], ' ', $labelJobStatusRaw)));
-        if ($labelJobStatus !== '') {
+        if ($isWorkflowManaged && $labelJobStatus !== '') {
             $labelJobExtra = json_decode((string)($row['label_job_extra'] ?? '{}'), true);
             if (!is_array($labelJobExtra)) {
                 $labelJobExtra = [];
@@ -396,21 +408,34 @@ function barcodePlanningFetchRows(mysqli $db): array {
         }
         $barcodeJobStatusRaw = (string)($row['barcode_job_status'] ?? '');
         $barcodeJobStatus = strtolower(trim(str_replace(['-', '_'], ' ', $barcodeJobStatusRaw)));
-        if ($barcodeJobStatus !== '' && $labelJobStatus === '') {
+        $barcodeJobDepartment = strtolower(trim((string)($row['barcode_job_department'] ?? '')));
+        if ($isWorkflowManaged && $barcodeJobStatus !== '' && $labelJobStatus === '') {
             $barcodeJobExtra = json_decode((string)($row['barcode_job_extra'] ?? '{}'), true);
             if (!is_array($barcodeJobExtra)) {
                 $barcodeJobExtra = [];
             }
             $barcodePackingDoneFlag = !empty($barcodeJobExtra['packing_done_flag']);
             $timerState = strtolower(trim((string)($barcodeJobExtra['timer_state'] ?? '')));
-            if ($barcodeJobStatus === 'running' && $timerState === 'paused') {
-                $statusSource = 'Barcode Pause';
-            } elseif ($barcodeJobStatus === 'running') {
-                $statusSource = 'Barcode';
-            } elseif ($barcodePackingDoneFlag || in_array($barcodeJobStatus, ['closed', 'finalized', 'completed', 'qc passed', 'packing done'], true)) {
-                $statusSource = 'Barcoded';
-            } elseif (in_array($barcodeJobStatus, ['queued', 'pending'], true)) {
-                $statusSource = 'Pending - Barcode';
+            if ($barcodeJobDepartment === 'pos') {
+                if ($barcodeJobStatus === 'running' && $timerState === 'paused') {
+                    $statusSource = 'Barcode Pause';
+                } elseif ($barcodeJobStatus === 'running') {
+                    $statusSource = 'Barcode';
+                } elseif ($barcodePackingDoneFlag || in_array($barcodeJobStatus, ['closed', 'finalized', 'completed', 'qc passed', 'packing done'], true)) {
+                    $statusSource = 'Barcoded';
+                } elseif (in_array($barcodeJobStatus, ['queued', 'pending'], true)) {
+                    $statusSource = 'Pending - Barcode';
+                }
+            } else {
+                if ($barcodeJobStatus === 'running' && $timerState === 'paused') {
+                    $statusSource = 'Barcode Pause';
+                } elseif ($barcodeJobStatus === 'running') {
+                    $statusSource = 'Barcode';
+                } elseif ($barcodePackingDoneFlag || in_array($barcodeJobStatus, ['closed', 'finalized', 'completed', 'qc passed', 'packing done'], true)) {
+                    $statusSource = 'Barcoded';
+                } elseif (in_array($barcodeJobStatus, ['queued', 'pending'], true)) {
+                    $statusSource = 'Pending - Barcode';
+                }
             }
         }
         if ($statusSource === '') {

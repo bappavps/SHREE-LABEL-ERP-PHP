@@ -1448,6 +1448,65 @@ function filterJobs(status, btn) {
   applyDCFilters();
 }
 
+function findActiveCardByJobRef(jobId, jobNo) {
+  const activeCards = Array.from(document.querySelectorAll('.dc-card:not([data-finished-only="1"])'));
+  const idText = String(jobId || '').trim();
+  const jobNoText = String(jobNo || '').trim().toLowerCase();
+  return activeCards.find(function(card) {
+    const cardId = String(card.dataset.id || '').trim();
+    if (idText && cardId === idText) return true;
+    if (!jobNoText) return false;
+    const cardSearch = String(card.dataset.search || '').toLowerCase();
+    return cardSearch.includes(jobNoText);
+  }) || null;
+}
+
+function findHistoryRowByJobRef(jobId, jobNo) {
+  const rows = Array.from(document.querySelectorAll('#htBody tr[data-id]'));
+  const idText = String(jobId || '').trim();
+  const jobNoText = String(jobNo || '').trim().toLowerCase();
+  return rows.find(function(row) {
+    const rowId = String(row.dataset.id || '').trim();
+    if (idText && rowId === idText) return true;
+    if (!jobNoText) return false;
+    const rowSearch = String(row.dataset.search || '').toLowerCase();
+    return rowSearch.includes(jobNoText);
+  }) || null;
+}
+
+function autoFocusJobFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const autoId = String(params.get('auto_job') || '').trim();
+  const autoJobNo = String(params.get('auto_job_no') || '').trim();
+  if (!autoId && !autoJobNo) return;
+
+  const activeCard = findActiveCardByJobRef(autoId, autoJobNo);
+  if (activeCard) {
+    switchDCTab('active');
+    const status = String(activeCard.dataset.status || '').trim();
+    const targetBtn = findFilterButton(status || 'all') || findFilterButton('all');
+    if (targetBtn) {
+      filterJobs(status || 'all', targetBtn);
+    }
+    const searchInput = document.getElementById('dcSearch');
+    if (searchInput && autoJobNo) {
+      searchInput.value = autoJobNo;
+      applyDCFilters();
+    }
+    return;
+  }
+
+  const historyRow = findHistoryRowByJobRef(autoId, autoJobNo);
+  if (historyRow) {
+    switchDCTab('history');
+    const historySearch = document.getElementById('htSearch');
+    if (historySearch && autoJobNo) {
+      historySearch.value = autoJobNo;
+    }
+    htGoPage(1);
+  }
+}
+
 function filterFromStat(status) {
   let targetBtn = null;
   if (status === 'all') {
@@ -2535,20 +2594,11 @@ async function openJobDetail(id, mode) {
   const coreText = coreSizeText;
   const coreTypeText = String(job.planning_core_type || '').trim() || '—';
   const rollRows = [];
-  if (String(job.roll_no || '').trim() !== '') {
-    rollRows.push({
-      roll_type: 'Parent',
-      roll_no: job.roll_no || '',
-      width_mm: job.width_mm ?? '',
-      length_mtr: job.length_mtr ?? '',
-      paper_type: job.planning_material || job.paper_type || '',
-      company: job.paper_company_name || job.company || '',
-      gsm: job.gsm ?? '',
-      status: job.roll_status || '—'
-    });
-  }
   allRollRows.forEach(function(r) {
-    rollRows.push(Object.assign({ roll_type: 'Child' }, r || {}));
+    const st = String((r && r.status) || '').trim().toLowerCase();
+    if (st === 'job assign' || st === 'job assigned' || st === '') {
+      rollRows.push(Object.assign({ roll_type: 'Child' }, r || {}));
+    }
   });
 
   html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-scissors"></i> ${esc(DC_DETAILS_SECTION_LABEL || 'Die-Cutting Details')}</div><div class="dc-op-b dc-op-grid-2">
@@ -2603,7 +2653,11 @@ async function openJobDetail(id, mode) {
   }
 
   // ── Job Preview Image ──
-  const previewUrl = job.job_preview_image_url || job.planning_image_url || job.plate_image_url || (extra.die_cutting_photo_url || '') || '';
+  const existingPhoto = extra.die_cutting_photo_url || '';
+  const previewUrl = job.job_preview_image_url || job.planning_image_url || job.plate_image_url || existingPhoto || '';
+  const normalizedPreviewUrl = String(previewUrl || '').trim();
+  const normalizedExistingPhoto = String(existingPhoto || '').trim();
+  const shouldHideDuplicatePhoto = normalizedPreviewUrl !== '' && normalizedExistingPhoto !== '' && normalizedPreviewUrl === normalizedExistingPhoto;
   if (previewUrl) {
     html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-image"></i> Job Preview</div><div class="dc-op-b" style="text-align:center">
       <img src="${esc(previewUrl)}" class="dc-preview" alt="Job Preview">
@@ -2657,8 +2711,7 @@ async function openJobDetail(id, mode) {
   }
 
   // ── Photo Upload ──
-  {
-    const existingPhoto = extra.die_cutting_photo_url || '';
+  if (!shouldHideDuplicatePhoto) {
     html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-camera"></i> Job Photo</div><div class="dc-op-b">
       <div class="dc-upload-zone" onclick="document.getElementById('dc-photo-input-${job.id}').click()">
         <input type="file" id="dc-photo-input-${job.id}" accept="image/*" capture="environment" onchange="uploadDCPhoto(${job.id})">
@@ -3119,6 +3172,7 @@ function generateQR(text) {
 
 // ═══ INIT ═══
 (function(){
+  autoFocusJobFromQuery();
   const autoId = new URLSearchParams(window.location.search).get('auto_job');
   if (autoId) setTimeout(function(){ try { openJobDetail(parseInt(autoId)); } catch(e){} }, 600);
 })();

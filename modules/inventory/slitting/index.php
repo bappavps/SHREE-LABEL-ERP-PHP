@@ -1766,7 +1766,7 @@ const SLT = (() => {
     if (!isAcceptMode() && plannerFilter !== 'all') {
       jobs = jobs.filter(j => {
         const s = normalizePlannerStatus(j.printing_planning || j.status || '');
-        if (plannerFilter === 'running') return s === 'running' || s === 'in progress';
+        if (plannerFilter === 'running') return s === 'running' || s === 'in progress' || s === 'slitting';
         return s === plannerFilter;
       });
     }
@@ -2850,7 +2850,10 @@ const SLT = (() => {
     if (normalized === 'barcode ready') return 'barcode ready';
     if (normalized === 'inprogress') return 'in progress';
     if (normalized === 'slitting hold' || normalized === 'slitting pause' || normalized === 'pause') return 'slitting pause';
-    if (normalized === 'slitted' || normalized === 'slitting completed') return 'completed';
+    if (normalized === 'slitted' || normalized === 'slitting completed' || normalized === 'jumbo slitted') return 'completed';
+    // Map preparing-phase and active-slitting statuses to canonical tab keys.
+    if (normalized === 'preparing slitting' || normalized === 'preparing jumbo slitting') return 'pending';
+    if (normalized === 'slitting') return 'running';
     return normalized;
   }
 

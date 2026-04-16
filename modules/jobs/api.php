@@ -1162,7 +1162,14 @@ function jobs_is_operator_media_upload_job(array $job): bool {
         return true;
     }
 
-    return $jobType === 'finishing' && in_array($department, ['barcode', 'label-slitting', 'label_slitting', 'label slitting', 'slitting'], true);
+    if (in_array($department, ['pos'], true)) {
+        return true;
+    }
+    if (in_array($jobType, ['pos'], true)) {
+        return true;
+    }
+
+    return $jobType === 'finishing' && in_array($department, ['barcode', 'label-slitting', 'label_slitting', 'label slitting', 'slitting', 'pos'], true);
 }
 
 function jobs_is_barcode_job(array $job): bool {
@@ -1187,6 +1194,14 @@ function jobs_is_packing_job(array $job): bool {
     if ($department === 'packing') return true;
     if ($jobType === 'packing') return true;
     return $jobType === 'finishing' && $department === 'packing';
+}
+
+function jobs_is_pos_job(array $job): bool {
+    $department = strtolower(trim((string)($job['department'] ?? '')));
+    $jobType = strtolower(trim((string)($job['job_type'] ?? '')));
+    if ($department === 'pos') return true;
+    if ($jobType === 'pos') return true;
+    return $jobType === 'finishing' && $department === 'pos';
 }
 
 function jobs_stage_status_for_event(array $job, string $event): string {
@@ -1236,6 +1251,13 @@ function jobs_stage_status_for_event(array $job, string $event): string {
         if ($evt === 'running') return 'Packing';
         if ($evt === 'pause') return 'Packing Pause';
         if ($evt === 'end' || $evt === 'complete') return 'Packed';
+        return '';
+    }
+
+    if (jobs_is_pos_job($job)) {
+        if ($evt === 'running') return 'Barcode';
+        if ($evt === 'pause') return 'Barcode Pause';
+        if ($evt === 'end' || $evt === 'complete') return 'Barcoded';
         return '';
     }
 
@@ -1795,7 +1817,7 @@ try {
         }
 
         // If completing a job, mark parent rolls as Slitted + child rolls as Job Assign
-        if (in_array($newStatus, ['Closed', 'Finalized', 'Completed'], true) && ($job['job_type'] ?? '') === 'Slitting') {
+        if (in_array($newStatus, ['Closed', 'Finalized', 'Completed', 'QC Passed', 'QC Failed'], true) && ($job['job_type'] ?? '') === 'Slitting') {
             // Update primary parent roll
             if ($job['roll_no']) {
                 $updRoll = $db->prepare("UPDATE paper_stock SET status = 'Slitted' WHERE roll_no = ? AND status IN ('Slitting','Consumed')");
@@ -1936,7 +1958,7 @@ try {
                     }
                 }
             }
-        } elseif (in_array($newStatus, ['Closed', 'Finalized', 'Completed'], true) && $job['roll_no']) {
+        } elseif (in_array($newStatus, ['Closed', 'Finalized', 'Completed', 'QC Passed', 'QC Failed'], true) && $job['roll_no']) {
             $extraClose = json_decode((string)($job['extra_data'] ?? '{}'), true) ?: [];
             $isDirectPrintingBypass = !empty($extraClose['direct_flexo_bypass'])
                 && (in_array(strtolower(trim((string)($job['job_type'] ?? ''))), ['printing', 'flexo'], true)
@@ -1975,7 +1997,7 @@ try {
         // Sequential gating: when a job completes, move next queued jobs to Pending
         $planningExtraForNotifications = [];
 
-        if (in_array($newStatus, ['Closed', 'Finalized', 'Completed'], true)) {
+        if (in_array($newStatus, ['Closed', 'Finalized', 'Completed', 'QC Passed', 'QC Failed'], true)) {
             $nextStmt = $db->prepare("UPDATE jobs SET status = 'Pending' WHERE previous_job_id = ? AND status = 'Queued' AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')");
             $nextStmt->bind_param('i', $jobId);
             $nextStmt->execute();
@@ -2124,7 +2146,7 @@ try {
         $nIns2->bind_param('iss', $jobId, $notifDept, $notifMsg);
         $nIns2->execute();
 
-        if (in_array($newStatus, ['Closed', 'Finalized', 'Completed'], true)) {
+        if (in_array($newStatus, ['Closed', 'Finalized', 'Completed', 'QC Passed', 'QC Failed'], true)) {
             $advanceTargets = jobsAdvanceNotificationTargets((string)($job['department'] ?? ''), $planningExtraForNotifications);
             if (!empty($advanceTargets)) {
                 $advanceMsg = $job['job_no'] . ' completed in ' . jobs_department_label((string)($job['department'] ?? '')) . ' — next stage updated';
@@ -2622,7 +2644,7 @@ try {
             break;
         }
         if (!jobs_is_operator_media_upload_job($job)) {
-            echo json_encode(['ok' => false, 'error' => 'This upload is only allowed for Barcode, Die-Cutting, or Label Slitting jobs']);
+            echo json_encode(['ok' => false, 'error' => 'This upload is only allowed for Barcode, Die-Cutting, Label Slitting, or POS jobs']);
             break;
         }
 
@@ -2747,7 +2769,7 @@ try {
             break;
         }
         if (!jobs_is_operator_media_upload_job($job)) {
-            echo json_encode(['ok' => false, 'error' => 'This upload is only allowed for Barcode, Die-Cutting, or Label Slitting jobs']);
+            echo json_encode(['ok' => false, 'error' => 'This upload is only allowed for Barcode, Die-Cutting, Label Slitting, or POS jobs']);
             break;
         }
 

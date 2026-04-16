@@ -851,6 +851,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $runResetQuery($db, "DELETE FROM jobs", 'Jobs cleanup');
       $runResetQuery($db, "DELETE FROM planning", 'Planning cleanup');
 
+      // Reset auto-increment counters so fresh test entries start from #1.
+      foreach (['planning', 'jobs', 'slitting_batches', 'slitting_entries', 'roll_allocations', 'job_change_requests', 'job_notifications', 'job_delete_audit', 'audit_scanned_rolls', 'inventory_audits'] as $resetTable) {
+        if ($tableExists($db, $resetTable)) {
+          $runResetQuery($db, "ALTER TABLE `{$resetTable}` AUTO_INCREMENT = 1", ucfirst(str_replace('_', ' ', $resetTable)) . ' auto increment reset');
+        }
+      }
+
       // Keep only Main/Stock rolls for clean retest baseline.
       $runResetQuery($db, "DELETE FROM paper_stock WHERE LOWER(COALESCE(status, '')) NOT IN ('main','stock')", 'Paper stock cleanup');
       $runResetQuery($db, "UPDATE paper_stock SET job_no='', job_name='', job_size='' WHERE LOWER(COALESCE(status, '')) IN ('main','stock')", 'Paper stock binding reset');
@@ -863,7 +870,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errors)) {
-      setFlash('success', 'Testing reset complete: all production job cards/live-floor data cleared, all planning rows deleted, only Main/Stock paper rolls kept, and related counters restarted from 0001.');
+      setFlash('success', 'Testing reset complete: all production job cards/live-floor data cleared, all planning rows deleted, only Main/Stock paper rolls kept, related counters restarted from 0001, and DB record IDs reset for core runtime tables.');
     } else {
       setFlash('error', 'Reset partially failed: ' . implode(' ', $errors));
     }

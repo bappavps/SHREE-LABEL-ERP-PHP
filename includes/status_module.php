@@ -491,6 +491,10 @@ function erp_status_page_options($pageKey): array {
     if (in_array($key, ['planning.label-printing', 'planning.label', 'label-printing-planning'], true)) {
         return erp_label_planning_status_options();
     }
+    if (in_array($key, ['planning.paperroll', 'planning.paper-roll', 'paperroll-planning', 'paper-roll-planning'], true)) {
+        // PaperRoll planning follows the same global planning lifecycle statuses.
+        return erp_label_planning_status_options();
+    }
     if (in_array($key, ['planning.barcode', 'barcode-planning'], true)) {
         return erp_barcode_planning_status_options();
     }
@@ -511,6 +515,9 @@ function erp_status_page_default($pageKey): string {
 function erp_status_page_normalize($status, $pageKey): string {
     $key = strtolower(trim((string)$pageKey));
     if (in_array($key, ['planning.label-printing', 'planning.label', 'label-printing-planning'], true)) {
+        return erp_label_planning_normalize_status($status);
+    }
+    if (in_array($key, ['planning.paperroll', 'planning.paper-roll', 'paperroll-planning', 'paper-roll-planning'], true)) {
         return erp_label_planning_normalize_status($status);
     }
     if (in_array($key, ['planning.barcode', 'barcode-planning'], true)) {

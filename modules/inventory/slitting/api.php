@@ -716,7 +716,7 @@ try {
                         NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.extra_data, '$.printing_planning')), ''),
                         NULLIF(p.status, ''),
                         'Pending'
-                    ))) IN ('pending', 'barcode ready', 'barcode_ready', 'preparing slitting', 'slitting', 'queued', 'running', 'in progress', 'printing done')
+                    ))) IN ('pending', 'barcode ready', 'barcode_ready', 'preparing slitting', 'preparing jumbo slitting', 'slitting', 'slitting pause', 'slitting hold', 'slitted', 'jumbo slitted', 'queued', 'running', 'in progress', 'printing done')
                 )
                 ORDER BY p.id DESC
                 LIMIT 500")->fetch_all(MYSQLI_ASSOC);
