@@ -1379,6 +1379,18 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                 }
                 var form = el.closest('form');
                 if (form) {
+                    // Preserve the button's name/value in the submission since
+                    // form.submit() does not include the clicked button's value.
+                    if ((el.tagName === 'BUTTON' || el.tagName === 'INPUT') && el.name && el.value !== undefined) {
+                        var existingHidden = form.querySelector('input[type="hidden"][name="' + el.name + '"][data-confirm-injected="1"]');
+                        if (existingHidden) existingHidden.parentNode.removeChild(existingHidden);
+                        var hidden = document.createElement('input');
+                        hidden.type = 'hidden';
+                        hidden.name = el.name;
+                        hidden.value = el.value;
+                        hidden.setAttribute('data-confirm-injected', '1');
+                        form.appendChild(hidden);
+                    }
                     form.dataset.confirmBypass = '1';
                     form.submit();
                 }

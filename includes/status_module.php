@@ -153,7 +153,7 @@ function erp_status_palette_map(): array {
         'preparing-slitting' => ['background' => '#ffedd5', 'color' => '#c2410c'],
         'slitted' => ['background' => '#dcfce7', 'color' => '#166534'],
         'slitting-pause' => ['background' => '#fff1f2', 'color' => '#be123c'],
-        'jumbo-slitting-active' => ['background' => '#ede9fe', 'color' => '#5b21b6'],
+        'jumbo-slitting-active' => ['background' => '#312e81', 'color' => '#ffffff'],
         'jumbo-slitting-preparing' => ['background' => '#f5f3ff', 'color' => '#6d28d9'],
         'jumbo-slitted' => ['background' => '#ecfdf5', 'color' => '#047857'],
         'job-assign' => ['background' => '#ffe4e6', 'color' => '#be123c'],

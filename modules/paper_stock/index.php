@@ -122,11 +122,7 @@ if ($quickFilters['gsm'] !== '') {
   $whereParams[] = $quickFilters['gsm'];
   $whereTypes .= 's';
 }
-if ($quickFilters['status'] !== '') {
-  $whereParts[] = "LOWER(COALESCE(`status`, '')) = ?";
-  $whereParams[] = strtolower($quickFilters['status']);
-  $whereTypes .= 's';
-}
+// Status quick filter is handled in PHP (with normalization), not in SQL
 if ($quickFilters['width'] !== '') {
   $rangeParts = preg_split('/\s*-\s*/', $quickFilters['width']);
   if (count($rangeParts) === 2) {
@@ -156,6 +152,9 @@ if ($quickFilters['date_to'] !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $quic
   $whereTypes .= 's';
 }
 foreach ($activeColumnFilters as $colKey => $selectedValues) {
+  // Status column filter is handled in PHP (with normalization), not in SQL
+  if ($colKey === 'status') continue;
+
   $selectedClauses = [];
   $selectedNonBlank = [];
   $hasBlank = false;
@@ -234,6 +233,8 @@ if ($page > $totalPages) {
     $offset = ($page - 1) * $perPage;
 }
 
+
+// Always fetch the rolls without filtering by status in SQL, so we can normalize in PHP
 if ($isAllRows) {
   $sql = "SELECT * FROM paper_stock{$searchWhere} ORDER BY {$orderBySql}";
   if ($whereTypes !== '') {
@@ -243,7 +244,7 @@ if ($isAllRows) {
       $stmt = $db->prepare($sql);
   }
   $stmt->execute();
-  $rolls = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+  $allRolls = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
   $page = 1;
   $totalPages = 1;
   $offset = 0;
@@ -259,7 +260,35 @@ if ($isAllRows) {
       $stmt->bind_param('ii', $perPage, $offset);
   }
   $stmt->execute();
-  $rolls = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+  $allRolls = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
+
+
+// If the column filter for status is active, normalize and filter in PHP
+if (!empty($activeColumnFilters['status'])) {
+    $selected = $activeColumnFilters['status'];
+    $hasBlankFilter = in_array('__blank__', $selected, true);
+    $nonBlankSelected = array_values(array_filter($selected, function($s) { return $s !== '__blank__'; }));
+    $normalizedSelected = array_map('erp_paper_stock_normalize_status', $nonBlankSelected);
+    $rolls = array_values(array_filter($allRolls, function($row) use ($normalizedSelected, $hasBlankFilter) {
+        $rowStatus = trim((string)($row['status'] ?? ''));
+        // Match blank rows
+        if ($hasBlankFilter && ($rowStatus === '' || $rowStatus === null)) {
+            return true;
+        }
+        // Match named statuses
+        if (!empty($normalizedSelected) && in_array(erp_paper_stock_normalize_status($rowStatus), $normalizedSelected, true)) {
+            return true;
+        }
+        return false;
+    }));
+} else if ($quickFilters['status'] !== '') {
+    $targetStatus = erp_paper_stock_normalize_status($quickFilters['status']);
+    $rolls = array_values(array_filter($allRolls, function($row) use ($targetStatus) {
+        return erp_paper_stock_normalize_status($row['status'] ?? '') === $targetStatus;
+    }));
+} else {
+    $rolls = $allRolls;
 }
 
 $companies  = $db->query("SELECT DISTINCT company FROM paper_stock WHERE company IS NOT NULL AND company <> '' ORDER BY company")->fetch_all(MYSQLI_ASSOC);
@@ -1362,9 +1391,17 @@ include __DIR__ . '/../../includes/header.php';
   function commitDraft(col){
     var pop = document.getElementById('cfp-' + col);
     var selected = pop.querySelectorAll('.cfp-list input[type=checkbox]:checked');
+    var allStatusCbs = pop.querySelectorAll('.cfp-list input[type=checkbox]:not([value="__blank__"])');
     var total = pop.querySelectorAll('.cfp-list input[type=checkbox]').length;
 
-    if (selected.length === total || selected.length === 0) {
+    // Treat as "no filter" only if ALL are selected or NONE are selected
+    var selectedCount = selected.length;
+    var allCount = total;
+    var allNonBlankSelected = allStatusCbs.length > 0 && pop.querySelectorAll('.cfp-list input[type=checkbox]:not([value="__blank__"]):checked').length === allStatusCbs.length;
+    var blankCb = pop.querySelector('.cfp-list input[type=checkbox][value="__blank__"]');
+    var blankChecked = blankCb && blankCb.checked;
+
+    if (selectedCount === 0 || (allNonBlankSelected && blankChecked)) {
       delete activeColFilters[col];
     } else {
       var values = [];

@@ -817,9 +817,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $errors[] = 'Could not reset prefix counters.';
     }
 
-    // 2. Reset planning board statuses to Pending while keeping planning rows.
-    // 3. Delete production/job-card and live-floor data.
-    // 4. Keep only Main/Stock paper rolls.
+    // 2. Delete planning and production/job-card + live-floor data.
+    // 3. Keep only Main/Stock paper rolls.
     try {
       $runResetQuery = static function (mysqli $dbConn, string $sql, string $label) use (&$errors): void {
         if (!$dbConn->query($sql)) {
@@ -836,59 +835,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $runResetQuery($db, "SET FOREIGN_KEY_CHECKS=0", 'Disable FK checks');
 
-      // Keep planning rows, but reset board status and runtime assignment fields.
-      $runResetQuery($db, "UPDATE planning SET status='Pending', machine=NULL, operator_name=NULL", 'Planning status reset');
-
-      // If extra_data contains board/status helpers, normalize those to Pending as well.
-      $planRes = $db->query("SELECT id, extra_data FROM planning");
-      if ($planRes) {
-        while ($planRow = $planRes->fetch_assoc()) {
-          $pid = (int)($planRow['id'] ?? 0);
-          if ($pid <= 0) continue;
-
-          $extra = json_decode((string)($planRow['extra_data'] ?? '{}'), true);
-          if (!is_array($extra)) $extra = [];
-
-          $changed = false;
-          foreach (['printing_planning', 'production_status', 'board_status', 'slitting_status', 'status', 'planing', 'planning', 'printingplanning', 'printing_planing'] as $k) {
-            if (array_key_exists($k, $extra) && (string)$extra[$k] !== 'Pending') {
-              $extra[$k] = 'Pending';
-              $changed = true;
-            }
-          }
-
-          // Normalize any legacy/custom status-like keys used by board columns.
-          foreach ($extra as $ek => $ev) {
-            $ekNorm = strtolower(trim((string)$ek));
-            if ($ekNorm === '') continue;
-            if (strpos($ekNorm, 'status') === false && strpos($ekNorm, 'planing') === false && strpos($ekNorm, 'planning') === false) {
-              continue;
-            }
-            if (!is_scalar($ev)) continue;
-            if ((string)$ev !== 'Pending') {
-              $extra[$ek] = 'Pending';
-              $changed = true;
-            }
-          }
-
-          if ($changed) {
-            $extraJson = json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            $upd = $db->prepare("UPDATE planning SET extra_data = ? WHERE id = ?");
-            if ($upd) {
-              $upd->bind_param('si', $extraJson, $pid);
-              if (!$upd->execute()) {
-                $errors[] = 'Planning extra_data reset failed for planning id ' . $pid . ': ' . $upd->error;
-              }
-              $upd->close();
-            } else {
-              $errors[] = 'Planning extra_data update prepare failed: ' . $db->error;
-            }
-          }
-        }
-      } else {
-        $errors[] = 'Planning extra_data read failed: ' . $db->error;
-      }
-
       // Live floor and production job-card cleanup.
       $runResetQuery($db, "DELETE FROM slitting_entries", 'Slitting entries cleanup');
       $runResetQuery($db, "DELETE FROM roll_allocations", 'Roll allocations cleanup');
@@ -903,6 +849,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $runResetQuery($db, "DELETE FROM inventory_audits", 'Audit sessions cleanup');
       }
       $runResetQuery($db, "DELETE FROM jobs", 'Jobs cleanup');
+      $runResetQuery($db, "DELETE FROM planning", 'Planning cleanup');
 
       // Keep only Main/Stock rolls for clean retest baseline.
       $runResetQuery($db, "DELETE FROM paper_stock WHERE LOWER(COALESCE(status, '')) NOT IN ('main','stock')", 'Paper stock cleanup');
@@ -916,7 +863,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errors)) {
-      setFlash('success', 'Testing reset complete: all production job cards/live-floor data cleared, all planning board status reset to Pending, only Main/Stock paper rolls kept, and related counters restarted from 0001.');
+      setFlash('success', 'Testing reset complete: all production job cards/live-floor data cleared, all planning rows deleted, only Main/Stock paper rolls kept, and related counters restarted from 0001.');
     } else {
       setFlash('error', 'Reset partially failed: ' . implode(' ', $errors));
     }
@@ -2091,9 +2038,9 @@ if ($activeTab === 'clients' && $editClientId > 0) {
             type="submit"
             name="action"
             value="reset_test_data"
-            data-confirm="⚠️ TESTING RESET\n\nThis will permanently delete/reset:\n• All production job cards (Jumbo/Flexo/Die/Label Slitting/Barcode)\n• Live Floor runtime data (slitting batches, entries, change requests, notifications, audits)\n• All paper rolls except status Main and Stock\n\nPlanning rows will be kept, and all planning board statuses will become Pending.\n\nRelated planning/job counters will reset to 0001.\n\nThis cannot be undone. Continue only on a test environment."
+            data-confirm="⚠️ TESTING RESET\n\nThis will permanently delete/reset:\n• All planning rows\n• All production job cards (Jumbo/Flexo/Die/Label Slitting/Barcode)\n• Live Floor runtime data (slitting batches, entries, change requests, notifications, audits)\n• All paper rolls except status Main and Stock\n\nRelated planning/job counters will reset to 0001.\n\nThis cannot be undone. Continue only on a test environment."
             style="background:#dc2626;border-color:#dc2626;color:#fff"
-          ><i class="bi bi-trash3"></i> Reset Production + Live Floor (Keep Planning)</button>
+          ><i class="bi bi-trash3"></i> Reset Planning + Production + Live Floor</button>
         </div>
       </form>
 

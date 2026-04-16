@@ -94,7 +94,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 8
+                "counter": 0
             },
             "sales_order": {
                 "prefix": "SO",
@@ -134,7 +134,11 @@
             },
             "paperroll_job": {
                 "prefix": "PRL",
-                "counter": 6
+                "counter": 0
+            },
+            "packing": {
+                "prefix": "PKG",
+                "counter": 0
             }
         }
     }

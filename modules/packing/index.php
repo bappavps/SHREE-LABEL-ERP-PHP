@@ -426,9 +426,25 @@ include __DIR__ . '/../../includes/header.php';
                         <?= e($row['packing_display_id'] ?? ('PKG/' . (int)$row['id'])) ?>
                       </button>
                     </td>
-                    <td><?= e(($row['plan_no'] ?? '') !== '' ? $row['plan_no'] : '-') ?></td>
+                    <td>
+                      <?php if (!empty($row['plan_no'])): ?>
+                        <a href="<?= e(BASE_URL . '/modules/planning/board.php?plan_no=' . urlencode($row['plan_no'])) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
+                          <?= e($row['plan_no']) ?>
+                        </a>
+                      <?php else: ?>
+                        -
+                      <?php endif; ?>
+                    </td>
                     <td><?= e(($row['plan_name'] ?? '') !== '' ? $row['plan_name'] : '-') ?></td>
-                    <td><?= e($row['job_no'] ?? '-') ?></td>
+                    <td>
+                      <?php if (!empty($row['job_no'])): ?>
+                        <a href="<?= e(BASE_URL . '/modules/pos_roll/job_card.php?job_no=' . urlencode($row['job_no'])) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
+                          <?= e($row['job_no']) ?>
+                        </a>
+                      <?php else: ?>
+                        -
+                      <?php endif; ?>
+                    </td>
                     <td><?= e(($row['client_name'] ?? '') !== '' ? $row['client_name'] : '-') ?></td>
                     <td><?= e($row['last_department'] ?? '-') ?></td>
                     <td><span class="pk-badge <?= e($statusClass((string)($row['status'] ?? ''))) ?>"><?= e($row['status'] ?? '-') ?></span></td>
@@ -449,8 +465,24 @@ include __DIR__ . '/../../includes/header.php';
                       </button>
                     </td>
                     <td><?= e(($row['plan_priority'] ?? '') !== '' ? $row['plan_priority'] : '-') ?></td>
-                    <td><?= e(($row['plan_no'] ?? '') !== '' ? $row['plan_no'] : '-') ?></td>
-                    <td><?= e($row['job_no'] ?? '-') ?></td>
+                    <td>
+                      <?php if (!empty($row['plan_no'])): ?>
+                        <button class="pk-id-btn pk-open-modal" type="button" data-job-id="<?= (int)$row['id'] ?>" title="Open Job Modal" style="text-decoration:underline;color:#2563eb;background:none;border:none;padding:0;font-size:inherit;cursor:pointer;">
+                          <?= e($row['plan_no']) ?>
+                        </button>
+                      <?php else: ?>
+                        -
+                      <?php endif; ?>
+                    </td>
+                    <td>
+                      <?php if (!empty($row['job_no'])): ?>
+                        <button class="pk-id-btn pk-open-modal" type="button" data-job-id="<?= (int)$row['id'] ?>" title="Open Job Modal" style="text-decoration:underline;color:#2563eb;background:none;border:none;padding:0;font-size:inherit;cursor:pointer;">
+                          <?= e($row['job_no']) ?>
+                        </button>
+                      <?php else: ?>
+                        -
+                      <?php endif; ?>
+                    </td>
                     <td><?= e(($row['plan_name'] ?? '') !== '' ? $row['plan_name'] : '-') ?></td>
                     <td><?= e(($row['client_name'] ?? '') !== '' ? $row['client_name'] : '-') ?></td>
                     <td><?= e($formatDate((string)($row['order_date'] ?? ''))) ?></td>
@@ -2462,7 +2494,11 @@ include __DIR__ . '/../../includes/header.php';
         if (!rollsPerShrinkWrap || rollsPerShrinkWrap < 1) rollsPerShrinkWrap = 5;
         var stickerItemWidth = getStickerItemWidth();
         var backUrl = window.location.href;
-        
+
+        // Use the same barcode value as sticker print: for each selected roll, batch_no and batch_labels should be the roll number
+        var batchNo = selectedRollLabels.length ? selectedRollLabels.join(',') : '';
+        var batchLabels = batchNo;
+
         var labelWin = window.open('about:blank', '_blank');
         if (!labelWin) {
           setSectionMessage('Popup blocked. Please allow popups for label print.', true);
@@ -2476,7 +2512,6 @@ include __DIR__ . '/../../includes/header.php';
             setSectionMessage('Paper stock id not found for this job.', true);
             return;
           }
-          var labelBatchNo = selectedRollLabels.length ? selectedRollLabels.join(', ') : '';
           var labelPrintUrl = baseUrl + '/modules/paper_stock/label.php?ids=' + encodeURIComponent(String(resolvedId))
             + '&print_type=label'
             + '&required_qty=' + encodeURIComponent(String(safeQty))
@@ -2485,8 +2520,8 @@ include __DIR__ . '/../../includes/header.php';
             + '&rolls_per_carton=' + encodeURIComponent(String(rollsPerCarton || 0))
             + '&item_width=' + encodeURIComponent(String(stickerItemWidth || ''))
             + '&job_name=' + encodeURIComponent(labelJobName)
-            + '&batch_labels=' + encodeURIComponent(labelBatchNo)
-            + '&batch_no=' + encodeURIComponent(labelBatchNo)
+            + '&batch_labels=' + encodeURIComponent(batchLabels)
+            + '&batch_no=' + encodeURIComponent(batchNo)
             + '&back_url=' + encodeURIComponent(backUrl);
           labelWin.location.href = labelPrintUrl;
           setSectionMessage('Label print preview opened.', false);
