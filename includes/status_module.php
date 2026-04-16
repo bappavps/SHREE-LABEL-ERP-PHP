@@ -436,6 +436,11 @@ function erp_label_planning_normalize_status($status): string {
 function erp_barcode_planning_status_options(): array {
     return [
         'Pending',
+        'Pending - Jumbo Slitting',
+        'Preparing Jumbo Slitting',
+        'Jumbo Slitting',
+        'Jumbo Slitting Pause',
+        'Jumbo Slitted',
         'Pending - Barcode',
         'Preparing Barcode',
         'Barcode',
@@ -464,6 +469,14 @@ function erp_barcode_planning_normalize_status($status): string {
     $n = trim(preg_replace('/\s+/', ' ', $n));
 
     if ($n === 'complete') return 'Complete';
+    if (strpos($n, 'jumbo') !== false) {
+        if (strpos($n, 'pending') !== false) return 'Pending - Jumbo Slitting';
+        if (strpos($n, 'pause') !== false || strpos($n, 'hold') !== false) return 'Jumbo Slitting Pause';
+        if (strpos($n, 'done') !== false || strpos($n, 'slitted') !== false || strpos($n, 'completed') !== false) return 'Jumbo Slitted';
+        if (strpos($n, 'prepar') !== false) return 'Preparing Jumbo Slitting';
+        if (strpos($n, 'running') !== false || strpos($n, 'progress') !== false || strpos($n, 'slitting') !== false) return 'Jumbo Slitting';
+        return 'Preparing Jumbo Slitting';
+    }
     if (strpos($n, 'label') !== false && strpos($n, 'slit') !== false) {
         if (strpos($n, 'pending') !== false || strpos($n, 'queue') !== false) return 'Pending - Label Slitting';
         if (strpos($n, 'pause') !== false || strpos($n, 'hold') !== false) return 'Label Slitting Pause';

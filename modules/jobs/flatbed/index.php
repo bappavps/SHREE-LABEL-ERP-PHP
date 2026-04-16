@@ -2052,9 +2052,12 @@ function resumeRunningDCTimer(jobId) {
 async function startJobWithTimer(id) {
   if (!(await dcConfirmAsync('Start this job?', { okLabel: 'Start' }))) return;
   const job = ALL_JOBS.find(j => j.id == id) || null;
+  const jobStatus = String(job?.status || '').trim().toLowerCase();
+  const timerState = String(job?.extra_data_parsed?.timer_state || '').trim().toLowerCase();
+  const isResumeFromPause = jobStatus === 'running' && timerState === 'paused';
 
   let verifiedRolls = [];
-  if (DC_REQUIRE_ROLL_SCAN && IS_OPERATOR_VIEW) {
+  if (DC_REQUIRE_ROLL_SCAN && IS_OPERATOR_VIEW && !isResumeFromPause) {
     const verification = await dcOpenRollVerification(job || { id: id, job_no: id, roll_no: '' });
     if (!verification.ok) {
       alert(verification.error || 'Assigned roll verification is required before start.');

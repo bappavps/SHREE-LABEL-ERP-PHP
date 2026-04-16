@@ -697,6 +697,21 @@ function jobs_can_manual_roll_entry_for_job(array $job): bool {
             || hasPageAction('/modules/operators/printing/index.php', 'edit');
     }
 
+    if (jobs_is_die_cutting_job($job)) {
+        return hasPageAction('/modules/jobs/flatbed/index.php', 'edit')
+            || hasPageAction('/modules/operators/flatbed/index.php', 'edit');
+    }
+
+    if (jobs_is_barcode_job($job)) {
+        return hasPageAction('/modules/jobs/barcode/index.php', 'edit')
+            || hasPageAction('/modules/operators/barcode/index.php', 'edit');
+    }
+
+    if (jobs_is_label_slitting_job($job)) {
+        return hasPageAction('/modules/jobs/label-slitting/index.php', 'edit')
+            || hasPageAction('/modules/operators/label-slitting/index.php', 'edit');
+    }
+
     return false;
 }
 

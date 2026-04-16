@@ -716,7 +716,17 @@ try {
                         NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.extra_data, '$.printing_planning')), ''),
                         NULLIF(p.status, ''),
                         'Pending'
-                    ))) IN ('pending', 'barcode ready', 'barcode_ready', 'preparing slitting', 'preparing jumbo slitting', 'slitting', 'slitting pause', 'slitting hold', 'slitted', 'jumbo slitted', 'queued', 'running', 'in progress', 'printing done')
+                    ))) IN ('pending', 'queued')
+                    AND NOT (
+                        UPPER(TRIM(COALESCE(p.job_no, ''))) LIKE 'PLN-BAR/%'
+                        AND EXISTS (
+                            SELECT 1 FROM jobs jb
+                            WHERE jb.planning_id = p.id
+                              AND LOWER(TRIM(COALESCE(jb.department, ''))) = 'barcode'
+                              AND LOWER(TRIM(COALESCE(jb.status, ''))) NOT IN ('cancelled', 'rejected')
+                              AND (jb.deleted_at IS NULL OR jb.deleted_at = '0000-00-00 00:00:00')
+                        )
+                    )
                 )
                 ORDER BY p.id DESC
                 LIMIT 500")->fetch_all(MYSQLI_ASSOC);
@@ -2639,7 +2649,8 @@ try {
 
             // 9. Update planning status to a valid planning enum state.
             $planningStatusTarget = $directFlexoBypass ? 'Queued' : 'Preparing Slitting';
-            if (!empty($allowBarcodeJob) && $barcodeDirectStart) {
+            if (!empty($allowBarcodeJob)) {
+                // Barcode job was created — planning leaves slitting queue regardless of chain position.
                 $planningStatusTarget = 'Pending - Barcode';
             }
             if (!$isFlexoRequestAcceptFlow && $planNo !== '') {

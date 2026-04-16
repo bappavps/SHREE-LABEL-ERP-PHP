@@ -94,7 +94,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 1
+                "counter": 2
             },
             "sales_order": {
                 "prefix": "SO",
@@ -130,7 +130,7 @@
             },
             "barcode_job": {
                 "prefix": "BRC-BAR",
-                "counter": 0
+                "counter": 1
             },
             "paperroll_job": {
                 "prefix": "PRL",
