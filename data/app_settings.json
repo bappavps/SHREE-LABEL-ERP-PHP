@@ -102,7 +102,7 @@
             },
             "planning": {
                 "prefix": "PLN",
-                "counter": 1
+                "counter": 0
             },
             "planning_barcode": {
                 "prefix": "PLN-BAR",
@@ -118,23 +118,23 @@
             },
             "printing_job": {
                 "prefix": "FLX",
-                "counter": 1
+                "counter": 0
             },
             "die_cutting_job": {
                 "prefix": "DCT",
-                "counter": 1
+                "counter": 0
             },
             "label_slitting_job": {
                 "prefix": "LSL",
-                "counter": 1
+                "counter": 0
             },
             "barcode_job": {
                 "prefix": "BRC-BAR",
-                "counter": 1
+                "counter": 0
             },
             "paperroll_job": {
                 "prefix": "PRL",
-                "counter": 0
+                "counter": 2
             },
             "packing": {
                 "prefix": "PKG",
