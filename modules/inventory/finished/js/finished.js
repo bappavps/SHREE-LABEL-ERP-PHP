@@ -504,6 +504,30 @@
     return String(row[key] == null ? '' : row[key]);
   }
 
+  function fg_barcodeHref(value) {
+    var txt = String(value || '').trim();
+    if (!txt) {
+      return '';
+    }
+    var apiUrl = String(fg_state.apiUrl || '');
+    var baseUrl = apiUrl.replace(/\/modules\/inventory\/finished\/api\/finished_api\.php.*$/i, '');
+    if (!baseUrl) {
+      return '';
+    }
+    return baseUrl + '/modules/planning/barcode/index.php?barcode_ref=' + encodeURIComponent(txt);
+  }
+
+  function fg_renderCell(row, key) {
+    var value = fg_value(row, key);
+    if (key === 'barcode') {
+      var href = fg_barcodeHref(value);
+      if (href && String(value || '').trim() !== '') {
+        return '<a href="' + fg_escapeHtml(href) + '" target="_blank" rel="noopener noreferrer">' + fg_escapeHtml(value) + '</a>';
+      }
+    }
+    return fg_escapeHtml(value);
+  }
+
   function fg_getFormSchema(tabKey) {
     if (tabKey === 'pos_paper_roll') {
       return [
@@ -996,7 +1020,7 @@
       row._fgSerial = start + r + 1;
       body += '<tr>';
       for (var x = 0; x < cols.length; x += 1) {
-        body += '<td>' + fg_escapeHtml(fg_value(row, cols[x].key)) + '</td>';
+        body += '<td>' + fg_renderCell(row, cols[x].key) + '</td>';
       }
       if (fg_state.isAdmin) {
         body += '<td><div class="fg-row-actions">' +

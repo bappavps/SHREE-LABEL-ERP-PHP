@@ -56,6 +56,84 @@ function packing_api_ensure_finished_goods_table(mysqli $db): void {
     }
 }
 
+function packing_api_assigned_child_rolls(array $jobDetails): array {
+    $jobExtra = is_array($jobDetails['job_extra_data'] ?? null) ? $jobDetails['job_extra_data'] : [];
+    foreach (['assigned_child_rolls', 'child_rolls', 'selected_rolls', 'rolls'] as $key) {
+        $rows = $jobExtra[$key] ?? null;
+        if (!is_array($rows) || !$rows) {
+            continue;
+        }
+        $out = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $rollNo = trim((string)($row['roll_no'] ?? ''));
+            if ($rollNo === '') {
+                continue;
+            }
+            $out[] = $row;
+        }
+        if ($out) {
+            return $out;
+        }
+    }
+    return [];
+}
+
+function packing_api_company_short_code(string $company): string {
+    $company = strtoupper(trim($company));
+    if ($company === '') {
+        return '';
+    }
+    $words = preg_split('/[^A-Z0-9]+/', $company, -1, PREG_SPLIT_NO_EMPTY);
+    if (!$words) {
+        return '';
+    }
+    if (count($words) >= 2) {
+        $code = '';
+        foreach ($words as $word) {
+            $code .= substr($word, 0, 1);
+        }
+        return substr($code, 0, 3);
+    }
+    return substr($words[0], 0, 2);
+}
+
+function packing_api_build_pos_barcode(array $childRolls): string {
+    if (!$childRolls) {
+        return '';
+    }
+
+    $rollNos = [];
+    $companyCodes = [];
+    foreach ($childRolls as $row) {
+        $rollNo = trim((string)($row['roll_no'] ?? ''));
+        if ($rollNo !== '') {
+            $rollNos[] = $rollNo;
+        }
+        $companyCode = packing_api_company_short_code((string)($row['company'] ?? ''));
+        if ($companyCode !== '') {
+            $companyCodes[] = $companyCode;
+        }
+    }
+    $rollNos = array_values(array_unique($rollNos));
+    $companyCodes = array_values(array_unique($companyCodes));
+
+    $barcode = implode(',', $rollNos);
+    if ($barcode === '') {
+        return '';
+    }
+
+    if (count($companyCodes) > 1) {
+        $barcode .= ' / ' . end($companyCodes);
+    } elseif (count($companyCodes) === 1) {
+        $barcode .= ' / ' . $companyCodes[0];
+    }
+
+    return $barcode;
+}
+
 function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array $operatorEntry, int $userId): void {
     packing_api_ensure_finished_goods_table($db);
 
@@ -63,24 +141,71 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
     $jobNo = trim((string)($jobDetails['job_no'] ?? ''));
     $itemName = trim((string)($jobDetails['plan_name'] ?? ''));
     $clientName = trim((string)($jobDetails['client_name'] ?? ''));
-    $size = trim((string)($jobDetails['paper_width_mm'] ?? ''));
-    $gsm = trim((string)($jobDetails['paper_gsm'] ?? ''));
+    $planExtra = is_array($jobDetails['plan_extra_data'] ?? null) ? $jobDetails['plan_extra_data'] : [];
+    $jobExtra = is_array($jobDetails['job_extra_data'] ?? null) ? $jobDetails['job_extra_data'] : [];
+    $operatorPayload = packing_decode_json($operatorEntry['roll_payload_json'] ?? null);
+    $rollOverrides = is_array($operatorPayload['roll_overrides'] ?? null) ? $operatorPayload['roll_overrides'] : [];
+    $childRolls = packing_api_assigned_child_rolls($jobDetails);
+    $firstOverride = [];
+    if (!empty($rollOverrides)) {
+        $firstOverride = reset($rollOverrides);
+        if (!is_array($firstOverride)) {
+            $firstOverride = [];
+        }
+    }
+
+    $width = trim((string)($planExtra['item_width'] ?? ($jobDetails['paper_width_mm'] ?? ($planExtra['width_mm'] ?? ''))));
+    $length = trim((string)($planExtra['item_length'] ?? ($jobDetails['paper_length_mtr'] ?? ($planExtra['length_mtr'] ?? ''))));
+    $size = trim((string)($planExtra['paper_size'] ?? ''));
+    if ($size === '' && ($width !== '' || $length !== '')) {
+        $size = trim($width . (($width !== '' && $length !== '') ? ' x ' : '') . $length);
+    }
+    if ($size === '') {
+        $size = trim((string)($jobDetails['paper_width_mm'] ?? ''));
+    }
+    $gsm = trim((string)($planExtra['gsm'] ?? ($jobDetails['paper_gsm'] ?? ($jobExtra['gsm'] ?? ''))));
     $quantity = round((float)($operatorEntry['packed_qty'] ?? 0), 3);
     $dateValue = date('Y-m-d');
+    $coreSize = trim((string)($planExtra['core_size'] ?? ($planExtra['core'] ?? '')));
+    $coreType = trim((string)($planExtra['core_type'] ?? ''));
+    $paperCompanies = [];
+    foreach ($childRolls as $row) {
+        $company = trim((string)($row['company'] ?? ''));
+        if ($company !== '' && !in_array($company, $paperCompanies, true)) {
+            $paperCompanies[] = $company;
+        }
+    }
+    $paperCompany = $paperCompanies ? implode(', ', $paperCompanies) : trim((string)($jobDetails['paper_company'] ?? ($planExtra['paper_company_name'] ?? ($planExtra['paper_company'] ?? ''))));
+    $materialType = trim((string)($planExtra['material_type'] ?? ($jobDetails['paper_type'] ?? ($jobExtra['material_type'] ?? ''))));
+    $barcode = packing_api_build_pos_barcode($childRolls);
+    $perCarton = (int)($firstOverride['rpc'] ?? 0);
+    $cartonCount = (int)round((float)($operatorEntry['cartons_count'] ?? 0));
+    $totalValue = $quantity;
 
     if ($packingId === '' || $jobNo === '' || $quantity <= 0) {
         packing_api_respond(['ok' => false, 'message' => 'Finished goods requires packing id, job no, and submitted physical quantity'], 409);
     }
 
-    $remarksParts = [
-        'Auto-created from packing manager',
-        ($clientName !== '' ? ('Client: ' . $clientName) : ''),
-        ('Packing ID: ' . $packingId),
-        ('Job No: ' . $jobNo),
+    $remarksPayload = [
+        'note' => 'Auto Generated',
+        'extra' => [
+            'packing_id' => $packingId,
+            'width' => $width,
+            'length' => $length,
+            'core_size' => $coreSize,
+            'core_type' => $coreType,
+            'paper_company' => $paperCompany,
+            'material_type' => $materialType,
+            'barcode' => $barcode,
+            'per_carton' => $perCarton > 0 ? $perCarton : '',
+            'carton' => $cartonCount > 0 ? $cartonCount : '',
+            'total' => $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '',
+        ],
     ];
-    $remarks = trim(implode(' | ', array_values(array_filter($remarksParts, static function($value) {
-        return trim((string)$value) !== '';
-    }))));
+    $remarks = json_encode($remarksPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($remarks === false) {
+        $remarks = '';
+    }
 
     $existingStmt = $db->prepare("SELECT id FROM finished_goods_stock WHERE category = 'pos_paper_roll' AND item_code = ? AND batch_no = ? ORDER BY id DESC LIMIT 1");
     if (!$existingStmt) {
