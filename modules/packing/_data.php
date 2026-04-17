@@ -35,30 +35,105 @@ function packing_department_type_map(): array {
     return [
         'printing_label' => [
             'label' => 'Printing Label',
-            'departments' => ['label_slitting', 'label slitting', 'label-slitting'],
+            'departments' => ['label_slitting', 'label slitting', 'label-slitting', 'printing', 'printing_label', 'printing label'],
+            'planning_types' => ['printing_label', 'printing', 'label_printing', 'label_slitting'],
             'department_label' => 'Label Slitting',
         ],
         'pos_roll' => [
             'label' => 'POS Roll',
             'departments' => ['pos', 'pos roll', 'pos_roll'],
+            'planning_types' => ['pos_roll', 'pos'],
+            'job_prefixes' => ['POS-PRL/', 'POS/'],
             'department_label' => 'POS Roll',
         ],
         'one_ply' => [
             'label' => 'One Ply',
-            'departments' => ['oneply', 'one ply', 'one_ply'],
+            'departments' => ['oneply', 'one ply', 'one_ply', 'paper_roll_1ply', 'paper roll 1ply'],
+            'planning_types' => ['one_ply', 'oneply', 'paper_roll_1ply', '1ply'],
             'department_label' => 'One Ply',
         ],
         'two_ply' => [
             'label' => 'Two Ply',
-            'departments' => ['twoply', 'two ply', 'two_ply'],
+            'departments' => ['twoply', 'two ply', 'two_ply', 'paper_roll_2ply', 'paper roll 2ply'],
+            'planning_types' => ['two_ply', 'twoply', 'paper_roll_2ply', '2ply'],
             'department_label' => 'Two Ply',
         ],
         'barcode' => [
             'label' => 'Barcode',
             'departments' => ['barcode', 'rotery', 'rotary'],
+            'planning_types' => ['barcode', 'rotary', 'rotery'],
             'department_label' => 'Barcode',
         ],
     ];
+}
+
+function packing_normalize_match_key($value): string {
+    $value = strtolower(trim((string)$value));
+    if ($value === '') {
+        return '';
+    }
+
+    $value = str_replace(['-', ' '], '_', $value);
+    $value = preg_replace('/_+/', '_', $value);
+    return $value ?? '';
+}
+
+function packing_value_matches_aliases($value, array $aliases): bool {
+    $needle = packing_normalize_match_key($value);
+    if ($needle === '') {
+        return false;
+    }
+
+    foreach ($aliases as $alias) {
+        if ($needle === packing_normalize_match_key($alias)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function packing_row_to_tab(array $row): ?string {
+    $planExtra = packing_decode_json($row['plan_extra_data'] ?? null);
+    $jobExtra = packing_decode_json($row['extra_data'] ?? null);
+
+    $planningType = packing_pick_value_loose(
+        [$planExtra, $jobExtra, $row],
+        ['planning_type', 'paper_roll_type', 'category', 'job_category', 'type']
+    );
+    $jobNo = trim((string)($row['job_no'] ?? ''));
+
+    foreach (packing_department_type_map() as $tabKey => $cfg) {
+        if (!empty($cfg['planning_types']) && packing_value_matches_aliases($planningType, (array)$cfg['planning_types'])) {
+            return $tabKey;
+        }
+
+        foreach ((array)($cfg['job_prefixes'] ?? []) as $prefix) {
+            if ($jobNo !== '' && stripos($jobNo, (string)$prefix) === 0) {
+                return $tabKey;
+            }
+        }
+
+        $candidates = [
+            (string)($row['department'] ?? ''),
+            (string)($row['plan_department'] ?? ''),
+            (string)($row['job_type'] ?? ''),
+            (string)($planExtra['department'] ?? ''),
+            (string)($jobExtra['department'] ?? ''),
+            (string)($planExtra['module_source'] ?? ''),
+            (string)($jobExtra['module_source'] ?? ''),
+            (string)($planExtra['source_module'] ?? ''),
+            (string)($jobExtra['source_module'] ?? ''),
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (packing_value_matches_aliases($candidate, (array)$cfg['departments'])) {
+                return $tabKey;
+            }
+        }
+    }
+
+    return null;
 }
 
 function packing_tab_keys(): array {
@@ -71,20 +146,7 @@ function packing_tab_label(string $key): string {
 }
 
 function packing_department_to_tab(string $department): ?string {
-    $needle = strtolower(trim($department));
-    if ($needle === '') {
-        return null;
-    }
-
-    foreach (packing_department_type_map() as $key => $cfg) {
-        foreach ($cfg['departments'] as $deptAlias) {
-            if ($needle === strtolower(trim($deptAlias))) {
-                return $key;
-            }
-        }
-    }
-
-    return null;
+    return packing_row_to_tab(['department' => $department]);
 }
 
 function packing_department_display_for_tab(string $tabKey): string {
@@ -498,13 +560,21 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     }
     $allDepartments = array_values(array_unique(array_filter($allDepartments)));
 
+    $trackedPlanDepartments = ['paperroll', 'printing', 'printing_label', 'label_slitting', 'barcode'];
+
     $quotedDepartments = [];
     foreach ($allDepartments as $dept) {
         $quotedDepartments[] = "'" . $db->real_escape_string($dept) . "'";
     }
 
+    $quotedPlanDepartments = [];
+    foreach ($trackedPlanDepartments as $dept) {
+        $quotedPlanDepartments[] = "'" . $db->real_escape_string($dept) . "'";
+    }
+
     $where = "(j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')";
-    $where .= " AND LOWER(COALESCE(j.department, '')) IN (" . implode(',', $quotedDepartments) . ")";
+    $where .= " AND (LOWER(COALESCE(j.department, '')) IN (" . implode(',', $quotedDepartments) . ")";
+    $where .= " OR LOWER(COALESCE(p.department, '')) IN (" . implode(',', $quotedPlanDepartments) . "))";
 
     // Never show 'Packing Done' jobs in active tabs — they belong to History only.
     $where .= " AND LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status,''),'-',' '),'_',' '))) != 'packing done'";
@@ -554,7 +624,7 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     $activeByGroup  = []; // best active (complete/completed) job per group
     $doneByGroup    = []; // best packing-done job per group (for history fallback)
     foreach ($rows as $row) {
-        $tabKey = packing_department_to_tab((string)($row['department'] ?? ''));
+        $tabKey = packing_row_to_tab($row);
         if ($tabKey === null) {
             continue;
         }

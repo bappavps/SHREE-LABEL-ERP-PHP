@@ -434,20 +434,22 @@ include __DIR__ . '/../../includes/header.php';
             <?php else: ?>
               <tr>
                 <th class="pk-check-col"><input type="checkbox" class="pk-select-all"></th>
+                <th>Sl No</th>
+                <th>Packing ID</th>
+                <th>Priority</th>
                 <th>Plan No</th>
-                <th>Plan Name</th>
                 <th>Last Job No</th>
-                <th>Roll No</th>
-                <th>Type</th>
-                <th>Last Department</th>
+                <th>Job Name</th>
+                <th>Client Name</th>
+                <th>Order Date</th>
+                <th>Dispatch Date</th>
                 <th>Status</th>
-                <th>Completed At</th>
               </tr>
             <?php endif; ?>
           </thead>
           <tbody>
             <?php if (empty($tabRows)): ?>
-              <tr><td colspan="<?= $tabKey === 'history' ? '10' : ($tabKey === 'pos_roll' ? '11' : '9') ?>" class="pk-empty">
+              <tr><td colspan="<?= $tabKey === 'history' ? '10' : '11' ?>" class="pk-empty">
                 <?= $tabKey === 'history' ? 'No completed jobs found.' : 'No packing-ready job found in this tab.' ?>
               </td></tr>
             <?php else: ?>
@@ -524,8 +526,15 @@ include __DIR__ . '/../../includes/header.php';
                     <td><span class="pk-badge <?= e($statusClass((string)($row['status'] ?? ''))) ?>"><?= e($displayPackingStatus((string)($row['status'] ?? ''))) ?></span></td>
                   </tr>
                 <?php else: ?>
-                  <tr>
+                  <tr data-row-id="<?= (int)$row['id'] ?>">
                     <td class="pk-check-col"><input type="checkbox" class="pk-row-check" value="<?= (int)$row['id'] ?>"></td>
+                    <td><?= (int)$idx + 1 ?></td>
+                    <td>
+                      <button class="pk-id-btn pk-open-modal" type="button" data-job-id="<?= (int)$row['id'] ?>">
+                        <?= e($row['packing_display_id'] ?? ('PKG/' . (int)$row['id'])) ?>
+                      </button>
+                    </td>
+                    <td><?= e(($row['plan_priority'] ?? '') !== '' ? $row['plan_priority'] : '-') ?></td>
                     <td>
                       <?php if (!empty($row['plan_no'])): ?>
                         <a href="<?= e($resolvePlanUrl((string)$row['plan_no'])) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
@@ -535,7 +544,6 @@ include __DIR__ . '/../../includes/header.php';
                         -
                       <?php endif; ?>
                     </td>
-                    <td><?= e(($row['plan_name'] ?? '') !== '' ? $row['plan_name'] : '-') ?></td>
                     <td>
                       <?php if (!empty($row['job_no'])): ?>
                         <a href="<?= e($resolveJobUrl((string)$row['job_no'], (int)($row['id'] ?? 0))) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
@@ -545,11 +553,11 @@ include __DIR__ . '/../../includes/header.php';
                         -
                       <?php endif; ?>
                     </td>
-                    <td><?= e(($row['roll_no'] ?? '') !== '' ? $row['roll_no'] : '-') ?></td>
-                    <td><?= e($row['tab_label'] ?? '-') ?></td>
-                    <td><?= e($row['last_department'] ?? '-') ?></td>
+                    <td><?= e(($row['plan_name'] ?? '') !== '' ? $row['plan_name'] : '-') ?></td>
+                    <td><?= e(($row['client_name'] ?? '') !== '' ? $row['client_name'] : '-') ?></td>
+                    <td><?= e($formatDate((string)($row['order_date'] ?? ''))) ?></td>
+                    <td class="pk-dispatch-date"><span class="pk-dispatch-pill"><?= e($formatDate((string)($row['dispatch_date'] ?? $row['event_time'] ?? ''))) ?></span></td>
                     <td><span class="pk-badge <?= e($statusClass((string)($row['status'] ?? ''))) ?>"><?= e($displayPackingStatus((string)($row['status'] ?? ''))) ?></span></td>
-                    <td><?= e(($row['event_time'] ?? '') !== '' ? date('d M Y H:i', strtotime((string)$row['event_time'])) : '-') ?></td>
                   </tr>
                 <?php endif; ?>
               <?php endforeach; ?>
