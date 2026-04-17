@@ -41,44 +41,35 @@ function barcodePlanningNormalizeStatus($value): string {
 
 function barcodePlanningStatusStyle($value): string {
     $status = trim((string)$value);
-    if ($status === 'Pending') {
-        return erp_status_inline_style('Pending');
+    $norm = strtolower(trim(str_replace(['-', '_'], ' ', $status)));
+    $norm = preg_replace('/\s+/', ' ', $norm) ?? '';
+
+    if ($norm === 'pending') {
+        return 'background:#f59e0b;color:#ffffff;';
     }
-    $map = [
-        'Slitting Preparing' => 'Preparing Slitting',
-        'Slitting' => 'Slitting',
-        'Slitting Pause' => 'Slitting Pause',
-        'Slitting Done' => 'Slitted',
-        'Barcode Preparing' => 'Preparing Barcode',
-        'Barcode' => 'Barcode',
-        'Barcode Pause' => 'Barcode Pause',
-        'Barcode Done' => 'Barcoded',
-        'Printing Preparing' => 'Preparing Printing',
-        'Printing' => 'Printing',
-        'Printing Pause' => 'Printing Pause',
-        'Printing Done' => 'Printed',
-        'Die Cutting Preparing' => 'Preparing Die Cutting',
-        'Die Cutting' => 'Die Cutting',
-        'Die Cutting Pause' => 'Die Cutting Pause',
-        'Die Cutting Done' => 'Die Cut',
-        'Packing Preparing' => 'Preparing Packing',
-        'Packing' => 'Packing',
-        'Packing Pause' => 'Packing Pause',
-        'Packing Done' => 'Packed',
+    if ($norm === 'dispatched' || str_contains($norm, 'packed') || str_contains($norm, 'done')) {
+        return 'background:#16a34a;color:#ffffff;';
+    }
+    if (str_contains($norm, 'pause')) {
+        return 'background:#dc2626;color:#ffffff;';
+    }
+    if (str_contains($norm, 'preparing')) {
+        return 'background:#9ca3af;color:#ffffff;';
+    }
+
+    $exactDepartments = [
+        'slitting',
+        'posroll',
+        'barcode',
+        'packing',
+        'printing',
+        'die cutting',
     ];
-    if (isset($map[$status])) {
-        return erp_status_inline_style($map[$status]);
+    if (in_array($norm, $exactDepartments, true)) {
+        return 'background:#2563eb;color:#ffffff;';
     }
-    if (preg_match('/\sPreparing$/', $status)) {
-        return erp_status_inline_style('Queued');
-    }
-    if (preg_match('/\sPause$/', $status)) {
-        return erp_status_inline_style('On Hold');
-    }
-    if (preg_match('/\sDone$/', $status)) {
-        return erp_status_inline_style('Completed');
-    }
-    return erp_status_inline_style('In Progress');
+
+    return 'background:#2563eb;color:#ffffff;';
 }
 
 function paperrollPlanningTypeOptions(): array {
@@ -111,7 +102,7 @@ function paperrollPlanningTypeLabel($type): string {
 }
 
 function paperrollPlanningDepartmentOptions(): array {
-    return ['Slitting', 'Barcode', 'Printing', 'Die Cutting', 'Packing'];
+    return ['Slitting', 'PosRoll', 'Barcode', 'Printing', 'Die Cutting', 'Packing'];
 }
 
 function paperrollPlanningNormalizeDepartmentLabel($value): string {
@@ -123,6 +114,12 @@ function paperrollPlanningNormalizeDepartmentLabel($value): string {
     $raw = str_replace(['/', '-', '_'], ' ', $raw);
     $raw = trim((string)preg_replace('/\s+/', ' ', $raw));
     if ($raw === '') {
+        return '';
+    }
+
+    // Generic planning-level department tags that are NOT real production departments
+    $skipTags = ['paperroll', 'paper roll', 'planning', 'plan'];
+    if (in_array($raw, $skipTags, true)) {
         return '';
     }
 
@@ -139,10 +136,12 @@ function paperrollPlanningNormalizeDepartmentLabel($value): string {
         'pos' => 'PosRoll',
         'pos roll' => 'PosRoll',
         'posroll' => 'PosRoll',
-        'one ply' => 'OnePly',
-        'oneply' => 'OnePly',
-        'two ply' => 'TwoPly',
-        'twoply' => 'TwoPly',
+        'one ply' => 'PosRoll',
+        'oneply' => 'PosRoll',
+        'paper roll 1ply' => 'PosRoll',
+        'paper roll 2ply' => 'PosRoll',
+        'two ply' => 'PosRoll',
+        'twoply' => 'PosRoll',
         'die cutting' => 'Die Cutting',
         'diecutting' => 'Die Cutting',
         'packing' => 'Packing',
@@ -161,6 +160,11 @@ function paperrollPlanningNormalizeDepartmentLabel($value): string {
 function paperrollPlanningStatusOptionsForType($type): array {
     $options = ['Pending'];
     foreach (paperrollPlanningDepartmentOptions() as $department) {
+        if ($department === 'Packing') {
+            $options[] = 'Packing';
+            $options[] = 'Packed';
+            continue;
+        }
         $options[] = $department . ' Preparing';
         $options[] = $department;
         $options[] = $department . ' Pause';
@@ -180,13 +184,7 @@ function paperrollPlanningStatusOptionsMap(): array {
 function paperrollPlanningDepartmentFromJob(array $job, array $jobExtra = []): string {
     $sources = [
         $job['department'] ?? '',
-        $jobExtra['department'] ?? '',
-        $jobExtra['operator_type'] ?? '',
         $job['job_type'] ?? '',
-        $jobExtra['job_type'] ?? '',
-        $jobExtra['module_source'] ?? '',
-        $jobExtra['source_module'] ?? '',
-        $jobExtra['module'] ?? '',
     ];
     foreach ($sources as $source) {
         $label = paperrollPlanningNormalizeDepartmentLabel($source);
@@ -200,6 +198,15 @@ function paperrollPlanningDepartmentFromJob(array $job, array $jobExtra = []): s
 function paperrollPlanningStatusFromPhase(string $department, string $phase): string {
     if ($department === '') {
         return 'Pending';
+    }
+    if ($department === 'Packing') {
+        if ($phase === 'done') {
+            return 'Packed';
+        }
+        if ($phase === 'dispatched') {
+            return 'Dispatched';
+        }
+        return 'Packing';
     }
     if ($phase === 'preparing') {
         return $department . ' Preparing';
@@ -232,7 +239,13 @@ function paperrollPlanningJobStatusPhase($status, $timerState = ''): string {
     if (in_array($jobStatus, ['queued', 'pending'], true)) {
         return 'preparing';
     }
+    if (in_array($jobStatus, ['dispatched', 'dispatch', 'shipped'], true)) {
+        return 'dispatched';
+    }
     if (in_array($jobStatus, ['completed', 'complete', 'closed', 'finalized', 'qc passed', 'qc_passed'], true)) {
+        return 'done';
+    }
+    if (in_array($jobStatus, ['packed', 'packing done', 'packing_done'], true)) {
         return 'done';
     }
 
@@ -260,15 +273,18 @@ function paperrollPlanningNormalizeManualStatus($status, $type): string {
     }
     $legacyMap = [
         'Preparing Slitting' => 'Slitting Preparing',
+        'Preparing PosRoll' => 'PosRoll Preparing',
         'Preparing Barcode' => 'Barcode Preparing',
         'Preparing Printing' => 'Printing Preparing',
         'Preparing Die Cutting' => 'Die Cutting Preparing',
-        'Preparing Packing' => 'Packing Preparing',
+        'Preparing Packing' => 'Packing',
         'Slitted' => 'Slitting Done',
+        'PosRoll Done' => 'PosRoll Done',
         'Barcoded' => 'Barcode Done',
         'Printed' => 'Printing Done',
         'Die Cut' => 'Die Cutting Done',
-        'Packed' => 'Packing Done',
+        'Packing Pause' => 'Packing',
+        'Packing Done' => 'Packed',
     ];
     foreach ($legacyMap as $legacy => $mapped) {
         if (strcasecmp($text, $legacy) === 0) {
@@ -732,6 +748,7 @@ function barcodePlanningFetchRows(mysqli $db): array {
                 'selected_job_id' => (int)($selected['id'] ?? 0),
                 'department_name' => (string)($selected['department'] ?? ''),
                 'job_status' => (string)($selected['status'] ?? ''),
+                'phase' => (string)($selected['phase'] ?? ''),
             ],
             'job_name' => trim((string)($row['job_name'] ?? '')),
             'priority' => trim((string)($row['priority'] ?? ($extra['priority'] ?? 'Normal'))) ?: 'Normal',
@@ -1491,6 +1508,35 @@ include __DIR__ . '/../../../includes/header.php';
           statusInput.appendChild(op);
       });
   }
+  function rebuildStatusSelectByDepartment(department, selectedStatus, planningType){
+      if(!statusInput) return;
+      var dept = String(department || '').trim();
+      var options;
+      if(dept !== ''){
+          if (dept === 'Packing') {
+              options = ['Pending', 'Packing', 'Packed'];
+          } else {
+              options = ['Pending', dept + ' Preparing', dept, dept + ' Pause', dept + ' Done'];
+          }
+      } else {
+          options = getStatusOptionsByPlanningType(planningType);
+      }
+      var selected = String(selectedStatus || '').trim();
+      if(selected !== '' && options.indexOf(selected) === -1){
+          options.push(selected);
+      }
+      if(selected === '' || options.indexOf(selected) === -1){
+          selected = options.indexOf('Pending') !== -1 ? 'Pending' : String(options[0] || 'Pending');
+      }
+      statusInput.innerHTML = '';
+      options.forEach(function(st){
+          var op = document.createElement('option');
+          op.value = String(st || '');
+          op.textContent = String(st || '');
+          if(op.value === selected) op.selected = true;
+          statusInput.appendChild(op);
+      });
+  }
   function assignIfPresent(id,value){ var el=document.getElementById(id); if(!el) return; el.value=value==null?'':String(value); }
         function assignAutoIfAllowed(id,value){
             var el=document.getElementById(id);
@@ -1541,7 +1587,7 @@ include __DIR__ . '/../../../includes/header.php';
         jobPickerList.innerHTML = html.length ? (head + html.join('')) : '<div class="bc-empty" style="padding:18px">No matching paperroll job name found.</div>';
     }
         function resetFormForAdd(){ if(!form) return; form.reset(); clearManualFlags(); editIdInput.value='0'; if(modalTitle) modalTitle.textContent='Add PaperRoll Planning'; assignIfPresent('barcode-sl-no', defaultState.sl_no); assignIfPresent('barcode-planning-id', defaultState.planning_id); assignIfPresent('barcode-planning-date', defaultState.planning_date); assignIfPresent('barcode-dispatch-date', defaultState.dispatch_date); assignIfPresent('barcode-planning-type', defaultState.planning_type); rebuildStatusSelectByPlanningType(defaultState.planning_type, defaultState.status); assignIfPresent('barcode-priority', defaultState.priority || 'Normal'); lastLayoutSource='paper_size'; updateSizeIndicator(''); previewSl.textContent=String(defaultState.sl_no); previewId.textContent=defaultState.planning_id; previewRecord.textContent=defaultState.record_label; hydrateLayoutFields(); clearAutofillMarks(); markAutofilledFields(); }
-        function openEdit(row){ if(!form||!row) return; resetFormForAdd(); if(modalTitle) modalTitle.textContent='Edit PaperRoll Planning'; editIdInput.value=String(row.id||0); assignIfPresent('barcode-sl-no', row.sl_no||''); assignIfPresent('barcode-planning-id', row.planning_id||''); var rowPlanningType=String(row.planning_type||defaultState.planning_type||'pos_roll'); assignIfPresent('barcode-planning-type', rowPlanningType); rebuildStatusSelectByPlanningType(rowPlanningType, row.status||defaultState.status); assignIfPresent('barcode-priority', row.priority||'Normal'); assignIfPresent('barcode-job-name', row.job_name||''); assignIfPresent('barcode-client-name', row.client_name||''); assignIfPresent('barcode-planning-date', row.planning_date||defaultState.planning_date); assignIfPresent('barcode-dispatch-date', row.dispatch_date||defaultState.dispatch_date); assignIfPresent('barcode-material-type', row.material_type||''); assignIfPresent('barcode-order-qty', row.order_quantity||''); assignIfPresent('barcode-order-meter', row.order_meter||''); assignIfPresent('barcode-pcs-per-roll', row.pcs_per_roll||''); assignIfPresent('barcode-size', row.barcode_size||''); assignIfPresent('barcode-up-roll', row.up_in_roll||''); assignIfPresent('barcode-up-production', row.up_in_production||''); assignIfPresent('barcode-label-gap', row.label_gap||''); assignIfPresent('barcode-both-gap', row.both_side_gap||''); assignIfPresent('barcode-paper-size', row.paper_size||''); assignIfPresent('barcode-cylinder', row.cylinder||''); assignIfPresent('barcode-repeat', row.repeat||''); assignIfPresent('barcode-use', row.use||''); assignIfPresent('barcode-die-type', row.die_type||''); assignIfPresent('barcode-core', row.core||''); assignIfPresent('barcode-item-width', row.item_width||''); assignIfPresent('barcode-item-length', row.item_length||''); assignIfPresent('barcode-gsm', row.gsm||''); assignIfPresent('barcode-roll-dia', row.roll_dia||''); assignIfPresent('barcode-core-size', row.core_size||''); assignIfPresent('barcode-core-type', row.core_type||''); lastLayoutSource = String(row.both_side_gap||'').trim() !== '' && String(row.paper_size||'').trim() === '' ? 'both_side_gap' : 'paper_size'; hydrateLayoutFields(); updateSizeIndicator(row.barcode_size||''); previewSl.textContent=String(row.sl_no||''); previewId.textContent=String(row.planning_id||''); previewRecord.textContent='#'+String(row.id||''); updateSqrMtr(); markAutofilledFields(); openModal(); }
+        function openEdit(row){ if(!form||!row) return; resetFormForAdd(); if(modalTitle) modalTitle.textContent='Edit PaperRoll Planning'; editIdInput.value=String(row.id||0); assignIfPresent('barcode-sl-no', row.sl_no||''); assignIfPresent('barcode-planning-id', row.planning_id||''); var rowPlanningType=String(row.planning_type||defaultState.planning_type||'pos_roll'); assignIfPresent('barcode-planning-type', rowPlanningType); var rowDetectedDept=String((row.status_debug&&row.status_debug.department_name)||'').trim(); rebuildStatusSelectByDepartment(rowDetectedDept, row.status||defaultState.status, rowPlanningType); assignIfPresent('barcode-priority', row.priority||'Normal'); assignIfPresent('barcode-job-name', row.job_name||''); assignIfPresent('barcode-client-name', row.client_name||''); assignIfPresent('barcode-planning-date', row.planning_date||defaultState.planning_date); assignIfPresent('barcode-dispatch-date', row.dispatch_date||defaultState.dispatch_date); assignIfPresent('barcode-material-type', row.material_type||''); assignIfPresent('barcode-order-qty', row.order_quantity||''); assignIfPresent('barcode-order-meter', row.order_meter||''); assignIfPresent('barcode-pcs-per-roll', row.pcs_per_roll||''); assignIfPresent('barcode-size', row.barcode_size||''); assignIfPresent('barcode-up-roll', row.up_in_roll||''); assignIfPresent('barcode-up-production', row.up_in_production||''); assignIfPresent('barcode-label-gap', row.label_gap||''); assignIfPresent('barcode-both-gap', row.both_side_gap||''); assignIfPresent('barcode-paper-size', row.paper_size||''); assignIfPresent('barcode-cylinder', row.cylinder||''); assignIfPresent('barcode-repeat', row.repeat||''); assignIfPresent('barcode-use', row.use||''); assignIfPresent('barcode-die-type', row.die_type||''); assignIfPresent('barcode-core', row.core||''); assignIfPresent('barcode-item-width', row.item_width||''); assignIfPresent('barcode-item-length', row.item_length||''); assignIfPresent('barcode-gsm', row.gsm||''); assignIfPresent('barcode-roll-dia', row.roll_dia||''); assignIfPresent('barcode-core-size', row.core_size||''); assignIfPresent('barcode-core-type', row.core_type||''); lastLayoutSource = String(row.both_side_gap||'').trim() !== '' && String(row.paper_size||'').trim() === '' ? 'both_side_gap' : 'paper_size'; hydrateLayoutFields(); updateSizeIndicator(row.barcode_size||''); previewSl.textContent=String(row.sl_no||''); previewId.textContent=String(row.planning_id||''); previewRecord.textContent='#'+String(row.id||''); updateSqrMtr(); markAutofilledFields(); openModal(); }
     function openView(row){ if(!viewGrid||!row) return;
         var m=parseNum(row.order_meter); var w=firstNumber(row.item_width); var sqrMtr=(m>0&&w>0)?formatNum(m*w/1000,4)+' m²':'—';
         var labels=[['SL.No.',row.sl_no],['Planning ID',row.planning_id],['Planning Type',row.planning_type_label||row.planning_type||'PosRoll'],['Status',row.status],['Priority',row.priority],['Client Name',row.client_name],['Planning Date',row.planning_date],['Dispatch Date',row.dispatch_date],['Job Name',row.job_name],['Material Type',row.material_type],['Order Quantity',row.order_quantity],['Order Meter',row.order_meter],['Sqr Mtr',sqrMtr],['Item Width',row.item_width],['Item Length',row.item_length],['GSM',row.gsm],['Roll Dia',row.roll_dia],['Core Size',row.core_size],['Core Type',row.core_type]];

@@ -64,6 +64,12 @@
             "uploaded_at": "2026-04-14 13:26:15",
             "category": "product-type",
             "paper_type": "Thermal Paper"
+        },
+        {
+            "path": "uploads/uploads/library/default/lib_20260417_173153_5884563c.png",
+            "name": "lib_20260417_173153_5884563c.png",
+            "uploaded_at": "2026-04-17 17:31:53",
+            "category": "label-asset"
         }
     ],
     "id_generation": {
@@ -134,7 +140,7 @@
             },
             "paperroll_job": {
                 "prefix": "PRL",
-                "counter": 2
+                "counter": 1
             },
             "packing": {
                 "prefix": "PKG",

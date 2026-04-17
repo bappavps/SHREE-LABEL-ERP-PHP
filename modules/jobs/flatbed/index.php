@@ -3258,9 +3258,9 @@ function dcBuildRequiredRolls(job) {
       });
     });
   } else {
-    const assignedRows = hasPrevJob ? dcCollectAssignedChildRolls(job) : [];
+    const assignedRows = dcCollectAssignedChildRolls(job);
     if (assignedRows.length > 0) {
-      // Job came after upstream (e.g. Jumbo / Printing) — scan all collected assigned child rolls
+      // Scan all collected assigned child rolls, including direct slitting-to-POS jobs.
       assignedRows.forEach(function(r) {
         if (!r || typeof r !== 'object') return;
         addRoll(r.roll_no || '', {

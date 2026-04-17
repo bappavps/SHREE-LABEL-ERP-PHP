@@ -76,11 +76,22 @@ $printLogoUrl = $printLogoPath !== ''
   : '';
 
 $statusClass = static function(string $status): string {
-  return strtolower(trim($status)) === 'packing done' ? 'ok' : 'muted';
+  $norm = strtolower(trim(str_replace(['-', '_'], ' ', $status)));
+  return in_array($norm, ['packing done', 'packed', 'dispatched', 'finished production'], true) ? 'ok' : 'muted';
 };
 
 $displayPackingStatus = static function(string $status): string {
-  return strtolower(trim($status)) === 'packing done' ? 'Packing Done' : 'Packing';
+  $norm = strtolower(trim(str_replace(['-', '_'], ' ', $status)));
+  if ($norm === 'finished production') {
+    return 'Finished Production';
+  }
+  if ($norm === 'dispatched') {
+    return 'Dispatched';
+  }
+  if (in_array($norm, ['packing done', 'packed'], true)) {
+    return 'Packed';
+  }
+  return 'Packing';
 };
 
 $formatDate = static function(string $value): string {
@@ -204,6 +215,12 @@ include __DIR__ . '/../../includes/header.php';
 .pk-badge{display:inline-flex;border-radius:999px;padding:2px 8px;font-size:.62rem;font-weight:800}
 .pk-badge.ok{background:#dcfce7;color:#166534}
 .pk-badge.muted{background:#e2e8f0;color:#475569}
+.pk-badge.operator-submitted{background:#dcfce7;color:#166534}
+.pk-badge.operator-pending{background:#fef3c7;color:#92400e}
+.pk-operator-flag{display:inline-flex;align-items:center;gap:6px;margin-left:8px;padding:4px 10px;border-radius:999px;background:#dcfce7;color:#166534;font-size:.7rem;font-weight:900;box-shadow:0 0 0 1px #86efac inset;animation:pkPulseSubmitted 1.5s ease-in-out infinite}
+.pk-operator-flag-dot{width:8px;height:8px;border-radius:999px;background:#22c55e;box-shadow:0 0 0 0 rgba(34,197,94,.55);animation:pkDotPulse 1.5s ease-in-out infinite}
+@keyframes pkPulseSubmitted{0%,100%{transform:translateY(0);box-shadow:0 0 0 1px #86efac inset,0 0 0 rgba(34,197,94,0)}50%{transform:translateY(-1px);box-shadow:0 0 0 1px #86efac inset,0 8px 18px rgba(34,197,94,.18)}}
+@keyframes pkDotPulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
 .pk-empty{padding:30px;text-align:center;color:#94a3b8}
 .pk-id-btn{border:1px solid var(--pk-border);background:var(--pk-soft);color:var(--pk-accent);padding:5px 9px;border-radius:999px;font-size:.7rem;font-weight:800;cursor:pointer}
 .pk-id-btn:hover{filter:brightness(.96)}
@@ -318,7 +335,9 @@ include __DIR__ . '/../../includes/header.php';
       <select name="status" style="height:38px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font-size:.82rem;width:100%;background:#fff;">
         <option value="" <?= $status === '' ? 'selected' : '' ?>>All Statuses</option>
         <option value="Completed" <?= $status === 'Completed' ? 'selected' : '' ?>>Completed</option>
-        <option value="Packing Done" <?= $status === 'Packing Done' ? 'selected' : '' ?>>Packing Done</option>
+        <option value="Packed" <?= $status === 'Packed' ? 'selected' : '' ?>>Packed</option>
+        <option value="Finished Production" <?= $status === 'Finished Production' ? 'selected' : '' ?>>Finished Production</option>
+        <option value="Dispatched" <?= $status === 'Dispatched' ? 'selected' : '' ?>>Dispatched</option>
       </select>
     </div>
     <div style="display:flex;gap:8px;">
@@ -429,6 +448,7 @@ include __DIR__ . '/../../includes/header.php';
                 <th>Client Name</th>
                 <th>Order Date</th>
                 <th>Dispatch Date</th>
+                <th>Operator Submit</th>
                 <th>Status</th>
               </tr>
             <?php else: ?>
@@ -443,13 +463,14 @@ include __DIR__ . '/../../includes/header.php';
                 <th>Client Name</th>
                 <th>Order Date</th>
                 <th>Dispatch Date</th>
+                <th>Operator Submit</th>
                 <th>Status</th>
               </tr>
             <?php endif; ?>
           </thead>
           <tbody>
             <?php if (empty($tabRows)): ?>
-              <tr><td colspan="<?= $tabKey === 'history' ? '10' : '11' ?>" class="pk-empty">
+              <tr><td colspan="<?= $tabKey === 'history' ? '10' : '12' ?>" class="pk-empty">
                 <?= $tabKey === 'history' ? 'No completed jobs found.' : 'No packing-ready job found in this tab.' ?>
               </td></tr>
             <?php else: ?>
@@ -523,6 +544,7 @@ include __DIR__ . '/../../includes/header.php';
                     <td><?= e(($row['client_name'] ?? '') !== '' ? $row['client_name'] : '-') ?></td>
                     <td><?= e($formatDate((string)($row['order_date'] ?? ''))) ?></td>
                     <td class="pk-dispatch-date"><span class="pk-dispatch-pill"><?= e($formatDate((string)($row['dispatch_date'] ?? $row['event_time'] ?? ''))) ?></span></td>
+                    <td><span class="pk-badge <?= !empty($row['operator_submitted']) ? 'operator-submitted' : 'operator-pending' ?>"><?= !empty($row['operator_submitted']) ? 'Operator Submitted' : 'Awaiting Submit' ?></span></td>
                     <td><span class="pk-badge <?= e($statusClass((string)($row['status'] ?? ''))) ?>"><?= e($displayPackingStatus((string)($row['status'] ?? ''))) ?></span></td>
                   </tr>
                 <?php else: ?>
@@ -557,6 +579,7 @@ include __DIR__ . '/../../includes/header.php';
                     <td><?= e(($row['client_name'] ?? '') !== '' ? $row['client_name'] : '-') ?></td>
                     <td><?= e($formatDate((string)($row['order_date'] ?? ''))) ?></td>
                     <td class="pk-dispatch-date"><span class="pk-dispatch-pill"><?= e($formatDate((string)($row['dispatch_date'] ?? $row['event_time'] ?? ''))) ?></span></td>
+                    <td><span class="pk-badge <?= !empty($row['operator_submitted']) ? 'operator-submitted' : 'operator-pending' ?>"><?= !empty($row['operator_submitted']) ? 'Operator Submitted' : 'Awaiting Submit' ?></span></td>
                     <td><span class="pk-badge <?= e($statusClass((string)($row['status'] ?? ''))) ?>"><?= e($displayPackingStatus((string)($row['status'] ?? ''))) ?></span></td>
                   </tr>
                 <?php endif; ?>
@@ -741,7 +764,7 @@ include __DIR__ . '/../../includes/header.php';
     ];
     var statusRaw = String(activeModalJob.status || '').trim();
     var statusLower = statusRaw.toLowerCase().replace(/[-_]/g, ' ').trim();
-    var statusText = (statusLower === 'packing done') ? 'Packing Done' : 'Packing';
+    var statusText = (statusLower === 'finished production') ? 'Finished Production' : ((statusLower === 'dispatched') ? 'Dispatched' : ((statusLower === 'packed' || statusLower === 'packing done') ? 'Packed' : 'Packing'));
     var completedAtRaw = String(activeModalJob.completed_at || activeModalJob.updated_at || activeModalJob.created_at || '').trim();
     var completedText = '-';
     if (completedAtRaw !== '') {
@@ -862,7 +885,7 @@ include __DIR__ . '/../../includes/header.php';
       '    <div>' +
       '      <p class="a4-sub">' + escHtml(modalSub ? modalSub.textContent : '-') + '</p>' +
       '      <p class="a4-sub">Completed: ' + escHtml(completedText) + '</p>' +
-      '      <div style="margin-top:4px;text-align:right"><span class="a4-badge ' + ((statusLower === 'packing done' || statusLower === 'completed' || statusLower === 'closed' || statusLower === 'finalized' || statusLower === 'qc passed') ? 'ok' : '') + '">' + escHtml(statusText) + '</span></div>' +
+      '      <div style="margin-top:4px;text-align:right"><span class="a4-badge ' + ((statusLower === 'packing done' || statusLower === 'packed' || statusLower === 'dispatched' || statusLower === 'finished production' || statusLower === 'completed' || statusLower === 'closed' || statusLower === 'finalized' || statusLower === 'qc passed') ? 'ok' : '') + '">' + escHtml(statusText) + '</span></div>' +
       '    </div>' +
       '  </div>' +
       '  <div class="a4-grid">' + summaryHtml + '</div>' +
@@ -1102,7 +1125,7 @@ include __DIR__ . '/../../includes/header.php';
     function addFromSource(src) {
       if (!src || typeof src !== 'object') return;
       addRoll(src.roll_no || src.parent_roll || src.roll || src.rollNumber || src.roll_number);
-      ['selected_rolls', 'split_rolls', 'child_rolls', 'rolls'].forEach(function(key) {
+      ['assigned_child_rolls', 'selected_rolls', 'split_rolls', 'child_rolls', 'rolls'].forEach(function(key) {
         var arr = src[key];
         if (!Array.isArray(arr)) return;
         arr.forEach(function(it) {
@@ -1116,7 +1139,7 @@ include __DIR__ . '/../../includes/header.php';
     function collectAssignedFromSource(src) {
       if (!src || typeof src !== 'object') return [];
       var out = [];
-      ['selected_rolls', 'split_rolls', 'child_rolls', 'rolls'].forEach(function(key) {
+      ['assigned_child_rolls', 'selected_rolls', 'split_rolls', 'child_rolls', 'rolls'].forEach(function(key) {
         var arr = src[key];
         if (!Array.isArray(arr)) return;
         arr.forEach(function(it) {
@@ -1289,6 +1312,18 @@ include __DIR__ . '/../../includes/header.php';
       addItem({ parent_roll: grandPrevExtra.parent_roll });
     }
 
+    if (Array.isArray(jobExtra.assigned_child_rolls)) {
+      jobExtra.assigned_child_rolls.forEach(addItem);
+    }
+    if (Array.isArray(planExtra.assigned_child_rolls)) {
+      planExtra.assigned_child_rolls.forEach(addItem);
+    }
+    if (Array.isArray(prevExtra.assigned_child_rolls)) {
+      prevExtra.assigned_child_rolls.forEach(addItem);
+    }
+    if (Array.isArray(grandPrevExtra.assigned_child_rolls)) {
+      grandPrevExtra.assigned_child_rolls.forEach(addItem);
+    }
     if (Array.isArray(jobExtra.selected_rolls)) {
       jobExtra.selected_rolls.forEach(addItem);
     }
@@ -1391,6 +1426,10 @@ include __DIR__ . '/../../includes/header.php';
       });
     }
 
+    if (Array.isArray(jobExtra.assigned_child_rolls)) jobExtra.assigned_child_rolls.forEach(pushLot);
+    if (Array.isArray(planExtra.assigned_child_rolls)) planExtra.assigned_child_rolls.forEach(pushLot);
+    if (Array.isArray(prevExtra.assigned_child_rolls)) prevExtra.assigned_child_rolls.forEach(pushLot);
+    if (Array.isArray(grandPrevExtra.assigned_child_rolls)) grandPrevExtra.assigned_child_rolls.forEach(pushLot);
     if (Array.isArray(jobExtra.selected_rolls)) jobExtra.selected_rolls.forEach(pushLot);
     if (Array.isArray(planExtra.selected_rolls)) planExtra.selected_rolls.forEach(pushLot);
     if (Array.isArray(prevExtra.selected_rolls)) prevExtra.selected_rolls.forEach(pushLot);
@@ -1580,12 +1619,17 @@ include __DIR__ . '/../../includes/header.php';
     var rollItems = buildRollItems(job);
     var jobStatusRaw = String(job.status || '').trim();
     var jobStatusNorm = jobStatusRaw.toLowerCase().replace(/[-_]/g, ' ').trim();
-    var isPackingDone = jobStatusNorm === 'packing done';
-    var jobStatusText = isPackingDone ? 'Packing Done' : 'Packing';
-    var sectionBLocked = isPackingDone && !canDeleteJobs;
+    var isPosRollTab = String(job.packing_tab || '') === 'pos_roll' || String(activeTab || '') === 'pos_roll';
+    var isPacked = (jobStatusNorm === 'packed' || jobStatusNorm === 'packing done');
+    var isDispatched = jobStatusNorm === 'dispatched';
+    var isFinishedProduction = jobStatusNorm === 'finished production';
+    var isTerminal = isPacked || isDispatched || isFinishedProduction;
+    var jobStatusText = isFinishedProduction ? 'Finished Production' : (isDispatched ? 'Dispatched' : (isPacked ? 'Packed' : 'Packing'));
+    var isAdminUser = !!canDeleteJobs;
+    var sectionBLocked = isTerminal && !canDeleteJobs;
     var targetPaperStockId = Number(job.paper_stock_id || 0);
     var operatorEntry = (job.operator_entry && typeof job.operator_entry === 'object') ? job.operator_entry : null;
-    var operatorHasSubmitted = !!operatorEntry;
+    var operatorHasSubmitted = !!operatorEntry && (Number(operatorEntry.submitted_lock || 0) === 1 || String(operatorEntry.submitted_at || '').trim() !== '');
     var operatorRollPayload = {};
     if (operatorEntry && operatorEntry.roll_payload_json) {
       if (typeof operatorEntry.roll_payload_json === 'object') {
@@ -1641,8 +1685,9 @@ include __DIR__ . '/../../includes/header.php';
         + '</label>';
     }).join('') : '<div style="font-size:.78rem;color:#64748b">No roll sources found.</div>';
     var currentPackingBatches = [];
-    // Finish active only if operator submitted AND job not already finished
-    var finishShouldBeActive = !isPackingDone && operatorHasSubmitted;
+    var markPackedActive = !isTerminal && operatorHasSubmitted;
+    var markDispatchedActive = !isPosRollTab && isPacked;
+    var markFinishedProductionActive = isPosRollTab && isPacked && !isFinishedProduction;
 
     var imageHtml = job.image_url
       ? '<div class="pk-jc-image"><div style="font-size:.72rem;font-weight:800;color:#475569;margin-bottom:6px">Assigned Image Preview</div><img src="' + escHtml(job.image_url) + '" alt="Assigned Job Image"></div>'
@@ -1686,7 +1731,7 @@ include __DIR__ . '/../../includes/header.php';
           '  <div class="pk-jc-section pk-jc-section-collapsible-b">'
           + '    <h5 class="pk-jc-section-toggle-b" tabindex="0" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:7px;">'
           + '      <span class="pk-jc-section-arrow-b" style="display:inline-block;transition:transform .25s ease;font-size:1.1em;">▼</span> Section B: Wrapping and Packing Details'
-          + (isPackingDone ? '<span id="pkPackingDoneBadge" style="margin-left:8px;background:#22c55e;color:#fff;font-size:.72rem;font-weight:800;padding:3px 8px;border-radius:999px;">Packing Done</span>' : '')
+          + (isTerminal ? ('<span id="pkPackingDoneBadge" style="margin-left:8px;background:#22c55e;color:#fff;font-size:.72rem;font-weight:800;padding:3px 8px;border-radius:999px;">' + (isFinishedProduction ? 'Finished Production' : (isDispatched ? 'Dispatched' : 'Packed')) + '</span>') : '')
           + '    </h5>'
           + '    <div class="pk-jc-section-content-b">'
           + '      <div style="padding:14px 12px;margin-bottom:14px;border:1px solid #bae6fd;border-radius:12px;background:linear-gradient(120deg,#ecfeff 0%,#f0f9ff 100%);">'
@@ -1725,7 +1770,7 @@ include __DIR__ . '/../../includes/header.php';
           + '        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">' + rollSelectionHtml + '</div>'
           + '      </div>'
           + '      <div style="padding:14px 12px;margin-bottom:14px;border:1px solid #d9f99d;border-radius:12px;background:linear-gradient(120deg,#f7fee7 0%,#fff 100%);">'
-          + '        <div style="font-size:.72rem;font-weight:900;color:#3f6212;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Roll Data (Selected Roll Only)</div>'
+          + '        <div style="font-size:.72rem;font-weight:900;color:#3f6212;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">Roll Data (Selected Roll Only)' + (operatorHasSubmitted ? '<span class="pk-operator-flag"><span class="pk-operator-flag-dot"></span>Physical Production Submitted</span>' : '') + '</div>'
           + '        <div id="pkHelpersRollCards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px"></div>'
           + '        <div id="pkHelpersHiddenMsg" style="display:none;margin-top:8px;padding:8px;border:1px dashed #fca5a5;border-radius:8px;background:#fff7ed;color:#9a3412;font-size:.76rem;font-weight:700">Select at least one roll to view helpers.</div>'
           + '      </div>'
@@ -1762,12 +1807,17 @@ include __DIR__ . '/../../includes/header.php';
           + '        </div>'
           + '      </div>'
           + '      <div style="padding:12px 0;border-top:1px solid #eef2f7;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-start;">'
-          + '        <button id="pkSectionBFinishedBtn" type="button" class="pk-action-btn pk-btn-finished" ' + (!finishShouldBeActive ? 'disabled ' : '') + 'title="' + (!finishShouldBeActive && !isPackingDone ? 'Waiting for operator to submit packing entry' : '') + '" style="background-color:' + (isPackingDone ? '#9ca3af' : (operatorHasSubmitted ? '#22c55e' : '#f97316')) + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:' + (!finishShouldBeActive ? 'not-allowed' : 'pointer') + ';font-size:.95em;transition:all .2s ease;opacity:' + (!finishShouldBeActive ? '0.65' : '1') + ';">Packing Done</button>'
+          + '        <span id="pkSectionBAdminEditBadge" style="display:none;align-items:center;gap:6px;background:#ede9fe;color:#6d28d9;border:1px solid #c4b5fd;padding:8px 12px;border-radius:999px;font-size:.8rem;font-weight:800;"><span style="width:8px;height:8px;border-radius:999px;background:#7c3aed;display:inline-block"></span>Admin Edit Mode Active</span>'
+          + '        <button id="pkSectionBFinishedBtn" type="button" class="pk-action-btn pk-btn-finished" ' + (!markPackedActive ? 'disabled ' : '') + 'title="' + (!markPackedActive && !isTerminal ? 'Waiting for operator to submit packing entry' : '') + '" style="background-color:' + (isTerminal ? '#9ca3af' : (operatorHasSubmitted ? '#22c55e' : '#f97316')) + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:' + (!markPackedActive ? 'not-allowed' : 'pointer') + ';font-size:.95em;transition:all .2s ease;opacity:' + (!markPackedActive ? '0.65' : '1') + ';">Mark Packed</button>'
+            + (isPosRollTab
+              ? '        <button id="pkSectionBFinalBtn" type="button" class="pk-action-btn pk-btn-finished-production" ' + (!markFinishedProductionActive ? 'disabled ' : '') + 'style="background-color:' + (markFinishedProductionActive ? '#15803d' : '#9ca3af') + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:' + (!markFinishedProductionActive ? 'not-allowed' : 'pointer') + ';font-size:.95em;transition:all .2s ease;opacity:' + (!markFinishedProductionActive ? '0.65' : '1') + ';">Finished Production</button>'
+              : '        <button id="pkSectionBDispatchBtn" type="button" class="pk-action-btn pk-btn-dispatched" ' + (!markDispatchedActive ? 'disabled ' : '') + 'style="background-color:' + (markDispatchedActive ? '#2563eb' : '#9ca3af') + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:' + (!markDispatchedActive ? 'not-allowed' : 'pointer') + ';font-size:.95em;transition:all .2s ease;opacity:' + (!markDispatchedActive ? '0.65' : '1') + ';">Mark Dispatched</button>')
           + '        <button id="pkSectionBCancelBtn" type="button" class="pk-action-btn pk-btn-cancel" style="background-color:#6b7280;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">Cancel</button>'
+          + (isAdminUser ? '        <button id="pkSectionBAdminEditBtn" type="button" class="pk-action-btn pk-btn-admin-edit" style="background-color:#7c3aed;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">Enable Edit</button>' : '')
           + '        <button class="pk-action-btn pk-btn-sticker" style="background-color:#3b82f6;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">Sticker Print</button>'
           + '        <button class="pk-action-btn pk-btn-label" style="background-color:#f97316;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">Label Print</button>'
           + '      </div>'
-          + '      <div id="pkSectionBMessage" style="min-height:20px;font-size:.82rem;color:#475569;font-weight:700;">' + (sectionBLocked ? 'Locked: Packing Done (non-admin view)' : '') + '</div>'
+          + '      <div id="pkSectionBMessage" style="min-height:20px;font-size:.82rem;color:#475569;font-weight:700;">' + (sectionBLocked ? ('Locked: ' + (isFinishedProduction ? 'Finished Production' : (isDispatched ? 'Dispatched' : 'Packed')) + ' (non-admin view)') : '') + '</div>'
           + '    </div>'
           + '  </div>'
               // Section B: Bidirectional sync logic
@@ -2119,9 +2169,17 @@ include __DIR__ . '/../../includes/header.php';
 
       var sectionMessage = document.getElementById('pkSectionBMessage');
       var finishBtn = section.querySelector('.pk-btn-finished');
+      var dispatchBtn = section.querySelector('.pk-btn-dispatched');
+      var finalProductionBtn = section.querySelector('.pk-btn-finished-production');
+      var adminEditBtn = section.querySelector('.pk-btn-admin-edit');
+      var adminEditBadge = section.querySelector('#pkSectionBAdminEditBadge');
       var sectionCancelBtn = section.querySelector('#pkSectionBCancelBtn');
-      var isAdminUser = !!canDeleteJobs;
-      var isPackingDoneNow = String(job.status || '').trim().toLowerCase() === 'packing done';
+      var adminEditMode = false;
+      var modalStatusNow = String(job.status || '').trim().toLowerCase().replace(/[-_]/g, ' ');
+      var isPackedNow = (modalStatusNow === 'packed' || modalStatusNow === 'packing done');
+      var isDispatchedNow = modalStatusNow === 'dispatched';
+      var isFinishedProductionNow = modalStatusNow === 'finished production';
+      var isTerminalNow = isPackedNow || isDispatchedNow || isFinishedProductionNow;
       var operatorSubmittedNow = operatorHasSubmitted;
       var pendingPrintType = '';
       var pendingPrintUrls = [];
@@ -2133,12 +2191,12 @@ include __DIR__ . '/../../includes/header.php';
       }
 
       function ensurePackingDoneBadge() {
-        if (!isPackingDoneNow) return;
+        if (!isTerminalNow) return;
         var heading = section.querySelector('.pk-jc-section-toggle-b');
         if (!heading || heading.querySelector('#pkPackingDoneBadge')) return;
         var badge = document.createElement('span');
         badge.id = 'pkPackingDoneBadge';
-        badge.textContent = 'Packing Done';
+        badge.textContent = isFinishedProductionNow ? 'Finished Production' : (isDispatchedNow ? 'Dispatched' : 'Packed');
         badge.style.marginLeft = '8px';
         badge.style.background = '#22c55e';
         badge.style.color = '#fff';
@@ -2480,7 +2538,8 @@ include __DIR__ . '/../../includes/header.php';
       }
 
       function applySectionBLockState() {
-        var shouldLock = isPackingDoneNow && !isAdminUser;
+        var shouldLock = ((operatorSubmittedNow || isTerminalNow) && !(isAdminUser && adminEditMode));
+        var allowAdminRepack = isAdminUser && adminEditMode && isPackedNow && !isFinishedProductionNow && !isDispatchedNow;
         var editableFields = section.querySelectorAll('.pk-jc-section-content-b input, .pk-jc-section-content-b select, .pk-jc-section-content-b textarea');
         editableFields.forEach(function(field) {
           if (shouldLock) {
@@ -2499,8 +2558,13 @@ include __DIR__ . '/../../includes/header.php';
         });
 
         if (finishBtn) {
-          var canFinishNow = !isPackingDoneNow && operatorSubmittedNow;
-          if (isPackingDoneNow) {
+          if (allowAdminRepack) {
+            finishBtn.removeAttribute('disabled');
+            finishBtn.style.backgroundColor = '#22c55e';
+            finishBtn.style.cursor = 'pointer';
+            finishBtn.style.opacity = '1';
+            finishBtn.title = 'Admin edit mode is active. Save changes by marking Packed again.';
+          } else if (isTerminalNow) {
             finishBtn.setAttribute('disabled', 'disabled');
             finishBtn.style.backgroundColor = '#9ca3af';
             finishBtn.style.cursor = 'not-allowed';
@@ -2521,13 +2585,76 @@ include __DIR__ . '/../../includes/header.php';
           }
         }
 
+        if (dispatchBtn) {
+          if (isAdminUser && adminEditMode) {
+            dispatchBtn.setAttribute('disabled', 'disabled');
+            dispatchBtn.style.backgroundColor = '#9ca3af';
+            dispatchBtn.style.cursor = 'not-allowed';
+            dispatchBtn.style.opacity = '0.65';
+          } else if (isDispatchedNow) {
+            dispatchBtn.setAttribute('disabled', 'disabled');
+            dispatchBtn.style.backgroundColor = '#9ca3af';
+            dispatchBtn.style.cursor = 'not-allowed';
+            dispatchBtn.style.opacity = '0.75';
+          } else if (!isPackedNow) {
+            dispatchBtn.setAttribute('disabled', 'disabled');
+            dispatchBtn.style.backgroundColor = '#9ca3af';
+            dispatchBtn.style.cursor = 'not-allowed';
+            dispatchBtn.style.opacity = '0.65';
+          } else {
+            dispatchBtn.removeAttribute('disabled');
+            dispatchBtn.style.backgroundColor = '#2563eb';
+            dispatchBtn.style.cursor = 'pointer';
+            dispatchBtn.style.opacity = '1';
+          }
+        }
+
+        if (finalProductionBtn) {
+          if (isAdminUser && adminEditMode) {
+            finalProductionBtn.setAttribute('disabled', 'disabled');
+            finalProductionBtn.style.backgroundColor = '#9ca3af';
+            finalProductionBtn.style.cursor = 'not-allowed';
+            finalProductionBtn.style.opacity = '0.65';
+          } else if (isFinishedProductionNow) {
+            finalProductionBtn.setAttribute('disabled', 'disabled');
+            finalProductionBtn.style.backgroundColor = '#9ca3af';
+            finalProductionBtn.style.cursor = 'not-allowed';
+            finalProductionBtn.style.opacity = '0.75';
+          } else if (!isPackedNow) {
+            finalProductionBtn.setAttribute('disabled', 'disabled');
+            finalProductionBtn.style.backgroundColor = '#9ca3af';
+            finalProductionBtn.style.cursor = 'not-allowed';
+            finalProductionBtn.style.opacity = '0.65';
+          } else {
+            finalProductionBtn.removeAttribute('disabled');
+            finalProductionBtn.style.backgroundColor = '#15803d';
+            finalProductionBtn.style.cursor = 'pointer';
+            finalProductionBtn.style.opacity = '1';
+          }
+        }
+
+        if (adminEditBtn) {
+          adminEditBtn.textContent = adminEditMode ? 'Disable Edit' : 'Enable Edit';
+          adminEditBtn.style.backgroundColor = adminEditMode ? '#dc2626' : '#7c3aed';
+          adminEditBtn.style.opacity = '1';
+          adminEditBtn.style.cursor = 'pointer';
+        }
+
+        if (adminEditBadge) {
+          adminEditBadge.style.display = (isAdminUser && adminEditMode) ? 'inline-flex' : 'none';
+        }
+
         ensurePackingDoneBadge();
-        if (isPackingDoneNow && !isAdminUser) {
-          setSectionMessage('Locked: Packing Done (non-admin view)', false);
-        } else if (isPackingDoneNow && isAdminUser) {
-          setSectionMessage('Packing Done: admin override enabled for edits.', false);
+        if (isTerminalNow && !isAdminUser) {
+          setSectionMessage('Locked: ' + (isFinishedProductionNow ? 'Finished Production' : (isDispatchedNow ? 'Dispatched' : 'Packed')) + ' (non-admin view)', false);
+        } else if ((isTerminalNow || operatorSubmittedNow) && isAdminUser && adminEditMode) {
+          setSectionMessage(allowAdminRepack ? 'Admin edit mode enabled. Update values, then press Mark Packed to save again. Finished Production stays disabled until you exit edit mode.' : 'Admin edit mode enabled. You can now update the locked values.', false);
+        } else if (isTerminalNow && isAdminUser) {
+          setSectionMessage((isFinishedProductionNow ? 'Finished Production' : (isDispatchedNow ? 'Dispatched' : 'Packed')) + ': admin override enabled for edits.', false);
+        } else if (operatorSubmittedNow) {
+          setSectionMessage(isAdminUser ? 'Operator physical production submitted. Press Enable Edit if you need admin override changes.' : 'Operator physical production submitted. Helper inputs are now locked. You can print sticker/label or mark Packed.', false);
         } else if (!operatorSubmittedNow) {
-          setSectionMessage('&#9679; Waiting: Operator has not yet submitted packing quantities. Finish button will activate once submitted.', false);
+          setSectionMessage('Waiting: Operator has not yet submitted packing quantities. Mark Packed will activate once submitted.', false);
         }
       }
 
@@ -2539,6 +2666,15 @@ include __DIR__ . '/../../includes/header.php';
           e.preventDefault();
           e.stopPropagation();
           closeModal();
+        });
+      }
+
+      if (adminEditBtn) {
+        adminEditBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          adminEditMode = !adminEditMode;
+          applySectionBLockState();
         });
       }
 
@@ -2634,6 +2770,8 @@ include __DIR__ . '/../../includes/header.php';
           if (this.hasAttribute('disabled')) return;
           var buttonAction = '';
           if (this.classList.contains('pk-btn-finished')) buttonAction = 'finished';
+          else if (this.classList.contains('pk-btn-dispatched')) buttonAction = 'dispatched';
+          else if (this.classList.contains('pk-btn-finished-production')) buttonAction = 'finished_production';
           else if (this.classList.contains('pk-btn-cancel')) buttonAction = 'cancel';
           else if (this.classList.contains('pk-btn-sticker')) buttonAction = 'sticker';
           else if (this.classList.contains('pk-btn-label')) buttonAction = 'label';
@@ -2645,17 +2783,17 @@ include __DIR__ . '/../../includes/header.php';
           };
           
           if (buttonAction === 'finished') {
-            if (isPackingDoneNow || !operatorSubmittedNow || (finishBtn && finishBtn.getAttribute('data-saving') === '1')) return;
+            if (isTerminalNow || !operatorSubmittedNow || (finishBtn && finishBtn.getAttribute('data-saving') === '1')) return;
             if (finishBtn) {
               finishBtn.setAttribute('data-saving', '1');
               finishBtn.setAttribute('disabled', 'disabled');
               finishBtn.textContent = 'Saving...';
               finishBtn.style.backgroundColor = '#64748b';
             }
-            setSectionMessage('Updating status to Packing Done...', false);
+            setSectionMessage('Updating status to Packed...', false);
 
             var fdFinish = new FormData();
-            fdFinish.append('action', 'mark_packing_done');
+            fdFinish.append('action', 'mark_packed');
             fdFinish.append('job_id', String(activeJobIdForModal));
 
             fetch(baseUrl + '/modules/packing/api.php', {
@@ -2667,15 +2805,74 @@ include __DIR__ . '/../../includes/header.php';
               .then(function(resp) {
                 if (!resp || !resp.ok) {
                   setSectionMessage((resp && resp.message) ? resp.message : 'Status update failed.', true);
-                  isPackingDoneNow = false;
+                  isPackedNow = false;
+                  isTerminalNow = isDispatchedNow || isPackedNow;
                   return;
                 }
-                isPackingDoneNow = true;
-                job.status = 'Packing Done';
+                adminEditMode = false;
+                isPackedNow = true;
+                isDispatchedNow = false;
+                isFinishedProductionNow = false;
+                isTerminalNow = true;
+                modalStatusNow = 'packed';
+                job.status = 'Packed';
+                var tableRow = document.querySelector('tr[data-row-id="' + String(activeJobIdForModal) + '"]');
+                var statusBadge = tableRow ? tableRow.querySelector('td:last-child .pk-badge') : null;
+                if (statusBadge) {
+                  statusBadge.textContent = 'Packed';
+                  statusBadge.classList.remove('muted');
+                  statusBadge.classList.add('ok');
+                }
                 applySectionBLockState();
-                setSectionMessage('Status updated: Packing Done ✓ Moving to History...', false);
+                setSectionMessage('Status updated: Packed ✓ ' + (isPosRollTab ? 'Finished Production is now enabled.' : 'You can now mark Dispatched.') , false);
+              })
+              .catch(function() {
+                setSectionMessage('Status update failed.', true);
+                isPackedNow = false;
+                isTerminalNow = isDispatchedNow || isPackedNow;
+              })
+              .finally(function() {
+                if (finishBtn) {
+                  finishBtn.removeAttribute('data-saving');
+                  finishBtn.textContent = 'Mark Packed';
+                  applySectionBLockState();
+                }
+              });
+          } else if (buttonAction === 'dispatched') {
+            if (!isPackedNow || isDispatchedNow || (dispatchBtn && dispatchBtn.getAttribute('data-saving') === '1')) return;
+            if (dispatchBtn) {
+              dispatchBtn.setAttribute('data-saving', '1');
+              dispatchBtn.setAttribute('disabled', 'disabled');
+              dispatchBtn.textContent = 'Saving...';
+              dispatchBtn.style.backgroundColor = '#64748b';
+            }
+            setSectionMessage('Updating status to Dispatched...', false);
 
-                // Remove row from active tab and reload page so History is updated.
+            var fdDispatch = new FormData();
+            fdDispatch.append('action', 'mark_dispatched');
+            fdDispatch.append('job_id', String(activeJobIdForModal));
+
+            fetch(baseUrl + '/modules/packing/api.php', {
+              method: 'POST',
+              body: fdDispatch,
+              credentials: 'same-origin'
+            })
+              .then(function(r) { return r.json(); })
+              .then(function(resp) {
+                if (!resp || !resp.ok) {
+                  setSectionMessage((resp && resp.message) ? resp.message : 'Status update failed.', true);
+                  isDispatchedNow = false;
+                  isTerminalNow = isDispatchedNow || isPackedNow;
+                  return;
+                }
+                isDispatchedNow = true;
+                isPackedNow = false;
+                isTerminalNow = true;
+                modalStatusNow = 'dispatched';
+                job.status = 'Dispatched';
+                applySectionBLockState();
+                setSectionMessage('Status updated: Dispatched ✓ Moving to History...', false);
+
                 var row = document.querySelector('tr[data-row-id="' + String(activeJobIdForModal) + '"]');
                 if (row && row.parentNode) {
                   row.parentNode.removeChild(row);
@@ -2685,12 +2882,68 @@ include __DIR__ . '/../../includes/header.php';
               })
               .catch(function() {
                 setSectionMessage('Status update failed.', true);
-                isPackingDoneNow = false;
+                isDispatchedNow = false;
+                isTerminalNow = isDispatchedNow || isPackedNow;
               })
               .finally(function() {
-                if (finishBtn) {
-                  finishBtn.removeAttribute('data-saving');
-                  finishBtn.textContent = 'Finished';
+                if (dispatchBtn) {
+                  dispatchBtn.removeAttribute('data-saving');
+                  dispatchBtn.textContent = 'Mark Dispatched';
+                  applySectionBLockState();
+                }
+              });
+          } else if (buttonAction === 'finished_production') {
+            if (!isPackedNow || isFinishedProductionNow || (finalProductionBtn && finalProductionBtn.getAttribute('data-saving') === '1')) return;
+            if (finalProductionBtn) {
+              finalProductionBtn.setAttribute('data-saving', '1');
+              finalProductionBtn.setAttribute('disabled', 'disabled');
+              finalProductionBtn.textContent = 'Saving...';
+              finalProductionBtn.style.backgroundColor = '#64748b';
+            }
+            setSectionMessage('Moving production to Finished Goods...', false);
+
+            var fdFinished = new FormData();
+            fdFinished.append('action', 'mark_finished_production');
+            fdFinished.append('job_id', String(activeJobIdForModal));
+
+            fetch(baseUrl + '/modules/packing/api.php', {
+              method: 'POST',
+              body: fdFinished,
+              credentials: 'same-origin'
+            })
+              .then(function(r) { return r.json(); })
+              .then(function(resp) {
+                if (!resp || !resp.ok) {
+                  setSectionMessage((resp && resp.message) ? resp.message : 'Finished Production failed.', true);
+                  isFinishedProductionNow = false;
+                  isTerminalNow = isDispatchedNow || isPackedNow || isFinishedProductionNow;
+                  return;
+                }
+                isFinishedProductionNow = true;
+                isPackedNow = false;
+                isDispatchedNow = false;
+                isTerminalNow = true;
+                modalStatusNow = 'finished production';
+                job.status = 'Finished Production';
+                applySectionBLockState();
+                setSectionMessage('Finished Production completed ✓ Moving to History...', false);
+
+                var row = document.querySelector('tr[data-row-id="' + String(activeJobIdForModal) + '"]');
+                if (row && row.parentNode) {
+                  row.parentNode.removeChild(row);
+                }
+                closeModal();
+                setTimeout(function() { window.location.href = window.location.pathname + '?tab=history'; }, 800);
+              })
+              .catch(function() {
+                setSectionMessage('Finished Production failed.', true);
+                isFinishedProductionNow = false;
+                isTerminalNow = isDispatchedNow || isPackedNow || isFinishedProductionNow;
+              })
+              .finally(function() {
+                if (finalProductionBtn) {
+                  finalProductionBtn.removeAttribute('data-saving');
+                  finalProductionBtn.textContent = 'Finished Production';
                   applySectionBLockState();
                 }
               });

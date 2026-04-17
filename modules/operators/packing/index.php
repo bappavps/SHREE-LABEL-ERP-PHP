@@ -256,7 +256,11 @@ include __DIR__ . '/../../../includes/header.php';
           <?php else: ?>
           <?php foreach ($rows as $r):
             $opEntry = packing_fetch_operator_entry($db, (string)($r['job_no'] ?? ''));
-            $hasEntry = !empty($opEntry);
+            $isSubmitted = !empty($opEntry)
+              && (
+                ((int)($opEntry['submitted_lock'] ?? 0) === 1)
+                || (trim((string)($opEntry['submitted_at'] ?? '')) !== '')
+              );
           ?>
           <tr data-row-id="<?= (int)($r['id'] ?? 0) ?>">
             <td><button class="op-id-btn op-open-btn"
@@ -269,7 +273,7 @@ include __DIR__ . '/../../../includes/header.php';
             <td><?= e($r['client_name'] ?? '-') ?></td>
             <td><?= e($formatDate((string)($r['dispatch_date'] ?? ''))) ?></td>
             <td><span class="op-badge <?= e($displayPackingStatusClass((string)($r['status'] ?? ''))) ?>"><?= e($displayPackingStatus((string)($r['status'] ?? ''))) ?></span></td>
-            <td><?php if ($hasEntry): ?>
+            <td><?php if ($isSubmitted): ?>
               <span class="op-badge submitted">Submitted</span>
             <?php else: ?>
               <span class="op-badge muted">Pending</span>
@@ -437,7 +441,11 @@ include __DIR__ . '/../../../includes/header.php';
     var prodQty  = parseFloat(String(prodQtyRaw).replace(/,/g,''))  || 0;
 
     var opEntry = (job.operator_entry && typeof job.operator_entry==='object') ? job.operator_entry : null;
-    var lockSubmittedForOperator = !!opEntry && !opCanAdminOverrideEdit;
+    var opEntrySubmitted = !!opEntry && (
+      Number(opEntry.submitted_lock || 0) === 1 ||
+      String(opEntry.submitted_at || '').trim() !== ''
+    );
+    var lockSubmittedForOperator = opEntrySubmitted && !opCanAdminOverrideEdit;
     var currentOpBatches = [];
     var opEntryRollPayload = parseExtraData(opEntry ? opEntry.roll_payload_json : null);
 
@@ -496,6 +504,10 @@ include __DIR__ . '/../../../includes/header.php';
       pushFromArrayMaybe(planExtra, 'roll_details');
       pushFromArrayMaybe(prevExtra, 'roll_details');
       pushFromArrayMaybe(grandPrevExtra, 'roll_details');
+      pushFromArrayMaybe(jobExtra, 'assigned_child_rolls');
+      pushFromArrayMaybe(planExtra, 'assigned_child_rolls');
+      pushFromArrayMaybe(prevExtra, 'assigned_child_rolls');
+      pushFromArrayMaybe(grandPrevExtra, 'assigned_child_rolls');
       pushFromArrayMaybe(jobExtra, 'child_rolls');
       pushFromArrayMaybe(planExtra, 'child_rolls');
       pushFromArrayMaybe(prevExtra, 'child_rolls');
@@ -605,7 +617,7 @@ include __DIR__ . '/../../../includes/header.php';
 
     // Build submitted box (if entry exists)
     var submittedBoxHtml = '';
-    if (opEntry) {
+    if (opEntrySubmitted) {
       submittedBoxHtml =
         '<div class="op-submitted-box">' +
         '<div style="font-size:.78rem;font-weight:900;color:#92400e;display:flex;align-items:center;gap:6px">' +
@@ -701,7 +713,7 @@ include __DIR__ . '/../../../includes/header.php';
             '</div>' +
           '</div>' +
           '<div class="op-submit-row">' +
-            '<button class="op-btn-submit" id="opSubmitBtn" type="button"' + (lockSubmittedForOperator ? ' disabled style="opacity:.65;cursor:not-allowed"' : '') + '>' + (lockSubmittedForOperator ? 'Submitted (Locked)' : (opEntry ? 'Update Entry' : 'Submit Entry')) + '</button>' +
+            '<button class="op-btn-submit" id="opSubmitBtn" type="button"' + (lockSubmittedForOperator ? ' disabled style="opacity:.65;cursor:not-allowed"' : '') + '>' + (lockSubmittedForOperator ? 'Submitted (Locked)' : (opEntrySubmitted ? 'Update Entry' : 'Submit Entry')) + '</button>' +
             '<button class="op-btn-print" id="opPrintSlipBtn" type="button">Packing Slip Print</button>' +
             '<button class="op-btn-cancel-modal" id="opCancelBtn" type="button">Cancel</button>' +
           '</div>' +

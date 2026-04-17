@@ -8,6 +8,10 @@ function packing_completed_statuses(): array {
         'complete',
         'qc passed',
         'qc_passed',
+        'packed',
+        'finished production',
+        'finished_production',
+        'dispatched',
         'packing done',
         'packing_done',
     ];
@@ -29,6 +33,27 @@ function packing_is_completed_status(string $status): bool {
         || str_starts_with($norm, 'qc passed')
         || str_starts_with($norm, 'finalized')
         || str_starts_with($norm, 'closed');
+}
+
+function packing_effective_status_from_row(array $row): string {
+    $rawStatus = trim((string)($row['status'] ?? ''));
+    $normRaw = strtolower(trim(str_replace(['-', '_'], ' ', $rawStatus)));
+    $extra = packing_decode_json($row['extra_data'] ?? null);
+
+    $hasFinishedFlag = (int)($extra['finished_production_flag'] ?? 0) === 1
+        || trim((string)($extra['finished_production_at'] ?? '')) !== '';
+    if ($hasFinishedFlag) {
+        return 'Finished Production';
+    }
+
+    $hasPackedFlag = (int)($extra['packing_done_flag'] ?? 0) === 1
+        || (int)($extra['packing_packed_flag'] ?? 0) === 1
+        || trim((string)($extra['packing_done_at'] ?? '')) !== '';
+    if ($hasPackedFlag && !in_array($normRaw, ['dispatched', 'finished production'], true)) {
+        return 'Packed';
+    }
+
+    return $rawStatus;
 }
 
 function packing_department_type_map(): array {
@@ -152,6 +177,23 @@ function packing_department_to_tab(string $department): ?string {
 function packing_department_display_for_tab(string $tabKey): string {
     $map = packing_department_type_map();
     return $map[$tabKey]['department_label'] ?? '-';
+}
+
+function packing_active_row_priority(array $row): int {
+    $status = strtolower(trim(str_replace(['-', '_'], ' ', (string)($row['status'] ?? ''))));
+    $hasOperatorSubmission = !empty($row['operator_submitted']);
+
+    if (in_array($status, ['packed', 'packing done'], true)) {
+        return 300;
+    }
+    if ($hasOperatorSubmission) {
+        return 200;
+    }
+    if (packing_is_completed_status((string)($row['status'] ?? ''))) {
+        return 100;
+    }
+
+    return 0;
 }
 
 function packing_decode_json($value): array {
@@ -383,6 +425,7 @@ function packing_ensure_operator_entries_table(mysqli $db): void {
             `roll_payload_json` LONGTEXT DEFAULT NULL,
             `photo_path`    VARCHAR(255) DEFAULT NULL,
             `submitted_at`  DATETIME DEFAULT NULL,
+            `submitted_lock` TINYINT(1) NOT NULL DEFAULT 0,
             `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `updated_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
@@ -411,6 +454,39 @@ function packing_ensure_operator_entries_table(mysqli $db): void {
     if (!$hasRollPayloadJson) {
         $db->query("ALTER TABLE `packing_operator_entries` ADD COLUMN `roll_payload_json` LONGTEXT DEFAULT NULL AFTER `notes`");
     }
+
+    // Backward compatibility for installations created before submitted_lock field.
+    $hasSubmittedLock = false;
+    $res = $db->query("SHOW COLUMNS FROM `packing_operator_entries` LIKE 'submitted_lock'");
+    if ($res instanceof mysqli_result) {
+        $hasSubmittedLock = ($res->num_rows > 0);
+        $res->close();
+    }
+    if (!$hasSubmittedLock) {
+        $db->query("ALTER TABLE `packing_operator_entries` ADD COLUMN `submitted_lock` TINYINT(1) NOT NULL DEFAULT 0 AFTER `submitted_at`");
+    }
+}
+
+function packing_table_has_column(mysqli $db, string $table, string $column): bool {
+    $table = trim($table);
+    $column = trim($column);
+    if ($table === '' || $column === '') {
+        return false;
+    }
+
+    try {
+        $sql = "SHOW COLUMNS FROM `" . $db->real_escape_string($table) . "` LIKE '" . $db->real_escape_string($column) . "'";
+        $res = $db->query($sql);
+        if ($res instanceof mysqli_result) {
+            $exists = ($res->num_rows > 0);
+            $res->close();
+            return $exists;
+        }
+    } catch (Throwable $e) {
+        return false;
+    }
+
+    return false;
 }
 
 function packing_fetch_operator_entry(mysqli $db, string $jobNo): ?array {
@@ -521,7 +597,7 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
         'roll_no' => (string)($row['roll_no'] ?? ''),
         'job_type' => (string)($row['job_type'] ?? ''),
         'department' => (string)($row['department'] ?? ''),
-        'status' => (string)($row['status'] ?? ''),
+        'status' => packing_effective_status_from_row($row),
         'started_at' => (string)($row['started_at'] ?? ''),
         'completed_at' => (string)($row['completed_at'] ?? ''),
         'created_at' => (string)($row['created_at'] ?? ''),
@@ -576,8 +652,9 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     $where .= " AND (LOWER(COALESCE(j.department, '')) IN (" . implode(',', $quotedDepartments) . ")";
     $where .= " OR LOWER(COALESCE(p.department, '')) IN (" . implode(',', $quotedPlanDepartments) . "))";
 
-    // Never show 'Packing Done' jobs in active tabs — they belong to History only.
-    $where .= " AND LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status,''),'-',' '),'_',' '))) != 'packing done'";
+    // Keep Packed jobs visible in manager dashboard for final completion step.
+    // Dispatched / Finished Production should leave active tabs.
+    $where .= " AND LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status,''),'-',' '),'_',' '))) NOT IN ('dispatched','finished production')";
 
     // Status filter: if provided, filter by exact status match
     if ($status !== '') {
@@ -619,10 +696,28 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     $result = $db->query($sql);
     $rows = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
 
-    // Group by plan+tab, keeping the latest job that is NOT 'Packing Done'.
-    // If the latest is 'Packing Done', try to keep the most recent non-done job.
-    $activeByGroup  = []; // best active (complete/completed) job per group
-    $doneByGroup    = []; // best packing-done job per group (for history fallback)
+    // Keep a fast lookup of jobs that already have operator-submitted entries.
+    // Such rows must remain visible to managers until explicitly marked finished.
+    $operatorEntryByJobNo = [];
+    $hasSubmittedLock = packing_table_has_column($db, 'packing_operator_entries', 'submitted_lock');
+    $opSql = $hasSubmittedLock
+        ? "SELECT job_no, submitted_lock, submitted_at FROM packing_operator_entries WHERE job_no IS NOT NULL AND TRIM(job_no) <> ''"
+        : "SELECT job_no, submitted_at FROM packing_operator_entries WHERE job_no IS NOT NULL AND TRIM(job_no) <> ''";
+    $opRes = $db->query($opSql);
+    if ($opRes) {
+        while ($opRow = $opRes->fetch_assoc()) {
+            $jn = strtolower(trim((string)($opRow['job_no'] ?? '')));
+            $isLocked = $hasSubmittedLock && (int)($opRow['submitted_lock'] ?? 0) === 1;
+            $hasSubmittedAt = trim((string)($opRow['submitted_at'] ?? '')) !== '';
+            if ($jn !== '' && ($isLocked || $hasSubmittedAt)) {
+                $operatorEntryByJobNo[$jn] = true;
+            }
+        }
+    }
+
+    // Group by plan+tab, keeping the latest non-terminal job in active tabs.
+    $activeByGroup  = []; // best active job per group
+    $doneByGroup    = []; // best terminal job per group (for history fallback)
     foreach ($rows as $row) {
         $tabKey = packing_row_to_tab($row);
         if ($tabKey === null) {
@@ -635,31 +730,39 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
             : ('job:' . strtolower(trim((string)($row['job_no'] ?? ''))));
         $groupKey = $planGroup . '|' . $tabKey;
 
+        $row['status'] = packing_effective_status_from_row($row);
         $rawStatus  = (string)($row['status'] ?? '');
         $normStatus = strtolower(trim(str_replace(['-', '_'], ' ', $rawStatus)));
-        $jobExtraStatus = packing_decode_json($row['extra_data'] ?? null);
-        $isPackingDoneFlag = !empty($jobExtraStatus['packing_done_flag']);
+        $jobNoKey = strtolower(trim((string)($row['job_no'] ?? '')));
+        $row['operator_submitted'] = ($jobNoKey !== '' && isset($operatorEntryByJobNo[$jobNoKey]));
 
         $row['packing_tab'] = $tabKey;
 
-        if ($normStatus === 'packing done' || $isPackingDoneFlag) {
-            // Store done group (for reference); will NOT go to active tabs
+        if (in_array($normStatus, ['dispatched', 'finished production'], true)) {
+            // Store terminal group (for reference); will NOT go to active tabs
             if (!isset($doneByGroup[$groupKey])) {
                 $doneByGroup[$groupKey] = $row;
             }
         } else {
-            // Keep the most recent non-done completed job per group
+            // Prefer Packed rows first so refresh does not fall back to an older in-progress row.
             if (!isset($activeByGroup[$groupKey])) {
                 $activeByGroup[$groupKey] = $row;
+            } else {
+                $existingPriority = packing_active_row_priority($activeByGroup[$groupKey]);
+                $currentPriority = packing_active_row_priority($row);
+                if ($currentPriority > $existingPriority) {
+                    $activeByGroup[$groupKey] = $row;
+                }
             }
         }
     }
 
     $readyRows = [];
     foreach ($activeByGroup as $row) {
-        // Only show jobs whose previous section is actually finished.
-        // Keep packing queue clean by excluding queued/pending/in-progress rows.
-        if (!packing_is_completed_status((string)($row['status'] ?? ''))) {
+        // Keep queue clean for fresh jobs, but retain any operator-submitted rows
+        // so manager can always review and finalize them.
+        $hasOperatorSubmission = !empty($row['operator_submitted']);
+        if (!$hasOperatorSubmission && !packing_is_completed_status((string)($row['status'] ?? ''))) {
             continue;
         }
 
@@ -724,10 +827,11 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
             'order_date' => $orderDate,
             'dispatch_date' => $dispatchDate,
             'last_department' => packing_department_display_for_tab($tabKey),
-            'status' => (string)($row['status'] ?? ''),
+            'status' => packing_effective_status_from_row($row),
             'notes' => (string)($row['notes'] ?? ''),
             'image_url' => packing_extract_image_url($jobExtra, $planExtra),
             'event_time' => $eventTime,
+            'operator_submitted' => $hasOperatorSubmission,
         ];
     }
 
@@ -810,12 +914,11 @@ function packing_fetch_history_rows(mysqli $db, array $filters = []): array {
 
     $historyRows = [];
     foreach ($rows as $row) {
-        // Show jobs marked as packing done either by status text or durable flag.
+        // History should reflect truly finished terminal state.
+        $row['status'] = packing_effective_status_from_row($row);
         $rawStatus  = (string)($row['status'] ?? '');
         $normStatus = strtolower(trim(str_replace(['-', '_'], ' ', $rawStatus)));
-        $jobExtraStatus = packing_decode_json($row['extra_data'] ?? null);
-        $isPackingDoneFlag = !empty($jobExtraStatus['packing_done_flag']);
-        if ($normStatus !== 'packing done' && !$isPackingDoneFlag) {
+        if (!in_array($normStatus, ['dispatched', 'packing done', 'finished production'], true)) {
             continue;
         }
 
@@ -883,7 +986,7 @@ function packing_fetch_history_rows(mysqli $db, array $filters = []): array {
             'order_date' => $orderDate,
             'dispatch_date' => $dispatchDate,
             'last_department' => $tabKey ? packing_department_display_for_tab($tabKey) : (trim((string)($row['department'] ?? '')) !== '' ? (string)$row['department'] : '-'),
-            'status' => $isPackingDoneFlag ? 'Packing Done' : (string)($row['status'] ?? ''),
+            'status' => (string)($row['status'] ?? ''),
             'notes' => (string)($row['notes'] ?? ''),
             'image_url' => packing_extract_image_url($jobExtra, $planExtra),
             'event_time' => $eventTime,
