@@ -1065,7 +1065,7 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                                 }
                             });
                         }
-                                var title = (n.job_no || notificationDepartmentLabel(n.department) || 'Notification');
+                        firstUnreadFetch = false;
                     }
                     if (typeof done === 'function') done(rows);
                 })

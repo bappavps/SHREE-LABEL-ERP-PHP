@@ -642,6 +642,7 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     // When true, show ALL active jobs regardless of operator submission status.
     // Used by the operator packing page so operators can see fresh jobs to submit.
     $showAllActive = !empty($filters['show_all_active']);
+    $hidePackedInActive = !empty($filters['hide_packed_in_active']);
 
     $allDepartments = [];
     foreach (packing_department_type_map() as $cfg) {
@@ -750,8 +751,12 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
         $row['operator_submitted'] = ($jobNoKey !== '' && isset($operatorEntryByJobNo[$jobNoKey]));
 
         $row['packing_tab'] = $tabKey;
+        $row['group_key'] = $groupKey;
 
-        if (in_array($normStatus, ['dispatched', 'finished production'], true)) {
+        $isTerminalForActive = in_array($normStatus, ['dispatched', 'finished production'], true)
+            || ($hidePackedInActive && in_array($normStatus, ['packed', 'packing done'], true));
+
+        if ($isTerminalForActive) {
             // Store terminal group (for reference); will NOT go to active tabs
             if (!isset($doneByGroup[$groupKey])) {
                 $doneByGroup[$groupKey] = $row;
@@ -772,6 +777,13 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
 
     $readyRows = [];
     foreach ($activeByGroup as $row) {
+        $groupKey = (string)($row['group_key'] ?? '');
+        if ($groupKey !== '' && isset($doneByGroup[$groupKey])) {
+            // A newer terminal row exists for this plan/tab group.
+            // Do not fallback to an older active row (prevents false "Awaiting Submit").
+            continue;
+        }
+
         // Keep queue clean: manager view only shows submitted/completed jobs.
         // show_all_active mode (operator page) also includes fresh "Packing" jobs
         // so operators can see new work and submit their entries for the first time.
@@ -928,12 +940,9 @@ function packing_fetch_history_rows(mysqli $db, array $filters = []): array {
 
     $historyRows = [];
     foreach ($rows as $row) {
-        // Show jobs marked as packing done either by status text or durable flag.
-        $rawStatus = (string)($row['status'] ?? '');
-        $normStatus = strtolower(trim(str_replace(['-', '_'], ' ', $rawStatus)));
-        $jobExtraStatus = packing_decode_json($row['extra_data'] ?? null);
-        $isPackingDoneFlag = !empty($jobExtraStatus['packing_done_flag']);
-        if ($normStatus !== 'packing done' && !$isPackingDoneFlag) {
+        // History should include all completed packing states.
+        $effectiveStatus = packing_effective_status_from_row($row);
+        if (!packing_is_completed_status($effectiveStatus)) {
             continue;
         }
 
@@ -1001,7 +1010,7 @@ function packing_fetch_history_rows(mysqli $db, array $filters = []): array {
             'order_date' => $orderDate,
             'dispatch_date' => $dispatchDate,
             'last_department' => $tabKey ? packing_department_display_for_tab($tabKey) : (trim((string)($row['department'] ?? '')) !== '' ? (string)$row['department'] : '-'),
-            'status' => $isPackingDoneFlag ? 'Packing Done' : (string)($row['status'] ?? ''),
+            'status' => $effectiveStatus,
             'notes' => (string)($row['notes'] ?? ''),
             'image_url' => packing_extract_image_url($jobExtra, $planExtra),
             'event_time' => $eventTime,

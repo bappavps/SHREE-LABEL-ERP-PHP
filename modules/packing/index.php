@@ -2108,7 +2108,22 @@ include __DIR__ . '/../../includes/header.php';
           + '  </div>'
           + '</div>';
 
-    // Safety: some older render paths may miss modal blocks; inject if missing.
+    // Safety: inject missing confirmation modals that may not be in the innerHTML string.
+    if (!document.getElementById('pk-delete-confirmation-modal')) {
+      modalCardCanvas.insertAdjacentHTML('beforeend',
+        '<div id="pk-delete-confirmation-modal" class="pk-modal-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background-color:rgba(0,0,0,0.5);z-index:10000;justify-content:center;align-items:center;opacity:0;transition:opacity .3s ease;">'
+        + '<div class="pk-modal-content" style="background-color:#fff;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.2);max-width:460px;width:90%;padding:32px;text-align:center;transform:scale(0.95);transition:transform .3s ease;">'
+        + '<h3 style="font-size:1.3em;font-weight:700;color:#1e293b;margin:0 0 12px 0;">Delete Job</h3>'
+        + '<p style="font-size:.95em;color:#64748b;margin:0 0 24px 0;line-height:1.5;">This will permanently remove this job from packing list. Continue?</p>'
+        + '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">'
+        + '<button id="pk-delete-modal-btn-yes" type="button" class="pk-modal-btn pk-modal-btn-danger" style="background-color:#b91c1c;color:#fff;border:none;padding:10px 20px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;flex:1;min-width:130px;">Yes, Delete</button>'
+        + '<button id="pk-delete-modal-btn-no" type="button" class="pk-modal-btn pk-modal-btn-gray" style="background-color:#6b7280;color:#fff;border:none;padding:10px 20px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;flex:1;min-width:130px;">No / Close</button>'
+        + '</div>'
+        + '</div>'
+        + '</div>'
+      );
+    }
+
     if (!document.getElementById('pk-print-confirmation-modal')) {
       modalCardCanvas.insertAdjacentHTML('beforeend',
         '<div id="pk-print-confirmation-modal" class="pk-modal-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background-color:rgba(0,0,0,0.5);z-index:10000;justify-content:center;align-items:center;opacity:0;transition:opacity .3s ease;">'

@@ -10,8 +10,9 @@ packing_ensure_operator_entries_table($db);
 $pageTitle = 'Packing Operator Station';
 $canAdminOverrideEdit = (function_exists('isAdmin') && isAdmin())
   || (function_exists('hasRole') && hasRole('system_admin', 'super_admin'));
+$canDeleteJobs = function_exists('isAdmin') && isAdmin();
 
-$allowedTabs   = packing_tab_keys();
+$allowedTabs   = array_merge(packing_tab_keys(), ['history']);
 $currentTab    = trim((string)($_GET['tab'] ?? 'printing_label'));
 if (!in_array($currentTab, $allowedTabs, true)) $currentTab = 'printing_label';
 
@@ -41,9 +42,20 @@ if ($period !== 'custom') {
 
 // show_all_active=true: operator page must show fresh "Packing" jobs even before submission
 // so operators can open them and submit their production entries.
-$data      = packing_fetch_ready_rows($db, ['search' => $search, 'from' => $from, 'to' => $to, 'show_all_active' => true]);
+$data      = packing_fetch_ready_rows($db, [
+  'search' => $search,
+  'from' => $from,
+  'to' => $to,
+  'show_all_active' => true,
+  // Operator queue should exclude manager-marked packed rows.
+  'hide_packed_in_active' => true,
+]);
 $rowsByTab = $data['rows_by_tab'];
 $counts    = $data['counts'];
+
+$historyRows = packing_fetch_history_rows($db, ['search' => $search, 'from' => $from, 'to' => $to]);
+$rowsByTab['history'] = $historyRows;
+$counts['history'] = count($historyRows);
 
 $formatDate = static function(string $value): string {
     $value = trim($value);
@@ -53,11 +65,16 @@ $formatDate = static function(string $value): string {
 };
 
 $displayPackingStatus = static function(string $status): string {
-  return strtolower(trim($status)) === 'packing done' ? 'Packing Done' : 'Packing';
+  $norm = strtolower(trim(str_replace(['-', '_'], ' ', $status)));
+  if ($norm === 'finished production') return 'Finished Production';
+  if ($norm === 'dispatched') return 'Dispatched';
+  if (in_array($norm, ['packing done', 'packed'], true)) return 'Packed';
+  return 'Packing';
 };
 
 $displayPackingStatusClass = static function(string $status): string {
-  return strtolower(trim($status)) === 'packing done' ? 'ok' : 'muted';
+  $norm = strtolower(trim(str_replace(['-', '_'], ' ', $status)));
+  return in_array($norm, ['packing done', 'packed', 'finished production', 'dispatched'], true) ? 'ok' : 'muted';
 };
 
 $tabThemes = [
@@ -66,6 +83,7 @@ $tabThemes = [
     'one_ply'         => ['accent' => '#92400e', 'soft' => '#ffedd5', 'border' => '#fdba74'],
     'two_ply'         => ['accent' => '#d97706', 'soft' => '#fffbeb', 'border' => '#fcd34d'],
     'barcode'         => ['accent' => '#dc2626', 'soft' => '#fef2f2', 'border' => '#fca5a5'],
+  'history'         => ['accent' => '#6d28d9', 'soft' => '#f3e8ff', 'border' => '#ddd6fe'],
 ];
 
 include __DIR__ . '/../../../includes/header.php';
@@ -165,6 +183,7 @@ include __DIR__ . '/../../../includes/header.php';
 .op-tab[data-theme="one_ply"],.op-pane[data-theme="one_ply"]{--op-accent:#92400e;--op-soft:#ffedd5;--op-border:#fdba74}
 .op-tab[data-theme="two_ply"],.op-pane[data-theme="two_ply"]{--op-accent:#d97706;--op-soft:#fffbeb;--op-border:#fcd34d}
 .op-tab[data-theme="barcode"],.op-pane[data-theme="barcode"]{--op-accent:#dc2626;--op-soft:#fef2f2;--op-border:#fca5a5}
+.op-tab[data-theme="history"],.op-pane[data-theme="history"]{--op-accent:#6d28d9;--op-soft:#f3e8ff;--op-border:#ddd6fe}
 .op-btn-admin-edit{background:#7c3aed;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-weight:800;font-size:.95em;cursor:pointer;transition:all .2s ease;display:inline-flex;align-items:center;gap:6px}
 .op-btn-admin-edit:hover{background:#6d28d9;transform:translateY(-1px)}
 .page-header{margin-top:12px;background:linear-gradient(120deg,#7c2d12 0%,#c2410c 48%,#ea580c 100%);border-radius:14px;padding:14px;border:1px solid #9a3412;box-shadow:0 14px 30px rgba(124,45,18,.24)}
@@ -278,11 +297,29 @@ include __DIR__ . '/../../../includes/header.php';
             <?php else: ?>
               <span class="op-badge muted">Pending</span>
             <?php endif; ?></td>
-            <td><button class="op-id-btn op-open-btn"
-                        data-job-id="<?= (int)($r['id'] ?? 0) ?>"
-                        style="--op-accent:<?= e($theme['accent']) ?>;--op-soft:<?= e($theme['soft']) ?>;--op-border:<?= e($theme['border']) ?>">
-              Open
-            </button></td>
+            <td>
+              <button class="op-id-btn op-open-btn"
+                      data-job-id="<?= (int)($r['id'] ?? 0) ?>"
+                      style="--op-accent:<?= e($theme['accent']) ?>;--op-soft:<?= e($theme['soft']) ?>;--op-border:<?= e($theme['border']) ?>">
+                Open
+              </button>
+              <?php if ($tabKey === 'history'): ?>
+              <button class="op-id-btn op-history-print-btn"
+                      data-job-id="<?= (int)($r['id'] ?? 0) ?>"
+                      title="Print packing slip"
+                      style="margin-left:6px;--op-accent:<?= e($theme['accent']) ?>;--op-soft:<?= e($theme['soft']) ?>;--op-border:<?= e($theme['border']) ?>">
+                Print
+              </button>
+              <?php if ($canDeleteJobs): ?>
+              <button class="op-id-btn op-history-delete-btn"
+                      data-job-id="<?= (int)($r['id'] ?? 0) ?>"
+                      title="Delete job"
+                      style="margin-left:6px;background:#fee2e2;border-color:#fecaca;color:#b91c1c">
+                Delete
+              </button>
+              <?php endif; ?>
+              <?php endif; ?>
+            </td>
           </tr>
           <?php endforeach; ?>
           <?php endif; ?>
@@ -316,6 +353,7 @@ include __DIR__ . '/../../../includes/header.php';
   var baseUrl = '<?= e(BASE_URL) ?>';
   var currentOperatorName = '<?= e(trim((string)($_SESSION['user_name'] ?? 'Operator')) ?: 'Operator') ?>';
   var opCanAdminOverrideEdit = <?= $canAdminOverrideEdit ? 'true' : 'false' ?>;
+  var opCanDeleteJobs = <?= $canDeleteJobs ? 'true' : 'false' ?>;
   var activeJobId = 0;
   var activeJobNo = '';
   var activeJobData = null;
@@ -442,7 +480,12 @@ include __DIR__ . '/../../../includes/header.php';
 
     var opEntry = (job.operator_entry && typeof job.operator_entry==='object') ? job.operator_entry : null;
     var opEntrySubmitted = !!opEntry && Number(opEntry.is_submitted || 0) === 1;
-    var lockSubmittedForOperator = opEntrySubmitted && !opCanAdminOverrideEdit;
+    var statusNorm = String(job.status || '').toLowerCase().replace(/[-_]/g, ' ').trim();
+    var isHistoryLockedByStatus = ['packed', 'packing done', 'finished production', 'dispatched'].indexOf(statusNorm) !== -1;
+    var lockSubmittedForOperator = (opEntrySubmitted || isHistoryLockedByStatus) && !opCanAdminOverrideEdit;
+    var operatorLockMessage = isHistoryLockedByStatus
+      ? 'This job has moved to History by manager status update. Operator entry is locked.'
+      : 'Only admin can edit/delete after first submit.';
     var currentOpBatches = [];
     var opEntryRollPayload = parseExtraData(opEntry ? opEntry.roll_payload_json : null);
 
@@ -710,12 +753,12 @@ include __DIR__ . '/../../../includes/header.php';
             '</div>' +
           '</div>' +
           '<div class="op-submit-row">' +
-            '<button class="op-btn-submit" id="opSubmitBtn" type="button"' + ((lockSubmittedForOperator || opEntrySubmitted) ? ' disabled style="opacity:.65;cursor:not-allowed"' : '') + '>' + (lockSubmittedForOperator ? 'Submitted (Locked)' : (opEntrySubmitted ? 'Submitted' : 'Submit Entry')) + '</button>' +
+            '<button class="op-btn-submit" id="opSubmitBtn" type="button"' + ((lockSubmittedForOperator || opEntrySubmitted) ? ' disabled style="opacity:.65;cursor:not-allowed"' : '') + '>' + (lockSubmittedForOperator ? (isHistoryLockedByStatus && !opEntrySubmitted ? 'Moved to History' : 'Submitted (Locked)') : (opEntrySubmitted ? 'Submitted' : 'Submit Entry')) + '</button>' +
             (opCanAdminOverrideEdit ? '<button class="op-btn-admin-edit" id="opAdminEditBtn" type="button" style="display:' + (opEntrySubmitted ? 'inline-flex' : 'none') + '">✎ Edit Entry (Admin)</button>' : '') +
             '<button class="op-btn-print" id="opPrintSlipBtn" type="button">Packing Slip Print</button>' +
             '<button class="op-btn-cancel-modal" id="opCancelBtn" type="button">Cancel</button>' +
           '</div>' +
-          '<div class="op-msg" id="opMsg">' + (lockSubmittedForOperator ? 'Only admin can edit/delete after first submit.' : '') + '</div>' +
+          '<div class="op-msg" id="opMsg">' + (lockSubmittedForOperator ? operatorLockMessage : '') + '</div>' +
         '</div>' +
       '</div>';
 
@@ -990,7 +1033,7 @@ include __DIR__ . '/../../../includes/header.php';
     var printBtn  = document.getElementById('opPrintSlipBtn');
     var cancelBtn = document.getElementById('opCancelBtn');
     var msgDiv    = document.getElementById('opMsg');
-    if (opEntrySubmitted) {
+    if (opEntrySubmitted || lockSubmittedForOperator) {
       var lockIds = ['opNotes','opPhoto'];
       lockIds.forEach(function(id) {
         var el = document.getElementById(id);
@@ -1009,7 +1052,7 @@ include __DIR__ . '/../../../includes/header.php';
       if (!submitBtn) return;
       if (lockSubmittedForOperator) {
         submitBtn.disabled = true;
-        submitBtn.textContent = 'Submitted (Locked)';
+        submitBtn.textContent = (isHistoryLockedByStatus && !opEntrySubmitted) ? 'Moved to History' : 'Submitted (Locked)';
         submitBtn.style.opacity = '0.65';
         submitBtn.style.cursor = 'not-allowed';
         return;
@@ -1455,7 +1498,7 @@ include __DIR__ . '/../../../includes/header.php';
   }
 
   // ── Open job modal ──
-  function openJobModal(jobId) {
+  function openJobModal(jobId, autoPrintAfterOpen) {
     if (!jobId) return;
     activeJobId = Number(jobId) || 0;
     modalBody.innerHTML = loadingHtml();
@@ -1473,6 +1516,12 @@ include __DIR__ . '/../../../includes/header.php';
         activeJobData = data.job;
         activeJobNo   = String(data.job.job_no || '');
         renderModal(data.job);
+        if (autoPrintAfterOpen) {
+          setTimeout(function() {
+            var printBtn = document.getElementById('opPrintSlipBtn');
+            if (printBtn) printBtn.click();
+          }, 120);
+        }
       })
       .catch(function(err) {
         modalBody.innerHTML = '<div style="padding:24px;text-align:center;color:#b91c1c;font-weight:700">' +
@@ -1484,6 +1533,37 @@ include __DIR__ . '/../../../includes/header.php';
   document.querySelectorAll('.op-open-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       openJobModal(btn.getAttribute('data-job-id'));
+    });
+  });
+
+  document.querySelectorAll('.op-history-print-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      openJobModal(btn.getAttribute('data-job-id'), true);
+    });
+  });
+
+  document.querySelectorAll('.op-history-delete-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      if (!opCanDeleteJobs) return;
+      var jobId = Number(btn.getAttribute('data-job-id') || 0);
+      if (!jobId) return;
+      if (!window.confirm('Delete this job from packing history?')) return;
+
+      var fd = new FormData();
+      fd.append('action', 'delete_job');
+      fd.append('job_id', String(jobId));
+      fetch(baseUrl + '/modules/packing/api.php', { method: 'POST', body: fd, credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(resp) {
+          if (!resp || !resp.ok) {
+            window.alert((resp && resp.message) ? resp.message : 'Delete failed.');
+            return;
+          }
+          window.location.reload();
+        })
+        .catch(function() {
+          window.alert('Network error while deleting job.');
+        });
     });
   });
 
