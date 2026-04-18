@@ -77,73 +77,7 @@ $rollsPerCarton = is_numeric($rollsPerCartonParam) ? (string)(int)$rollsPerCarto
 // Add is_system column if missing
 try { $db->query("ALTER TABLE print_templates ADD COLUMN is_system TINYINT(1) NOT NULL DEFAULT 0 AFTER is_default"); } catch (Exception $e) {}
 
-// ── Ensure default label template exists ──────────────────────
-// Mark any old default system labels and ensure exactly one exists
-$chk = $db->query("SELECT id FROM print_templates WHERE is_system = 1 AND document_type = 'Industrial Label' LIMIT 1");
-if (!$chk || $chk->num_rows === 0) {
-    // Also check by name (may exist without is_system flag from prior version)
-    $chkName = $db->query("SELECT id FROM print_templates WHERE name = 'Default Paper Stock Label' AND document_type = 'Industrial Label' LIMIT 1");
-    if ($chkName && $chkName->num_rows > 0) {
-        $existId = (int)$chkName->fetch_assoc()['id'];
-        $builtinElements = json_encode([['type'=>'builtin','layout'=>'default_stock_label']]);
-        $db->query("UPDATE print_templates SET is_system = 1, is_default = 1, elements = '" . $db->real_escape_string($builtinElements) . "' WHERE id = {$existId}");
-    } else {
-        $defaultElements = json_encode([['type'=>'builtin','layout'=>'default_stock_label']]);
-        $defaultBg = json_encode(['image'=>'','opacity'=>1]);
-        $name = 'Default Paper Stock Label';
-        $docType = 'Industrial Label';
-        $pw = 150; $ph = 100;
-        $isDefault = 1; $isSystem = 1;
-        $stmt = $db->prepare("INSERT INTO print_templates (name, document_type, paper_width, paper_height, elements, background, is_default, is_system) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param('ssddssii', $name, $docType, $pw, $ph, $defaultElements, $defaultBg, $isDefault, $isSystem);
-        $stmt->execute();
-    }
-} else {
-    // System template exists — ensure it uses the latest built-in layout
-    $sysId = (int)$chk->fetch_assoc()['id'];
-    $builtinElements = json_encode([['type'=>'builtin','layout'=>'default_stock_label']]);
-    $db->query("UPDATE print_templates SET elements = '" . $db->real_escape_string($builtinElements) . "' WHERE id = {$sysId} AND (elements IS NULL OR elements NOT LIKE '%builtin%')");
-}
-
-// ── Ensure POS sticker template (40mm x 25mm) exists ───────────────────────
-$posTplName = 'POS Roll Sticker 40x25';
-$posChk = $db->query("SELECT id FROM print_templates WHERE name = '" . $db->real_escape_string($posTplName) . "' AND document_type = 'Industrial Label' LIMIT 1");
-if (!$posChk || $posChk->num_rows === 0) {
-    $posElements = json_encode([['type'=>'builtin','layout'=>'pos_roll_sticker_40x25']]);
-    $posBg = json_encode(['image'=>'','opacity'=>1]);
-    $posDocType = 'Industrial Label';
-    $posPw = 40;
-    $posPh = 25;
-    $posDefault = 0;
-    $posSystem = 1;
-    $stmtPos = $db->prepare("INSERT INTO print_templates (name, document_type, paper_width, paper_height, elements, background, is_default, is_system) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-    $stmtPos->bind_param('ssddssii', $posTplName, $posDocType, $posPw, $posPh, $posElements, $posBg, $posDefault, $posSystem);
-    $stmtPos->execute();
-} else {
-    $posId = (int)$posChk->fetch_assoc()['id'];
-    $posElements = json_encode([['type'=>'builtin','layout'=>'pos_roll_sticker_40x25']]);
-    $db->query("UPDATE print_templates SET paper_width = 40, paper_height = 25, is_system = 1, elements = '" . $db->real_escape_string($posElements) . "' WHERE id = {$posId}");
-}
-
-// ── Ensure Packing label template (150mm x 100mm) exists ───────────────────
-$packingTplName = 'Packing Label 150x100';
-$packingChk = $db->query("SELECT id FROM print_templates WHERE name = '" . $db->real_escape_string($packingTplName) . "' AND document_type = 'Industrial Label' LIMIT 1");
-if (!$packingChk || $packingChk->num_rows === 0) {
-    $packingElements = json_encode([['type'=>'builtin','layout'=>'packing_label_150x100']]);
-    $packingBg = json_encode(['image'=>'','opacity'=>1]);
-    $packingDocType = 'Industrial Label';
-    $packingPw = 150;
-    $packingPh = 100;
-    $packingDefault = 0;
-    $packingSystem = 1;
-    $stmtPacking = $db->prepare("INSERT INTO print_templates (name, document_type, paper_width, paper_height, elements, background, is_default, is_system) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-    $stmtPacking->bind_param('ssddssii', $packingTplName, $packingDocType, $packingPw, $packingPh, $packingElements, $packingBg, $packingDefault, $packingSystem);
-    $stmtPacking->execute();
-} else {
-    $packingId = (int)$packingChk->fetch_assoc()['id'];
-    $packingElements = json_encode([['type'=>'builtin','layout'=>'packing_label_150x100']]);
-    $db->query("UPDATE print_templates SET paper_width = 150, paper_height = 100, is_system = 1, elements = '" . $db->real_escape_string($packingElements) . "' WHERE id = {$packingId}");
-}
+erp_ensure_print_studio_system_templates($db);
 
 // ── Get roll data ─────────────────────────────────────────────
 $idsParam = trim($_GET['ids'] ?? '');
@@ -243,7 +177,7 @@ if (empty($rolls)) {
 }
 
 // ── Load label templates ──────────────────────────────────────
-$tplRes = $db->query("SELECT * FROM print_templates WHERE document_type = 'Industrial Label' ORDER BY is_default DESC, is_system DESC, name ASC");
+$tplRes = $db->query("SELECT * FROM print_templates WHERE document_type IN ('Industrial Label', 'POS Roll Sticker', 'Packing Label') ORDER BY is_default DESC, is_system DESC, name ASC");
 $templates = [];
 if ($tplRes) { while ($t = $tplRes->fetch_assoc()) $templates[] = $t; }
 
@@ -799,7 +733,8 @@ if (printType === 'sticker') {
     }
 } else if (printType === 'label') {
     for (var k = 0; k < templates.length; k++) {
-        if (String(templates[k].name || '').toLowerCase() === 'packing label 150x100') {
+        var tplName = String(templates[k].name || '').toLowerCase();
+        if (tplName === 'label printing 150x100' || tplName === 'packing label 150x100') {
             activeTemplateId = templates[k].id;
             break;
         }
@@ -1353,9 +1288,6 @@ function renderCustomLabel(roll, tpl) {
 
 /* ── Main render dispatcher ── */
 function renderLabel(roll, tpl) {
-    // System template or builtin element → professional built-in layout
-    if (tpl.isSystem) return renderBuiltinLabel(roll, tpl);
-
     var els = tpl.elements || [];
     // Check for builtin marker
     for (var i = 0; i < els.length; i++) {

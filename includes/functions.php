@@ -79,6 +79,570 @@ function appUrl($path = '') {
     return $baseUrl . $normalizedPath;
 }
 
+function erp_print_studio_system_background(): array {
+    return ['image' => '', 'opacity' => 1, 'mode' => 'fit', 'locked' => true];
+}
+
+function erp_print_studio_pos_roll_elements(): array {
+    return [
+        [
+            'id' => 'pos-title',
+            'type' => 'text',
+            'x' => 8,
+            'y' => 5,
+            'width' => 135,
+            'height' => 14,
+            'rotate' => 0,
+            'content' => '{{paper_type}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 10,
+                'fontWeight' => '900',
+                'fontFamily' => 'oswald',
+                'textAlign' => 'center',
+                'color' => '#000000',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'pos-batch',
+            'type' => 'text',
+            'x' => 8,
+            'y' => 20,
+            'width' => 135,
+            'height' => 12,
+            'rotate' => 0,
+            'content' => '{{batch_display}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 6,
+                'fontWeight' => 'bold',
+                'fontFamily' => 'inter',
+                'textAlign' => 'center',
+                'color' => '#000000',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'pos-barcode',
+            'type' => 'barcode',
+            'x' => 7,
+            'y' => 34,
+            'width' => 137,
+            'height' => 28,
+            'rotate' => 0,
+            'content' => '{{barcode_value}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'barcodeType' => 'CODE128',
+            'style' => [
+                'fontSize' => 10,
+                'fontWeight' => 'normal',
+                'fontFamily' => 'inter',
+                'textAlign' => 'center',
+                'color' => '#000000',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'pos-rollno',
+            'type' => 'text',
+            'x' => 8,
+            'y' => 67,
+            'width' => 102,
+            'height' => 10,
+            'rotate' => 0,
+            'content' => '{{roll_no}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 6,
+                'fontWeight' => 'bold',
+                'fontFamily' => 'inter',
+                'textAlign' => 'left',
+                'color' => '#000000',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'pos-qty',
+            'type' => 'text',
+            'x' => 8,
+            'y' => 79,
+            'width' => 100,
+            'height' => 10,
+            'rotate' => 0,
+            'content' => 'Qty: {{bundle_pcs}} | {{item_width}} mm',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 5,
+                'fontWeight' => 'bold',
+                'fontFamily' => 'inter',
+                'textAlign' => 'left',
+                'color' => '#000000',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'pos-company',
+            'type' => 'text',
+            'x' => 111,
+            'y' => 67,
+            'width' => 32,
+            'height' => 20,
+            'rotate' => 0,
+            'content' => '{{company_code}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 10,
+                'fontWeight' => '900',
+                'fontFamily' => 'oswald',
+                'textAlign' => 'center',
+                'color' => '#000000',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 1,
+                'borderColor' => '#000000',
+                'borderRadius' => 3,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ]
+    ];
+}
+
+function erp_print_studio_label_printing_elements(): array {
+    return [
+        [
+            'id' => 'lp-title',
+            'type' => 'text',
+            'x' => 18,
+            'y' => 10,
+            'width' => 531,
+            'height' => 30,
+            'rotate' => 0,
+            'content' => '{{paper_type}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 22,
+                'fontWeight' => '900',
+                'fontFamily' => 'oswald',
+                'textAlign' => 'center',
+                'color' => '#000000',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'lp-batch-top',
+            'type' => 'text',
+            'x' => 48,
+            'y' => 44,
+            'width' => 471,
+            'height' => 18,
+            'rotate' => 0,
+            'content' => '{{batch_display}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 13,
+                'fontWeight' => 'bold',
+                'fontFamily' => 'inter',
+                'textAlign' => 'center',
+                'color' => '#000000',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'lp-divider-1',
+            'type' => 'line',
+            'x' => 12,
+            'y' => 82,
+            'width' => 543,
+            'height' => 2,
+            'rotate' => 0,
+            'content' => '',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'borderColor' => '#000000',
+                'opacity' => 1,
+                'borderWidth' => 2,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'lp-barcode',
+            'type' => 'barcode',
+            'x' => 48,
+            'y' => 106,
+            'width' => 471,
+            'height' => 34,
+            'rotate' => 0,
+            'content' => '{{barcode_value}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'barcodeType' => 'CODE128',
+            'style' => [
+                'fontSize' => 10,
+                'fontWeight' => 'normal',
+                'fontFamily' => 'inter',
+                'textAlign' => 'center',
+                'color' => '#000000',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'lp-batch-bottom',
+            'type' => 'text',
+            'x' => 102,
+            'y' => 142,
+            'width' => 363,
+            'height' => 14,
+            'rotate' => 0,
+            'content' => '{{batch_display}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 10,
+                'fontWeight' => 'normal',
+                'fontFamily' => 'inter',
+                'textAlign' => 'center',
+                'color' => '#000000',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'lp-divider-2',
+            'type' => 'line',
+            'x' => 12,
+            'y' => 178,
+            'width' => 543,
+            'height' => 2,
+            'rotate' => 0,
+            'content' => '',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'borderColor' => '#000000',
+                'opacity' => 1,
+                'borderWidth' => 2,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'lp-product',
+            'type' => 'text',
+            'x' => 114,
+            'y' => 204,
+            'width' => 339,
+            'height' => 24,
+            'rotate' => 0,
+            'content' => '{{job_name}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 17,
+                'fontWeight' => '900',
+                'fontFamily' => 'oswald',
+                'textAlign' => 'center',
+                'color' => '#000000',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'lp-qty',
+            'type' => 'text',
+            'x' => 114,
+            'y' => 233,
+            'width' => 339,
+            'height' => 18,
+            'rotate' => 0,
+            'content' => 'Qty: {{bundle_pcs}} Pcs | {{item_width}} mm',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 12,
+                'fontWeight' => 'bold',
+                'fontFamily' => 'inter',
+                'textAlign' => 'center',
+                'color' => '#000000',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'lp-mfg',
+            'type' => 'text',
+            'x' => 174,
+            'y' => 271,
+            'width' => 219,
+            'height' => 16,
+            'rotate' => 0,
+            'content' => 'Manufactured by:',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 10,
+                'fontWeight' => 'bold',
+                'fontFamily' => 'inter',
+                'textAlign' => 'center',
+                'color' => '#000000',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'lp-company',
+            'type' => 'text',
+            'x' => 102,
+            'y' => 294,
+            'width' => 363,
+            'height' => 24,
+            'rotate' => 0,
+            'content' => '{{company_name}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 18,
+                'fontWeight' => '900',
+                'fontFamily' => 'oswald',
+                'textAlign' => 'center',
+                'color' => '#000000',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'lp-dash',
+            'type' => 'text',
+            'x' => 270,
+            'y' => 325,
+            'width' => 27,
+            'height' => 14,
+            'rotate' => 0,
+            'content' => '-',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 12,
+                'fontWeight' => 'bold',
+                'fontFamily' => 'inter',
+                'textAlign' => 'center',
+                'color' => '#000000',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'lp-origin',
+            'type' => 'text',
+            'x' => 147,
+            'y' => 348,
+            'width' => 273,
+            'height' => 18,
+            'rotate' => 0,
+            'content' => 'MADE IN INDIA',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 15,
+                'fontWeight' => '900',
+                'fontFamily' => 'oswald',
+                'textAlign' => 'center',
+                'color' => '#000000',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ]
+    ];
+}
+
+function erp_print_studio_system_template_specs(): array {
+    $background = erp_print_studio_system_background();
+    return [
+        [
+            'name' => 'Default Paper Stock Label',
+            'aliases' => ['Default Paper Stock Label'],
+            'document_type' => 'Industrial Label',
+            'paper_width' => 150,
+            'paper_height' => 100,
+            'elements' => [['type' => 'builtin', 'layout' => 'default_stock_label']],
+            'background' => $background,
+            'is_default' => 1,
+        ],
+        [
+            'name' => 'POS Roll Sticker 40x25',
+            'aliases' => ['POS Roll Sticker 40x25'],
+            'document_type' => 'POS Roll Sticker',
+            'paper_width' => 40,
+            'paper_height' => 25,
+            'elements' => erp_print_studio_pos_roll_elements(),
+            'background' => $background,
+            'is_default' => 0,
+        ],
+        [
+            'name' => 'Label Printing 150x100',
+            'aliases' => ['Label Printing 150x100', 'Packing Label 150x100'],
+            'document_type' => 'Packing Label',
+            'paper_width' => 150,
+            'paper_height' => 100,
+            'elements' => erp_print_studio_label_printing_elements(),
+            'background' => $background,
+            'is_default' => 0,
+        ],
+    ];
+}
+
+function erp_print_studio_elements_have_builtin_marker($elements): bool {
+    if (!is_array($elements)) {
+        return false;
+    }
+    foreach ($elements as $element) {
+        if (is_array($element) && strtolower(trim((string)($element['type'] ?? ''))) === 'builtin') {
+            return true;
+        }
+    }
+    return false;
+}
+
+function erp_ensure_print_studio_system_templates(mysqli $db): void {
+    foreach (erp_print_studio_system_template_specs() as $spec) {
+        $aliases = array_values(array_unique(array_filter(array_map('trim', (array)($spec['aliases'] ?? [])))));
+        if (empty($aliases)) {
+            $aliases = [(string)$spec['name']];
+        }
+
+        $existing = null;
+        $aliasTokens = implode(',', array_fill(0, count($aliases), '?'));
+        $selectSql = "SELECT id, name, elements FROM print_templates WHERE name IN ($aliasTokens) ORDER BY FIELD(name, $aliasTokens) LIMIT 1";
+        $selectStmt = $db->prepare($selectSql);
+        if ($selectStmt) {
+            $bindValues = array_merge($aliases, $aliases);
+            $selectStmt->bind_param(str_repeat('s', count($bindValues)), ...$bindValues);
+            $selectStmt->execute();
+            $existing = $selectStmt->get_result()->fetch_assoc() ?: null;
+            $selectStmt->close();
+        }
+
+        $elementsJson = json_encode($spec['elements'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $backgroundJson = json_encode($spec['background'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $name = (string)$spec['name'];
+        $documentType = (string)$spec['document_type'];
+        $paperWidth = (float)$spec['paper_width'];
+        $paperHeight = (float)$spec['paper_height'];
+        $isDefault = (int)($spec['is_default'] ?? 0);
+        $isSystem = 1;
+
+        if (!$existing) {
+            $insertStmt = $db->prepare("INSERT INTO print_templates (name, document_type, paper_width, paper_height, elements, background, is_default, is_system) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            if ($insertStmt) {
+                $insertStmt->bind_param('ssddssii', $name, $documentType, $paperWidth, $paperHeight, $elementsJson, $backgroundJson, $isDefault, $isSystem);
+                $insertStmt->execute();
+                $insertStmt->close();
+            }
+            continue;
+        }
+
+        $existingElements = json_decode((string)($existing['elements'] ?? '[]'), true);
+        $shouldRefreshElements = empty($existingElements) || erp_print_studio_elements_have_builtin_marker($existingElements);
+        $templateId = (int)($existing['id'] ?? 0);
+        if ($templateId <= 0) {
+            continue;
+        }
+
+        if ($shouldRefreshElements) {
+            $updateStmt = $db->prepare("UPDATE print_templates SET name = ?, document_type = ?, paper_width = ?, paper_height = ?, elements = ?, background = ?, is_default = ?, is_system = ? WHERE id = ?");
+            if ($updateStmt) {
+                $updateStmt->bind_param('ssddssiii', $name, $documentType, $paperWidth, $paperHeight, $elementsJson, $backgroundJson, $isDefault, $isSystem, $templateId);
+                $updateStmt->execute();
+                $updateStmt->close();
+            }
+            continue;
+        }
+
+        $updateStmt = $db->prepare("UPDATE print_templates SET name = ?, document_type = ?, paper_width = ?, paper_height = ?, is_default = ?, is_system = ? WHERE id = ?");
+        if ($updateStmt) {
+            $updateStmt->bind_param('ssddiii', $name, $documentType, $paperWidth, $paperHeight, $isDefault, $isSystem, $templateId);
+            $updateStmt->execute();
+            $updateStmt->close();
+        }
+    }
+}
+
 function erp_parse_multi_value_list($value) {
     if (is_array($value)) {
         $parts = $value;

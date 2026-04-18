@@ -26,6 +26,8 @@ $db = getDB();
 // Add is_system column if missing
 try { $db->query("ALTER TABLE print_templates ADD COLUMN is_system TINYINT(1) NOT NULL DEFAULT 0 AFTER is_default"); } catch (Exception $e) {}
 
+erp_ensure_print_studio_system_templates($db);
+
 // ============================================================
 // AJAX Handler (returns JSON, exits early)
 // ============================================================
@@ -265,7 +267,7 @@ include __DIR__ . '/../../includes/header.php';
             <div style="font-size:.7rem;color:#6366f1;font-weight:700;text-transform:uppercase"><?= e($tpl['document_type']) ?></div>
             <div style="font-size:.65rem;color:#94a3b8;margin-top:2px"><?= e($tpl['paper_width']) ?> &times; <?= e($tpl['paper_height']) ?>mm</div>
             <?php if ($tpl['is_system'] ?? false): ?>
-              <div style="font-size:.65rem;color:#2563eb;margin-top:4px;font-weight:700">✓ Built-in System Template</div>
+              <div style="font-size:.65rem;color:#2563eb;margin-top:4px;font-weight:700">✓ Editable System Template</div>
             <?php endif; ?>
           </div>
         </div>
@@ -441,9 +443,38 @@ textarea.ps-prop-input { resize:vertical;min-height:50px; }
 .ps-field-btn:hover span { color:#6366f1; }
 .ps-field-code-btn { width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:8px 10px;border:none;background:none;cursor:pointer;border-radius:8px;transition:background .15s;text-align:left; }
 .ps-field-code-btn:hover { background:rgba(99,102,241,.06); }
+.ps-field-btn.ps-field-highlight,
+.ps-field-code-btn.ps-field-highlight { background:rgba(59,130,246,.12); box-shadow:inset 0 0 0 1px rgba(59,130,246,.22); }
+.ps-field-btn.ps-field-highlight i,
+.ps-field-btn.ps-field-highlight span,
+.ps-field-code-btn.ps-field-highlight .ps-field-code-label,
+.ps-field-code-btn.ps-field-highlight .ps-field-code-value,
+.ps-field-code-btn.ps-field-highlight .ps-field-code-preview { color:#1d4ed8; }
+.ps-field-code-btn.ps-field-highlight .ps-field-code-value { background:#dbeafe; }
 .ps-field-code-label { font-size:9px;font-weight:700;text-transform:uppercase;color:#64748b; }
 .ps-field-code-value { font-size:10px;font-weight:700;color:#0f172a;background:#eef2ff;padding:2px 6px;border-radius:5px;word-break:break-all; }
 .ps-field-code-preview { font-size:9px;color:#94a3b8; }
+.ps-element-badge { position:absolute; top:-9px; left:-1px; z-index:71; padding:2px 6px; border-radius:999px; font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; box-shadow:0 1px 2px rgba(15,23,42,.18); }
+.ps-element-badge-dynamic { background:#dbeafe; color:#1d4ed8; }
+.ps-element-badge-static { background:#fef3c7; color:#b45309; }
+.ps-element-badge-frame { background:#e5e7eb; color:#4b5563; }
+.ps-layer-list { display:grid; gap:8px; }
+.ps-layer-row { border:1px solid #e2e8f0; border-radius:10px; padding:10px; cursor:pointer; transition:all .15s; }
+.ps-layer-row:hover { border-color:#a5b4fc; background:#f8faff; }
+.ps-layer-row.active { border-color:#6366f1; background:#eef2ff; box-shadow:0 0 0 1px rgba(99,102,241,.12); }
+.ps-layer-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.ps-layer-name { font-size:10px; font-weight:800; text-transform:uppercase; color:#0f172a; letter-spacing:.04em; }
+.ps-layer-meta { margin-top:4px; font-size:10px; color:#64748b; word-break:break-word; }
+.ps-layer-chips { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:6px; }
+.ps-layer-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border-radius:999px; font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; }
+.ps-layer-actions { display:flex; align-items:center; gap:4px; }
+.ps-layer-action { border:none; background:#ffffff; color:#475569; width:24px; height:24px; border-radius:6px; cursor:pointer; box-shadow:inset 0 0 0 1px #e2e8f0; }
+.ps-layer-action:hover { color:#4338ca; box-shadow:inset 0 0 0 1px #a5b4fc; }
+.ps-map-card { margin:-4px 0 16px; padding:12px; border-radius:12px; background:linear-gradient(135deg,#eff6ff,#f8fbff); border:1px solid #bfdbfe; }
+.ps-map-label { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color:#1d4ed8; margin-bottom:8px; }
+.ps-map-name { font-size:11px; font-weight:900; color:#1e3a8a; text-transform:uppercase; letter-spacing:.04em; }
+.ps-map-code { display:inline-block; margin-top:6px; padding:4px 8px; border-radius:8px; background:#dbeafe; color:#1d4ed8; font-size:10px; font-weight:800; word-break:break-all; }
+.ps-map-empty { color:#64748b; font-size:10px; font-weight:700; }
 @media print { #ps-editor, #ps-gallery, .ps-toast, #ps-create-modal, #ps-delete-modal { display:none!important; } }
 </style>
 
@@ -629,6 +660,14 @@ Object.values(JOB_CARD_VARIABLE_GROUPS).flat().forEach(function(code) {
   const key = code.replace(/[{}]/g, '');
   if (!(key in PREVIEW_DATA)) PREVIEW_DATA[key] = key;
 });
+const PLACEHOLDER_LABEL_MAP = {};
+Object.values(PLACEHOLDERS).flat().forEach(function(p) {
+  PLACEHOLDER_LABEL_MAP[String(p.key || '').trim()] = String(p.label || p.key || '').trim();
+});
+Object.values(JOB_CARD_VARIABLE_GROUPS).flat().forEach(function(code) {
+  const key = String(code || '').trim();
+  if (!(key in PLACEHOLDER_LABEL_MAP)) PLACEHOLDER_LABEL_MAP[key] = key;
+});
 
 // ============================================================
 // STATE
@@ -668,6 +707,105 @@ function psToast(msg, type) {
   t.className = 'ps-toast ps-toast-' + (type||'info') + ' ps-toast-show';
   clearTimeout(t._timer);
   t._timer = setTimeout(() => t.className = 'ps-toast', 3000);
+}
+
+function psElementTypeLabel(el) {
+  var type = String((el && el.type) || '').trim().toLowerCase();
+  if (type === 'text') return 'Text';
+  if (type === 'title') return 'Title';
+  if (type === 'image') return 'Image';
+  if (type === 'barcode') return 'Barcode';
+  if (type === 'qr') return 'QR';
+  if (type === 'rectangle' || type === 'rect' || type === 'shape') return 'Rectangle';
+  if (type === 'circle') return 'Circle';
+  if (type === 'line' || type === 'divider') return 'Line';
+  if (type === 'table') return 'Table';
+  return type ? type.charAt(0).toUpperCase() + type.slice(1) : 'Element';
+}
+
+function psElementUsageType(el) {
+  var type = String((el && el.type) || '').trim().toLowerCase();
+  if (type === 'line' || type === 'divider' || type === 'rectangle' || type === 'rect' || type === 'shape' || type === 'circle') {
+    return 'frame';
+  }
+  if (type === 'table' && String((el && el.placeholder) || '').trim() !== '') {
+    return 'dynamic';
+  }
+  var raw = String((el && (el.content || el.placeholder)) || '');
+  return /\{\{.+?\}\}/.test(raw) ? 'dynamic' : 'static';
+}
+
+function psElementUsageLabel(el) {
+  var usage = psElementUsageType(el);
+  if (usage === 'dynamic') return 'Dynamic';
+  if (usage === 'frame') return 'Frame';
+  return 'Static';
+}
+
+function psExtractPlaceholderCodes(el) {
+  var bag = [];
+  [String((el && el.content) || ''), String((el && el.placeholder) || '')].forEach(function(raw) {
+    var matches = raw.match(/\{\{.+?\}\}/g) || [];
+    matches.forEach(function(code) {
+      var normalized = String(code || '').trim();
+      if (normalized && bag.indexOf(normalized) === -1) bag.push(normalized);
+    });
+  });
+  return bag;
+}
+
+function psPlaceholderDisplayNames(el) {
+  return psExtractPlaceholderCodes(el).map(function(code) {
+    return { code: code, label: PLACEHOLDER_LABEL_MAP[code] || code };
+  });
+}
+
+function psRefreshErpFieldHighlights() {
+  document.querySelectorAll('#ps-erp-fields .ps-field-highlight').forEach(function(node) {
+    node.classList.remove('ps-field-highlight');
+  });
+  if (!currentTemplate || !selectedElementId) return;
+  var el = currentTemplate.elements.find(function(item) { return item.id === selectedElementId; });
+  if (!el) return;
+  psExtractPlaceholderCodes(el).forEach(function(code) {
+    document.querySelectorAll('#ps-erp-fields [data-placeholder-code="' + code.replace(/"/g, '&quot;') + '"]').forEach(function(node) {
+      node.classList.add('ps-field-highlight');
+    });
+  });
+}
+
+function psSelectElement(id) {
+  selectedElementId = id || null;
+  psRenderCanvas();
+  psRenderProps();
+}
+
+function psBuildLayerListHtml() {
+  if (!currentTemplate || !currentTemplate.elements || !currentTemplate.elements.length) {
+    return '<div style="font-size:10px;color:#94a3b8;font-weight:600">No frames added yet.</div>';
+  }
+  var rows = '<div class="ps-layer-list">';
+  currentTemplate.elements.slice().reverse().forEach(function(el) {
+    var usage = psElementUsageType(el);
+    var rawMeta = String(el.content || el.placeholder || '').trim();
+    var meta = rawMeta ? rawMeta : (Math.round(el.width) + ' x ' + Math.round(el.height));
+    if (meta.length > 44) meta = meta.slice(0, 44) + '...';
+    rows += '<div class="ps-layer-row' + (selectedElementId === el.id ? ' active' : '') + '" onclick="psSelectElement(\'' + el.id + '\')">';
+    rows += '<div class="ps-layer-top">';
+    rows += '<div class="ps-layer-name">' + psEscHtml(psElementTypeLabel(el)) + '</div>';
+    rows += '<div class="ps-layer-actions">';
+    rows += '<button type="button" class="ps-layer-action" title="Duplicate" onclick="event.stopPropagation();psDuplicateElement(\'' + el.id + '\')"><i class="bi bi-copy"></i></button>';
+    rows += '<button type="button" class="ps-layer-action" title="' + (el.isLocked ? 'Unlock' : 'Lock') + '" onclick="event.stopPropagation();psToggleLock(\'' + el.id + '\')"><i class="bi bi-' + (el.isLocked ? 'lock-fill' : 'unlock') + '"></i></button>';
+    rows += '<button type="button" class="ps-layer-action" title="Delete" onclick="event.stopPropagation();psDeleteElement(\'' + el.id + '\')"><i class="bi bi-trash"></i></button>';
+    rows += '</div></div>';
+    rows += '<div class="ps-layer-meta">' + psEscHtml(meta) + '</div>';
+    rows += '<div class="ps-layer-chips">';
+    rows += '<span class="ps-layer-chip ps-element-badge-' + usage + '">' + psEscHtml(psElementUsageLabel(el)) + '</span>';
+    if (el.isLocked) rows += '<span class="ps-layer-chip ps-element-badge-frame">Locked</span>';
+    rows += '</div></div>';
+  });
+  rows += '</div>';
+  return rows;
 }
 
 // Optimized slider handlers (skip props panel re-render for smooth dragging)
@@ -838,7 +976,7 @@ function openEditor(templateId) {
       sysMsg.style.fontWeight = '700';
       sysMsg.style.zIndex = '9999';
       sysMsg.style.maxWidth = '300px';
-      sysMsg.textContent = '✓ System Template: This template uses built-in layout. Use ERP Fields section to customize.';
+      sysMsg.textContent = '✓ System Template loaded. Dynamic fields are blue, static text amber, and frame guides gray.';
       document.body.appendChild(sysMsg);
       setTimeout(function() { if (sysMsg) sysMsg.remove(); }, 5000);
     }
@@ -907,7 +1045,7 @@ function psRenderErpFields() {
       const onclick = isTable
         ? "psAddElement('table','"+f.key.replace(/[{}]/g,'')+"')"
         : (isBarcodeField ? "psAddElement('barcode',null,'"+f.key+"')" : "psAddElement('text',null,'"+f.key+"')");
-      html += '<button class="ps-field-btn" onclick="'+onclick+'"><i class="bi '+f.icon+'"></i><span>'+f.label+'</span></button>';
+      html += '<button class="ps-field-btn" data-placeholder-code="'+psEscHtml(f.key)+'" onclick="'+onclick+'"><i class="bi '+f.icon+'"></i><span>'+f.label+'</span></button>';
     });
     html += '</div>';
   });
@@ -919,7 +1057,7 @@ function psRenderErpFields() {
     html += '<div style="margin-bottom:10px">';
     html += '<div style="font-size:8px;font-weight:800;color:#cbd5e1;text-transform:uppercase;letter-spacing:1px;padding:0 4px 4px">'+psEscHtml(group)+'</div>';
     codes.forEach(function(code) {
-      html += '<button class="ps-field-code-btn" onclick="psInsertVariableCode(\''+psEscHtml(code)+'\')">';
+      html += '<button class="ps-field-code-btn" data-placeholder-code="'+psEscHtml(code)+'" onclick="psInsertVariableCode(\''+psEscHtml(code)+'\')">';
       html += '<code class="ps-field-code-value">'+psEscHtml(code)+'</code>';
       html += '</button>';
     });
@@ -927,6 +1065,7 @@ function psRenderErpFields() {
   });
   html += '</div>';
   c.innerHTML = html;
+  psRefreshErpFieldHighlights();
 }
 
 // ============================================================
@@ -973,6 +1112,7 @@ function psUpdateProp(id, prop, val) {
   el[prop] = val;
   psRenderCanvas();
   psRenderProps();
+  psRefreshErpFieldHighlights();
 }
 
 function psUpdateStyle(id, prop, val) {
@@ -981,6 +1121,7 @@ function psUpdateStyle(id, prop, val) {
   el.style[prop] = val;
   psRenderCanvas();
   psRenderProps();
+  psRefreshErpFieldHighlights();
 }
 
 function psDeleteElement(id) {
@@ -991,6 +1132,7 @@ function psDeleteElement(id) {
   if (selectedElementId === id) selectedElementId = null;
   psRenderCanvas();
   psRenderProps();
+  psRefreshErpFieldHighlights();
 }
 
 function psDuplicateElement(id) {
@@ -1005,6 +1147,7 @@ function psDuplicateElement(id) {
   selectedElementId = newEl.id;
   psRenderCanvas();
   psRenderProps();
+  psRefreshErpFieldHighlights();
   psToast('Element duplicated','success');
 }
 
@@ -1015,6 +1158,7 @@ function psToggleLock(id) {
   psToast(el.isLocked ? 'Locked' : 'Unlocked','success');
   psRenderCanvas();
   psRenderProps();
+  psRefreshErpFieldHighlights();
 }
 
 function psMoveLayer(dir) {
@@ -1028,6 +1172,8 @@ function psMoveLayer(dir) {
   else if (dir === 'forward') els.splice(Math.min(els.length, idx + 1), 0, el);
   else els.splice(Math.max(0, idx - 1), 0, el);
   psRenderCanvas();
+  psRenderProps();
+  psRefreshErpFieldHighlights();
 }
 
 // ============================================================
@@ -1061,6 +1207,10 @@ function psRenderCanvas() {
     Object.assign(div.style, { position:'absolute', left:el.x+'px', top:el.y+'px', width:el.width+'px', height:el.height+'px', transform:'rotate('+(el.rotate||0)+'deg)', cursor:el.isLocked?'default':'move', userSelect:'none' });
 
     if (el.isLocked) { const lb = document.createElement('div'); lb.className='element-lock-badge'; lb.innerHTML='<i class="bi bi-lock-fill"></i>'; div.appendChild(lb); }
+  const usageBadge = document.createElement('div');
+  usageBadge.className = 'ps-element-badge ps-element-badge-' + psElementUsageType(el);
+  usageBadge.textContent = psElementUsageLabel(el);
+  div.appendChild(usageBadge);
 
     const content = document.createElement('div');
     content.style.cssText = 'width:100%;height:100%;overflow:hidden';
@@ -1258,6 +1408,10 @@ function psRenderProps() {
       h += '<button class="btn btn-xs" style="color:#ef4444;margin-top:8px;width:100%;font-size:9px;font-weight:700;text-transform:uppercase" onclick="currentTemplate.background.image=\'\';psRenderCanvas();psRenderProps()"><i class="bi bi-eraser"></i> Remove</button></div>';
     }
     h += '</div>';
+    h += '<div style="margin-top:24px">';
+    h += '<label style="font-size:10px;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:1px;display:block;padding-bottom:8px;border-bottom:1px solid #f1f5f9;margin-bottom:12px">Frame List</label>';
+    h += psBuildLayerListHtml();
+    h += '</div>';
     h += '<div style="margin-top:24px;padding-top:16px;border-top:1px solid #f1f5f9"><p style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase"><i class="bi bi-info-circle"></i> Click an element on the canvas to edit its properties.</p></div>';
     h += '</div>';
     panel.innerHTML = h;
@@ -1266,6 +1420,7 @@ function psRenderProps() {
 
   // Element properties
   let h = '<div style="padding:20px">';
+  var placeholderMeta = psPlaceholderDisplayNames(el);
   // Header with actions
   h += '<div style="display:flex;justify-content:space-between;align-items:center;background:#f8fafc;margin:-20px -20px 16px;padding:14px 20px;border-bottom:1px solid #e2e8f0">';
   h += '<h4 style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#6366f1;display:flex;align-items:center;gap:6px;margin:0"><i class="bi bi-gear"></i> Properties</h4>';
@@ -1274,6 +1429,24 @@ function psRenderProps() {
   h += '<button class="btn btn-xs btn-ghost" title="'+(el.isLocked?'Unlock':'Lock')+'" onclick="psToggleLock(\''+el.id+'\')"><i class="bi bi-'+(el.isLocked?'lock-fill':'unlock')+'"></i></button>';
   h += '<button class="btn btn-xs" style="color:#ef4444" title="Delete" onclick="psDeleteElement(\''+el.id+'\')" '+(el.isLocked?'disabled':'')+'><i class="bi bi-trash"></i></button>';
   h += '</div></div>';
+  h += '<div class="ps-map-card">';
+  h += '<div class="ps-map-label">Selected Mapping</div>';
+  h += '<div class="ps-map-name">Name: ' + psEscHtml(psElementTypeLabel(el)) + '</div>';
+  if (placeholderMeta.length) {
+    placeholderMeta.forEach(function(meta) {
+      h += '<div style="margin-top:8px">';
+      h += '<div class="ps-map-name" style="font-size:10px">Placeholder: ' + psEscHtml(meta.label) + '</div>';
+      h += '<div class="ps-map-code">' + psEscHtml(meta.code) + '</div>';
+      h += '</div>';
+    });
+  } else {
+    h += '<div class="ps-map-empty" style="margin-top:8px">This selected frame currently uses static content only.</div>';
+  }
+  h += '</div>';
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-4px 0 16px">';
+  h += '<span class="ps-layer-chip ps-element-badge-' + psElementUsageType(el) + '">' + psEscHtml(psElementUsageLabel(el)) + '</span>';
+  h += '<span class="ps-layer-chip ps-element-badge-frame">' + psEscHtml(psElementTypeLabel(el)) + '</span>';
+  h += '</div>';
 
   // Position
   h += '<div style="margin-bottom:20px">';
@@ -1368,8 +1541,14 @@ function psRenderProps() {
   h += '<button class="btn btn-xs" style="font-size:9px;font-weight:700;text-transform:uppercase;border:1px solid #e2e8f0" onclick="psMoveLayer(\'backward\')"><i class="bi bi-chevron-down"></i> Down</button>';
   h += '</div></div>';
 
+  h += '<div style="margin-bottom:20px">';
+  h += '<label style="font-size:10px;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:1px;display:block;padding-bottom:8px;border-bottom:1px solid #f1f5f9;margin-bottom:12px">Frame List</label>';
+  h += psBuildLayerListHtml();
+  h += '</div>';
+
   h += '</div>';
   panel.innerHTML = h;
+  psRefreshErpFieldHighlights();
 }
 
 // ============================================================
