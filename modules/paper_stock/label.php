@@ -333,8 +333,9 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSla
         'job_token'       => $jobToken,
         'roll_token'      => $rollToken,
         'scan_job_url'    => $jobNo !== '' ? (BASE_URL . '/modules/scan/job.php?jn=' . rawurlencode($jobNo)) : '',
-        // Prefer job-target payload so sticker barcode resolves like job QR flow.
+        // Prefer job-target payload so sticker and label barcodes resolve like job QR flow.
         'barcode_value'   => $jobToken !== '' ? $jobToken : ($jobNo !== '' ? ('JOB:' . $jobNo) : $rollToken),
+        'scan_barcode_url'=> BASE_URL . '/modules/scan/index.php?qr=' . rawurlencode($jobToken !== '' ? $jobToken : ($jobNo !== '' ? ('JOB:' . $jobNo) : $rollToken)),
         // ── Firebase Print Studio aliases ──
         'paper_company'       => $paperCompany,
         'width'               => $widthVal,
@@ -991,7 +992,7 @@ function renderBuiltinLabel(roll, tpl) {
             }
             var labelCompanyName = String(roll.company_name || '').trim() || 'COMPANY';
             var labelCompanyAddress = String(roll.company_address || roll['job.companyAddress'] || '').trim() || '-';
-            var barcodeValue = String(batchTextBase && batchTextBase !== 'NA' ? batchTextBase : roll.roll_no || roll.id);
+            var barcodeValue = String(roll.barcode_value || roll.job_token || (batchTextBase && batchTextBase !== 'NA' ? batchTextBase : roll.roll_no || roll.id));
             var barcodeId = 'pk150-bc-' + String(roll.id || Math.floor(Math.random() * 100000));
 
             var html150 = '';
@@ -1163,7 +1164,7 @@ function renderCustomLabel(roll, tpl) {
             if (rot) qrWrap.style.transform = 'rotate(' + rot + 'deg)';
             var qrContent = replacePlaceholders(el.content || '', roll);
             if (!qrContent || qrContent === '') {
-                qrContent = roll.view_url || (window.location.origin + '/modules/paper_stock/view.php?id=' + roll.id);
+                qrContent = roll.scan_barcode_url || roll.scan_job_url || roll.view_url || (window.location.origin + '/modules/paper_stock/view.php?id=' + roll.id);
             }
             var qrSz = Math.min(pw, ph);
             qrWrap.innerHTML = generateQR(qrContent, qrSz);
@@ -1187,10 +1188,12 @@ function renderCustomLabel(roll, tpl) {
             bcWrap.style.zIndex = '1';
             if (rot) bcWrap.style.transform = 'rotate(' + rot + 'deg)';
             var bcVal = replacePlaceholders(el.content || el.placeholder || '', roll);
-            if (!bcVal || bcVal === '') bcVal = roll.view_url || (window.location.origin + '/modules/paper_stock/view.php?id=' + roll.id);
+            if (!bcVal || bcVal === '') {
+                bcVal = roll.barcode_value || roll.job_token || roll.view_url || (window.location.origin + '/modules/paper_stock/view.php?id=' + roll.id);
+            }
 
-            // For sticker print mode, force barcode payload to compact scan token for reliable tiny-label scanning.
-            if (printType === 'sticker') {
+            // For POS roll sticker/label print mode, force barcode payload to unified job scan token.
+            if (printType === 'sticker' || printType === 'label') {
                 var rollUrl = String(roll.view_url || roll.roll_url || '');
                 var preferredStickerPayload = String(roll.barcode_value || roll.job_token || '');
                 if (preferredStickerPayload) {

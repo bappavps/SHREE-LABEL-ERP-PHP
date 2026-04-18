@@ -134,6 +134,18 @@ function packing_api_build_pos_barcode(array $childRolls): string {
     return $barcode;
 }
 
+function packing_api_build_job_barcode(array $jobDetails): string {
+    $jobId = (int)($jobDetails['id'] ?? 0);
+    if ($jobId > 0) {
+        return 'J' . strtoupper(base_convert((string)$jobId, 10, 36));
+    }
+    $jobNo = trim((string)($jobDetails['job_no'] ?? ''));
+    if ($jobNo !== '') {
+        return 'JOB:' . $jobNo;
+    }
+    return '';
+}
+
 function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array $operatorEntry, int $userId): void {
     packing_api_ensure_finished_goods_table($db);
 
@@ -177,7 +189,10 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
     }
     $paperCompany = $paperCompanies ? implode(', ', $paperCompanies) : trim((string)($jobDetails['paper_company'] ?? ($planExtra['paper_company_name'] ?? ($planExtra['paper_company'] ?? ''))));
     $materialType = trim((string)($planExtra['material_type'] ?? ($jobDetails['paper_type'] ?? ($jobExtra['material_type'] ?? ''))));
-    $barcode = packing_api_build_pos_barcode($childRolls);
+    $barcode = packing_api_build_job_barcode($jobDetails);
+    if ($barcode === '') {
+        $barcode = packing_api_build_pos_barcode($childRolls);
+    }
     $perCarton = (int)($firstOverride['rpc'] ?? 0);
     $cartonCount = (int)round((float)($operatorEntry['cartons_count'] ?? 0));
     $totalValue = $quantity;

@@ -769,6 +769,14 @@ include __DIR__ . '/../../../includes/header.php';
       return Number.isFinite(n) ? n : 0;
     }
 
+    function getDefaultDistributedQty(totalQty, totalRollCount, rollIndex) {
+      var safeTotal = Math.max(0, Math.floor(toNum(totalQty)));
+      var safeCount = Math.max(1, Math.floor(toNum(totalRollCount)));
+      var baseQty = Math.floor(safeTotal / safeCount);
+      var remainder = safeTotal % safeCount;
+      return baseQty + (rollIndex < remainder ? 1 : 0);
+    }
+
     function renderPerRollCards(selectedRolls) {
       if (!perRollOutput) return;
       var htmlCards = selectedRolls.map(function(roll, idx) {
@@ -865,17 +873,6 @@ include __DIR__ . '/../../../includes/header.php';
       if (helpersSection) helpersSection.style.display = '';
       if (helpersHiddenMsg) helpersHiddenMsg.style.display = 'none';
       if (cleanSummarySection) cleanSummarySection.style.display = '';
-      renderPerRollCards(selectedRolls);
-      bindPerRollCardEvents();
-
-      var totalCartons = 0;
-      var totalLoose = 0;
-      var totalShrinkBundles = 0;
-      var physicalProduction = 0;
-      var totalProductionReceived = 0;
-      var batches = [];
-      var summaryRows = [];
-
       var splitMeta = selectedRolls.map(function(roll) {
         var rollNo = String(roll && roll.rollNo ? roll.rollNo : '').trim();
         var qtyVal = Math.max(0, Math.min(toNum(roll.productionQty), toNum(roll.availableQty)));
@@ -893,15 +890,35 @@ include __DIR__ . '/../../../includes/header.php';
       var sharedSplitMode = selectedRolls.length > 1 && parentKeyCount === 1 && qtyCount === 1;
       var sharedReceivedQty = sharedSplitMode && splitMeta.length ? splitMeta[0].qty : 0;
 
+      renderPerRollCards(selectedRolls.map(function(roll, idx) {
+        if (!sharedSplitMode) return roll;
+        return Object.assign({}, roll, {
+          productionQty: getDefaultDistributedQty(sharedReceivedQty, selectedRolls.length, idx),
+          availableQty: getDefaultDistributedQty(sharedReceivedQty, selectedRolls.length, idx)
+        });
+      }));
+      bindPerRollCardEvents();
+
+      var totalCartons = 0;
+      var totalLoose = 0;
+      var totalShrinkBundles = 0;
+      var physicalProduction = 0;
+      var totalProductionReceived = 0;
+      var batches = [];
+      var summaryRows = [];
+
       selectedRolls.forEach(function(roll, rollIdx) {
         var rollKey = String(roll.rollNo || ('roll-' + String(rollIdx)));
         var st = rollLooseOverrides[rollKey] || {};
         var rps = Math.max(1, Math.floor(toNum(st.rps || 5)));
         var rpc = Math.max(1, Math.floor(toNum(st.rpc || 50)));
         var qty = Math.max(0, Math.min(toNum(roll.productionQty), toNum(roll.availableQty)));
+        var normalizedQty = sharedSplitMode
+          ? getDefaultDistributedQty(sharedReceivedQty, selectedRolls.length, rollIdx)
+          : qty;
         if (!sharedSplitMode) totalProductionReceived += qty;
-        var autoExtra = qty % rpc;
-        var rollCartons = Object.prototype.hasOwnProperty.call(st, 'cartons') ? Math.max(0, Math.floor(toNum(st.cartons))) : Math.floor(qty / rpc);
+        var autoExtra = normalizedQty % rpc;
+        var rollCartons = Object.prototype.hasOwnProperty.call(st, 'cartons') ? Math.max(0, Math.floor(toNum(st.cartons))) : Math.floor(normalizedQty / rpc);
         var rollExtra = Object.prototype.hasOwnProperty.call(st, 'extra') ? Math.max(0, Math.floor(toNum(st.extra))) : autoExtra;
         var rollTotalRolls = Math.max(0, rollCartons * rpc + rollExtra);
         var rollShrink = Math.floor(rollTotalRolls / rps);
@@ -916,7 +933,7 @@ include __DIR__ . '/../../../includes/header.php';
         summaryRows.push(
           '<tr>'
           + '<td style="padding:7px;border:1px solid #dcfce7;font-size:.78rem;color:#14532d;font-weight:700">' + escHtml(String(roll.rollNo || '-')) + '</td>'
-          + '<td style="padding:7px;border:1px solid #dcfce7;font-size:.78rem;color:#0f172a">' + escHtml(sharedSplitMode ? '_' : String(qty)) + '</td>'
+          + '<td style="padding:7px;border:1px solid #dcfce7;font-size:.78rem;color:#0f172a">' + escHtml(String(sharedSplitMode ? normalizedQty : qty)) + '</td>'
           + '<td style="padding:7px;border:1px solid #dcfce7;font-size:.78rem;color:#334155">' + escHtml(String(rollCartons)) + ' x ' + escHtml(String(rpc)) + ' + ' + escHtml(String(rollExtra)) + '</td>'
           + '<td style="padding:7px;border:1px solid #dcfce7;font-size:.78rem;color:#166534;font-weight:900">' + escHtml(String(rollTotalRolls)) + '</td>'
           + '</tr>'
@@ -995,6 +1012,37 @@ include __DIR__ . '/../../../includes/header.php';
     var adminEditBtn = document.getElementById('opAdminEditBtn');
     var adminEditMode = false;
     var helperInputSel = '.op-roll-rps,.op-roll-rpc-input,.op-roll-csize,.op-roll-cartons-input,.op-roll-extra-input,.op-roll-select';
+    function syncSubmitButtonState() {
+      if (!submitBtn) return;
+      if (lockSubmittedForOperator) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Submitted (Locked)';
+        submitBtn.style.opacity = '0.65';
+        submitBtn.style.cursor = 'not-allowed';
+        return;
+      }
+      if (adminEditMode) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Update Entry';
+        submitBtn.style.opacity = '1';
+        submitBtn.style.cursor = 'pointer';
+        return;
+      }
+      if (opEntrySubmitted && opCanAdminOverrideEdit) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Submitted';
+        submitBtn.style.opacity = '0.65';
+        submitBtn.style.cursor = 'not-allowed';
+        return;
+      }
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Submit Entry';
+      submitBtn.style.opacity = '1';
+      submitBtn.style.cursor = 'pointer';
+    }
+
+    syncSubmitButtonState();
+
     function applyAdminEditLockState(isEditMode) {
       var editLockIds = ['opNotes', 'opPhoto'];
       if (isEditMode) {
@@ -1005,10 +1053,7 @@ include __DIR__ . '/../../../includes/header.php';
         Array.prototype.slice.call(document.querySelectorAll(helperInputSel)).forEach(function(el) {
           el.disabled = false; el.style.cursor = ''; el.style.opacity = '';
         });
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Update Entry';
-        submitBtn.style.opacity = '1';
-        submitBtn.style.cursor = 'pointer';
+        syncSubmitButtonState();
         if (adminEditBtn) {
           adminEditBtn.textContent = '✕ Cancel Edit';
           adminEditBtn.style.backgroundColor = '#dc2626';
@@ -1022,10 +1067,7 @@ include __DIR__ . '/../../../includes/header.php';
         Array.prototype.slice.call(document.querySelectorAll(helperInputSel)).forEach(function(el) {
           el.disabled = true;
         });
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Submitted';
-        submitBtn.style.opacity = '0.65';
-        submitBtn.style.cursor = 'not-allowed';
+        syncSubmitButtonState();
         if (adminEditBtn) {
           adminEditBtn.textContent = '✎ Edit Entry (Admin)';
           adminEditBtn.style.backgroundColor = '#7c3aed';
@@ -1371,15 +1413,14 @@ include __DIR__ . '/../../../includes/header.php';
           if (!resp || !resp.ok) {
             msgDiv.textContent = (resp && resp.message) ? resp.message : 'Submit failed.';
             msgDiv.style.color = '#b91c1c';
-            // Re-enable submit button so the user can retry
-            submitBtn.disabled = false;
-            submitBtn.style.opacity = '1';
-            submitBtn.style.cursor = 'pointer';
-            submitBtn.textContent = adminEditMode ? 'Update Entry' : (opEntrySubmitted ? 'Update Entry' : 'Submit Entry');
+            // Restore button state based on role/submission/edit mode rules
+            syncSubmitButtonState();
             return;
           }
           msgDiv.textContent = '✓ Entry submitted successfully! Manager can now finalize this job.';
           msgDiv.style.color = '#166534';
+          opEntrySubmitted = true;
+          lockSubmittedForOperator = !opCanAdminOverrideEdit;
           if (opCanAdminOverrideEdit) {
             // Admin: re-lock form and reset edit mode after successful update
             adminEditMode = false;
@@ -1388,8 +1429,7 @@ include __DIR__ . '/../../../includes/header.php';
             msgDiv.textContent = 'Entry updated. Press Edit Entry (Admin) to make further changes.';
             msgDiv.style.color = '#166534';
           } else {
-            submitBtn.textContent = 'Submitted (Locked)';
-            submitBtn.disabled = true;
+            syncSubmitButtonState();
             ['opNotes','opPhoto'].forEach(function(id) {
               var el = document.getElementById(id);
               if (el) el.disabled = true;
@@ -1415,11 +1455,8 @@ include __DIR__ . '/../../../includes/header.php';
         .catch(function() {
           msgDiv.textContent = 'Network error. Please try again.';
           msgDiv.style.color = '#b91c1c';
-          // Re-enable button so operator can retry
-          submitBtn.disabled = false;
-          submitBtn.style.opacity = '1';
-          submitBtn.style.cursor = 'pointer';
-          submitBtn.textContent = adminEditMode ? 'Update Entry' : (opEntrySubmitted ? 'Update Entry' : 'Submit Entry');
+          // Restore button state based on role/submission/edit mode rules
+          syncSubmitButtonState();
         });
     });
   }

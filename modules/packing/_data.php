@@ -917,15 +917,27 @@ function packing_fetch_history_rows(mysqli $db, array $filters = []): array {
     $result = $db->query($sql);
     $rows = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
 
-    $readyRows = [];
-    foreach ($activeByGroup as $row) {
-        // Keep queue clean: manager view only shows submitted/completed jobs.
-        // show_all_active mode (operator page) also includes fresh "Packing" jobs
-        // so operators can see new work and submit their entries for the first time.
-        $hasOperatorSubmission = !empty($row['operator_submitted']);
-        if (!$showAllActive && !$hasOperatorSubmission && !packing_is_completed_status((string)($row['status'] ?? ''))) {
+    $historyRows = [];
+    foreach ($rows as $row) {
+        // Show jobs marked as packing done either by status text or durable flag.
+        $rawStatus = (string)($row['status'] ?? '');
+        $normStatus = strtolower(trim(str_replace(['-', '_'], ' ', $rawStatus)));
+        $jobExtraStatus = packing_decode_json($row['extra_data'] ?? null);
+        $isPackingDoneFlag = !empty($jobExtraStatus['packing_done_flag']);
+        if ($normStatus !== 'packing done' && !$isPackingDoneFlag) {
             continue;
         }
+
+        $tabKey = packing_department_to_tab((string)($row['department'] ?? ''));
+        if ($tabKey === null) {
+            $tabKey = packing_department_to_tab((string)($row['plan_department'] ?? ''));
+        }
+
+        $jobExtra = packing_decode_json($row['extra_data'] ?? null);
+        $planExtra = packing_decode_json($row['plan_extra_data'] ?? null);
+        $completedAt = (string)($row['completed_at'] ?? '');
+        $fallbackAt = (string)($row['updated_at'] ?? ($row['created_at'] ?? ''));
+        $eventTime = $completedAt !== '' ? $completedAt : $fallbackAt;
 
         if ($from !== '') {
             $eventDate = date('Y-m-d', strtotime($eventTime));
@@ -964,7 +976,7 @@ function packing_fetch_history_rows(mysqli $db, array $filters = []): array {
         ));
         $dispatchDate = trim((string)($planExtra['dispatch_date'] ?? ($row['so_due_date'] ?? $eventTime)));
         $clientName = trim((string)($row['client_name'] ?? ($planExtra['client_name'] ?? ($jobExtra['client_name'] ?? ''))));
-        
+
         $historyRows[] = [
             'id' => (int)$row['id'],
             'packing_display_id' => packing_build_display_id((int)$row['id'], (string)($row['plan_no'] ?? '')),
@@ -980,7 +992,7 @@ function packing_fetch_history_rows(mysqli $db, array $filters = []): array {
             'order_date' => $orderDate,
             'dispatch_date' => $dispatchDate,
             'last_department' => $tabKey ? packing_department_display_for_tab($tabKey) : (trim((string)($row['department'] ?? '')) !== '' ? (string)$row['department'] : '-'),
-            'status' => (string)($row['status'] ?? ''),
+            'status' => $isPackingDoneFlag ? 'Packing Done' : (string)($row['status'] ?? ''),
             'notes' => (string)($row['notes'] ?? ''),
             'image_url' => packing_extract_image_url($jobExtra, $planExtra),
             'event_time' => $eventTime,

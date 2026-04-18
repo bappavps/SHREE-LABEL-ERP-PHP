@@ -6,6 +6,163 @@
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
+function scan_resolve_payload(mysqli $db, string $raw): array {
+  $raw = trim($raw);
+  if ($raw === '') {
+    return ['ok' => false, 'error' => 'Empty QR'];
+  }
+
+  $emitJobByNo = static function(string $jobNo): array {
+    return [
+      'ok' => true,
+      'type' => 'job',
+      'label' => 'Job Journey: ' . $jobNo,
+      'url' => BASE_URL . '/modules/scan/job.php?jn=' . urlencode($jobNo),
+    ];
+  };
+
+  if (preg_match('/modules\/scan\/(?:job|dossier)\.php\?jn=(.+)$/i', $raw, $m)) {
+    return $emitJobByNo(urldecode($m[1]));
+  }
+
+  if (preg_match('/^J([0-9A-Z]{1,10})$/i', strtoupper($raw), $m)) {
+    $jobId = (int)base_convert($m[1], 36, 10);
+    if ($jobId > 0) {
+      $stmt = $db->prepare("SELECT job_no FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+      if ($stmt) {
+        $stmt->bind_param('i', $jobId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($row && trim((string)($row['job_no'] ?? '')) !== '') {
+          return $emitJobByNo((string)$row['job_no']);
+        }
+      }
+    }
+  }
+
+  if (preg_match('/^JOB\s*:\s*(.+)$/i', $raw, $m)) {
+    $jn = trim((string)$m[1]);
+    if ($jn !== '') {
+      return $emitJobByNo($jn);
+    }
+  }
+
+  if (preg_match('/^[A-Z0-9][A-Z0-9\/_\-]{4,60}$/i', $raw)) {
+    $jobNoRaw = trim((string)$raw);
+    $stmt = $db->prepare("SELECT job_no FROM jobs WHERE UPPER(TRIM(job_no)) = UPPER(TRIM(?)) AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+    if ($stmt) {
+      $stmt->bind_param('s', $jobNoRaw);
+      $stmt->execute();
+      $jobRow = $stmt->get_result()->fetch_assoc();
+      $stmt->close();
+      if ($jobRow && trim((string)($jobRow['job_no'] ?? '')) !== '') {
+        return $emitJobByNo((string)$jobRow['job_no']);
+      }
+    }
+  }
+
+  if (preg_match('/modules\/paper_stock\/view\.php\?id=(\d+)/i', $raw, $m)) {
+    $rollId = (int)$m[1];
+    $stmt = $db->prepare("SELECT id, roll_no, paper_type, status FROM paper_stock WHERE id = ? LIMIT 1");
+    if ($stmt) {
+      $stmt->bind_param('i', $rollId);
+      $stmt->execute();
+      $row = $stmt->get_result()->fetch_assoc();
+      $stmt->close();
+      if ($row) {
+        return [
+          'ok' => true,
+          'type' => 'roll',
+          'label' => 'Roll ' . $row['roll_no'] . ' — ' . ($row['paper_type'] ?? '') . ' (' . ($row['status'] ?? '') . ')',
+          'url' => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$row['id'],
+        ];
+      }
+    }
+    return ['ok' => false, 'type' => 'roll_not_found', 'error' => 'Roll ID ' . $rollId . ' not found in ERP.'];
+  }
+
+  if (preg_match('/^ROLL\s*:\s*([^\|]+)/i', $raw, $m)) {
+    $rollNo = strtoupper(trim($m[1]));
+    $stmt = $db->prepare("SELECT id, roll_no, paper_type, status FROM paper_stock WHERE UPPER(TRIM(roll_no)) = ? LIMIT 1");
+    if ($stmt) {
+      $stmt->bind_param('s', $rollNo);
+      $stmt->execute();
+      $row = $stmt->get_result()->fetch_assoc();
+      $stmt->close();
+      if ($row) {
+        return [
+          'ok' => true,
+          'type' => 'roll',
+          'label' => 'Roll ' . $row['roll_no'] . ' — ' . ($row['paper_type'] ?? '') . ' (' . ($row['status'] ?? '') . ')',
+          'url' => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$row['id'],
+        ];
+      }
+    }
+    return ['ok' => false, 'type' => 'roll_not_found', 'error' => 'Roll "' . htmlspecialchars($rollNo, ENT_QUOTES) . '" not found in ERP.'];
+  }
+
+  if (BASE_URL !== '' && stripos($raw, BASE_URL) === 0) {
+    return ['ok' => true, 'type' => 'url', 'label' => 'ERP Page', 'url' => $raw];
+  }
+
+  $decoded = json_decode($raw, true);
+  if (is_array($decoded) && ($decoded['type'] ?? '') === 'slitting-traceability') {
+    return [
+      'ok' => true,
+      'type' => 'slitting',
+      'label' => 'Slitting Batch: ' . ($decoded['batch_no'] ?? ''),
+      'url' => BASE_URL . '/modules/inventory/slitting/index.php',
+    ];
+  }
+
+  if (preg_match('/^[A-Z0-9\/\-]+$/i', $raw) && strlen($raw) <= 30) {
+    $rollNo = strtoupper(trim($raw));
+    $stmt = $db->prepare("SELECT id, roll_no, paper_type, status FROM paper_stock WHERE UPPER(TRIM(roll_no)) = ? LIMIT 1");
+    if ($stmt) {
+      $stmt->bind_param('s', $rollNo);
+      $stmt->execute();
+      $row = $stmt->get_result()->fetch_assoc();
+      $stmt->close();
+      if ($row) {
+        return [
+          'ok' => true,
+          'type' => 'roll',
+          'label' => 'Roll ' . $row['roll_no'] . ' — ' . ($row['paper_type'] ?? '') . ' (' . ($row['status'] ?? '') . ')',
+          'url' => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$row['id'],
+        ];
+      }
+    }
+  }
+
+  if (preg_match('/^R([0-9A-Z]{1,10})$/i', strtoupper($raw), $m)) {
+    $rollId = (int)base_convert($m[1], 36, 10);
+    if ($rollId > 0) {
+      $stmt = $db->prepare("SELECT id, roll_no, paper_type, status FROM paper_stock WHERE id = ? LIMIT 1");
+      if ($stmt) {
+        $stmt->bind_param('i', $rollId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($row) {
+          return [
+            'ok' => true,
+            'type' => 'roll',
+            'label' => 'Roll ' . $row['roll_no'] . ' — ' . ($row['paper_type'] ?? '') . ' (' . ($row['status'] ?? '') . ')',
+            'url' => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$row['id'],
+          ];
+        }
+      }
+    }
+  }
+
+  return [
+    'ok' => false,
+    'type' => 'unknown',
+    'error' => 'QR not recognised. Scanned: ' . htmlspecialchars(mb_substr($raw, 0, 80), ENT_QUOTES),
+  ];
+}
+
 // ── QR Resolve API (?action=resolve) ────────────────────────
 // Called via fetch from the dashboard scanner widget.
 // Only requires login — NOT full scan-page RBAC permission.
@@ -20,136 +177,7 @@ if (($_GET['action'] ?? '') === 'resolve') {
     }
     $db  = getDB();
     $raw = trim((string)($_POST['qr'] ?? $_GET['qr'] ?? ''));
-    if ($raw === '') { echo json_encode(['ok' => false, 'error' => 'Empty QR']); exit; }
-
-    $emitJobByNo = static function(string $jobNo) {
-      echo json_encode([
-        'ok' => true,
-        'type' => 'job',
-        'label' => 'Job Journey: ' . $jobNo,
-        'url' => BASE_URL . '/modules/scan/dossier.php?jn=' . urlencode($jobNo),
-      ]);
-      exit;
-    };
-
-    // 1. Job card URL: contains modules/scan/job.php?jn= OR dossier.php?jn=
-    if (preg_match('/modules\/scan\/(?:job|dossier)\.php\?jn=(.+)$/i', $raw, $m)) {
-        $jn = urldecode($m[1]);
-      $emitJobByNo($jn);
-    }
-    // 1.1 Compact job token for tiny Code128 labels: J + base36(job_id)
-    if (preg_match('/^J([0-9A-Z]{1,10})$/i', strtoupper($raw), $m)) {
-      $jobId = (int)base_convert($m[1], 36, 10);
-      if ($jobId > 0) {
-        $stmt = $db->prepare("SELECT job_no FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
-        if ($stmt) {
-          $stmt->bind_param('i', $jobId);
-          $stmt->execute();
-          $row = $stmt->get_result()->fetch_assoc();
-          $stmt->close();
-          if ($row && trim((string)($row['job_no'] ?? '')) !== '') {
-            $emitJobByNo((string)$row['job_no']);
-          }
-        }
-      }
-    }
-    // 1.2 JOB: prefixed token (works well in 1D barcode scanners)
-    if (preg_match('/^JOB\s*:\s*(.+)$/i', $raw, $m)) {
-      $jn = trim((string)$m[1]);
-      if ($jn !== '') {
-        $emitJobByNo($jn);
-      }
-    }
-    // 1.3 Direct job_no fallback (e.g. OPL-PRL/2026/0006)
-    if (preg_match('/^[A-Z0-9][A-Z0-9\/_\-]{4,60}$/i', $raw)) {
-      $jobNoRaw = trim((string)$raw);
-      $stmt = $db->prepare("SELECT job_no FROM jobs WHERE UPPER(TRIM(job_no)) = UPPER(TRIM(?)) AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
-      if ($stmt) {
-        $stmt->bind_param('s', $jobNoRaw);
-        $stmt->execute();
-        $jobRow = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        if ($jobRow && trim((string)($jobRow['job_no'] ?? '')) !== '') {
-          $emitJobByNo((string)$jobRow['job_no']);
-        }
-      }
-    }
-    // 2. Roll view URL (from printed label QR): .../paper_stock/view.php?id=N
-    if (preg_match('/modules\/paper_stock\/view\.php\?id=(\d+)/i', $raw, $m)) {
-        $rollId = (int)$m[1];
-        $stmt = $db->prepare("SELECT id, roll_no, paper_type, status FROM paper_stock WHERE id = ? LIMIT 1");
-        $stmt->bind_param('i', $rollId); $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
-        if ($row) {
-            echo json_encode(['ok' => true, 'type' => 'roll',
-                'label' => 'Roll ' . $row['roll_no'] . ' — ' . ($row['paper_type'] ?? '') . ' (' . ($row['status'] ?? '') . ')',
-                'url'   => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$row['id']]);
-        } else {
-            echo json_encode(['ok' => false, 'type' => 'roll_not_found',
-                'error' => 'Roll ID ' . $rollId . ' not found in ERP.']);
-        }
-        exit;
-    }
-    // 3. Roll label QR payload: "Roll: XXXX | Type: ..."
-    if (preg_match('/^ROLL\s*:\s*([^\|]+)/i', $raw, $m)) {
-        $rollNo = strtoupper(trim($m[1]));
-        $stmt = $db->prepare("SELECT id, roll_no, paper_type, status FROM paper_stock WHERE UPPER(TRIM(roll_no)) = ? LIMIT 1");
-        $stmt->bind_param('s', $rollNo); $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
-        if ($row) {
-            echo json_encode(['ok' => true, 'type' => 'roll',
-                'label' => 'Roll ' . $row['roll_no'] . ' — ' . ($row['paper_type'] ?? '') . ' (' . ($row['status'] ?? '') . ')',
-                'url'   => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$row['id']]);
-        } else {
-            echo json_encode(['ok' => false, 'type' => 'roll_not_found',
-                'error' => 'Roll "' . htmlspecialchars($rollNo, ENT_QUOTES) . '" not found in ERP.']);
-        }
-        exit;
-    }
-    // 4. Any full ERP URL (only when BASE_URL is non-empty to avoid false matches)
-    if (BASE_URL !== '' && stripos($raw, BASE_URL) === 0) {
-        echo json_encode(['ok' => true, 'type' => 'url', 'label' => 'ERP Page', 'url' => $raw]); exit;
-    }
-    // 5. Slitting traceability JSON QR
-    $decoded = json_decode($raw, true);
-    if (is_array($decoded) && ($decoded['type'] ?? '') === 'slitting-traceability') {
-        echo json_encode(['ok' => true, 'type' => 'slitting',
-            'label' => 'Slitting Batch: ' . ($decoded['batch_no'] ?? ''),
-            'url'   => BASE_URL . '/modules/inventory/slitting/index.php']); exit;
-    }
-    // 6. Plain roll number guess (short alphanumeric/slash/hyphen)
-    if (preg_match('/^[A-Z0-9\/\-]+$/i', $raw) && strlen($raw) <= 30) {
-        $rollNo = strtoupper(trim($raw));
-        $stmt = $db->prepare("SELECT id, roll_no, paper_type, status FROM paper_stock WHERE UPPER(TRIM(roll_no)) = ? LIMIT 1");
-        $stmt->bind_param('s', $rollNo); $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
-        if ($row) {
-            echo json_encode(['ok' => true, 'type' => 'roll',
-                'label' => 'Roll ' . $row['roll_no'] . ' — ' . ($row['paper_type'] ?? '') . ' (' . ($row['status'] ?? '') . ')',
-                'url'   => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$row['id']]); exit;
-        }
-    }
-      // 1.15 Compact roll token for tiny stickers: R + base36(paper_stock.id)
-      if (preg_match('/^R([0-9A-Z]{1,10})$/i', strtoupper($raw), $m)) {
-        $rollId = (int)base_convert($m[1], 36, 10);
-        if ($rollId > 0) {
-          $stmt = $db->prepare("SELECT id, roll_no, paper_type, status FROM paper_stock WHERE id = ? LIMIT 1");
-          if ($stmt) {
-            $stmt->bind_param('i', $rollId);
-            $stmt->execute();
-            $row = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-            if ($row) {
-              echo json_encode(['ok' => true, 'type' => 'roll',
-                'label' => 'Roll ' . $row['roll_no'] . ' — ' . ($row['paper_type'] ?? '') . ' (' . ($row['status'] ?? '') . ')',
-                'url'   => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$row['id']]);
-              exit;
-            }
-          }
-        }
-      }
-    echo json_encode(['ok' => false, 'type' => 'unknown',
-        'error' => 'QR not recognised. Scanned: ' . htmlspecialchars(mb_substr($raw, 0, 80), ENT_QUOTES)]);
+    echo json_encode(scan_resolve_payload($db, $raw));
     exit;
 }
 
@@ -161,6 +189,16 @@ ensureAuditTables();
 
 $db   = getDB();
 $csrf = generateCSRF();
+
+$directQr = trim((string)($_GET['qr'] ?? ''));
+if ($directQr !== '') {
+  $resolved = scan_resolve_payload($db, $directQr);
+  if (!empty($resolved['ok']) && !empty($resolved['url'])) {
+    redirect((string)$resolved['url']);
+  }
+  setFlash('error', (string)($resolved['error'] ?? 'QR not recognised.'));
+  redirect(BASE_URL . '/modules/scan/index.php');
+}
 
 $pageTitle = 'Scan Terminal';
 include __DIR__ . '/../../includes/header.php';

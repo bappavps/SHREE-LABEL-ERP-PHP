@@ -504,8 +504,21 @@
     return String(row[key] == null ? '' : row[key]);
   }
 
-  function fg_barcodeHref(value) {
-    var txt = String(value || '').trim();
+  function fg_resolveBarcodeValue(row) {
+    var extra = row ? (row._fgExtra || {}) : {};
+    var raw = String(extra.barcode || '').trim();
+    if (/^J[0-9A-Z]{1,10}$/i.test(raw) || /^JOB\s*:/i.test(raw) || /\/modules\/scan\//i.test(raw)) {
+      return raw;
+    }
+    var batchNo = String((row && row.batch_no) || '').trim();
+    if (batchNo) {
+      return 'JOB:' + batchNo;
+    }
+    return raw;
+  }
+
+  function fg_barcodeHref(row) {
+    var txt = fg_resolveBarcodeValue(row);
     if (!txt) {
       return '';
     }
@@ -514,15 +527,16 @@
     if (!baseUrl) {
       return '';
     }
-    return baseUrl + '/modules/planning/barcode/index.php?barcode_ref=' + encodeURIComponent(txt);
+    return baseUrl + '/modules/scan/index.php?qr=' + encodeURIComponent(txt);
   }
 
   function fg_renderCell(row, key) {
     var value = fg_value(row, key);
     if (key === 'barcode') {
-      var href = fg_barcodeHref(value);
-      if (href && String(value || '').trim() !== '') {
-        return '<a href="' + fg_escapeHtml(href) + '" target="_blank" rel="noopener noreferrer">' + fg_escapeHtml(value) + '</a>';
+      var barcodeValue = fg_resolveBarcodeValue(row) || String(value || '').trim();
+      var href = fg_barcodeHref(row);
+      if (href && barcodeValue !== '') {
+        return '<a href="' + fg_escapeHtml(href) + '" target="_blank" rel="noopener noreferrer" style="color:#2563eb;font-weight:700;text-decoration:underline">' + fg_escapeHtml(barcodeValue) + '</a>';
       }
     }
     return fg_escapeHtml(value);

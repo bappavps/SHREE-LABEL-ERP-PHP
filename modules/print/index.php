@@ -109,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $paperSize = $_POST['paper_size'] ?? 'A4';
     $customW = (float)($_POST['custom_width'] ?? 0);
     $customH = (float)($_POST['custom_height'] ?? 0);
-    $sizes = ['A4'=>[210,297],'A5'=>[148,210],'Thermal150x100'=>[150,100],'Thermal100x50'=>[100,50]];
+    $sizes = ['A4'=>[210,297],'A5'=>[148,210],'Thermal150x100'=>[150,100],'Thermal100x50'=>[100,50],'Thermal40x25'=>[40,25]];
     if ($paperSize === 'Custom') { $w = $customW > 0 ? $customW : 100; $h = $customH > 0 ? $customH : 100; }
     else { $d = $sizes[$paperSize] ?? [210,297]; $w = $d[0]; $h = $d[1]; }
     if ($name === '') { setFlash('error', 'Template name is required.'); }
@@ -169,7 +169,7 @@ $filteredTemplates = $templates;
 if ($activeCategory !== 'All') {
   $filteredTemplates = array_filter($templates, function($t) use ($activeCategory) {
     if ($activeCategory === 'Job Cards') return $t['document_type'] === 'Technical Job Card';
-    if ($activeCategory === 'Labels') return $t['document_type'] === 'Industrial Label';
+    if ($activeCategory === 'Labels') return in_array($t['document_type'], ['Industrial Label', 'POS Roll Sticker', 'Packing Label'], true);
     if ($activeCategory === 'Reports') return $t['document_type'] === 'Report';
     if ($activeCategory === 'Billing') return in_array($t['document_type'], ['Tax Invoice','Proforma','Delivery Challan']);
     return true;
@@ -287,9 +287,11 @@ include __DIR__ . '/../../includes/header.php';
       </div>
       <div style="margin-bottom:16px">
         <label style="display:block;margin-bottom:4px;font-size:10px;font-weight:700;text-transform:uppercase;opacity:.5">Document Type</label>
-        <select name="document_type" required style="width:100%;padding:10px;border:2px solid #e2e8f0;border-radius:8px;font-weight:600">
+        <select name="document_type" id="ps-document-type" onchange="psSyncDocTypeDefaults()" required style="width:100%;padding:10px;border:2px solid #e2e8f0;border-radius:8px;font-weight:600">
           <option value="Tax Invoice">Tax Invoice</option>
           <option value="Technical Job Card">Technical Job Card</option>
+          <option value="POS Roll Sticker">POS Roll Sticker</option>
+          <option value="Packing Label">Packing Label</option>
           <option value="Industrial Label" selected>Industrial Label</option>
           <option value="Delivery Challan">Delivery Challan</option>
           <option value="Purchase Order">Purchase Order</option>
@@ -302,6 +304,7 @@ include __DIR__ . '/../../includes/header.php';
         <select name="paper_size" id="ps-paper-size" onchange="psUpdatePaperFields()" style="width:100%;padding:10px;border:2px solid #e2e8f0;border-radius:8px;font-weight:600">
           <option value="A4">A4 Paper (210×297mm)</option>
           <option value="A5">A5 Paper (148×210mm)</option>
+          <option value="Thermal40x25">Sticker 40×25mm</option>
           <option value="Thermal150x100" selected>Label 150×100mm</option>
           <option value="Thermal100x50">Label 100×50mm</option>
           <option value="Custom">Custom Size</option>
@@ -530,9 +533,27 @@ const PLACEHOLDERS = {
     { key:'{{batch_display}}', label:'Batch Display (Multi-Roll)', icon:'bi-upc', preview:'SLC/2026/0365-B-A, SLC/2026/0365-B-B / AB' },
     { key:'{{job_no}}', label:'Job Number', icon:'bi-briefcase', preview:'OPL-PRL/2026/0006' },
     { key:'{{job_token}}', label:'Compact Job Token (Code128)', icon:'bi-upc-scan', preview:'J6' },
+    { key:'{{scan_barcode_url}}', label:'Barcode Scan Link', icon:'bi-link-45deg', preview:(ERP_BASE_URL + '/modules/scan/index.php?qr=J6') },
     { key:'{{scan_job_url}}', label:'Job Scan URL', icon:'bi-link-45deg', preview:(ERP_BASE_URL + '/modules/scan/job.php?jn=OPL-PRL%2F2026%2F0006') },
     { key:'{{roll_no}}', label:'Roll Number', icon:'bi-box', preview:'SLC/2026/0364-C' },
     { key:'{{company_code}}', label:'Company Code (2 letters)', icon:'bi-building', preview:'AB' },
+    { key:'{{barcode_value}}', label:'Barcode Value', icon:'bi-upc-scan', preview:'J6' }
+  ],
+  'Packing Label': [
+    { key:'{{paper_type}}', label:'Material Type', icon:'bi-file-text', preview:'THERMAL PAPER' },
+    { key:'{{batch_labels}}', label:'Batch Labels', icon:'bi-upc', preview:'SLC/2026/0365-B-A, SLC/2026/0365-B-B' },
+    { key:'{{batch_display}}', label:'Batch Display', icon:'bi-upc', preview:'SLC/2026/0365-B-A, SLC/2026/0365-B-B / AB' },
+    { key:'{{job_name}}', label:'Product Name', icon:'bi-tag', preview:'THERMAL PAPER ROLL' },
+    { key:'{{rolls_per_carton}}', label:'Qty Per Carton', icon:'bi-123', preview:'5' },
+    { key:'{{item_width}}', label:'Item Width (MM)', icon:'bi-arrows-expand', preview:'78' },
+    { key:'{{company_name}}', label:'Company Name', icon:'bi-building', preview:'Shree Label' },
+    { key:'{{company_address}}', label:'Company Address', icon:'bi-geo-alt', preview:'Kolkata, India' },
+    { key:'{{manufacturer_label}}', label:'Manufacturer Label', icon:'bi-type', preview:'Manufacturere by :' },
+    { key:'{{made_in_country}}', label:'Country Label', icon:'bi-globe2', preview:'MADE IN INDIA' },
+    { key:'{{job_no}}', label:'Job Number', icon:'bi-briefcase', preview:'OPL-PRL/2026/0006' },
+    { key:'{{job_token}}', label:'Compact Job Token (Code128)', icon:'bi-upc-scan', preview:'J6' },
+    { key:'{{scan_barcode_url}}', label:'Barcode Scan Link', icon:'bi-link-45deg', preview:(ERP_BASE_URL + '/modules/scan/index.php?qr=J6') },
+    { key:'{{scan_job_url}}', label:'Job Scan URL', icon:'bi-link-45deg', preview:(ERP_BASE_URL + '/modules/scan/job.php?jn=OPL-PRL%2F2026%2F0006') },
     { key:'{{barcode_value}}', label:'Barcode Value', icon:'bi-upc-scan', preview:'J6' }
   ]
 };
@@ -680,11 +701,23 @@ function psUpdatePaperFields() {
   const cw = document.getElementById('ps-cw');
   const ch = document.getElementById('ps-ch');
   if (!sel||!cw||!ch) return;
-  const sizes = {A4:[210,297],A5:[148,210],Thermal150x100:[150,100],Thermal100x50:[100,50]};
+  const sizes = {A4:[210,297],A5:[148,210],Thermal150x100:[150,100],Thermal100x50:[100,50],Thermal40x25:[40,25]};
   const isCustom = sel.value === 'Custom';
   if (!isCustom && sizes[sel.value]) { cw.value = sizes[sel.value][0]; ch.value = sizes[sel.value][1]; }
   cw.readOnly = !isCustom; ch.readOnly = !isCustom;
   cw.style.opacity = isCustom ? '1' : '.6'; ch.style.opacity = isCustom ? '1' : '.6';
+}
+
+function psSyncDocTypeDefaults() {
+  const docSel = document.getElementById('ps-document-type');
+  const sizeSel = document.getElementById('ps-paper-size');
+  if (!docSel || !sizeSel) return;
+  if (docSel.value === 'POS Roll Sticker') {
+    sizeSel.value = 'Thermal40x25';
+  } else if (docSel.value === 'Packing Label') {
+    sizeSel.value = 'Thermal150x100';
+  }
+  psUpdatePaperFields();
 }
 
 // Image Library browser
@@ -1516,6 +1549,7 @@ document.addEventListener('keydown', function(e) {
   }
 
   psUpdatePaperFields();
+  psSyncDocTypeDefaults();
 
   // Close modals on click outside
   ['ps-create-modal','ps-delete-modal','ps-library-modal'].forEach(id => {
