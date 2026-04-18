@@ -1,9 +1,22 @@
 <?php
 require_once __DIR__ . '/../../../../config/db.php';
 require_once __DIR__ . '/../../../../includes/functions.php';
-require_once __DIR__ . '/../../../../includes/auth_check.php';
 
+// Set JSON header before auth_check so any redirect still returns JSON to JS callers.
 header('Content-Type: application/json; charset=utf-8');
+
+// Override auth_check redirect behaviour for this API endpoint:
+// if session is missing or access is denied, return JSON 401/403 instead of HTML redirect.
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+if (!isset($_SESSION['user_id'])) {
+    http_response_code(401);
+    echo json_encode(['ok' => false, 'error' => 'Not authenticated. Please log in.']);
+    exit;
+}
+
+require_once __DIR__ . '/../../../../includes/auth_check.php';
 
 $db = getDB();
 

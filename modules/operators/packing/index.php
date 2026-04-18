@@ -39,7 +39,9 @@ if ($period !== 'custom') {
     }
 }
 
-$data      = packing_fetch_ready_rows($db, ['search' => $search, 'from' => $from, 'to' => $to]);
+// show_all_active=true: operator page must show fresh "Packing" jobs even before submission
+// so operators can open them and submit their production entries.
+$data      = packing_fetch_ready_rows($db, ['search' => $search, 'from' => $from, 'to' => $to, 'show_all_active' => true]);
 $rowsByTab = $data['rows_by_tab'];
 $counts    = $data['counts'];
 
@@ -163,6 +165,8 @@ include __DIR__ . '/../../../includes/header.php';
 .op-tab[data-theme="one_ply"],.op-pane[data-theme="one_ply"]{--op-accent:#92400e;--op-soft:#ffedd5;--op-border:#fdba74}
 .op-tab[data-theme="two_ply"],.op-pane[data-theme="two_ply"]{--op-accent:#d97706;--op-soft:#fffbeb;--op-border:#fcd34d}
 .op-tab[data-theme="barcode"],.op-pane[data-theme="barcode"]{--op-accent:#dc2626;--op-soft:#fef2f2;--op-border:#fca5a5}
+.op-btn-admin-edit{background:#7c3aed;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-weight:800;font-size:.95em;cursor:pointer;transition:all .2s ease;display:inline-flex;align-items:center;gap:6px}
+.op-btn-admin-edit:hover{background:#6d28d9;transform:translateY(-1px)}
 .page-header{margin-top:12px;background:linear-gradient(120deg,#7c2d12 0%,#c2410c 48%,#ea580c 100%);border-radius:14px;padding:14px;border:1px solid #9a3412;box-shadow:0 14px 30px rgba(124,45,18,.24)}
 @media(max-width:980px){.op-filters{grid-template-columns:1fr 1fr}}
 @media(max-width:680px){.op-filters{grid-template-columns:1fr}.op-table{min-width:660px}.op-modal-card{margin:0;border-radius:0;max-height:100vh}.op-detail-grid{grid-template-columns:1fr}}
@@ -713,7 +717,8 @@ include __DIR__ . '/../../../includes/header.php';
             '</div>' +
           '</div>' +
           '<div class="op-submit-row">' +
-            '<button class="op-btn-submit" id="opSubmitBtn" type="button"' + (lockSubmittedForOperator ? ' disabled style="opacity:.65;cursor:not-allowed"' : '') + '>' + (lockSubmittedForOperator ? 'Submitted (Locked)' : (opEntrySubmitted ? 'Update Entry' : 'Submit Entry')) + '</button>' +
+            '<button class="op-btn-submit" id="opSubmitBtn" type="button"' + ((lockSubmittedForOperator || opEntrySubmitted) ? ' disabled style="opacity:.65;cursor:not-allowed"' : '') + '>' + (lockSubmittedForOperator ? 'Submitted (Locked)' : (opEntrySubmitted ? 'Submitted' : 'Submit Entry')) + '</button>' +
+            (opCanAdminOverrideEdit ? '<button class="op-btn-admin-edit" id="opAdminEditBtn" type="button" style="display:' + (opEntrySubmitted ? 'inline-flex' : 'none') + '">✎ Edit Entry (Admin)</button>' : '') +
             '<button class="op-btn-print" id="opPrintSlipBtn" type="button">Packing Slip Print</button>' +
             '<button class="op-btn-cancel-modal" id="opCancelBtn" type="button">Cancel</button>' +
           '</div>' +
@@ -975,14 +980,63 @@ include __DIR__ . '/../../../includes/header.php';
     var printBtn  = document.getElementById('opPrintSlipBtn');
     var cancelBtn = document.getElementById('opCancelBtn');
     var msgDiv    = document.getElementById('opMsg');
-    if (lockSubmittedForOperator) {
-      var lockIds = ['opLooseQty','opNotes','opPhoto'];
+    if (opEntrySubmitted) {
+      var lockIds = ['opNotes','opPhoto'];
       lockIds.forEach(function(id) {
         var el = document.getElementById(id);
         if (el) el.disabled = true;
       });
       Array.prototype.slice.call(document.querySelectorAll('.op-roll-rps,.op-roll-rpc-input,.op-roll-csize,.op-roll-cartons-input,.op-roll-extra-input,.op-roll-select')).forEach(function(el) {
         el.disabled = true;
+      });
+    }
+
+    // ── Admin Edit Entry button ──
+    var adminEditBtn = document.getElementById('opAdminEditBtn');
+    var adminEditMode = false;
+    var helperInputSel = '.op-roll-rps,.op-roll-rpc-input,.op-roll-csize,.op-roll-cartons-input,.op-roll-extra-input,.op-roll-select';
+    function applyAdminEditLockState(isEditMode) {
+      var editLockIds = ['opNotes', 'opPhoto'];
+      if (isEditMode) {
+        editLockIds.forEach(function(id) {
+          var el = document.getElementById(id);
+          if (el) { el.disabled = false; el.style.backgroundColor = ''; el.style.cursor = ''; }
+        });
+        Array.prototype.slice.call(document.querySelectorAll(helperInputSel)).forEach(function(el) {
+          el.disabled = false; el.style.cursor = ''; el.style.opacity = '';
+        });
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Update Entry';
+        submitBtn.style.opacity = '1';
+        submitBtn.style.cursor = 'pointer';
+        if (adminEditBtn) {
+          adminEditBtn.textContent = '✕ Cancel Edit';
+          adminEditBtn.style.backgroundColor = '#dc2626';
+        }
+        if (msgDiv) { msgDiv.textContent = 'Admin edit mode enabled. Update values and press Update Entry.'; msgDiv.style.color = '#7c3aed'; }
+      } else {
+        editLockIds.forEach(function(id) {
+          var el = document.getElementById(id);
+          if (el) { el.disabled = true; }
+        });
+        Array.prototype.slice.call(document.querySelectorAll(helperInputSel)).forEach(function(el) {
+          el.disabled = true;
+        });
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Submitted';
+        submitBtn.style.opacity = '0.65';
+        submitBtn.style.cursor = 'not-allowed';
+        if (adminEditBtn) {
+          adminEditBtn.textContent = '✎ Edit Entry (Admin)';
+          adminEditBtn.style.backgroundColor = '#7c3aed';
+        }
+        if (msgDiv) { msgDiv.textContent = 'Edit cancelled.'; msgDiv.style.color = '#78350f'; }
+      }
+    }
+    if (adminEditBtn) {
+      adminEditBtn.addEventListener('click', function() {
+        adminEditMode = !adminEditMode;
+        applyAdminEditLockState(adminEditMode);
       });
     }
 
@@ -1317,16 +1371,26 @@ include __DIR__ . '/../../../includes/header.php';
           if (!resp || !resp.ok) {
             msgDiv.textContent = (resp && resp.message) ? resp.message : 'Submit failed.';
             msgDiv.style.color = '#b91c1c';
+            // Re-enable submit button so the user can retry
+            submitBtn.disabled = false;
+            submitBtn.style.opacity = '1';
+            submitBtn.style.cursor = 'pointer';
+            submitBtn.textContent = adminEditMode ? 'Update Entry' : (opEntrySubmitted ? 'Update Entry' : 'Submit Entry');
             return;
           }
           msgDiv.textContent = '✓ Entry submitted successfully! Manager can now finalize this job.';
           msgDiv.style.color = '#166534';
           if (opCanAdminOverrideEdit) {
-            submitBtn.textContent = 'Update Entry';
+            // Admin: re-lock form and reset edit mode after successful update
+            adminEditMode = false;
+            applyAdminEditLockState(false);
+            if (adminEditBtn) adminEditBtn.style.display = 'inline-flex';
+            msgDiv.textContent = 'Entry updated. Press Edit Entry (Admin) to make further changes.';
+            msgDiv.style.color = '#166534';
           } else {
             submitBtn.textContent = 'Submitted (Locked)';
             submitBtn.disabled = true;
-            ['opLooseQty','opNotes','opPhoto'].forEach(function(id) {
+            ['opNotes','opPhoto'].forEach(function(id) {
               var el = document.getElementById(id);
               if (el) el.disabled = true;
             });
@@ -1351,9 +1415,11 @@ include __DIR__ . '/../../../includes/header.php';
         .catch(function() {
           msgDiv.textContent = 'Network error. Please try again.';
           msgDiv.style.color = '#b91c1c';
-        })
-        .finally(function() {
+          // Re-enable button so operator can retry
           submitBtn.disabled = false;
+          submitBtn.style.opacity = '1';
+          submitBtn.style.cursor = 'pointer';
+          submitBtn.textContent = adminEditMode ? 'Update Entry' : (opEntrySubmitted ? 'Update Entry' : 'Submit Entry');
         });
     });
   }

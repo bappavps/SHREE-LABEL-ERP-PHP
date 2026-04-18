@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 function packing_completed_statuses(): array {
     return [
@@ -628,6 +628,10 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     $to = trim((string)($filters['to'] ?? ''));
     $status = trim((string)($filters['status'] ?? ''));
 
+    // When true, show ALL active jobs regardless of operator submission status.
+    // Used by the operator packing page so operators can see fresh jobs to submit.
+    $showAllActive = !empty($filters['show_all_active']);
+
     $allDepartments = [];
     foreach (packing_department_type_map() as $cfg) {
         foreach ($cfg['departments'] as $deptAlias) {
@@ -759,10 +763,11 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
 
     $readyRows = [];
     foreach ($activeByGroup as $row) {
-        // Keep queue clean for fresh jobs, but retain any operator-submitted rows
-        // so manager can always review and finalize them.
+        // Keep queue clean: manager view only shows submitted/completed jobs.
+        // show_all_active mode (operator page) also includes fresh "Packing" jobs
+        // so operators can see new work and submit their entries for the first time.
         $hasOperatorSubmission = !empty($row['operator_submitted']);
-        if (!$hasOperatorSubmission && !packing_is_completed_status((string)($row['status'] ?? ''))) {
+        if (!$showAllActive && !$hasOperatorSubmission && !packing_is_completed_status((string)($row['status'] ?? ''))) {
             continue;
         }
 
@@ -869,7 +874,7 @@ function packing_fetch_history_rows(mysqli $db, array $filters = []): array {
     $to = trim((string)($filters['to'] ?? ''));
     $deptFilter = trim((string)($filters['dept'] ?? '')); // Filter by department
 
-    // No SQL status filter — filter in PHP for reliability.
+    // No SQL status filter â€” filter in PHP for reliability.
     $where = "(j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')";
     
     // Department filter
@@ -912,26 +917,15 @@ function packing_fetch_history_rows(mysqli $db, array $filters = []): array {
     $result = $db->query($sql);
     $rows = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
 
-    $historyRows = [];
-    foreach ($rows as $row) {
-        // History should reflect truly finished terminal state.
-        $row['status'] = packing_effective_status_from_row($row);
-        $rawStatus  = (string)($row['status'] ?? '');
-        $normStatus = strtolower(trim(str_replace(['-', '_'], ' ', $rawStatus)));
-        if (!in_array($normStatus, ['dispatched', 'packing done', 'finished production'], true)) {
+    $readyRows = [];
+    foreach ($activeByGroup as $row) {
+        // Keep queue clean: manager view only shows submitted/completed jobs.
+        // show_all_active mode (operator page) also includes fresh "Packing" jobs
+        // so operators can see new work and submit their entries for the first time.
+        $hasOperatorSubmission = !empty($row['operator_submitted']);
+        if (!$showAllActive && !$hasOperatorSubmission && !packing_is_completed_status((string)($row['status'] ?? ''))) {
             continue;
         }
-
-        $tabKey = packing_department_to_tab((string)($row['department'] ?? ''));
-        if ($tabKey === null) {
-            $tabKey = packing_department_to_tab((string)($row['plan_department'] ?? ''));
-        }
-
-        $jobExtra = packing_decode_json($row['extra_data'] ?? null);
-        $planExtra = packing_decode_json($row['plan_extra_data'] ?? null);
-        $completedAt = (string)($row['completed_at'] ?? '');
-        $fallbackAt = (string)($row['updated_at'] ?? ($row['created_at'] ?? ''));
-        $eventTime = $completedAt !== '' ? $completedAt : $fallbackAt;
 
         if ($from !== '') {
             $eventDate = date('Y-m-d', strtotime($eventTime));

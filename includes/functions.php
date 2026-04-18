@@ -1085,6 +1085,11 @@ function canAccessPath($path) {
         return canAccessPath('/modules/packing/index.php');
     }
 
+    // Finished Goods API follows finished goods page permission.
+    if ($path === '/modules/inventory/finished/api/finished_api.php') {
+        return canAccessPath('/modules/inventory/finished/index.php');
+    }
+
     $catalog = rbacPageCatalog();
     if (!isset($catalog[$path])) {
         // If page is not cataloged, deny by default for non-admin.
