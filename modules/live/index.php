@@ -665,6 +665,56 @@ function stBadge(status){
   return map[s]||'background:#f1f5f9;color:#64748b';
 }
 
+function getChainRootId(job, byId){
+  let cur = Number((job && job.id) || 0);
+  let prev = Number((job && job.previous_job_id) || 0);
+  const seen = new Set();
+  while(prev>0 && byId.has(prev) && !seen.has(prev)){
+    seen.add(prev);
+    cur = prev;
+    const parent = byId.get(prev);
+    prev = Number((parent && parent.previous_job_id) || 0);
+  }
+  return cur>0 ? ('id:'+cur) : '';
+}
+
+function logicalJobKey(job, byId){
+  const root = getChainRootId(job, byId);
+  if(root) return root;
+  const planningId = Number((job && job.planning_id) || 0);
+  if(planningId>0) return 'pln:'+planningId;
+  const name = String((job && job.planning_job_name) || '').trim().toLowerCase();
+  if(name) return 'name:'+name;
+  const jobNo = String((job && job.job_no) || '').trim().toLowerCase();
+  if(jobNo) return 'job:'+jobNo;
+  return 'row:' + String((job && job.id) || Math.random());
+}
+
+function betterLiveCard(a,b){
+  const ar = normStatus(a.status)==='running'?1:0;
+  const br = normStatus(b.status)==='running'?1:0;
+  if(ar!==br) return ar>br ? a : b;
+  const as = getStageIdx(a), bs = getStageIdx(b);
+  if(as!==bs) return as>bs ? a : b;
+  const priOrd={urgent:0,high:1,normal:2,low:3};
+  const ap = priOrd[String(a.planning_priority||'normal').toLowerCase()] ?? 2;
+  const bp = priOrd[String(b.planning_priority||'normal').toLowerCase()] ?? 2;
+  if(ap!==bp) return ap<bp ? a : b;
+  return Number(a.id||0) >= Number(b.id||0) ? a : b;
+}
+
+function dedupeLogicalJobs(rows){
+  const byId = new Map();
+  rows.forEach(j=>{ const id=Number(j.id||0); if(id>0) byId.set(id,j); });
+  const pick = new Map();
+  rows.forEach(j=>{
+    const key = logicalJobKey(j, byId);
+    if(!pick.has(key)){ pick.set(key,j); return; }
+    pick.set(key, betterLiveCard(pick.get(key), j));
+  });
+  return Array.from(pick.values());
+}
+
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
 
 /* ─── Filter predicate ─── */
@@ -723,7 +773,7 @@ async function flLoad(){
       return !printByPrevId.has(Number(j.id||0));
     });
 
-    FL_ALL_JOBS=[...slittingVis,...printing,...finishing,...planOnly];
+    FL_ALL_JOBS=dedupeLogicalJobs([...slittingVis,...printing,...finishing,...planOnly]);
 
     renderStats(FL_ALL_JOBS);
     renderFilterCounts(FL_ALL_JOBS);

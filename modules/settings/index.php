@@ -1875,115 +1875,117 @@ include __DIR__ . '/../../includes/header.php';
 
     <?php if ($activeTab === 'status-workflow'): ?>
       <style>
-      .status-workflow-shell { display: grid; gap: 14px; }
+      .status-workflow-shell { display:grid; gap:14px; }
+      /* Hero */
       .status-hero {
-        border: 1px solid #dbeafe;
-        background: linear-gradient(120deg, #eff6ff 0%, #ecfeff 100%);
-        border-radius: 12px;
-        padding: 14px;
+        background:linear-gradient(120deg,#6366f1 0%,#7c3aed 60%,#a21caf 100%);
+        border-radius:14px;
+        padding:18px 22px;
+        color:#fff;
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:12px;
       }
-      .status-hero h3 { margin: 0 0 5px; color: #0f172a; font-size: 1.05rem; }
-      .status-hero p { margin: 0; color: #334155; font-size: .88rem; }
+      .status-hero h3 { margin:0 0 4px; font-size:1.1rem; font-weight:900; }
+      .status-hero p  { margin:0; opacity:.88; font-size:.84rem; }
+      /* Toolbar */
       .status-toolbar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        justify-content: space-between;
-        align-items: center;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 10px 12px;
-        background: #fff;
+        display:flex; flex-wrap:wrap; gap:10px;
+        justify-content:space-between; align-items:center;
+        background:#fff; border:1.5px solid #e2e8f0;
+        border-radius:12px; padding:10px 14px;
+        box-shadow:0 2px 8px rgba(0,0,0,.05);
       }
-      .status-toolbar .left,
-      .status-toolbar .right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-      .status-toolbar input[type="text"] { min-width: 210px; }
-      .status-section-card {
-        border: 1px solid #e2e8f0;
-        border-radius: 14px;
-        background: #ffffff;
-        overflow: hidden;
+      .status-toolbar .left,.status-toolbar .right{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+      .status-toolbar input[type="text"]{min-width:200px;border:1.5px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:.84rem}
+      .status-toolbar input[type="text"]:focus{outline:none;border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.15)}
+      /* Reference card */
+      .sw-ref-toggle{cursor:pointer;display:flex;align-items:center;gap:6px;font-size:.82rem;font-weight:700;color:#6366f1;user-select:none}
+      .sw-ref-toggle:hover{color:#4f46e5}
+      .status-reference-card{
+        border:1.5px solid #e0e7ff; border-radius:12px;
+        background:linear-gradient(180deg,#f5f3ff 0%,#fff 100%); padding:12px;
       }
-      .status-section-head {
-        display: flex;
-        justify-content: space-between;
-        gap: 10px;
-        align-items: center;
-        padding: 12px;
-        background: #f8fafc;
-        border-bottom: 1px solid #e2e8f0;
+      .status-reference-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
+      .status-reference-item{
+        border:1px solid #e0e7ff; border-radius:10px; padding:8px 10px; background:#fff;
       }
-      .status-section-head h4 { margin: 0; color: #0f172a; font-size: .95rem; }
-      .status-section-head p { margin: 3px 0 0; color: #64748b; font-size: .78rem; }
-      .status-section-body { padding: 12px; display: grid; gap: 10px; }
-      .status-page-card {
-        border: 1px solid #dbe2ea;
-        border-radius: 12px;
-        padding: 10px;
-        background: #ffffff;
+      .status-reference-item p{margin:4px 0 0;font-size:.73rem;color:#475569;line-height:1.35}
+      /* Section card */
+      .status-section-card{
+        border-radius:14px; overflow:hidden;
+        box-shadow:0 2px 10px rgba(0,0,0,.06);
+        border:1.5px solid transparent;
       }
-      .status-page-head {
-        display: grid;
-        gap: 8px;
-        grid-template-columns: 1fr 1.1fr auto;
-        margin-bottom: 8px;
+      .status-section-card[data-sect-color="0"]{border-color:#c7d2fe}
+      .status-section-card[data-sect-color="1"]{border-color:#99f6e4}
+      .status-section-card[data-sect-color="2"]{border-color:#fde68a}
+      .status-section-card[data-sect-color="3"]{border-color:#fca5a5}
+      .status-section-card[data-sect-color="4"]{border-color:#d9f99d}
+      .status-section-card[data-sect-color="5"]{border-color:#fbcfe8}
+      .status-section-head{
+        display:flex;justify-content:space-between;gap:10px;align-items:center;
+        padding:12px 14px;
+        border-bottom:1.5px solid rgba(0,0,0,.07);
       }
-      .status-table { width: 100%; border-collapse: collapse; }
-      .status-table th,
-      .status-table td { border: 1px solid #e2e8f0; padding: 6px; vertical-align: top; font-size: .78rem; }
-      .status-table th { background: #f8fafc; text-align: left; color: #334155; }
-      .status-table input,
-      .status-table textarea { width: 100%; font-size: .78rem; }
-      .status-table textarea { min-height: 46px; resize: vertical; }
-      .status-badge-preview {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 999px;
-        min-width: 88px;
-        height: 28px;
-        font-weight: 700;
-        font-size: .72rem;
-        padding: 0 10px;
+      .status-section-card[data-sect-color="0"] .status-section-head{background:linear-gradient(120deg,#eef2ff,#f5f3ff)}
+      .status-section-card[data-sect-color="1"] .status-section-head{background:linear-gradient(120deg,#f0fdf4,#ecfeff)}
+      .status-section-card[data-sect-color="2"] .status-section-head{background:linear-gradient(120deg,#fffbeb,#fef9c3)}
+      .status-section-card[data-sect-color="3"] .status-section-head{background:linear-gradient(120deg,#fff1f2,#ffe4e6)}
+      .status-section-card[data-sect-color="4"] .status-section-head{background:linear-gradient(120deg,#f7fee7,#ecfccb)}
+      .status-section-card[data-sect-color="5"] .status-section-head{background:linear-gradient(120deg,#fdf4ff,#fce7f3)}
+      .status-section-head h4{margin:0;font-size:.95rem;font-weight:800;color:#0f172a}
+      .status-section-head p{margin:3px 0 0;color:#64748b;font-size:.77rem}
+      .status-section-body{padding:12px;display:grid;gap:10px;background:#fff}
+      /* Page card */
+      .status-page-card{
+        border:1px solid #e2e8f0; border-radius:12px;
+        background:#fafafa; overflow:hidden;
       }
-      .status-actions-row { display: flex; justify-content: space-between; margin-top: 8px; gap: 8px; }
-      .status-muted { color: #64748b; font-size: .76rem; }
-      .status-empty {
-        border: 1px dashed #cbd5e1;
-        border-radius: 10px;
-        padding: 18px;
-        text-align: center;
-        color: #64748b;
-        font-size: .82rem;
+      .status-page-head{
+        display:grid;gap:8px;
+        grid-template-columns:1fr 1.2fr auto;
+        padding:10px 12px;
+        background:#f8fafc;
+        border-bottom:1px solid #e2e8f0;
       }
-      .status-reference-card {
-        border: 1px solid #cbd5e1;
-        border-radius: 12px;
-        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-        padding: 12px;
+      .status-page-head input{border:1px solid #e2e8f0;border-radius:7px;padding:6px 9px;font-size:.8rem;background:#fff}
+      .status-page-head input:focus{outline:none;border-color:#6366f1}
+      /* Status table */
+      .status-table{width:100%;border-collapse:collapse}
+      .status-table th,.status-table td{border:1px solid #f1f5f9;padding:6px 8px;vertical-align:middle;font-size:.78rem}
+      .status-table th{background:#f1f5f9;text-align:left;color:#475569;font-size:.67rem;text-transform:uppercase;letter-spacing:.06em}
+      .status-table tbody tr:hover td{background:#f8f8ff}
+      .status-table input[type="text"],.status-table textarea{width:100%;font-size:.78rem;border:1px solid #e2e8f0;border-radius:6px;padding:4px 6px}
+      .status-table input[type="text"]:focus,.status-table textarea:focus{outline:none;border-color:#6366f1}
+      .status-table textarea{min-height:42px;resize:vertical}
+      .status-table input[type="color"]{width:36px;height:28px;border:none;cursor:pointer;border-radius:5px;padding:1px}
+      /* Badge preview */
+      .status-badge-preview{
+        display:inline-flex;align-items:center;justify-content:center;
+        border-radius:999px;min-width:80px;height:26px;
+        font-weight:800;font-size:.68rem;padding:0 10px;
+        white-space:nowrap;
       }
-      .status-reference-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 8px;
+      .status-actions-row{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;gap:8px;background:#f8fafc;border-top:1px solid #e2e8f0}
+      .status-muted{color:#94a3b8;font-size:.73rem}
+      .status-empty{
+        border:1.5px dashed #cbd5e1;border-radius:10px;
+        padding:16px;text-align:center;color:#94a3b8;font-size:.82rem;
       }
-      .status-reference-item {
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 8px;
-        background: #fff;
-      }
-      .status-reference-item p { margin: 4px 0 0; font-size: .75rem; color: #475569; line-height: 1.35; }
-      @media (max-width: 900px) {
-        .status-page-head { grid-template-columns: 1fr; }
-        .status-toolbar { flex-direction: column; align-items: stretch; }
+      @media(max-width:900px){
+        .status-page-head{grid-template-columns:1fr}
+        .status-toolbar{flex-direction:column;align-items:stretch}
       }
       </style>
 
       <div class="status-workflow-shell">
         <div class="status-hero">
-          <h3><i class="bi bi-diagram-3"></i> Status Workflow Configuration</h3>
-          <p>Define exactly which status appears in which page/section, when it should be used, and what color concept it carries. This is your single reference board to reduce status confusion across ERP.</p>
+          <div>
+            <h3><i class="bi bi-diagram-3"></i> Status Workflow</h3>
+            <p>Define which status appears on each page, when to use it, and what color it carries.</p>
+          </div>
         </div>
 
         <form method="POST" id="status-workflow-form">
@@ -1994,29 +1996,27 @@ include __DIR__ . '/../../includes/header.php';
           <div class="status-toolbar">
             <div class="left">
               <button type="button" class="btn btn-secondary btn-sm" id="sw-add-section"><i class="bi bi-plus-circle"></i> Add Section</button>
-              <button type="button" class="btn btn-light btn-sm" id="sw-reset-default"><i class="bi bi-arrow-counterclockwise"></i> Reset To Default</button>
+              <button type="button" class="btn btn-light btn-sm" id="sw-reset-default"><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
+              <span class="sw-ref-toggle" id="sw-toggle-ref"><i class="bi bi-palette"></i> Global Reference</span>
             </div>
             <div class="right">
-              <input type="text" id="sw-search" placeholder="Search page or status...">
-              <button class="btn btn-primary" type="submit"><i class="bi bi-save"></i> Save Status Workflow</button>
+              <input type="text" id="sw-search" placeholder="Search section or status…">
+              <button class="btn btn-primary" type="submit"><i class="bi bi-save"></i> Save</button>
             </div>
           </div>
 
-          <div class="status-muted">Tip: Keep each status concept short and business-friendly. Example concept: "QC approved, ready for packing".</div>
-
-          <div class="status-reference-card">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-              <strong style="font-size:.86rem;color:#0f172a">Global Status Reference (with concept templates)</strong>
-              <span class="status-muted">Use page card button "Use Global Statuses" for one-click fill.</span>
-            </div>
-            <div class="status-reference-grid">
-              <?php foreach ($statusWorkflowGlobalFlat as $refStatus): ?>
-                <div class="status-reference-item">
-                  <span class="status-badge-preview" style="background:<?= e($refStatus['bg_color']) ?>;color:<?= e($refStatus['text_color']) ?>"><?= e($refStatus['label']) ?></span>
-                  <p><strong>When:</strong> <?= e($refStatus['when']) ?></p>
-                  <p><strong>Concept:</strong> <?= e($refStatus['concept']) ?></p>
-                </div>
-              <?php endforeach; ?>
+          <div id="sw-ref-panel" style="display:none">
+            <div class="status-reference-card">
+              <div style="margin-bottom:8px;font-size:.82rem;font-weight:700;color:#6366f1">Global Status Reference — click &ldquo;Use Global Statuses&rdquo; on any page card to auto-fill.</div>
+              <div class="status-reference-grid">
+                <?php foreach ($statusWorkflowGlobalFlat as $refStatus): ?>
+                  <div class="status-reference-item">
+                    <span class="status-badge-preview" style="background:<?= e($refStatus['bg_color']) ?>;color:<?= e($refStatus['text_color']) ?>"><?= e($refStatus['label']) ?></span>
+                    <p><strong>When:</strong> <?= e($refStatus['when']) ?></p>
+                    <p><strong>Concept:</strong> <?= e($refStatus['concept']) ?></p>
+                  </div>
+                <?php endforeach; ?>
+              </div>
             </div>
           </div>
 
@@ -2070,14 +2070,13 @@ include __DIR__ . '/../../includes/header.php';
           var label = st.label || st.code || 'Status';
           return '' +
             '<tr data-status-row="1">' +
-              '<td><input data-bind="code" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" type="text" value="' + escHtml(st.code || '') + '" placeholder="Status code"></td>' +
-              '<td><input data-bind="label" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" type="text" value="' + escHtml(st.label || '') + '" placeholder="Label"></td>' +
-              '<td><textarea data-bind="when" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" placeholder="When this status should appear">' + escHtml(st.when || '') + '</textarea></td>' +
-              '<td><textarea data-bind="concept" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" placeholder="Business concept / meaning">' + escHtml(st.concept || '') + '</textarea></td>' +
-              '<td><input data-bind="bg_color" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" type="color" value="' + escHtml(bg) + '"></td>' +
-              '<td><input data-bind="text_color" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" type="color" value="' + escHtml(tx) + '"></td>' +
-              '<td><span class="status-badge-preview" style="background:' + escHtml(bg) + ';color:' + escHtml(tx) + '">' + escHtml(label) + '</span></td>' +
-              '<td><button type="button" class="btn btn-danger btn-sm" data-remove-status="1" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '"><i class="bi bi-trash"></i></button></td>' +
+              '<td style="width:13%"><input data-bind="code" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" type="text" value="' + escHtml(st.code || '') + '" placeholder="Code"></td>' +
+              '<td style="width:13%"><input data-bind="label" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" type="text" value="' + escHtml(st.label || '') + '" placeholder="Label"></td>' +
+              '<td style="width:34%"><textarea data-bind="when" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" placeholder="When to use / meaning">' + escHtml(st.when || st.concept || '') + '</textarea></td>' +
+              '<td style="width:5%;text-align:center"><input data-bind="bg_color" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" type="color" value="' + escHtml(bg) + '"></td>' +
+              '<td style="width:5%;text-align:center"><input data-bind="text_color" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" type="color" value="' + escHtml(tx) + '"></td>' +
+              '<td style="width:14%"><span class="status-badge-preview" style="background:' + escHtml(bg) + ';color:' + escHtml(tx) + '">' + escHtml(label) + '</span></td>' +
+              '<td style="width:4%;text-align:center"><button type="button" class="btn btn-danger btn-sm" data-remove-status="1" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '"><i class="bi bi-trash"></i></button></td>' +
             '</tr>';
         }
 
@@ -2102,14 +2101,13 @@ include __DIR__ . '/../../includes/header.php';
               '<table class="status-table">' +
                 '<thead>' +
                   '<tr>' +
-                    '<th style="width:12%">Code</th>' +
-                    '<th style="width:12%">Label</th>' +
-                    '<th style="width:24%">When To Use</th>' +
-                    '<th style="width:24%">Concept</th>' +
-                    '<th style="width:7%">BG</th>' +
-                    '<th style="width:7%">Text</th>' +
-                    '<th style="width:10%">Preview</th>' +
-                    '<th style="width:4%"></th>' +
+                    '<th>Code</th>' +
+                    '<th>Label</th>' +
+                    '<th>When / Meaning</th>' +
+                    '<th title="Background">BG</th>' +
+                    '<th title="Text color">Txt</th>' +
+                    '<th>Preview</th>' +
+                    '<th></th>' +
                   '</tr>' +
                 '</thead>' +
                 '<tbody>' + rows + '</tbody>' +
@@ -2124,6 +2122,8 @@ include __DIR__ . '/../../includes/header.php';
             '</div>';
         }
 
+        var SECT_COLORS = ['0','1','2','3','4','5'];
+
         function sectionCardMarkup(sIdx, section) {
           var pagesHtml = '';
           var pages = Array.isArray(section.pages) ? section.pages : [];
@@ -2133,25 +2133,21 @@ include __DIR__ . '/../../includes/header.php';
           if (!pagesHtml) {
             pagesHtml = '<div class="status-empty">No pages in this section yet.</div>';
           }
+          var colorIdx = SECT_COLORS[sIdx % SECT_COLORS.length];
 
           return '' +
-            '<section class="status-section-card" data-section-card="1">' +
+            '<section class="status-section-card" data-section-card="1" data-sect-color="' + colorIdx + '">' +
               '<div class="status-section-head">' +
-                '<div>' +
-                  '<h4>' + escHtml(section.section_name || '') + '</h4>' +
-                  '<p>' + escHtml(section.description || '') + '</p>' +
+                '<div style="flex:1;display:grid;grid-template-columns:1fr 1.4fr;gap:8px;align-items:center">' +
+                  '<input data-section-bind="section_name" data-s="' + sIdx + '" type="text" value="' + escHtml(section.section_name || '') + '" placeholder="Section name" style="font-weight:800;font-size:.92rem;border:1px solid rgba(0,0,0,.1);border-radius:7px;padding:5px 9px;background:transparent">' +
+                  '<input data-section-bind="description" data-s="' + sIdx + '" type="text" value="' + escHtml(section.description || '') + '" placeholder="Description" style="font-size:.78rem;border:1px solid rgba(0,0,0,.1);border-radius:7px;padding:5px 9px;background:transparent;color:#64748b">' +
                 '</div>' +
-                '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">' +
+                '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
                   '<button type="button" class="btn btn-secondary btn-sm" data-add-page="1" data-s="' + sIdx + '"><i class="bi bi-plus"></i> Add Page</button>' +
-                  '<button type="button" class="btn btn-danger btn-sm" data-remove-section="1" data-s="' + sIdx + '"><i class="bi bi-trash"></i> Remove Section</button>' +
+                  '<button type="button" class="btn btn-danger btn-sm" data-remove-section="1" data-s="' + sIdx + '"><i class="bi bi-trash"></i></button>' +
                 '</div>' +
               '</div>' +
               '<div class="status-section-body">' +
-                '<div class="status-page-head" style="margin-bottom:2px;grid-template-columns: 1fr 1fr;">' +
-                  '<input data-section-bind="section_name" data-s="' + sIdx + '" type="text" value="' + escHtml(section.section_name || '') + '" placeholder="Section name (e.g. Planning)">' +
-                  '<input data-section-bind="description" data-s="' + sIdx + '" type="text" value="' + escHtml(section.description || '') + '" placeholder="Section description">' +
-                '</div>' +
-                '<div class="status-muted">Section key: ' + escHtml(section.section_key || '') + '</div>' +
                 '<div data-pages-wrapper="1">' + pagesHtml + '</div>' +
               '</div>' +
             '</section>';
@@ -2282,6 +2278,11 @@ include __DIR__ . '/../../includes/header.php';
         });
 
         btnAddSection.addEventListener('click', addSection);
+        document.getElementById('sw-toggle-ref').addEventListener('click', function () {
+          var panel = document.getElementById('sw-ref-panel');
+          panel.style.display = panel.style.display === 'none' ? '' : 'none';
+        });
+
         btnResetDefault.addEventListener('click', function () {
           if (!window.confirm('Reset workflow matrix to default values?')) {
             return;
