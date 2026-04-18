@@ -4,6 +4,11 @@ require_once __DIR__ . '/../../includes/functions.php';
 require_once __DIR__ . '/../../includes/auth_check.php';
 require_once __DIR__ . '/_data.php';
 
+// Packing board must always reflect latest operator entry state.
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
+
 $db = getDB();
 $pageTitle = 'Packing';
 
@@ -1635,7 +1640,7 @@ include __DIR__ . '/../../includes/header.php';
     var sectionBLocked = isTerminal && !canDeleteJobs;
     var targetPaperStockId = Number(job.paper_stock_id || 0);
     var operatorEntry = (job.operator_entry && typeof job.operator_entry === 'object') ? job.operator_entry : null;
-    var operatorHasSubmitted = !!operatorEntry && (Number(operatorEntry.submitted_lock || 0) === 1 || String(operatorEntry.submitted_at || '').trim() !== '');
+    var operatorHasSubmitted = !!operatorEntry && (Number(operatorEntry.is_submitted || operatorEntry.submitted_lock || 0) === 1);
     var operatorRollPayload = {};
     if (operatorEntry && operatorEntry.roll_payload_json) {
       if (typeof operatorEntry.roll_payload_json === 'object') {

@@ -787,7 +787,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $settings['id_generation'] = $idg;
     if (saveAppSettings($settings)) {
-      setFlash('success', 'Only counters were reset successfully. Existing job cards were not deleted.');
+      $blockedModules = [];
+      foreach (array_keys($idg['modules']) as $type) {
+        if (getExistingMaxSequenceForType((string)$type, $idg) > 0) {
+          $blockedModules[] = (string)$type;
+        }
+      }
+
+      if (!empty($blockedModules)) {
+        setFlash(
+          'warning',
+          'Counters reset হয়েছে, কিন্তু existing records থাকার কারণে কিছু module-এ next ID 0001 থেকে শুরু হবে না. '
+          . 'Affected modules: ' . implode(', ', $blockedModules)
+          . '. 0001 থেকে শুরু করতে Reset Planning + Production + Live Floor ব্যবহার করুন.'
+        );
+      } else {
+        setFlash('success', 'Counters reset complete. Next IDs will start from 0001.');
+      }
     } else {
       setFlash('error', 'Unable to reset prefix counters.');
     }
@@ -2044,7 +2060,7 @@ if ($activeTab === 'clients' && $editClientId > 0) {
             type="submit"
             name="action"
             value="reset_prefix_counters"
-            data-confirm="Reset counters only? This will NOT delete existing job cards."
+            data-confirm="Reset counters only? This will NOT delete existing job cards. Existing records thakle next ID 0001 na-o hote pare."
           ><i class="bi bi-arrow-counterclockwise"></i> Reset Counters Only (No Job Delete)</button>
           <button
             class="btn btn-danger"

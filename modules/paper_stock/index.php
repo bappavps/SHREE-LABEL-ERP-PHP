@@ -36,8 +36,13 @@ $sortDir = (strtolower($_GET['dir'] ?? '') === 'asc') ? 'ASC' : 'DESC';
 
 $orderBySql = "`{$sortCol}` {$sortDir}";
 if ($sortCol === 'roll_no') {
-  // Natural roll sort: compare trailing numeric token first, then full roll_no.
-  $orderBySql = "CAST(SUBSTRING_INDEX(REPLACE(REPLACE(REPLACE(`roll_no`,'-','/'),' ','/'),'_','/'), '/', -1) AS UNSIGNED) {$sortDir}, `roll_no` {$sortDir}";
+  // Keep parent/child roll groups together (e.g. 0351, 0351-A, 0351-B)
+  // while still sorting by the trailing numeric part.
+  $tailExpr = "SUBSTRING_INDEX(`roll_no`, '/', -1)";
+  $baseNumExpr = "CAST(SUBSTRING_INDEX({$tailExpr}, '-', 1) AS UNSIGNED)";
+  $hasSuffixExpr = "CASE WHEN {$tailExpr} LIKE '%-%' THEN 1 ELSE 0 END";
+  $suffixExpr = "CASE WHEN {$tailExpr} LIKE '%-%' THEN SUBSTRING_INDEX({$tailExpr}, '-', -1) ELSE '' END";
+  $orderBySql = "{$baseNumExpr} {$sortDir}, {$hasSuffixExpr} ASC, {$suffixExpr} ASC, `roll_no` {$sortDir}";
 }
 
 // Server-side global search
@@ -216,6 +221,16 @@ function renderHiddenFilterInputs(array $filterParams) {
 }
 
 $activeFilterParams = activeFilterParams($searchTerm, $quickFilters, $activeColumnFilterParams);
+
+$quickStatusActive = trim((string)($quickFilters['status'] ?? '')) !== '';
+$columnStatusActive = !empty($activeColumnFilters['status']);
+$statusFilterActive = $quickStatusActive || $columnStatusActive;
+$clearStatusParams = $_GET;
+unset($clearStatusParams['status'], $clearStatusParams['cfp_status'], $clearStatusParams['page']);
+$clearStatusFilterUrl = BASE_URL . '/modules/paper_stock/index.php';
+if (!empty($clearStatusParams)) {
+  $clearStatusFilterUrl .= '?' . http_build_query($clearStatusParams);
+}
 
 $countSql = 'SELECT COUNT(*) AS c FROM paper_stock' . $searchWhere;
 if ($whereTypes !== '') {
@@ -687,6 +702,18 @@ include __DIR__ . '/../../includes/header.php';
     <button type="button" class="ps-qf-reset" onclick="resetQuickFilters()">Reset</button>
   </div>
 </form>
+
+<?php if ($statusFilterActive): ?>
+<div class="no-print" style="margin:10px 0 12px;padding:10px 12px;border:1px solid #facc15;background:#fffbeb;color:#854d0e;border-radius:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+  <div style="font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px">
+    <i class="bi bi-funnel-fill"></i>
+    Status filter active ache, tai kichu roll hidden thakte pare.
+  </div>
+  <a href="<?= e($clearStatusFilterUrl) ?>" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:8px;background:#f59e0b;color:#fff;text-decoration:none;font-size:12px;font-weight:700">
+    <i class="bi bi-x-circle"></i> Clear Status Filter
+  </a>
+</div>
+<?php endif; ?>
 
 <div id="ps-selected-summary" class="ps-selected-summary no-print">
   <div class="ps-selected-meta">
@@ -1264,9 +1291,14 @@ include __DIR__ . '/../../includes/header.php';
   window.resetQuickFilters = function(){
     // If any server-side quick/global filter is active, clear and reload
     var u = new URL(window.location.href);
-    var hadServerFilters = ['search','lot','roll','company','type','gsm','status','width','date_from','date_to'].some(function(k){
+    var hadQuickFilters = ['search','lot','roll','company','type','gsm','status','width','date_from','date_to'].some(function(k){
       return u.searchParams.has(k);
     });
+    var hadColumnFilters = false;
+    u.searchParams.forEach(function(_value, key){
+      if (key.indexOf('cfp_') === 0) hadColumnFilters = true;
+    });
+    var hadServerFilters = hadQuickFilters || hadColumnFilters;
     Object.keys(qf).forEach(function(k){ qf[k].value = ''; });
     document.querySelectorAll('.ps-qf-picker-btn').forEach(function(btn){
       var label = btn.querySelector('span');
@@ -1284,6 +1316,11 @@ include __DIR__ . '/../../includes/header.php';
       ['search','lot','roll','company','type','gsm','status','width','date_from','date_to'].forEach(function(k){
         u.searchParams.delete(k);
       });
+      var cfpKeys = [];
+      u.searchParams.forEach(function(_value, key){
+        if (key.indexOf('cfp_') === 0) cfpKeys.push(key);
+      });
+      cfpKeys.forEach(function(key){ u.searchParams.delete(key); });
       u.searchParams.set('page', '1');
       window.location.href = u.toString();
       return;
