@@ -87,6 +87,8 @@ if ($currentUserId > 0) {
   }
 }
 $notificationDepartments = array_values(array_unique($notificationDepartments));
+$notificationDepartments[] = 'global';
+$notificationDepartments = array_values(array_unique($notificationDepartments));
 $notificationDeptCsv = implode(',', $notificationDepartments);
 ?>
 <!DOCTYPE html>

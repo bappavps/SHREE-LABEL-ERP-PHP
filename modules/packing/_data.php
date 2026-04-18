@@ -60,8 +60,8 @@ function packing_department_type_map(): array {
     return [
         'printing_label' => [
             'label' => 'Printing Label',
-            'departments' => ['label_slitting', 'label slitting', 'label-slitting', 'printing', 'printing_label', 'printing label'],
-            'planning_types' => ['printing_label', 'printing', 'label_printing', 'label_slitting'],
+            'departments' => ['label-printing', 'label printing', 'label_printing', 'printing_label', 'printing label'],
+            'planning_types' => ['label-printing', 'label_printing', 'printing_label'],
             'department_label' => 'Label Slitting',
         ],
         'pos_roll' => [
@@ -118,15 +118,99 @@ function packing_value_matches_aliases($value, array $aliases): bool {
     return false;
 }
 
+function packing_planning_board_key($value): string {
+    $norm = packing_normalize_match_key($value);
+    if ($norm === '') {
+        return '';
+    }
+    if (in_array($norm, ['label_printing', 'printing_label', 'label'], true)) {
+        return 'label';
+    }
+    if (in_array($norm, ['barcode', 'rotery', 'rotary'], true)) {
+        return 'barcode';
+    }
+    if ($norm === 'paperroll' || $norm === 'paper_roll') {
+        return 'paperroll';
+    }
+
+    return '';
+}
+
+function packing_row_origin_board(array $row): string {
+    $planExtra = packing_decode_json($row['plan_extra_data'] ?? null);
+    $jobExtra = packing_decode_json($row['extra_data'] ?? null);
+    $sources = [
+        (string)($row['plan_department'] ?? ''),
+        (string)($planExtra['department'] ?? ''),
+        (string)($planExtra['module_source'] ?? ''),
+        (string)($planExtra['source_module'] ?? ''),
+        (string)($jobExtra['planning_department'] ?? ''),
+        (string)($jobExtra['planning_board'] ?? ''),
+        (string)($jobExtra['module_source'] ?? ''),
+        (string)($jobExtra['source_module'] ?? ''),
+    ];
+
+    foreach ($sources as $source) {
+        $board = packing_planning_board_key($source);
+        if ($board !== '') {
+            return $board;
+        }
+    }
+
+    return '';
+}
+
 function packing_row_to_tab(array $row): ?string {
     $planExtra = packing_decode_json($row['plan_extra_data'] ?? null);
     $jobExtra = packing_decode_json($row['extra_data'] ?? null);
+    $originBoard = packing_row_origin_board($row);
 
     $planningType = packing_pick_value_loose(
         [$planExtra, $jobExtra, $row],
         ['planning_type', 'paper_roll_type', 'category', 'job_category', 'type']
     );
     $jobNo = trim((string)($row['job_no'] ?? ''));
+
+    if ($originBoard === 'label') {
+        return 'printing_label';
+    }
+
+    if ($originBoard === 'barcode') {
+        return 'barcode';
+    }
+
+    if ($originBoard === 'paperroll') {
+        foreach (['pos_roll', 'one_ply', 'two_ply'] as $tabKey) {
+            $cfg = packing_department_type_map()[$tabKey] ?? null;
+            if (!is_array($cfg)) {
+                continue;
+            }
+
+            if (!empty($cfg['planning_types']) && packing_value_matches_aliases($planningType, (array)$cfg['planning_types'])) {
+                return $tabKey;
+            }
+
+            foreach ((array)($cfg['job_prefixes'] ?? []) as $prefix) {
+                if ($jobNo !== '' && stripos($jobNo, (string)$prefix) === 0) {
+                    return $tabKey;
+                }
+            }
+
+            $candidates = [
+                (string)($row['department'] ?? ''),
+                (string)($row['job_type'] ?? ''),
+                (string)($jobExtra['department'] ?? ''),
+                (string)($planExtra['planning_type'] ?? ''),
+            ];
+            foreach ($candidates as $candidate) {
+                if (packing_value_matches_aliases($candidate, (array)$cfg['departments'])) {
+                    return $tabKey;
+                }
+            }
+        }
+
+        return null;
+    }
 
     foreach (packing_department_type_map() as $tabKey => $cfg) {
         if (!empty($cfg['planning_types']) && packing_value_matches_aliases($planningType, (array)$cfg['planning_types'])) {
@@ -676,7 +760,7 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     }
     $allDepartments = array_values(array_unique(array_filter($allDepartments)));
 
-    $trackedPlanDepartments = ['paperroll', 'printing', 'printing_label', 'label_slitting', 'barcode'];
+    $trackedPlanDepartments = ['paperroll', 'barcode', 'rotery', 'rotary', 'label-printing'];
 
     $quotedDepartments = [];
     foreach ($allDepartments as $dept) {
@@ -992,9 +1076,16 @@ function packing_fetch_history_rows(mysqli $db, array $filters = []): array {
 
     $historyRows = [];
     foreach ($rows as $row) {
-        // History should include all completed packing states.
+        // Operator packing history should only show packing outcomes,
+        // not generic completed rows from upstream departments.
         $effectiveStatus = packing_effective_status_from_row($row);
         if (!packing_is_completed_status($effectiveStatus)) {
+            continue;
+        }
+
+        $effectiveNorm = strtolower(trim(str_replace(['-', '_'], ' ', $effectiveStatus)));
+        $isPackingOutcome = in_array($effectiveNorm, ['packed', 'packing done', 'finished production', 'dispatched'], true);
+        if (!$isPackingOutcome) {
             continue;
         }
 

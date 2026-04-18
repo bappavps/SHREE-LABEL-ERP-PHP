@@ -103,6 +103,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $log->bind_param('sidd', $data['roll_no'], $newId, $data['length_mtr'], $_SESSION['user_id']);
                 $log->execute();
 
+              $actorName = trim((string)($_SESSION['user_name'] ?? ''));
+              if ($actorName === '') {
+                $actorName = 'A user';
+              }
+              $notificationMessage = sprintf(
+                'Paper stock added: Roll %s (%s, %s) by %s.',
+                $data['roll_no'],
+                (string)$data['paper_type'],
+                (string)$data['company'],
+                $actorName
+              );
+              createDepartmentNotifications(
+                $db,
+                ['global'],
+                0,
+                $notificationMessage,
+                'success',
+                '/modules/paper_stock/index.php'
+              );
+
                 setFlash('success', 'Roll ' . $data['roll_no'] . ' added successfully.');
                 redirect(BASE_URL . '/modules/paper_stock/index.php');
             } else {

@@ -797,8 +797,8 @@ function barcodePlanningFetchRows(mysqli $db): array {
                         $statusSource = 'Packing';
                     }
                 } else {
-                    // Job is active in Packing, use jobs.status directly (normalized for display)
-                    $statusSource = paperrollPlanningNormalizeManualStatus($jobStatus, $planningType);
+                    // For Jumbo/Printing/Barcode/etc show department-wise status from phase.
+                    $statusSource = paperrollPlanningStatusFromPhase($selectedDepartment, $selectedPhase);
                 }
             } else {
                 if ($jobStatusNorm === 'finished production') {

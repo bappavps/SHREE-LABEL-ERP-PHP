@@ -1035,6 +1035,30 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             return value.replace(/_/g, ' ').replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
         }
 
+        function notificationStageText(n) {
+            var msg = String((n && n.message) || '').trim();
+            var deptLabel = notificationDepartmentLabel(String((n && n.department) || '').trim());
+            if (!msg) {
+                return deptLabel;
+            }
+
+            var lower = msg.toLowerCase();
+            var statusMatch = msg.match(/status\s+changed\s+to\s+(.+)$/i);
+            if (statusMatch && statusMatch[1]) {
+                return String(statusMatch[1]).trim();
+            }
+
+            if (lower.indexOf('is now ready') !== -1) {
+                return 'Preparing ' + deptLabel;
+            }
+
+            if (lower.indexOf('completed in ') !== -1 || lower.indexOf(' closed ') !== -1 || lower.indexOf(' closed') !== -1) {
+                return deptLabel + ' Done';
+            }
+
+            return msg;
+        }
+
         function fetchNotifications(unreadOnly, done) {
             var url = apiBase + '?action=get_notifications&limit=25';
             if (unreadOnly) url += '&unread=1';
@@ -1057,21 +1081,8 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                                 latest = n;
                             }
                         });
-                        if (!firstUnreadFetch && latest && typeof window.erpCenterMessage === 'function') {
-                            var latestId = parseInt(latest.id || 0, 10) || 0;
-                            var latestDept = String(latest.department || '').trim();
-                            var latestTarget = String(latest.target_url || '').trim() || buildDeptUrl(latestDept);
-                            window.erpCenterMessage(String(latest.message || 'New notification'), {
-                                title: String(latest.job_no || notificationDepartmentLabel(latestDept) || 'New Notification'),
-                                okLabel: 'Open',
-                                cancelLabel: 'Cancel',
-                                onOk: function () {
-                                    markRead(latestId, function () {
-                                        window.location.href = latestTarget;
-                                    });
-                                }
-                            });
-                        }
+                        // Popup toasts are intentionally disabled for notifications.
+                        // Users open details directly from the bell panel.
                         firstUnreadFetch = false;
                     }
                     if (typeof done === 'function') done(rows);
@@ -1087,12 +1098,16 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                 return;
             }
             notifList.innerHTML = items.map(function (n) {
-                var title = (n.job_no || n.department || 'Notification');
+                var dept = String(n.department || '').trim();
+                var deptLabel = notificationDepartmentLabel(dept);
+                var jobNo = String(n.job_no || '').trim();
+                var title = (jobNo !== '' ? (jobNo + ' - ' + deptLabel) : deptLabel);
+                var stageText = notificationStageText(n);
                 var targetUrl = String(n.target_url || '');
                 return '' +
                     '<div class="np-item" data-nid="' + escHtml(n.id) + '" data-dept="' + escHtml(n.department || '') + '" data-url="' + escHtml(targetUrl) + '">' +
                     '<div class="np-item-title">' + escHtml(title) + '</div>' +
-                    '<div class="np-item-msg">' + escHtml(n.message || '') + '</div>' +
+                    '<div class="np-item-msg">' + escHtml(stageText) + '</div>' +
                     '<div class="np-item-time">' + escHtml(timeAgo(n.created_at)) + '</div>' +
                     '</div>';
             }).join('');

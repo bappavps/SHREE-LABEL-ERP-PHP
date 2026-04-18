@@ -425,6 +425,8 @@ function planningNotificationRouteInfo($planningDepartment = '') {
 }
 
 function createDepartmentNotifications(mysqli $db, array $departments, $jobId, $message, $type = 'info') {
+    static $routePathColumnChecked = false;
+
     $jobId = (int)$jobId;
     $message = trim((string)$message);
     $type = trim((string)$type);
@@ -433,16 +435,42 @@ function createDepartmentNotifications(mysqli $db, array $departments, $jobId, $
         $type = 'info';
     }
 
+    $routePath = '';
+    $args = func_get_args();
+    if (isset($args[5])) {
+        $routePath = trim((string)$args[5]);
+    }
+
     $departments = array_values(array_unique(array_filter(array_map(static function ($dept) {
         return trim((string)$dept);
     }, $departments))));
     if (empty($departments)) return;
 
-    $stmt = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, ?)");
+    if (!$routePathColumnChecked) {
+        $routePathColumnChecked = true;
+        $colRes = $db->query("SHOW COLUMNS FROM job_notifications LIKE 'route_path'");
+        if ($colRes && !$colRes->fetch_assoc()) {
+            $db->query("ALTER TABLE job_notifications ADD COLUMN route_path VARCHAR(255) NOT NULL DEFAULT '' AFTER type");
+        }
+    }
+
+    $hasRoutePath = false;
+    $routeColRes = $db->query("SHOW COLUMNS FROM job_notifications LIKE 'route_path'");
+    if ($routeColRes && $routeColRes->fetch_assoc()) {
+        $hasRoutePath = true;
+    }
+
+    $stmt = $hasRoutePath
+        ? $db->prepare("INSERT INTO job_notifications (job_id, department, message, type, route_path) VALUES (?, ?, ?, ?, ?)")
+        : $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, ?)");
     if (!$stmt) return;
 
     foreach ($departments as $department) {
-        $stmt->bind_param('isss', $jobId, $department, $message, $type);
+        if ($hasRoutePath) {
+            $stmt->bind_param('issss', $jobId, $department, $message, $type, $routePath);
+        } else {
+            $stmt->bind_param('isss', $jobId, $department, $message, $type);
+        }
         $stmt->execute();
     }
 }
@@ -487,6 +515,13 @@ function jobsAdvanceNotificationTargets($jobDepartment = '', array $planningExtr
             return ['planning', 'packing'];
         case 'packing':
             return ['planning', 'dispatch'];
+        case 'paperroll':
+        case 'pos':
+        case 'oneply':
+        case 'one_ply':
+        case 'twoply':
+        case 'two_ply':
+            return ['planning', 'paperroll', 'packing'];
         default:
             return [];
     }
@@ -513,7 +548,7 @@ function planningCreateNotifications(mysqli $db, $jobNo, $jobName, $planningDepa
         $message = $jobName . ' ' . $eventLabel . ' to ' . $planningSuffix;
     }
 
-    createDepartmentNotifications($db, planningNotificationTargets($planningDepartment), 0, $message, 'info');
+    createDepartmentNotifications($db, planningNotificationTargets($planningDepartment), 0, $message, 'info', (string)($routeInfo['path'] ?? ''));
 }
 
 /**

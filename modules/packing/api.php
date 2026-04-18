@@ -47,10 +47,11 @@ function packing_api_create_notifications(mysqli $db, int $jobId, string $jobNo,
     if ($eventLabel === '') {
         return;
     }
+    $routePath = '/modules/packing/index.php';
 
     $jobRef = $jobNo !== '' ? $jobNo : ('Job #' . ($jobId > 0 ? $jobId : 'N/A'));
     $message = $jobRef . ' ' . $eventLabel;
-    createDepartmentNotifications($db, $departments, $jobId, $message, $type);
+    createDepartmentNotifications($db, $departments, $jobId, $message, $type, $routePath);
 }
 
 function packing_api_ensure_finished_goods_table(mysqli $db): void {

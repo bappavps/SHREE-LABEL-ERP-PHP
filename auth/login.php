@@ -47,6 +47,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['group_id']  = isset($user['group_id']) ? (int)$user['group_id'] : 0;
               $_SESSION['tenant_slug'] = defined('TENANT_SLUG') ? TENANT_SLUG : 'default';
               $_SESSION['tenant_name'] = defined('TENANT_NAME') ? TENANT_NAME : APP_NAME;
+
+              $userLabel = trim((string)($user['name'] ?? ''));
+              if ($userLabel === '') {
+                $userLabel = trim((string)($user['email'] ?? 'Unknown user'));
+              }
+              createDepartmentNotifications(
+                $db,
+                ['global'],
+                0,
+                $userLabel . ' logged in.',
+                'info',
+                '/modules/dashboard/index.php'
+              );
                 redirect(BASE_URL . '/modules/dashboard/index.php');
             } else {
                 $error = 'Invalid email or password.';

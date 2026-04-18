@@ -1088,6 +1088,11 @@ function jobs_notification_target_url(mysqli $db, array $notification): string {
     $department = strtolower(trim((string)($notification['department'] ?? '')));
     $message = strtolower(trim((string)($notification['message'] ?? '')));
     $notificationJobId = (int)($notification['job_id'] ?? 0);
+    $routePath = trim((string)($notification['route_path'] ?? ''));
+
+    if ($routePath !== '') {
+        return jobs_join_base_url($routePath);
+    }
 
     // PaperRoll pipeline notifications should stay on their own stage page.
     if ($notificationJobId > 0 && in_array($department, ['paperroll', 'pos', 'oneply', 'twoply'], true)) {
@@ -2188,7 +2193,8 @@ try {
             $advanceTargets = jobsAdvanceNotificationTargets((string)($job['department'] ?? ''), $planningExtraForNotifications);
             if (!empty($advanceTargets)) {
                 $advanceMsg = $job['job_no'] . ' completed in ' . jobs_department_label((string)($job['department'] ?? '')) . ' — next stage updated';
-                createDepartmentNotifications($db, $advanceTargets, $jobId, $advanceMsg, 'success');
+                $routePath = jobs_notification_job_page_by_department((string)($job['department'] ?? ''));
+                createDepartmentNotifications($db, $advanceTargets, $jobId, $advanceMsg, 'success', $routePath);
             }
         }
 
