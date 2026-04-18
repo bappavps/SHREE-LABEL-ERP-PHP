@@ -88,6 +88,8 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
             <?= navSubItem('/modules/planning/flatbed/index.php',        'Die-Cutting',     $currentFile, [], 'nav-sub-item-nested', 'layout-wtf') ?>
             <?= navSubItem('/modules/planning/barcode/index.php',        'Barcode',         $currentFile, ['/modules/planning/rotery/index.php'], 'nav-sub-item-nested', 'upc-scan') ?>
             <?= navSubItem('/modules/planning/paperroll/index.php',      'PaperRoll',       $currentFile, [], 'nav-sub-item-nested', 'journal-text') ?>
+            <?= navSubItem('/modules/planning/oneply/index.php',         '1 Ply Planning',  $currentFile, [], 'nav-sub-item-nested', 'layers') ?>
+            <?= navSubItem('/modules/planning/twoply/index.php',         '2 Ply Planning',  $currentFile, [], 'nav-sub-item-nested', 'layers') ?>
             <?= navSubItem('/modules/planning/label-slitting/index.php', 'Label Slitting',  $currentFile, [], 'nav-sub-item-nested', 'layout-split') ?>
             <?= navSubItem('/modules/planning/batch/index.php',          'Batch Printing',  $currentFile, [], 'nav-sub-item-nested', 'stack') ?>
             <?= navSubItem('/modules/planning/packing/index.php',        'Packaging',       $currentFile, [], 'nav-sub-item-nested', 'box') ?>

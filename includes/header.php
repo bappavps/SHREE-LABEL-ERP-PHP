@@ -56,7 +56,16 @@ if (strpos($currentPath, '/modules/operators/label-slitting/') === 0 || strpos($
 if (strpos($currentPath, '/modules/operators/pos/') === 0 || strpos($currentPath, '/modules/jobs/pos/') === 0) {
   $notificationDepartments[] = 'pos';
 }
+if (strpos($currentPath, '/modules/operators/oneply/') === 0 || strpos($currentPath, '/modules/jobs/oneply/') === 0) {
+  $notificationDepartments[] = 'oneply';
+}
+if (strpos($currentPath, '/modules/operators/twoply/') === 0 || strpos($currentPath, '/modules/jobs/twoply/') === 0) {
+  $notificationDepartments[] = 'twoply';
+}
 if (strpos($currentPath, '/modules/planning/paperroll/') === 0 || strpos($currentPath, '/modules/jobs/paperroll/') === 0) {
+  $notificationDepartments[] = 'paperroll';
+}
+if (strpos($currentPath, '/modules/planning/oneply/') === 0 || strpos($currentPath, '/modules/planning/twoply/') === 0) {
   $notificationDepartments[] = 'paperroll';
 }
 if (strpos($currentPath, '/modules/operators/packing/') === 0 || strpos($currentPath, '/modules/jobs/packing/') === 0) {

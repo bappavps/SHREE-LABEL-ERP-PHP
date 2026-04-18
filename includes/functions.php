@@ -1400,6 +1400,14 @@ function planningNotificationTargets($planningDepartment = '') {
         $targets[] = 'flexo_printing';
     } elseif (in_array($department, ['slitting', 'jumbo_slitting', 'jumbo-slitting'], true)) {
         $targets[] = 'jumbo_slitting';
+    } elseif (in_array($department, ['paperroll', 'paper-roll', 'paper_roll', 'pos', 'pos_roll', 'pos-roll'], true)) {
+        $targets[] = 'paperroll';
+    } elseif (in_array($department, ['one_ply', 'oneply', 'one-ply', 'one ply'], true)) {
+        $targets[] = 'paperroll';
+        $targets[] = 'oneply';
+    } elseif (in_array($department, ['two_ply', 'twoply', 'two-ply', 'two ply'], true)) {
+        $targets[] = 'paperroll';
+        $targets[] = 'twoply';
     } elseif (!in_array($department, ['packing', 'dispatch'], true)) {
         $targets[] = 'flexo_printing';
         $targets[] = 'jumbo_slitting';
@@ -1428,6 +1436,15 @@ function planningNotificationRouteInfo($planningDepartment = '') {
     }
     if (in_array($department, ['paperroll', 'paper-roll', 'paper_roll'], true)) {
         return ['label' => 'paperroll', 'path' => '/modules/planning/paperroll/index.php'];
+    }
+    if (in_array($department, ['one_ply', 'oneply', 'one-ply', 'one ply'], true)) {
+        return ['label' => '1 Ply', 'path' => '/modules/planning/oneply/index.php'];
+    }
+    if (in_array($department, ['two_ply', 'twoply', 'two-ply', 'two ply'], true)) {
+        return ['label' => '2 Ply', 'path' => '/modules/planning/twoply/index.php'];
+    }
+    if (in_array($department, ['pos', 'pos_roll', 'pos-roll', 'posroll'], true)) {
+        return ['label' => 'POS Roll', 'path' => '/modules/planning/paperroll/index.php'];
     }
     if (in_array($department, ['label_slitting', 'label-slitting', 'label slitting'], true)) {
         return ['label' => 'label slitting', 'path' => '/modules/planning/label-slitting/index.php'];

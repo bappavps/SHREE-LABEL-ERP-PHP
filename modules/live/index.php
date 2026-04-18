@@ -549,7 +549,7 @@ function normStatus(v){
 }
 
 function isDoneStatus(v){
-  return ['closed','finalized','completed','qc passed','qc failed','dispatched','packing done'].includes(normStatus(v));
+  return ['closed','finalized','completed','qc passed','qc failed','dispatched','packing done','packed','finished production'].includes(normStatus(v));
 }
 
 /* ─── Stage Detection ─── */
@@ -559,7 +559,7 @@ function getStageIdx(job){
   const dept = getDept(job);
 
   if(ps.includes('dispatch') || s==='dispatched') return 6;
-  if(ps.includes('packing') || s==='packing done' || s==='packed') return 5;
+  if(ps.includes('packing') || s==='packing done' || s==='packed' || s==='finished production') return 5;
 
   if(dept==='lsl'){
     return isDoneStatus(s) ? 5 : 4;
@@ -618,6 +618,7 @@ function getStageName(job,idx){
   const active  =['Planning','Jumbo Slitting','Flexo Printing','Diecutting / Barcode','Label Slitting','Packing','Dispatched'];
   const inactive=['Planning','Jumbo Slitting','Flexo Printing','Diecutting / Barcode','Label Slitting','Packing','Dispatched'];
   if(idx===cur){
+    if(isDoneStatus(job.status||'')) return doneNames[idx]||'Done';
     if(idx===0) return 'Planning';
     if(idx===6) return isDispatchDone(job) ? 'Dispatched' : 'Preparing Dispatch';
     return isRunningStage(job,idx) ? active[idx]||'' : 'Preparing '+active[idx];
@@ -661,7 +662,7 @@ function getDisplayJobRef(job){
 
 function stBadge(status){
   const s=normStatus(status||'');
-  const map={running:'background:#dbeafe;color:#1e40af',pending:'background:#fef3c7;color:#92400e',queued:'background:#fef3c7;color:#92400e',closed:'background:#dcfce7;color:#166534',finalized:'background:#dcfce7;color:#166534',completed:'background:#dcfce7;color:#166534','qc passed':'background:#dcfce7;color:#166534','qc failed':'background:#fee2e2;color:#dc2626','packing done':'background:#dcfce7;color:#166534',dispatched:'background:#dcfce7;color:#166534'};
+  const map={running:'background:#dbeafe;color:#1e40af',pending:'background:#fef3c7;color:#92400e',queued:'background:#fef3c7;color:#92400e',closed:'background:#dcfce7;color:#166534',finalized:'background:#dcfce7;color:#166534',completed:'background:#dcfce7;color:#166534','qc passed':'background:#dcfce7;color:#166534','qc failed':'background:#fee2e2;color:#dc2626','packing done':'background:#dcfce7;color:#166534',packed:'background:#dcfce7;color:#166534','finished production':'background:#dcfce7;color:#166534',dispatched:'background:#dcfce7;color:#166534'};
   return map[s]||'background:#f1f5f9;color:#64748b';
 }
 
@@ -678,7 +679,22 @@ function getChainRootId(job, byId){
   return cur>0 ? ('id:'+cur) : '';
 }
 
+function getJobSequenceToken(job){
+  const fields = [job.job_no, job.prev_job_no, job.planning_job_name];
+  for(let i=0;i<fields.length;i++){
+    const v = String(fields[i]||'').trim().toUpperCase();
+    if(!v) continue;
+    const m = v.match(/(\d{4}\/\d{3,6})$/);
+    if(m && m[1]) return m[1];
+  }
+  return '';
+}
+
 function logicalJobKey(job, byId){
+  const seq = getJobSequenceToken(job);
+  if(seq){
+    return 'seq:'+seq;
+  }
   const root = getChainRootId(job, byId);
   if(root) return root;
   const planningId = Number((job && job.planning_id) || 0);
@@ -748,10 +764,24 @@ async function flLoad(){
     const isVisible=(j)=>{
       if(j.deleted_at) return false;
       // Normalize status for this page; keep durable packing flag authoritative.
-      if (j && j.extra_data_parsed && Number(j.extra_data_parsed.packing_done_flag||0) === 1) {
-        j.status = 'Packing Done';
-        if (!j.completed_at && j.extra_data_parsed.packing_done_at) {
-          j.completed_at = j.extra_data_parsed.packing_done_at;
+      if (j && j.extra_data_parsed) {
+        const liveStatus = normStatus(j.status || '');
+        const finishedFlag = Number(j.extra_data_parsed.finished_production_flag || 0) === 1 || String(j.extra_data_parsed.finished_production_at || '').trim() !== '';
+        const packingFlag = Number(j.extra_data_parsed.packing_done_flag || 0) === 1;
+
+        if (finishedFlag && liveStatus !== 'dispatched') {
+          j.status = 'Finished Production';
+          if (!j.completed_at && j.extra_data_parsed.finished_production_at) {
+            j.completed_at = j.extra_data_parsed.finished_production_at;
+          }
+        } else if (packingFlag) {
+          const isTerminal = ['dispatched', 'finished production'].includes(liveStatus);
+          if (!isTerminal) {
+            j.status = 'Packing Done';
+          }
+          if (!j.completed_at && j.extra_data_parsed.packing_done_at) {
+            j.completed_at = j.extra_data_parsed.packing_done_at;
+          }
         }
       }
 

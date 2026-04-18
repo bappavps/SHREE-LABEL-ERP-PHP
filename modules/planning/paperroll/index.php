@@ -985,7 +985,13 @@ function barcodePlanningExportPrint(array $rows, string $companyName, string $co
 }
 
 $db = getDB();
-$pageTitle = 'PaperRoll Planning';
+// Support pre-filtering by type from wrapper pages (planning/oneply, planning/twoply)
+// $planningTypeOverride can be set before including this file; it does not affect any other page.
+$_planningTypeOverride = isset($planningTypeOverride) ? paperrollPlanningNormalizeType($planningTypeOverride) : '';
+$_planningTypeLabels = ['pos_roll' => 'PosRoll', 'one_ply' => '1 Ply', 'two_ply' => '2 Ply'];
+$pageTitle = $_planningTypeOverride !== ''
+    ? ($_planningTypeLabels[$_planningTypeOverride] ?? 'PaperRoll') . ' Planning'
+    : 'PaperRoll Planning';
 $planningPageKey = 'paperroll';
 $canAdd = currentPageAction('add');
 $canEdit = currentPageAction('edit');
@@ -996,7 +1002,7 @@ $today = date('Y-m-d');
 $dispatchDefault = date('Y-m-d', strtotime('+12 days'));
 $planningTypeOptions = paperrollPlanningTypeOptions();
 $planningStatusOptionsMap = paperrollPlanningStatusOptionsMap();
-$defaultPlanningType = 'pos_roll';
+$defaultPlanningType = $_planningTypeOverride !== '' ? $_planningTypeOverride : 'pos_roll';
 $statusOptions = paperrollPlanningStatusOptionsForType($defaultPlanningType);
 $defaultStatus = 'Pending';
 $priorityOptions = barcodePlanningPriorityOptions();
@@ -1196,6 +1202,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $rows = barcodePlanningFetchRows($db);
+// Filter rows by type when accessed from wrapper pages (oneply/twoply)
+if ($_planningTypeOverride !== '') {
+    $rows = array_values(array_filter($rows, static function (array $r) use ($_planningTypeOverride): bool {
+        return ($r['planning_type'] ?? '') === $_planningTypeOverride;
+    }));
+}
 $paperStockTypeOptions = barcodePlanningPaperStockTypes($db);
 $materialTypeOptions = barcodePlanningSuggestionBucket($rows, 'material_type');
 $orderQtyOptions = barcodePlanningSuggestionBucket($rows, 'order_quantity');
@@ -1252,7 +1264,7 @@ include __DIR__ . '/../../../includes/header.php';
   <span class="breadcrumb-sep">&#8250;</span>
   <span>Job Planning</span>
   <span class="breadcrumb-sep">&#8250;</span>
-    <span>PaperRoll</span>
+  <span><?= e($_planningTypeOverride !== '' ? (($_planningTypeLabels[$_planningTypeOverride] ?? 'PaperRoll') . ' Planning') : 'PaperRoll') ?></span>
 </div>
 
 <?php include __DIR__ . '/../_page_switcher.php'; ?>
@@ -1313,20 +1325,20 @@ include __DIR__ . '/../../../includes/header.php';
 
 <div class="bc-header">
   <div>
-    <h1><i class="bi bi-upc-scan"></i> PaperRoll Planning</h1>
+    <h1><i class="bi bi-upc-scan"></i> <?= e($_planningTypeOverride !== '' ? (($_planningTypeLabels[$_planningTypeOverride] ?? 'PaperRoll') . ' Planning') : 'PaperRoll Planning') ?></h1>
         <p>Exact ERP paperroll planning register with the same fields and planning flow as Barcode, ready for later customization.</p>
   </div>
   <div class="bc-actions no-print">
     <a class="btn btn-ghost" href="<?= e(BASE_URL . '/modules/planning/paperroll/index.php?export=pdf') ?>" target="_blank"><i class="bi bi-printer"></i> Print / PDF</a>
     <a class="btn btn-ghost" href="<?= e(BASE_URL . '/modules/planning/paperroll/index.php?export=excel') ?>"><i class="bi bi-file-earmark-excel"></i> Export Excel</a>
-    <?php if ($canAdd): ?><button type="button" class="btn btn-primary" id="btn-open-paperroll-modal"><i class="bi bi-plus-circle"></i> Add PaperRoll Planning</button><?php endif; ?>
+    <?php if ($canAdd): ?><button type="button" class="btn btn-primary" id="btn-open-paperroll-modal"><i class="bi bi-plus-circle"></i> Add <?= e($_planningTypeOverride !== '' ? ($_planningTypeLabels[$_planningTypeOverride] ?? 'PaperRoll') : 'PaperRoll') ?> Planning</button><?php endif; ?>
   </div>
 </div>
 
 <?php if ($flash): ?><div class="alert alert-<?= e($flash['type'] ?? 'info') ?>" style="margin-bottom:14px"><?= e($flash['message'] ?? '') ?></div><?php endif; ?>
 <?php if (!empty($errors)): ?><div class="alert alert-danger" style="margin-bottom:14px"><strong>Could not save paperroll planning.</strong><ul style="margin:8px 0 0 18px"><?php foreach ($errors as $error): ?><li><?= e($error) ?></li><?php endforeach; ?></ul></div><?php endif; ?>
 
-<div class="bc-toolbar-card no-print"><div><div class="bc-toolbar-title">PaperRoll Planning Register</div><div class="bc-toolbar-sub">Showing all requested paperroll planning fields in the exact column sequence.</div></div><div class="bc-count"><?= count($rows) ?> entries</div></div>
+<div class="bc-toolbar-card no-print"><div><div class="bc-toolbar-title"><?= e($_planningTypeOverride !== '' ? (($_planningTypeLabels[$_planningTypeOverride] ?? 'PaperRoll') . ' Planning Register') : 'PaperRoll Planning Register') ?></div><div class="bc-toolbar-sub">Showing all requested paperroll planning fields in the exact column sequence.</div></div><div class="bc-count"><?= count($rows) ?> entries</div></div>
 
 <div class="card">
   <div class="card-header"><span class="card-title"><i class="bi bi-table"></i> PaperRoll Planning List</span></div>
@@ -1355,7 +1367,7 @@ include __DIR__ . '/../../../includes/header.php';
             </tr></thead>
       <tbody>
         <?php if (empty($rows)): ?>
-                    <tr><td colspan="21" class="bc-empty"><i class="bi bi-inbox"></i>No paperroll planning entries found yet.</td></tr>
+                    <tr><td colspan="21" class="bc-empty"><i class="bi bi-inbox"></i>No <?= e($_planningTypeOverride !== '' ? ($_planningTypeLabels[$_planningTypeOverride] ?? 'paperroll') : 'paperroll') ?> planning entries found yet.</td></tr>
         <?php else: ?>
           <?php foreach ($rows as $row): ?>
                         <?php

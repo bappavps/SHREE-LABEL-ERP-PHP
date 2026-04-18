@@ -22,6 +22,8 @@
     isAdmin: String(fg_root.getAttribute('data-is-admin') || '') === '1',
     tabs: [
       { key: 'pos_paper_roll', label: 'POS & Paper Roll', color: '#2563EB' },
+      { key: 'one_ply', label: '1 Ply', color: '#166534' },
+      { key: 'two_ply', label: '2 Ply', color: '#0f766e' },
       { key: 'barcode', label: 'Barcode', color: '#16A34A' },
       { key: 'printing_roll', label: 'Printing Roll', color: '#7E22CE' },
       { key: 'ribbon', label: 'Ribbon', color: '#EA580C' },
@@ -372,7 +374,7 @@
   }
 
   function fg_getColumns(tabKey) {
-    if (tabKey === 'pos_paper_roll') {
+    if (tabKey === 'pos_paper_roll' || tabKey === 'one_ply' || tabKey === 'two_ply') {
       return [
         { key: 'sl_no', label: 'SL.NO', numeric: true },
         { key: 'packing_id', label: 'Packing ID' },
@@ -543,7 +545,7 @@
   }
 
   function fg_getFormSchema(tabKey) {
-    if (tabKey === 'pos_paper_roll') {
+    if (tabKey === 'pos_paper_roll' || tabKey === 'one_ply' || tabKey === 'two_ply') {
       return [
         { name: 'packing_id', label: 'Packing ID', source: 'extra' },
         { name: 'date', label: 'Production Date', source: 'direct', type: 'date' },
@@ -638,7 +640,11 @@
     for (var i = 0; i < fg_state.tabs.length; i += 1) {
       var t = fg_state.tabs[i];
       var active = t.key === fg_state.activeTab ? ' active' : '';
-      html += '<button class="fg-tab-btn' + active + '" type="button" data-fg-action="switch-tab" data-tab="' + fg_escapeHtml(t.key) + '">' + fg_escapeHtml(t.label) + '</button>';
+      var countBadge = '';
+      if (t.key === fg_state.activeTab && fg_state.rows.length > 0) {
+        countBadge = ' <span style="background:rgba(255,255,255,0.25);border-radius:10px;padding:1px 7px;font-size:.78em;font-weight:700;">' + fg_state.rows.length + '</span>';
+      }
+      html += '<button class="fg-tab-btn' + active + '" type="button" data-fg-action="switch-tab" data-tab="' + fg_escapeHtml(t.key) + '">' + fg_escapeHtml(t.label) + countBadge + '</button>';
     }
     fg_nodes.tabs.innerHTML = html;
   }
@@ -975,6 +981,7 @@
     fg_renderTable();
     fg_renderPagination();
     fg_renderItemSummary();
+    fg_renderTabs();
 
     // Enable/disable reset-filter button based on active filters
     var rfBtn = fg_root ? fg_root.querySelector('#fgResetFilterBtn') : null;
@@ -1274,8 +1281,8 @@
     fg_nodes.entryFormGrid.innerHTML = html;
     fg_attachPosAutoCalc();
 
-    // Attach PRC suggestions for pos_paper_roll tab
-    if (fg_state.activeTab === 'pos_paper_roll') {
+    // Attach PRC suggestions for pos_paper_roll, one_ply and two_ply tabs
+    if (fg_state.activeTab === 'pos_paper_roll' || fg_state.activeTab === 'one_ply' || fg_state.activeTab === 'two_ply') {
       fg_loadPrcData(function (prcRows) {
         fg_attachPrcSuggestions(prcRows);
       });
@@ -1286,7 +1293,7 @@
   }
 
   function fg_attachPosAutoCalc() {
-    if (fg_state.activeTab !== 'pos_paper_roll' || !fg_nodes.entryForm) {
+    if ((fg_state.activeTab !== 'pos_paper_roll' && fg_state.activeTab !== 'one_ply' && fg_state.activeTab !== 'two_ply') || !fg_nodes.entryForm) {
       return;
     }
 

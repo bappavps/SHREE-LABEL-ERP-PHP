@@ -363,7 +363,7 @@ include __DIR__ . '/../../includes/header.php';
         style="--pk-accent:<?= e($theme['accent']) ?>;--pk-soft:<?= e($theme['soft']) ?>;--pk-border:<?= e($theme['border']) ?>;text-decoration:none;display:inline-flex;align-items:center;"
       >
         <?php if ($tabKey === 'history'): ?>
-          <i class="bi bi-clock-history" style="margin-right:3px"></i> History
+          <i class="bi bi-clock-history" style="margin-right:3px"></i> History (<?= count($historyData) ?>)
         <?php else: ?>
           <?= e(packing_tab_label($tabKey)) ?> (<?= (int)($counts[$tabKey] ?? 0) ?>)
         <?php endif; ?>
@@ -1631,6 +1631,10 @@ include __DIR__ . '/../../includes/header.php';
     var jobStatusRaw = String(job.status || '').trim();
     var jobStatusNorm = jobStatusRaw.toLowerCase().replace(/[-_]/g, ' ').trim();
     var isPosRollTab = String(job.packing_tab || '') === 'pos_roll' || String(activeTab || '') === 'pos_roll';
+    // one_ply and two_ply are also paper-roll types → use "Finished Production" not "Mark Dispatched"
+    var isPaperRollTypeTab = isPosRollTab
+      || String(job.packing_tab || '') === 'one_ply' || String(activeTab || '') === 'one_ply'
+      || String(job.packing_tab || '') === 'two_ply' || String(activeTab || '') === 'two_ply';
     var isPacked = (jobStatusNorm === 'packed' || jobStatusNorm === 'packing done');
     var isDispatched = jobStatusNorm === 'dispatched';
     var isFinishedProduction = jobStatusNorm === 'finished production';
@@ -1697,8 +1701,8 @@ include __DIR__ . '/../../includes/header.php';
     }).join('') : '<div style="font-size:.78rem;color:#64748b">No roll sources found.</div>';
     var currentPackingBatches = [];
     var markPackedActive = !isTerminal && operatorHasSubmitted;
-    var markDispatchedActive = !isPosRollTab && isPacked;
-    var markFinishedProductionActive = isPosRollTab && isPacked && !isFinishedProduction;
+    var markDispatchedActive = !isPaperRollTypeTab && isPacked;
+    var markFinishedProductionActive = isPaperRollTypeTab && isPacked && !isFinishedProduction;
 
     var imageHtml = job.image_url
       ? '<div class="pk-jc-image"><div style="font-size:.72rem;font-weight:800;color:#475569;margin-bottom:6px">Assigned Image Preview</div><img src="' + escHtml(job.image_url) + '" alt="Assigned Job Image"></div>'
@@ -1820,7 +1824,7 @@ include __DIR__ . '/../../includes/header.php';
           + '      <div style="padding:12px 0;border-top:1px solid #eef2f7;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-start;">'
           + '        <span id="pkSectionBAdminEditBadge" style="display:none;align-items:center;gap:6px;background:#ede9fe;color:#6d28d9;border:1px solid #c4b5fd;padding:8px 12px;border-radius:999px;font-size:.8rem;font-weight:800;"><span style="width:8px;height:8px;border-radius:999px;background:#7c3aed;display:inline-block"></span>Admin Edit Mode Active</span>'
           + '        <button id="pkSectionBFinishedBtn" type="button" class="pk-action-btn pk-btn-finished" ' + (!markPackedActive ? 'disabled ' : '') + 'title="' + (!markPackedActive && !isTerminal ? 'Waiting for operator to submit packing entry' : '') + '" style="background-color:' + (isTerminal ? '#9ca3af' : (operatorHasSubmitted ? '#22c55e' : '#f97316')) + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:' + (!markPackedActive ? 'not-allowed' : 'pointer') + ';font-size:.95em;transition:all .2s ease;opacity:' + (!markPackedActive ? '0.65' : '1') + ';">Mark Packed</button>'
-            + (isPosRollTab
+            + (isPaperRollTypeTab
               ? '        <button id="pkSectionBFinalBtn" type="button" class="pk-action-btn pk-btn-finished-production" ' + (!markFinishedProductionActive ? 'disabled ' : '') + 'style="background-color:' + (markFinishedProductionActive ? '#15803d' : '#9ca3af') + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:' + (!markFinishedProductionActive ? 'not-allowed' : 'pointer') + ';font-size:.95em;transition:all .2s ease;opacity:' + (!markFinishedProductionActive ? '0.65' : '1') + ';">Finished Production</button>'
               : '        <button id="pkSectionBDispatchBtn" type="button" class="pk-action-btn pk-btn-dispatched" ' + (!markDispatchedActive ? 'disabled ' : '') + 'style="background-color:' + (markDispatchedActive ? '#2563eb' : '#9ca3af') + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:' + (!markDispatchedActive ? 'not-allowed' : 'pointer') + ';font-size:.95em;transition:all .2s ease;opacity:' + (!markDispatchedActive ? '0.65' : '1') + ';">Mark Dispatched</button>')
           + '        <button id="pkSectionBCancelBtn" type="button" class="pk-action-btn pk-btn-cancel" style="background-color:#6b7280;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">Cancel</button>'
@@ -2872,7 +2876,7 @@ include __DIR__ . '/../../includes/header.php';
                   statusBadge.classList.add('ok');
                 }
                 applySectionBLockState();
-                setSectionMessage('Status updated: Packed ✓ ' + (isPosRollTab ? 'Finished Production is now enabled.' : 'You can now mark Dispatched.') , false);
+                setSectionMessage('Status updated: Packed ✓ ' + (isPaperRollTypeTab ? 'Finished Production is now enabled.' : 'You can now mark Dispatched.') , false);
               })
               .catch(function() {
                 setSectionMessage('Status update failed.', true);

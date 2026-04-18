@@ -42,9 +42,11 @@ function pm_department_label($dept, $fallbackType = ''): string {
 }
 
 function pm_bucket_status(array $row): string {
-  $jobStatus = strtolower(pm_text($row['latest_job_status'] ?: $row['active_job_status']));
+  $jobStatus = strtolower(pm_text($row['effective_status'] ?: ($row['latest_job_status'] ?: $row['active_job_status'])));
     $boardStatus = strtolower(pm_text($row['board_status']));
     $planningStatus = strtolower(pm_text($row['planning_status']));
+
+    if (in_array($jobStatus, ['packed', 'packing done'], true)) return 'Packed';
 
     $haystack = $jobStatus . ' ' . $boardStatus . ' ' . $planningStatus;
     if (strpos($haystack, 'running') !== false || strpos($haystack, 'in progress') !== false) return 'Running';
@@ -63,6 +65,58 @@ function pm_bucket_status(array $row): string {
     if (strpos($haystack, 'pending') !== false || strpos($haystack, 'queued') !== false || strpos($haystack, 'preparing') !== false) return 'Pending';
     return 'Pending';
 }
+
+  function pm_display_status($status): string {
+    $norm = strtolower(trim(str_replace(['-', '_'], ' ', pm_text($status))));
+    if (in_array($norm, ['packing done', 'packed'], true)) {
+      return 'Packed';
+    }
+    if ($norm === 'finished production') {
+      return 'Finished Production';
+    }
+    if ($norm === 'dispatched') {
+      return 'Dispatched';
+    }
+    return pm_text($status);
+  }
+
+  function pm_decode_json_assoc($json): array {
+    if (is_array($json)) {
+      return $json;
+    }
+    if (!is_string($json) || trim($json) === '') {
+      return [];
+    }
+    $decoded = json_decode($json, true);
+    return is_array($decoded) ? $decoded : [];
+  }
+
+  function pm_status_priority_from_job($status, array $extra): array {
+    $norm = strtolower(trim(str_replace(['-', '_'], ' ', pm_text($status))));
+
+    $finishedFlag = (int)($extra['finished_production_flag'] ?? 0) === 1
+      || pm_text($extra['finished_production_at'] ?? '') !== '';
+    $packedFlag = (int)($extra['packing_done_flag'] ?? 0) === 1
+      || (int)($extra['packing_packed_flag'] ?? 0) === 1
+      || pm_text($extra['packing_done_at'] ?? '') !== '';
+
+    if ($finishedFlag || in_array($norm, ['finished production', 'dispatched', 'dispatch', 'shipped'], true)) {
+      return [
+        'priority' => 5,
+        'status' => ($norm === 'dispatched' || $norm === 'dispatch' || $norm === 'shipped') ? 'Dispatched' : 'Finished Production',
+      ];
+    }
+    if ($packedFlag || in_array($norm, ['packed', 'packing done'], true)) {
+      return ['priority' => 4, 'status' => 'Packed'];
+    }
+    if (in_array($norm, ['completed', 'complete', 'closed', 'finalized', 'qc passed', 'qc failed'], true)) {
+      return ['priority' => 3, 'status' => 'Completed'];
+    }
+    if (in_array($norm, ['running', 'in progress', 'inprogress'], true)) {
+      return ['priority' => 2, 'status' => 'Running'];
+    }
+    return ['priority' => 1, 'status' => pm_display_status($status !== '' ? $status : 'Pending')];
+  }
 /* ── Delete planning row ── */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && pm_text($_POST['action'] ?? '') === 'delete_planning') {
     $delId   = (int)($_POST['planning_id'] ?? 0);
@@ -182,13 +236,96 @@ if ($stmt) {
     }
 }
 
+$effectiveStatusByPlanning = [];
+if (!empty($rows)) {
+  $planningIds = array_values(array_unique(array_map(static function ($row) {
+    return (int)($row['id'] ?? 0);
+  }, $rows)));
+  $planningIds = array_values(array_filter($planningIds, static function ($id) {
+    return $id > 0;
+  }));
+
+  if (!empty($planningIds)) {
+    $in = implode(',', array_fill(0, count($planningIds), '?'));
+    $types2 = str_repeat('i', count($planningIds));
+    $jobSql = "SELECT planning_id, status, extra_data, updated_at, id
+           FROM jobs
+           WHERE (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
+           AND planning_id IN ($in)
+           ORDER BY planning_id ASC, id ASC";
+    $jobStmt = $db->prepare($jobSql);
+    if ($jobStmt) {
+      $jobStmt->bind_param($types2, ...$planningIds);
+      $jobStmt->execute();
+      $jobRes = $jobStmt->get_result();
+      if ($jobRes instanceof mysqli_result) {
+        while ($jobRow = $jobRes->fetch_assoc()) {
+          $pid = (int)($jobRow['planning_id'] ?? 0);
+          if ($pid <= 0) {
+            continue;
+          }
+          $extra = pm_decode_json_assoc($jobRow['extra_data'] ?? null);
+          $evaluated = pm_status_priority_from_job((string)($jobRow['status'] ?? ''), $extra);
+          $priority = (int)($evaluated['priority'] ?? 0);
+          $statusText = pm_text($evaluated['status'] ?? '');
+          $updatedAt = pm_text($jobRow['updated_at'] ?? '');
+          $jobId = (int)($jobRow['id'] ?? 0);
+
+          if (!isset($effectiveStatusByPlanning[$pid])) {
+            $effectiveStatusByPlanning[$pid] = [
+              'priority' => $priority,
+              'status' => $statusText,
+              'updated_at' => $updatedAt,
+              'job_id' => $jobId,
+            ];
+            continue;
+          }
+
+          $current = $effectiveStatusByPlanning[$pid];
+          $shouldReplace = false;
+          if ($priority > (int)$current['priority']) {
+            $shouldReplace = true;
+          } elseif ($priority === (int)$current['priority']) {
+            if ($updatedAt !== '' && ($current['updated_at'] === '' || strcmp($updatedAt, (string)$current['updated_at']) >= 0)) {
+              $shouldReplace = true;
+            } elseif ($updatedAt === (string)$current['updated_at'] && $jobId >= (int)$current['job_id']) {
+              $shouldReplace = true;
+            }
+          }
+
+          if ($shouldReplace) {
+            $effectiveStatusByPlanning[$pid] = [
+              'priority' => $priority,
+              'status' => $statusText,
+              'updated_at' => $updatedAt,
+              'job_id' => $jobId,
+            ];
+          }
+        }
+      }
+      $jobStmt->close();
+    }
+  }
+}
+
 $filtered = [];
 foreach ($rows as $row) {
+  $planningId = (int)($row['id'] ?? 0);
+  if ($planningId > 0 && isset($effectiveStatusByPlanning[$planningId]['status'])) {
+    $row['effective_status'] = pm_text($effectiveStatusByPlanning[$planningId]['status']);
+  }
+
   $currentDept = pm_department_label($row['latest_job_department'] ?: $row['active_job_department'] ?: $row['planning_department'], $row['latest_job_type'] ?: $row['active_job_type']);
     $bucket = pm_bucket_status($row);
 
-    if ($statusFilter !== '' && strcasecmp($bucket, $statusFilter) !== 0) {
+    if ($statusFilter !== '') {
+      if (strcasecmp($statusFilter, 'Completed') === 0) {
+        if (!in_array($bucket, ['Completed', 'Packed'], true)) {
+          continue;
+        }
+      } elseif (strcasecmp($bucket, $statusFilter) !== 0) {
         continue;
+      }
     }
     if ($stageFilter !== '' && stripos($currentDept, $stageFilter) === false) {
         continue;
@@ -209,7 +346,7 @@ foreach ($filtered as $row) {
     $bucket = $row['bucket_status'];
     if ($bucket === 'Running') $running++;
     elseif ($bucket === 'Pending') $pending++;
-    elseif ($bucket === 'Completed') $completed++;
+  elseif ($bucket === 'Completed' || $bucket === 'Packed') $completed++;
     elseif ($bucket === 'On Hold') $hold++;
 }
 
@@ -400,7 +537,7 @@ body{background:#f1f5f9}
     <input type="text" name="q" value="<?= e($q) ?>" placeholder="Search by planning/job no, job name, notes">
     <select name="status">
       <option value="">All Status</option>
-      <?php foreach (['Pending','Running','On Hold','Completed'] as $opt): ?>
+      <?php foreach (['Pending','Running','On Hold','Packed','Completed'] as $opt): ?>
         <option value="<?= e($opt) ?>" <?= strcasecmp($statusFilter, $opt) === 0 ? 'selected' : '' ?>><?= e($opt) ?></option>
       <?php endforeach; ?>
     </select>
@@ -441,7 +578,7 @@ body{background:#f1f5f9}
               $bucket = (string)$row['bucket_status'];
               $bucketClass = 'pending';
               if ($bucket === 'Running') $bucketClass = 'running';
-              elseif ($bucket === 'Completed') $bucketClass = 'completed';
+              elseif ($bucket === 'Completed' || $bucket === 'Packed') $bucketClass = 'completed';
               elseif ($bucket === 'On Hold') $bucketClass = 'hold';
 
               $activeJobNo = pm_text($row['active_job_no']);
@@ -461,6 +598,10 @@ body{background:#f1f5f9}
               if ($curPos === '') $curPos = pm_text($row['active_job_status']);
               if ($curPos === '') $curPos = pm_text($row['board_status']);
               if ($curPos === '') $curPos = pm_text($row['planning_status']);
+                if (pm_text($row['effective_status']) !== '') {
+                  $curPos = pm_text($row['effective_status']);
+                }
+              $curPos = pm_display_status($curPos);
 
               $route = pm_text($row['department_route']);
               if ($route === '') $route = pm_text($row['planning_department']);

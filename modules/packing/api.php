@@ -173,8 +173,11 @@ function packing_api_build_job_barcode(array $jobDetails): string {
     return '';
 }
 
-function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array $operatorEntry, int $userId): void {
+function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array $operatorEntry, int $userId, string $packingTabKey = 'pos_roll'): void {
     packing_api_ensure_finished_goods_table($db);
+
+    $category = $packingTabKey === 'one_ply' ? 'one_ply' : ($packingTabKey === 'two_ply' ? 'two_ply' : 'pos_paper_roll');
+    $subTypeDerived = $packingTabKey === 'one_ply' ? '1 Ply' : ($packingTabKey === 'two_ply' ? '2 Ply' : 'POS Roll');
 
     $packingId = trim((string)($jobDetails['packing_display_id'] ?? ''));
     $jobNo = trim((string)($jobDetails['job_no'] ?? ''));
@@ -249,7 +252,7 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $remarks = '';
     }
 
-    $existingStmt = $db->prepare("SELECT id FROM finished_goods_stock WHERE category = 'pos_paper_roll' AND item_code = ? AND batch_no = ? ORDER BY id DESC LIMIT 1");
+    $existingStmt = $db->prepare("SELECT id FROM finished_goods_stock WHERE category = '{$category}' AND item_code = ? AND batch_no = ? ORDER BY id DESC LIMIT 1");
     if (!$existingStmt) {
         packing_api_respond(['ok' => false, 'message' => 'Finished goods lookup prepare failed'], 500);
     }
@@ -264,7 +267,7 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         if (!$updateStmt) {
             packing_api_respond(['ok' => false, 'message' => 'Finished goods update prepare failed'], 500);
         }
-        $subType = 'POS Roll';
+        $subType = $subTypeDerived;
         $updateStmt->bind_param('ssssdssi', $subType, $itemName, $size, $gsm, $quantity, $dateValue, $remarks, $stockId);
         if (!$updateStmt->execute()) {
             $err = (string)$updateStmt->error;
@@ -275,11 +278,11 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         return;
     }
 
-    $insertStmt = $db->prepare("INSERT INTO finished_goods_stock (category, sub_type, item_name, item_code, size, gsm, quantity, unit, location, batch_no, date, remarks, created_by) VALUES ('pos_paper_roll', ?, ?, ?, ?, ?, ?, 'PCS', 'Packing', ?, ?, ?, ?)");
+    $insertStmt = $db->prepare("INSERT INTO finished_goods_stock (category, sub_type, item_name, item_code, size, gsm, quantity, unit, location, batch_no, date, remarks, created_by) VALUES ('{$category}', ?, ?, ?, ?, ?, ?, 'PCS', 'Packing', ?, ?, ?, ?)");
     if (!$insertStmt) {
         packing_api_respond(['ok' => false, 'message' => 'Finished goods insert prepare failed'], 500);
     }
-    $subType = 'POS Roll';
+    $subType = $subTypeDerived;
     $insertStmt->bind_param('sssssdsssi', $subType, $itemName, $packingId, $size, $gsm, $quantity, $jobNo, $dateValue, $remarks, $userId);
     if (!$insertStmt->execute()) {
         $err = (string)$insertStmt->error;
@@ -565,8 +568,8 @@ try {
             'extra_data' => $jobDetails['job_extra_data'] ?? [],
             'plan_extra_data' => $jobDetails['plan_extra_data'] ?? [],
         ]);
-        if ($tabKey !== 'pos_roll') {
-            packing_api_respond(['ok' => false, 'message' => 'Finished Production is available only for POS Roll packing'], 409);
+        if (!in_array($tabKey, ['pos_roll', 'one_ply', 'two_ply'], true)) {
+            packing_api_respond(['ok' => false, 'message' => 'Finished Production is available only for POS Roll, 1 Ply and 2 Ply packing'], 409);
         }
 
         $currentStatus = strtolower(trim(str_replace(['-', '_'], ' ', packing_effective_status_from_row([
@@ -592,7 +595,7 @@ try {
 
         $db->begin_transaction();
         try {
-            packing_api_upsert_finished_goods($db, $jobDetails, $opEntry, $userId);
+            packing_api_upsert_finished_goods($db, $jobDetails, $opEntry, $userId, $tabKey);
 
             $stmt = $db->prepare("UPDATE jobs SET status = 'Finished Production', completed_at = COALESCE(completed_at, NOW()), updated_at = NOW() WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
             if (!$stmt) {
