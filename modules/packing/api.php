@@ -27,6 +27,32 @@ function packing_api_can_finalize(): bool {
     return false;
 }
 
+function packing_api_create_notifications(mysqli $db, int $jobId, string $jobNo, string $eventLabel, string $type = 'info', array $extraDepartments = []): void {
+    if (!function_exists('createDepartmentNotifications')) {
+        return;
+    }
+
+    $baseDepartments = ['packing'];
+    $departments = array_merge($baseDepartments, $extraDepartments);
+    $departments = array_values(array_unique(array_filter(array_map(static function ($dept) {
+        return trim((string)$dept);
+    }, $departments))));
+    if (!$departments) {
+        return;
+    }
+
+    $jobId = (int)$jobId;
+    $jobNo = trim($jobNo);
+    $eventLabel = trim($eventLabel);
+    if ($eventLabel === '') {
+        return;
+    }
+
+    $jobRef = $jobNo !== '' ? $jobNo : ('Job #' . ($jobId > 0 ? $jobId : 'N/A'));
+    $message = $jobRef . ' ' . $eventLabel;
+    createDepartmentNotifications($db, $departments, $jobId, $message, $type);
+}
+
 function packing_api_ensure_finished_goods_table(mysqli $db): void {
     $sql = "CREATE TABLE IF NOT EXISTS finished_goods_stock (
         id INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -447,6 +473,11 @@ try {
             }
         }
 
+        $advanceTargets = function_exists('jobsAdvanceNotificationTargets')
+            ? jobsAdvanceNotificationTargets('packing', [])
+            : [];
+        packing_api_create_notifications($db, $jobId, $jobNo, 'moved to Packed in packing.', 'success', $advanceTargets);
+
         packing_api_respond(['ok' => true, 'already_done' => false, 'status' => 'Packed']);
     }
 
@@ -463,7 +494,7 @@ try {
             packing_api_respond(['ok' => false, 'message' => 'Invalid job id'], 400);
         }
 
-        $statusCheck = $db->prepare("SELECT status, extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $statusCheck = $db->prepare("SELECT status, extra_data, job_no FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
         if (!$statusCheck) {
             packing_api_respond(['ok' => false, 'message' => 'Status check prepare failed'], 500);
         }
@@ -497,6 +528,12 @@ try {
             packing_api_respond(['ok' => false, 'message' => 'Update failed: ' . $err], 500);
         }
         $stmt->close();
+
+        $dispatchJobNo = trim((string)($statusRow['job_no'] ?? ''));
+        $advanceTargets = function_exists('jobsAdvanceNotificationTargets')
+            ? jobsAdvanceNotificationTargets('packing', [])
+            : [];
+        packing_api_create_notifications($db, $jobId, $dispatchJobNo, 'marked as Dispatched.', 'success', $advanceTargets);
 
         packing_api_respond(['ok' => true, 'already_done' => false, 'status' => 'Dispatched']);
     }
@@ -590,6 +627,12 @@ try {
             }
 
             $db->commit();
+
+            $advanceTargets = function_exists('jobsAdvanceNotificationTargets')
+                ? jobsAdvanceNotificationTargets('packing', [])
+                : [];
+            $finishedJobNo = trim((string)($jobDetails['job_no'] ?? ''));
+            packing_api_create_notifications($db, $jobId, $finishedJobNo, 'marked as Finished Production.', 'success', $advanceTargets);
         } catch (Throwable $e) {
             $db->rollback();
             packing_api_respond(['ok' => false, 'message' => $e->getMessage()], 500);
@@ -606,6 +649,28 @@ try {
         $jobId = (int)($_POST['job_id'] ?? 0);
         $jobNo = trim((string)($_POST['job_no'] ?? ''));
         $planId = (int)($_POST['planning_id'] ?? 0);
+
+        // Always resolve canonical identifiers from DB to avoid client-side stale job_no
+        // causing submit persistence mismatch after refresh.
+        if ($jobId > 0) {
+            $idStmt = $db->prepare("SELECT job_no, planning_id FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+            if ($idStmt) {
+                $idStmt->bind_param('i', $jobId);
+                $idStmt->execute();
+                $idRow = $idStmt->get_result()->fetch_assoc();
+                $idStmt->close();
+                if (is_array($idRow)) {
+                    $resolvedJobNo = trim((string)($idRow['job_no'] ?? ''));
+                    if ($resolvedJobNo !== '') {
+                        $jobNo = $resolvedJobNo;
+                    }
+                    $resolvedPlanId = (int)($idRow['planning_id'] ?? 0);
+                    if ($resolvedPlanId > 0) {
+                        $planId = $resolvedPlanId;
+                    }
+                }
+            }
+        }
 
         if ($jobNo === '') {
             packing_api_respond(['ok' => false, 'message' => 'job_no is required'], 400);
@@ -744,6 +809,8 @@ try {
                 $touchStmt->close();
             }
         }
+
+        packing_api_create_notifications($db, $jobId, $jobNo, 'operator submitted packing entry.', 'info');
 
         $entry = packing_fetch_operator_entry($db, $jobNo);
         packing_api_respond(['ok' => true, 'message' => 'Packing entry submitted successfully', 'entry' => $entry]);

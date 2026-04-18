@@ -1023,17 +1023,29 @@ function jobs_notification_department_rank(string $department): int {
     if ($d === 'barcode') return 4;
     if ($d === 'label_slitting') return 5;
     if ($d === 'packing') return 6;
+    if ($d === 'paperroll') return 7;
+    if ($d === 'pos') return 8;
+    if ($d === 'oneply') return 9;
+    if ($d === 'twoply') return 10;
     return 99;
 }
 
 function jobs_notification_job_page_by_department(string $department): string {
     $d = strtolower(trim($department));
+    if ($d === 'label-slitting' || $d === 'label slitting') $d = 'label_slitting';
+    if ($d === 'rotary') $d = 'rotery';
+    if ($d === 'one ply' || $d === 'one_ply') $d = 'oneply';
+    if ($d === 'two ply' || $d === 'two_ply') $d = 'twoply';
     if ($d === 'jumbo_slitting') return '/modules/jobs/jumbo/index.php';
     if ($d === 'flexo_printing') return '/modules/jobs/printing/index.php';
     if ($d === 'flatbed') return '/modules/jobs/flatbed/index.php';
     if ($d === 'rotery') return '/modules/jobs/rotery/index.php';
     if ($d === 'barcode') return '/modules/jobs/barcode/index.php';
     if ($d === 'label_slitting') return '/modules/jobs/label-slitting/index.php';
+    if ($d === 'pos') return '/modules/jobs/pos/index.php';
+    if ($d === 'oneply') return '/modules/jobs/oneply/index.php';
+    if ($d === 'twoply') return '/modules/jobs/twoply/index.php';
+    if ($d === 'paperroll') return '/modules/planning/paperroll/index.php';
     if ($d === 'packing') return '/modules/jobs/packing/index.php';
     return '';
 }
@@ -1077,6 +1089,14 @@ function jobs_notification_target_url(mysqli $db, array $notification): string {
     $message = strtolower(trim((string)($notification['message'] ?? '')));
     $notificationJobId = (int)($notification['job_id'] ?? 0);
 
+    // PaperRoll pipeline notifications should stay on their own stage page.
+    if ($notificationJobId > 0 && in_array($department, ['paperroll', 'pos', 'oneply', 'twoply'], true)) {
+        $directPage = jobs_notification_job_page_by_department($department);
+        if ($directPage !== '') {
+            return jobs_join_base_url($directPage) . '?auto_job=' . rawurlencode((string)$notificationJobId);
+        }
+    }
+
     if ($department === 'requisition_admin' || preg_match('/^requisition_user_\d+$/', $department)) {
         return jobs_join_base_url('/modules/requisition-management/index.php');
     }
@@ -1086,6 +1106,9 @@ function jobs_notification_target_url(mysqli $db, array $notification): string {
     }
 
     if ($department === 'planning') {
+        if (strpos($message, 'paperroll planning') !== false || strpos($message, 'paper roll planning') !== false || strpos($message, 'paper-roll planning') !== false) {
+            return jobs_join_base_url('/modules/planning/paperroll/index.php');
+        }
         if (strpos($message, 'barcode planning') !== false || strpos($message, 'rotery planning') !== false || strpos($message, 'rotary planning') !== false) {
             return jobs_join_base_url('/modules/planning/barcode/index.php');
         }

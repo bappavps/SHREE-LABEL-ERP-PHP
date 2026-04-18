@@ -797,9 +797,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (!empty($blockedModules)) {
         setFlash(
           'warning',
-          'Counters reset হয়েছে, কিন্তু existing records থাকার কারণে কিছু module-এ next ID 0001 থেকে শুরু হবে না. '
+          'Counters were reset, but due to existing records, the next ID will not start from 0001 in some modules. '
           . 'Affected modules: ' . implode(', ', $blockedModules)
-          . '. 0001 থেকে শুরু করতে Reset Planning + Production + Live Floor ব্যবহার করুন.'
+          . '. To start from 0001, use Reset Planning + Production + Live Floor.'
         );
       } else {
         setFlash('success', 'Counters reset complete. Next IDs will start from 0001.');
@@ -858,6 +858,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $runResetQuery($db, "DELETE FROM job_change_requests", 'Job change requests cleanup');
       $runResetQuery($db, "DELETE FROM job_notifications", 'Job notifications cleanup');
       $runResetQuery($db, "DELETE FROM job_delete_audit", 'Job delete audit cleanup');
+      if ($tableExists($db, 'packing_operator_entries')) {
+        $runResetQuery($db, "DELETE FROM packing_operator_entries", 'Packing operator entries cleanup');
+      }
       if ($tableExists($db, 'audit_scanned_rolls')) {
         $runResetQuery($db, "DELETE FROM audit_scanned_rolls", 'Audit scanned rolls cleanup');
       }
@@ -874,7 +877,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $runResetQuery($db, "DELETE FROM planning", 'Planning cleanup');
 
       // Reset auto-increment counters so fresh test entries start from #1.
-      foreach (['planning', 'jobs', 'slitting_batches', 'slitting_entries', 'roll_allocations', 'job_change_requests', 'job_notifications', 'job_delete_audit', 'audit_scanned_rolls', 'inventory_audits', 'finished_goods_dispatch_log', 'finished_goods_stock'] as $resetTable) {
+      foreach (['planning', 'jobs', 'slitting_batches', 'slitting_entries', 'roll_allocations', 'job_change_requests', 'job_notifications', 'job_delete_audit', 'packing_operator_entries', 'audit_scanned_rolls', 'inventory_audits', 'finished_goods_dispatch_log', 'finished_goods_stock'] as $resetTable) {
         if ($tableExists($db, $resetTable)) {
           $runResetQuery($db, "ALTER TABLE `{$resetTable}` AUTO_INCREMENT = 1", ucfirst(str_replace('_', ' ', $resetTable)) . ' auto increment reset');
         }

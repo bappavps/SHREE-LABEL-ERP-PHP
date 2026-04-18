@@ -223,11 +223,38 @@ function paperrollPlanningStatusFromPhase(string $department, string $phase): st
     return 'Pending';
 }
 
-function paperrollPlanningJobStatusPhase($status, $timerState = ''): string {
+function paperrollPlanningJobStatusPhase($status, $timerState = '', array $jobExtra = []): string {
     $jobStatus = strtolower(trim((string)$status));
     $timer = strtolower(trim((string)$timerState));
+
+    $hasFinishedFlag = (int)($jobExtra['finished_production_flag'] ?? 0) === 1
+        || trim((string)($jobExtra['finished_production_at'] ?? '')) !== '';
+    if ($hasFinishedFlag) {
+        return 'dispatched';
+    }
+
+    $hasPackedFlag = (int)($jobExtra['packing_done_flag'] ?? 0) === 1
+        || (int)($jobExtra['packing_packed_flag'] ?? 0) === 1
+        || trim((string)($jobExtra['packing_done_at'] ?? '')) !== '';
+    if ($hasPackedFlag) {
+        return 'done';
+    }
+
     if ($jobStatus === '') {
+        if (in_array($timer, ['completed', 'done', 'packed'], true)) {
+            return 'done';
+        }
+        if (in_array($timer, ['running', 'active'], true)) {
+            return 'active';
+        }
+        if ($timer === 'paused') {
+            return 'pause';
+        }
         return '';
+    }
+
+    if (in_array($jobStatus, ['packing', 'in packing', 'in_progress', 'in progress'], true)) {
+        return 'active';
     }
 
     if ($jobStatus === 'paused' || ($jobStatus === 'running' && $timer === 'paused')) {
@@ -304,6 +331,8 @@ function paperrollPlanningSelectCurrentJob(array $jobs): ?array {
 
     $running = [];
     $paused = [];
+    $done = [];
+    $preparing = [];
     $all = [];
     foreach ($jobs as $job) {
         $phase = (string)($job['phase'] ?? '');
@@ -315,6 +344,10 @@ function paperrollPlanningSelectCurrentJob(array $jobs): ?array {
             $running[] = $job;
         } elseif ($phase === 'pause') {
             $paused[] = $job;
+        } elseif ($phase === 'done' || $phase === 'dispatched') {
+            $done[] = $job;
+        } elseif ($phase === 'preparing') {
+            $preparing[] = $job;
         }
     }
 
@@ -336,6 +369,14 @@ function paperrollPlanningSelectCurrentJob(array $jobs): ?array {
     if (!empty($paused)) {
         $sortLatest($paused);
         return $paused[0];
+    }
+    if (!empty($done)) {
+        $sortLatest($done);
+        return $done[0];
+    }
+    if (!empty($preparing)) {
+        $sortLatest($preparing);
+        return $preparing[0];
     }
     if (!empty($all)) {
         $sortLatest($all);
@@ -688,14 +729,40 @@ function barcodePlanningFetchRows(mysqli $db): array {
             if (!is_array($jobExtra)) {
                 $jobExtra = [];
             }
-            $phase = paperrollPlanningJobStatusPhase($job['status'] ?? '', $jobExtra['timer_state'] ?? '');
-            if ($phase === '') {
-                continue;
-            }
+            $phase = paperrollPlanningJobStatusPhase($job['status'] ?? '', $jobExtra['timer_state'] ?? '', $jobExtra);
             $departmentLabel = paperrollPlanningDepartmentFromJob($job, $jobExtra);
             if ($departmentLabel === '') {
                 continue;
             }
+
+            if ($phase === '') {
+                $rawStatusNorm = strtolower(trim(str_replace(['-', '_'], ' ', (string)($job['status'] ?? ''))));
+                if ($rawStatusNorm === '' || in_array($rawStatusNorm, ['pending', 'queued'], true)) {
+                    $phase = 'preparing';
+                } elseif ($rawStatusNorm === 'running') {
+                    $phase = 'active';
+                } elseif ($rawStatusNorm === 'paused') {
+                    $phase = 'pause';
+                } else {
+                    continue;
+                }
+            }
+
+            $effectiveJobStatus = trim((string)($job['status'] ?? ''));
+            $rawNormStatus = strtolower(trim(str_replace(['-', '_'], ' ', $effectiveJobStatus)));
+            $hasFinishedFlag = (int)($jobExtra['finished_production_flag'] ?? 0) === 1
+                || trim((string)($jobExtra['finished_production_at'] ?? '')) !== '';
+            if ($hasFinishedFlag) {
+                $effectiveJobStatus = 'Finished Production';
+            } else {
+                $hasPackedFlag = (int)($jobExtra['packing_done_flag'] ?? 0) === 1
+                    || (int)($jobExtra['packing_packed_flag'] ?? 0) === 1
+                    || trim((string)($jobExtra['packing_done_at'] ?? '')) !== '';
+                if ($hasPackedFlag && !in_array($rawNormStatus, ['dispatched', 'finished production'], true)) {
+                    $effectiveJobStatus = 'Packed';
+                }
+            }
+
             $activityAt = (string)($job['updated_at'] ?? '');
             if ($activityAt === '') {
                 $activityAt = (string)($job['completed_at'] ?? '');
@@ -707,7 +774,7 @@ function barcodePlanningFetchRows(mysqli $db): array {
             $jobCandidates[] = [
                 'id' => (int)($job['id'] ?? 0),
                 'department' => $departmentLabel,
-                'status' => trim((string)($job['status'] ?? '')),
+                'status' => $effectiveJobStatus,
                 'phase' => $phase,
                 'ts' => $timestamp !== false ? (int)$timestamp : 0,
             ];
@@ -715,7 +782,34 @@ function barcodePlanningFetchRows(mysqli $db): array {
 
         $selected = paperrollPlanningSelectCurrentJob($jobCandidates);
         if (is_array($selected) && !empty($selected['phase'])) {
-            $statusSource = paperrollPlanningStatusFromPhase((string)($selected['department'] ?? ''), (string)($selected['phase'] ?? ''));
+            // Check if job is active in Packing (not in terminal states)
+            $jobStatus = trim((string)($selected['status'] ?? ''));
+            $jobStatusNorm = strtolower(trim(str_replace(['-', '_'], ' ', $jobStatus)));
+            $selectedDepartment = trim((string)($selected['department'] ?? ''));
+            $selectedPhase = trim((string)($selected['phase'] ?? ''));
+            $terminalStatuses = ['dispatched', 'finished production'];
+            if ($jobStatus !== '' && !in_array($jobStatusNorm, $terminalStatuses, true)) {
+                // Packing screen shows active POS roll completion as "Packing" until dispatch/finished production.
+                if ($selectedDepartment === 'PosRoll' && $selectedPhase === 'done') {
+                    if (in_array($jobStatusNorm, ['packed', 'packing done'], true)) {
+                        $statusSource = 'Packed';
+                    } else {
+                        $statusSource = 'Packing';
+                    }
+                } else {
+                    // Job is active in Packing, use jobs.status directly (normalized for display)
+                    $statusSource = paperrollPlanningNormalizeManualStatus($jobStatus, $planningType);
+                }
+            } else {
+                if ($jobStatusNorm === 'finished production') {
+                    $statusSource = 'Finished Production';
+                } elseif ($jobStatusNorm === 'dispatched') {
+                    $statusSource = 'Dispatched';
+                } else {
+                // Job is in terminal state or no status, use phase-based conversion
+                    $statusSource = paperrollPlanningStatusFromPhase((string)($selected['department'] ?? ''), (string)($selected['phase'] ?? ''));
+                }
+            }
         }
 
         $departmentRaw = strtolower(trim((string)($row['department'] ?? '')));

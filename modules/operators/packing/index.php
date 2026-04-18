@@ -278,8 +278,7 @@ include __DIR__ . '/../../../includes/header.php';
           <tr><td colspan="8" class="op-empty">No jobs found for this category.</td></tr>
           <?php else: ?>
           <?php foreach ($rows as $r):
-            $opEntry = packing_fetch_operator_entry($db, (string)($r['job_no'] ?? ''));
-            $isSubmitted = !empty($opEntry) && packing_operator_entry_is_submitted($opEntry);
+            $isSubmitted = !empty($r['operator_submitted']);
           ?>
           <tr data-row-id="<?= (int)($r['id'] ?? 0) ?>">
             <td><button class="op-id-btn op-open-btn"

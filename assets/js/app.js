@@ -995,12 +995,16 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
         }
 
         function buildDeptUrl(dept) {
+            if (dept === 'label-slitting' || dept === 'label slitting') dept = 'label_slitting';
+            if (dept === 'rotary') dept = 'rotery';
             if (dept === 'jumbo_slitting') return withAppBase('modules/operators/jumbo/index.php');
             if (dept === 'flexo_printing') return withAppBase('modules/operators/printing/index.php');
             if (dept === 'flatbed') return withAppBase('modules/operators/flatbed/index.php');
             if (dept === 'rotery') return withAppBase('modules/operators/rotery/index.php');
             if (dept === 'barcode') return withAppBase('modules/operators/barcode/index.php');
             if (dept === 'label_slitting') return withAppBase('modules/operators/label-slitting/index.php');
+            if (dept === 'pos') return withAppBase('modules/operators/pos/index.php');
+            if (dept === 'paperroll') return withAppBase('modules/planning/paperroll/index.php');
             if (dept === 'packing') return withAppBase('modules/operators/packing/index.php');
             if (dept === 'dispatch') return withAppBase('modules/dispatch/index.php');
             if (dept === 'planning') return withAppBase('modules/planning/index.php');
@@ -1018,6 +1022,9 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             if (value === 'rotery') return 'Rotary';
             if (value === 'barcode') return 'Barcode';
             if (value === 'label_slitting') return 'Label Slitting';
+            if (value === 'label-slitting' || value === 'label slitting') return 'Label Slitting';
+            if (value === 'pos') return 'POS Roll';
+            if (value === 'paperroll') return 'Paper Roll';
             if (value === 'packing') return 'Packing';
             if (value === 'dispatch') return 'Dispatch';
             if (value === 'planning') return 'Planning';

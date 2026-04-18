@@ -53,6 +53,12 @@ if (strpos($currentPath, '/modules/operators/barcode/') === 0 || strpos($current
 if (strpos($currentPath, '/modules/operators/label-slitting/') === 0 || strpos($currentPath, '/modules/jobs/label-slitting/') === 0) {
   $notificationDepartments[] = 'label_slitting';
 }
+if (strpos($currentPath, '/modules/operators/pos/') === 0 || strpos($currentPath, '/modules/jobs/pos/') === 0) {
+  $notificationDepartments[] = 'pos';
+}
+if (strpos($currentPath, '/modules/planning/paperroll/') === 0 || strpos($currentPath, '/modules/jobs/paperroll/') === 0) {
+  $notificationDepartments[] = 'paperroll';
+}
 if (strpos($currentPath, '/modules/operators/packing/') === 0 || strpos($currentPath, '/modules/jobs/packing/') === 0) {
   $notificationDepartments[] = 'packing';
 }

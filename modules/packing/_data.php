@@ -489,7 +489,7 @@ function packing_table_has_column(mysqli $db, string $table, string $column): bo
     return false;
 }
 
-function packing_fetch_operator_entry(mysqli $db, string $jobNo): ?array {
+function packing_fetch_operator_entry(mysqli $db, string $jobNo, int $jobId = 0, string $jobCreatedAt = ''): ?array {
     $jobNo = trim($jobNo);
     if ($jobNo === '') return null;
     $stmt = $db->prepare("SELECT * FROM packing_operator_entries WHERE job_no = ? LIMIT 1");
@@ -502,15 +502,34 @@ function packing_fetch_operator_entry(mysqli $db, string $jobNo): ?array {
     if (!$row) {
         return null;
     }
+
+    $currentJobId = max(0, (int)$jobId);
+    $entryJobId = (int)($row['job_id'] ?? 0);
+    if ($currentJobId > 0 && $entryJobId > 0 && $entryJobId !== $currentJobId) {
+        return null;
+    }
+
+    $jobCreatedAt = trim($jobCreatedAt);
+    if ($jobCreatedAt !== '') {
+        $jobCreatedTs = strtotime($jobCreatedAt);
+        $submittedAt = trim((string)($row['submitted_at'] ?? ''));
+        $submittedTs = $submittedAt !== '' ? strtotime($submittedAt) : false;
+        $isDifferentJob = $currentJobId > 0 && $entryJobId > 0 && $entryJobId !== $currentJobId;
+        if ($isDifferentJob && $jobCreatedTs !== false && $submittedTs !== false && $submittedTs < $jobCreatedTs) {
+            return null;
+        }
+    }
+
     $row['is_submitted'] = packing_operator_entry_is_submitted($row) ? 1 : 0;
     return $row;
 }
 
 function packing_operator_entry_is_submitted(array $entry): bool {
+    $hasSubmittedAt = trim((string)($entry['submitted_at'] ?? '')) !== '';
     if (array_key_exists('submitted_lock', $entry)) {
-        return (int)($entry['submitted_lock'] ?? 0) === 1;
+        return (int)($entry['submitted_lock'] ?? 0) === 1 || $hasSubmittedAt;
     }
-    return trim((string)($entry['submitted_at'] ?? '')) !== '';
+    return $hasSubmittedAt;
 }
 
 function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
@@ -629,7 +648,12 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
         'plan_extra_data' => $planExtra,
         'prev_job_extra_data' => $prevExtra,
         'grandprev_job_extra_data' => $grandPrevExtra,
-        'operator_entry' => packing_fetch_operator_entry($db, (string)($row['job_no'] ?? '')),
+        'operator_entry' => packing_fetch_operator_entry(
+            $db,
+            (string)($row['job_no'] ?? ''),
+            (int)($row['id'] ?? 0),
+            (string)($row['created_at'] ?? '')
+        ),
     ];
 }
 
@@ -717,14 +741,17 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     $operatorEntryByJobNo = [];
     $hasSubmittedLock = packing_table_has_column($db, 'packing_operator_entries', 'submitted_lock');
     $opSql = $hasSubmittedLock
-        ? "SELECT job_no, submitted_lock, submitted_at FROM packing_operator_entries WHERE job_no IS NOT NULL AND TRIM(job_no) <> ''"
-        : "SELECT job_no, submitted_at FROM packing_operator_entries WHERE job_no IS NOT NULL AND TRIM(job_no) <> ''";
+        ? "SELECT job_no, job_id, submitted_lock, submitted_at FROM packing_operator_entries WHERE job_no IS NOT NULL AND TRIM(job_no) <> ''"
+        : "SELECT job_no, job_id, submitted_at FROM packing_operator_entries WHERE job_no IS NOT NULL AND TRIM(job_no) <> ''";
     $opRes = $db->query($opSql);
     if ($opRes) {
         while ($opRow = $opRes->fetch_assoc()) {
             $jn = strtolower(trim((string)($opRow['job_no'] ?? '')));
             if ($jn !== '' && packing_operator_entry_is_submitted($opRow)) {
-                $operatorEntryByJobNo[$jn] = true;
+                $operatorEntryByJobNo[$jn][] = [
+                    'job_id' => (int)($opRow['job_id'] ?? 0),
+                    'submitted_at' => trim((string)($opRow['submitted_at'] ?? '')),
+                ];
             }
         }
     }
@@ -732,6 +759,7 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     // Group by plan+tab, keeping the latest non-terminal job in active tabs.
     $activeByGroup  = []; // best active job per group
     $doneByGroup    = []; // best terminal job per group (for history fallback)
+    $submittedByGroup = []; // any submitted operator entry exists in this group
     foreach ($rows as $row) {
         $tabKey = packing_row_to_tab($row);
         if ($tabKey === null) {
@@ -748,7 +776,31 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
         $rawStatus  = (string)($row['status'] ?? '');
         $normStatus = strtolower(trim(str_replace(['-', '_'], ' ', $rawStatus)));
         $jobNoKey = strtolower(trim((string)($row['job_no'] ?? '')));
-        $row['operator_submitted'] = ($jobNoKey !== '' && isset($operatorEntryByJobNo[$jobNoKey]));
+        $jobId = (int)($row['id'] ?? 0);
+        $hasSubmittedEntry = false;
+        if ($jobNoKey !== '' && isset($operatorEntryByJobNo[$jobNoKey])) {
+            foreach ((array)$operatorEntryByJobNo[$jobNoKey] as $entryMeta) {
+                $entryJobId = (int)($entryMeta['job_id'] ?? 0);
+                $entrySubmittedAt = trim((string)($entryMeta['submitted_at'] ?? ''));
+                $entrySubmittedTs = $entrySubmittedAt !== '' ? strtotime($entrySubmittedAt) : false;
+                $jobCreatedAt = trim((string)($row['created_at'] ?? ''));
+                $jobCreatedTs = $jobCreatedAt !== '' ? strtotime($jobCreatedAt) : false;
+                $isDifferentJob = ($entryJobId > 0 && $jobId > 0 && $entryJobId !== $jobId);
+                $isStaleFromPastCycle = ($isDifferentJob && $entrySubmittedTs !== false && $jobCreatedTs !== false && $entrySubmittedTs < $jobCreatedTs);
+                if ($isStaleFromPastCycle) {
+                    continue;
+                }
+
+                // After stale-cycle filtering, same job_no should remain submitted on refresh
+                // even when job_id references shift between active rows.
+                $hasSubmittedEntry = true;
+                break;
+            }
+        }
+        $row['operator_submitted'] = $hasSubmittedEntry;
+        if ($hasSubmittedEntry) {
+            $submittedByGroup[$groupKey] = true;
+        }
 
         $row['packing_tab'] = $tabKey;
         $row['group_key'] = $groupKey;
@@ -787,7 +839,7 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
         // Keep queue clean: manager view only shows submitted/completed jobs.
         // show_all_active mode (operator page) also includes fresh "Packing" jobs
         // so operators can see new work and submit their entries for the first time.
-        $hasOperatorSubmission = !empty($row['operator_submitted']);
+        $hasOperatorSubmission = !empty($row['operator_submitted']) || !empty($submittedByGroup[$groupKey]);
         if (!$showAllActive && !$hasOperatorSubmission && !packing_is_completed_status((string)($row['status'] ?? ''))) {
             continue;
         }
