@@ -390,7 +390,7 @@ try {
         if (!$opEntry) {
             packing_api_respond(['ok' => false, 'message' => 'Operator submission is required before marking Packed'], 409);
         }
-        $isSubmitted = (int)($opEntry['submitted_lock'] ?? 0) === 1 || trim((string)($opEntry['submitted_at'] ?? '')) !== '';
+        $isSubmitted = packing_operator_entry_is_submitted($opEntry);
         if (!$isSubmitted) {
             packing_api_respond(['ok' => false, 'message' => 'Operator submission is required before marking Packed'], 409);
         }
@@ -547,7 +547,7 @@ try {
         if (!$opEntry) {
             packing_api_respond(['ok' => false, 'message' => 'Operator submitted physical production is required'], 409);
         }
-        $isSubmitted = (int)($opEntry['submitted_lock'] ?? 0) === 1 || trim((string)($opEntry['submitted_at'] ?? '')) !== '';
+        $isSubmitted = packing_operator_entry_is_submitted($opEntry);
         if (!$isSubmitted) {
             packing_api_respond(['ok' => false, 'message' => 'Operator submitted physical production is required'], 409);
         }
@@ -673,7 +673,7 @@ try {
         $existing = packing_fetch_operator_entry($db, $jobNo);
 
         if ($existing) {
-            $isLocked = (int)($existing['submitted_lock'] ?? 0) === 1 || trim((string)($existing['submitted_at'] ?? '')) !== '';
+            $isLocked = packing_operator_entry_is_submitted($existing);
             if ($isLocked && !$canAdminOverrideEditLock) {
                 packing_api_respond([
                     'ok' => false,

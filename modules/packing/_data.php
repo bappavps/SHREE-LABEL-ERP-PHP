@@ -499,7 +499,18 @@ function packing_fetch_operator_entry(mysqli $db, string $jobNo): ?array {
     $res = $stmt->get_result();
     $row = $res ? $res->fetch_assoc() : null;
     $stmt->close();
-    return $row ?: null;
+    if (!$row) {
+        return null;
+    }
+    $row['is_submitted'] = packing_operator_entry_is_submitted($row) ? 1 : 0;
+    return $row;
+}
+
+function packing_operator_entry_is_submitted(array $entry): bool {
+    if (array_key_exists('submitted_lock', $entry)) {
+        return (int)($entry['submitted_lock'] ?? 0) === 1;
+    }
+    return trim((string)($entry['submitted_at'] ?? '')) !== '';
 }
 
 function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
@@ -711,9 +722,7 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     if ($opRes) {
         while ($opRow = $opRes->fetch_assoc()) {
             $jn = strtolower(trim((string)($opRow['job_no'] ?? '')));
-            $isLocked = $hasSubmittedLock && (int)($opRow['submitted_lock'] ?? 0) === 1;
-            $hasSubmittedAt = trim((string)($opRow['submitted_at'] ?? '')) !== '';
-            if ($jn !== '' && ($isLocked || $hasSubmittedAt)) {
+            if ($jn !== '' && packing_operator_entry_is_submitted($opRow)) {
                 $operatorEntryByJobNo[$jn] = true;
             }
         }

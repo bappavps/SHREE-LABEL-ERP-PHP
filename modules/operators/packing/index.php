@@ -260,11 +260,7 @@ include __DIR__ . '/../../../includes/header.php';
           <?php else: ?>
           <?php foreach ($rows as $r):
             $opEntry = packing_fetch_operator_entry($db, (string)($r['job_no'] ?? ''));
-            $isSubmitted = !empty($opEntry)
-              && (
-                ((int)($opEntry['submitted_lock'] ?? 0) === 1)
-                || (trim((string)($opEntry['submitted_at'] ?? '')) !== '')
-              );
+            $isSubmitted = !empty($opEntry) && packing_operator_entry_is_submitted($opEntry);
           ?>
           <tr data-row-id="<?= (int)($r['id'] ?? 0) ?>">
             <td><button class="op-id-btn op-open-btn"
@@ -445,10 +441,7 @@ include __DIR__ . '/../../../includes/header.php';
     var prodQty  = parseFloat(String(prodQtyRaw).replace(/,/g,''))  || 0;
 
     var opEntry = (job.operator_entry && typeof job.operator_entry==='object') ? job.operator_entry : null;
-    var opEntrySubmitted = !!opEntry && (
-      Number(opEntry.submitted_lock || 0) === 1 ||
-      String(opEntry.submitted_at || '').trim() !== ''
-    );
+    var opEntrySubmitted = !!opEntry && Number(opEntry.is_submitted || 0) === 1;
     var lockSubmittedForOperator = opEntrySubmitted && !opCanAdminOverrideEdit;
     var currentOpBatches = [];
     var opEntryRollPayload = parseExtraData(opEntry ? opEntry.roll_payload_json : null);
