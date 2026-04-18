@@ -83,6 +83,422 @@ function erp_print_studio_system_background(): array {
     return ['image' => '', 'opacity' => 1, 'mode' => 'fit', 'locked' => true];
 }
 
+function erp_print_studio_default_paper_stock_elements(): array {
+    return [
+        [
+            'id' => 'stock-company',
+            'type' => 'text',
+            'x' => 16,
+            'y' => 12,
+            'width' => 390,
+            'height' => 26,
+            'rotate' => 0,
+            'content' => '{{company_name}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 20,
+                'fontWeight' => '900',
+                'fontFamily' => 'oswald',
+                'textAlign' => 'left',
+                'color' => '#0f172a',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'stock-qr',
+            'type' => 'qr',
+            'x' => 430,
+            'y' => 8,
+            'width' => 120,
+            'height' => 120,
+            'rotate' => 0,
+            'content' => '{{roll_url}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 10,
+                'fontWeight' => 'normal',
+                'fontFamily' => 'inter',
+                'textAlign' => 'center',
+                'color' => '#000000',
+                'backgroundColor' => '#ffffff',
+                'borderWidth' => 1,
+                'borderColor' => '#cbd5e1',
+                'borderRadius' => 4,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'stock-divider-top',
+            'type' => 'line',
+            'x' => 14,
+            'y' => 132,
+            'width' => 538,
+            'height' => 2,
+            'rotate' => 0,
+            'content' => '',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'borderColor' => '#0f172a',
+                'opacity' => 1,
+                'borderWidth' => 2,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'stock-rollno',
+            'type' => 'text',
+            'x' => 16,
+            'y' => 140,
+            'width' => 536,
+            'height' => 34,
+            'rotate' => 0,
+            'content' => '{{roll_no}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 28,
+                'fontWeight' => '900',
+                'fontFamily' => 'oswald',
+                'textAlign' => 'left',
+                'color' => '#0f172a',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'stock-row1-left',
+            'type' => 'text',
+            'x' => 16,
+            'y' => 184,
+            'width' => 260,
+            'height' => 18,
+            'rotate' => 0,
+            'content' => 'Company / Mill: {{company}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 12,
+                'fontWeight' => '700',
+                'fontFamily' => 'inter',
+                'textAlign' => 'left',
+                'color' => '#111827',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'stock-row1-right',
+            'type' => 'text',
+            'x' => 292,
+            'y' => 184,
+            'width' => 260,
+            'height' => 18,
+            'rotate' => 0,
+            'content' => 'Paper Type: {{paper_type}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 12,
+                'fontWeight' => '700',
+                'fontFamily' => 'inter',
+                'textAlign' => 'left',
+                'color' => '#111827',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'stock-row2-left',
+            'type' => 'text',
+            'x' => 16,
+            'y' => 206,
+            'width' => 260,
+            'height' => 18,
+            'rotate' => 0,
+            'content' => 'Width: {{width}} mm',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 12,
+                'fontWeight' => '700',
+                'fontFamily' => 'inter',
+                'textAlign' => 'left',
+                'color' => '#111827',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'stock-row2-right',
+            'type' => 'text',
+            'x' => 292,
+            'y' => 206,
+            'width' => 260,
+            'height' => 18,
+            'rotate' => 0,
+            'content' => 'Length: {{length}} MTR',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 12,
+                'fontWeight' => '700',
+                'fontFamily' => 'inter',
+                'textAlign' => 'left',
+                'color' => '#111827',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'stock-row3-left',
+            'type' => 'text',
+            'x' => 16,
+            'y' => 228,
+            'width' => 260,
+            'height' => 18,
+            'rotate' => 0,
+            'content' => 'GSM: {{gsm}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 12,
+                'fontWeight' => '700',
+                'fontFamily' => 'inter',
+                'textAlign' => 'left',
+                'color' => '#111827',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'stock-row3-right',
+            'type' => 'text',
+            'x' => 292,
+            'y' => 228,
+            'width' => 260,
+            'height' => 18,
+            'rotate' => 0,
+            'content' => 'Weight: {{weight}} KG',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 12,
+                'fontWeight' => '700',
+                'fontFamily' => 'inter',
+                'textAlign' => 'left',
+                'color' => '#111827',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'stock-row4-left',
+            'type' => 'text',
+            'x' => 16,
+            'y' => 250,
+            'width' => 260,
+            'height' => 18,
+            'rotate' => 0,
+            'content' => 'SQM: {{sqm}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 12,
+                'fontWeight' => '700',
+                'fontFamily' => 'inter',
+                'textAlign' => 'left',
+                'color' => '#111827',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'stock-row4-right',
+            'type' => 'text',
+            'x' => 292,
+            'y' => 250,
+            'width' => 260,
+            'height' => 18,
+            'rotate' => 0,
+            'content' => 'Lot / Batch: {{lot_batch_no}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 12,
+                'fontWeight' => '700',
+                'fontFamily' => 'inter',
+                'textAlign' => 'left',
+                'color' => '#111827',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'stock-row5-left',
+            'type' => 'text',
+            'x' => 16,
+            'y' => 272,
+            'width' => 260,
+            'height' => 18,
+            'rotate' => 0,
+            'content' => 'Job No: {{job_no}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 12,
+                'fontWeight' => '700',
+                'fontFamily' => 'inter',
+                'textAlign' => 'left',
+                'color' => '#111827',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'stock-row5-right',
+            'type' => 'text',
+            'x' => 292,
+            'y' => 272,
+            'width' => 260,
+            'height' => 18,
+            'rotate' => 0,
+            'content' => 'Job Size: {{job_size}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 12,
+                'fontWeight' => '700',
+                'fontFamily' => 'inter',
+                'textAlign' => 'left',
+                'color' => '#111827',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'stock-divider-bottom',
+            'type' => 'line',
+            'x' => 14,
+            'y' => 320,
+            'width' => 538,
+            'height' => 1,
+            'rotate' => 0,
+            'content' => '',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'borderColor' => '#cbd5e1',
+                'opacity' => 1,
+                'borderWidth' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'stock-status',
+            'type' => 'text',
+            'x' => 16,
+            'y' => 330,
+            'width' => 190,
+            'height' => 22,
+            'rotate' => 0,
+            'content' => 'Status: {{status}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 12,
+                'fontWeight' => '800',
+                'fontFamily' => 'inter',
+                'textAlign' => 'left',
+                'color' => '#0f172a',
+                'backgroundColor' => '#f8fafc',
+                'borderWidth' => 1,
+                'borderColor' => '#cbd5e1',
+                'borderRadius' => 10,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ],
+        [
+            'id' => 'stock-date',
+            'type' => 'text',
+            'x' => 356,
+            'y' => 334,
+            'width' => 196,
+            'height' => 16,
+            'rotate' => 0,
+            'content' => '{{date_received}}',
+            'placeholder' => '',
+            'isLocked' => false,
+            'style' => [
+                'fontSize' => 11,
+                'fontWeight' => '700',
+                'fontFamily' => 'inter',
+                'textAlign' => 'right',
+                'color' => '#64748b',
+                'backgroundColor' => 'transparent',
+                'borderWidth' => 0,
+                'borderColor' => '#000000',
+                'borderRadius' => 0,
+                'opacity' => 1,
+                'lineStyle' => 'solid'
+            ]
+        ]
+    ];
+}
+
 function erp_print_studio_pos_roll_elements(): array {
     return [
         [
@@ -540,7 +956,7 @@ function erp_print_studio_system_template_specs(): array {
             'document_type' => 'Industrial Label',
             'paper_width' => 150,
             'paper_height' => 100,
-            'elements' => [['type' => 'builtin', 'layout' => 'default_stock_label']],
+            'elements' => erp_print_studio_default_paper_stock_elements(),
             'background' => $background,
             'is_default' => 1,
         ],
@@ -579,7 +995,45 @@ function erp_print_studio_elements_have_builtin_marker($elements): bool {
     return false;
 }
 
+function erp_print_studio_system_thumbnail_data_uri(string $name, string $documentType, float $paperWidth, float $paperHeight): string {
+    $safeName = htmlspecialchars($name, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $safeType = htmlspecialchars($documentType, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $safeSize = htmlspecialchars(number_format($paperWidth, 0) . 'x' . number_format($paperHeight, 0) . ' mm', ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+    $svg = '';
+    $svg .= '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="560" viewBox="0 0 420 560">';
+    $svg .= '<defs>';
+    $svg .= '<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">';
+    $svg .= '<stop offset="0%" stop-color="#eff6ff"/>';
+    $svg .= '<stop offset="100%" stop-color="#f8fafc"/>';
+    $svg .= '</linearGradient>';
+    $svg .= '</defs>';
+    $svg .= '<rect x="0" y="0" width="420" height="560" rx="26" fill="url(#bg)"/>';
+    $svg .= '<rect x="26" y="26" width="368" height="508" rx="20" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>';
+    $svg .= '<rect x="46" y="46" width="328" height="44" rx="12" fill="#dbeafe"/>';
+    $svg .= '<text x="210" y="73" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="13" font-weight="800" fill="#1d4ed8">SYSTEM TEMPLATE</text>';
+    $svg .= '<text x="210" y="132" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#0f172a">' . $safeName . '</text>';
+    $svg .= '<text x="210" y="160" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="12" font-weight="700" fill="#475569">' . $safeType . '</text>';
+    $svg .= '<text x="210" y="182" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="11" font-weight="700" fill="#64748b">' . $safeSize . '</text>';
+    $svg .= '<rect x="62" y="228" width="296" height="250" rx="14" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>';
+    $svg .= '<line x1="84" y1="272" x2="336" y2="272" stroke="#e2e8f0" stroke-width="2"/>';
+    $svg .= '<line x1="84" y1="308" x2="336" y2="308" stroke="#e2e8f0" stroke-width="2"/>';
+    $svg .= '<line x1="84" y1="344" x2="336" y2="344" stroke="#e2e8f0" stroke-width="2"/>';
+    $svg .= '<line x1="84" y1="380" x2="336" y2="380" stroke="#e2e8f0" stroke-width="2"/>';
+    $svg .= '<circle cx="336" cy="238" r="16" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5"/>';
+    $svg .= '<rect x="84" y="246" width="190" height="16" rx="6" fill="#0f172a" opacity=".82"/>';
+    $svg .= '<rect x="84" y="282" width="150" height="12" rx="5" fill="#334155" opacity=".55"/>';
+    $svg .= '<rect x="84" y="318" width="170" height="12" rx="5" fill="#334155" opacity=".55"/>';
+    $svg .= '<rect x="84" y="354" width="140" height="12" rx="5" fill="#334155" opacity=".55"/>';
+    $svg .= '<rect x="84" y="390" width="120" height="12" rx="5" fill="#334155" opacity=".55"/>';
+    $svg .= '</svg>';
+
+    return 'data:image/svg+xml;base64,' . base64_encode($svg);
+}
+
 function erp_ensure_print_studio_system_templates(mysqli $db): void {
+    $db->query("DELETE FROM print_templates WHERE name = 'Default Paper Stock Label AI' AND (is_system = 1 OR is_system IS NULL)");
+
     foreach (erp_print_studio_system_template_specs() as $spec) {
         $aliases = array_values(array_unique(array_filter(array_map('trim', (array)($spec['aliases'] ?? [])))));
         if (empty($aliases)) {
@@ -588,7 +1042,7 @@ function erp_ensure_print_studio_system_templates(mysqli $db): void {
 
         $existing = null;
         $aliasTokens = implode(',', array_fill(0, count($aliases), '?'));
-        $selectSql = "SELECT id, name, elements FROM print_templates WHERE name IN ($aliasTokens) ORDER BY FIELD(name, $aliasTokens) LIMIT 1";
+        $selectSql = "SELECT id, name, elements, thumbnail FROM print_templates WHERE name IN ($aliasTokens) ORDER BY FIELD(name, $aliasTokens) LIMIT 1";
         $selectStmt = $db->prepare($selectSql);
         if ($selectStmt) {
             $bindValues = array_merge($aliases, $aliases);
@@ -606,11 +1060,13 @@ function erp_ensure_print_studio_system_templates(mysqli $db): void {
         $paperHeight = (float)$spec['paper_height'];
         $isDefault = (int)($spec['is_default'] ?? 0);
         $isSystem = 1;
+        $thumbnail = erp_print_studio_system_thumbnail_data_uri($name, $documentType, $paperWidth, $paperHeight);
+        $existingThumbnail = trim((string)($existing['thumbnail'] ?? ''));
 
         if (!$existing) {
-            $insertStmt = $db->prepare("INSERT INTO print_templates (name, document_type, paper_width, paper_height, elements, background, is_default, is_system) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $insertStmt = $db->prepare("INSERT INTO print_templates (name, document_type, paper_width, paper_height, elements, background, thumbnail, is_default, is_system) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
             if ($insertStmt) {
-                $insertStmt->bind_param('ssddssii', $name, $documentType, $paperWidth, $paperHeight, $elementsJson, $backgroundJson, $isDefault, $isSystem);
+                $insertStmt->bind_param('ssddsssii', $name, $documentType, $paperWidth, $paperHeight, $elementsJson, $backgroundJson, $thumbnail, $isDefault, $isSystem);
                 $insertStmt->execute();
                 $insertStmt->close();
             }
@@ -625,18 +1081,19 @@ function erp_ensure_print_studio_system_templates(mysqli $db): void {
         }
 
         if ($shouldRefreshElements) {
-            $updateStmt = $db->prepare("UPDATE print_templates SET name = ?, document_type = ?, paper_width = ?, paper_height = ?, elements = ?, background = ?, is_default = ?, is_system = ? WHERE id = ?");
+            $updateStmt = $db->prepare("UPDATE print_templates SET name = ?, document_type = ?, paper_width = ?, paper_height = ?, elements = ?, background = ?, thumbnail = ?, is_default = ?, is_system = ? WHERE id = ?");
             if ($updateStmt) {
-                $updateStmt->bind_param('ssddssiii', $name, $documentType, $paperWidth, $paperHeight, $elementsJson, $backgroundJson, $isDefault, $isSystem, $templateId);
+                $updateStmt->bind_param('ssddsssiii', $name, $documentType, $paperWidth, $paperHeight, $elementsJson, $backgroundJson, $thumbnail, $isDefault, $isSystem, $templateId);
                 $updateStmt->execute();
                 $updateStmt->close();
             }
             continue;
         }
 
-        $updateStmt = $db->prepare("UPDATE print_templates SET name = ?, document_type = ?, paper_width = ?, paper_height = ?, is_default = ?, is_system = ? WHERE id = ?");
+        $updateStmt = $db->prepare("UPDATE print_templates SET name = ?, document_type = ?, paper_width = ?, paper_height = ?, thumbnail = ?, is_default = ?, is_system = ? WHERE id = ?");
         if ($updateStmt) {
-            $updateStmt->bind_param('ssddiii', $name, $documentType, $paperWidth, $paperHeight, $isDefault, $isSystem, $templateId);
+            $thumbnailForUpdate = $existingThumbnail !== '' ? $existingThumbnail : $thumbnail;
+            $updateStmt->bind_param('ssddsiii', $name, $documentType, $paperWidth, $paperHeight, $thumbnailForUpdate, $isDefault, $isSystem, $templateId);
             $updateStmt->execute();
             $updateStmt->close();
         }

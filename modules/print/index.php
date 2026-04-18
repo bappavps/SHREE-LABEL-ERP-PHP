@@ -451,10 +451,27 @@ textarea.ps-prop-input { resize:vertical;min-height:50px; }
 .ps-field-code-btn.ps-field-highlight .ps-field-code-value,
 .ps-field-code-btn.ps-field-highlight .ps-field-code-preview { color:#1d4ed8; }
 .ps-field-code-btn.ps-field-highlight .ps-field-code-value { background:#dbeafe; }
+.ps-field-btn.ps-field-highlight-primary,
+.ps-field-code-btn.ps-field-highlight-primary { background:rgba(59,130,246,.16); box-shadow:inset 0 0 0 1px rgba(59,130,246,.34), 0 0 0 1px rgba(59,130,246,.08); }
+.ps-field-btn.ps-field-highlight-primary:hover,
+.ps-field-code-btn.ps-field-highlight-primary:hover { background:rgba(59,130,246,.22); }
+.ps-field-btn.ps-field-highlight-secondary,
+.ps-field-code-btn.ps-field-highlight-secondary { background:rgba(16,185,129,.14); box-shadow:inset 0 0 0 1px rgba(16,185,129,.32), 0 0 0 1px rgba(16,185,129,.06); }
+.ps-field-btn.ps-field-highlight-secondary:hover,
+.ps-field-code-btn.ps-field-highlight-secondary:hover { background:rgba(16,185,129,.2); }
+.ps-field-btn.ps-field-highlight-tertiary,
+.ps-field-code-btn.ps-field-highlight-tertiary { background:rgba(245,158,11,.16); box-shadow:inset 0 0 0 1px rgba(245,158,11,.34), 0 0 0 1px rgba(245,158,11,.08); }
+.ps-field-btn.ps-field-highlight-tertiary:hover,
+.ps-field-code-btn.ps-field-highlight-tertiary:hover { background:rgba(245,158,11,.22); }
+.ps-field-btn.ps-field-highlight-quaternary,
+.ps-field-code-btn.ps-field-highlight-quaternary { background:rgba(168,85,247,.15); box-shadow:inset 0 0 0 1px rgba(168,85,247,.34), 0 0 0 1px rgba(168,85,247,.08); }
+.ps-field-btn.ps-field-highlight-quaternary:hover,
+.ps-field-code-btn.ps-field-highlight-quaternary:hover { background:rgba(168,85,247,.22); }
 .ps-field-code-label { font-size:9px;font-weight:700;text-transform:uppercase;color:#64748b; }
 .ps-field-code-value { font-size:10px;font-weight:700;color:#0f172a;background:#eef2ff;padding:2px 6px;border-radius:5px;word-break:break-all; }
 .ps-field-code-preview { font-size:9px;color:#94a3b8; }
 .ps-element-badge { position:absolute; top:-9px; left:-1px; z-index:71; padding:2px 6px; border-radius:999px; font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; box-shadow:0 1px 2px rgba(15,23,42,.18); }
+.ps-element-badge-compact { width:12px; height:12px; padding:0; border-radius:50%; font-size:0; letter-spacing:0; display:flex; align-items:center; justify-content:center; }
 .ps-element-badge-dynamic { background:#dbeafe; color:#1d4ed8; }
 .ps-element-badge-static { background:#fef3c7; color:#b45309; }
 .ps-element-badge-frame { background:#e5e7eb; color:#4b5563; }
@@ -475,6 +492,11 @@ textarea.ps-prop-input { resize:vertical;min-height:50px; }
 .ps-map-name { font-size:11px; font-weight:900; color:#1e3a8a; text-transform:uppercase; letter-spacing:.04em; }
 .ps-map-code { display:inline-block; margin-top:6px; padding:4px 8px; border-radius:8px; background:#dbeafe; color:#1d4ed8; font-size:10px; font-weight:800; word-break:break-all; }
 .ps-map-empty { color:#64748b; font-size:10px; font-weight:700; }
+.ps-map-badge { display:inline-flex; align-items:center; gap:6px; margin-top:6px; margin-right:6px; padding:3px 8px; border-radius:999px; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; }
+.ps-map-badge-primary { background:#dbeafe; color:#1d4ed8; }
+.ps-map-badge-secondary { background:#d1fae5; color:#047857; }
+.ps-map-badge-tertiary { background:#fef3c7; color:#b45309; }
+.ps-map-badge-quaternary { background:#f3e8ff; color:#7e22ce; }
 @media print { #ps-editor, #ps-gallery, .ps-toast, #ps-create-modal, #ps-delete-modal { display:none!important; } }
 </style>
 
@@ -677,6 +699,7 @@ let selectedElementId = null;
 let psZoom = 1;
 let psGridSnap = 5;
 let psShowGrid = true;
+let psLastHighlightSignature = '';
 
 // ============================================================
 // HELPERS
@@ -763,15 +786,36 @@ function psPlaceholderDisplayNames(el) {
 function psRefreshErpFieldHighlights() {
   document.querySelectorAll('#ps-erp-fields .ps-field-highlight').forEach(function(node) {
     node.classList.remove('ps-field-highlight');
+    node.classList.remove('ps-field-highlight-primary');
+    node.classList.remove('ps-field-highlight-secondary');
+    node.classList.remove('ps-field-highlight-tertiary');
+    node.classList.remove('ps-field-highlight-quaternary');
   });
   if (!currentTemplate || !selectedElementId) return;
   var el = currentTemplate.elements.find(function(item) { return item.id === selectedElementId; });
   if (!el) return;
-  psExtractPlaceholderCodes(el).forEach(function(code) {
-    document.querySelectorAll('#ps-erp-fields [data-placeholder-code="' + code.replace(/"/g, '&quot;') + '"]').forEach(function(node) {
+  var codes = psExtractPlaceholderCodes(el);
+  if (!codes.length) {
+    psLastHighlightSignature = '';
+    return;
+  }
+  var firstMatchedNode = null;
+  codes.forEach(function(code, idx) {
+    var tierClass = idx === 0
+      ? 'ps-field-highlight-primary'
+      : (idx === 1 ? 'ps-field-highlight-secondary' : (idx === 2 ? 'ps-field-highlight-tertiary' : 'ps-field-highlight-quaternary'));
+    document.querySelectorAll('#ps-erp-fields [data-placeholder-code]').forEach(function(node) {
+      if (String(node.getAttribute('data-placeholder-code') || '') !== code) return;
       node.classList.add('ps-field-highlight');
+      node.classList.add(tierClass);
+      if (!firstMatchedNode) firstMatchedNode = node;
     });
   });
+  var signature = selectedElementId + '|' + codes.join('|');
+  if (firstMatchedNode && signature !== psLastHighlightSignature) {
+    firstMatchedNode.scrollIntoView({ behavior:'smooth', block:'center' });
+  }
+  psLastHighlightSignature = signature;
 }
 
 function psSelectElement(id) {
@@ -1208,8 +1252,9 @@ function psRenderCanvas() {
 
     if (el.isLocked) { const lb = document.createElement('div'); lb.className='element-lock-badge'; lb.innerHTML='<i class="bi bi-lock-fill"></i>'; div.appendChild(lb); }
   const usageBadge = document.createElement('div');
-  usageBadge.className = 'ps-element-badge ps-element-badge-' + psElementUsageType(el);
-  usageBadge.textContent = psElementUsageLabel(el);
+    usageBadge.className = 'ps-element-badge ps-element-badge-compact ps-element-badge-' + psElementUsageType(el);
+    usageBadge.title = psElementUsageLabel(el);
+    usageBadge.setAttribute('aria-label', psElementUsageLabel(el));
   div.appendChild(usageBadge);
 
     const content = document.createElement('div');
@@ -1434,9 +1479,14 @@ function psRenderProps() {
   h += '<div class="ps-map-name">Name: ' + psEscHtml(psElementTypeLabel(el)) + '</div>';
   if (placeholderMeta.length) {
     placeholderMeta.forEach(function(meta) {
+      var idx = placeholderMeta.indexOf(meta);
+      var badgeClass = idx === 0
+        ? 'ps-map-badge-primary'
+        : (idx === 1 ? 'ps-map-badge-secondary' : (idx === 2 ? 'ps-map-badge-tertiary' : 'ps-map-badge-quaternary'));
       h += '<div style="margin-top:8px">';
       h += '<div class="ps-map-name" style="font-size:10px">Placeholder: ' + psEscHtml(meta.label) + '</div>';
       h += '<div class="ps-map-code">' + psEscHtml(meta.code) + '</div>';
+      h += '<span class="ps-map-badge ' + badgeClass + '">Match Color</span>';
       h += '</div>';
     });
   } else {

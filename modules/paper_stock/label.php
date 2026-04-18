@@ -1148,14 +1148,19 @@ function renderCustomLabel(roll, tpl) {
                 var bcSvg = document.createElementNS(svgNS, 'svg');
                 bcWrap.appendChild(bcSvg);
                 try {
+                    var isCompact = (bcFmt === 'CODE128') && ((pw || 0) <= 90 || (ph || 0) <= 30 || String(bcVal).length <= 10);
                     JsBarcode(bcSvg, bcVal, {
                         format: bcFmt,
-                        height: Math.max(24, ph - 10),
-                        width: Math.max(1, Math.min(2, pw / 160)),
-                        fontSize: 10,
-                        displayValue: false,
-                        margin: 0
+                        height: isCompact ? Math.max(12, (ph || 24) - 4) : Math.max(20, (ph || 50) - 30),
+                        width: isCompact ? 0.9 : 1.5,
+                        fontSize: isCompact ? 0 : 10,
+                        displayValue: !isCompact,
+                        margin: isCompact ? 1 : 4
                     });
+                    bcSvg.style.width = '100%';
+                    bcSvg.style.height = '100%';
+                    bcSvg.style.display = 'block';
+                    bcSvg.setAttribute('preserveAspectRatio', 'none');
                 } catch(e) {
                     bcWrap.innerHTML = '<div style="font-size:10px;color:#94a3b8;text-align:center">Barcode Error</div>';
                 }
