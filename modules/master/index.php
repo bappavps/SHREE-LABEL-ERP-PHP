@@ -126,6 +126,9 @@ if (!masterColumnExists($db, 'master_clients', 'credit_period_days')) {
 if (!masterColumnExists($db, 'master_clients', 'credit_limit')) {
   @$db->query("ALTER TABLE master_clients ADD COLUMN credit_limit DECIMAL(12,2) DEFAULT 0 AFTER credit_period_days");
 }
+if (!masterColumnExists($db, 'master_clients', 'gst_number')) {
+  @$db->query("ALTER TABLE master_clients ADD COLUMN gst_number VARCHAR(30) DEFAULT NULL AFTER state");
+}
 if (!masterColumnExists($db, 'master_machines', 'operator_name')) {
   @$db->query("ALTER TABLE master_machines ADD COLUMN operator_name VARCHAR(150) DEFAULT NULL AFTER section");
 }
@@ -1131,6 +1134,18 @@ if ($activeTab === 'cylinders') {
 }
 if ($activeTab === 'clients') {
   $clients = getMasterRecords($db, 'master_clients', 'created_at DESC');
+  // Ensure tally_sync_log table exists
+  @$db->query("CREATE TABLE IF NOT EXISTS tally_sync_log (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    type VARCHAR(50) NOT NULL,
+    fetched_count INT DEFAULT 0,
+    imported_count INT DEFAULT 0,
+    skipped_count INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  )");
+  $tallyLastSync = null;
+  $lsRes = $db->query("SELECT imported_count, skipped_count, created_at FROM tally_sync_log WHERE type='clients' ORDER BY created_at DESC LIMIT 1");
+  if ($lsRes) { $tallyLastSync = $lsRes->fetch_assoc(); }
 }
 if ($activeTab === 'paper_masters') {
   ensurePaperMasterSchema();
@@ -1291,15 +1306,27 @@ if ($activeTab === 'clients' && $editClientId > 0) {
 
     <?php if ($activeTab === 'suppliers'): ?>
       <div class="card">
-        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-          <span class="card-title">Suppliers</span>
-          <div style="display:flex;gap:8px">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span class="card-title">Suppliers</span>
+            <span id="tallySupplierBadge" style="display:none;padding:3px 10px;border-radius:999px;font-size:.75rem;font-weight:700;line-height:1"></span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button id="tallySupplierSyncBtn" class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="syncTallySuppliers(true)"><i class="bi bi-arrow-repeat"></i> Sync from Tally</button>
             <button class="btn btn-sm btn-primary" onclick="openSupplierModal()"><i class="bi bi-plus"></i> Add Supplier</button>
             <button class="btn btn-sm btn-success" onclick="openUploadModal('suppliers')"><i class="bi bi-upload"></i> Upload CSV</button>
           </div>
         </div>
+        <div id="tallySupplierMsg" style="display:none;padding:8px 16px;font-size:.82rem"></div>
+
+        <div style="padding:8px 16px 4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <button id="tsToggleManual" class="btn btn-sm btn-primary" onclick="tsSetView('manual')">Manual Suppliers</button>
+          <button id="tsToggleTally" class="btn btn-sm" style="background:#f1f5f9;color:#334155" onclick="tsSetView('tally')">Tally Suppliers</button>
+          <input id="tsSearch" type="search" placeholder="Search supplier, GST, address..." oninput="tsFilterRows()" style="margin-left:auto;min-width:200px;max-width:320px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:.83rem">
+        </div>
+
           <div class="table-responsive">
-            <table class="table">
+            <table class="table" id="tsManualTable">
               <thead>
                 <tr>
                   <th>Name</th>
@@ -1337,6 +1364,21 @@ if ($activeTab === 'clients' && $editClientId > 0) {
                     </td>
                   </tr>
                 <?php endforeach; ?>
+              </tbody>
+            </table>
+
+            <table class="table" id="tsTallyTable" style="display:none">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Address</th>
+                  <th>GST Number</th>
+                  <th>Match</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody id="tsTallyTbody">
+                <tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:20px">Click &ldquo;Sync from Tally&rdquo; to load Tally suppliers.</td></tr>
               </tbody>
             </table>
           </div>
@@ -1594,15 +1636,33 @@ if ($activeTab === 'clients' && $editClientId > 0) {
 
     <?php if ($activeTab === 'clients'): ?>
       <div class="card">
-        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-          <span class="card-title">Clients</span>
-          <div style="display:flex;gap:8px">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span class="card-title">Clients</span>
+            <span id="tallyClientBadge" style="display:none;padding:3px 10px;border-radius:999px;font-size:.75rem;font-weight:700;line-height:1"></span>
+            <span id="tallyLastSync" style="font-size:.75rem;color:#64748b">
+              <?php if (!empty($tallyLastSync)): ?>
+                Last Sync: <?= date('d M Y, g:i A', strtotime($tallyLastSync['created_at'])) ?>
+                &nbsp;&middot;&nbsp;Imported: <?= (int)$tallyLastSync['imported_count'] ?>, Skipped: <?= (int)$tallyLastSync['skipped_count'] ?>
+              <?php else: ?>No sync yet<?php endif; ?>
+            </span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button id="tallyClientSyncBtn" class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="syncTallyClients(true)"><i class="bi bi-arrow-repeat"></i> Sync from Tally</button>
             <button class="btn btn-sm btn-primary" onclick="openClientModal()"><i class="bi bi-plus"></i> Add Client</button>
             <button class="btn btn-sm btn-success" onclick="openUploadModal('clients')"><i class="bi bi-upload"></i> Upload CSV</button>
           </div>
         </div>
+        <div id="tallyClientMsg" style="display:none;padding:8px 16px;font-size:.82rem"></div>
+        <!-- View toggle -->
+        <div style="padding:8px 16px 4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <button id="tcToggleManual" class="btn btn-sm btn-primary" onclick="tcSetView('manual')">Manual Clients</button>
+          <button id="tcToggleTally" class="btn btn-sm" style="background:#f1f5f9;color:#334155" onclick="tcSetView('tally')">Tally Clients</button>
+          <button id="tcImportBtn" class="btn btn-sm" style="display:none;background:#059669;color:#fff;margin-left:auto" onclick="tcImportSelected()"><i class="bi bi-download"></i> Import Selected</button>
+        </div>
+
           <div class="table-responsive">
-            <table class="table">
+            <table class="table" id="tcManualTable">
               <thead>
                 <tr>
                   <th>Name</th>
@@ -1642,6 +1702,22 @@ if ($activeTab === 'clients' && $editClientId > 0) {
                     </td>
                   </tr>
                 <?php endforeach; ?>
+              </tbody>
+            </table>
+
+            <!-- Tally Clients Table (hidden by default) -->
+            <table class="table" id="tcTallyTable" style="display:none">
+              <thead>
+                <tr>
+                  <th style="width:36px"><input type="checkbox" id="tcSelectAll" onchange="tcToggleSelectAll(this)" title="Select all"></th>
+                  <th>Name</th>
+                  <th>Address</th>
+                  <th>GST Number</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody id="tcTallyTbody">
+                <tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:20px">Click &ldquo;Sync from Tally&rdquo; to load Tally clients.</td></tr>
               </tbody>
             </table>
           </div>
@@ -2172,6 +2248,463 @@ if ($activeTab === 'clients' && $editClientId > 0) {
 <script>
 const suppliersData = <?= json_encode($suppliers, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 const clientsData = <?= json_encode($clients, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+const tallyFetchClientsUrl    = '<?= e(BASE_URL) ?>/modules/tally/fetch_clients.php';
+const tallyFetchSuppliersUrl  = '<?= e(BASE_URL) ?>/modules/tally/fetch_clients.php';
+const tallyCheckConnectionUrl = '<?= e(BASE_URL) ?>/modules/tally/check_connection.php';
+const tallyImportClientsUrl   = '<?= e(BASE_URL) ?>/modules/tally/import_clients.php';
+const TC_MAX_ROWS = 100; // max Tally clients to display at once
+const TS_MAX_ROWS = 100; // max Tally suppliers to display at once
+
+// --- Tally Suppliers Integration (read-only) ---
+var _tsView = 'manual';
+var _tsRawRows = null;
+var _tsRows = [];
+
+function _tsEsc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function tsNormalizeName(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function tsSetBadge(connected) {
+  var badge = document.getElementById('tallySupplierBadge');
+  if (!badge) return;
+  badge.style.display = 'inline-block';
+  if (connected) {
+    badge.textContent = 'Tally Connected';
+    badge.style.background = '#dcfce7';
+    badge.style.color = '#166534';
+  } else {
+    badge.textContent = 'Tally Disconnected';
+    badge.style.background = '#fee2e2';
+    badge.style.color = '#b91c1c';
+  }
+}
+
+function tsShowMsg(text, color, bg, border) {
+  var msg = document.getElementById('tallySupplierMsg');
+  if (!msg) return;
+  msg.style.display = 'block';
+  msg.style.background = bg || '#fffbeb';
+  msg.style.border = '1px solid ' + (border || '#fde68a');
+  msg.style.borderRadius = '8px';
+  msg.style.margin = '8px 16px';
+  msg.style.padding = '8px 12px';
+  msg.style.color = color || '#92400e';
+  msg.style.fontSize = '.83rem';
+  msg.textContent = text;
+}
+
+function tsHideMsg() {
+  var msg = document.getElementById('tallySupplierMsg');
+  if (msg) msg.style.display = 'none';
+}
+
+function tsSetView(v) {
+  _tsView = v;
+  var manual = document.getElementById('tsManualTable');
+  var tally  = document.getElementById('tsTallyTable');
+  var btnM   = document.getElementById('tsToggleManual');
+  var btnT   = document.getElementById('tsToggleTally');
+
+  if (!manual || !tally || !btnM || !btnT) return;
+
+  if (v === 'tally') {
+    manual.style.display = 'none';
+    tally.style.display = '';
+    btnM.style.background = '#f1f5f9'; btnM.style.color = '#334155'; btnM.className = 'btn btn-sm';
+    btnT.className = 'btn btn-sm btn-primary'; btnT.style.background = ''; btnT.style.color = '';
+    if (_tsRawRows === null) syncTallySuppliers(false);
+  } else {
+    manual.style.display = '';
+    tally.style.display = 'none';
+    btnM.className = 'btn btn-sm btn-primary'; btnM.style.background = ''; btnM.style.color = '';
+    btnT.style.background = '#f1f5f9'; btnT.style.color = '#334155'; btnT.className = 'btn btn-sm';
+  }
+}
+
+function tsBuildSupplierRows(rows) {
+  var hasGroupData = false;
+  for (var i = 0; i < rows.length; i++) {
+    var g = String(rows[i].group || rows[i].group_name || rows[i].parent || rows[i].under || rows[i].ledger_group || '').trim();
+    if (g !== '') { hasGroupData = true; break; }
+  }
+
+  var out = [];
+  var seen = {};
+  for (var j = 0; j < rows.length; j++) {
+    var r = rows[j] || {};
+    var grp = String(r.group || r.group_name || r.parent || r.under || r.ledger_group || '').trim().toLowerCase();
+
+    if (hasGroupData && grp !== 'sundry creditors') {
+      continue;
+    }
+
+    var gst = String(r.gst_number || '').trim().toUpperCase();
+    var key = gst ? ('g:' + gst) : ('n:' + tsNormalizeName(r.name));
+    if (seen[key]) continue;
+    seen[key] = true;
+
+    out.push({
+      name: String(r.name || '').trim(),
+      address: String(r.address || '').trim(),
+      gst_number: gst
+    });
+  }
+
+  return { rows: out, hasGroupData: hasGroupData };
+}
+
+function tsRenderRows(rows) {
+  var tbody = document.getElementById('tsTallyTbody');
+  if (!tbody) return;
+
+  if (!rows || rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:20px">No suppliers found in Tally.</td></tr>';
+    return;
+  }
+
+  var capped = false;
+  var totalCount = rows.length;
+  if (totalCount > TS_MAX_ROWS) {
+    rows = rows.slice(0, TS_MAX_ROWS);
+    capped = true;
+  }
+
+  var existingByGst = {};
+  var existingByNorm = {};
+  for (var i = 0; i < suppliersData.length; i++) {
+    var s = suppliersData[i];
+    var g = String(s.gst_number || '').trim().toUpperCase();
+    if (g) existingByGst[g] = true;
+    var n = tsNormalizeName(s.name);
+    if (n) existingByNorm[n] = true;
+  }
+
+  var html = '';
+  for (var j = 0; j < rows.length; j++) {
+    var r = rows[j];
+    var rGst = String(r.gst_number || '').trim().toUpperCase();
+    var isDup = rGst ? !!existingByGst[rGst] : !!existingByNorm[tsNormalizeName(r.name)];
+    var match = isDup
+      ? '<span style="padding:2px 8px;border-radius:999px;background:#fef9c3;color:#854d0e;font-size:.72rem;font-weight:700">Exists</span>'
+      : '<span style="padding:2px 8px;border-radius:999px;background:#dcfce7;color:#166534;font-size:.72rem;font-weight:700">New</span>';
+
+    html += '<tr>';
+    html += '<td>' + _tsEsc(r.name || '-') + '</td>';
+    html += '<td>' + _tsEsc(r.address || '-') + '</td>';
+    html += '<td>' + _tsEsc(rGst || '-') + '</td>';
+    html += '<td>' + match + '</td>';
+    html += '<td><span style="padding:2px 8px;border-radius:999px;background:#e0f2fe;color:#0369a1;font-size:.72rem;font-weight:700">Tally</span></td>';
+    html += '</tr>';
+  }
+
+  if (capped) {
+    html += '<tr><td colspan="5" style="text-align:center;background:#fffbeb;color:#92400e;font-size:.8rem;padding:8px">'
+      + 'Showing first ' + TS_MAX_ROWS + ' of ' + totalCount + ' suppliers.'
+      + '</td></tr>';
+  }
+
+  tbody.innerHTML = html;
+}
+
+function tsFilterRows() {
+  var q = (document.getElementById('tsSearch').value || '').toLowerCase().trim();
+  if (!q) {
+    _tsRows = (_tsRawRows || []).slice();
+  } else {
+    _tsRows = (_tsRawRows || []).filter(function(r) {
+      return String(r.name || '').toLowerCase().indexOf(q) >= 0
+        || String(r.address || '').toLowerCase().indexOf(q) >= 0
+        || String(r.gst_number || '').toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  tsRenderRows(_tsRows);
+}
+
+function syncTallySuppliers(force) {
+  var btn = document.getElementById('tallySupplierSyncBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> Syncing...';
+  }
+
+  var url = tallyFetchSuppliersUrl + (force ? '?refresh=1' : '');
+  fetch(url, { credentials: 'same-origin' })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> Sync from Tally';
+      }
+
+      if (!data || !data.ok) {
+        tsSetBadge(false);
+        tsShowMsg('Tally not connected or unreachable. Manual supplier system remains active.', '#b91c1c', '#fff5f5', '#fecaca');
+        return;
+      }
+
+      tsSetBadge(true);
+      var rawRows = data.rows || data.data || [];
+      var prepared = tsBuildSupplierRows(rawRows);
+      _tsRawRows = prepared.rows;
+      _tsRows = _tsRawRows.slice();
+      tsRenderRows(_tsRows);
+
+      if (!prepared.hasGroupData) {
+        tsShowMsg('Tally group field is not available in this fetch. Showing available ledgers as supplier candidates.', '#92400e', '#fffbeb', '#fde68a');
+      } else {
+        tsHideMsg();
+      }
+    })
+    .catch(function() {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> Sync from Tally';
+      }
+      tsSetBadge(false);
+      tsShowMsg('Tally not connected or unreachable. Manual supplier system remains active.', '#b91c1c', '#fff5f5', '#fecaca');
+    });
+}
+
+// --- Tally Clients Integration ---
+var _tcView = 'manual';
+var _tcTallyRows = null;
+
+// Normalise a name for duplicate comparison:
+// strips punctuation/spaces/case so "ABC Pharma Pvt Ltd" ≈ "abc pharma pvt ltd"
+function tcNormalizeName(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function tcSetView(v) {
+  _tcView = v;
+  var manual  = document.getElementById('tcManualTable');
+  var tally   = document.getElementById('tcTallyTable');
+  var btnM    = document.getElementById('tcToggleManual');
+  var btnT    = document.getElementById('tcToggleTally');
+  var impBtn  = document.getElementById('tcImportBtn');
+  if (v === 'tally') {
+    manual.style.display = 'none';
+    tally.style.display  = '';
+    btnM.style.background = '#f1f5f9'; btnM.style.color = '#334155'; btnM.className = 'btn btn-sm';
+    btnT.className = 'btn btn-sm btn-primary'; btnT.style.background = ''; btnT.style.color = '';
+    if (impBtn) impBtn.style.display = '';
+    if (_tcTallyRows === null) syncTallyClients(false);
+  } else {
+    manual.style.display = '';
+    tally.style.display  = 'none';
+    btnM.className = 'btn btn-sm btn-primary'; btnM.style.background = ''; btnM.style.color = '';
+    btnT.style.background = '#f1f5f9'; btnT.style.color = '#334155'; btnT.className = 'btn btn-sm';
+    if (impBtn) impBtn.style.display = 'none';
+  }
+}
+
+function syncTallyClients(force) {
+  var btn = document.getElementById('tallyClientSyncBtn');
+  // Loading state — disable + show spinner text
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> Syncing...'; }
+
+  var url = tallyFetchClientsUrl + (force ? '?refresh=1' : '');
+  fetch(url, { credentials: 'same-origin' })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      // Restore button
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> Sync from Tally'; }
+      if (!data.ok) {
+        tcSetBadge(false);
+        tcShowMsg('Tally not connected or unreachable — manual client system is still active.', '#b91c1c');
+        return;
+      }
+      tcSetBadge(true);
+      var rows = data.data || [];
+      _tcTallyRows = rows;
+      tcRenderTallyRows(rows);
+      // Hide any previous error message on success
+      var msg = document.getElementById('tallyClientMsg');
+      if (msg) msg.style.display = 'none';
+    })
+    .catch(function() {
+      // Restore button on network error
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> Sync from Tally'; }
+      tcSetBadge(false);
+      tcShowMsg('Tally not connected or unreachable — manual client system is still active.', '#b91c1c');
+    });
+}
+
+function tcSetBadge(connected) {
+  var badge = document.getElementById('tallyClientBadge');
+  if (!badge) return;
+  badge.style.display = 'inline-block';
+  if (connected) {
+    badge.textContent = 'Tally Connected';
+    badge.style.background = '#dcfce7'; badge.style.color = '#166534';
+  } else {
+    badge.textContent = 'Tally Disconnected';
+    badge.style.background = '#fee2e2'; badge.style.color = '#b91c1c';
+  }
+}
+
+function tcShowMsg(text, color) {
+  var msg = document.getElementById('tallyClientMsg');
+  if (!msg) return;
+  msg.style.display = 'block';
+  msg.style.background = '#fff5f5';
+  msg.style.border = '1px solid #fecaca';
+  msg.style.borderRadius = '8px';
+  msg.style.margin = '8px 16px';
+  msg.style.padding = '8px 12px';
+  msg.style.color = color || '#475569';
+  msg.style.fontSize = '.83rem';
+  msg.textContent = text;
+}
+
+function tcRenderTallyRows(rows) {
+  var tbody  = document.getElementById('tcTallyTbody');
+  var impBtn = document.getElementById('tcImportBtn');
+  if (!tbody) return;
+
+  if (!rows || rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:20px">No clients found in Tally.</td></tr>';
+    if (impBtn) impBtn.style.display = 'none';
+    return;
+  }
+  if (impBtn) impBtn.style.display = '';
+
+  // Limit large datasets
+  var capped = false;
+  var totalCount = rows.length;
+  if (totalCount > TC_MAX_ROWS) {
+    rows = rows.slice(0, TC_MAX_ROWS);
+    capped = true;
+  }
+
+  // Build GST and normalised-name lookup from existing manual clients
+  var existingByGst  = {};
+  var existingByNorm = {};
+  for (var i = 0; i < clientsData.length; i++) {
+    var c = clientsData[i];
+    if (c.gst_number && c.gst_number.trim()) {
+      existingByGst[c.gst_number.trim().toUpperCase()] = true;
+    }
+    var cn = tcNormalizeName(c.name);
+    if (cn) existingByNorm[cn] = true;
+  }
+
+  var html = '';
+  for (var j = 0; j < rows.length; j++) {
+    var r    = rows[j];
+    var rGst = (r.gst_number || '').trim().toUpperCase();
+    // Prefer GST match when both sides have GST, else fall back to normalised name
+    var isDup = false;
+    if (rGst) {
+      isDup = !!existingByGst[rGst];
+    } else {
+      isDup = !!existingByNorm[tcNormalizeName(r.name)];
+    }
+    var dupBadge = isDup
+      ? ' <span style="padding:1px 6px;border-radius:999px;background:#fef9c3;color:#854d0e;font-size:.7rem;font-weight:700">Exists</span>'
+      : '';
+    html += '<tr>';
+    html += '<td><input type="checkbox" class="tc-row-check" data-idx="' + j + '"' + (isDup ? ' title="Already exists in manual list"' : '') + '></td>';
+    html += '<td>' + _tcEsc(r.name || '-') + dupBadge + '</td>';
+    html += '<td>' + _tcEsc(r.address || '-') + '</td>';
+    html += '<td>' + _tcEsc(rGst || '-') + '</td>';
+    html += '<td><span style="padding:2px 8px;border-radius:999px;background:#e0f2fe;color:#0369a1;font-size:.72rem;font-weight:700">Tally</span></td>';
+    html += '</tr>';
+  }
+
+  if (capped) {
+    html += '<tr><td colspan="5" style="text-align:center;background:#fffbeb;color:#92400e;font-size:.8rem;padding:8px">'
+          + 'Showing first ' + TC_MAX_ROWS + ' of ' + totalCount + ' clients. Use filters in Tally to narrow results.'
+          + '</td></tr>';
+  }
+
+  tbody.innerHTML = html;
+}
+
+function tcToggleSelectAll(chk) {
+  var boxes = document.querySelectorAll('#tcTallyTbody input[type="checkbox"].tc-row-check');
+  for (var i = 0; i < boxes.length; i++) boxes[i].checked = chk.checked;
+}
+
+function tcImportSelected() {
+  var boxes = document.querySelectorAll('#tcTallyTbody input[type="checkbox"].tc-row-check:checked');
+  if (boxes.length === 0) {
+    alert('Please select at least one client to import.');
+    return;
+  }
+  var selected = [];
+  for (var i = 0; i < boxes.length; i++) {
+    var idx = parseInt(boxes[i].getAttribute('data-idx'), 10);
+    if (_tcTallyRows && _tcTallyRows[idx]) selected.push(_tcTallyRows[idx]);
+  }
+  var btn = document.getElementById('tcImportBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Importing...'; }
+  fetch(tallyImportClientsUrl, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clients: selected })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-download"></i> Import Selected'; }
+    if (d && d.success) {
+      var msg = 'Imported ' + d.inserted + ' client' + (d.inserted !== 1 ? 's' : '')
+              + ', skipped ' + d.skipped + ' duplicate' + (d.skipped !== 1 ? 's' : '') + '.';
+      tcShowMsg(msg, '#166534');
+      if (d.last_sync) {
+        var ls = document.getElementById('tallyLastSync');
+        if (ls) ls.textContent = 'Last Sync: ' + d.last_sync
+          + '  \u00b7  Imported: ' + d.inserted + ', Skipped: ' + d.skipped;
+      }
+      var allChk = document.getElementById('tcSelectAll');
+      if (allChk) allChk.checked = false;
+      tcToggleSelectAll({ checked: false });
+    } else {
+      tcShowMsg('Import failed: ' + ((d && d.error) ? d.error : 'Unknown error'), '#b91c1c');
+    }
+  })
+  .catch(function() {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-download"></i> Import Selected'; }
+    tcShowMsg('Import request failed. Please try again.', '#b91c1c');
+  });
+}
+
+function _tcEsc(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Auto-check badge on page load using dedicated check_connection.php endpoint
+(function() {
+  var activeTab = '<?= e($activeTab) ?>';
+  if (activeTab === 'clients') {
+    fetch(tallyCheckConnectionUrl, { credentials: 'same-origin' })
+      .then(function(r) { return r.json(); })
+      .then(function(d) { tcSetBadge(!!(d && d.status === 'connected')); })
+      .catch(function() { tcSetBadge(false); });
+  }
+  if (activeTab === 'suppliers') {
+    fetch(tallyCheckConnectionUrl, { credentials: 'same-origin' })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var connected = !!(d && d.status === 'connected');
+        tsSetBadge(connected);
+        if (connected) {
+          syncTallySuppliers(false);
+        } else {
+          tsShowMsg('Tally not connected. Manual supplier system remains active.', '#92400e', '#fffbeb', '#fde68a');
+        }
+      })
+      .catch(function() {
+        tsSetBadge(false);
+        tsShowMsg('Tally not connected. Manual supplier system remains active.', '#92400e', '#fffbeb', '#fde68a');
+      });
+  }
+})();
 const machinesData = <?= json_encode($machines, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 const machineDepartmentsData = <?= json_encode($machineDepartments, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 const paperCompaniesData = <?= json_encode($paperCompanies, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
