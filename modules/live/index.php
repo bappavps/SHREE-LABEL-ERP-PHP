@@ -410,12 +410,14 @@ include __DIR__ . '/../../includes/header.php';
 .db-print{background:#dbeafe;color:#1e40af}
 .db-die{background:#ccfbf1;color:#0f766e}
 .db-lsl{background:#ffedd5;color:#c2410c}
+.db-pack{background:#dcfce7;color:#166534}
 
 /* ── Left dept border on card ── */
 .fl-card.dept-slit{border-left:4px solid #f59e0b}
 .fl-card.dept-print{border-left:4px solid #3b82f6}
 .fl-card.dept-die{border-left:4px solid #0f766e}
 .fl-card.dept-lsl{border-left:4px solid #c2410c}
+.fl-card.dept-pack{border-left:4px solid #22c55e}
 .fl-card.dept-plan{border-left:4px solid #8b5cf6}
 
 /* ── Card header flex layout ── */
@@ -536,20 +538,23 @@ function getDept(job){
   if(jt==='printing'||dept.includes('print')||jn.startsWith('FLX/')) return 'print';
   if(dept.includes('label')||jn.startsWith('LSL/')) return 'lsl';
   if(dept.includes('flatbed')||dept.includes('die')||jn.startsWith('DCT/')||jn.startsWith('ROT/')) return 'die';
+  if(['pos','paperroll','oneply','one_ply','twoply','two_ply'].includes(dept)) return 'pack';
+  if(['pos','paperroll','oneply','one_ply','twoply','two_ply'].includes(jt)) return 'pack';
+  if(dept.includes('pack') || dept.includes('dispatch')) return 'pack';
   if(jt==='finishing') return 'die';
   return 'plan';
 }
-const DEPT_LABEL = {plan:'PLN',slit:'JMB',print:'FLX',die:'DCT',lsl:'LSL'};
-const DEPT_ICON  = {plan:'📋',slit:'🔪',print:'🖨️',die:'✂️',lsl:'🏷️'};
-const DEPT_CLASS = {plan:'db-plan',slit:'db-slit',print:'db-print',die:'db-die',lsl:'db-lsl'};
-const CARD_CLASS = {plan:'dept-plan',slit:'dept-slit',print:'dept-print',die:'dept-die',lsl:'dept-lsl'};
+const DEPT_LABEL = {plan:'PLN',slit:'JMB',print:'FLX',die:'DCT',lsl:'LSL',pack:'PKG'};
+const DEPT_ICON  = {plan:'📋',slit:'🔪',print:'🖨️',die:'✂️',lsl:'🏷️',pack:'📦'};
+const DEPT_CLASS = {plan:'db-plan',slit:'db-slit',print:'db-print',die:'db-die',lsl:'db-lsl',pack:'db-pack'};
+const CARD_CLASS = {plan:'dept-plan',slit:'dept-slit',print:'dept-print',die:'dept-die',lsl:'dept-lsl',pack:'dept-pack'};
 
 function normStatus(v){
   return String(v||'').toLowerCase().replace(/[-_]/g,' ').trim();
 }
 
 function isDoneStatus(v){
-  return ['closed','finalized','completed','qc passed','qc failed','dispatched','packing done','packed','finished production'].includes(normStatus(v));
+  return ['closed','finalized','completed','qc passed','qc failed','dispatched','delivered','packing done','packed','finished production'].includes(normStatus(v));
 }
 
 /* ─── Stage Detection ─── */
@@ -558,11 +563,14 @@ function getStageIdx(job){
   const ps   = normStatus(job.planning_status||'');
   const dept = getDept(job);
 
-  if(ps.includes('dispatch') || s==='dispatched') return 6;
+  if(ps.includes('dispatch') || s==='dispatched' || s === 'delivered') return 6;
   if(ps.includes('packing') || s==='packing done' || s==='packed' || s==='finished production') return 5;
 
   if(dept==='lsl'){
     return isDoneStatus(s) ? 5 : 4;
+  }
+  if(dept==='pack'){
+    return isDoneStatus(s) ? 6 : 5;
   }
   if(dept==='die'){
     return isDoneStatus(s) ? 4 : 3;
@@ -607,7 +615,7 @@ function isRunningStage(job,idx){
   if(idx===2) return dept==='print';
   if(idx===3) return dept==='die';
   if(idx===4) return dept==='lsl';
-  if(idx===5) return s==='running' && (String(job.department||'').toLowerCase().includes('pack')||String(job.department||'').toLowerCase().includes('dispatch'));
+  if(idx===5) return s==='running' && (dept==='pack' || String(job.department||'').toLowerCase().includes('pack')||String(job.department||'').toLowerCase().includes('dispatch'));
   return false;
 }
 
@@ -620,7 +628,7 @@ function getStageName(job,idx){
   if(idx===cur){
     if(isDoneStatus(job.status||'')) return doneNames[idx]||'Done';
     if(idx===0) return 'Planning';
-    if(idx===6) return isDispatchDone(job) ? 'Dispatched' : 'Preparing Dispatch';
+    if(idx===6) return normStatus(job.status||'') === 'delivered' ? 'Delivered' : (isDispatchDone(job) ? 'Dispatched' : 'Preparing Dispatch');
     return isRunningStage(job,idx) ? active[idx]||'' : 'Preparing '+active[idx];
   }
   return inactive[idx]||'—';
@@ -662,8 +670,22 @@ function getDisplayJobRef(job){
 
 function stBadge(status){
   const s=normStatus(status||'');
-  const map={running:'background:#dbeafe;color:#1e40af',pending:'background:#fef3c7;color:#92400e',queued:'background:#fef3c7;color:#92400e',closed:'background:#dcfce7;color:#166534',finalized:'background:#dcfce7;color:#166534',completed:'background:#dcfce7;color:#166534','qc passed':'background:#dcfce7;color:#166534','qc failed':'background:#fee2e2;color:#dc2626','packing done':'background:#dcfce7;color:#166534',packed:'background:#dcfce7;color:#166534','finished production':'background:#dcfce7;color:#166534',dispatched:'background:#dcfce7;color:#166534'};
+  const map={running:'background:#dbeafe;color:#1e40af',pending:'background:#fef3c7;color:#92400e',queued:'background:#fef3c7;color:#92400e',closed:'background:#dcfce7;color:#166534',finalized:'background:#dcfce7;color:#166534',completed:'background:#dcfce7;color:#166534','qc passed':'background:#dcfce7;color:#166534','qc failed':'background:#fee2e2;color:#dc2626','packing done':'background:#dcfce7;color:#166534',packed:'background:#dcfce7;color:#166534','finished production':'background:#dcfce7;color:#166534',dispatched:'background:#dcfce7;color:#166534',delivered:'background:#dcfce7;color:#166534'};
   return map[s]||'background:#f1f5f9;color:#64748b';
+}
+
+function liveStatusLabel(status){
+  const s = normStatus(status||'');
+  if(s === 'delivered') return '✓ Delivered';
+  return String(status||'Pending');
+}
+
+function liveStatusTitle(status){
+  const s = normStatus(status||'');
+  if(s === 'delivered') return 'Delivered: client received material and the final stage is complete.';
+  if(s === 'dispatched') return 'Dispatched: material has left the plant and is in transit.';
+  if(s === 'packing done' || s === 'packed') return 'Packing: material is packed and ready for dispatch.';
+  return 'Production: job is still within internal production stages.';
 }
 
 function getChainRootId(job, byId){
@@ -864,7 +886,7 @@ function renderJobs(jobs){
         <div class="fl-card-info">
           <div class="fl-card-row1">
             <span class="fl-card-jobno" style="font-size:.9rem;font-weight:900;color:#1a1a2e">${esc(ref)}</span>
-            <span class="fl-status-badge" style="${stBadge(job.status)}">${esc(job.status||'Pending')}</span>
+            <span class="fl-status-badge" style="${stBadge(job.status)}" title="${esc(liveStatusTitle(job.status))}">${esc(liveStatusLabel(job.status))}</span>
             <span class="fl-dept-badge ${DEPT_CLASS[dept]||''}">${DEPT_LABEL[dept]||'—'}</span>
             ${cr>0?`<span class="fl-cr-badge">⚠ ${cr} Change Req</span>`:''}
             ${pri!=='normal'?`<span class="fl-card-pri ${pri}">${pri}</span>`:''}

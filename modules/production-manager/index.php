@@ -20,6 +20,7 @@ function pm_department_label($dept, $fallbackType = ''): string {
         'jumbo slitting' => 'Jumbo Slitting',
         'jumbo-slitting' => 'Jumbo Slitting',
         'jumbo_slitting' => 'Jumbo Slitting',
+      'jumbo' => 'Jumbo Slitting',
         'printing' => 'Printing',
         'flexo printing' => 'Printing',
         'flexo_printing' => 'Printing',
@@ -34,6 +35,20 @@ function pm_department_label($dept, $fallbackType = ''): string {
         'dispatch' => 'Dispatch',
         'slitting' => 'Slitting',
         'printing_planning' => 'Printing',
+        'pos' => 'POS Roll',
+        'pos roll' => 'POS Roll',
+        'pos_roll' => 'POS Roll',
+        'paperroll' => 'Paper Roll',
+        'paper roll' => 'Paper Roll',
+        'paper_roll' => 'Paper Roll',
+        'oneply' => 'One Ply',
+        'one ply' => 'One Ply',
+        'one_ply' => 'One Ply',
+        'paper_roll_1ply' => 'One Ply',
+        'twoply' => 'Two Ply',
+        'two ply' => 'Two Ply',
+        'two_ply' => 'Two Ply',
+        'paper_roll_2ply' => 'Two Ply',
     ];
 
     if (isset($map[$dept])) return $map[$dept];
@@ -68,14 +83,17 @@ function pm_bucket_status(array $row): string {
 
   function pm_display_status($status): string {
     $norm = strtolower(trim(str_replace(['-', '_'], ' ', pm_text($status))));
-    if (in_array($norm, ['packing done', 'packed'], true)) {
-      return 'Packed';
+    if (in_array($norm, ['pending', 'queued', 'running', 'in progress', 'preparing'], true)) {
+      return 'Production';
     }
-    if ($norm === 'finished production') {
-      return 'Finished Production';
+    if (in_array($norm, ['packing done', 'packed', 'packing'], true)) {
+      return 'Packing';
     }
-    if ($norm === 'dispatched') {
+    if (in_array($norm, ['finished production', 'dispatched', 'in transit'], true)) {
       return 'Dispatched';
+    }
+    if ($norm === 'delivered') {
+      return 'Delivered';
     }
     return pm_text($status);
   }

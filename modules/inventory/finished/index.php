@@ -33,6 +33,7 @@ include __DIR__ . '/../../../includes/header.php';
 <div class="fg-stock-module"
      id="fgStockModule"
      data-api-url="<?= e(BASE_URL) ?>/modules/inventory/finished/api/finished_api.php"
+  data-dispatch-url="<?= e(BASE_URL) ?>/modules/dispatch/index.php"
      data-csrf-token="<?= e($csrfToken) ?>"
      data-is-admin="<?= $isAdminUser ? '1' : '0' ?>"
      data-co-name="<?= e($co_name) ?>"
@@ -68,28 +69,28 @@ include __DIR__ . '/../../../includes/header.php';
     </div>
 
     <div class="fg-summary" id="fgSummaryCards">
-      <div class="fg-summary-card">
-        <small>Total Items</small>
+      <div class="fg-summary-card fg-card-total-items">
+        <small><i class="bi bi-box-seam"></i> Total Items</small>
         <strong id="fgSummaryItems">0</strong>
       </div>
-      <div class="fg-summary-card">
-        <small>Total Quantity</small>
+      <div class="fg-summary-card fg-card-total-qty">
+        <small><i class="bi bi-123"></i> Total Quantity</small>
         <strong id="fgSummaryQty">0</strong>
       </div>
-      <div class="fg-summary-card">
-        <small>Opening Stock</small>
+      <div class="fg-summary-card fg-card-opening">
+        <small><i class="bi bi-archive"></i> Opening Stock</small>
         <strong id="fgSummaryOpening">0</strong>
       </div>
-      <div class="fg-summary-card">
-        <small>Inward</small>
+      <div class="fg-summary-card fg-card-inward">
+        <small><i class="bi bi-box-arrow-in-down"></i> Inward</small>
         <strong id="fgSummaryInward">0</strong>
       </div>
-      <div class="fg-summary-card">
-        <small>Dispatch</small>
+      <div class="fg-summary-card fg-card-dispatch">
+        <small><i class="bi bi-truck"></i> Dispatch</small>
         <strong id="fgSummaryDispatch">0</strong>
       </div>
-      <div class="fg-summary-card">
-        <small>Closing Stock</small>
+      <div class="fg-summary-card fg-card-closing">
+        <small><i class="bi bi-check2-circle"></i> Closing Stock</small>
         <strong id="fgSummaryClosing">0</strong>
       </div>
     </div>

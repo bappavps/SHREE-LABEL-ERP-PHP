@@ -18,6 +18,7 @@
 
   var fg_state = {
     apiUrl: String(fg_root.getAttribute('data-api-url') || ''),
+    dispatchUrl: String(fg_root.getAttribute('data-dispatch-url') || ''),
     csrf: String(fg_root.getAttribute('data-csrf-token') || ''),
     isAdmin: String(fg_root.getAttribute('data-is-admin') || '') === '1',
     tabs: [
@@ -393,7 +394,9 @@
         { key: 'pcs', label: 'PCS', numeric: true },
         { key: 'per_carton', label: 'Per carton', numeric: true },
         { key: 'carton', label: 'CARTON', numeric: true },
-        { key: 'total', label: 'TOTAL', numeric: true }
+        { key: 'total', label: 'TOTAL', numeric: true },
+        { key: 'available_for_dispatch', label: 'Available for Dispatch', numeric: true },
+        { key: 'stock_status', label: 'Status' }
       ];
     }
 
@@ -488,6 +491,19 @@
       }
       return fg_num(row.quantity).toFixed(3).replace(/\.000$/, '');
     }
+    if (key === 'available_for_dispatch') {
+      return fg_num(row.quantity).toFixed(3).replace(/\.000$/, '');
+    }
+    if (key === 'stock_status') {
+      var q = fg_num(row.quantity);
+      if (q <= 0) {
+        return 'Dispatched';
+      }
+      if (q <= 10) {
+        return 'Low';
+      }
+      return 'In Stock';
+    }
     if (key === 'type' || key === 'barcode_type' || key === 'print_type' || key === 'ribbon_type' || key === 'core_type' || key === 'carton_type') {
       return row.sub_type || '';
     }
@@ -534,6 +550,15 @@
 
   function fg_renderCell(row, key) {
     var value = fg_value(row, key);
+    if (key === 'stock_status') {
+      var cls = 'fg-status-instock';
+      if (String(value) === 'Low') {
+        cls = 'fg-status-low';
+      } else if (String(value) === 'Dispatched') {
+        cls = 'fg-status-dispatched';
+      }
+      return '<span class="fg-stock-badge ' + cls + '">' + fg_escapeHtml(value) + '</span>';
+    }
     if (key === 'barcode') {
       var barcodeValue = fg_resolveBarcodeValue(row) || String(value || '').trim();
       var href = fg_barcodeHref(row);
@@ -542,6 +567,32 @@
       }
     }
     return fg_escapeHtml(value);
+  }
+
+  function fg_isDispatchTab() {
+    return fg_state.activeTab === 'pos_paper_roll' || fg_state.activeTab === 'one_ply' || fg_state.activeTab === 'two_ply';
+  }
+
+  function fg_dispatchRow(row) {
+    if (!row) {
+      return;
+    }
+    var base = String(fg_state.dispatchUrl || '').trim();
+    if (!base) {
+      fg_showMessage('Dispatch page URL not configured.', 'error');
+      return;
+    }
+    var extra = row._fgExtra || {};
+    var params = new URLSearchParams();
+    params.set('item_id', String(row.id || ''));
+    params.set('packing_id', String(extra.packing_id || row.item_code || ''));
+    params.set('qty', String(fg_num(row.quantity)));
+    params.set('size', String(row.size || ''));
+    params.set('batch', String(row.batch_no || ''));
+    params.set('item_name', String(row.item_name || ''));
+    params.set('unit', String(row.unit || 'PCS'));
+    params.set('tab', String(fg_state.activeTab || ''));
+    window.location.href = base + '?' + params.toString();
   }
 
   function fg_getFormSchema(tabKey) {
@@ -1019,6 +1070,9 @@
         '<div class="fg-col-filter-pop" id="fg-col-filter-' + fg_escapeHtml(c.key) + '"></div>' +
       '</div></th>';
     }
+    if (fg_isDispatchTab()) {
+      headHtml += '<th>Dispatch</th>';
+    }
     if (fg_state.isAdmin) {
       headHtml += '<th>Action</th>';
     }
@@ -1042,6 +1096,10 @@
       body += '<tr>';
       for (var x = 0; x < cols.length; x += 1) {
         body += '<td>' + fg_renderCell(row, cols[x].key) + '</td>';
+      }
+      if (fg_isDispatchTab()) {
+        var disabled = fg_num(row.quantity) <= 0 ? 'disabled' : '';
+        body += '<td><button type="button" class="fg-act-btn blue fg-dispatch-btn" data-fg-action="dispatch-row" data-id="' + row.id + '" ' + disabled + '><i class="bi bi-truck"></i> Dispatch</button></td>';
       }
       if (fg_state.isAdmin) {
         body += '<td><div class="fg-row-actions">' +
@@ -2041,6 +2099,25 @@
       if (!fg_state.isAdmin) return;
       var did = parseInt(target.getAttribute('data-id') || '0', 10);
       if (did > 0) fg_deleteRow(did);
+      return;
+    }
+
+    if (action === 'dispatch-row') {
+      var rid = parseInt(target.getAttribute('data-id') || '0', 10);
+      if (rid <= 0) {
+        fg_showMessage('Invalid row selected for dispatch.', 'error');
+        return;
+      }
+      var dispatchRow = fg_findRowById(rid);
+      if (!dispatchRow) {
+        fg_showMessage('Stock row not found.', 'error');
+        return;
+      }
+      if (fg_num(dispatchRow.quantity) <= 0) {
+        fg_showMessage('No stock available for dispatch.', 'warning');
+        return;
+      }
+      fg_dispatchRow(dispatchRow);
       return;
     }
 

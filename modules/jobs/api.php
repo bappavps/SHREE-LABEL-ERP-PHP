@@ -1094,6 +1094,10 @@ function jobs_notification_target_url(mysqli $db, array $notification): string {
         return jobs_join_base_url($routePath);
     }
 
+    if ($department === 'dispatch' && $notificationJobId > 0) {
+        return jobs_join_base_url('/modules/dispatch/index.php?dispatch_entry=' . rawurlencode((string)$notificationJobId) . '&open=view&highlight=1');
+    }
+
     // PaperRoll pipeline notifications should stay on their own stage page.
     if ($notificationJobId > 0 && in_array($department, ['paperroll', 'pos', 'oneply', 'twoply'], true)) {
         $directPage = jobs_notification_job_page_by_department($department);

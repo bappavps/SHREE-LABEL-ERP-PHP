@@ -199,12 +199,12 @@ function paperrollPlanningStatusFromPhase(string $department, string $phase): st
     if ($department === '') {
         return 'Pending';
     }
+    if ($phase === 'dispatched') {
+        return 'Dispatched';
+    }
     if ($department === 'Packing') {
         if ($phase === 'done') {
             return 'Packed';
-        }
-        if ($phase === 'dispatched') {
-            return 'Dispatched';
         }
         return 'Packing';
     }
@@ -285,6 +285,23 @@ function paperrollPlanningIsDisplayStatus($status): bool {
         return true;
     }
     return (bool)preg_match('/^[A-Za-z0-9][A-Za-z0-9 &\/]*(?: Preparing| Pause| Done)?$/', $text);
+}
+
+function paperrollPlanningUnifiedStageLabel($status): string {
+    $norm = strtolower(trim(str_replace(['-', '_'], ' ', (string)$status)));
+    if (in_array($norm, ['pending', 'queued', 'running', 'in progress', 'preparing'], true)) {
+        return 'Production';
+    }
+    if (in_array($norm, ['packing', 'packed', 'packing done'], true)) {
+        return 'Packing';
+    }
+    if (in_array($norm, ['dispatched', 'finished production', 'in transit'], true)) {
+        return 'Dispatched';
+    }
+    if ($norm === 'delivered') {
+        return 'Delivered';
+    }
+    return trim((string)$status) !== '' ? trim((string)$status) : 'Production';
 }
 
 function paperrollPlanningNormalizeManualStatus($status, $type): string {
@@ -793,8 +810,10 @@ function barcodePlanningFetchRows(mysqli $db): array {
                 if ($selectedDepartment === 'PosRoll' && $selectedPhase === 'done') {
                     if (in_array($jobStatusNorm, ['packed', 'packing done'], true)) {
                         $statusSource = 'Packed';
+                    } elseif (in_array($jobStatusNorm, ['dispatched', 'finished production'], true)) {
+                        $statusSource = 'Dispatched';
                     } else {
-                        $statusSource = 'Packing';
+                        $statusSource = 'PosRoll Done';
                     }
                 } else {
                     // For Jumbo/Printing/Barcode/etc show department-wise status from phase.
@@ -1375,6 +1394,7 @@ include __DIR__ . '/../../../includes/header.php';
                             if ($statusRaw === '') {
                                 $statusRaw = $defaultStatus;
                             }
+                            $statusDisplay = paperrollPlanningUnifiedStageLabel($statusRaw);
                             $priorityRaw = trim((string)($row['priority'] ?? 'Normal')) ?: 'Normal';
                             $priorityClass = match (strtolower($priorityRaw)) {
                                 'low' => 'low',
@@ -1390,7 +1410,7 @@ include __DIR__ . '/../../../includes/header.php';
             <tr data-row="<?= $rowPayload ?>">
                             <td class="bc-num"><?= e((string)$row['sl_no']) ?></td>
                             <td class="bc-cell-strong"><?= e((string)$row['planning_id']) ?></td>
-                            <td><span class="bc-status-badge" style="<?= e(barcodePlanningStatusStyle($statusRaw)) ?>"><?= e($statusRaw) ?></span></td>
+                            <td><span class="bc-status-badge" style="<?= e(barcodePlanningStatusStyle($statusRaw)) ?>"><?= e($statusDisplay) ?></span></td>
                             <td><?= e((string)$row['client_name']) ?></td>
                             <td><?= e((string)$row['planning_date']) ?></td>
                             <td><?= e((string)$row['dispatch_date']) ?></td>
