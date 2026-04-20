@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';
 require_once __DIR__ . '/../../includes/auth_check.php';
+require_once __DIR__ . '/../tally/tally_helper.php';
 
 $db = getDB();
 $settings = getAppSettings();
@@ -703,7 +704,7 @@ $tenantSettingsZipPath = tenantSettingsZipPath($projectRoot, $tenantSettingsPath
 $tenantSettingsDisplayPath = str_replace($projectRoot . '/', '', str_replace('\\', '/', $tenantSettingsPath));
 
 $activeTab = $_GET['tab'] ?? 'company';
-$allowedTabs = ['company', 'library', 'theme', 'status-workflow', 'backup', 'update', 'tenant'];
+$allowedTabs = ['company', 'library', 'theme', 'status-workflow', 'tally', 'backup', 'update', 'tenant'];
 if (!in_array($activeTab, $allowedTabs, true)) $activeTab = 'company';
 
 $statusWorkflowSettings = sanitizeStatusWorkflowPayload($settings['status_workflow_matrix'] ?? statusWorkflowDefaults());
@@ -1155,6 +1156,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       setFlash('error', 'Unable to save status workflow configuration.');
     }
     redirect(BASE_URL . '/modules/settings/index.php?tab=status-workflow');
+  }
+
+  if ($action === 'save_tally_settings') {
+    $ipRaw = trim((string)($_POST['tally_ip'] ?? ''));
+    $portRaw = (int)($_POST['tally_port'] ?? 9000);
+
+    $ip = tally_normalize_ip($ipRaw);
+    $port = tally_normalize_port($portRaw);
+
+    if ($ip === '') {
+      setFlash('error', 'Please enter a valid Tally IP address.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tally');
+    }
+
+    $settings['tally_ip'] = $ip;
+    $settings['tally_port'] = $port;
+
+    if (saveAppSettings($settings)) {
+      setFlash('success', 'Tally settings saved successfully.');
+    } else {
+      setFlash('error', 'Unable to save Tally settings.');
+    }
+    redirect(BASE_URL . '/modules/settings/index.php?tab=tally');
+  }
+
+  if ($action === 'test_tally_connection') {
+    $ipRaw = trim((string)($_POST['tally_ip'] ?? ''));
+    $portRaw = (int)($_POST['tally_port'] ?? 9000);
+
+    $ip = tally_normalize_ip($ipRaw);
+    $port = tally_normalize_port($portRaw);
+
+    if ($ip === '') {
+      setFlash('error', 'Please enter a valid Tally IP address before testing.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tally');
+    }
+
+    $reachable = tally_ping($ip, $port, 2);
+    if ($reachable) {
+      setFlash('success', 'Tally connection successful: http://' . $ip . ':' . $port);
+    } else {
+      setFlash('error', 'Tally Disconnected: unable to reach http://' . $ip . ':' . $port . '. Manual entry will continue.');
+    }
+    redirect(BASE_URL . '/modules/settings/index.php?tab=tally');
   }
 
 
@@ -1669,6 +1714,7 @@ include __DIR__ . '/../../includes/header.php';
     <a class="settings-tab <?= $activeTab==='library'?'active':'' ?>" href="?tab=library">Image Library</a>
     <a class="settings-tab <?= $activeTab==='theme'?'active':'' ?>" href="?tab=theme">Color Theme</a>
     <a class="settings-tab <?= $activeTab==='status-workflow'?'active':'' ?>" href="?tab=status-workflow">Status Workflow</a>
+    <a class="settings-tab <?= $activeTab==='tally'?'active':'' ?>" href="?tab=tally">Tally Integration</a>
     <a class="settings-tab <?= $activeTab==='tenant'?'active':'' ?>" href="?tab=tenant">Tenant Provision</a>
     <a class="settings-tab <?= $activeTab==='backup'?'active':'' ?>" href="?tab=backup">Backup &amp; Restore</a>
     <a class="settings-tab <?= $activeTab==='update'?'active':'' ?>" href="?tab=update">System Update</a>
@@ -2519,6 +2565,437 @@ include __DIR__ . '/../../includes/header.php';
         });
       })();
       </script>
+    <?php endif; ?>
+
+    <?php if ($activeTab === 'tally'): ?>
+      <style>
+      .tally-tab-banner {
+        display:flex;
+        align-items:center;
+        gap:12px;
+        padding:14px 16px;
+        border-radius:12px;
+        border:1px solid #bfdbfe;
+        background: linear-gradient(135deg, #eff6ff 0%, #ecfeff 100%);
+        color:#0c4a6e;
+        margin-bottom:14px;
+      }
+      .tally-tab-grid {
+        display:grid;
+        grid-template-columns:repeat(2, minmax(0, 1fr));
+        gap:14px;
+      }
+      .tally-tab-card {
+        border:1px solid #dbe5ef;
+        border-radius:12px;
+        background:#ffffff;
+        padding:16px;
+      }
+      .tally-tab-card.full {
+        grid-column:1 / -1;
+      }
+      .tally-tab-card h4 {
+        margin:0 0 6px;
+        font-size:1rem;
+        color:#0f172a;
+      }
+      .tally-tab-card p {
+        margin:0 0 12px;
+        font-size:.84rem;
+        color:#475569;
+      }
+      .tally-stack {
+        display:grid;
+        gap:10px;
+      }
+      .tally-field label {
+        display:block;
+        margin-bottom:4px;
+        font-weight:700;
+        font-size:.78rem;
+        color:#334155;
+      }
+      .tally-field input {
+        width:100%;
+      }
+      .tally-status {
+        border:1px dashed #cbd5e1;
+        border-radius:10px;
+        background:#f8fafc;
+        padding:10px 12px;
+        font-size:.82rem;
+        color:#475569;
+      }
+      .tally-actions {
+        display:flex;
+        gap:10px;
+        flex-wrap:wrap;
+      }
+      .tally-guide-title {
+        margin:0 0 10px;
+        font-size:1.05rem;
+        color:#0f172a;
+      }
+      .tally-guide-sub {
+        margin:0;
+        color:#475569;
+        font-size:.84rem;
+      }
+      .tally-guide-stack {
+        display:grid;
+        gap:14px;
+      }
+      .tally-guide-section {
+        border:1px solid #dbe5ef;
+        border-radius:12px;
+        padding:14px;
+        background:#ffffff;
+      }
+      .tally-guide-section h5 {
+        margin:0 0 10px;
+        font-size:.95rem;
+        color:#0f172a;
+      }
+      .tally-image-grid {
+        display:grid;
+        grid-template-columns:repeat(4, minmax(0, 1fr));
+        gap:10px;
+        margin-bottom:12px;
+      }
+      .tally-image-grid.tally-image-grid-3 {
+        grid-template-columns:repeat(3, minmax(0, 1fr));
+      }
+      .tally-image-card {
+        border:1px solid #dbe5ef;
+        border-radius:12px;
+        display:flex;
+        flex-direction:column;
+        justify-content:center;
+        align-items:center;
+        gap:8px;
+        min-height:128px;
+        background:linear-gradient(140deg, #f8fafc 0%, #eef2ff 100%);
+        color:#334155;
+        padding:10px;
+        text-align:center;
+      }
+      .tally-image-card i {
+        font-size:1.35rem;
+        color:#0284c7;
+      }
+      .tally-image-card strong {
+        font-size:.78rem;
+        color:#0f172a;
+      }
+      .tally-image-card span {
+        font-size:.76rem;
+        color:#475569;
+      }
+      .tally-steps {
+        list-style:none;
+        margin:0;
+        padding:0;
+        display:grid;
+        gap:10px;
+      }
+      .tally-step {
+        border:1px solid #e2e8f0;
+        border-radius:10px;
+        background:#f8fafc;
+        padding:9px 10px;
+        display:grid;
+        grid-template-columns:auto 1fr;
+        gap:8px;
+        align-items:flex-start;
+      }
+      .tally-step-badge {
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        min-width:60px;
+        padding:3px 8px;
+        border-radius:999px;
+        background:#0ea5e9;
+        color:#ffffff;
+        font-size:.68rem;
+        font-weight:700;
+        letter-spacing:.2px;
+      }
+      .tally-step p {
+        margin:0;
+        color:#334155;
+        font-size:.82rem;
+        line-height:1.45;
+      }
+      .tally-fix-list {
+        margin:0;
+        padding-left:20px;
+        color:#334155;
+        font-size:.82rem;
+        line-height:1.5;
+      }
+      @media (max-width: 920px) {
+        .tally-tab-grid { grid-template-columns:1fr; }
+        .tally-image-grid,
+        .tally-image-grid.tally-image-grid-3 { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+      }
+      @media (max-width: 640px) {
+        .tally-image-grid,
+        .tally-image-grid.tally-image-grid-3 { grid-template-columns:1fr; }
+      }
+      </style>
+
+      <?php
+        $tallyIpValue = (string)($settings['tally_ip'] ?? '');
+        $tallyPortValue = (int)($settings['tally_port'] ?? 9000);
+        if ($tallyPortValue <= 0 || $tallyPortValue > 65535) {
+          $tallyPortValue = 9000;
+        }
+        $tallyConnected = $tallyIpValue !== '' ? tally_ping($tallyIpValue, $tallyPortValue, 1) : false;
+      ?>
+
+      <div class="tally-tab-banner">
+        <i class="bi bi-diagram-3" style="font-size:1.3rem"></i>
+        <div>
+          <strong>Tally Integration</strong>
+          <div style="font-size:.84rem">Configure Tally endpoint and test connectivity in safe mode.</div>
+        </div>
+      </div>
+
+      <div class="tally-tab-grid">
+        <div class="tally-tab-card">
+          <h4>Connection Settings</h4>
+          <p>ERP will connect to Tally using: <strong>http://{IP}:{PORT}</strong></p>
+          <form method="POST" class="tally-stack">
+            <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
+            <div class="tally-field">
+              <label for="tally_ip">Tally IP Address</label>
+              <input id="tally_ip" type="text" name="tally_ip" placeholder="e.g. 192.168.1.10" value="<?= e($tallyIpValue) ?>" required>
+            </div>
+            <div class="tally-field">
+              <label for="tally_port">Port</label>
+              <input id="tally_port" type="number" name="tally_port" min="1" max="65535" value="<?= (int)$tallyPortValue ?>" required>
+            </div>
+            <div class="tally-actions">
+              <button class="btn" type="submit" name="action" value="test_tally_connection"><i class="bi bi-wifi"></i> Test Connection</button>
+              <button class="btn btn-primary" type="submit" name="action" value="save_tally_settings"><i class="bi bi-save"></i> Save Settings</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="tally-tab-card">
+          <h4>Status</h4>
+          <div class="tally-status">
+            <div><strong>Endpoint:</strong> <?= e($tallyIpValue !== '' ? ('http://' . $tallyIpValue . ':' . $tallyPortValue) : 'Not configured') ?></div>
+            <div style="margin-top:6px"><strong>Connection:</strong> <?= $tallyConnected ? '<span style="color:#166534">Connected</span>' : '<span style="color:#b91c1c">Tally Disconnected</span>' ?></div>
+            <div style="margin-top:6px">If Tally is not reachable, ERP manual input continues safely.</div>
+          </div>
+
+          <div style="margin-top:12px;font-size:.82rem;color:#64748b">
+            Backend endpoints available in <strong>modules/tally/</strong>: fetch_invoices, fetch_po, fetch_clients.
+          </div>
+        </div>
+
+        <div class="tally-tab-card full">
+          <h4 class="tally-guide-title">Tally Setup Guide (Step-by-Step with Screenshots)</h4>
+          <p class="tally-guide-sub">Use this guide to complete Tally integration in a clear visual flow for new users.</p>
+
+          <div class="tally-guide-stack" style="margin-top:12px">
+            <section class="tally-guide-section">
+              <h5>Step A: Setup in ERP</h5>
+              <div class="tally-image-grid">
+                <div class="tally-image-card">
+                  <i class="bi bi-globe2"></i>
+                  <strong>Image 1</strong>
+                  <span>Enter IP address in ERP</span>
+                </div>
+                <div class="tally-image-card">
+                  <i class="bi bi-hdd-network"></i>
+                  <strong>Image 2</strong>
+                  <span>Enter Port 9000</span>
+                </div>
+                <div class="tally-image-card">
+                  <i class="bi bi-wifi"></i>
+                  <strong>Image 3</strong>
+                  <span>Click Test Connection button</span>
+                </div>
+                <div class="tally-image-card">
+                  <i class="bi bi-patch-check"></i>
+                  <strong>Image 4</strong>
+                  <span>Connection success message</span>
+                </div>
+              </div>
+
+              <ol class="tally-steps">
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 1</span>
+                  <p>Enter Tally IP Address (from Tally PC).</p>
+                </li>
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 2</span>
+                  <p>Enter Port = 9000.</p>
+                </li>
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 3</span>
+                  <p>Click "Test Connection".</p>
+                </li>
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 4</span>
+                  <p>If Connected -> Click Save.</p>
+                </li>
+              </ol>
+            </section>
+
+            <section class="tally-guide-section">
+              <h5>Step B: Setup in TallyPrime</h5>
+              <div class="tally-image-grid">
+                <div class="tally-image-card">
+                  <i class="bi bi-window-desktop"></i>
+                  <strong>Image 1</strong>
+                  <span>TallyPrime open with company loaded</span>
+                </div>
+                <div class="tally-image-card">
+                  <i class="bi bi-question-circle"></i>
+                  <strong>Image 2</strong>
+                  <span>F1 Help menu</span>
+                </div>
+                <div class="tally-image-card">
+                  <i class="bi bi-sliders"></i>
+                  <strong>Image 3</strong>
+                  <span>Connectivity settings screen</span>
+                </div>
+                <div class="tally-image-card">
+                  <i class="bi bi-toggle-on"></i>
+                  <strong>Image 4</strong>
+                  <span>ODBC enabled YES</span>
+                </div>
+              </div>
+
+              <ol class="tally-steps">
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 1</span>
+                  <p>Open TallyPrime.</p>
+                </li>
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 2</span>
+                  <p>Load your Company.</p>
+                </li>
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 3</span>
+                  <p>Press F1 -> Help -> Settings -> Connectivity.</p>
+                </li>
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 4</span>
+                  <p>Enable: ODBC Server = Yes, HTTP Server = Yes (if available), Port = 9000.</p>
+                </li>
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 5</span>
+                  <p>Press Ctrl + A to Save.</p>
+                </li>
+              </ol>
+            </section>
+
+            <section class="tally-guide-section">
+              <h5>Step C: Find Tally Computer IP</h5>
+              <div class="tally-image-grid tally-image-grid-3">
+                <div class="tally-image-card">
+                  <i class="bi bi-terminal"></i>
+                  <strong>Image 1</strong>
+                  <span>Open CMD</span>
+                </div>
+                <div class="tally-image-card">
+                  <i class="bi bi-code-slash"></i>
+                  <strong>Image 2</strong>
+                  <span>Type ipconfig</span>
+                </div>
+                <div class="tally-image-card">
+                  <i class="bi bi-highlighter"></i>
+                  <strong>Image 3</strong>
+                  <span>Highlight IPv4 Address</span>
+                </div>
+              </div>
+
+              <ol class="tally-steps">
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 1</span>
+                  <p>Open Command Prompt.</p>
+                </li>
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 2</span>
+                  <p>Type: <strong>ipconfig</strong>.</p>
+                </li>
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 3</span>
+                  <p>Copy IPv4 Address.</p>
+                </li>
+              </ol>
+            </section>
+
+            <section class="tally-guide-section">
+              <h5>Step D: Allow Port in Firewall</h5>
+              <div class="tally-image-grid">
+                <div class="tally-image-card">
+                  <i class="bi bi-shield-lock"></i>
+                  <strong>Image 1</strong>
+                  <span>Open Firewall Advanced Settings</span>
+                </div>
+                <div class="tally-image-card">
+                  <i class="bi bi-list-check"></i>
+                  <strong>Image 2</strong>
+                  <span>Inbound Rules</span>
+                </div>
+                <div class="tally-image-card">
+                  <i class="bi bi-magic"></i>
+                  <strong>Image 3</strong>
+                  <span>New Rule Wizard</span>
+                </div>
+                <div class="tally-image-card">
+                  <i class="bi bi-unlock"></i>
+                  <strong>Image 4</strong>
+                  <span>Port 9000 Allow</span>
+                </div>
+              </div>
+
+              <ol class="tally-steps">
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 1</span>
+                  <p>Open Windows Firewall Advanced Settings.</p>
+                </li>
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 2</span>
+                  <p>Click Inbound Rules -> New Rule.</p>
+                </li>
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 3</span>
+                  <p>Select Port -> TCP -> 9000.</p>
+                </li>
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 4</span>
+                  <p>Allow Connection.</p>
+                </li>
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 5</span>
+                  <p>Select Private network.</p>
+                </li>
+                <li class="tally-step">
+                  <span class="tally-step-badge">STEP 6</span>
+                  <p>Finish.</p>
+                </li>
+              </ol>
+            </section>
+
+            <section class="tally-guide-section">
+              <h5>Common Problems &amp; Fix</h5>
+              <ul class="tally-fix-list">
+                <li>Tally Disconnected -> Check IP.</li>
+                <li>No Response -> Check Firewall.</li>
+                <li>No Data -> Tally not open.</li>
+                <li>Stops Working -> IP changed.</li>
+              </ul>
+            </section>
+          </div>
+        </div>
+      </div>
     <?php endif; ?>
 
     <?php if ($activeTab === 'backup'): ?>
