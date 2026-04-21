@@ -260,6 +260,28 @@
   color: #0f766e;
 }
 
+.fg-stock-module .fg-qty-pill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 800;
+  line-height: 1.2;
+  border: 1px solid transparent;
+}
+
+.fg-stock-module .fg-qty-pill-total {
+  background: #fff7ed;
+  color: #c2410c;
+  border-color: #fdba74;
+}
+
+.fg-stock-module .fg-qty-pill-available {
+  background: #ecfdf3;
+  color: #166534;
+  border-color: #86efac;
+}
+
 .fg-stock-module .fg-item-meta {
   display: grid;
   gap: 4px;
@@ -453,6 +475,7 @@
   font-weight: 400;
   color: #1f2937;
   vertical-align: top;
+  text-align: center;
   background: #fff;
 }
 
@@ -460,19 +483,45 @@
   position: sticky;
   top: 0;
   z-index: 3;
-  background: #f1f5f9;
+  background: #dbeafe;
   color: #334155;
-  font-weight: 500;
+  font-weight: 700;
+}
+
+.fg-stock-module .fg-table tbody tr:nth-child(odd) td {
+  background: #f8fbff;
+}
+
+.fg-stock-module .fg-table tbody tr:nth-child(even) td {
+  background: #eaf2ff;
 }
 
 .fg-stock-module .fg-table tbody tr:hover td {
-  background: #f7fbff;
+  background: #dbeafe;
+}
+
+.fg-stock-module .fg-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 116px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.fg-stock-module .fg-status-pill-green {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #166534;
 }
 
 .fg-stock-module .fg-th-wrap {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 6px;
 }
 
@@ -614,6 +663,16 @@
   gap: 6px;
 }
 
+.fg-stock-module .fg-view-btn {
+  color: #2563eb;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.fg-stock-module .fg-view-btn:hover {
+  background: #dbeafe;
+}
+
 .fg-stock-module .fg-dispatch-btn {
   padding: 6px 10px;
   font-size: .74rem;
@@ -700,6 +759,10 @@
 
 .fg-stock-module .fg-import-card {
   width: min(1080px, 96vw);
+}
+
+.fg-stock-module .fg-view-modal-card {
+  width: min(1100px, 96vw);
 }
 
 .fg-stock-module .fg-modal-head {
@@ -796,6 +859,51 @@
   justify-content: flex-end;
   gap: 8px;
   margin-top: 12px;
+}
+
+.fg-stock-module .fg-view-sec {
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: #f8fbff;
+}
+
+.fg-stock-module .fg-view-sec h4 {
+  margin: 0 0 10px;
+  color: #1e3a8a;
+  font-size: .86rem;
+  font-weight: 700;
+}
+
+.fg-stock-module .fg-view-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 8px;
+}
+
+.fg-stock-module .fg-view-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fg-stock-module .fg-view-item b {
+  font-size: .7rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #64748b;
+}
+
+.fg-stock-module .fg-view-item span {
+  font-size: .8rem;
+  color: #0f172a;
+  font-weight: 600;
+  word-break: break-word;
 }
 
 .fg-stock-module .fg-import-top {

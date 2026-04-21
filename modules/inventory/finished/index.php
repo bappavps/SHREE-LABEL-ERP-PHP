@@ -179,6 +179,16 @@ include __DIR__ . '/../../../includes/header.php';
     </div>
   </div>
 
+  <div class="modal-overlay fg-modal" id="fgViewModal" style="display:none" aria-hidden="true">
+    <div class="modal-card fg-modal-card fg-view-modal-card">
+      <div class="modal-head fg-modal-head">
+        <h3 id="fgViewModalTitle">View Details</h3>
+        <button type="button" class="fg-act-btn" data-fg-action="close-view-modal"><i class="bi bi-x"></i> Close</button>
+      </div>
+      <div class="modal-body-pad fg-modal-body" id="fgViewModalBody"></div>
+    </div>
+  </div>
+
   <div class="modal-overlay fg-modal" id="fgImportModal" style="display:none" aria-hidden="true">
     <div class="modal-card fg-modal-card fg-import-card">
       <div class="modal-head fg-modal-head">

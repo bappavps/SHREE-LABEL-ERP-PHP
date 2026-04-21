@@ -173,11 +173,21 @@ function packing_api_build_job_barcode(array $jobDetails): string {
     return '';
 }
 
-function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array $operatorEntry, int $userId, string $packingTabKey = 'pos_roll'): void {
+function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array $operatorEntry, int $userId, string $packingTabKey = 'pos_roll', bool $throwOnError = false): void {
     packing_api_ensure_finished_goods_table($db);
 
-    $category = $packingTabKey === 'one_ply' ? 'one_ply' : ($packingTabKey === 'two_ply' ? 'two_ply' : 'pos_paper_roll');
-    $subTypeDerived = $packingTabKey === 'one_ply' ? '1 Ply' : ($packingTabKey === 'two_ply' ? '2 Ply' : 'POS Roll');
+    $category = 'pos_paper_roll';
+    $subTypeDerived = 'POS Roll';
+    if ($packingTabKey === 'one_ply') {
+        $category = 'one_ply';
+        $subTypeDerived = '1 Ply';
+    } elseif ($packingTabKey === 'two_ply') {
+        $category = 'two_ply';
+        $subTypeDerived = '2 Ply';
+    } elseif ($packingTabKey === 'barcode') {
+        $category = 'barcode';
+        $subTypeDerived = 'Barcode';
+    }
 
     $packingId = trim((string)($jobDetails['packing_display_id'] ?? ''));
     $jobNo = trim((string)($jobDetails['job_no'] ?? ''));
@@ -227,13 +237,46 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
     $cartonCount = (int)round((float)($operatorEntry['cartons_count'] ?? 0));
     $totalValue = $quantity;
 
+    if ($packingTabKey === 'barcode') {
+        $barcodeSizeRaw = trim((string)($planExtra['barcode_size'] ?? ($planExtra['planning_die_size'] ?? ($planExtra['die_size'] ?? ($planExtra['size'] ?? '')))));
+        if ($barcodeSizeRaw !== '') {
+            $size = $barcodeSizeRaw;
+            if (preg_match('/([0-9]+(?:\.[0-9]+)?)\s*mm?\s*[xX×]\s*([0-9]+(?:\.[0-9]+)?)/i', $barcodeSizeRaw, $m)) {
+                $a = (float)$m[1];
+                $b = (float)$m[2];
+                if ($a > 0 && $b > 0) {
+                    $maxDim = max($a, $b);
+                    $minDim = min($a, $b);
+                    $width = rtrim(rtrim(number_format($maxDim, 3, '.', ''), '0'), '.') . ' mm';
+                    $length = rtrim(rtrim(number_format($minDim, 3, '.', ''), '0'), '.') . ' mm';
+                }
+            }
+        }
+
+        $barcodePerRoll = (int)round((float)($firstOverride['bpr'] ?? ($planExtra['barcode_in_1_roll'] ?? 0)));
+        $barcodeTotalRolls = (int)round((float)($firstOverride['total_rolls'] ?? 0));
+        $rollsPerCartoon = (int)round((float)($firstOverride['rolls_per_carton'] ?? 0));
+
+        if ($barcodePerRoll > 0 && $barcodeTotalRolls > 0) {
+            $quantity = round((float)($barcodePerRoll * $barcodeTotalRolls), 3);
+            $totalValue = $quantity;
+        }
+
+        $perCarton = $rollsPerCartoon > 0 ? $rollsPerCartoon : $perCarton;
+    }
+
     if ($packingId === '' || $jobNo === '' || $quantity <= 0) {
-        packing_api_respond(['ok' => false, 'message' => 'Finished goods requires packing id, job no, and submitted physical quantity'], 409);
+        $msg = 'Finished goods requires packing id, job no, and submitted physical quantity';
+        if ($throwOnError) {
+            throw new RuntimeException($msg);
+        }
+        packing_api_respond(['ok' => false, 'message' => $msg], 409);
     }
 
     $remarksPayload = [
         'note' => 'Auto Generated',
         'extra' => [
+            'status' => 'Ready to Dispatch',
             'packing_id' => $packingId,
             'width' => $width,
             'length' => $length,
@@ -247,6 +290,25 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
             'total' => $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '',
         ],
     ];
+
+    if ($packingTabKey === 'barcode') {
+        $barcodePerRoll = (int)round((float)($firstOverride['bpr'] ?? ($planExtra['barcode_in_1_roll'] ?? 0)));
+        $barcodeTotalRolls = (int)round((float)($firstOverride['total_rolls'] ?? 0));
+        $rollsPerCartoon = (int)round((float)($firstOverride['rolls_per_carton'] ?? 0));
+        $labelGap = trim((string)($planExtra['label_gap'] ?? ''));
+        $dieType = trim((string)($planExtra['die_type'] ?? ''));
+        $ups = trim((string)($planExtra['up_in_production'] ?? ($planExtra['ups'] ?? '')));
+
+        $remarksPayload['extra']['planning_id'] = '';
+        $remarksPayload['extra']['pcs_per_roll'] = $barcodePerRoll > 0 ? $barcodePerRoll : '';
+        $remarksPayload['extra']['total_roll'] = $barcodeTotalRolls > 0 ? $barcodeTotalRolls : '';
+        $remarksPayload['extra']['roll_per_cartoon'] = $rollsPerCartoon > 0 ? $rollsPerCartoon : '';
+        $remarksPayload['extra']['label_gap'] = $labelGap;
+        $remarksPayload['extra']['die_type'] = $dieType;
+        $remarksPayload['extra']['ups'] = $ups;
+        $remarksPayload['extra']['total_quantity'] = $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '';
+        $remarksPayload['extra']['available_for_dispatch'] = $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '';
+    }
     $remarks = json_encode($remarksPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if ($remarks === false) {
         $remarks = '';
@@ -254,7 +316,11 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
 
     $existingStmt = $db->prepare("SELECT id FROM finished_goods_stock WHERE category = '{$category}' AND item_code = ? AND batch_no = ? ORDER BY id DESC LIMIT 1");
     if (!$existingStmt) {
-        packing_api_respond(['ok' => false, 'message' => 'Finished goods lookup prepare failed'], 500);
+        $msg = 'Finished goods lookup prepare failed';
+        if ($throwOnError) {
+            throw new RuntimeException($msg);
+        }
+        packing_api_respond(['ok' => false, 'message' => $msg], 500);
     }
     $existingStmt->bind_param('ss', $packingId, $jobNo);
     $existingStmt->execute();
@@ -265,14 +331,22 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $stockId = (int)($existingRow['id'] ?? 0);
         $updateStmt = $db->prepare("UPDATE finished_goods_stock SET sub_type = ?, item_name = ?, size = ?, gsm = ?, quantity = ?, unit = 'PCS', location = 'Packing', date = ?, remarks = ? WHERE id = ? LIMIT 1");
         if (!$updateStmt) {
-            packing_api_respond(['ok' => false, 'message' => 'Finished goods update prepare failed'], 500);
+            $msg = 'Finished goods update prepare failed';
+            if ($throwOnError) {
+                throw new RuntimeException($msg);
+            }
+            packing_api_respond(['ok' => false, 'message' => $msg], 500);
         }
         $subType = $subTypeDerived;
         $updateStmt->bind_param('ssssdssi', $subType, $itemName, $size, $gsm, $quantity, $dateValue, $remarks, $stockId);
         if (!$updateStmt->execute()) {
             $err = (string)$updateStmt->error;
             $updateStmt->close();
-            packing_api_respond(['ok' => false, 'message' => 'Finished goods update failed: ' . $err], 500);
+            $msg = 'Finished goods update failed: ' . $err;
+            if ($throwOnError) {
+                throw new RuntimeException($msg);
+            }
+            packing_api_respond(['ok' => false, 'message' => $msg], 500);
         }
         $updateStmt->close();
         return;
@@ -280,14 +354,22 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
 
     $insertStmt = $db->prepare("INSERT INTO finished_goods_stock (category, sub_type, item_name, item_code, size, gsm, quantity, unit, location, batch_no, date, remarks, created_by) VALUES ('{$category}', ?, ?, ?, ?, ?, ?, 'PCS', 'Packing', ?, ?, ?, ?)");
     if (!$insertStmt) {
-        packing_api_respond(['ok' => false, 'message' => 'Finished goods insert prepare failed'], 500);
+        $msg = 'Finished goods insert prepare failed';
+        if ($throwOnError) {
+            throw new RuntimeException($msg);
+        }
+        packing_api_respond(['ok' => false, 'message' => $msg], 500);
     }
     $subType = $subTypeDerived;
     $insertStmt->bind_param('sssssdsssi', $subType, $itemName, $packingId, $size, $gsm, $quantity, $jobNo, $dateValue, $remarks, $userId);
     if (!$insertStmt->execute()) {
         $err = (string)$insertStmt->error;
         $insertStmt->close();
-        packing_api_respond(['ok' => false, 'message' => 'Finished goods insert failed: ' . $err], 500);
+        $msg = 'Finished goods insert failed: ' . $err;
+        if ($throwOnError) {
+            throw new RuntimeException($msg);
+        }
+        packing_api_respond(['ok' => false, 'message' => $msg], 500);
     }
     $insertStmt->close();
 }
@@ -407,6 +489,12 @@ try {
         if ($currentStatus === 'dispatched') {
             packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Dispatched']);
         }
+        if ($currentStatus === 'finished production') {
+            packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Finished Production']);
+        }
+        if ($currentStatus === 'finished barcode') {
+            packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Finished Barcode']);
+        }
         if (in_array($currentStatus, ['packed', 'packing done'], true)) {
             packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Packed']);
         }
@@ -512,6 +600,23 @@ try {
             packing_api_respond(['ok' => false, 'message' => 'Job not found'], 404);
         }
 
+        $jobDetails = packing_fetch_job_details($db, $jobId);
+        if (!$jobDetails) {
+            packing_api_respond(['ok' => false, 'message' => 'Job not found'], 404);
+        }
+
+        $tabKey = packing_row_to_tab([
+            'job_no' => (string)($jobDetails['job_no'] ?? ''),
+            'department' => (string)($jobDetails['department'] ?? ''),
+            'plan_department' => (string)($jobDetails['plan_extra_data']['department'] ?? ''),
+            'job_type' => (string)($jobDetails['job_type'] ?? ''),
+            'extra_data' => $jobDetails['job_extra_data'] ?? [],
+            'plan_extra_data' => $jobDetails['plan_extra_data'] ?? [],
+        ]);
+        if ($tabKey === 'barcode') {
+            packing_api_respond(['ok' => false, 'message' => 'Barcode packing uses Finished Barcode instead of Dispatched'], 409);
+        }
+
         $currentStatus = strtolower(trim(str_replace(['-', '_'], ' ', packing_effective_status_from_row($statusRow))));
         if ($currentStatus === 'dispatched') {
             packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Dispatched']);
@@ -540,6 +645,109 @@ try {
         packing_api_create_notifications($db, $jobId, $dispatchJobNo, 'marked as Dispatched.', 'success', $advanceTargets);
 
         packing_api_respond(['ok' => true, 'already_done' => false, 'status' => 'Dispatched']);
+    }
+
+    if ($action === 'mark_finished_barcode') {
+        if ($method !== 'POST') {
+            packing_api_respond(['ok' => false, 'message' => 'Method not allowed'], 405);
+        }
+        if (!packing_api_can_finalize()) {
+            packing_api_respond(['ok' => false, 'message' => 'Only manager/admin can finish barcode packing'], 403);
+        }
+
+        $jobId = (int)($_POST['job_id'] ?? 0);
+        if ($jobId <= 0) {
+            packing_api_respond(['ok' => false, 'message' => 'Invalid job id'], 400);
+        }
+
+        $jobDetails = packing_fetch_job_details($db, $jobId);
+        if (!$jobDetails) {
+            packing_api_respond(['ok' => false, 'message' => 'Job not found'], 404);
+        }
+
+        $tabKey = packing_row_to_tab([
+            'job_no' => (string)($jobDetails['job_no'] ?? ''),
+            'department' => (string)($jobDetails['department'] ?? ''),
+            'plan_department' => (string)($jobDetails['plan_extra_data']['department'] ?? ''),
+            'job_type' => (string)($jobDetails['job_type'] ?? ''),
+            'extra_data' => $jobDetails['job_extra_data'] ?? [],
+            'plan_extra_data' => $jobDetails['plan_extra_data'] ?? [],
+        ]);
+        if ($tabKey !== 'barcode') {
+            packing_api_respond(['ok' => false, 'message' => 'Finished Barcode is available only for Barcode packing'], 409);
+        }
+
+        $currentStatus = strtolower(trim(str_replace(['-', '_'], ' ', packing_effective_status_from_row([
+            'status' => (string)($jobDetails['status'] ?? ''),
+            'extra_data' => $jobDetails['job_extra_data'] ?? [],
+        ]))));
+        if ($currentStatus === 'finished barcode') {
+            packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Finished Barcode']);
+        }
+        if (!in_array($currentStatus, ['packed', 'packing done'], true)) {
+            packing_api_respond(['ok' => false, 'message' => 'Job must be Packed before Finished Barcode'], 409);
+        }
+
+        $jobNo = trim((string)($jobDetails['job_no'] ?? ''));
+        $opEntry = $jobNo !== '' ? packing_fetch_operator_entry($db, $jobNo) : null;
+        if (!$opEntry) {
+            packing_api_respond(['ok' => false, 'message' => 'Operator submitted physical production is required'], 409);
+        }
+        $isSubmitted = packing_operator_entry_is_submitted($opEntry);
+        if (!$isSubmitted) {
+            packing_api_respond(['ok' => false, 'message' => 'Operator submitted physical production is required'], 409);
+        }
+
+        $db->begin_transaction();
+        try {
+            packing_api_upsert_finished_goods($db, $jobDetails, $opEntry, $userId, $tabKey);
+
+            $stmt = $db->prepare("UPDATE jobs SET status = 'Finished Barcode', completed_at = COALESCE(completed_at, NOW()), updated_at = NOW() WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+            if (!$stmt) {
+                throw new RuntimeException('Finished Barcode update prepare failed');
+            }
+            $stmt->bind_param('i', $jobId);
+            if (!$stmt->execute()) {
+                $err = (string)$stmt->error;
+                $stmt->close();
+                throw new RuntimeException('Finished Barcode update failed: ' . $err);
+            }
+            $stmt->close();
+
+            $extraSel = $db->prepare("SELECT extra_data FROM jobs WHERE id = ? LIMIT 1");
+            if ($extraSel) {
+                $extraSel->bind_param('i', $jobId);
+                $extraSel->execute();
+                $extraRow = $extraSel->get_result()->fetch_assoc();
+                $extraSel->close();
+
+                $extra = packing_decode_json($extraRow['extra_data'] ?? null);
+                $extra['finished_barcode_flag'] = 1;
+                $extra['finished_barcode_at'] = date('Y-m-d H:i:s');
+                $extraJson = json_encode($extra, JSON_UNESCAPED_UNICODE);
+                if ($extraJson !== false) {
+                    $extraUpd = $db->prepare("UPDATE jobs SET extra_data = ? WHERE id = ? LIMIT 1");
+                    if ($extraUpd) {
+                        $extraUpd->bind_param('si', $extraJson, $jobId);
+                        $extraUpd->execute();
+                        $extraUpd->close();
+                    }
+                }
+            }
+
+            $db->commit();
+        } catch (Throwable $e) {
+            $db->rollback();
+            packing_api_respond(['ok' => false, 'message' => $e->getMessage()], 500);
+        }
+
+        $advanceTargets = function_exists('jobsAdvanceNotificationTargets')
+            ? jobsAdvanceNotificationTargets('packing', [])
+            : [];
+        $finishedBarcodeJobNo = trim((string)($jobDetails['job_no'] ?? ''));
+        packing_api_create_notifications($db, $jobId, $finishedBarcodeJobNo, 'marked as Finished Barcode.', 'success', $advanceTargets);
+
+        packing_api_respond(['ok' => true, 'already_done' => false, 'status' => 'Finished Barcode']);
     }
 
     if ($action === 'mark_finished_production') {
@@ -643,6 +851,113 @@ try {
         }
 
         packing_api_respond(['ok' => true, 'already_done' => false, 'status' => 'Finished Production']);
+    }
+
+    if ($action === 'backfill_finished_barcode_stock') {
+        if ($method !== 'POST') {
+            packing_api_respond(['ok' => false, 'message' => 'Method not allowed'], 405);
+        }
+        if (!packing_api_can_finalize()) {
+            packing_api_respond(['ok' => false, 'message' => 'Only manager/admin can run backfill'], 403);
+        }
+
+        $limit = (int)($_POST['limit'] ?? 500);
+        if ($limit <= 0) {
+            $limit = 500;
+        }
+        if ($limit > 5000) {
+            $limit = 5000;
+        }
+
+        $sql = "SELECT id, status, extra_data FROM jobs
+                WHERE (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
+                ORDER BY id DESC
+                LIMIT ?";
+        $stmt = $db->prepare($sql);
+        if (!$stmt) {
+            packing_api_respond(['ok' => false, 'message' => 'Backfill query prepare failed'], 500);
+        }
+        $stmt->bind_param('i', $limit);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+
+        $scanned = 0;
+        $matchedBarcode = 0;
+        $upserted = 0;
+        $skippedNoOperator = 0;
+        $failed = 0;
+        $errors = [];
+
+        foreach ($rows as $row) {
+            $scanned++;
+            $jobId = (int)($row['id'] ?? 0);
+            if ($jobId <= 0) {
+                continue;
+            }
+
+            $rawStatus = strtolower(trim(str_replace(['-', '_'], ' ', (string)($row['status'] ?? ''))));
+            $extra = packing_decode_json($row['extra_data'] ?? null);
+            $hasFinishedBarcodeFlag = (int)($extra['finished_barcode_flag'] ?? 0) === 1
+                || trim((string)($extra['finished_barcode_at'] ?? '')) !== '';
+            $isFinishedBarcode = $rawStatus === 'finished barcode' || $hasFinishedBarcodeFlag;
+            if (!$isFinishedBarcode) {
+                continue;
+            }
+
+            $jobDetails = packing_fetch_job_details($db, $jobId);
+            if (!$jobDetails) {
+                continue;
+            }
+
+            $tabKey = packing_row_to_tab([
+                'job_no' => (string)($jobDetails['job_no'] ?? ''),
+                'department' => (string)($jobDetails['department'] ?? ''),
+                'plan_department' => (string)($jobDetails['plan_extra_data']['department'] ?? ''),
+                'job_type' => (string)($jobDetails['job_type'] ?? ''),
+                'extra_data' => $jobDetails['job_extra_data'] ?? [],
+                'plan_extra_data' => $jobDetails['plan_extra_data'] ?? [],
+            ]);
+            if ($tabKey !== 'barcode') {
+                continue;
+            }
+
+            $matchedBarcode++;
+
+            $jobNo = trim((string)($jobDetails['job_no'] ?? ''));
+            $opEntry = $jobNo !== '' ? packing_fetch_operator_entry($db, $jobNo) : null;
+            if (!$opEntry || !packing_operator_entry_is_submitted($opEntry)) {
+                $skippedNoOperator++;
+                continue;
+            }
+
+            try {
+                packing_api_upsert_finished_goods($db, $jobDetails, $opEntry, $userId, 'barcode', true);
+                $upserted++;
+            } catch (Throwable $e) {
+                $failed++;
+                if (count($errors) < 25) {
+                    $errors[] = [
+                        'job_id' => $jobId,
+                        'job_no' => (string)($jobDetails['job_no'] ?? ''),
+                        'message' => $e->getMessage(),
+                    ];
+                }
+            }
+        }
+
+        packing_api_respond([
+            'ok' => true,
+            'message' => 'Finished Barcode backfill completed',
+            'result' => [
+                'scanned' => $scanned,
+                'matched_barcode_finished' => $matchedBarcode,
+                'upserted' => $upserted,
+                'skipped_no_operator_submission' => $skippedNoOperator,
+                'failed' => $failed,
+                'sample_errors' => $errors,
+            ],
+        ]);
     }
 
     if ($action === 'operator_submit') {

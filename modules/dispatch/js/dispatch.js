@@ -19,7 +19,8 @@
       { key: 'pos', label: 'POS', color: '#2563eb' },
       { key: 'paperroll', label: 'PaperRoll', color: '#0f766e' },
       { key: 'one_ply', label: '1 Ply', color: '#166534' },
-      { key: 'two_ply', label: '2 Ply', color: '#16a34a' }
+      { key: 'two_ply', label: '2 Ply', color: '#16a34a' },
+      { key: 'barcode', label: 'Barcode', color: '#7c3aed' }
     ],
     itemWiseByCategory: {},
     report: {
@@ -181,6 +182,21 @@
     alert(String(msg || ''));
   }
 
+  function showConfirm(msg, onOk) {
+    var text = String(msg || '');
+    if (typeof window.showERPConfirm === 'function') {
+      window.showERPConfirm(text, onOk, { title: 'Please Confirm', okLabel: 'Confirm', cancelLabel: 'Cancel' });
+      return;
+    }
+    if (typeof window.erpCenterMessage === 'function') {
+      window.erpCenterMessage(text, { title: 'Please Confirm', actionLabel: 'Confirm', action: onOk });
+      return;
+    }
+    if (confirm(text) && typeof onOk === 'function') {
+      onOk();
+    }
+  }
+
   function esc(v) {
     return String(v == null ? '' : v)
       .replace(/&/g, '&amp;')
@@ -235,7 +251,7 @@
     if (normalized === 'packing done' || normalized === 'packed' || normalized === 'packing') {
       return 'Packing: packing is complete and ready for dispatch handoff.';
     }
-    return 'Production: dispatch entry is created but not yet moved to transit.';
+    return 'Ready to Dispatch: dispatch entry is created and waiting to move in transit.';
   }
 
   function statusRank(status) {
@@ -592,7 +608,7 @@
 
   function statusPill(status) {
     var normalized = String(status || '').toLowerCase();
-    var label = 'Production';
+    var label = 'Ready to Dispatch';
     var cls = 'ds-status-pending';
     if (statusRank(normalized) >= 3 && normalized !== 'delivered') {
       label = 'Dispatched';
@@ -2089,21 +2105,20 @@
       var currentStatus = String(row.delivery_status || 'Pending');
       var nextStatus = currentStatus === 'Pending' ? 'In Transit' : currentStatus === 'In Transit' ? 'Delivered' : 'Pending';
       var confirmMsg = 'Change dispatch status from "' + currentStatus + '" to "' + nextStatus + '"?';
-      if (!confirm(confirmMsg)) {
-        return;
-      }
-      setLoading(true);
-      api('update_dispatch_status', { id: row.id, status: nextStatus }, 'POST').then(function (res) {
-        if (!res || !res.ok) {
-          throw new Error((res && res.error) || 'Unable to update dispatch status.');
-        }
-        showMessage('Status updated to: ' + nextStatus, 'success');
-        loadTable();
-        loadDashboardStats();
-      }).catch(function (err) {
-        showMessage(err.message || 'Unable to update dispatch status.', 'error');
-      }).finally(function () {
-        setLoading(false);
+      showConfirm(confirmMsg, function () {
+        setLoading(true);
+        api('update_dispatch_status', { id: row.id, status: nextStatus }, 'POST').then(function (res) {
+          if (!res || !res.ok) {
+            throw new Error((res && res.error) || 'Unable to update dispatch status.');
+          }
+          showMessage('Status updated to: ' + nextStatus, 'success');
+          loadTable();
+          loadDashboardStats();
+        }).catch(function (err) {
+          showMessage(err.message || 'Unable to update dispatch status.', 'error');
+        }).finally(function () {
+          setLoading(false);
+        });
       });
       return;
     }
@@ -2169,21 +2184,20 @@
     }
 
     if (action === 'delete') {
-      if (!confirm('Delete dispatch entry ' + (row.dispatch_id || '') + '? This will rollback stock and remove this record.')) {
-        return;
-      }
-      setLoading(true);
-      api('delete_dispatch', { id: row.id }, 'POST').then(function (res) {
-        if (!res || !res.ok) {
-          throw new Error((res && res.error) || 'Unable to delete dispatch entry.');
-        }
-        showMessage(res.message || 'Dispatch entry deleted successfully.', 'success');
-        loadTable();
-        loadDashboardStats();
-      }).catch(function (err) {
-        showMessage(err.message || 'Unable to delete dispatch entry.', 'error');
-      }).finally(function () {
-        setLoading(false);
+      showConfirm('Delete dispatch entry ' + (row.dispatch_id || '') + '? This will rollback stock and remove this record.', function () {
+        setLoading(true);
+        api('delete_dispatch', { id: row.id }, 'POST').then(function (res) {
+          if (!res || !res.ok) {
+            throw new Error((res && res.error) || 'Unable to delete dispatch entry.');
+          }
+          showMessage(res.message || 'Dispatch entry deleted successfully.', 'success');
+          loadTable();
+          loadDashboardStats();
+        }).catch(function (err) {
+          showMessage(err.message || 'Unable to delete dispatch entry.', 'error');
+        }).finally(function () {
+          setLoading(false);
+        });
       });
       return;
     }

@@ -74,6 +74,30 @@ if (strpos($currentPath, '/modules/operators/packing/') === 0 || strpos($current
 if (strpos($currentPath, '/modules/planning/') === 0) {
   $notificationDepartments[] = 'planning';
 }
+if (strpos($currentPath, '/modules/planning/barcode/') === 0) {
+  $notificationDepartments[] = 'barcode';
+  $notificationDepartments[] = 'rotery';
+}
+if (
+  strpos($currentPath, '/modules/live/') === 0 ||
+  strpos($currentPath, '/modules/production-manager/') === 0
+) {
+  $notificationDepartments = array_merge($notificationDepartments, [
+    'planning',
+    'jumbo_slitting',
+    'flexo_printing',
+    'flatbed',
+    'rotery',
+    'barcode',
+    'label_slitting',
+    'packing',
+    'dispatch',
+    'paperroll',
+    'pos',
+    'oneply',
+    'twoply',
+  ]);
+}
 if ($currentUserId > 0) {
   $canRequisitionUser = !function_exists('canAccessPath') || canAccessPath('/modules/requisition-management/index.php');
   if ($canRequisitionUser) {

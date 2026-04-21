@@ -61,7 +61,7 @@ function pm_bucket_status(array $row): string {
     $boardStatus = strtolower(pm_text($row['board_status']));
     $planningStatus = strtolower(pm_text($row['planning_status']));
 
-    if (in_array($jobStatus, ['packed', 'packing done'], true)) return 'Packed';
+    if (in_array($jobStatus, ['ready to dispatch', 'ready to dispatched', 'ready to dispathce', 'packed', 'packing done', 'finished barcode', 'finished production'], true)) return 'Packed';
 
     $haystack = $jobStatus . ' ' . $boardStatus . ' ' . $planningStatus;
     if (strpos($haystack, 'running') !== false || strpos($haystack, 'in progress') !== false) return 'Running';
@@ -83,10 +83,13 @@ function pm_bucket_status(array $row): string {
 
   function pm_display_status($status): string {
     $norm = strtolower(trim(str_replace(['-', '_'], ' ', pm_text($status))));
+    if (in_array($norm, ['ready to dispatch', 'ready to dispatched', 'ready to dispathce', 'packing done', 'packed', 'finished barcode', 'finished production'], true)) {
+      return 'Ready to Dispatch';
+    }
     if (in_array($norm, ['pending', 'queued', 'running', 'in progress', 'preparing'], true)) {
       return 'Production';
     }
-    if (in_array($norm, ['packing done', 'packed', 'packing'], true)) {
+    if ($norm === 'packing') {
       return 'Packing';
     }
     if (in_array($norm, ['finished production', 'dispatched', 'in transit'], true)) {
@@ -121,11 +124,11 @@ function pm_bucket_status(array $row): string {
     if ($finishedFlag || in_array($norm, ['finished production', 'dispatched', 'dispatch', 'shipped'], true)) {
       return [
         'priority' => 5,
-        'status' => ($norm === 'dispatched' || $norm === 'dispatch' || $norm === 'shipped') ? 'Dispatched' : 'Finished Production',
+        'status' => ($norm === 'dispatched' || $norm === 'dispatch' || $norm === 'shipped') ? 'Dispatched' : 'Ready to Dispatch',
       ];
     }
     if ($packedFlag || in_array($norm, ['packed', 'packing done'], true)) {
-      return ['priority' => 4, 'status' => 'Packed'];
+      return ['priority' => 4, 'status' => 'Ready to Dispatch'];
     }
     if (in_array($norm, ['completed', 'complete', 'closed', 'finalized', 'qc passed', 'qc failed'], true)) {
       return ['priority' => 3, 'status' => 'Completed'];
@@ -153,6 +156,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && pm_text($_POST['action'] ?? '') ===
 $q = pm_text($_GET['q'] ?? '');
 $statusFilter = pm_text($_GET['status'] ?? '');
 $stageFilter = pm_text($_GET['stage'] ?? '');
+if (in_array(strtolower($statusFilter), ['ready to dispatch', 'ready to dispatched', 'ready to dispathce'], true)) {
+  $statusFilter = 'Packed';
+}
 
 $where = [];
 $types = '';
@@ -556,7 +562,7 @@ body{background:#f1f5f9}
     <select name="status">
       <option value="">All Status</option>
       <?php foreach (['Pending','Running','On Hold','Packed','Completed'] as $opt): ?>
-        <option value="<?= e($opt) ?>" <?= strcasecmp($statusFilter, $opt) === 0 ? 'selected' : '' ?>><?= e($opt) ?></option>
+        <option value="<?= e($opt) ?>" <?= strcasecmp($statusFilter, $opt) === 0 ? 'selected' : '' ?>><?= e($opt === 'Packed' ? 'Ready to Dispatch' : $opt) ?></option>
       <?php endforeach; ?>
     </select>
     <input type="text" name="stage" value="<?= e($stageFilter) ?>" placeholder="Filter stage (e.g. Barcode)">
@@ -585,7 +591,6 @@ body{background:#f1f5f9}
             <th>Details</th>
             <th></th>
           </tr>
-        </thead>
         <tbody>
         <?php if (empty($filtered)): ?>
           <tr><td colspan="15" class="pm-muted">No data found for selected filters.</td></tr>
@@ -636,9 +641,9 @@ body{background:#f1f5f9}
               <td><?= e(pm_text($row['job_name']) !== '' ? $row['job_name'] : '-') ?></td>
               <td><?= e(pm_text($row['priority']) !== '' ? $row['priority'] : 'Normal') ?></td>
               <td>
-                <span class="pm-badge <?= e($bucketClass) ?>"><?= e($bucket) ?></span>
+                <span class="pm-badge <?= e($bucketClass) ?>"><?= e(pm_display_status($bucket)) ?></span>
                 <?php if (pm_text($row['board_status']) !== ''): ?>
-                  <div class="pm-muted">Board: <?= e($row['board_status']) ?></div>
+                  <div class="pm-muted">Board: <?= e(pm_display_status($row['board_status'])) ?></div>
                 <?php endif; ?>
               </td>
               <td><strong><?= e($row['current_department_label']) ?></strong></td>

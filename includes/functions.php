@@ -1398,6 +1398,10 @@ function planningNotificationTargets($planningDepartment = '') {
 
     if (in_array($department, ['printing', 'flexo_printing', 'flexo-printing'], true)) {
         $targets[] = 'flexo_printing';
+    } elseif (in_array($department, ['barcode'], true)) {
+        $targets[] = 'barcode';
+    } elseif (in_array($department, ['rotery', 'rotary'], true)) {
+        $targets[] = 'rotery';
     } elseif (in_array($department, ['slitting', 'jumbo_slitting', 'jumbo-slitting'], true)) {
         $targets[] = 'jumbo_slitting';
     } elseif (in_array($department, ['paperroll', 'paper-roll', 'paper_roll', 'pos', 'pos_roll', 'pos-roll'], true)) {

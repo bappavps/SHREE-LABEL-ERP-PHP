@@ -290,9 +290,9 @@ include __DIR__ . '/../../includes/header.php';
         </div>
         <div class="ds-field-inline">
           <label>Status</label>
-          <select id="dsFilterStatus" title="Production = pending before transit, Dispatched = in transit, Delivered = client received">
+          <select id="dsFilterStatus" title="Ready to Dispatch = pending before transit, Dispatched = in transit, Delivered = client received">
             <option value="">All</option>
-            <option value="Pending">Production</option>
+            <option value="Pending">Ready to Dispatch</option>
             <option value="In Transit">Dispatched</option>
             <option value="Delivered">Delivered</option>
           </select>

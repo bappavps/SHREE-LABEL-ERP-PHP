@@ -79,6 +79,9 @@
     entryForm: document.getElementById('fgEntryForm'),
     entryFormGrid: document.getElementById('fgEntryFormGrid'),
     entrySubmitBtn: document.getElementById('fgEntrySubmitBtn'),
+    viewModal: document.getElementById('fgViewModal'),
+    viewModalTitle: document.getElementById('fgViewModalTitle'),
+    viewModalBody: document.getElementById('fgViewModalBody'),
     importModal: document.getElementById('fgImportModal'),
     importFile: document.getElementById('fgImportFile'),
     importMapping: document.getElementById('fgImportMapping'),
@@ -402,15 +405,25 @@
 
     if (tabKey === 'barcode') {
       return [
-        { key: 'barcode_type', label: 'Barcode Type' },
-        { key: 'size', label: 'Size' },
-        { key: 'material', label: 'Material' },
-        { key: 'quantity', label: 'Quantity', numeric: true },
-        { key: 'unit', label: 'Unit' },
-        { key: 'location', label: 'Location' },
-        { key: 'batch_no', label: 'Batch' },
-        { key: 'date', label: 'Date' },
-        { key: 'remarks', label: 'Remarks' }
+        { key: 'sl_no', label: 'SL.NO', numeric: true },
+        { key: 'planning_id', label: 'Planning ID' },
+        { key: 'production_date', label: 'Production Date' },
+        { key: 'status', label: 'Status' },
+        { key: 'item_name', label: 'Item Name' },
+        { key: 'pcs_per_roll', label: 'PCS PER ROLL', numeric: true },
+        { key: 'total_roll', label: 'Total Roll', numeric: true },
+        { key: 'size', label: 'SIZE' },
+        { key: 'width', label: 'Width' },
+        { key: 'length', label: 'Length' },
+        { key: 'ups', label: 'UPS' },
+        { key: 'paper_company', label: 'Paper COMPANY' },
+        { key: 'label_gap', label: 'Label Gap' },
+        { key: 'die_type', label: 'Die Type' },
+        { key: 'carton', label: 'CARTON', numeric: true },
+        { key: 'batch_no', label: 'BATCH NO.' },
+        { key: 'roll_per_cartoon', label: 'ROLL PER CARTOON', numeric: true },
+        { key: 'total_quantity', label: 'TOTAL Quantity', numeric: true },
+        { key: 'available_for_dispatch', label: 'Available for Dispatch', numeric: true }
       ];
     }
 
@@ -467,8 +480,20 @@
 
   function fg_value(row, key) {
     var extra = row._fgExtra || {};
+    function extraPick(keys) {
+      for (var i = 0; i < keys.length; i += 1) {
+        var got = extra[keys[i]];
+        if (String(got == null ? '' : got).trim() !== '') {
+          return String(got);
+        }
+      }
+      return '';
+    }
     if (key === 'sl_no') {
       return row._fgSerial || '';
+    }
+    if (key === 'planning_id') {
+      return String(extraPick(['planning_id', 'packing_id']) || row.item_code || '');
     }
     if (key === 'packing_id') {
       return String(extra.packing_id || row.item_code || '');
@@ -476,8 +501,60 @@
     if (key === 'production_date') {
       return row.date || '';
     }
+    if (key === 'status') {
+      var statusFromExtra = extraPick(['status', 'job_status', 'finished_status']);
+      if (statusFromExtra !== '') {
+        return statusFromExtra;
+      }
+      if (fg_state.activeTab === 'barcode') {
+        return fg_num(row.quantity) <= 0 ? 'Dispatched' : 'Ready to Dispatch';
+      }
+      return fg_num(row.quantity) <= 0 ? 'Dispatched' : 'In Stock';
+    }
+    if (key === 'pcs_per_roll') {
+      return extraPick(['pcs_per_roll', 'pieces_per_roll', 'pices_per_roll', 'barcode_in_1_roll', 'qty_per_roll']);
+    }
+    if (key === 'total_roll') {
+      var totalRollDirect = extraPick(['total_roll', 'total_rolls', 'total_roll_value']);
+      if (totalRollDirect !== '') {
+        return totalRollDirect;
+      }
+
+      var totalQtyRaw = extraPick(['total_quantity', 'total']);
+      if (totalQtyRaw === '') {
+        totalQtyRaw = String(row.quantity == null ? '' : row.quantity);
+      }
+      var pcsPerRollRaw = extraPick(['pcs_per_roll', 'pieces_per_roll', 'pices_per_roll', 'barcode_in_1_roll', 'qty_per_roll']);
+
+      var totalQtyNum = fg_num(totalQtyRaw);
+      var pcsPerRollNum = fg_num(pcsPerRollRaw);
+      if (totalQtyNum > 0 && pcsPerRollNum > 0) {
+        return String(Math.max(1, Math.ceil(totalQtyNum / pcsPerRollNum)));
+      }
+
+      return '';
+    }
     if (key === 'width' || key === 'length' || key === 'core_size' || key === 'core_type' || key === 'paper_company' || key === 'barcode' || key === 'per_carton' || key === 'carton') {
       return String(extra[key] || '');
+    }
+    if (key === 'ups') {
+      return extraPick(['ups', 'up_in_production', 'ups_in_die']);
+    }
+    if (key === 'label_gap') {
+      return extraPick(['label_gap']);
+    }
+    if (key === 'die_type' || key === 'die_type_dup') {
+      return extraPick(['die_type']);
+    }
+    if (key === 'roll_per_cartoon') {
+      return extraPick(['roll_per_cartoon', 'roll_per_carton', 'per_carton']);
+    }
+    if (key === 'total_quantity') {
+      var fromExtraTotal = extraPick(['total', 'total_quantity']);
+      if (fromExtraTotal !== '') {
+        return fromExtraTotal;
+      }
+      return fg_num(row.quantity).toFixed(3).replace(/\.000$/, '');
     }
     if (key === 'material_type') {
       return String(extra.material_type || row.sub_type || '');
@@ -550,6 +627,12 @@
 
   function fg_renderCell(row, key) {
     var value = fg_value(row, key);
+    if (key === 'total_quantity') {
+      return '<span class="fg-qty-pill fg-qty-pill-total">' + fg_escapeHtml(value) + '</span>';
+    }
+    if (key === 'available_for_dispatch') {
+      return '<span class="fg-qty-pill fg-qty-pill-available">' + fg_escapeHtml(value) + '</span>';
+    }
     if (key === 'stock_status') {
       var cls = 'fg-status-instock';
       if (String(value) === 'Low') {
@@ -558,6 +641,9 @@
         cls = 'fg-status-dispatched';
       }
       return '<span class="fg-stock-badge ' + cls + '">' + fg_escapeHtml(value) + '</span>';
+    }
+    if (key === 'status') {
+      return '<span class="fg-status-pill fg-status-pill-green">' + fg_escapeHtml(value || 'Ready to Dispatch') + '</span>';
     }
     if (key === 'barcode') {
       var barcodeValue = fg_resolveBarcodeValue(row) || String(value || '').trim();
@@ -570,7 +656,7 @@
   }
 
   function fg_isDispatchTab() {
-    return fg_state.activeTab === 'pos_paper_roll' || fg_state.activeTab === 'one_ply' || fg_state.activeTab === 'two_ply';
+    return fg_state.activeTab === 'pos_paper_roll' || fg_state.activeTab === 'one_ply' || fg_state.activeTab === 'two_ply' || fg_state.activeTab === 'barcode';
   }
 
   function fg_dispatchRow(row) {
@@ -623,14 +709,25 @@
 
     if (tabKey === 'barcode') {
       return [
-        { name: 'sub_type', label: 'Barcode Type', source: 'direct', required: true },
-        { name: 'size', label: 'Size', source: 'direct' },
-        { name: 'material', label: 'Material', source: 'extra' },
-        { name: 'quantity', label: 'Quantity', source: 'direct', type: 'number', required: true },
-        { name: 'unit', label: 'Unit', source: 'direct', required: true },
-        { name: 'location', label: 'Location', source: 'direct' },
-        { name: 'batch_no', label: 'Batch', source: 'direct' },
-        { name: 'date', label: 'Date', source: 'direct', type: 'date' },
+        { name: 'planning_id', label: 'Planning ID', source: 'extra', readonly: true },
+        { name: 'date', label: 'Production Date', source: 'direct', type: 'date' },
+        { name: 'status', label: 'Status', source: 'extra', readonly: true },
+        { name: 'item_name', label: 'Item Name', source: 'direct', required: true },
+        { name: 'pcs_per_roll', label: 'PCS PER ROLL', source: 'extra', type: 'number' },
+        { name: 'total_roll', label: 'Total Roll', source: 'extra', type: 'number', readonly: true },
+        { name: 'size', label: 'SIZE', source: 'direct' },
+        { name: 'width', label: 'Width', source: 'extra' },
+        { name: 'length', label: 'Length', source: 'extra' },
+        { name: 'ups', label: 'UPS', source: 'extra' },
+        { name: 'paper_company', label: 'Paper COMPANY', source: 'extra' },
+        { name: 'quantity', label: 'PCS', source: 'direct', type: 'number', required: true },
+        { name: 'label_gap', label: 'Label Gap', source: 'extra' },
+        { name: 'die_type', label: 'Die Type', source: 'extra' },
+        { name: 'carton', label: 'CARTON', source: 'extra', type: 'number', readonly: true },
+        { name: 'batch_no', label: 'BATCH NO.', source: 'direct' },
+        { name: 'roll_per_cartoon', label: 'ROLL PER CARTOON', source: 'extra', type: 'number' },
+        { name: 'total_quantity', label: 'TOTAL Quantity', source: 'extra', type: 'number', readonly: true },
+        { name: 'available_for_dispatch', label: 'Available for Dispatch', source: 'extra', type: 'number', readonly: true },
         { name: 'note', label: 'Remarks', source: 'note', type: 'textarea', full: true }
       ];
     }
@@ -1073,7 +1170,7 @@
     if (fg_isDispatchTab()) {
       headHtml += '<th>Dispatch</th>';
     }
-    if (fg_state.isAdmin) {
+    {
       headHtml += '<th>Action</th>';
     }
     headHtml += '</tr>';
@@ -1101,10 +1198,12 @@
         var disabled = fg_num(row.quantity) <= 0 ? 'disabled' : '';
         body += '<td><button type="button" class="fg-act-btn blue fg-dispatch-btn" data-fg-action="dispatch-row" data-id="' + row.id + '" ' + disabled + '><i class="bi bi-truck"></i> Dispatch</button></td>';
       }
-      if (fg_state.isAdmin) {
+      {
         body += '<td><div class="fg-row-actions">' +
+          '<button type="button" class="btn btn-sm fg-view-btn" data-fg-action="view-row" data-id="' + row.id + '" title="View"><i class="bi bi-eye"></i></button>' +
+          (fg_state.isAdmin ?
           '<button type="button" class="btn btn-sm" data-fg-action="edit-row" data-id="' + row.id + '"><i class="bi bi-pencil"></i></button>' +
-          '<button type="button" class="btn btn-sm btn-danger" data-fg-action="delete-row" data-id="' + row.id + '"><i class="bi bi-trash"></i></button>' +
+          '<button type="button" class="btn btn-sm btn-danger" data-fg-action="delete-row" data-id="' + row.id + '"><i class="bi bi-trash"></i></button>' : '') +
           '</div></td>';
       }
       body += '</tr>';
@@ -1317,9 +1416,9 @@
       html += '<label>' + fg_escapeHtml(f.label) + (f.required ? ' *' : '') + '</label>';
 
       if (f.type === 'textarea') {
-        html += '<textarea data-fg-field="' + fg_escapeHtml(f.name) + '" data-fg-source="' + fg_escapeHtml(f.source) + '">' + fg_escapeHtml(val) + '</textarea>';
+        html += '<textarea data-fg-field="' + fg_escapeHtml(f.name) + '" data-fg-source="' + fg_escapeHtml(f.source) + '"' + (f.readonly ? ' readonly' : '') + '>' + fg_escapeHtml(val) + '</textarea>';
       } else if (f.type === 'select') {
-        html += '<select data-fg-field="' + fg_escapeHtml(f.name) + '" data-fg-source="' + fg_escapeHtml(f.source) + '">';
+        html += '<select data-fg-field="' + fg_escapeHtml(f.name) + '" data-fg-source="' + fg_escapeHtml(f.source) + '"' + (f.readonly ? ' disabled' : '') + '>';
         html += '<option value="">Select</option>';
         var options = f.options || [];
         for (var o = 0; o < options.length; o += 1) {
@@ -1330,7 +1429,7 @@
         html += '</select>';
       } else {
         var type = f.type || 'text';
-        html += '<input type="' + type + '" data-fg-field="' + fg_escapeHtml(f.name) + '" data-fg-source="' + fg_escapeHtml(f.source) + '" value="' + fg_escapeHtml(val) + '">';
+        html += '<input type="' + type + '" data-fg-field="' + fg_escapeHtml(f.name) + '" data-fg-source="' + fg_escapeHtml(f.source) + '" value="' + fg_escapeHtml(val) + '"' + (f.readonly ? ' readonly' : '') + '>';
       }
 
       html += '</div>';
@@ -1338,6 +1437,7 @@
 
     fg_nodes.entryFormGrid.innerHTML = html;
     fg_attachPosAutoCalc();
+    fg_attachBarcodeAutoCalc();
 
     // Attach PRC suggestions for pos_paper_roll, one_ply and two_ply tabs
     if (fg_state.activeTab === 'pos_paper_roll' || fg_state.activeTab === 'one_ply' || fg_state.activeTab === 'two_ply') {
@@ -1401,10 +1501,138 @@
     calc();
   }
 
+  function fg_attachBarcodeAutoCalc() {
+    if (fg_state.activeTab !== 'barcode' || !fg_nodes.entryForm) {
+      return;
+    }
+
+    var qtyEl = fg_nodes.entryForm.querySelector('[data-fg-field="quantity"]');
+    var pcsPerRollEl = fg_nodes.entryForm.querySelector('[data-fg-field="pcs_per_roll"]');
+    var totalRollEl = fg_nodes.entryForm.querySelector('[data-fg-field="total_roll"]');
+    var rollsPerCartonEl = fg_nodes.entryForm.querySelector('[data-fg-field="roll_per_cartoon"]');
+    var cartonEl = fg_nodes.entryForm.querySelector('[data-fg-field="carton"]');
+    var totalQtyEl = fg_nodes.entryForm.querySelector('[data-fg-field="total_quantity"]');
+    var availableEl = fg_nodes.entryForm.querySelector('[data-fg-field="available_for_dispatch"]');
+    var statusEl = fg_nodes.entryForm.querySelector('[data-fg-field="status"]');
+
+    if (!qtyEl) {
+      return;
+    }
+
+    function toInt(v) {
+      var n = Number(String(v == null ? '' : v).replace(/,/g, '').trim());
+      if (!isFinite(n) || isNaN(n)) {
+        return 0;
+      }
+      return Math.max(0, Math.floor(n));
+    }
+
+    function setVal(el, value) {
+      if (!el) return;
+      el.value = String(value);
+    }
+
+    function calcBarcode() {
+      var qty = toInt(qtyEl.value);
+      var pcsPerRoll = Math.max(1, toInt(pcsPerRollEl ? pcsPerRollEl.value : 0));
+      var totalRoll = qty > 0 ? Math.ceil(qty / pcsPerRoll) : 0;
+      var rollsPerCarton = toInt(rollsPerCartonEl ? rollsPerCartonEl.value : 0);
+      var cartons = rollsPerCarton > 0 ? Math.floor(totalRoll / rollsPerCarton) : 0;
+
+      setVal(totalRollEl, totalRoll > 0 ? totalRoll : '');
+      setVal(cartonEl, cartons > 0 ? cartons : '');
+      setVal(totalQtyEl, qty > 0 ? qty : '');
+      setVal(availableEl, qty > 0 ? qty : '');
+      if (statusEl) {
+        statusEl.value = qty > 0 ? 'Ready to Dispatch' : 'Dispatched';
+      }
+    }
+
+    qtyEl.addEventListener('input', calcBarcode);
+    if (pcsPerRollEl) pcsPerRollEl.addEventListener('input', calcBarcode);
+    if (rollsPerCartonEl) rollsPerCartonEl.addEventListener('input', calcBarcode);
+
+    calcBarcode();
+  }
+
   function fg_closeEntryModal() {
     fg_nodes.entryModal.style.display = 'none';
     fg_nodes.entryModal.setAttribute('aria-hidden', 'true');
     fg_state.editId = 0;
+  }
+
+  function fg_openViewModal(row) {
+    if (!row || !fg_nodes.viewModal || !fg_nodes.viewModalBody) {
+      return;
+    }
+
+    var cols = fg_getColumns(fg_state.activeTab);
+    var tableDetails = '';
+    for (var i = 0; i < cols.length; i += 1) {
+      var c = cols[i];
+      tableDetails += '<div class="fg-view-item">' +
+        '<b>' + fg_escapeHtml(c.label) + '</b>' +
+        '<span>' + fg_renderCell(row, c.key) + '</span>' +
+      '</div>';
+    }
+
+    var extra = row._fgExtra || {};
+    var sysDetails = '';
+    var sysPairs = [
+      ['ID', row.id],
+      ['Category', row.category],
+      ['Sub Type', row.sub_type],
+      ['Item Code', row.item_code],
+      ['Unit', row.unit],
+      ['Location', row.location],
+      ['Created At', row.created_at],
+      ['Remarks', row._fgNote || '-']
+    ];
+    for (var j = 0; j < sysPairs.length; j += 1) {
+      sysDetails += '<div class="fg-view-item">' +
+        '<b>' + fg_escapeHtml(sysPairs[j][0]) + '</b>' +
+        '<span>' + fg_escapeHtml(String(sysPairs[j][1] == null || sysPairs[j][1] === '' ? '-' : sysPairs[j][1])) + '</span>' +
+      '</div>';
+    }
+
+    var extraKeys = Object.keys(extra);
+    if (extraKeys.length) {
+      for (var k = 0; k < extraKeys.length; k += 1) {
+        var ek = extraKeys[k];
+        var eLabel = String(ek || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
+        sysDetails += '<div class="fg-view-item">' +
+          '<b>' + fg_escapeHtml(eLabel) + '</b>' +
+          '<span>' + fg_escapeHtml(String(extra[ek] == null || extra[ek] === '' ? '-' : extra[ek])) + '</span>' +
+        '</div>';
+      }
+    }
+
+    if (fg_nodes.viewModalTitle) {
+      fg_nodes.viewModalTitle.textContent = 'View Details - ' + String(row.item_name || 'Stock Row');
+    }
+    fg_nodes.viewModalBody.innerHTML =
+      '<div class="fg-view-sec">' +
+      '  <h4>Table Details</h4>' +
+      '  <div class="fg-view-grid">' + tableDetails + '</div>' +
+      '</div>' +
+      '<div class="fg-view-sec">' +
+      '  <h4>System / Extra Details</h4>' +
+      '  <div class="fg-view-grid">' + sysDetails + '</div>' +
+      '</div>';
+
+    fg_nodes.viewModal.style.display = 'flex';
+    fg_nodes.viewModal.setAttribute('aria-hidden', 'false');
+  }
+
+  function fg_closeViewModal() {
+    if (!fg_nodes.viewModal) {
+      return;
+    }
+    fg_nodes.viewModal.style.display = 'none';
+    fg_nodes.viewModal.setAttribute('aria-hidden', 'true');
+    if (fg_nodes.viewModalBody) {
+      fg_nodes.viewModalBody.innerHTML = '';
+    }
   }
 
   function fg_readFormPayload() {
@@ -2057,6 +2285,11 @@
       return;
     }
 
+    if (action === 'close-view-modal') {
+      fg_closeViewModal();
+      return;
+    }
+
     if (action === 'go-page') {
       var p = parseInt(target.getAttribute('data-page') || '1', 10);
       if (p >= 1) {
@@ -2092,6 +2325,15 @@
       var id = target.getAttribute('data-id');
       var row = fg_findRowById(id);
       if (row) fg_openEntryModal(row);
+      return;
+    }
+
+    if (action === 'view-row') {
+      var viewId = target.getAttribute('data-id');
+      var viewRow = fg_findRowById(viewId);
+      if (viewRow) {
+        fg_openViewModal(viewRow);
+      }
       return;
     }
 
@@ -2239,6 +2481,14 @@
       fg_nodes.importModal.addEventListener('click', function (ev) {
         if (ev.target === fg_nodes.importModal) {
           fg_toggleImportModal(false);
+        }
+      });
+    }
+
+    if (fg_nodes.viewModal) {
+      fg_nodes.viewModal.addEventListener('click', function (ev) {
+        if (ev.target === fg_nodes.viewModal) {
+          fg_closeViewModal();
         }
       });
     }

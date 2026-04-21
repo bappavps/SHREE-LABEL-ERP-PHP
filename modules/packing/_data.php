@@ -11,6 +11,8 @@ function packing_completed_statuses(): array {
         'packed',
         'finished production',
         'finished_production',
+        'finished barcode',
+        'finished_barcode',
         'dispatched',
         'packing done',
         'packing_done',
@@ -40,6 +42,12 @@ function packing_effective_status_from_row(array $row): string {
     $normRaw = strtolower(trim(str_replace(['-', '_'], ' ', $rawStatus)));
     $extra = packing_decode_json($row['extra_data'] ?? null);
 
+    $hasFinishedBarcodeFlag = (int)($extra['finished_barcode_flag'] ?? 0) === 1
+        || trim((string)($extra['finished_barcode_at'] ?? '')) !== '';
+    if ($hasFinishedBarcodeFlag) {
+        return 'Finished Barcode';
+    }
+
     $hasFinishedFlag = (int)($extra['finished_production_flag'] ?? 0) === 1
         || trim((string)($extra['finished_production_at'] ?? '')) !== '';
     if ($hasFinishedFlag) {
@@ -49,7 +57,7 @@ function packing_effective_status_from_row(array $row): string {
     $hasPackedFlag = (int)($extra['packing_done_flag'] ?? 0) === 1
         || (int)($extra['packing_packed_flag'] ?? 0) === 1
         || trim((string)($extra['packing_done_at'] ?? '')) !== '';
-    if ($hasPackedFlag && !in_array($normRaw, ['dispatched', 'finished production'], true)) {
+    if ($hasPackedFlag && !in_array($normRaw, ['dispatched', 'finished production', 'finished barcode'], true)) {
         return 'Packed';
     }
 
@@ -514,7 +522,57 @@ function packing_extract_production_metrics(mysqli $db, int $planningId, array $
     ];
 }
 
-function packing_extract_total_roll_value(array $jobExtra, array $planExtra, array $prevExtra = [], array $grandPrevExtra = []): string {
+function packing_extract_total_roll_value(array $jobExtra, array $planExtra, array $prevExtra = [], array $grandPrevExtra = [], ?array $operatorEntry = null): string {
+    if (is_array($operatorEntry)) {
+        $payload = packing_decode_roll_payload($operatorEntry['roll_payload_json'] ?? null);
+        if (!empty($payload)) {
+            $topLevelTotal = packing_pick_value_loose([$payload], ['total_roll_value', 'total_roll', 'total_rolls']);
+            if ($topLevelTotal !== '') {
+                return $topLevelTotal;
+            }
+
+            $rollOverrides = (isset($payload['roll_overrides']) && is_array($payload['roll_overrides']))
+                ? $payload['roll_overrides']
+                : [];
+            if (!empty($rollOverrides)) {
+                $selectedKeys = (isset($payload['selected_roll_keys']) && is_array($payload['selected_roll_keys']))
+                    ? $payload['selected_roll_keys']
+                    : [];
+
+                $keysToTry = [];
+                foreach ($selectedKeys as $rk) {
+                    $k = trim((string)$rk);
+                    if ($k !== '') {
+                        $keysToTry[] = $k;
+                    }
+                }
+                foreach (array_keys($rollOverrides) as $rk) {
+                    $k = trim((string)$rk);
+                    if ($k !== '') {
+                        $keysToTry[] = $k;
+                    }
+                }
+
+                $sumTotalRolls = 0;
+                $hasTotalRolls = false;
+                foreach ($keysToTry as $key) {
+                    $state = $rollOverrides[$key] ?? null;
+                    if (!is_array($state)) {
+                        continue;
+                    }
+                    $rolls = packing_to_float_or_null($state['total_rolls'] ?? ($state['total_roll_value'] ?? null));
+                    if ($rolls !== null && $rolls > 0) {
+                        $sumTotalRolls += (int)floor($rolls);
+                        $hasTotalRolls = true;
+                    }
+                }
+                if ($hasTotalRolls && $sumTotalRolls > 0) {
+                    return (string)$sumTotalRolls;
+                }
+            }
+        }
+    }
+
     $sources = [$jobExtra, $planExtra, $prevExtra, $grandPrevExtra];
 
     $explicitTotal = packing_pick_value_loose($sources, [
@@ -882,15 +940,15 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
     $imageUrl = packing_extract_image_url($jobExtra, $planExtra);
 
     $planningId = (int)($row['planning_id'] ?? 0);
-    $metrics = packing_extract_production_metrics($db, $planningId, $jobExtra, $planExtra, $prevExtra, $grandPrevExtra);
-    $itemDimensions = packing_extract_item_dimensions($row, $jobExtra, $planExtra, $prevExtra, $grandPrevExtra);
-    $totalRollValue = packing_extract_total_roll_value($jobExtra, $planExtra, $prevExtra, $grandPrevExtra);
     $operatorEntry = packing_fetch_operator_entry(
         $db,
         (string)($row['job_no'] ?? ''),
         (int)($row['id'] ?? 0),
         (string)($row['created_at'] ?? '')
     );
+    $metrics = packing_extract_production_metrics($db, $planningId, $jobExtra, $planExtra, $prevExtra, $grandPrevExtra);
+    $itemDimensions = packing_extract_item_dimensions($row, $jobExtra, $planExtra, $prevExtra, $grandPrevExtra);
+    $totalRollValue = packing_extract_total_roll_value($jobExtra, $planExtra, $prevExtra, $grandPrevExtra, $operatorEntry);
     $barcodePerRoll = packing_extract_barcode_per_roll(
         $jobExtra,
         $planExtra,
@@ -988,8 +1046,8 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     $where .= " OR LOWER(COALESCE(p.department, '')) IN (" . implode(',', $quotedPlanDepartments) . "))";
 
     // Keep Packed jobs visible in manager dashboard for final completion step.
-    // Dispatched / Finished Production should leave active tabs.
-    $where .= " AND LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status,''),'-',' '),'_',' '))) NOT IN ('dispatched','finished production')";
+    // Dispatched / Finished Production / Finished Barcode should leave active tabs.
+    $where .= " AND LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status,''),'-',' '),'_',' '))) NOT IN ('dispatched','finished production','finished barcode')";
 
     // Status filter: if provided, filter by exact status match
     if ($status !== '') {
@@ -1104,7 +1162,7 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
         $row['packing_tab'] = $tabKey;
         $row['group_key'] = $groupKey;
 
-        $isTerminalForActive = in_array($normStatus, ['dispatched', 'finished production'], true)
+        $isTerminalForActive = in_array($normStatus, ['dispatched', 'finished production', 'finished barcode'], true)
             || ($hidePackedInActive && in_array($normStatus, ['packed', 'packing done'], true));
 
         if ($isTerminalForActive) {
@@ -1183,7 +1241,7 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
         $planningId = (int)($row['planning_id'] ?? 0);
         $metrics = packing_extract_production_metrics($db, $planningId, $jobExtra, $planExtra);
         $operatorEntry = (isset($row['operator_entry']) && is_array($row['operator_entry'])) ? $row['operator_entry'] : null;
-        $totalRollValue = packing_extract_total_roll_value($jobExtra, $planExtra);
+        $totalRollValue = packing_extract_total_roll_value($jobExtra, $planExtra, [], [], $operatorEntry);
         $barcodePerRoll = packing_extract_barcode_per_roll($jobExtra, $planExtra, [], [], $metrics, $totalRollValue, $operatorEntry);
         $orderDate = trim((string)(
             $planExtra['order_date']
@@ -1309,7 +1367,7 @@ function packing_fetch_history_rows(mysqli $db, array $filters = []): array {
         }
 
         $effectiveNorm = strtolower(trim(str_replace(['-', '_'], ' ', $effectiveStatus)));
-        $isPackingOutcome = in_array($effectiveNorm, ['packed', 'packing done', 'finished production', 'dispatched'], true);
+        $isPackingOutcome = in_array($effectiveNorm, ['packed', 'packing done', 'finished production', 'finished barcode', 'dispatched'], true);
         if (!$isPackingOutcome) {
             continue;
         }

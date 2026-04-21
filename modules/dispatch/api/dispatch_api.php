@@ -1058,15 +1058,37 @@ if ($action === 'delete_dispatch') {
                 if ($revertItemId <= 0 || $revertQty <= 0) {
                     continue;
                 }
-                $revert = ds_adjust_stock($db, $revertItemId, -$revertQty, $dispatchId, 'Dispatch delete rollback (batch: ' . ds_clean($batchRow['batch_no'] ?? '', 120) . ')', $userId);
-                if (empty($revert['ok'])) {
-                    throw new RuntimeException((string)($revert['error'] ?? 'Unable to rollback stock before delete.'));
+                // Check if stock item exists before trying to adjust
+                $checkStmt = $db->prepare('SELECT id FROM finished_goods_stock WHERE id = ? LIMIT 1');
+                if ($checkStmt) {
+                    $checkStmt->bind_param('i', $revertItemId);
+                    $checkStmt->execute();
+                    $stockExists = $checkStmt->get_result()->fetch_assoc();
+                    if ($stockExists) {
+                        $revert = ds_adjust_stock($db, $revertItemId, -$revertQty, $dispatchId, 'Dispatch delete rollback (batch: ' . ds_clean($batchRow['batch_no'] ?? '', 120) . ')', $userId);
+                        if (empty($revert['ok'])) {
+                            error_log('Stock adjustment warning during delete: ' . (string)($revert['error'] ?? 'Unknown error'));
+                        }
+                    } else {
+                        error_log('Stock item ' . $revertItemId . ' not found during dispatch delete rollback - skipping stock adjustment');
+                    }
                 }
             }
         } elseif ($oldStockId > 0 && $oldQty > 0) {
-            $revert = ds_adjust_stock($db, $oldStockId, -$oldQty, $dispatchId, 'Dispatch delete rollback', $userId);
-            if (empty($revert['ok'])) {
-                throw new RuntimeException((string)($revert['error'] ?? 'Unable to rollback stock before delete.'));
+            // Check if stock item exists before trying to adjust
+            $checkStmt = $db->prepare('SELECT id FROM finished_goods_stock WHERE id = ? LIMIT 1');
+            if ($checkStmt) {
+                $checkStmt->bind_param('i', $oldStockId);
+                $checkStmt->execute();
+                $stockExists = $checkStmt->get_result()->fetch_assoc();
+                if ($stockExists) {
+                    $revert = ds_adjust_stock($db, $oldStockId, -$oldQty, $dispatchId, 'Dispatch delete rollback', $userId);
+                    if (empty($revert['ok'])) {
+                        error_log('Stock adjustment warning during delete: ' . (string)($revert['error'] ?? 'Unknown error'));
+                    }
+                } else {
+                    error_log('Stock item ' . $oldStockId . ' not found during dispatch delete rollback - skipping stock adjustment');
+                }
             }
         }
 
@@ -1424,6 +1446,7 @@ if ($action === 'dashboard_stats') {
                 WHEN {$categoryBucketSql} = 'pos_paper_roll' THEN 'pos'
                 WHEN {$categoryBucketSql} = 'one_ply' THEN 'one_ply'
                 WHEN {$categoryBucketSql} = 'two_ply' THEN 'two_ply'
+                WHEN {$categoryBucketSql} = 'barcode' THEN 'barcode'
                 ELSE 'unmapped'
             END AS category_key,
             CASE
@@ -1431,6 +1454,7 @@ if ($action === 'dashboard_stats') {
                 WHEN {$categoryBucketSql} = 'pos_paper_roll' THEN 'POS'
                 WHEN {$categoryBucketSql} = 'one_ply' THEN '1 Ply'
                 WHEN {$categoryBucketSql} = 'two_ply' THEN '2 Ply'
+                WHEN {$categoryBucketSql} = 'barcode' THEN 'Barcode'
                 ELSE 'Unmapped'
             END AS category_label,
             COALESCE(NULLIF(de.item_name, ''), 'Unknown Item') AS item_name,

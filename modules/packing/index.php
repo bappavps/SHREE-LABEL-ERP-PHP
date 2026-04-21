@@ -63,14 +63,17 @@ $data = packing_fetch_ready_rows($db, [
 $rowsByTab = $data['rows_by_tab'];
 $counts = $data['counts'];
 
+$historyCounterRows = packing_fetch_history_rows($db, [
+  'search' => $search,
+  'from' => $from,
+  'to' => $to,
+  'dept' => $historyDept,
+]);
+$historyCount = count($historyCounterRows);
+
 $historyData = [];
 if ($currentTab === 'history') {
-  $historyData = packing_fetch_history_rows($db, [
-    'search' => $search,
-    'from' => $from,
-    'to' => $to,
-    'dept' => $historyDept,
-  ]);
+  $historyData = $historyCounterRows;
 }
 $canDeleteJobs = isAdmin();
 $appSettings = getAppSettings();
@@ -82,11 +85,14 @@ $printLogoUrl = $printLogoPath !== ''
 
 $statusClass = static function(string $status): string {
   $norm = strtolower(trim(str_replace(['-', '_'], ' ', $status)));
-  return in_array($norm, ['packing done', 'packed', 'dispatched', 'finished production'], true) ? 'ok' : 'muted';
+  return in_array($norm, ['packing done', 'packed', 'dispatched', 'finished production', 'finished barcode'], true) ? 'ok' : 'muted';
 };
 
 $displayPackingStatus = static function(string $status): string {
   $norm = strtolower(trim(str_replace(['-', '_'], ' ', $status)));
+  if ($norm === 'finished barcode') {
+    return 'Finished Barcode';
+  }
   if ($norm === 'finished production') {
     return 'Finished Production';
   }
@@ -366,6 +372,7 @@ include __DIR__ . '/../../includes/header.php';
         <option value="Completed" <?= $status === 'Completed' ? 'selected' : '' ?>>Completed</option>
         <option value="Packed" <?= $status === 'Packed' ? 'selected' : '' ?>>Packed</option>
         <option value="Finished Production" <?= $status === 'Finished Production' ? 'selected' : '' ?>>Finished Production</option>
+        <option value="Finished Barcode" <?= $status === 'Finished Barcode' ? 'selected' : '' ?>>Finished Barcode</option>
         <option value="Dispatched" <?= $status === 'Dispatched' ? 'selected' : '' ?>>Dispatched</option>
       </select>
     </div>
@@ -387,7 +394,7 @@ include __DIR__ . '/../../includes/header.php';
         style="--pk-accent:<?= e($theme['accent']) ?>;--pk-soft:<?= e($theme['soft']) ?>;--pk-border:<?= e($theme['border']) ?>;text-decoration:none;display:inline-flex;align-items:center;"
       >
         <?php if ($tabKey === 'history'): ?>
-          <i class="bi bi-clock-history" style="margin-right:3px"></i> History (<?= count($historyData) ?>)
+          <i class="bi bi-clock-history" style="margin-right:3px"></i> History (<?= (int)$historyCount ?>)
         <?php else: ?>
           <?= e(packing_tab_label($tabKey)) ?> (<?= (int)($counts[$tabKey] ?? 0) ?>)
         <?php endif; ?>
@@ -749,6 +756,33 @@ include __DIR__ . '/../../includes/header.php';
     syncPaneState(activePane());
   }
 
+  function triggerBarcodeBackfillOnce() {
+    if (String(activeTab || '') !== 'barcode') return;
+    var onceKey = 'pk_barcode_backfill_once_v1';
+    try {
+      if (window.sessionStorage && sessionStorage.getItem(onceKey) === '1') {
+        return;
+      }
+      if (window.sessionStorage) {
+        sessionStorage.setItem(onceKey, '1');
+      }
+    } catch (e) {
+      // Ignore storage errors and continue once-per-load.
+    }
+
+    var fd = new FormData();
+    fd.append('action', 'backfill_finished_barcode_stock');
+    fd.append('limit', '2000');
+
+    fetch(baseUrl + '/modules/packing/api.php', {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin'
+    }).catch(function() {
+      // Silent: this is best-effort historical sync.
+    });
+  }
+
   function readThemeVars() {
     var pane = activePane();
     if (!pane) {
@@ -813,7 +847,7 @@ include __DIR__ . '/../../includes/header.php';
     ];
     var statusRaw = String(activeModalJob.status || '').trim();
     var statusLower = statusRaw.toLowerCase().replace(/[-_]/g, ' ').trim();
-    var statusText = (statusLower === 'finished production') ? 'Finished Production' : ((statusLower === 'dispatched') ? 'Dispatched' : ((statusLower === 'packed' || statusLower === 'packing done') ? 'Packed' : 'Packing'));
+    var statusText = (statusLower === 'finished barcode') ? 'Finished Barcode' : ((statusLower === 'finished production') ? 'Finished Production' : ((statusLower === 'dispatched') ? 'Dispatched' : ((statusLower === 'packed' || statusLower === 'packing done') ? 'Packed' : 'Packing')));
     var completedAtRaw = String(activeModalJob.completed_at || activeModalJob.updated_at || activeModalJob.created_at || '').trim();
     var completedText = '-';
     if (completedAtRaw !== '') {
@@ -934,7 +968,7 @@ include __DIR__ . '/../../includes/header.php';
       '    <div>' +
       '      <p class="a4-sub">' + escHtml(modalSub ? modalSub.textContent : '-') + '</p>' +
       '      <p class="a4-sub">Completed: ' + escHtml(completedText) + '</p>' +
-      '      <div style="margin-top:4px;text-align:right"><span class="a4-badge ' + ((statusLower === 'packing done' || statusLower === 'packed' || statusLower === 'dispatched' || statusLower === 'finished production' || statusLower === 'completed' || statusLower === 'closed' || statusLower === 'finalized' || statusLower === 'qc passed') ? 'ok' : '') + '">' + escHtml(statusText) + '</span></div>' +
+      '      <div style="margin-top:4px;text-align:right"><span class="a4-badge ' + ((statusLower === 'packing done' || statusLower === 'packed' || statusLower === 'dispatched' || statusLower === 'finished production' || statusLower === 'finished barcode' || statusLower === 'completed' || statusLower === 'closed' || statusLower === 'finalized' || statusLower === 'qc passed') ? 'ok' : '') + '">' + escHtml(statusText) + '</span></div>' +
       '    </div>' +
       '  </div>' +
       '  <div class="a4-grid">' + summaryHtml + '</div>' +
@@ -1716,15 +1750,16 @@ include __DIR__ . '/../../includes/header.php';
     var jobStatusNorm = jobStatusRaw.toLowerCase().replace(/[-_]/g, ' ').trim();
     var isBarcodeMode = String(job.packing_tab || '') === 'barcode' || String(activeTab || '') === 'barcode';
     var isPosRollTab = String(job.packing_tab || '') === 'pos_roll' || String(activeTab || '') === 'pos_roll';
-    // one_ply and two_ply are also paper-roll types → use "Finished Production" not "Mark Dispatched"
+    // one_ply and two_ply are paper-roll types; barcode has its own final state.
     var isPaperRollTypeTab = isPosRollTab
       || String(job.packing_tab || '') === 'one_ply' || String(activeTab || '') === 'one_ply'
       || String(job.packing_tab || '') === 'two_ply' || String(activeTab || '') === 'two_ply';
     var isPacked = (jobStatusNorm === 'packed' || jobStatusNorm === 'packing done');
     var isDispatched = jobStatusNorm === 'dispatched';
     var isFinishedProduction = jobStatusNorm === 'finished production';
-    var isTerminal = isPacked || isDispatched || isFinishedProduction;
-    var jobStatusText = isFinishedProduction ? 'Finished Production' : (isDispatched ? 'Dispatched' : (isPacked ? 'Packed' : 'Packing'));
+    var isFinishedBarcode = jobStatusNorm === 'finished barcode';
+    var isTerminal = isPacked || isDispatched || isFinishedProduction || isFinishedBarcode;
+    var jobStatusText = isFinishedBarcode ? 'Finished Barcode' : (isFinishedProduction ? 'Finished Production' : (isDispatched ? 'Dispatched' : (isPacked ? 'Packed' : 'Packing')));
     var isAdminUser = !!canDeleteJobs;
     var sectionBLocked = isTerminal && !canDeleteJobs;
     var targetPaperStockId = Number(job.paper_stock_id || 0);
@@ -1799,8 +1834,9 @@ include __DIR__ . '/../../includes/header.php';
     }).join('') : '<div style="font-size:.78rem;color:#64748b">No roll sources found.</div>';
     var currentPackingBatches = [];
     var markPackedActive = !isTerminal && operatorHasSubmitted;
-    var markDispatchedActive = !isPaperRollTypeTab && isPacked;
+    var markDispatchedActive = !isPaperRollTypeTab && !isBarcodeMode && isPacked;
     var markFinishedProductionActive = isPaperRollTypeTab && isPacked && !isFinishedProduction;
+    var markFinishedBarcodeActive = isBarcodeMode && isPacked && !isFinishedBarcode;
     var barcodePerRollText = String(job && job.barcode_in_1_roll ? job.barcode_in_1_roll : '').trim() || '-';
 
     var imageHtml = job.image_url
@@ -1845,7 +1881,7 @@ include __DIR__ . '/../../includes/header.php';
           '  <div class="pk-jc-section pk-jc-section-collapsible-b">'
           + '    <h5 class="pk-jc-section-toggle-b" tabindex="0" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:7px;">'
           + '      <span class="pk-jc-section-arrow-b" style="display:inline-block;transition:transform .25s ease;font-size:1.1em;">▼</span> Section B: Wrapping and Packing Details'
-          + (isTerminal ? ('<span id="pkPackingDoneBadge" style="margin-left:8px;background:#22c55e;color:#fff;font-size:.72rem;font-weight:800;padding:3px 8px;border-radius:999px;">' + (isFinishedProduction ? 'Finished Production' : (isDispatched ? 'Dispatched' : 'Packed')) + '</span>') : '')
+          + (isTerminal ? ('<span id="pkPackingDoneBadge" style="margin-left:8px;background:#22c55e;color:#fff;font-size:.72rem;font-weight:800;padding:3px 8px;border-radius:999px;">' + (isFinishedBarcode ? 'Finished Barcode' : (isFinishedProduction ? 'Finished Production' : (isDispatched ? 'Dispatched' : 'Packed'))) + '</span>') : '')
           + '    </h5>'
           + '    <div class="pk-jc-section-content-b">'
           + '      <div style="padding:14px 12px;margin-bottom:14px;border:1px solid #bae6fd;border-radius:12px;background:linear-gradient(120deg,#ecfeff 0%,#f0f9ff 100%);">'
@@ -1931,13 +1967,15 @@ include __DIR__ . '/../../includes/header.php';
           + '        <button id="pkSectionBFinishedBtn" type="button" class="pk-action-btn pk-btn-finished" ' + (!markPackedActive ? 'disabled ' : '') + 'title="' + (!markPackedActive && !isTerminal ? 'Waiting for operator to submit packing entry' : '') + '" style="background-color:' + (isTerminal ? '#9ca3af' : (operatorHasSubmitted ? '#22c55e' : '#f97316')) + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:' + (!markPackedActive ? 'not-allowed' : 'pointer') + ';font-size:.95em;transition:all .2s ease;opacity:' + (!markPackedActive ? '0.65' : '1') + ';">Mark Packed</button>'
             + (isPaperRollTypeTab
               ? '        <button id="pkSectionBFinalBtn" type="button" class="pk-action-btn pk-btn-finished-production" ' + (!markFinishedProductionActive ? 'disabled ' : '') + 'style="background-color:' + (markFinishedProductionActive ? '#15803d' : '#9ca3af') + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:' + (!markFinishedProductionActive ? 'not-allowed' : 'pointer') + ';font-size:.95em;transition:all .2s ease;opacity:' + (!markFinishedProductionActive ? '0.65' : '1') + ';">Finished Production</button>'
-              : '        <button id="pkSectionBDispatchBtn" type="button" class="pk-action-btn pk-btn-dispatched" ' + (!markDispatchedActive ? 'disabled ' : '') + 'style="background-color:' + (markDispatchedActive ? '#2563eb' : '#9ca3af') + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:' + (!markDispatchedActive ? 'not-allowed' : 'pointer') + ';font-size:.95em;transition:all .2s ease;opacity:' + (!markDispatchedActive ? '0.65' : '1') + ';">Mark Dispatched</button>')
+              : (isBarcodeMode
+                ? '        <button id="pkSectionBBarcodeBtn" type="button" class="pk-action-btn pk-btn-finished-barcode" ' + (!markFinishedBarcodeActive ? 'disabled ' : '') + 'style="background-color:' + (markFinishedBarcodeActive ? '#0f766e' : '#9ca3af') + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:' + (!markFinishedBarcodeActive ? 'not-allowed' : 'pointer') + ';font-size:.95em;transition:all .2s ease;opacity:' + (!markFinishedBarcodeActive ? '0.65' : '1') + ';">Finished Barcode</button>'
+                : '        <button id="pkSectionBDispatchBtn" type="button" class="pk-action-btn pk-btn-dispatched" ' + (!markDispatchedActive ? 'disabled ' : '') + 'style="background-color:' + (markDispatchedActive ? '#2563eb' : '#9ca3af') + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:' + (!markDispatchedActive ? 'not-allowed' : 'pointer') + ';font-size:.95em;transition:all .2s ease;opacity:' + (!markDispatchedActive ? '0.65' : '1') + ';">Mark Dispatched</button>'))
           + '        <button id="pkSectionBCancelBtn" type="button" class="pk-action-btn pk-btn-cancel" style="background-color:#6b7280;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">Cancel</button>'
           + (isAdminUser ? '        <button id="pkSectionBAdminEditBtn" type="button" class="pk-action-btn pk-btn-admin-edit" style="background-color:#7c3aed;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">Enable Edit</button>' : '')
           + '        <button class="pk-action-btn pk-btn-sticker" style="background-color:#3b82f6;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">Sticker Print</button>'
           + '        <button class="pk-action-btn pk-btn-label" style="background-color:#f97316;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.95em;transition:all .2s ease;">Label Print</button>'
           + '      </div>'
-          + '      <div id="pkSectionBMessage" style="min-height:20px;font-size:.82rem;color:#475569;font-weight:700;">' + (sectionBLocked ? ('Locked: ' + (isFinishedProduction ? 'Finished Production' : (isDispatched ? 'Dispatched' : 'Packed')) + ' (non-admin view)') : '') + '</div>'
+          + '      <div id="pkSectionBMessage" style="min-height:20px;font-size:.82rem;color:#475569;font-weight:700;">' + (sectionBLocked ? ('Locked: ' + (isFinishedBarcode ? 'Finished Barcode' : (isFinishedProduction ? 'Finished Production' : (isDispatched ? 'Dispatched' : 'Packed'))) + ' (non-admin view)') : '') + '</div>'
           + '    </div>'
           + '  </div>'
               // Section B: Bidirectional sync logic
@@ -2459,6 +2497,7 @@ include __DIR__ . '/../../includes/header.php';
       var finishBtn = section.querySelector('.pk-btn-finished');
       var dispatchBtn = section.querySelector('.pk-btn-dispatched');
       var finalProductionBtn = section.querySelector('.pk-btn-finished-production');
+      var finishedBarcodeBtn = section.querySelector('.pk-btn-finished-barcode');
       var adminEditBtn = section.querySelector('.pk-btn-admin-edit');
       var adminEditBadge = section.querySelector('#pkSectionBAdminEditBadge');
       var sectionCancelBtn = section.querySelector('#pkSectionBCancelBtn');
@@ -2467,7 +2506,8 @@ include __DIR__ . '/../../includes/header.php';
       var isPackedNow = (modalStatusNow === 'packed' || modalStatusNow === 'packing done');
       var isDispatchedNow = modalStatusNow === 'dispatched';
       var isFinishedProductionNow = modalStatusNow === 'finished production';
-      var isTerminalNow = isPackedNow || isDispatchedNow || isFinishedProductionNow;
+      var isFinishedBarcodeNow = modalStatusNow === 'finished barcode';
+      var isTerminalNow = isPackedNow || isDispatchedNow || isFinishedProductionNow || isFinishedBarcodeNow;
       var operatorSubmittedNow = operatorHasSubmitted;
       var pendingPrintType = '';
       var pendingPrintUrls = [];
@@ -2484,7 +2524,7 @@ include __DIR__ . '/../../includes/header.php';
         if (!heading || heading.querySelector('#pkPackingDoneBadge')) return;
         var badge = document.createElement('span');
         badge.id = 'pkPackingDoneBadge';
-        badge.textContent = isFinishedProductionNow ? 'Finished Production' : (isDispatchedNow ? 'Dispatched' : 'Packed');
+        badge.textContent = isFinishedBarcodeNow ? 'Finished Barcode' : (isFinishedProductionNow ? 'Finished Production' : (isDispatchedNow ? 'Dispatched' : 'Packed'));
         badge.style.marginLeft = '8px';
         badge.style.background = '#22c55e';
         badge.style.color = '#fff';
@@ -2834,7 +2874,7 @@ include __DIR__ . '/../../includes/header.php';
 
       function applySectionBLockState() {
         var shouldLock = ((operatorSubmittedNow || isTerminalNow) && !(isAdminUser && adminEditMode));
-        var allowAdminRepack = isAdminUser && adminEditMode && isPackedNow && !isFinishedProductionNow && !isDispatchedNow;
+        var allowAdminRepack = isAdminUser && adminEditMode && isPackedNow && !isFinishedProductionNow && !isFinishedBarcodeNow && !isDispatchedNow;
         // Exclude .pk-roll-select checkboxes — manager must always be able to select rolls for printing
         var editableFields = section.querySelectorAll('.pk-jc-section-content-b input:not(.pk-roll-select), .pk-jc-section-content-b select, .pk-jc-section-content-b textarea');
         editableFields.forEach(function(field) {
@@ -2937,6 +2977,30 @@ include __DIR__ . '/../../includes/header.php';
           }
         }
 
+        if (finishedBarcodeBtn) {
+          if (isAdminUser && adminEditMode) {
+            finishedBarcodeBtn.setAttribute('disabled', 'disabled');
+            finishedBarcodeBtn.style.backgroundColor = '#9ca3af';
+            finishedBarcodeBtn.style.cursor = 'not-allowed';
+            finishedBarcodeBtn.style.opacity = '0.65';
+          } else if (isFinishedBarcodeNow) {
+            finishedBarcodeBtn.setAttribute('disabled', 'disabled');
+            finishedBarcodeBtn.style.backgroundColor = '#9ca3af';
+            finishedBarcodeBtn.style.cursor = 'not-allowed';
+            finishedBarcodeBtn.style.opacity = '0.75';
+          } else if (!isPackedNow) {
+            finishedBarcodeBtn.setAttribute('disabled', 'disabled');
+            finishedBarcodeBtn.style.backgroundColor = '#9ca3af';
+            finishedBarcodeBtn.style.cursor = 'not-allowed';
+            finishedBarcodeBtn.style.opacity = '0.65';
+          } else {
+            finishedBarcodeBtn.removeAttribute('disabled');
+            finishedBarcodeBtn.style.backgroundColor = '#0f766e';
+            finishedBarcodeBtn.style.cursor = 'pointer';
+            finishedBarcodeBtn.style.opacity = '1';
+          }
+        }
+
         if (adminEditBtn) {
           adminEditBtn.textContent = adminEditMode ? 'Disable Edit' : 'Enable Edit';
           adminEditBtn.style.backgroundColor = adminEditMode ? '#dc2626' : '#7c3aed';
@@ -2950,11 +3014,11 @@ include __DIR__ . '/../../includes/header.php';
 
         ensurePackingDoneBadge();
         if (isTerminalNow && !isAdminUser) {
-          setSectionMessage('Locked: ' + (isFinishedProductionNow ? 'Finished Production' : (isDispatchedNow ? 'Dispatched' : 'Packed')) + ' (non-admin view)', false);
+          setSectionMessage('Locked: ' + (isFinishedBarcodeNow ? 'Finished Barcode' : (isFinishedProductionNow ? 'Finished Production' : (isDispatchedNow ? 'Dispatched' : 'Packed'))) + ' (non-admin view)', false);
         } else if ((isTerminalNow || operatorSubmittedNow) && isAdminUser && adminEditMode) {
-          setSectionMessage(allowAdminRepack ? 'Admin edit mode enabled. Update values, then press Mark Packed to save again. Finished Production stays disabled until you exit edit mode.' : 'Admin edit mode enabled. You can now update the locked values.', false);
+          setSectionMessage(allowAdminRepack ? 'Admin edit mode enabled. Update values, then press Mark Packed to save again. Final completion stays disabled until you exit edit mode.' : 'Admin edit mode enabled. You can now update the locked values.', false);
         } else if (isTerminalNow && isAdminUser) {
-          setSectionMessage((isFinishedProductionNow ? 'Finished Production' : (isDispatchedNow ? 'Dispatched' : 'Packed')) + ': admin override enabled for edits.', false);
+          setSectionMessage((isFinishedBarcodeNow ? 'Finished Barcode' : (isFinishedProductionNow ? 'Finished Production' : (isDispatchedNow ? 'Dispatched' : 'Packed'))) + ': admin override enabled for edits.', false);
         } else if (operatorSubmittedNow) {
           setSectionMessage(isAdminUser ? 'Operator physical production submitted. Press Enable Edit if you need admin override changes.' : 'Operator physical production submitted. Helper inputs are now locked. You can print sticker/label or mark Packed.', false);
         } else if (!operatorSubmittedNow) {
@@ -3088,6 +3152,7 @@ include __DIR__ . '/../../includes/header.php';
           var buttonAction = '';
           if (this.classList.contains('pk-btn-finished')) buttonAction = 'finished';
           else if (this.classList.contains('pk-btn-dispatched')) buttonAction = 'dispatched';
+          else if (this.classList.contains('pk-btn-finished-barcode')) buttonAction = 'finished_barcode';
           else if (this.classList.contains('pk-btn-finished-production')) buttonAction = 'finished_production';
           else if (this.classList.contains('pk-btn-cancel')) buttonAction = 'cancel';
           else if (this.classList.contains('pk-btn-sticker')) buttonAction = 'sticker';
@@ -3123,13 +3188,14 @@ include __DIR__ . '/../../includes/header.php';
                 if (!resp || !resp.ok) {
                   setSectionMessage((resp && resp.message) ? resp.message : 'Status update failed.', true);
                   isPackedNow = false;
-                  isTerminalNow = isDispatchedNow || isPackedNow;
+                  isTerminalNow = isDispatchedNow || isPackedNow || isFinishedProductionNow || isFinishedBarcodeNow;
                   return;
                 }
                 adminEditMode = false;
                 isPackedNow = true;
                 isDispatchedNow = false;
                 isFinishedProductionNow = false;
+                isFinishedBarcodeNow = false;
                 isTerminalNow = true;
                 modalStatusNow = 'packed';
                 job.status = 'Packed';
@@ -3141,12 +3207,12 @@ include __DIR__ . '/../../includes/header.php';
                   statusBadge.classList.add('ok');
                 }
                 applySectionBLockState();
-                setSectionMessage('Status updated: Packed ✓ ' + (isPaperRollTypeTab ? 'Finished Production is now enabled.' : 'You can now mark Dispatched.') , false);
+                setSectionMessage('Status updated: Packed ✓ ' + (isPaperRollTypeTab ? 'Finished Production is now enabled.' : (isBarcodeMode ? 'Finished Barcode is now enabled.' : 'You can now mark Dispatched.')) , false);
               })
               .catch(function() {
                 setSectionMessage('Status update failed.', true);
                 isPackedNow = false;
-                isTerminalNow = isDispatchedNow || isPackedNow;
+                isTerminalNow = isDispatchedNow || isPackedNow || isFinishedProductionNow || isFinishedBarcodeNow;
               })
               .finally(function() {
                 if (finishBtn) {
@@ -3164,6 +3230,62 @@ include __DIR__ . '/../../includes/header.php';
                     });
                   });
 
+                }
+              });
+          } else if (buttonAction === 'finished_barcode') {
+            if (!isPackedNow || isFinishedBarcodeNow || (finishedBarcodeBtn && finishedBarcodeBtn.getAttribute('data-saving') === '1')) return;
+            if (finishedBarcodeBtn) {
+              finishedBarcodeBtn.setAttribute('data-saving', '1');
+              finishedBarcodeBtn.setAttribute('disabled', 'disabled');
+              finishedBarcodeBtn.textContent = 'Saving...';
+              finishedBarcodeBtn.style.backgroundColor = '#64748b';
+            }
+            setSectionMessage('Updating status to Finished Barcode...', false);
+
+            var fdFinishedBarcode = new FormData();
+            fdFinishedBarcode.append('action', 'mark_finished_barcode');
+            fdFinishedBarcode.append('job_id', String(activeJobIdForModal));
+
+            fetch(baseUrl + '/modules/packing/api.php', {
+              method: 'POST',
+              body: fdFinishedBarcode,
+              credentials: 'same-origin'
+            })
+              .then(function(r) { return r.json(); })
+              .then(function(resp) {
+                if (!resp || !resp.ok) {
+                  setSectionMessage((resp && resp.message) ? resp.message : 'Finished Barcode failed.', true);
+                  isFinishedBarcodeNow = false;
+                  isTerminalNow = isDispatchedNow || isPackedNow || isFinishedProductionNow || isFinishedBarcodeNow;
+                  return;
+                }
+                isFinishedBarcodeNow = true;
+                isPackedNow = false;
+                isDispatchedNow = false;
+                isFinishedProductionNow = false;
+                isTerminalNow = true;
+                modalStatusNow = 'finished barcode';
+                job.status = 'Finished Barcode';
+                applySectionBLockState();
+                setSectionMessage('Finished Barcode completed ✓ Moving to History...', false);
+
+                var barcodeRow = document.querySelector('tr[data-row-id="' + String(activeJobIdForModal) + '"]');
+                if (barcodeRow && barcodeRow.parentNode) {
+                  barcodeRow.parentNode.removeChild(barcodeRow);
+                }
+                closeModal();
+                setTimeout(function() { window.location.href = window.location.pathname + '?tab=history'; }, 800);
+              })
+              .catch(function() {
+                setSectionMessage('Finished Barcode failed.', true);
+                isFinishedBarcodeNow = false;
+                isTerminalNow = isDispatchedNow || isPackedNow || isFinishedProductionNow || isFinishedBarcodeNow;
+              })
+              .finally(function() {
+                if (finishedBarcodeBtn) {
+                  finishedBarcodeBtn.removeAttribute('data-saving');
+                  finishedBarcodeBtn.textContent = 'Finished Barcode';
+                  applySectionBLockState();
                 }
               });
           } else if (buttonAction === 'dispatched') {
@@ -3190,11 +3312,13 @@ include __DIR__ . '/../../includes/header.php';
                 if (!resp || !resp.ok) {
                   setSectionMessage((resp && resp.message) ? resp.message : 'Status update failed.', true);
                   isDispatchedNow = false;
-                  isTerminalNow = isDispatchedNow || isPackedNow;
+                  isTerminalNow = isDispatchedNow || isPackedNow || isFinishedProductionNow || isFinishedBarcodeNow;
                   return;
                 }
                 isDispatchedNow = true;
                 isPackedNow = false;
+                isFinishedProductionNow = false;
+                isFinishedBarcodeNow = false;
                 isTerminalNow = true;
                 modalStatusNow = 'dispatched';
                 job.status = 'Dispatched';
@@ -3211,7 +3335,7 @@ include __DIR__ . '/../../includes/header.php';
               .catch(function() {
                 setSectionMessage('Status update failed.', true);
                 isDispatchedNow = false;
-                isTerminalNow = isDispatchedNow || isPackedNow;
+                isTerminalNow = isDispatchedNow || isPackedNow || isFinishedProductionNow || isFinishedBarcodeNow;
               })
               .finally(function() {
                 if (dispatchBtn) {
@@ -3244,12 +3368,13 @@ include __DIR__ . '/../../includes/header.php';
                 if (!resp || !resp.ok) {
                   setSectionMessage((resp && resp.message) ? resp.message : 'Finished Production failed.', true);
                   isFinishedProductionNow = false;
-                  isTerminalNow = isDispatchedNow || isPackedNow || isFinishedProductionNow;
+                  isTerminalNow = isDispatchedNow || isPackedNow || isFinishedProductionNow || isFinishedBarcodeNow;
                   return;
                 }
                 isFinishedProductionNow = true;
                 isPackedNow = false;
                 isDispatchedNow = false;
+                isFinishedBarcodeNow = false;
                 isTerminalNow = true;
                 modalStatusNow = 'finished production';
                 job.status = 'Finished Production';
@@ -3266,7 +3391,7 @@ include __DIR__ . '/../../includes/header.php';
               .catch(function() {
                 setSectionMessage('Finished Production failed.', true);
                 isFinishedProductionNow = false;
-                isTerminalNow = isDispatchedNow || isPackedNow || isFinishedProductionNow;
+                isTerminalNow = isDispatchedNow || isPackedNow || isFinishedProductionNow || isFinishedBarcodeNow;
               })
               .finally(function() {
                 if (finalProductionBtn) {
@@ -3555,6 +3680,7 @@ include __DIR__ . '/../../includes/header.php';
 
   panes.forEach(bindPane);
   activateTab(activeTab);
+  triggerBarcodeBackfillOnce();
 
   function exportUrl(autoprint) {
     var ids = activeIds();
