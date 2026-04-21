@@ -379,6 +379,54 @@ function packing_pick_value_loose(array $sources, array $keys): string {
     return '';
 }
 
+function packing_extract_item_dimensions(array $row, array $jobExtra, array $planExtra, array $prevExtra = [], array $grandPrevExtra = []): array {
+    $sources = [$jobExtra, $planExtra, $prevExtra, $grandPrevExtra];
+
+    $barcodeSize = packing_pick_value_loose($sources, [
+        'barcode_size', 'planning_die_size', 'die_size', 'size', 'item_size'
+    ]);
+
+    $itemWidth = packing_pick_value_loose($sources, [
+        'planning_size_width_mm', 'size_width_mm', 'item_width_mm', 'barcode_width', 'width_mm', 'width'
+    ]);
+    $itemLength = packing_pick_value_loose($sources, [
+        'planning_size_height_mm', 'size_height_mm', 'item_length_mm', 'barcode_height', 'height_mm', 'height', 'length_mm', 'length'
+    ]);
+
+    if (($itemWidth === '' || $itemLength === '') && $barcodeSize !== '') {
+        if (preg_match('/([0-9]+(?:\.[0-9]+)?)\s*mm?\s*[xX×]\s*([0-9]+(?:\.[0-9]+)?)/i', $barcodeSize, $m)) {
+            if ($itemWidth === '') {
+                $itemWidth = (string)$m[1];
+            }
+            if ($itemLength === '') {
+                $itemLength = (string)$m[2];
+            }
+        }
+    }
+
+    $itemWidthNum = packing_to_float_or_null($itemWidth);
+    $itemLengthNum = packing_to_float_or_null($itemLength);
+    if ($itemWidthNum !== null && $itemLengthNum !== null && $itemWidthNum > 0 && $itemLengthNum > 0 && $itemWidthNum < $itemLengthNum) {
+        $tmp = $itemWidth;
+        $itemWidth = $itemLength;
+        $itemLength = $tmp;
+    }
+
+    $paperSize = packing_pick_value_loose($sources, [
+        'paper_size', 'paper_roll_width', 'paper_width', 'paper_width_mm'
+    ]);
+    if ($paperSize === '') {
+        $paperSize = trim((string)($row['paper_width_mm'] ?? ''));
+    }
+
+    return [
+        'barcode_size' => $barcodeSize,
+        'planning_size_width_mm' => trim((string)$itemWidth),
+        'planning_size_height_mm' => trim((string)$itemLength),
+        'paper_size' => $paperSize,
+    ];
+}
+
 function packing_to_float_or_null($value): ?float {
     if ($value === null) {
         return null;
@@ -464,6 +512,143 @@ function packing_extract_production_metrics(mysqli $db, int $planningId, array $
         'wastage' => $wastageRaw,
         'production_percent' => $percentOut,
     ];
+}
+
+function packing_extract_total_roll_value(array $jobExtra, array $planExtra, array $prevExtra = [], array $grandPrevExtra = []): string {
+    $sources = [$jobExtra, $planExtra, $prevExtra, $grandPrevExtra];
+
+    $explicitTotal = packing_pick_value_loose($sources, [
+        'total_roll_value',
+        'total_roll',
+        'total_rolls',
+        'barcode_total_roll',
+        'barcode_total_rolls',
+        'label_slitting_total_roll',
+    ]);
+    if ($explicitTotal !== '') {
+        return $explicitTotal;
+    }
+
+    $orderQtyRaw = packing_pick_value_loose($sources, [
+        'order_quantity_user',
+        'order_qty_user',
+        'order_quantity',
+        'order_qty',
+        'quantity',
+        'qty_pcs',
+        'total_order_qty',
+    ]);
+    $pcsPerRollRaw = packing_pick_value_loose($sources, [
+        'pcs_per_roll',
+        'pices_per_roll',
+        'qty_in_roll',
+        'quantity_in_roll',
+    ]);
+
+    $orderQtyNum = packing_to_float_or_null($orderQtyRaw);
+    $pcsPerRollNum = packing_to_float_or_null($pcsPerRollRaw);
+    if ($orderQtyNum !== null && $orderQtyNum > 0 && $pcsPerRollNum !== null && $pcsPerRollNum > 0) {
+        return (string)max(1, (int)ceil($orderQtyNum / $pcsPerRollNum));
+    }
+
+    return '';
+}
+
+function packing_decode_roll_payload($raw): array {
+    if (is_array($raw)) {
+        return $raw;
+    }
+    if (!is_string($raw) || trim($raw) === '') {
+        return [];
+    }
+    $decoded = json_decode($raw, true);
+    return is_array($decoded) ? $decoded : [];
+}
+
+function packing_extract_bpr_from_payload(array $payload): string {
+    $rollOverrides = (isset($payload['roll_overrides']) && is_array($payload['roll_overrides']))
+        ? $payload['roll_overrides']
+        : [];
+    if (!$rollOverrides) {
+        return '';
+    }
+
+    $selectedKeys = (isset($payload['selected_roll_keys']) && is_array($payload['selected_roll_keys']))
+        ? $payload['selected_roll_keys']
+        : [];
+
+    $keysToTry = [];
+    foreach ($selectedKeys as $rk) {
+        $k = trim((string)$rk);
+        if ($k !== '') {
+            $keysToTry[] = $k;
+        }
+    }
+    foreach (array_keys($rollOverrides) as $rk) {
+        $k = trim((string)$rk);
+        if ($k !== '') {
+            $keysToTry[] = $k;
+        }
+    }
+
+    foreach ($keysToTry as $key) {
+        $state = $rollOverrides[$key] ?? null;
+        if (!is_array($state)) {
+            continue;
+        }
+        $bpr = packing_to_float_or_null($state['bpr'] ?? null);
+        if ($bpr !== null && $bpr > 0) {
+            return (string)max(1, (int)floor($bpr));
+        }
+    }
+
+    return '';
+}
+
+function packing_extract_barcode_per_roll(
+    array $jobExtra,
+    array $planExtra,
+    array $prevExtra = [],
+    array $grandPrevExtra = [],
+    array $metrics = [],
+    string $totalRollValue = '',
+    ?array $operatorEntry = null
+): string {
+    if (is_array($operatorEntry)) {
+        $payload = packing_decode_roll_payload($operatorEntry['roll_payload_json'] ?? null);
+        $fromPayload = packing_extract_bpr_from_payload($payload);
+        if ($fromPayload !== '') {
+            return $fromPayload;
+        }
+    }
+
+    $sources = [$jobExtra, $planExtra, $prevExtra, $grandPrevExtra];
+    $direct = packing_pick_value_loose($sources, [
+        'barcode_in_1_roll',
+        'barcode_per_roll',
+        'barcode_qty_per_roll',
+        'pcs_per_roll',
+        'pieces_per_roll',
+        'pices_per_roll',
+        'qty_per_roll',
+        'quantity_per_roll',
+        'qty_in_roll',
+        'quantity_in_roll',
+        'planning_pcs_per_roll',
+    ]);
+    if ($direct !== '') {
+        return $direct;
+    }
+
+    $totalRollNum = packing_to_float_or_null($totalRollValue);
+    $prodNum = packing_to_float_or_null($metrics['production_quantity'] ?? null);
+    $orderNum = packing_to_float_or_null($metrics['order_quantity'] ?? null);
+    $qtyBase = ($prodNum !== null && $prodNum > 0) ? $prodNum : $orderNum;
+    if ($qtyBase !== null && $qtyBase > 0 && $totalRollNum !== null && $totalRollNum > 0) {
+        return (string)max(1, (int)round($qtyBase / $totalRollNum));
+    }
+
+    return '';
 }
 
 function packing_display_prefix(): string {
@@ -698,6 +883,23 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
 
     $planningId = (int)($row['planning_id'] ?? 0);
     $metrics = packing_extract_production_metrics($db, $planningId, $jobExtra, $planExtra, $prevExtra, $grandPrevExtra);
+    $itemDimensions = packing_extract_item_dimensions($row, $jobExtra, $planExtra, $prevExtra, $grandPrevExtra);
+    $totalRollValue = packing_extract_total_roll_value($jobExtra, $planExtra, $prevExtra, $grandPrevExtra);
+    $operatorEntry = packing_fetch_operator_entry(
+        $db,
+        (string)($row['job_no'] ?? ''),
+        (int)($row['id'] ?? 0),
+        (string)($row['created_at'] ?? '')
+    );
+    $barcodePerRoll = packing_extract_barcode_per_roll(
+        $jobExtra,
+        $planExtra,
+        $prevExtra,
+        $grandPrevExtra,
+        $metrics,
+        $totalRollValue,
+        $operatorEntry
+    );
 
     return [
         'id' => (int)$row['id'],
@@ -732,20 +934,21 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
         'paper_width_mm' => (string)($row['paper_width_mm'] ?? ''),
         'paper_length_mtr' => (string)($row['paper_length_mtr'] ?? ''),
         'paper_gsm' => (string)($row['paper_gsm'] ?? ''),
+        'barcode_size' => (string)($itemDimensions['barcode_size'] ?? ''),
+        'planning_size_width_mm' => (string)($itemDimensions['planning_size_width_mm'] ?? ''),
+        'planning_size_height_mm' => (string)($itemDimensions['planning_size_height_mm'] ?? ''),
+        'paper_size' => (string)($itemDimensions['paper_size'] ?? ''),
         'order_quantity' => (string)($metrics['order_quantity'] ?? ''),
         'production_quantity' => (string)($metrics['production_quantity'] ?? ''),
+        'total_roll_value' => $totalRollValue,
+        'barcode_in_1_roll' => $barcodePerRoll,
         'wastage' => (string)($metrics['wastage'] ?? ''),
         'production_percent' => (string)($metrics['production_percent'] ?? ''),
         'job_extra_data' => $jobExtra,
         'plan_extra_data' => $planExtra,
         'prev_job_extra_data' => $prevExtra,
         'grandprev_job_extra_data' => $grandPrevExtra,
-        'operator_entry' => packing_fetch_operator_entry(
-            $db,
-            (string)($row['job_no'] ?? ''),
-            (int)($row['id'] ?? 0),
-            (string)($row['created_at'] ?? '')
-        ),
+        'operator_entry' => $operatorEntry,
     ];
 }
 
@@ -833,8 +1036,8 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     $operatorEntryByJobNo = [];
     $hasSubmittedLock = packing_table_has_column($db, 'packing_operator_entries', 'submitted_lock');
     $opSql = $hasSubmittedLock
-        ? "SELECT job_no, job_id, submitted_lock, submitted_at FROM packing_operator_entries WHERE job_no IS NOT NULL AND TRIM(job_no) <> ''"
-        : "SELECT job_no, job_id, submitted_at FROM packing_operator_entries WHERE job_no IS NOT NULL AND TRIM(job_no) <> ''";
+        ? "SELECT job_no, job_id, submitted_lock, submitted_at, packed_qty, cartons_count, loose_qty, bundles_count, roll_payload_json FROM packing_operator_entries WHERE job_no IS NOT NULL AND TRIM(job_no) <> ''"
+        : "SELECT job_no, job_id, submitted_at, packed_qty, cartons_count, loose_qty, bundles_count, roll_payload_json FROM packing_operator_entries WHERE job_no IS NOT NULL AND TRIM(job_no) <> ''";
     $opRes = $db->query($opSql);
     if ($opRes) {
         while ($opRow = $opRes->fetch_assoc()) {
@@ -843,6 +1046,7 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
                 $operatorEntryByJobNo[$jn][] = [
                     'job_id' => (int)($opRow['job_id'] ?? 0),
                     'submitted_at' => trim((string)($opRow['submitted_at'] ?? '')),
+                    'entry' => $opRow,
                 ];
             }
         }
@@ -870,6 +1074,7 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
         $jobNoKey = strtolower(trim((string)($row['job_no'] ?? '')));
         $jobId = (int)($row['id'] ?? 0);
         $hasSubmittedEntry = false;
+        $matchedOperatorEntry = null;
         if ($jobNoKey !== '' && isset($operatorEntryByJobNo[$jobNoKey])) {
             foreach ((array)$operatorEntryByJobNo[$jobNoKey] as $entryMeta) {
                 $entryJobId = (int)($entryMeta['job_id'] ?? 0);
@@ -886,10 +1091,12 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
                 // After stale-cycle filtering, same job_no should remain submitted on refresh
                 // even when job_id references shift between active rows.
                 $hasSubmittedEntry = true;
+                $matchedOperatorEntry = (isset($entryMeta['entry']) && is_array($entryMeta['entry'])) ? $entryMeta['entry'] : null;
                 break;
             }
         }
         $row['operator_submitted'] = $hasSubmittedEntry;
+        $row['operator_entry'] = $matchedOperatorEntry;
         if ($hasSubmittedEntry) {
             $submittedByGroup[$groupKey] = true;
         }
@@ -973,6 +1180,11 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
         $tabKey = (string)($row['packing_tab'] ?? '');
         $jobExtra = packing_decode_json($row['extra_data'] ?? null);
         $planExtra = packing_decode_json($row['plan_extra_data'] ?? null);
+        $planningId = (int)($row['planning_id'] ?? 0);
+        $metrics = packing_extract_production_metrics($db, $planningId, $jobExtra, $planExtra);
+        $operatorEntry = (isset($row['operator_entry']) && is_array($row['operator_entry'])) ? $row['operator_entry'] : null;
+        $totalRollValue = packing_extract_total_roll_value($jobExtra, $planExtra);
+        $barcodePerRoll = packing_extract_barcode_per_roll($jobExtra, $planExtra, [], [], $metrics, $totalRollValue, $operatorEntry);
         $orderDate = trim((string)(
             $planExtra['order_date']
             ?? $planExtra['job_date']
@@ -996,10 +1208,15 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
             'client_name' => $clientName,
             'order_date' => $orderDate,
             'dispatch_date' => $dispatchDate,
+            'order_quantity' => (string)($metrics['order_quantity'] ?? ''),
+            'production_quantity' => (string)($metrics['production_quantity'] ?? ''),
+            'barcode_in_1_roll' => $barcodePerRoll,
             'last_department' => packing_department_display_for_tab($tabKey),
             'status' => packing_effective_status_from_row($row),
             'notes' => (string)($row['notes'] ?? ''),
             'image_url' => packing_extract_image_url($jobExtra, $planExtra),
+            'total_roll_value' => $totalRollValue,
+            'operator_packed_qty' => is_array($operatorEntry) ? (string)($operatorEntry['packed_qty'] ?? '') : '',
             'event_time' => $eventTime,
             'operator_submitted' => $hasOperatorSubmission,
         ];

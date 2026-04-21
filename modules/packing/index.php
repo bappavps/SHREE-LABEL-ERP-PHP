@@ -111,24 +111,48 @@ $formatDate = static function(string $value): string {
   return date('d M Y', $ts);
 };
 
-$resolvePlanUrl = static function(string $planNo): string {
+$resolvePlanUrl = static function(string $planNo, array $row = []): string {
   $planNo = trim($planNo);
   if ($planNo === '') {
     return '';
   }
 
+  $tabKey = packing_row_to_tab($row) ?? '';
   $upperPlanNo = strtoupper($planNo);
+  if (str_starts_with($upperPlanNo, 'PLN-BAR/') || $tabKey === 'barcode') {
+    return BASE_URL . '/modules/planning/barcode/index.php';
+  }
   if (str_starts_with($upperPlanNo, 'PLN-PRL/')) {
+    if ($tabKey === 'one_ply') {
+      return BASE_URL . '/modules/planning/oneply/index.php';
+    }
+    if ($tabKey === 'two_ply') {
+      return BASE_URL . '/modules/planning/twoply/index.php';
+    }
+    if ($tabKey === 'pos_roll') {
+      return BASE_URL . '/modules/planning/pos/index.php';
+    }
     return BASE_URL . '/modules/planning/paperroll/index.php';
   }
 
   return BASE_URL . '/modules/planning/board.php?plan_no=' . urlencode($planNo);
 };
 
-$resolveJobUrl = static function(string $jobNo, int $jobId = 0): string {
+$resolveJobUrl = static function(string $jobNo, int $jobId = 0, array $row = []): string {
   $jobNo = trim($jobNo);
   if ($jobNo === '') {
     return '';
+  }
+
+  $tabKey = packing_row_to_tab($row) ?? '';
+  $jobRouteMap = [
+    'barcode' => '/modules/jobs/barcode/index.php',
+    'one_ply' => '/modules/jobs/oneply/index.php',
+    'two_ply' => '/modules/jobs/twoply/index.php',
+    'pos_roll' => '/modules/jobs/pos/index.php',
+  ];
+  if ($jobId > 0 && isset($jobRouteMap[$tabKey])) {
+    return BASE_URL . $jobRouteMap[$tabKey] . '?auto_job=' . rawurlencode((string)$jobId);
   }
 
   $upperJobNo = strtoupper($jobNo);
@@ -375,6 +399,17 @@ include __DIR__ . '/../../includes/header.php';
     <?php 
       $tabRows = $tabKey === 'history' ? $historyData : ($rowsByTab[$tabKey] ?? []);
       $theme = $tabThemes[$tabKey] ?? ['accent' => '#1d4ed8', 'soft' => '#eff6ff', 'border' => '#bfdbfe']; 
+      $isBarcodeTab = ($tabKey === 'barcode');
+      $barcodeTotalRollValue = 0.0;
+      if ($isBarcodeTab) {
+        foreach ($tabRows as $rowValue) {
+          $rawRollValue = trim((string)($rowValue['total_roll_value'] ?? ''));
+          if ($rawRollValue === '') continue;
+          $rollNumeric = str_replace(',', '', $rawRollValue);
+          if (!is_numeric($rollNumeric)) continue;
+          $barcodeTotalRollValue += (float)$rollNumeric;
+        }
+      }
     ?>
     <div
       class="pk-pane<?= $currentTab === $tabKey ? ' active' : '' ?>"
@@ -421,7 +456,7 @@ include __DIR__ . '/../../includes/header.php';
       <?php else: ?>
         <div class="pk-bar">
           <div class="count"><span class="pk-selected">0</span> selected in <?= e(packing_tab_label($tabKey)) ?></div>
-          <div style="font-size:.74rem;color:#475569;">Ready rows: <?= count($tabRows) ?></div>
+          <div style="font-size:.74rem;color:#475569;">Ready rows: <?= count($tabRows) ?><?php if ($isBarcodeTab): ?> | Total Roll Value: <?= e(number_format($barcodeTotalRollValue, 2, '.', '')) ?><?php endif; ?></div>
         </div>
       <?php endif; ?>
 
@@ -468,6 +503,9 @@ include __DIR__ . '/../../includes/header.php';
                 <th>Client Name</th>
                 <th>Order Date</th>
                 <th>Dispatch Date</th>
+                <?php if ($isBarcodeTab): ?><th>Total Roll Value</th><?php endif; ?>
+                <?php if ($isBarcodeTab): ?><th>Barcode in 1 Roll</th><?php endif; ?>
+                <?php if ($isBarcodeTab): ?><th>Physical Production</th><?php endif; ?>
                 <th>Operator Submit</th>
                 <th>Status</th>
               </tr>
@@ -475,7 +513,7 @@ include __DIR__ . '/../../includes/header.php';
           </thead>
           <tbody>
             <?php if (empty($tabRows)): ?>
-              <tr><td colspan="<?= $tabKey === 'history' ? '10' : '12' ?>" class="pk-empty">
+              <tr><td colspan="<?= $tabKey === 'history' ? '10' : ($isBarcodeTab ? '15' : '12') ?>" class="pk-empty">
                 <?= $tabKey === 'history' ? 'No completed jobs found.' : 'No packing-ready job found in this tab.' ?>
               </td></tr>
             <?php else: ?>
@@ -490,7 +528,7 @@ include __DIR__ . '/../../includes/header.php';
                     </td>
                     <td>
                       <?php if (!empty($row['plan_no'])): ?>
-                        <a href="<?= e($resolvePlanUrl((string)$row['plan_no'])) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
+                        <a href="<?= e($resolvePlanUrl((string)$row['plan_no'], $row)) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
                           <?= e($row['plan_no']) ?>
                         </a>
                       <?php else: ?>
@@ -500,7 +538,7 @@ include __DIR__ . '/../../includes/header.php';
                     <td><?= e(($row['plan_name'] ?? '') !== '' ? $row['plan_name'] : '-') ?></td>
                     <td>
                       <?php if (!empty($row['job_no'])): ?>
-                        <a href="<?= e($resolveJobUrl((string)$row['job_no'], (int)($row['id'] ?? 0))) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
+                        <a href="<?= e($resolveJobUrl((string)$row['job_no'], (int)($row['id'] ?? 0), $row)) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
                           <?= e($row['job_no']) ?>
                         </a>
                       <?php else: ?>
@@ -529,7 +567,7 @@ include __DIR__ . '/../../includes/header.php';
                     <td><?= e(($row['plan_priority'] ?? '') !== '' ? $row['plan_priority'] : '-') ?></td>
                     <td>
                       <?php if (!empty($row['plan_no'])): ?>
-                        <a href="<?= e($resolvePlanUrl((string)$row['plan_no'])) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
+                        <a href="<?= e($resolvePlanUrl((string)$row['plan_no'], $row)) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
                           <?= e($row['plan_no']) ?>
                         </a>
                       <?php else: ?>
@@ -538,7 +576,7 @@ include __DIR__ . '/../../includes/header.php';
                     </td>
                     <td>
                       <?php if (!empty($row['job_no'])): ?>
-                        <a href="<?= e($resolveJobUrl((string)$row['job_no'], (int)($row['id'] ?? 0))) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
+                        <a href="<?= e($resolveJobUrl((string)$row['job_no'], (int)($row['id'] ?? 0), $row)) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
                           <?= e($row['job_no']) ?>
                         </a>
                       <?php else: ?>
@@ -549,6 +587,9 @@ include __DIR__ . '/../../includes/header.php';
                     <td><?= e(($row['client_name'] ?? '') !== '' ? $row['client_name'] : '-') ?></td>
                     <td><?= e($formatDate((string)($row['order_date'] ?? ''))) ?></td>
                     <td class="pk-dispatch-date"><span class="pk-dispatch-pill"><?= e($formatDate((string)($row['dispatch_date'] ?? $row['event_time'] ?? ''))) ?></span></td>
+                    <?php if ($isBarcodeTab): ?><td><?= e(($row['total_roll_value'] ?? '') !== '' ? $row['total_roll_value'] : '-') ?></td><?php endif; ?>
+                    <?php if ($isBarcodeTab): ?><td><?= e(($row['barcode_in_1_roll'] ?? '') !== '' ? $row['barcode_in_1_roll'] : '-') ?></td><?php endif; ?>
+                    <?php if ($isBarcodeTab): ?><td><?= e(($row['operator_packed_qty'] ?? '') !== '' ? $row['operator_packed_qty'] : '-') ?></td><?php endif; ?>
                     <td><span class="pk-badge <?= !empty($row['operator_submitted']) ? 'operator-submitted' : 'operator-pending' ?>"><?= !empty($row['operator_submitted']) ? 'Operator Submitted' : 'Awaiting Submit' ?></span></td>
                     <td><span class="pk-badge <?= e($statusClass((string)($row['status'] ?? ''))) ?>"><?= e($displayPackingStatus((string)($row['status'] ?? ''))) ?></span></td>
                   </tr>
@@ -564,7 +605,7 @@ include __DIR__ . '/../../includes/header.php';
                     <td><?= e(($row['plan_priority'] ?? '') !== '' ? $row['plan_priority'] : '-') ?></td>
                     <td>
                       <?php if (!empty($row['plan_no'])): ?>
-                        <a href="<?= e($resolvePlanUrl((string)$row['plan_no'])) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
+                        <a href="<?= e($resolvePlanUrl((string)$row['plan_no'], $row)) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
                           <?= e($row['plan_no']) ?>
                         </a>
                       <?php else: ?>
@@ -573,7 +614,7 @@ include __DIR__ . '/../../includes/header.php';
                     </td>
                     <td>
                       <?php if (!empty($row['job_no'])): ?>
-                        <a href="<?= e($resolveJobUrl((string)$row['job_no'], (int)($row['id'] ?? 0))) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
+                        <a href="<?= e($resolveJobUrl((string)$row['job_no'], (int)($row['id'] ?? 0), $row)) ?>" target="_blank" style="text-decoration:underline;color:#2563eb;">
                           <?= e($row['job_no']) ?>
                         </a>
                       <?php else: ?>
@@ -584,6 +625,9 @@ include __DIR__ . '/../../includes/header.php';
                     <td><?= e(($row['client_name'] ?? '') !== '' ? $row['client_name'] : '-') ?></td>
                     <td><?= e($formatDate((string)($row['order_date'] ?? ''))) ?></td>
                     <td class="pk-dispatch-date"><span class="pk-dispatch-pill"><?= e($formatDate((string)($row['dispatch_date'] ?? $row['event_time'] ?? ''))) ?></span></td>
+                    <?php if ($isBarcodeTab): ?><td><?= e(($row['total_roll_value'] ?? '') !== '' ? $row['total_roll_value'] : '-') ?></td><?php endif; ?>
+                    <?php if ($isBarcodeTab): ?><td><?= e(($row['barcode_in_1_roll'] ?? '') !== '' ? $row['barcode_in_1_roll'] : '-') ?></td><?php endif; ?>
+                    <?php if ($isBarcodeTab): ?><td><?= e(($row['operator_packed_qty'] ?? '') !== '' ? $row['operator_packed_qty'] : '-') ?></td><?php endif; ?>
                     <td><span class="pk-badge <?= !empty($row['operator_submitted']) ? 'operator-submitted' : 'operator-pending' ?>"><?= !empty($row['operator_submitted']) ? 'Operator Submitted' : 'Awaiting Submit' ?></span></td>
                     <td><span class="pk-badge <?= e($statusClass((string)($row['status'] ?? ''))) ?>"><?= e($displayPackingStatus((string)($row['status'] ?? ''))) ?></span></td>
                   </tr>
@@ -1181,6 +1225,32 @@ include __DIR__ . '/../../includes/header.php';
     rollList = stripParentRolls(rollList);
     var rollNoSummary = assignedRolls.length ? assignedRolls.join(', ') : (rollList.length ? rollList.join(', ') : '-');
     var sources = [{ __roll_no_summary__: rollNoSummary }].concat(sourceObjects);
+    var barcodeSizeRaw = pickFirstValue(sources, ['barcode_size', 'planning_die_size', 'die_size', 'size', 'item_size']);
+    var isBarcodeJob = String((job && job.packing_tab) || '').toLowerCase() === 'barcode';
+
+    function parseBarcodeDims(raw) {
+      var txt = String(raw == null ? '' : raw).trim();
+      if (!txt) return null;
+      var m = txt.match(/([0-9]+(?:\.[0-9]+)?)\s*mm?\s*[xX×]\s*([0-9]+(?:\.[0-9]+)?)/i);
+      if (!m) return null;
+      var a = Number(String(m[1] || '').replace(/,/g, ''));
+      var b = Number(String(m[2] || '').replace(/,/g, ''));
+      if (isNaN(a) || isNaN(b) || a <= 0 || b <= 0) return null;
+      var width = Math.max(a, b);
+      var length = Math.min(a, b);
+      return { width: String(width), length: String(length) };
+    }
+
+    var parsedBarcodeDims = parseBarcodeDims(barcodeSizeRaw);
+
+    function isBlankish(v) {
+      var s = String(v == null ? '' : v).trim();
+      if (!s) return true;
+      var lower = s.toLowerCase();
+      if (lower === '-' || lower === '—' || lower === 'n/a' || lower === 'na' || lower === 'null' || lower === 'undefined') return true;
+      var n = Number(s.replace(/,/g, ''));
+      return !isNaN(n) && n <= 0;
+    }
     var defs = [
       ['Packing ID', ['packing_display_id']],
       ['Plan No', ['plan_no', 'plan_number']],
@@ -1200,16 +1270,30 @@ include __DIR__ . '/../../includes/header.php';
       ['Order Quantity User', ['order_quantity_user', 'quantity_user']],
       ['Order Meter User', ['order_meter_user', 'meter_user']],
       ['Job Label', ['job_label']],
-      ['Item Width', ['item_width', 'width_mm', 'width']],
-      ['Item Length', ['item_length', 'length_mm', 'length']],
+      ['Item Width', ['planning_size_width_mm', 'item_width_mm', 'item_width', 'barcode_width', 'width_mm', 'width']],
+      ['Item Length', ['planning_size_height_mm', 'item_length_mm', 'item_length', 'barcode_height', 'height_mm', 'height', 'length_mm', 'length']],
       ['Gsm', ['gsm']],
       ['Core Size', ['core_size']],
       ['Core Type', ['core_type']],
       ['Printing Planning', ['printing_planning', 'planning_status']]
     ];
 
+    if (isBarcodeJob) {
+      defs.splice(14, 0,
+        ['Total Roll Value', ['total_roll_value', 'total_rolls']],
+        ['Barcode in 1 roll', ['barcode_in_1_roll', 'barcode_per_roll', 'pcs_per_roll']]
+      );
+      defs = defs.filter(function(def) {
+        var label = String(def[0] || '');
+        return label !== 'Gsm' && label !== 'Core Size' && label !== 'Core Type';
+      });
+    }
+
     return defs.map(function(def) {
       var val = pickFirstValue(sources, def[1]);
+      if (isBarcodeJob && (def[0] === 'Item Width' || def[0] === 'Item Length') && isBlankish(val) && parsedBarcodeDims) {
+        val = (def[0] === 'Item Width') ? parsedBarcodeDims.width : parsedBarcodeDims.length;
+      }
       // If value is null/undefined/empty, show '-'
       if (val === null || typeof val === 'undefined' || val === '') val = '-';
       return [def[0], val];
@@ -1630,6 +1714,7 @@ include __DIR__ . '/../../includes/header.php';
     var rollItems = buildRollItems(job);
     var jobStatusRaw = String(job.status || '').trim();
     var jobStatusNorm = jobStatusRaw.toLowerCase().replace(/[-_]/g, ' ').trim();
+    var isBarcodeMode = String(job.packing_tab || '') === 'barcode' || String(activeTab || '') === 'barcode';
     var isPosRollTab = String(job.packing_tab || '') === 'pos_roll' || String(activeTab || '') === 'pos_roll';
     // one_ply and two_ply are also paper-roll types → use "Finished Production" not "Mark Dispatched"
     var isPaperRollTypeTab = isPosRollTab
@@ -1675,13 +1760,26 @@ include __DIR__ . '/../../includes/header.php';
       var src = operatorRollOverrides[k];
       if (!src || typeof src !== 'object') return;
       var state = {};
-      ['rps', 'rpc', 'cartons', 'extra', 'csize'].forEach(function(field) {
-        if (!Object.prototype.hasOwnProperty.call(src, field)) return;
-        var raw = Math.floor(toNum(src[field]));
-        if (!isNaN(raw)) {
-          state[field] = (field === 'rps' || field === 'rpc' || field === 'csize') ? Math.max(1, raw) : Math.max(0, raw);
+      if (isBarcodeMode) {
+        ['bpr', 'total_rolls', 'rolls_per_carton', 'extra_pcs'].forEach(function(field) {
+          if (!Object.prototype.hasOwnProperty.call(src, field)) return;
+          var raw = Math.floor(toNum(src[field]));
+          if (!isNaN(raw)) {
+            state[field] = (field === 'bpr') ? Math.max(1, raw) : Math.max(0, raw);
+          }
+        });
+        if (Object.prototype.hasOwnProperty.call(src, 'csize_text')) {
+          state.csize_text = String(src.csize_text || '').trim();
         }
-      });
+      } else {
+        ['rps', 'rpc', 'cartons', 'extra', 'csize'].forEach(function(field) {
+          if (!Object.prototype.hasOwnProperty.call(src, field)) return;
+          var raw = Math.floor(toNum(src[field]));
+          if (!isNaN(raw)) {
+            state[field] = (field === 'rps' || field === 'rpc' || field === 'csize') ? Math.max(1, raw) : Math.max(0, raw);
+          }
+        });
+      }
       if (Object.keys(state).length) {
         rollHelperOverrides[String(k)] = state;
       }
@@ -1703,6 +1801,7 @@ include __DIR__ . '/../../includes/header.php';
     var markPackedActive = !isTerminal && operatorHasSubmitted;
     var markDispatchedActive = !isPaperRollTypeTab && isPacked;
     var markFinishedProductionActive = isPaperRollTypeTab && isPacked && !isFinishedProduction;
+    var barcodePerRollText = String(job && job.barcode_in_1_roll ? job.barcode_in_1_roll : '').trim() || '-';
 
     var imageHtml = job.image_url
       ? '<div class="pk-jc-image"><div style="font-size:.72rem;font-weight:800;color:#475569;margin-bottom:6px">Assigned Image Preview</div><img src="' + escHtml(job.image_url) + '" alt="Assigned Job Image"></div>'
@@ -1776,6 +1875,12 @@ include __DIR__ . '/../../includes/header.php';
             + '            <label style="font-size:.85em;font-weight:700;color:#64748b;">Actual %</label>'
             + '            <div style="font-size:1.15em;font-weight:900;color:#0f766e;">'
             + '              <span id="pkDashActualPercent">-</span>'
+            + '            </div>'
+            + '          </div>'
+            + '          <div style="display:flex;flex-direction:column;gap:4px;">'
+            + '            <label style="font-size:.85em;font-weight:700;color:#64748b;">Barcode in 1 Roll</label>'
+            + '            <div style="font-size:1.15em;font-weight:900;color:#9a3412;">'
+            + '              <span id="pkDashBarcodePerRoll">' + escHtml(barcodePerRollText) + '</span>'
             + '            </div>'
             + '          </div>'
           + '        </div>'
@@ -1878,9 +1983,31 @@ include __DIR__ . '/../../includes/header.php';
                 } else {
                   dashActualPercentSpan.textContent = '-';
                 }
+
+                function resolveBarcodePackState(st, qtyInput, bpr) {
+                  var totalRollsBarcode = (Object.prototype.hasOwnProperty.call(st, 'total_rolls') && Math.floor(toNum(st.total_rolls)) > 0)
+                    ? Math.max(0, Math.floor(toNum(st.total_rolls)))
+                    : Math.max(0, Math.ceil(qtyInput / Math.max(1, bpr)));
+                  var rollsPerCarton = Object.prototype.hasOwnProperty.call(st, 'rolls_per_carton')
+                    ? Math.max(0, Math.floor(toNum(st.rolls_per_carton)))
+                    : 0;
+                  var cartonsBarcode = (rollsPerCarton > 0)
+                    ? Math.floor(totalRollsBarcode / rollsPerCarton)
+                    : 0;
+                  var extraRolls = (rollsPerCarton > 0)
+                    ? (totalRollsBarcode - cartonsBarcode * rollsPerCarton)
+                    : 0;
+                  return {
+                    totalRollsBarcode: totalRollsBarcode,
+                    rollsPerCarton: rollsPerCarton,
+                    cartonsBarcode: cartonsBarcode,
+                    extraRolls: extraRolls,
+                  };
+                }
                 
                 function seedSubmittedDefaultsForSelection(selectedRolls) {
                   if (!operatorHasSubmitted || !operatorEntry || !Array.isArray(selectedRolls) || selectedRolls.length !== 1) return;
+                  if (isBarcodeMode) return;
                   var roll = selectedRolls[0] || {};
                   var key = String(roll.rollNo || 'roll-0');
                   if (!rollHelperOverrides[key] || typeof rollHelperOverrides[key] !== 'object') rollHelperOverrides[key] = {};
@@ -1917,6 +2044,36 @@ include __DIR__ . '/../../includes/header.php';
                     var key = String(roll.rollNo || ('roll-' + String(idx)));
                     var st = rollHelperOverrides[key] || {};
                     var qty = Math.max(0, Math.min(toNum(roll.productionQty), toNum(roll.availableQty)));
+                    if (isBarcodeMode) {
+                      var bprJobVal = Math.floor(toNum(job && job.barcode_in_1_roll ? job.barcode_in_1_roll : 0));
+                      var bprDefault = bprJobVal > 0 ? bprJobVal : 250;
+                      var bpr = Object.prototype.hasOwnProperty.call(st, 'bpr') ? Math.max(1, Math.floor(toNum(st.bpr))) : bprDefault;
+                      var packCalc = resolveBarcodePackState(st, qty, bpr);
+                      var totalRollsBarcode = packCalc.totalRollsBarcode;
+                      var rollsPerCarton = packCalc.rollsPerCarton;
+                      var cartonsBarcode = packCalc.cartonsBarcode;
+                      var extraRolls = packCalc.extraRolls;
+                      var extraPieces = Object.prototype.hasOwnProperty.call(st, 'extra_pcs') ? Math.max(0, Math.floor(toNum(st.extra_pcs))) : 0;
+                      var csizeText = String(st.csize_text || '75 mm').trim() || '75 mm';
+                      var physical = Math.max(0, totalRollsBarcode * bpr + extraPieces);
+                      return ''
+                        + '<div style="border:1px solid #fdba74;border-radius:10px;padding:10px;background:#fff">'
+                        + '  <div style="font-size:.74rem;font-weight:900;color:#9a3412;margin-bottom:8px">Roll: ' + escHtml(String(roll.rollNo || '-')) + '</div>'
+                        + '  <div style="display:grid;grid-template-columns:repeat(2,minmax(110px,1fr));gap:8px">'
+                        + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Barcode in 1 roll (bpr)</label><input type="number" class="pk-bc-per-roll" data-roll-key="' + escHtml(key) + '" min="1" step="1" value="' + String(bpr) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
+                        + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Total rolls <span style="font-weight:500;color:#94a3b8">(auto=ceil(qty÷bpr))</span></label><input type="number" class="pk-bc-total-rolls-input" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(totalRollsBarcode) + '" style="width:100%;padding:5px 6px;border:1px solid #86efac;border-radius:6px"></div>'
+                        + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Roll in 1 carton</label><input type="number" class="pk-bc-rolls-per-carton-input" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(rollsPerCarton) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
+                        + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#0f766e">Total cartons <span style="font-weight:500;color:#94a3b8">(auto)</span></label><div class="pk-bc-cartons-display" data-roll-key="' + escHtml(key) + '" style="width:100%;padding:5px 8px;border:1px solid #99f6e4;border-radius:6px;background:#f0fdfa;font-size:.85rem;font-weight:900;color:#0f766e;min-height:28px">' + String(cartonsBarcode) + '</div></div>'
+                        + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#7c3aed">Extra rolls <span style="font-weight:500;color:#94a3b8">(auto)</span></label><div class="pk-bc-extra-rolls-display" data-roll-key="' + escHtml(key) + '" style="width:100%;padding:5px 8px;border:1px solid #ddd6fe;border-radius:6px;background:#f5f3ff;font-size:.85rem;font-weight:900;color:#7c3aed;min-height:28px">' + String(extraRolls) + '</div></div>'
+                        + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#92400e">Extra pieces (loose)</label><input type="number" class="pk-bc-extra-pcs-input" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(extraPieces) + '" style="width:100%;padding:5px 6px;border:1px solid #fdba74;border-radius:6px"></div>'
+                        + '    <div style="grid-column:span 2"><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Carton size</label><input type="text" class="pk-bc-csize-input" data-roll-key="' + escHtml(key) + '" value="' + escHtml(csizeText) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
+                        + '  </div>'
+                        + '  <div style="margin-top:8px;padding:7px 9px;border:1px solid #86efac;border-radius:7px;background:#dcfce7;color:#166534;font-size:.8rem;font-weight:900">'
+                        + '    Physical: <span class="pk-roll-total" data-roll-key="' + escHtml(key) + '">' + String(physical) + '</span>'
+                        + '    <span style="font-weight:500;font-size:.72rem;color:#16a34a;margin-left:8px">(' + String(totalRollsBarcode) + ' rolls × ' + String(bpr) + ' bpr' + (extraPieces > 0 ? ' + ' + String(extraPieces) + ' pcs' : '') + ')</span>'
+                        + '  </div>'
+                        + '</div>';
+                    }
                     var rps = Math.max(1, Math.floor(toNum(st.rps || 5)));
                     var rpc = Math.max(1, Math.floor(toNum(st.rpc || 50)));
                     var cartons = Object.prototype.hasOwnProperty.call(st, 'cartons') ? Math.max(0, Math.floor(toNum(st.cartons))) : Math.floor(qty / rpc);
@@ -1943,9 +2100,43 @@ include __DIR__ . '/../../includes/header.php';
                     var key = String(node.getAttribute('data-roll-key') || '').trim();
                     if (!key) return;
                     if (!rollHelperOverrides[key] || typeof rollHelperOverrides[key] !== 'object') rollHelperOverrides[key] = {};
+                    if (isBarcodeMode && field === 'csize_text') {
+                      rollHelperOverrides[key][field] = String(node.value || '').trim();
+                      recalc();
+                      return;
+                    }
                     var raw = Math.floor(toNum(node.value));
-                    rollHelperOverrides[key][field] = field === 'rps' || field === 'rpc' ? Math.max(1, raw) : Math.max(0, raw);
+                    if (isBarcodeMode) {
+                      rollHelperOverrides[key][field] = (field === 'bpr') ? Math.max(1, raw) : Math.max(0, raw);
+                      if (field === 'bpr') {
+                        delete rollHelperOverrides[key].total_rolls;
+                      }
+                    } else {
+                      rollHelperOverrides[key][field] = field === 'rps' || field === 'rpc' ? Math.max(1, raw) : Math.max(0, raw);
+                    }
                     recalc();
+                  }
+                  if (isBarcodeMode) {
+                    Array.prototype.slice.call(helperCardsWrap.querySelectorAll('.pk-bc-per-roll')).forEach(function(node) {
+                      node.addEventListener('input', function() { saveAndRecalc(node, 'bpr'); });
+                      node.addEventListener('change', function() { saveAndRecalc(node, 'bpr'); });
+                    });
+                    Array.prototype.slice.call(helperCardsWrap.querySelectorAll('.pk-bc-total-rolls-input')).forEach(function(node) {
+                      node.addEventListener('input', function() { saveAndRecalc(node, 'total_rolls'); });
+                      node.addEventListener('change', function() { saveAndRecalc(node, 'total_rolls'); });
+                    });
+                    Array.prototype.slice.call(helperCardsWrap.querySelectorAll('.pk-bc-rolls-per-carton-input')).forEach(function(node) {
+                      node.addEventListener('input', function() { saveAndRecalc(node, 'rolls_per_carton'); });
+                      node.addEventListener('change', function() { saveAndRecalc(node, 'rolls_per_carton'); });
+                    });
+                    Array.prototype.slice.call(helperCardsWrap.querySelectorAll('.pk-bc-extra-pcs-input')).forEach(function(node) {
+                      node.addEventListener('input', function() { saveAndRecalc(node, 'extra_pcs'); });
+                      node.addEventListener('change', function() { saveAndRecalc(node, 'extra_pcs'); });
+                    });
+                    Array.prototype.slice.call(helperCardsWrap.querySelectorAll('.pk-bc-csize-input')).forEach(function(node) {
+                      node.addEventListener('change', function() { saveAndRecalc(node, 'csize_text'); });
+                    });
+                    return;
                   }
                   Array.prototype.slice.call(helperCardsWrap.querySelectorAll('.pk-roll-rps')).forEach(function(node) {
                     node.addEventListener('change', function() { saveAndRecalc(node, 'rps'); });
@@ -1972,6 +2163,23 @@ include __DIR__ . '/../../includes/header.php';
                       selectedRolls.push(rollLots[idx]);
                     });
                   }
+                  var splitMeta = selectedRolls.map(function(roll) {
+                    var rollNo = String(roll && roll.rollNo ? roll.rollNo : '').trim();
+                    var qtyVal = Math.max(0, Math.min(toNum(roll.productionQty), toNum(roll.availableQty)));
+                    var parentKey = rollNo.replace(/-[A-Za-z0-9]+$/, '');
+                    return { rollNo: rollNo, qty: qtyVal, parentKey: parentKey };
+                  });
+                  var parentKeySet = {};
+                  var qtySet = {};
+                  splitMeta.forEach(function(m) {
+                    if (m.parentKey) parentKeySet[m.parentKey] = true;
+                    qtySet[String(m.qty)] = true;
+                  });
+                  var parentKeyCount = Object.keys(parentKeySet).length;
+                  var qtyCount = Object.keys(qtySet).length;
+                  var sharedSplitMode = selectedRolls.length > 1 && parentKeyCount === 1 && qtyCount === 1;
+                  var sharedReceivedQty = sharedSplitMode && splitMeta.length ? splitMeta[0].qty : 0;
+
                   if (!selectedRolls.length) {
                     if (helperCardsWrap) helperCardsWrap.innerHTML = '';
                     if (helperHiddenMsg) helperHiddenMsg.style.display = 'block';
@@ -1998,7 +2206,57 @@ include __DIR__ . '/../../includes/header.php';
                   selectedRolls.forEach(function(roll, rollIdx) {
                     var rollKey = String(roll.rollNo || ('roll-' + String(rollIdx)));
                     var st = rollHelperOverrides[rollKey] || {};
-                    var qty = Math.max(0, Math.min(toNum(roll.productionQty), toNum(roll.availableQty)));
+                    var qty = sharedSplitMode
+                      ? Math.max(0, Math.floor(sharedReceivedQty / Math.max(1, selectedRolls.length)) + (rollIdx < (Math.floor(sharedReceivedQty) % Math.max(1, selectedRolls.length)) ? 1 : 0))
+                      : Math.max(0, Math.min(toNum(roll.productionQty), toNum(roll.availableQty)));
+                    if (isBarcodeMode) {
+                      var bprJobVal = Math.floor(toNum(job && job.barcode_in_1_roll ? job.barcode_in_1_roll : 0));
+                      var bprDefault = bprJobVal > 0 ? bprJobVal : 250;
+                      var bpr = Object.prototype.hasOwnProperty.call(st, 'bpr') ? Math.max(1, Math.floor(toNum(st.bpr))) : bprDefault;
+                      var packCalc = resolveBarcodePackState(st, qty, bpr);
+                      var totalRollsBarcode = packCalc.totalRollsBarcode;
+                      var rollsPerCarton = packCalc.rollsPerCarton;
+                      var cartonsBarcode = packCalc.cartonsBarcode;
+                      var extraRolls = packCalc.extraRolls;
+                      var extraPieces = Object.prototype.hasOwnProperty.call(st, 'extra_pcs') ? Math.max(0, Math.floor(toNum(st.extra_pcs))) : 0;
+                      var rollPhysical = Math.max(0, totalRollsBarcode * bpr + extraPieces);
+
+                      totalBundlesNum += totalRollsBarcode;
+                      totalCartonsNum += cartonsBarcode;
+                      totalLooseNum += extraPieces;
+                      totalPhysicalNum += rollPhysical;
+
+                      var totalRollsNodeBarcode = helperCardsWrap ? helperCardsWrap.querySelector('.pk-roll-total[data-roll-key="' + rollKey.replace(/"/g, '\\"') + '"]') : null;
+                      if (totalRollsNodeBarcode) totalRollsNodeBarcode.textContent = String(rollPhysical);
+                      var cartonsDisplay = helperCardsWrap ? helperCardsWrap.querySelector('.pk-bc-cartons-display[data-roll-key="' + rollKey.replace(/"/g, '\\"') + '"]') : null;
+                      if (cartonsDisplay) cartonsDisplay.textContent = String(cartonsBarcode);
+                      var extraRollsDisplay = helperCardsWrap ? helperCardsWrap.querySelector('.pk-bc-extra-rolls-display[data-roll-key="' + rollKey.replace(/"/g, '\\"') + '"]') : null;
+                      if (extraRollsDisplay) extraRollsDisplay.textContent = String(extraRolls);
+
+                      if (!Object.prototype.hasOwnProperty.call(st, 'total_rolls') || st.total_rolls === 0) {
+                        var totalRollInput = helperCardsWrap ? helperCardsWrap.querySelector('.pk-bc-total-rolls-input[data-roll-key="' + rollKey.replace(/"/g, '\\"') + '"]') : null;
+                        if (totalRollInput) totalRollInput.value = String(totalRollsBarcode);
+                      }
+
+                      rollBatches.push({
+                        batchNo: rollIdx + 1,
+                        type: 'ROLL',
+                        label: String(roll.rollNo || '-'),
+                        cartons: cartonsBarcode,
+                        shrinkBundles: totalRollsBarcode,
+                        looseUsed: extraPieces,
+                        shortage: 0
+                      });
+
+                      resultCards.push(
+                        '<div style="border:1px solid #cbd5e1;border-radius:8px;padding:8px;background:#f8fafc">'
+                        + '<b style="display:block;font-size:.73rem;color:#0f172a;margin-bottom:4px">' + escHtml(String(roll.rollNo || '-')) + '</b>'
+                        + '<div style="font-size:.72rem;color:#334155">' + escHtml(String(totalRollsBarcode)) + ' rolls × ' + escHtml(String(bpr)) + ' bpr | Cartons: <b>' + String(cartonsBarcode) + '</b> | Extra rolls: <b>' + String(extraRolls) + '</b></div>'
+                        + '<div style="font-size:.72rem;color:#166534">Physical Output: <b>' + String(rollPhysical) + '</b></div>'
+                        + '</div>'
+                      );
+                      return;
+                    }
                     var rollRps = Math.max(1, Math.floor(toNum(st.rps || 5)));
                     var rollRpc = Math.max(1, Math.floor(toNum(st.rpc || 50)));
                     var rollCartons = Object.prototype.hasOwnProperty.call(st, 'cartons') ? Math.max(0, Math.floor(toNum(st.cartons))) : Math.floor(qty / rollRpc);
@@ -2274,11 +2532,18 @@ include __DIR__ . '/../../includes/header.php';
 
       function getFirstSelectedRollRpc() {
         var selected = getSelectedRollNodes();
-        if (!selected.length) return 50;
+        if (!selected.length) return isBarcodeMode ? 0 : 50;
         var idx = Number(selected[0].getAttribute('data-roll-index'));
-        if (isNaN(idx) || idx < 0 || idx >= rollLots.length) return 50;
+        if (isNaN(idx) || idx < 0 || idx >= rollLots.length) return isBarcodeMode ? 0 : 50;
         var rollKey = String((rollLots[idx] || {}).rollNo || ('roll-' + String(idx)));
         var st = (rollHelperOverrides[rollKey] && typeof rollHelperOverrides[rollKey] === 'object') ? rollHelperOverrides[rollKey] : {};
+        if (isBarcodeMode) {
+          var rpcBarcode = Number(String(st.rolls_per_carton == null ? '' : st.rolls_per_carton));
+          if (!isNaN(rpcBarcode) && rpcBarcode > 0) return Math.floor(rpcBarcode);
+          var rpcBarcodeInput = section.querySelector('.pk-bc-rolls-per-carton-input');
+          var rpcBarcodeVal = rpcBarcodeInput ? Number(String(rpcBarcodeInput.value || '').trim()) : 0;
+          return (!isNaN(rpcBarcodeVal) && rpcBarcodeVal > 0) ? Math.floor(rpcBarcodeVal) : 0;
+        }
         var rpc = Number(String(st.rpc == null ? '' : st.rpc));
         if (!isNaN(rpc) && rpc > 0) return Math.floor(rpc);
         var rpcInput = section.querySelector('.pk-roll-rpc');

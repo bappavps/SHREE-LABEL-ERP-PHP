@@ -100,7 +100,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 3
+                "counter": 1
             },
             "sales_order": {
                 "prefix": "SO",
@@ -136,16 +136,18 @@
             },
             "barcode_job": {
                 "prefix": "BRC-BAR",
-                "counter": 0
+                "counter": 1
             },
             "paperroll_job": {
                 "prefix": "PRL",
-                "counter": 2
+                "counter": 0
             },
             "packing": {
                 "prefix": "PKG",
                 "counter": 0
             }
         }
-    }
+    },
+    "tally_ip": "192.168.1.22",
+    "tally_port": 9000
 }
