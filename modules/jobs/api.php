@@ -4834,8 +4834,11 @@ try {
                     WHERE request_type = 'jumbo_roll_update' AND status = 'Pending'
                     GROUP BY job_id
                 ) req ON req.job_id = j.id
-                WHERE (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')
-                  AND j.job_type IN ('Slitting','Printing','Finishing')
+                                WHERE (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')
+                                    AND (
+                                        j.job_type IN ('Slitting','Jumbo','Printing','Finishing')
+                                        OR LOWER(COALESCE(j.department, '')) = 'jumbo_slitting'
+                                    )
                 ORDER BY j.created_at DESC
                 LIMIT ?";
 

@@ -57,7 +57,7 @@ function pm_department_label($dept, $fallbackType = ''): string {
 }
 
 function pm_bucket_status(array $row): string {
-  $jobStatus = strtolower(pm_text($row['effective_status'] ?: ($row['latest_job_status'] ?: $row['active_job_status'])));
+  $jobStatus = strtolower(pm_text(($row['effective_status'] ?? '') ?: ($row['latest_job_status'] ?: $row['active_job_status'])));
     $boardStatus = strtolower(pm_text($row['board_status']));
     $planningStatus = strtolower(pm_text($row['planning_status']));
 
@@ -86,7 +86,10 @@ function pm_bucket_status(array $row): string {
     if (in_array($norm, ['ready to dispatch', 'ready to dispatched', 'ready to dispathce', 'packing done', 'packed', 'finished barcode', 'finished production'], true)) {
       return 'Ready to Dispatch';
     }
-    if (in_array($norm, ['pending', 'queued', 'running', 'in progress', 'preparing'], true)) {
+    if ($norm === 'pending') {
+      return 'Pending';
+    }
+    if (in_array($norm, ['queued', 'running', 'in progress', 'preparing'], true)) {
       return 'Production';
     }
     if ($norm === 'packing') {
@@ -621,7 +624,7 @@ body{background:#f1f5f9}
               if ($curPos === '') $curPos = pm_text($row['active_job_status']);
               if ($curPos === '') $curPos = pm_text($row['board_status']);
               if ($curPos === '') $curPos = pm_text($row['planning_status']);
-                if (pm_text($row['effective_status']) !== '') {
+                if (pm_text($row['effective_status'] ?? '') !== '') {
                   $curPos = pm_text($row['effective_status']);
                 }
               $curPos = pm_display_status($curPos);

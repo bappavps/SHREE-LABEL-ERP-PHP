@@ -709,7 +709,12 @@ function getJobSequenceToken(job){
     const v = String(fields[i]||'').trim().toUpperCase();
     if(!v) continue;
     const m = v.match(/(\d{4}\/\d{3,6})$/);
-    if(m && m[1]) return m[1];
+    // Include the full prefix before the year so different planning types with the
+    // same sequence number (e.g. PLN-POS/2026/0001 vs PLN-1PL/2026/0001) don't collide.
+    if(m && m[1]){
+      const prefixPart = v.substring(0, v.length - m[1].length).replace(/\/$/, '');
+      return (prefixPart ? prefixPart + '/' : '') + m[1];
+    }
   }
   return '';
 }

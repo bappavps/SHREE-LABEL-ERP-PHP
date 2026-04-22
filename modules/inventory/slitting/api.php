@@ -711,6 +711,9 @@ try {
                         UPPER(TRIM(COALESCE(p.job_no, ''))) LIKE 'PLN/%'
                         OR UPPER(TRIM(COALESCE(p.job_no, ''))) LIKE 'PLN-BAR/%'
                         OR UPPER(TRIM(COALESCE(p.job_no, ''))) LIKE 'PLN-PRL/%'
+                        OR UPPER(TRIM(COALESCE(p.job_no, ''))) LIKE 'PLN-POS/%'
+                        OR UPPER(TRIM(COALESCE(p.job_no, ''))) LIKE 'PLN-1PL/%'
+                        OR UPPER(TRIM(COALESCE(p.job_no, ''))) LIKE 'PLN-2PL/%'
                     )
                     AND LOWER(TRIM(COALESCE(
                         NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.extra_data, '$.printing_planning')), ''),

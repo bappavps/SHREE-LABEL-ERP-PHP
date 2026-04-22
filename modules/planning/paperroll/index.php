@@ -289,7 +289,10 @@ function paperrollPlanningIsDisplayStatus($status): bool {
 
 function paperrollPlanningUnifiedStageLabel($status): string {
     $norm = strtolower(trim(str_replace(['-', '_'], ' ', (string)$status)));
-    if (in_array($norm, ['pending', 'queued', 'running', 'in progress', 'preparing'], true)) {
+    if ($norm === 'pending') {
+        return 'Pending';
+    }
+    if (in_array($norm, ['queued', 'running', 'in progress', 'preparing'], true)) {
         return 'Production';
     }
     if (in_array($norm, ['packing', 'packed', 'packing done'], true)) {
@@ -408,11 +411,24 @@ function barcodePlanningPriorityOptions(): array {
     return ['Low', 'Normal', 'High', 'Urgent'];
 }
 
-function barcodePlanningIdMeta(): array {
+function barcodePlanningIdMeta(string $planningType = 'pos_roll'): array {
     $idg = getPrefixSettings();
-    $barcodePrefix = strtoupper(trim((string)($idg['modules']['planning_paperroll']['prefix'] ?? 'PLN-PRL')));
+    // Each planning type uses its own dedicated prefix key so IDs are distinguishable.
+    $typeKeyMap = [
+        'pos_roll' => 'planning_pos_roll',
+        'one_ply'  => 'planning_one_ply',
+        'two_ply'  => 'planning_two_ply',
+    ];
+    $typeDefaultMap = [
+        'pos_roll' => 'PLN-POS',
+        'one_ply'  => 'PLN-1PL',
+        'two_ply'  => 'PLN-2PL',
+    ];
+    $moduleKey     = $typeKeyMap[$planningType]     ?? 'planning_pos_roll';
+    $defaultPrefix = $typeDefaultMap[$planningType] ?? 'PLN-POS';
+    $barcodePrefix = strtoupper(trim((string)($idg['modules'][$moduleKey]['prefix'] ?? $defaultPrefix)));
     if ($barcodePrefix === '') {
-        $barcodePrefix = 'PLN-PRL';
+        $barcodePrefix = $defaultPrefix;
     }
     $separator = (string)($idg['separator'] ?? '/');
     if ($separator === '') $separator = '/';
@@ -444,10 +460,12 @@ function barcodePlanningSequenceFromId($value, string $prefixExpr): int {
     return (int)$seqPart;
 }
 
-function barcodePlanningPreviewId(mysqli $db): string {
-    $meta = barcodePlanningIdMeta();
+function barcodePlanningPreviewId(mysqli $db, string $planningType = 'pos_roll'): string {
+    $meta = barcodePlanningIdMeta($planningType);
     $max = 0;
-    $res = $db->query("SELECT job_no FROM planning WHERE LOWER(COALESCE(department, '')) IN ('paperroll')");
+    // Only scan rows whose job_no starts with this type's prefix to avoid cross-type sequence collisions.
+    $prefixLike = $db->real_escape_string($meta['prefix_expr']);
+    $res = $db->query("SELECT job_no FROM planning WHERE LOWER(COALESCE(department, '')) IN ('paperroll') AND UPPER(job_no) LIKE '{$prefixLike}%'");
     if ($res) {
         while ($row = $res->fetch_assoc()) {
             $max = max($max, barcodePlanningSequenceFromId($row['job_no'] ?? '', $meta['prefix_expr']));
@@ -1127,7 +1145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                     if ($planningId === '') {
-                        $planningId = barcodePlanningPreviewId($db);
+                        $planningId = barcodePlanningPreviewId($db, $planningType);
                     }
 
                     $payload = [
@@ -1263,7 +1281,7 @@ $dieTypeOptions = barcodePlanningMergeSuggestionLists($dieTypeOptions, barcodePl
 $dieTypeOptions = barcodePlanningMergeSuggestionLists($dieTypeOptions, ['Flatbed', 'Rotary']);
 $useOptions = barcodePlanningMergeSuggestionLists($useOptions, barcodePlanningSuggestionBucket($rows, 'use'));
 $flash = getFlash();
-$previewPlanningId = barcodePlanningPreviewId($db);
+$previewPlanningId = barcodePlanningPreviewId($db, $defaultPlanningType);
 $previewSerial = barcodePlanningNextSerial($db);
 $previewRecordId = barcodePlanningNextRecordId($db);
 $appSettings = getAppSettings();

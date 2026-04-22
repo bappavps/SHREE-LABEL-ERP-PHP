@@ -746,6 +746,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       'planning' => 'prefix_planning',
       'planning_barcode' => 'prefix_planning_barcode',
       'planning_paperroll' => 'prefix_planning_paperroll',
+      'planning_pos_roll' => 'prefix_planning_pos_roll',
+      'planning_one_ply' => 'prefix_planning_one_ply',
+      'planning_two_ply' => 'prefix_planning_two_ply',
       'packing' => 'prefix_packing',
       'jumbo_job' => 'prefix_jumbo_job',
       'printing_job' => 'prefix_printing_job',
@@ -825,7 +828,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isset($idg['modules']) || !is_array($idg['modules'])) {
       $idg['modules'] = [];
     }
-    foreach (['planning', 'planning_barcode', 'planning_paperroll', 'batch', 'jumbo_job', 'printing_job', 'die_cutting_job', 'label_slitting_job', 'barcode_job', 'paperroll_job', 'pos_job', 'oneply_job', 'twoply_job'] as $type) {
+    foreach (['planning', 'planning_barcode', 'planning_paperroll', 'planning_pos_roll', 'planning_one_ply', 'planning_two_ply', 'batch', 'jumbo_job', 'printing_job', 'die_cutting_job', 'label_slitting_job', 'barcode_job', 'paperroll_job', 'pos_job', 'oneply_job', 'twoply_job'] as $type) {
       if (isset($idg['modules'][$type])) {
         $idg['modules'][$type]['counter'] = 0;
       }
@@ -1070,6 +1073,9 @@ $prefixModules = [
   'planning' => 'Planning Job Prefix',
   'planning_barcode' => 'Barcode Planning Job Prefix',
   'planning_paperroll' => 'PaperRoll Planning Job Prefix',
+  'planning_pos_roll' => 'POS Roll Planning Prefix',
+  'planning_one_ply' => '1-Ply Planning Prefix',
+  'planning_two_ply' => '2-Ply Planning Prefix',
   'packing' => 'Packing Prefix',
   'jumbo_job' => 'Jumbo Slitting Job Prefix',
   'printing_job' => 'Flexo Printing Job Prefix',

@@ -263,6 +263,23 @@ if ($action === 'get_tabs') {
     mi_json(200, ['ok' => true, 'tabs' => $tabs]);
 }
 
+if ($action === 'get_tab_counts') {
+    $counts = [];
+    foreach (mi_categories() as $key => $label) {
+        $counts[$key] = 0;
+    }
+
+    $rows = mi_fetch_rows($db, '');
+    foreach ($rows as $row) {
+        $cat = (string)($row['category'] ?? '');
+        if ($cat !== '' && array_key_exists($cat, $counts)) {
+            $counts[$cat] += 1;
+        }
+    }
+
+    mi_json(200, ['ok' => true, 'counts' => $counts]);
+}
+
 if ($action === 'get_extra_stock') {
     $category = mi_clean($_GET['category'] ?? '', 60);
     if ($category !== '' && !array_key_exists($category, mi_categories())) {

@@ -69,35 +69,57 @@
 }
 
 .fg-stock-module .fg-tab-wrap {
-  border-bottom: 1px solid #eaeaea;
-  background: #fbfcfe;
-  padding: 10px 14px 0;
+  border-bottom: 2px solid #e5eaf4;
+  background: linear-gradient(to bottom, #f8faff 0%, #f0f4fc 100%);
+  padding: 14px 16px 0;
 }
 
 .fg-stock-module .fg-tabs {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   overflow-x: auto;
-  padding-bottom: 10px;
+  padding-bottom: 14px;
+  scrollbar-width: none;
 }
 
+.fg-stock-module .fg-tabs::-webkit-scrollbar { display: none; }
+
 .fg-stock-module .fg-tab-btn {
-  border: 1px solid #d1d5db;
-  background: #fff;
-  color: #334155;
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 0.8rem;
-  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 12px;
+  padding: 9px 16px;
+  font-size: 0.79rem;
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  border: 1.5px solid;
+  transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease;
+  line-height: 1;
+  letter-spacing: .01em;
+}
+
+.fg-stock-module .fg-tab-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(0,0,0,.13);
 }
 
 .fg-stock-module .fg-tab-btn.active {
-  border-color: var(--fg-accent);
-  background: var(--fg-accent-soft);
-  color: var(--fg-accent-text);
-  box-shadow: inset 0 -2px 0 var(--fg-accent);
+  transform: translateY(-1px);
+}
+
+.fg-stock-module .fg-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .fg-stock-module .fg-summary {
@@ -488,16 +510,24 @@
   font-weight: 700;
 }
 
-.fg-stock-module .fg-table tbody tr:nth-child(odd) td {
-  background: #f8fbff;
+.fg-stock-module .fg-table tbody tr:nth-child(odd) td,
+.fg-stock-module .fg-table tbody tr:nth-child(even) td {
+  background: #fff;
 }
 
-.fg-stock-module .fg-table tbody tr:nth-child(even) td {
-  background: #eaf2ff;
-}
+/* ── Per-row color palette (8-color cycle) ── */
+.fg-stock-module .fg-table tbody tr.fg-row-c0 td { background: #fffdf0; }
+.fg-stock-module .fg-table tbody tr.fg-row-c1 td { background: #f0fff6; }
+.fg-stock-module .fg-table tbody tr.fg-row-c2 td { background: #f0f9ff; }
+.fg-stock-module .fg-table tbody tr.fg-row-c3 td { background: #fdf0ff; }
+.fg-stock-module .fg-table tbody tr.fg-row-c4 td { background: #fff0f4; }
+.fg-stock-module .fg-table tbody tr.fg-row-c5 td { background: #f0fcff; }
+.fg-stock-module .fg-table tbody tr.fg-row-c6 td { background: #f9fff0; }
+.fg-stock-module .fg-table tbody tr.fg-row-c7 td { background: #fff7f0; }
 
 .fg-stock-module .fg-table tbody tr:hover td {
-  background: #dbeafe;
+  background: #dbeafe !important;
+  transition: background .1s;
 }
 
 .fg-stock-module .fg-status-pill {

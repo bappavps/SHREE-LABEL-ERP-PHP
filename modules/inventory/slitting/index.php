@@ -2831,7 +2831,7 @@ const SLT = (() => {
     if (no.startsWith('PLN-BAR/')) {
       return { label: 'Barcode Board', chipClass: 'pln-bar', rowClass: 'src-pln-bar' };
     }
-    if (no.startsWith('PLN-PRL/')) {
+    if (no.startsWith('PLN-POS/') || no.startsWith('PLN-1PL/') || no.startsWith('PLN-2PL/') || no.startsWith('PLN-PRL/')) {
       return { label: 'PaperRoll Board', chipClass: 'pln-prl', rowClass: 'src-pln-prl' };
     }
     if (no.startsWith('PLN/')) {

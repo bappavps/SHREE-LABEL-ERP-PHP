@@ -377,6 +377,19 @@ if ($action === 'get_prc_suggestions') {
     fg_json(200, ['ok' => true, 'rows' => $prcRows]);
 }
 
+if ($action === 'get_tab_counts') {
+    $categories = ['pos_paper_roll', 'one_ply', 'two_ply', 'barcode', 'printing_roll', 'ribbon', 'core', 'carton'];
+    $counts = [];
+    foreach ($categories as $cat) {
+        $stmt = $db->prepare("SELECT COUNT(*) AS cnt FROM finished_goods_stock WHERE category = ?");
+        $stmt->bind_param('s', $cat);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $counts[$cat] = (int)($row['cnt'] ?? 0);
+    }
+    fg_json(200, ['ok' => true, 'counts' => $counts]);
+}
+
 if ($action === 'get_period_report') {
     $category = fg_clean_text($_GET['category'] ?? '', 60);
     if ($category === '') {

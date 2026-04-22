@@ -1936,6 +1936,64 @@
     '</div>';
   }
 
+  function getExportStyles() {
+    return '@page{size:A4;margin:18px}' +
+      'body{font-family:Segoe UI,Arial,sans-serif;color:#0f172a;background:#f4f7fb;margin:0}' +
+      '.no-print{padding:10px 14px;background:#ffffff;border-bottom:1px solid #dbe5ef;position:sticky;top:0;z-index:2}' +
+      '.no-print button{padding:7px 10px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-weight:600;cursor:pointer}' +
+      '.no-print .primary{background:#0f766e;color:#fff;border-color:#0f766e}' +
+      '.ds-report{padding:14px}' +
+      '.ds-report-card{background:#fff;border:1px solid #dbe5ef;border-radius:14px;overflow:hidden;box-shadow:0 10px 28px rgba(15,23,42,.08)}' +
+      '.ds-report-head{background:linear-gradient(120deg,#0f766e 0%,#2563eb 52%,#7c3aed 100%);color:#fff;padding:14px 16px}' +
+      '.ds-report-head h2{margin:0;font-size:20px;letter-spacing:.01em}' +
+      '.ds-report-head p{margin:4px 0 0;font-size:12px;opacity:.95}' +
+      '.ds-report-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:12px 14px;background:#f8fbff;border-bottom:1px solid #dbe5ef}' +
+      '.ds-kpi-box{border:1px solid #dbe5ef;border-radius:10px;padding:10px;background:#fff}' +
+      '.ds-kpi-box span{display:block;font-size:11px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.04em}' +
+      '.ds-kpi-box strong{display:block;margin-top:4px;font-size:16px;color:#0f172a}' +
+      '.ds-kpi-blue{background:linear-gradient(180deg,#eaf2ff,#f8fbff);border-color:#bfdbfe}' +
+      '.ds-kpi-violet{background:linear-gradient(180deg,#f2edff,#fbf9ff);border-color:#ddd6fe}' +
+      '.ds-kpi-amber{background:linear-gradient(180deg,#fff7e6,#fffcf4);border-color:#fcd34d}' +
+      '.ds-kpi-emerald{background:linear-gradient(180deg,#ecfdf5,#f7fffb);border-color:#86efac}' +
+      '.ds-report-meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:12px 14px;background:#f8fafc;border-bottom:1px solid #dbe5ef}' +
+      '.ds-report-meta div{font-size:12px;color:#334155;border:1px dashed #dbe5ef;border-radius:8px;padding:6px 8px;background:#fff}' +
+      '.ds-report-meta strong{color:#0f172a}' +
+      '.ds-report-table-wrap{padding:12px 14px}' +
+      '.ds-report table{width:100%;border-collapse:collapse}' +
+      '.ds-report th,.ds-report td{border:1px solid #d5deea;padding:8px 9px;font-size:12px;vertical-align:top}' +
+      '.ds-report th{background:#eaf2ff;color:#1e293b;text-align:left;font-weight:700}' +
+      '.ds-report tbody tr:nth-child(even) td{background:#fbfdff}' +
+      '.ds-row-pending td{background:#fff7ed !important}' +
+      '.ds-row-transit td{background:#eff6ff !important}' +
+      '.ds-row-delivered td{background:#ecfdf3 !important}' +
+      '.ds-report-cell-right{text-align:right;white-space:nowrap}' +
+      '.ds-no-data,.ds-challan-empty{padding:20px;text-align:center;color:#64748b;font-weight:600}' +
+      '.ds-report-foot{padding:10px 14px;border-top:1px solid #dbe5ef;background:#f8fafc;color:#334155;font-size:11px}' +
+      '.ds-challan{width:100%;background:#fff;padding:20px;box-sizing:border-box}' +
+      '.ds-challan-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;border-bottom:2px solid #cbd5e1;padding-bottom:12px;margin-bottom:14px}' +
+      '.ds-challan-brand{display:flex;gap:12px;align-items:flex-start}' +
+      '.ds-challan-logo{height:52px;max-width:140px;object-fit:contain}' +
+      '.ds-challan-company{font-size:18px;font-weight:800}' +
+      '.ds-challan-tagline,.ds-challan-address{font-size:12px;color:#475569;margin-top:3px}' +
+      '.ds-challan-head-meta{text-align:right}' +
+      '.ds-challan-title{font-size:18px;font-weight:800}' +
+      '.ds-challan-id{font-size:12px;color:#475569;margin-top:4px}' +
+      '.ds-challan-section-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:14px}' +
+      '.ds-challan-section{border:1px solid #dbe5ef;border-radius:10px;padding:10px 12px;font-size:12px;background:#f8fafc}' +
+      '.ds-challan-section-title{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#334155;margin-bottom:6px}' +
+      '.ds-challan-table-wrap{margin-bottom:14px}' +
+      '.ds-challan-table{width:100%;border-collapse:collapse}' +
+      '.ds-challan-table th,.ds-challan-table td{border:1px solid #cbd5e1;padding:8px;font-size:12px;vertical-align:top}' +
+      '.ds-challan-table th{background:#e2e8f0;text-align:left}' +
+      '.ds-challan-empty-row{text-align:center;color:#64748b;font-weight:600}' +
+      '.ds-challan-num{text-align:right;white-space:nowrap}' +
+      '.ds-challan-transport-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}' +
+      '.ds-challan-remarks{font-size:12px;margin:12px 0 18px}' +
+      '.ds-sign-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px}' +
+      '.ds-sign-box{padding-top:28px;border-top:1px solid #94a3b8;font-size:12px;font-weight:700;text-align:center}' +
+      '@media print{.no-print{display:none}body{background:#fff;margin:0;font-size:12px}.ds-report,.ds-challan{padding:0}.ds-challan{width:100%}.ds-challan-table{border-collapse:collapse}}';
+  }
+
   function printHtml(title, html) {
     var options = arguments[2] || {};
     if (!String(html || '').trim()) {
@@ -1949,7 +2007,7 @@
     }
 
     var doc = '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(title) + '</title>' +
-      '<style>@page{size:A4;margin:20px}body{font-family:Segoe UI,Arial,sans-serif;color:#0f172a;background:#f8fafc;margin:0}.no-print{padding:10px 14px;background:#ffffff;border-bottom:1px solid #e2e8f0;position:sticky;top:0;z-index:2}.no-print button{padding:7px 10px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-weight:600;cursor:pointer}.no-print .primary{background:#0f766e;color:#fff;border-color:#0f766e}.ds-report{padding:14px}.ds-report-card{background:#fff;border:1px solid #dbe5ef;border-radius:12px;overflow:hidden}.ds-report-head{background:linear-gradient(90deg,#0f766e,#2563eb);color:#fff;padding:12px 14px}.ds-report-head h2{margin:0;font-size:18px}.ds-report-head p{margin:4px 0 0;font-size:12px;opacity:.95}.ds-report-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:10px 14px;background:#f8fafc;border-bottom:1px solid #dbe5ef}.ds-report-meta div{font-size:12px;color:#334155}.ds-report-meta strong{color:#0f172a}.ds-report-table-wrap{padding:12px 14px}.ds-no-data,.ds-challan-empty{padding:20px;text-align:center;color:#64748b;font-weight:600}.ds-report-foot{padding:10px 14px;border-top:1px solid #dbe5ef;background:#f8fafc;color:#334155;font-size:11px}.ds-challan{width:100%;background:#fff;padding:20px;box-sizing:border-box}.ds-challan-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;border-bottom:2px solid #cbd5e1;padding-bottom:12px;margin-bottom:14px}.ds-challan-brand{display:flex;gap:12px;align-items:flex-start}.ds-challan-logo{height:52px;max-width:140px;object-fit:contain}.ds-challan-company{font-size:18px;font-weight:800}.ds-challan-tagline,.ds-challan-address{font-size:12px;color:#475569;margin-top:3px}.ds-challan-head-meta{text-align:right}.ds-challan-title{font-size:18px;font-weight:800}.ds-challan-id{font-size:12px;color:#475569;margin-top:4px}.ds-challan-section-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:14px}.ds-challan-section{border:1px solid #dbe5ef;border-radius:10px;padding:10px 12px;font-size:12px;background:#f8fafc}.ds-challan-section-title{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#334155;margin-bottom:6px}.ds-challan-table-wrap{margin-bottom:14px}.ds-challan-table{width:100%;border-collapse:collapse}.ds-challan-table th,.ds-challan-table td{border:1px solid #cbd5e1;padding:8px;font-size:12px;vertical-align:top}.ds-challan-table th{background:#e2e8f0;text-align:left}.ds-challan-empty-row{text-align:center;color:#64748b;font-weight:600}.ds-challan-num{text-align:right;white-space:nowrap}.ds-challan-transport-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.ds-challan-remarks{font-size:12px;margin:12px 0 18px}.ds-sign-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px}.ds-sign-box{padding-top:28px;border-top:1px solid #94a3b8;font-size:12px;font-weight:700;text-align:center}@media print{.no-print{display:none}body{background:#fff;margin:20px;font-size:12px}.ds-report,.ds-challan{padding:0}.ds-challan{width:100%}.ds-challan-table{border-collapse:collapse}}</style>' +
+      '<style>' + getExportStyles() + '</style>' +
       '</head><body><div class="no-print"><button class="primary" onclick="window.print()">Print / Save PDF</button> <button onclick="window.close()">Close</button></div>' + html + '</body></html>';
 
     w.document.open();
@@ -1970,10 +2028,32 @@
     var generatedAt = new Date();
     var generatedText = generatedAt.toLocaleDateString('en-GB') + ' ' + generatedAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
+    var totalQty = 0;
+    var totalCost = 0;
+    var pendingCount = 0;
+    var deliveredCount = 0;
+    for (var t = 0; t < state.filteredRows.length; t += 1) {
+      var tr = state.filteredRows[t] || {};
+      var st = String(tr.delivery_status || '').toLowerCase();
+      totalQty += num(tr.dispatch_qty || 0);
+      totalCost += num(tr.transport_cost || 0);
+      if (st === 'delivered') {
+        deliveredCount += 1;
+      } else {
+        pendingCount += 1;
+      }
+    }
+
     var html = '<div class="ds-report"><div class="ds-report-card">' +
       '<div class="ds-report-head">' +
         '<h2>Dispatch Entries Report</h2>' +
-        '<p>' + esc(company.name || 'ERP') + ' | Color Summary Export</p>' +
+        '<p>' + esc(company.name || 'ERP') + ' | Professional Dispatch Export</p>' +
+      '</div>' +
+      '<div class="ds-report-kpis">' +
+        '<div class="ds-kpi-box ds-kpi-blue"><span>Total Entries</span><strong>' + esc(String(state.filteredRows.length)) + '</strong></div>' +
+        '<div class="ds-kpi-box ds-kpi-violet"><span>Total Dispatch Qty</span><strong>' + esc(fmt(totalQty, 0)) + '</strong></div>' +
+        '<div class="ds-kpi-box ds-kpi-amber"><span>Pending / Transit</span><strong>' + esc(String(pendingCount)) + '</strong></div>' +
+        '<div class="ds-kpi-box ds-kpi-emerald"><span>Total Cost</span><strong>' + esc(fmtCurrency(totalCost)) + '</strong></div>' +
       '</div>' +
       '<div class="ds-report-meta">' +
         '<div><strong>From:</strong> ' + esc(fromDate || 'N/A') + '</div>' +
@@ -1983,26 +2063,30 @@
         '<div><strong>Status:</strong> ' + esc(nodes.filterStatus.value || 'All') + '</div>' +
         '<div><strong>Search:</strong> ' + esc(nodes.searchInput.value || 'None') + '</div>' +
         '<div><strong>Date Range:</strong> ' + esc(summaryRange) + '</div>' +
-        '<div><strong>Total Rows:</strong> ' + String(state.filteredRows.length) + '</div>' +
+        '<div><strong>Delivered Rows:</strong> ' + String(deliveredCount) + '</div>' +
+        '<div><strong>Generated By:</strong> ' + esc(company.name || 'Dispatch Module') + '</div>' +
       '</div>' +
       '<div class="ds-report-table-wrap">';
 
     if (!state.filteredRows.length) {
       html += '<div class="ds-no-data">No dispatch entries found for selected filters.</div>';
     } else {
-      html += '<table><thead><tr><th>Dispatch ID</th><th>Date</th><th>Client</th><th>Item</th><th>Qty</th><th>Invoice No</th><th>Transport Type</th><th>Delivery Status</th><th>Cost</th></tr></thead><tbody>';
+      html += '<table><thead><tr><th>SL</th><th>Dispatch ID</th><th>Date</th><th>Client</th><th>Item</th><th>Qty</th><th>Invoice No</th><th>Transport Type</th><th>Delivery Status</th><th>Cost</th></tr></thead><tbody>';
       for (var i = 0; i < state.filteredRows.length; i += 1) {
         var r = state.filteredRows[i];
-        html += '<tr>' +
+        var statusText = String(r.delivery_status || '').toLowerCase();
+        var rowClass = statusText === 'delivered' ? 'ds-row-delivered' : (statusText === 'in transit' ? 'ds-row-transit' : 'ds-row-pending');
+        html += '<tr class="' + rowClass + '">' +
+          '<td>' + String(i + 1) + '</td>' +
           '<td>' + esc(r.dispatch_id || '') + '</td>' +
           '<td>' + esc(formatDisplayDate(r.dispatch_date || r.entry_date || '')) + '</td>' +
           '<td>' + esc(r.client_name || '') + '</td>' +
           '<td>' + esc(r.item_name || '') + '</td>' +
-          '<td>' + fmt(r.dispatch_qty || 0) + ' ' + esc(r.unit || '') + '</td>' +
+          '<td class="ds-report-cell-right">' + fmt(r.dispatch_qty || 0) + ' ' + esc(r.unit || '') + '</td>' +
           '<td>' + esc(r.invoice_no || '') + '</td>' +
           '<td>' + esc(r.transport_type || '') + '</td>' +
           '<td>' + esc(r.delivery_status || '') + '</td>' +
-          '<td>' + fmt(r.transport_cost || 0, 2) + '</td>' +
+          '<td class="ds-report-cell-right">' + fmtCurrency(r.transport_cost || 0) + '</td>' +
         '</tr>';
       }
       html += '</tbody></table>';
@@ -2013,7 +2097,7 @@
   }
 
   function exportExcelTemplate() {
-    var htmlDoc = '<html><head><meta charset="utf-8"></head><body>' + buildEntriesReportHtml() + '</body></html>';
+    var htmlDoc = '<html><head><meta charset="utf-8"><style>' + getExportStyles() + '</style></head><body>' + buildEntriesReportHtml() + '</body></html>';
     var blob = new Blob(['\ufeff' + htmlDoc], { type: 'application/vnd.ms-excel;charset=utf-8;' });
     var link = document.createElement('a');
     var dt = new Date();

@@ -15,8 +15,11 @@
     activeTab: '',
     rows: [],
     filteredRows: [],
+    tabCounts: {},
     selectedIds: {},
-    search: ''
+    search: '',
+    filters: {},
+    activeFilterCol: ''
   };
 
   var nodes = {
@@ -55,7 +58,212 @@
   }
 
   function fmt(v) {
-    return Number(num(v).toFixed(3)).toLocaleString('en-IN');
+    return Math.round(num(v)).toLocaleString('en-IN');
+  }
+
+  function filterToken(v) {
+    var s = String(v == null ? '' : v).trim().toLowerCase();
+    return s ? s : '__blank__';
+  }
+
+  function columns() {
+    return [
+      { key: 'item_name', label: 'Item' },
+      { key: 'batch_no', label: 'Batch' },
+      { key: 'size', label: 'Size' },
+      { key: 'gsm', label: 'GSM' },
+      { key: 'width', label: 'Width' },
+      { key: 'length', label: 'Length' },
+      { key: 'total_qty', label: 'Total Qty' },
+      { key: 'per_carton', label: 'Per Carton' },
+      { key: 'extra_qty', label: 'Extra' },
+      { key: 'unit_type', label: 'Unit' },
+      { key: 'possible_cartons', label: 'Possible Cartons' },
+      { key: 'date', label: 'Date' }
+    ];
+  }
+
+  function columnValue(row, key) {
+    if (key === 'total_qty' || key === 'per_carton' || key === 'extra_qty') {
+      return fmt(row[key] || 0);
+    }
+    if (key === 'possible_cartons') {
+      return String(Math.round(num(row[key] || 0)));
+    }
+    return String(row[key] == null || row[key] === '' ? '-' : row[key]);
+  }
+
+  function filterOptions(colKey) {
+    var map = {};
+    state.rows.forEach(function (row) {
+      var raw = columnValue(row, colKey);
+      var token = filterToken(raw);
+      if (!Object.prototype.hasOwnProperty.call(map, token)) {
+        map[token] = raw || 'Blanks';
+      }
+    });
+
+    var out = Object.keys(map).map(function (token) {
+      return { token: token, label: map[token] };
+    });
+
+    out.sort(function (a, b) {
+      if (a.token === '__blank__') return -1;
+      if (b.token === '__blank__') return 1;
+      return String(a.label).localeCompare(String(b.label), undefined, { numeric: true, sensitivity: 'base' });
+    });
+    return out;
+  }
+
+  function closeFilterPopup() {
+    var pop = document.getElementById('mixFilterPopup');
+    if (pop) {
+      pop.remove();
+    }
+    state.activeFilterCol = '';
+  }
+
+  function syncFilterSelectAll(pop) {
+    if (!pop) return;
+    var all = pop.querySelectorAll('input[data-mix-filter-item]');
+    var checked = pop.querySelectorAll('input[data-mix-filter-item]:checked');
+    var selectAll = pop.querySelector('input[data-mix-filter-all]');
+    if (selectAll) {
+      selectAll.checked = all.length > 0 && all.length === checked.length;
+      selectAll.indeterminate = checked.length > 0 && checked.length < all.length;
+    }
+  }
+
+  function applyFiltersAndSearch() {
+    var q = String(state.search || '').toLowerCase().trim();
+    var cols = columns();
+
+    state.filteredRows = state.rows.filter(function (r) {
+      if (q) {
+        var found = cols.some(function (c) {
+          return String(columnValue(r, c.key) || '').toLowerCase().indexOf(q) >= 0;
+        });
+        if (!found) {
+          return false;
+        }
+      }
+
+      for (var key in state.filters) {
+        if (!Object.prototype.hasOwnProperty.call(state.filters, key)) continue;
+        var selected = state.filters[key];
+        if (!Array.isArray(selected) || !selected.length) continue;
+        var got = filterToken(columnValue(r, key));
+        if (selected.indexOf(got) === -1) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    renderTable();
+  }
+
+  function openFilterPopup(colKey, triggerEl) {
+    if (!colKey || !triggerEl) return;
+    if (state.activeFilterCol === colKey) {
+      closeFilterPopup();
+      return;
+    }
+
+    closeFilterPopup();
+    state.activeFilterCol = colKey;
+
+    var pop = document.createElement('div');
+    pop.id = 'mixFilterPopup';
+    pop.className = 'mix-filter-popup';
+
+    var options = filterOptions(colKey);
+    var active = Array.isArray(state.filters[colKey]) ? state.filters[colKey] : [];
+    var useActive = active.length > 0;
+
+    var html = '<div class="mix-filter-head">' +
+      '<input type="text" class="mix-filter-search" placeholder="Search values...">' +
+      '<label class="mix-filter-select-all"><input type="checkbox" data-mix-filter-all> <span>Select All</span></label>' +
+      '</div>' +
+      '<div class="mix-filter-list">';
+
+    options.forEach(function (opt) {
+      var checked = useActive ? active.indexOf(opt.token) !== -1 : true;
+      html += '<label class="mix-filter-item" data-token="' + esc(opt.token) + '">' +
+        '<input type="checkbox" data-mix-filter-item value="' + esc(opt.token) + '" ' + (checked ? 'checked' : '') + '> ' +
+        '<span>' + esc(opt.label) + '</span>' +
+        '</label>';
+    });
+
+    html += '</div><div class="mix-filter-actions">' +
+      '<button type="button" class="mix-btn" data-mix-filter-reset>Reset</button>' +
+      '<button type="button" class="mix-btn mix-btn-green" data-mix-filter-apply>Apply</button>' +
+      '</div>';
+
+    pop.innerHTML = html;
+    document.body.appendChild(pop);
+
+    var rect = triggerEl.getBoundingClientRect();
+    pop.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 300)) + 'px';
+    pop.style.top = (rect.bottom + window.scrollY + 6) + 'px';
+
+    var searchEl = pop.querySelector('.mix-filter-search');
+    if (searchEl) {
+      searchEl.focus();
+      searchEl.addEventListener('input', function () {
+        var query = String(searchEl.value || '').toLowerCase();
+        pop.querySelectorAll('.mix-filter-item').forEach(function (item) {
+          var text = String(item.textContent || '').toLowerCase();
+          item.style.display = text.indexOf(query) >= 0 ? '' : 'none';
+        });
+      });
+    }
+
+    var selectAll = pop.querySelector('input[data-mix-filter-all]');
+    if (selectAll) {
+      selectAll.addEventListener('change', function () {
+        pop.querySelectorAll('input[data-mix-filter-item]').forEach(function (cb) {
+          if (cb.closest('.mix-filter-item').style.display !== 'none') {
+            cb.checked = !!selectAll.checked;
+          }
+        });
+        syncFilterSelectAll(pop);
+      });
+    }
+
+    pop.querySelectorAll('input[data-mix-filter-item]').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        syncFilterSelectAll(pop);
+      });
+    });
+
+    var resetBtn = pop.querySelector('[data-mix-filter-reset]');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', function () {
+        delete state.filters[colKey];
+        closeFilterPopup();
+        applyFiltersAndSearch();
+      });
+    }
+
+    var applyBtn = pop.querySelector('[data-mix-filter-apply]');
+    if (applyBtn) {
+      applyBtn.addEventListener('click', function () {
+        var selected = [];
+        pop.querySelectorAll('input[data-mix-filter-item]:checked').forEach(function (cb) {
+          selected.push(String(cb.value || ''));
+        });
+        if (!selected.length || selected.length === options.length) {
+          delete state.filters[colKey];
+        } else {
+          state.filters[colKey] = selected;
+        }
+        closeFilterPopup();
+        applyFiltersAndSearch();
+      });
+    }
+
+    syncFilterSelectAll(pop);
   }
 
   function api(action, params, method) {
@@ -92,27 +300,27 @@
     var html = '';
     state.tabs.forEach(function (t) {
       var active = t.key === state.activeTab ? ' active' : '';
-      html += '<button type="button" class="mix-tab' + active + '" data-mix-tab="' + esc(t.key) + '">' + esc(t.label) + '</button>';
+      var count = state.tabCounts[t.key] != null ? state.tabCounts[t.key] : 0;
+      html += '<button type="button" class="mix-tab' + active + '" data-mix-tab="' + esc(t.key) + '">' +
+        '<span>' + esc(t.label) + '</span>' +
+        '<span class="mix-tab-count">' + esc(String(count)) + '</span>' +
+        '</button>';
     });
     nodes.tabs.innerHTML = html;
   }
 
   function renderTable() {
-    nodes.thead.innerHTML = '<tr>' +
-      '<th><input type="checkbox" id="mixSelectAll"></th>' +
-      '<th>Item</th>' +
-      '<th>Batch</th>' +
-      '<th>Size</th>' +
-      '<th>GSM</th>' +
-      '<th>Width</th>' +
-      '<th>Length</th>' +
-      '<th>Total Qty</th>' +
-      '<th>Per Carton</th>' +
-      '<th>Extra</th>' +
-      '<th>Unit</th>' +
-      '<th>Possible Cartons</th>' +
-      '<th>Date</th>' +
-      '</tr>';
+    var cols = columns();
+    var headHtml = '<tr><th><input type="checkbox" id="mixSelectAll"></th>';
+    cols.forEach(function (col) {
+      var activeCount = Array.isArray(state.filters[col.key]) ? state.filters[col.key].length : 0;
+      headHtml += '<th><div class="mix-th-wrap">' +
+        '<span>' + esc(col.label) + '</span>' +
+        '<button type="button" class="mix-filter-btn ' + (activeCount ? 'active' : '') + '" data-mix-open-filter="' + esc(col.key) + '" title="Filter ' + esc(col.label) + '">&#x1F5D0;</button>' +
+        '</div></th>';
+    });
+    headHtml += '</tr>';
+    nodes.thead.innerHTML = headHtml;
 
     if (!state.filteredRows.length) {
       nodes.tbody.innerHTML = '<tr><td class="mix-empty" colspan="99">No extra production found in this tab.</td></tr>';
@@ -125,19 +333,14 @@
       var checked = state.selectedIds[r.id] ? 'checked' : '';
       html += '<tr>' +
         '<td><input type="checkbox" data-mix-select="' + esc(r.id) + '" ' + checked + '></td>' +
-        '<td>' + esc(r.item_name || '-') + '</td>' +
-        '<td>' + esc(r.batch_no || '-') + '</td>' +
-        '<td>' + esc(r.size || '-') + '</td>' +
-        '<td>' + esc(r.gsm || '-') + '</td>' +
-        '<td>' + esc(r.width || '-') + '</td>' +
-        '<td>' + esc(r.length || '-') + '</td>' +
-        '<td>' + esc(fmt(r.total_qty || 0)) + '</td>' +
-        '<td>' + esc(fmt(r.per_carton || 0)) + '</td>' +
-        '<td><span class="mix-extra-pill">' + esc(fmt(r.extra_qty || 0)) + '</span></td>' +
-        '<td>' + esc(r.unit_type || '-') + '</td>' +
-        '<td>' + esc(String(r.possible_cartons || 0)) + '</td>' +
-        '<td>' + esc(r.date || '-') + '</td>' +
-      '</tr>';
+        columns().map(function (col) {
+          var value = columnValue(r, col.key);
+          if (col.key === 'extra_qty') {
+            return '<td><span class="mix-extra-pill">' + esc(value) + '</span></td>';
+          }
+          return '<td>' + esc(value) + '</td>';
+        }).join('') +
+        '</tr>';
     });
 
     nodes.tbody.innerHTML = html;
@@ -169,21 +372,7 @@
   }
 
   function applySearch() {
-    var q = String(state.search || '').toLowerCase().trim();
-    if (!q) {
-      state.filteredRows = state.rows.slice();
-      renderTable();
-      return;
-    }
-
-    state.filteredRows = state.rows.filter(function (r) {
-      var blob = [
-        r.item_name, r.batch_no, r.size, r.gsm, r.width, r.length, r.unit_type, r.date,
-        r.total_qty, r.per_carton, r.extra_qty
-      ].join(' ').toLowerCase();
-      return blob.indexOf(q) >= 0;
-    });
-    renderTable();
+    applyFiltersAndSearch();
   }
 
   function loadRows() {
@@ -194,6 +383,8 @@
       }
       state.rows = Array.isArray(res.rows) ? res.rows : [];
       state.filteredRows = state.rows.slice();
+      state.tabCounts[state.activeTab] = state.rows.length;
+      renderTabs();
 
       var summary = res.summary || {};
       nodes.totalItems.textContent = String(summary.total_items || 0);
@@ -203,6 +394,19 @@
     }).catch(function (err) {
       nodes.tbody.innerHTML = '<tr><td class="mix-empty" colspan="99">Unable to load data.</td></tr>';
       showMessage(err.message || 'Unable to load data.', 'error');
+    });
+  }
+
+  function loadTabCounts() {
+    return api('get_tab_counts', {}, 'GET').then(function (res) {
+      if (!res || !res.ok) {
+        throw new Error((res && res.error) || 'Unable to load tab counts.');
+      }
+      state.tabCounts = res.counts && typeof res.counts === 'object' ? res.counts : {};
+      renderTabs();
+    }).catch(function () {
+      state.tabCounts = {};
+      renderTabs();
     });
   }
 
@@ -217,6 +421,7 @@
       }
       state.activeTab = state.tabs[0].key;
       renderTabs();
+      loadTabCounts();
       return loadRows();
     }).catch(function (err) {
       showMessage(err.message || 'Unable to load tabs.', 'error');
@@ -279,8 +484,16 @@
       if (!key || key === state.activeTab) return;
       state.activeTab = key;
       state.selectedIds = {};
+      state.filters = {};
+      closeFilterPopup();
       renderTabs();
       loadRows();
+    });
+
+    nodes.thead.addEventListener('click', function (ev) {
+      var btn = ev.target.closest('[data-mix-open-filter]');
+      if (!btn) return;
+      openFilterPopup(String(btn.getAttribute('data-mix-open-filter') || ''), btn);
     });
 
     if (nodes.search) {
@@ -322,6 +535,20 @@
     if (nodes.openBoardBtn) {
       nodes.openBoardBtn.addEventListener('click', openBoard);
     }
+
+    document.addEventListener('click', function (ev) {
+      if (!state.activeFilterCol) return;
+      var popup = document.getElementById('mixFilterPopup');
+      if (popup && popup.contains(ev.target)) return;
+      if (ev.target.closest('[data-mix-open-filter]')) return;
+      closeFilterPopup();
+    });
+
+    document.addEventListener('scroll', function () {
+      if (state.activeFilterCol) {
+        closeFilterPopup();
+      }
+    }, true);
   }
 
   function boot() {

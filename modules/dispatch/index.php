@@ -53,9 +53,9 @@ include __DIR__ . '/../../includes/header.php';
     <button type="button" class="ds-tab-btn" data-ds-tab="reports" aria-selected="false">Dispatch Reports</button>
   </div>
 
-  <section class="ds-tab-panel is-active" data-ds-panel="operations">
+  <section class="ds-tab-panel is-active ds-panel-operations" data-ds-panel="operations">
 
-  <div class="card ds-card ds-summary-card-wrap">
+  <div class="card ds-card ds-summary-card-wrap ds-tone-indigo">
     <div class="ds-summary-grid">
       <div class="ds-kpi ds-kpi-blue">
         <span><i class="bi bi-truck"></i> Total Dispatches</span>
@@ -99,7 +99,7 @@ include __DIR__ . '/../../includes/header.php';
   </div>
 
   <div class="ds-main-grid">
-    <div class="card ds-card ds-card-blue">
+    <div class="card ds-card ds-card-blue ds-tone-sky">
       <div class="card-header ds-card-header">
         <span class="card-title">Dispatch Entry</span>
         <span class="ds-muted" id="dsFormModeLabel">New Entry</span>
@@ -148,8 +148,9 @@ include __DIR__ . '/../../includes/header.php';
             <div class="ds-field">
               <label for="dsUnit">Unit</label>
               <select id="dsUnit">
-                <option value="PCS">PCS</option>
+                <option value="PCS">Pcs</option>
                 <option value="Roll">Roll</option>
+                <option value="Carton">Carton</option>
               </select>
             </div>
 
@@ -261,7 +262,7 @@ include __DIR__ . '/../../includes/header.php';
   </div>
 
   <div class="ds-dashboard-grid">
-    <div class="card ds-card ds-card-orange ds-dashboard-left">
+    <div class="card ds-card ds-card-orange ds-dashboard-left ds-tone-amber">
       <div class="card-header ds-card-header ds-table-header">
         <span class="card-title">Dispatch Entries</span>
         <div class="ds-actions">
@@ -328,7 +329,7 @@ include __DIR__ . '/../../includes/header.php';
       </div>
     </div>
 
-    <div class="card ds-card ds-card-green ds-dashboard-right">
+    <div class="card ds-card ds-card-green ds-dashboard-right ds-tone-emerald">
       <div class="card-header ds-card-header">
         <span class="card-title">Dispatch Insights</span>
       </div>
@@ -365,8 +366,8 @@ include __DIR__ . '/../../includes/header.php';
 
   </section>
 
-  <section class="ds-tab-panel" data-ds-panel="reports" hidden>
-    <div class="card ds-card ds-card-blue ds-report-filter-card">
+  <section class="ds-tab-panel ds-panel-reports" data-ds-panel="reports" hidden>
+    <div class="card ds-card ds-card-blue ds-report-filter-card ds-tone-cobalt">
       <div class="card-header ds-card-header ds-report-hero">
         <div>
           <span class="card-title">Dispatch Reports</span>
@@ -456,7 +457,7 @@ include __DIR__ . '/../../includes/header.php';
     </div>
 
     <div class="ds-report-chart-grid">
-      <div class="card ds-card ds-report-chart-card">
+      <div class="card ds-card ds-report-chart-card ds-tone-violet">
         <div class="card-header ds-card-header">
           <span class="card-title">Transport Type Analysis</span>
           <span class="ds-muted">Click a segment to filter the drill-down table</span>
@@ -466,7 +467,7 @@ include __DIR__ . '/../../includes/header.php';
         </div>
       </div>
 
-      <div class="card ds-card ds-report-chart-card">
+      <div class="card ds-card ds-report-chart-card ds-tone-cyan">
         <div class="card-header ds-card-header">
           <span class="card-title">Monthly Trend</span>
           <span class="ds-muted">Smooth cost trend with peak month highlight</span>
@@ -476,7 +477,7 @@ include __DIR__ . '/../../includes/header.php';
         </div>
       </div>
 
-      <div class="card ds-card ds-report-chart-card">
+      <div class="card ds-card ds-report-chart-card ds-tone-rose">
         <div class="card-header ds-card-header">
           <span class="card-title">Product-wise Cost Analysis</span>
           <span class="ds-muted">Click a bar to narrow client and detail view</span>
@@ -486,7 +487,7 @@ include __DIR__ . '/../../includes/header.php';
         </div>
       </div>
 
-      <div class="card ds-card ds-report-chart-card">
+      <div class="card ds-card ds-report-chart-card ds-tone-lime">
         <div class="card-header ds-card-header">
           <span class="card-title">Client-wise Cost Analysis</span>
           <span class="ds-muted">Click a client to focus item-level dispatch rows</span>
@@ -497,7 +498,7 @@ include __DIR__ . '/../../includes/header.php';
       </div>
     </div>
 
-    <div class="card ds-card ds-card-green ds-report-table-card">
+    <div class="card ds-card ds-card-green ds-report-table-card ds-tone-mint">
       <div class="card-header ds-card-header ds-table-header">
         <div>
           <span class="card-title">Dispatch Detail Table</span>

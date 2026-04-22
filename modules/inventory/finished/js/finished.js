@@ -51,7 +51,8 @@
     importMapping: {},
     itemSummary: [],
     prcData: null,
-    prcLoading: false
+    prcLoading: false,
+    tabCounts: {}
   };
 
   var fg_nodes = {
@@ -783,16 +784,37 @@
     ];
   }
 
+  var fg_tabIcons = {
+    pos_paper_roll: 'bi bi-receipt-cutoff',
+    one_ply: 'bi bi-layers',
+    two_ply: 'bi bi-layers-fill',
+    barcode: 'bi bi-upc-scan',
+    printing_roll: 'bi bi-printer-fill',
+    ribbon: 'bi bi-gift',
+    core: 'bi bi-circle-half',
+    carton: 'bi bi-box-seam-fill'
+  };
+
   function fg_renderTabs() {
     var html = '';
     for (var i = 0; i < fg_state.tabs.length; i += 1) {
       var t = fg_state.tabs[i];
-      var active = t.key === fg_state.activeTab ? ' active' : '';
-      var countBadge = '';
-      if (t.key === fg_state.activeTab && fg_state.rows.length > 0) {
-        countBadge = ' <span style="background:rgba(255,255,255,0.25);border-radius:10px;padding:1px 7px;font-size:.78em;font-weight:700;">' + fg_state.rows.length + '</span>';
+      var isActive = t.key === fg_state.activeTab;
+      var count = fg_state.tabCounts[t.key] != null ? fg_state.tabCounts[t.key] : '';
+      var icon = fg_tabIcons[t.key] || 'bi bi-folder';
+      var btnStyle, badgeStyle;
+      if (isActive) {
+        btnStyle = 'background:' + t.color + ';color:#fff;border-color:' + t.color + ';box-shadow:0 6px 20px ' + t.color + '55;';
+        badgeStyle = 'background:rgba(255,255,255,0.28);color:#fff;';
+      } else {
+        btnStyle = 'background:#fff;color:' + t.color + ';border-color:' + t.color + '55;';
+        badgeStyle = 'background:' + t.color + '1a;color:' + t.color + ';';
       }
-      html += '<button class="fg-tab-btn' + active + '" type="button" data-fg-action="switch-tab" data-tab="' + fg_escapeHtml(t.key) + '">' + fg_escapeHtml(t.label) + countBadge + '</button>';
+      html += '<button class="fg-tab-btn' + (isActive ? ' active' : '') + '" type="button" data-fg-action="switch-tab" data-tab="' + fg_escapeHtml(t.key) + '" style="' + btnStyle + '">' +
+        '<i class="' + icon + '"></i>' +
+        ' ' + fg_escapeHtml(t.label) +
+        '<span class="fg-tab-count" style="' + badgeStyle + '">' + (count !== '' ? count : '…') + '</span>' +
+        '</button>';
     }
     fg_nodes.tabs.innerHTML = html;
   }
@@ -911,7 +933,8 @@
 
   function fg_loadTable() {
     fg_nodes.tableBody.innerHTML = '<tr><td class="fg-empty" colspan="99">Loading...</td></tr>';
-    return fg_api('get_stock', { category: fg_state.activeTab }, 'GET')
+    var loadTab = fg_state.activeTab;
+    return fg_api('get_stock', { category: loadTab }, 'GET')
       .then(function (res) {
         if (!res || !res.ok) {
           throw new Error((res && res.error) || 'Table load failed.');
@@ -922,12 +945,22 @@
           r._fgExtra = parsed.extra;
           return r;
         });
+        fg_state.tabCounts[loadTab] = fg_state.rows.length;
         fg_applyFilterSort();
       })
       .catch(function (err) {
         fg_nodes.tableBody.innerHTML = '<tr><td class="fg-empty" colspan="99">Unable to load rows.</td></tr>';
         fg_showMessage(err.message || 'Unable to load rows.', 'error');
       });
+  }
+
+  function fg_loadTabCounts() {
+    fg_api('get_tab_counts', {}, 'GET').then(function (res) {
+      if (res && res.ok && res.counts && typeof res.counts === 'object') {
+        fg_state.tabCounts = res.counts;
+        fg_renderTabs();
+      }
+    }).catch(function () {});
   }
 
   function fg_buildItemSummary(rows) {
@@ -1190,7 +1223,7 @@
     for (var r = 0; r < rows.length; r += 1) {
       var row = rows[r];
       row._fgSerial = start + r + 1;
-      body += '<tr>';
+      body += '<tr class="fg-row-c' + (r % 8) + '">';
       for (var x = 0; x < cols.length; x += 1) {
         body += '<td>' + fg_renderCell(row, cols[x].key) + '</td>';
       }
@@ -2562,6 +2595,7 @@
     fg_renderTabs();
     fg_renderColumnMenu();
     fg_bindEvents();
+    fg_loadTabCounts();
     fg_loadSummary();
     fg_loadTable();
   }
