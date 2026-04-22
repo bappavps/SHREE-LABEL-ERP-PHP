@@ -204,6 +204,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
         </div>
         <?= navSubItem('/modules/inventory/slitting/index.php', 'Slitting', $currentFile, [], '', 'scissors') ?>
         <?= navSubItem('/modules/inventory/finished/index.php', 'Finished Good', $currentFile, [], '', 'check2-circle') ?>
+        <?= navSubItem('/modules/inventory/mixed-item/index.php', 'Mixed Item', $currentFile, [], '', 'collection') ?>
       </div>
     </div>
 

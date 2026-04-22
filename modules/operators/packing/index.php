@@ -801,6 +801,16 @@ include __DIR__ . '/../../../includes/header.php';
           '<div id="opHelpersSection" style="margin-bottom:14px;padding:12px;border:1px solid #fed7aa;border-radius:10px;background:linear-gradient(120deg,#fff7ed 0%,#fff 100%)">'
           + '<div style="font-size:.74rem;font-weight:900;color:#c2410c;margin-bottom:8px">Packing Calculation Helpers</div>'
           + '<div id="opPerRollOutput" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px"></div>'
+          + '<div id="opMixedPanel" style="display:none;margin-top:10px;padding:10px;border:1px solid #fca5a5;border-radius:8px;background:#fff1f2">'
+          + '  <div style="font-size:.72rem;font-weight:900;color:#be123c;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Mixed Carton Pool (Barcode)</div>'
+          + '  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">'
+          + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Enable Mixed</label><input type="checkbox" id="opMixedEnable" style="margin-top:6px"></div>'
+          + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Mixed Roll/Carton</label><input type="number" id="opMixedRpc" min="0" step="1" value="0" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
+          + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Pool Extra Rolls</label><input type="text" id="opMixedPool" readonly value="0" style="width:100%;padding:5px 6px;border:1px solid #fecaca;border-radius:6px;background:#fff"></div>'
+          + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Mixed Cartons</label><input type="text" id="opMixedCartons" readonly value="0" style="width:100%;padding:5px 6px;border:1px solid #fecaca;border-radius:6px;background:#fff"></div>'
+          + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Mixed Extra</label><input type="text" id="opMixedExtra" readonly value="0" style="width:100%;padding:5px 6px;border:1px solid #fecaca;border-radius:6px;background:#fff"></div>'
+          + '  </div>'
+          + '</div>'
           + '<div class="op-entry-form" style="margin-top:10px">'
           +   '<div class="op-field"><label>Physical Production (calculated)</label><input type="text" id="opCalcPhysicalProduction" readonly value="-" style="background:#fff7ed;font-weight:900;color:#166534;cursor:not-allowed"></div>'
           + '</div>'
@@ -867,6 +877,12 @@ include __DIR__ . '/../../../includes/header.php';
     var livePhysicalQty = document.getElementById('opLivePhysicalQty');
     var livePhysicalPct = document.getElementById('opLivePhysicalPct');
     var liveLooseQty = document.getElementById('opLiveLooseQty');
+    var mixedPanel = document.getElementById('opMixedPanel');
+    var mixedEnableNode = document.getElementById('opMixedEnable');
+    var mixedRpcNode = document.getElementById('opMixedRpc');
+    var mixedPoolNode = document.getElementById('opMixedPool');
+    var mixedCartonsNode = document.getElementById('opMixedCartons');
+    var mixedExtraNode = document.getElementById('opMixedExtra');
     var calcCartonsNeeded = document.getElementById('opCalcCartonsNeeded');
     var calcPhysicalProduction = document.getElementById('opCalcPhysicalProduction');
     var helpersSection = document.getElementById('opHelpersSection');
@@ -878,6 +894,15 @@ include __DIR__ . '/../../../includes/header.php';
     var rollSelectNodes = Array.prototype.slice.call(document.querySelectorAll('.op-roll-select'));
     var orderQtyNum = parseFloat(String(orderQtyRaw || '').replace(/,/g, '')) || 0;
     var prodQtyNum = parseFloat(String(prodQtyRaw || '').replace(/,/g, '')) || 0;
+
+    if (isBarcodeMode && opEntryRollPayload && typeof opEntryRollPayload === 'object' && opEntryRollPayload.mixed && typeof opEntryRollPayload.mixed === 'object') {
+      var mixedSaved = opEntryRollPayload.mixed;
+      if (mixedEnableNode) mixedEnableNode.checked = (Number(mixedSaved.enabled || 0) === 1 || mixedSaved.enabled === true);
+      if (mixedRpcNode) mixedRpcNode.value = String(Math.max(0, Math.floor(toNum(mixedSaved.rolls_per_carton || 0))));
+      if (mixedPoolNode) mixedPoolNode.value = String(Math.max(0, Math.floor(toNum(mixedSaved.pool_extra_rolls || 0))));
+      if (mixedCartonsNode) mixedCartonsNode.value = String(Math.max(0, Math.floor(toNum(mixedSaved.mixed_cartons || 0))));
+      if (mixedExtraNode) mixedExtraNode.value = String(Math.max(0, Math.floor(toNum(mixedSaved.mixed_extra_rolls || 0))));
+    }
 
     function toNum(v) {
       var n = parseFloat(String(v || '').replace(/,/g, ''));
@@ -918,6 +943,26 @@ include __DIR__ . '/../../../includes/header.php';
         rollsPerCarton: rollsPerCarton,
         cartonsBarcode: cartonsBarcode,
         extraRolls: extraRolls,
+      };
+    }
+
+    function computeMixedBarcodePool(rows, sharedRpc) {
+      var pool = 0;
+      (rows || []).forEach(function(row) {
+        pool += Math.max(0, Math.floor(toNum(row && row.extraRolls != null ? row.extraRolls : 0)));
+      });
+      var rpc = Math.max(0, Math.floor(toNum(sharedRpc)));
+      if (rpc <= 0) {
+        return {
+          poolExtraRolls: pool,
+          mixedCartons: 0,
+          mixedExtraRolls: pool
+        };
+      }
+      return {
+        poolExtraRolls: pool,
+        mixedCartons: Math.floor(pool / rpc),
+        mixedExtraRolls: pool % rpc
       };
     }
 
@@ -1069,6 +1114,9 @@ include __DIR__ . '/../../../includes/header.php';
         if (bundlesCountInput) bundlesCountInput.value = '';
         if (looseQtyInput) looseQtyInput.value = '';
         if (perRollOutput) perRollOutput.innerHTML = '';
+        if (mixedPoolNode) mixedPoolNode.value = '0';
+        if (mixedCartonsNode) mixedCartonsNode.value = '0';
+        if (mixedExtraNode) mixedExtraNode.value = '0';
         currentOpBatches = [];
         return;
       }
@@ -1076,6 +1124,7 @@ include __DIR__ . '/../../../includes/header.php';
       if (helpersSection) helpersSection.style.display = '';
       if (helpersHiddenMsg) helpersHiddenMsg.style.display = 'none';
       if (cleanSummarySection) cleanSummarySection.style.display = '';
+      if (mixedPanel) mixedPanel.style.display = isBarcodeMode ? '' : 'none';
       var splitMeta = selectedRolls.map(function(roll) {
         var rollNo = String(roll && roll.rollNo ? roll.rollNo : '').trim();
         var qtyVal = Math.max(0, Math.min(toNum(roll.productionQty), toNum(roll.availableQty)));
@@ -1109,6 +1158,9 @@ include __DIR__ . '/../../../includes/header.php';
       var totalProductionReceived = 0;
       var batches = [];
       var summaryRows = [];
+      var barcodeRowsForMix = [];
+      var barcodeExtraPiecesTotal = 0;
+      var barcodeSharedRpc = 0;
 
       selectedRolls.forEach(function(roll, rollIdx) {
         var rollKey = String(roll.rollNo || ('roll-' + String(rollIdx)));
@@ -1131,7 +1183,14 @@ include __DIR__ . '/../../../includes/header.php';
 
           totalShrinkBundles += totalRollsBarcode;
           totalCartons += cartonsBarcode;
-          totalLoose += extraPieces;
+          barcodeExtraPiecesTotal += extraPieces;
+          barcodeRowsForMix.push({
+            rollNo: String(roll.rollNo || '-'),
+            extraRolls: extraRolls
+          });
+          if (rollsPerCarton > 0 && barcodeSharedRpc <= 0) {
+            barcodeSharedRpc = rollsPerCarton;
+          }
           physicalProduction += rollPhysical;
           if (!sharedSplitMode) totalProductionReceived += qtyInput;
 
@@ -1216,6 +1275,40 @@ include __DIR__ . '/../../../includes/header.php';
 
       if (sharedSplitMode) totalProductionReceived = sharedReceivedQty;
 
+      if (isBarcodeMode) {
+        var mixedEnabled = !!(mixedEnableNode && mixedEnableNode.checked);
+        var rpcInputVal = mixedRpcNode ? Math.max(0, Math.floor(toNum(mixedRpcNode.value))) : 0;
+        var effectiveRpc = rpcInputVal > 0 ? rpcInputVal : barcodeSharedRpc;
+        var mix = computeMixedBarcodePool(barcodeRowsForMix, effectiveRpc);
+
+        if (mixedPoolNode) mixedPoolNode.value = String(mix.poolExtraRolls);
+        if (mixedCartonsNode) mixedCartonsNode.value = String(mix.mixedCartons);
+        if (mixedExtraNode) mixedExtraNode.value = String(mix.mixedExtraRolls);
+
+        if (mixedEnabled && effectiveRpc > 0) {
+          totalCartons += mix.mixedCartons;
+          totalLoose = mix.mixedExtraRolls + barcodeExtraPiecesTotal;
+          if (mix.mixedCartons > 0 || mix.mixedExtraRolls > 0) {
+            var mixLabel = 'MIXED';
+            var mixSources = barcodeRowsForMix.map(function(row) { return String(row.rollNo || '').trim(); }).filter(function(v) { return v !== ''; });
+            if (mixSources.length) {
+              mixLabel += ' (' + mixSources.join(', ') + ')';
+            }
+            batches.push({
+              batchNo: batches.length + 1,
+              label: mixLabel,
+              type: 'MIXED',
+              cartons: mix.mixedCartons,
+              shrinkBundles: 0,
+              looseUsed: mix.mixedExtraRolls,
+              shortage: 0
+            });
+          }
+        } else {
+          totalLoose = barcodeExtraPiecesTotal;
+        }
+      }
+
       var physicalPct = orderQtyNum > 0 ? ((physicalProduction / orderQtyNum) * 100) : 0;
 
       if (cleanSummaryBody) {
@@ -1254,6 +1347,8 @@ include __DIR__ . '/../../../includes/header.php';
         node.addEventListener('change', updateLiveMetrics);
       });
     }
+    if (mixedEnableNode) mixedEnableNode.addEventListener('change', updateLiveMetrics);
+    if (mixedRpcNode) mixedRpcNode.addEventListener('change', updateLiveMetrics);
     updateLiveMetrics();
 
     // Submit handler
@@ -1675,9 +1770,17 @@ include __DIR__ . '/../../../includes/header.php';
         };
       });
       fd.append('roll_payload_json', JSON.stringify({
-        v: 1,
+        v: 2,
         selected_roll_keys: selectedRollPayloadKeys,
-        roll_overrides: payloadOverrides
+        roll_overrides: payloadOverrides,
+        mixed: {
+          enabled: !!(mixedEnableNode && mixedEnableNode.checked),
+          rolls_per_carton: Math.max(0, Math.floor(toNum(mixedRpcNode ? mixedRpcNode.value : 0))),
+          pool_extra_rolls: Math.max(0, Math.floor(toNum(mixedPoolNode ? mixedPoolNode.value : 0))),
+          mixed_cartons: Math.max(0, Math.floor(toNum(mixedCartonsNode ? mixedCartonsNode.value : 0))),
+          mixed_extra_rolls: Math.max(0, Math.floor(toNum(mixedExtraNode ? mixedExtraNode.value : 0))),
+          batch_labels: selectedRollPayloadKeys.join(', ')
+        }
       }));
       if (photoInput && photoInput.files && photoInput.files[0]) {
         fd.append('photo', photoInput.files[0]);

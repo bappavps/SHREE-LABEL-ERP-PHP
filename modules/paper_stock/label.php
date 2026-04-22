@@ -57,6 +57,9 @@ $batchLabelsParam = trim((string)($_GET['batch_labels'] ?? ''));
 $jobNameParam = trim((string)($_GET['job_name'] ?? ''));
 $rollsPerCartonParam = trim((string)($_GET['rolls_per_carton'] ?? ''));
 $rollsPerCarton = is_numeric($rollsPerCartonParam) ? (string)(int)$rollsPerCartonParam : '';
+$mixedEnabledParam = (int)($_GET['mixed_enabled'] ?? 0);
+$mixedCartonsParam = trim((string)($_GET['mixed_cartons'] ?? ''));
+$mixedExtraRollsParam = trim((string)($_GET['mixed_extra_rolls'] ?? ''));
 
 // ── Auto-create print_templates table if missing ──────────────
 @$db->query("CREATE TABLE IF NOT EXISTS print_templates (
@@ -715,6 +718,9 @@ var batchNoParam = <?= json_encode($batchNoParam, JSON_HEX_TAG | JSON_HEX_AMP) ?
 var batchLabelsParam = <?= json_encode($batchLabelsParam, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 var jobNameParam = <?= json_encode($jobNameParam, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 var rollsPerCarton = <?= json_encode($rollsPerCarton, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+var mixedEnabledParam = <?= json_encode($mixedEnabledParam, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+var mixedCartonsParam = <?= json_encode($mixedCartonsParam, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+var mixedExtraRollsParam = <?= json_encode($mixedExtraRollsParam, JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 var previewZoom = 100;
 var activeTemplateId = 0;
 
@@ -917,6 +923,12 @@ function renderBuiltinLabel(roll, tpl) {
             var labelCompanyCode = labelCompanyCodeRaw ? labelCompanyCodeRaw.substring(0, 2) : 'NA';
             var rawBatchLabels = String(roll.batch_labels || batchLabelsParam || '').trim();
             var batchTextBase = rawBatchLabels !== '' ? rawBatchLabels : String(batchNoParam || roll.batch_no || roll.roll_no || 'NA').trim();
+            if (batchTextBase.indexOf(',') !== -1) {
+                var parts = batchTextBase.split(',').map(function(v) { return String(v || '').trim(); }).filter(function(v) { return v !== ''; });
+                if (parts.length > 1) {
+                    batchTextBase = 'MIXED: ' + parts.join(' + ');
+                }
+            }
             var batchText = batchTextBase + ' / ' + labelCompanyCode;
             var labelPaperType = String(roll.paper_type || 'PAPER').trim().toUpperCase();
             var labelJobName = String(roll.job_name || jobNameParam || '-').trim();
@@ -939,6 +951,9 @@ function renderBuiltinLabel(roll, tpl) {
             html150 += '<div class="pk150-divider"></div>';
             html150 += '<div class="pk150-product">' + escHtml(labelJobName || '-') + '</div>';
             html150 += '<div class="pk150-meta">Qty: ' + escHtml(labelRpc || '0') + ' Pcs | ' + escHtml(labelWidth) + ' mm</div>';
+            if (Number(mixedEnabledParam || 0) === 1) {
+                html150 += '<div class="pk150-meta">Mixed Cartons: ' + escHtml(String(mixedCartonsParam || '0')) + ' | Mixed Extra: ' + escHtml(String(mixedExtraRollsParam || '0')) + '</div>';
+            }
             html150 += '<div class="pk150-mfg-label">Manufactured by:</div>';
             html150 += '<div class="pk150-company">' + escHtml(labelCompanyName) + '</div>';
             html150 += '<div class="pk150-address">' + escHtml(labelCompanyAddress) + '</div>';

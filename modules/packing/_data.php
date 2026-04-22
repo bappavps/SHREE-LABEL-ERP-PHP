@@ -526,6 +526,15 @@ function packing_extract_total_roll_value(array $jobExtra, array $planExtra, arr
     if (is_array($operatorEntry)) {
         $payload = packing_decode_roll_payload($operatorEntry['roll_payload_json'] ?? null);
         if (!empty($payload)) {
+            $mixedPayload = (isset($payload['mixed']) && is_array($payload['mixed'])) ? $payload['mixed'] : [];
+            $mixedEnabled = !empty($mixedPayload['enabled']) && ((int)($mixedPayload['enabled'] ?? 0) === 1 || ($mixedPayload['enabled'] ?? false) === true);
+            if ($mixedEnabled) {
+                $mixedPool = packing_to_float_or_null($mixedPayload['pool_extra_rolls'] ?? null);
+                if ($mixedPool !== null && $mixedPool >= 0) {
+                    return (string)((int)floor($mixedPool));
+                }
+            }
+
             $topLevelTotal = packing_pick_value_loose([$payload], ['total_roll_value', 'total_roll', 'total_rolls']);
             if ($topLevelTotal !== '') {
                 return $topLevelTotal;

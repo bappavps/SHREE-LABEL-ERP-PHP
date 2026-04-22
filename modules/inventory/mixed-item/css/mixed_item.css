@@ -1,0 +1,177 @@
+.mix-page {
+  display: grid;
+  gap: 14px;
+}
+
+.mix-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.mix-head h1 {
+  margin: 0;
+  font-size: 1.45rem;
+}
+
+.mix-head p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 0.86rem;
+}
+
+.mix-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mix-head-actions select,
+.mix-btn {
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  padding: 0 12px;
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+.mix-btn {
+  cursor: pointer;
+}
+
+.mix-btn-green {
+  background: #16a34a;
+  color: #fff;
+  border-color: #15803d;
+}
+
+.mix-card {
+  padding: 14px;
+  border-radius: 12px;
+}
+
+.mix-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.mix-tab {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mix-tab.active {
+  background: #0f766e;
+  color: #fff;
+  border-color: #0f766e;
+}
+
+.mix-summary {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.mix-pill {
+  min-width: 140px;
+  border: 1px solid #dbeafe;
+  background: #f8fbff;
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.mix-pill small {
+  display: block;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.mix-pill strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 1rem;
+}
+
+.mix-toolbar {
+  margin-bottom: 10px;
+}
+
+.mix-toolbar input {
+  width: 100%;
+  max-width: 320px;
+  height: 36px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 10px;
+}
+
+.mix-table-wrap {
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.mix-table {
+  width: 100%;
+  min-width: 1100px;
+  border-collapse: collapse;
+  font-size: 0.79rem;
+}
+
+.mix-table th,
+.mix-table td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.mix-table th {
+  background: #0f172a;
+  color: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.mix-table tr:nth-child(even) td {
+  background: #fcfdff;
+}
+
+.mix-empty {
+  text-align: center;
+  color: #64748b;
+  padding: 20px;
+}
+
+.mix-extra-pill {
+  display: inline-block;
+  min-width: 56px;
+  text-align: center;
+  background: #fee2e2;
+  color: #9f1239;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-weight: 800;
+}
+
+@media (max-width: 980px) {
+  .mix-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

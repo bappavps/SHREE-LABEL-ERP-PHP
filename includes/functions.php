@@ -1918,6 +1918,7 @@ function rbacPageCatalog() {
         '/modules/scan/index.php' => 'Physical Stock Scan Terminal',
         '/modules/inventory/slitting/index.php' => 'Inventory - Slitting',
         '/modules/inventory/finished/index.php' => 'Inventory - Finished Good',
+        '/modules/inventory/mixed-item/index.php' => 'Inventory - Mixed Item',
         '/modules/die-tooling/index.php' => 'Barcode Die',
         '/modules/design/barcode-die.php' => 'Design - Barcode Die',
         '/modules/master/barcode-die.php' => 'Master - Barcode Die',
@@ -2165,6 +2166,11 @@ function canAccessPath($path) {
     // Finished Goods API follows finished goods page permission.
     if ($path === '/modules/inventory/finished/api/finished_api.php') {
         return canAccessPath('/modules/inventory/finished/index.php');
+    }
+
+    // Mixed Item API follows mixed item page permission.
+    if ($path === '/modules/inventory/mixed-item/api/mixed_item_api.php') {
+        return canAccessPath('/modules/inventory/mixed-item/index.php');
     }
 
     $catalog = rbacPageCatalog();

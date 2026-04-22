@@ -173,6 +173,60 @@ function packing_api_build_job_barcode(array $jobDetails): string {
     return '';
 }
 
+function packing_api_resolve_barcode_metrics(array $operatorPayload, array $planExtra): array {
+    $rollOverrides = is_array($operatorPayload['roll_overrides'] ?? null) ? $operatorPayload['roll_overrides'] : [];
+    $selected = is_array($operatorPayload['selected_roll_keys'] ?? null) ? $operatorPayload['selected_roll_keys'] : [];
+    $mixed = is_array($operatorPayload['mixed'] ?? null) ? $operatorPayload['mixed'] : [];
+
+    $keys = [];
+    foreach ($selected as $k) {
+        $key = trim((string)$k);
+        if ($key !== '') $keys[] = $key;
+    }
+    if (!$keys) {
+        foreach (array_keys($rollOverrides) as $k) {
+            $key = trim((string)$k);
+            if ($key !== '') $keys[] = $key;
+        }
+    }
+
+    $sumTotalRolls = 0;
+    $bpr = 0;
+    $rpc = 0;
+    foreach ($keys as $k) {
+        $st = $rollOverrides[$k] ?? null;
+        if (!is_array($st)) continue;
+        $tr = (int)floor((float)($st['total_rolls'] ?? 0));
+        if ($tr > 0) $sumTotalRolls += $tr;
+        if ($bpr <= 0) {
+            $bv = (int)floor((float)($st['bpr'] ?? 0));
+            if ($bv > 0) $bpr = $bv;
+        }
+        if ($rpc <= 0) {
+            $rv = (int)floor((float)($st['rolls_per_carton'] ?? 0));
+            if ($rv > 0) $rpc = $rv;
+        }
+    }
+
+    if ($bpr <= 0) {
+        $bpr = (int)round((float)($planExtra['barcode_in_1_roll'] ?? 0));
+    }
+
+    $mixedEnabled = (!empty($mixed['enabled']) && ((int)$mixed['enabled'] === 1 || $mixed['enabled'] === true));
+    if ($mixedEnabled) {
+        $mrpc = (int)floor((float)($mixed['rolls_per_carton'] ?? 0));
+        if ($mrpc > 0) $rpc = $mrpc;
+    }
+
+    return [
+        'bpr' => max(0, $bpr),
+        'total_rolls' => max(0, $sumTotalRolls),
+        'rolls_per_carton' => max(0, $rpc),
+        'mixed' => $mixed,
+        'mixed_enabled' => $mixedEnabled,
+    ];
+}
+
 function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array $operatorEntry, int $userId, string $packingTabKey = 'pos_roll', bool $throwOnError = false): void {
     packing_api_ensure_finished_goods_table($db);
 
@@ -198,13 +252,7 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
     $operatorPayload = packing_decode_json($operatorEntry['roll_payload_json'] ?? null);
     $rollOverrides = is_array($operatorPayload['roll_overrides'] ?? null) ? $operatorPayload['roll_overrides'] : [];
     $childRolls = packing_api_assigned_child_rolls($jobDetails);
-    $firstOverride = [];
-    if (!empty($rollOverrides)) {
-        $firstOverride = reset($rollOverrides);
-        if (!is_array($firstOverride)) {
-            $firstOverride = [];
-        }
-    }
+    $barcodeMetricsResolved = packing_api_resolve_barcode_metrics($operatorPayload, $planExtra);
 
     $width = trim((string)($planExtra['item_width'] ?? ($jobDetails['paper_width_mm'] ?? ($planExtra['width_mm'] ?? ''))));
     $length = trim((string)($planExtra['item_length'] ?? ($jobDetails['paper_length_mtr'] ?? ($planExtra['length_mtr'] ?? ''))));
@@ -233,7 +281,19 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
     if ($barcode === '') {
         $barcode = packing_api_build_pos_barcode($childRolls);
     }
-    $perCarton = (int)($firstOverride['rpc'] ?? 0);
+    $perCarton = 0;
+    if (!empty($rollOverrides)) {
+        foreach ($rollOverrides as $ov) {
+            if (!is_array($ov)) {
+                continue;
+            }
+            $candidate = (int)round((float)($ov['rpc'] ?? ($ov['rolls_per_carton'] ?? 0)));
+            if ($candidate > 0) {
+                $perCarton = $candidate;
+                break;
+            }
+        }
+    }
     $cartonCount = (int)round((float)($operatorEntry['cartons_count'] ?? 0));
     $totalValue = $quantity;
 
@@ -253,9 +313,9 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
             }
         }
 
-        $barcodePerRoll = (int)round((float)($firstOverride['bpr'] ?? ($planExtra['barcode_in_1_roll'] ?? 0)));
-        $barcodeTotalRolls = (int)round((float)($firstOverride['total_rolls'] ?? 0));
-        $rollsPerCartoon = (int)round((float)($firstOverride['rolls_per_carton'] ?? 0));
+        $barcodePerRoll = (int)($barcodeMetricsResolved['bpr'] ?? 0);
+        $barcodeTotalRolls = (int)($barcodeMetricsResolved['total_rolls'] ?? 0);
+        $rollsPerCartoon = (int)($barcodeMetricsResolved['rolls_per_carton'] ?? 0);
 
         if ($barcodePerRoll > 0 && $barcodeTotalRolls > 0) {
             $quantity = round((float)($barcodePerRoll * $barcodeTotalRolls), 3);
@@ -292,9 +352,11 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
     ];
 
     if ($packingTabKey === 'barcode') {
-        $barcodePerRoll = (int)round((float)($firstOverride['bpr'] ?? ($planExtra['barcode_in_1_roll'] ?? 0)));
-        $barcodeTotalRolls = (int)round((float)($firstOverride['total_rolls'] ?? 0));
-        $rollsPerCartoon = (int)round((float)($firstOverride['rolls_per_carton'] ?? 0));
+        $barcodePerRoll = (int)($barcodeMetricsResolved['bpr'] ?? 0);
+        $barcodeTotalRolls = (int)($barcodeMetricsResolved['total_rolls'] ?? 0);
+        $rollsPerCartoon = (int)($barcodeMetricsResolved['rolls_per_carton'] ?? 0);
+        $mixedPayload = is_array($barcodeMetricsResolved['mixed'] ?? null) ? $barcodeMetricsResolved['mixed'] : [];
+        $mixedEnabled = !empty($barcodeMetricsResolved['mixed_enabled']);
         $labelGap = trim((string)($planExtra['label_gap'] ?? ''));
         $dieType = trim((string)($planExtra['die_type'] ?? ''));
         $ups = trim((string)($planExtra['up_in_production'] ?? ($planExtra['ups'] ?? '')));
@@ -308,6 +370,10 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $remarksPayload['extra']['ups'] = $ups;
         $remarksPayload['extra']['total_quantity'] = $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '';
         $remarksPayload['extra']['available_for_dispatch'] = $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '';
+        $remarksPayload['extra']['mixed_enabled'] = $mixedEnabled ? 1 : 0;
+        $remarksPayload['extra']['mixed_cartons'] = (int)($mixedPayload['mixed_cartons'] ?? 0);
+        $remarksPayload['extra']['mixed_extra_rolls'] = (int)($mixedPayload['mixed_extra_rolls'] ?? 0);
+        $remarksPayload['extra']['mixed_batch_labels'] = trim((string)($mixedPayload['batch_labels'] ?? ''));
     }
     $remarks = json_encode($remarksPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if ($remarks === false) {

@@ -2240,6 +2240,9 @@ include __DIR__ . '/../../includes/header.php';
                   var totalPhysicalNum = 0;
                   var resultCards = [];
                   var rollBatches = [];
+                  var barcodeRowsForMix = [];
+                  var barcodeExtraPiecesTotal = 0;
+                  var barcodeSharedRpc = 0;
 
                   selectedRolls.forEach(function(roll, rollIdx) {
                     var rollKey = String(roll.rollNo || ('roll-' + String(rollIdx)));
@@ -2261,7 +2264,14 @@ include __DIR__ . '/../../includes/header.php';
 
                       totalBundlesNum += totalRollsBarcode;
                       totalCartonsNum += cartonsBarcode;
-                      totalLooseNum += extraPieces;
+                      barcodeExtraPiecesTotal += extraPieces;
+                      barcodeRowsForMix.push({
+                        rollNo: String(roll.rollNo || '-'),
+                        extraRolls: extraRolls
+                      });
+                      if (rollsPerCarton > 0 && barcodeSharedRpc <= 0) {
+                        barcodeSharedRpc = rollsPerCarton;
+                      }
                       totalPhysicalNum += rollPhysical;
 
                       var totalRollsNodeBarcode = helperCardsWrap ? helperCardsWrap.querySelector('.pk-roll-total[data-roll-key="' + rollKey.replace(/"/g, '\\"') + '"]') : null;
@@ -2324,6 +2334,40 @@ include __DIR__ . '/../../includes/header.php';
                       + '</div>'
                     );
                   });
+
+                  if (isBarcodeMode) {
+                    var mixedCfg = (operatorRollPayload && typeof operatorRollPayload === 'object' && operatorRollPayload.mixed && typeof operatorRollPayload.mixed === 'object')
+                      ? operatorRollPayload.mixed
+                      : {};
+                    var mixedEnabled = Number(mixedCfg.enabled || 0) === 1 || mixedCfg.enabled === true;
+                    var cfgRpc = Math.max(0, Math.floor(toNum(mixedCfg.rolls_per_carton || 0)));
+                    var effectiveRpc = cfgRpc > 0 ? cfgRpc : barcodeSharedRpc;
+                    var pool = 0;
+                    barcodeRowsForMix.forEach(function(r) {
+                      pool += Math.max(0, Math.floor(toNum(r.extraRolls)));
+                    });
+                    var mixedCartons = (effectiveRpc > 0) ? Math.floor(pool / effectiveRpc) : 0;
+                    var mixedExtra = (effectiveRpc > 0) ? (pool % effectiveRpc) : pool;
+                    if (mixedEnabled && effectiveRpc > 0) {
+                      totalCartonsNum += mixedCartons;
+                      totalLooseNum = mixedExtra + barcodeExtraPiecesTotal;
+                      if (mixedCartons > 0 || mixedExtra > 0) {
+                        var mixLabel = String(mixedCfg.batch_labels || '').trim() || 'MIXED';
+                        rollBatches.push({
+                          batchNo: rollBatches.length + 1,
+                          type: 'MIXED',
+                          label: mixLabel,
+                          cartons: mixedCartons,
+                          shrinkBundles: 0,
+                          looseUsed: mixedExtra,
+                          shortage: 0
+                        });
+                      }
+                    } else {
+                      totalLooseNum = barcodeExtraPiecesTotal;
+                    }
+                  }
+
                   calcBundlesSpan.textContent = totalBundlesNum;
                   calcCartonsSpan.textContent = totalCartonsNum;
                   calcLooseSpan.textContent = totalLooseNum;
@@ -2810,7 +2854,13 @@ include __DIR__ . '/../../includes/header.php';
           }
 
           if (printType === 'label') {
-            var labelBatchNo = selectedRollLabels.length ? selectedRollLabels.join(', ') : '';
+            var mixedCfg = (operatorRollPayload && typeof operatorRollPayload === 'object' && operatorRollPayload.mixed && typeof operatorRollPayload.mixed === 'object')
+              ? operatorRollPayload.mixed
+              : {};
+            var labelBatchNo = String(mixedCfg.batch_labels || '').trim();
+            if (!labelBatchNo) {
+              labelBatchNo = selectedRollLabels.length ? selectedRollLabels.join(', ') : '';
+            }
             pendingPrintUrls = [
               baseUrl + '/modules/paper_stock/label.php?ids=' + encodeURIComponent(String(resolvedId))
                 + '&print_type=' + encodeURIComponent(printType)
@@ -2822,6 +2872,9 @@ include __DIR__ . '/../../includes/header.php';
                 + '&job_name=' + encodeURIComponent(labelJobName)
                 + '&batch_labels=' + encodeURIComponent(labelBatchNo)
                 + '&batch_no=' + encodeURIComponent(labelBatchNo)
+                + '&mixed_enabled=' + encodeURIComponent(String((Number(mixedCfg.enabled || 0) === 1 || mixedCfg.enabled === true) ? 1 : 0))
+                + '&mixed_cartons=' + encodeURIComponent(String(Math.max(0, Math.floor(toNum(mixedCfg.mixed_cartons || 0)))))
+                + '&mixed_extra_rolls=' + encodeURIComponent(String(Math.max(0, Math.floor(toNum(mixedCfg.mixed_extra_rolls || 0)))))
                 + '&back_url=' + encodeURIComponent(backUrl)
             ];
           } else if (!batches || batches.length <= 1) {
@@ -3071,7 +3124,11 @@ include __DIR__ . '/../../includes/header.php';
         var backUrl = window.location.href;
 
         // Use the same barcode value as sticker print: for each selected roll, batch_no and batch_labels should be the roll number
-        var batchNo = selectedRollLabels.length ? selectedRollLabels.join(',') : '';
+        var mixedCfg = (operatorRollPayload && typeof operatorRollPayload === 'object' && operatorRollPayload.mixed && typeof operatorRollPayload.mixed === 'object')
+          ? operatorRollPayload.mixed
+          : {};
+        var batchNo = String(mixedCfg.batch_labels || '').trim();
+        if (!batchNo) batchNo = selectedRollLabels.length ? selectedRollLabels.join(',') : '';
         var batchLabels = batchNo;
 
         var labelWin = window.open('about:blank', '_blank');
@@ -3097,6 +3154,9 @@ include __DIR__ . '/../../includes/header.php';
             + '&job_name=' + encodeURIComponent(labelJobName)
             + '&batch_labels=' + encodeURIComponent(batchLabels)
             + '&batch_no=' + encodeURIComponent(batchNo)
+            + '&mixed_enabled=' + encodeURIComponent(String((Number(mixedCfg.enabled || 0) === 1 || mixedCfg.enabled === true) ? 1 : 0))
+            + '&mixed_cartons=' + encodeURIComponent(String(Math.max(0, Math.floor(toNum(mixedCfg.mixed_cartons || 0)))))
+            + '&mixed_extra_rolls=' + encodeURIComponent(String(Math.max(0, Math.floor(toNum(mixedCfg.mixed_extra_rolls || 0)))))
             + '&back_url=' + encodeURIComponent(backUrl);
           labelWin.location.href = labelPrintUrl;
           setSectionMessage('Label print preview opened.', false);
