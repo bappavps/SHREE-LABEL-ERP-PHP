@@ -100,7 +100,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 0
+                "counter": 3
             },
             "sales_order": {
                 "prefix": "SO",
@@ -120,7 +120,7 @@
             },
             "jumbo_job": {
                 "prefix": "SLT",
-                "counter": 0
+                "counter": 1
             },
             "printing_job": {
                 "prefix": "FLX",
@@ -136,7 +136,7 @@
             },
             "barcode_job": {
                 "prefix": "BRC-BAR",
-                "counter": 0
+                "counter": 1
             },
             "paperroll_job": {
                 "prefix": "PRL",
@@ -144,6 +144,18 @@
             },
             "packing": {
                 "prefix": "PKG",
+                "counter": 0
+            },
+            "planning_pos_roll": {
+                "prefix": "PLN-POS",
+                "counter": 0
+            },
+            "planning_one_ply": {
+                "prefix": "PLN-1PL",
+                "counter": 0
+            },
+            "planning_two_ply": {
+                "prefix": "PLN-2PL",
                 "counter": 0
             }
         }

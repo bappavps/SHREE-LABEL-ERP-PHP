@@ -1867,6 +1867,13 @@ const SLT = (() => {
       || textHasTwoPlyToken(job.job_no);
   }
 
+  function normalizeStockKeyPart(value) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  }
+
   async function analyzeStock() {
     if (!selectedJob) return;
     openModal('stockModal');
@@ -1895,7 +1902,7 @@ const SLT = (() => {
     }
 
     const materialQueries = twoPlyMode
-      ? ['Carbonless paper cb white', 'Carbonless paper cf yellow']
+      ? ['carbonless']
       : [material];
     const mergedOptions = [];
     const seenRollKeys = new Set();
@@ -1956,6 +1963,7 @@ const SLT = (() => {
     contentEl._targetWidth = targetWidth;
     contentEl._reqMtrs = reqMtrs;
     contentEl._material = materialLabel;
+    contentEl._twoPlyMode = twoPlyMode;
 
     renderStockOptions(targetWidth, reqMtrs);
   }
@@ -1964,7 +1972,12 @@ const SLT = (() => {
     const grouped = {};
     (options || []).forEach(opt => {
       const r = opt.roll || {};
-      const key = r.width_mm + 'x' + r.length_mtr + '-' + (r.company || '');
+      const key = [
+        String(r.width_mm || ''),
+        String(r.length_mtr || ''),
+        normalizeStockKeyPart(r.company || ''),
+        normalizeStockKeyPart(r.paper_type || ''),
+      ].join('|');
       if (!grouped[key]) {
         grouped[key] = {
           roll: r,
@@ -2110,12 +2123,19 @@ const SLT = (() => {
     const contentEl = document.getElementById('stockAnalysisContent');
     const groups = allStockGroups || [];
     const reqMtrs = contentEl._reqMtrs || 0;
+    const twoPlyMode = !!contentEl._twoPlyMode;
 
     let totalProduced = 0;
+    let totalSelectedRolls = 0;
+    const selectedPaperTypes = new Set();
     groups.forEach(g => {
       const qty = selectionMap[g.key] || 0;
       const yieldPerRoll = (parseFloat(g.roll.length_mtr) || 0) * g.splits;
       totalProduced += qty * yieldPerRoll;
+      totalSelectedRolls += qty;
+      if (qty > 0) {
+        selectedPaperTypes.add(normalizeStockKeyPart(g.roll.paper_type || 'unknown'));
+      }
     });
 
     const summaryEl = document.getElementById('stockModalSummary');
@@ -2126,7 +2146,7 @@ const SLT = (() => {
     const overBy = Math.max(0, totalProduced - reqMtrs);
     const hasSelection = Object.values(selectionMap).some(v => v > 0);
 
-    summaryEl.innerHTML = hasSelection
+    let summaryHtml = hasSelection
       ? `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <span style="font-weight:800">${totalProduced.toLocaleString()} M of ${(reqMtrs || 0).toLocaleString()} M required</span>
           <div style="width:120px;height:8px;background:var(--bg-secondary);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${exceeded ? '#dc2626' : (achieved ? '#22c55e' : '#3b82f6')};border-radius:4px"></div></div>
@@ -2134,6 +2154,15 @@ const SLT = (() => {
           <span style="font-size:.7rem;font-weight:700;color:${exceeded ? '#dc2626' : '#64748b'}">${exceeded ? ('Over by ' + overBy.toLocaleString() + ' M') : ('Remaining ' + balance.toLocaleString() + ' M')}</span>
         </div>`
       : 'Select rolls and set qty to deploy';
+
+    if (twoPlyMode) {
+      const twoPlyReady = totalSelectedRolls >= 2 && selectedPaperTypes.size >= 2;
+      summaryHtml += `<div style="margin-top:8px;font-size:.72rem;font-weight:700;color:${twoPlyReady ? '#166534' : '#b45309'}">
+        2-Ply rule: Select minimum 2 rolls from 2 different carbonless paper types. Currently ${totalSelectedRolls} roll(s), ${selectedPaperTypes.size} type(s).
+      </div>`;
+    }
+
+    summaryEl.innerHTML = summaryHtml;
 
     document.getElementById('btnDeployTerminal').style.display = hasSelection ? '' : 'none';
     document.getElementById('btnDeployTerminal').onclick = () => deployToTerminal();
@@ -2143,7 +2172,24 @@ const SLT = (() => {
     const contentEl = document.getElementById('stockAnalysisContent');
     const groups = allStockGroups || [];
     const targetWidth = contentEl._targetWidth || 0;
+    const twoPlyMode = !!contentEl._twoPlyMode;
     const j = selectedJob;
+
+    if (twoPlyMode) {
+      let selectedCount = 0;
+      const selectedTypes = new Set();
+      groups.forEach(g => {
+        const qty = selectionMap[g.key] || 0;
+        if (qty <= 0) return;
+        selectedCount += qty;
+        selectedTypes.add(normalizeStockKeyPart(g.roll.paper_type || 'unknown'));
+      });
+
+      if (selectedCount < 2 || selectedTypes.size < 2) {
+        showToast('2-Ply requires at least 2 rolls from 2 different carbonless paper types.', 'error');
+        return;
+      }
+    }
 
     groups.forEach(g => {
       const qty = selectionMap[g.key] || 0;
