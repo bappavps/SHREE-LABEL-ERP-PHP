@@ -172,6 +172,20 @@
     return fg_tabByKey(fg_state.activeTab);
   }
 
+  function fg_hexToRgba(hex, alpha) {
+    var raw = String(hex || '').trim().replace('#', '');
+    if (raw.length === 3) {
+      raw = raw.charAt(0) + raw.charAt(0) + raw.charAt(1) + raw.charAt(1) + raw.charAt(2) + raw.charAt(2);
+    }
+    if (!/^[0-9a-fA-F]{6}$/.test(raw)) {
+      return 'rgba(37,99,235,' + String(alpha) + ')';
+    }
+    var r = parseInt(raw.slice(0, 2), 16);
+    var g = parseInt(raw.slice(2, 4), 16);
+    var b = parseInt(raw.slice(4, 6), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + String(alpha) + ')';
+  }
+
   // ── PRC suggestion helpers ────────────────────────────────────────────────
   function fg_loadPrcData(callback) {
     if (fg_state.prcData !== null) {
@@ -373,6 +387,13 @@
     fg_root.style.setProperty('--fg-accent', tab.color);
     fg_root.style.setProperty('--fg-accent-soft', tab.color + '22');
     fg_root.style.setProperty('--fg-accent-text', tab.color);
+    fg_root.style.setProperty('--fg-modal-surface', fg_hexToRgba(tab.color, 0.10));
+    fg_root.style.setProperty('--fg-modal-head', fg_hexToRgba(tab.color, 0.16));
+    fg_root.style.setProperty('--fg-modal-border', fg_hexToRgba(tab.color, 0.35));
+    fg_root.style.setProperty('--fg-modal-shadow', fg_hexToRgba(tab.color, 0.20));
+    fg_root.style.setProperty('--fg-input-surface', fg_hexToRgba(tab.color, 0.11));
+    fg_root.style.setProperty('--fg-input-border', fg_hexToRgba(tab.color, 0.38));
+    fg_root.style.setProperty('--fg-input-focus-ring', fg_hexToRgba(tab.color, 0.28));
     if (fg_nodes.headerStrip) {
       fg_nodes.headerStrip.style.background = tab.color;
     }
@@ -631,6 +652,9 @@
     if (key === 'total_quantity') {
       return '<span class="fg-qty-pill fg-qty-pill-total">' + fg_escapeHtml(value) + '</span>';
     }
+    if (key === 'total' && (fg_state.activeTab === 'pos_paper_roll' || fg_state.activeTab === 'one_ply' || fg_state.activeTab === 'two_ply')) {
+      return '<span class="fg-qty-pill fg-qty-pill-total">' + fg_escapeHtml(value) + '</span>';
+    }
     if (key === 'available_for_dispatch') {
       return '<span class="fg-qty-pill fg-qty-pill-available">' + fg_escapeHtml(value) + '</span>';
     }
@@ -685,6 +709,7 @@
   function fg_getFormSchema(tabKey) {
     if (tabKey === 'pos_paper_roll' || tabKey === 'one_ply' || tabKey === 'two_ply') {
       return [
+        { name: 'sl_no', label: 'SL.NO', source: 'meta', readonly: true, save: false, importable: false },
         { name: 'packing_id', label: 'Packing ID', source: 'extra' },
         { name: 'date', label: 'Production Date', source: 'direct', type: 'date' },
         { name: 'item_name', label: 'ITEM', source: 'direct', required: true },
@@ -702,6 +727,8 @@
         { name: 'per_carton', label: 'Per carton', source: 'extra', type: 'number' },
         { name: 'carton', label: 'CARTON', source: 'extra', type: 'number' },
         { name: 'total', label: 'TOTAL', source: 'extra', type: 'number' },
+        { name: 'available_for_dispatch', label: 'Available for Dispatch', source: 'extra', type: 'number', readonly: true, save: false, importable: false },
+        { name: 'stock_status', label: 'Status', source: 'extra', readonly: true, save: false, importable: false },
         { name: 'unit', label: 'Unit', source: 'direct' },
         { name: 'location', label: 'Location', source: 'direct' },
         { name: 'note', label: 'Remarks', source: 'note', type: 'textarea', full: true }
@@ -710,25 +737,25 @@
 
     if (tabKey === 'barcode') {
       return [
+        { name: 'sl_no', label: 'SL.NO', source: 'meta', readonly: true, save: false, importable: false },
         { name: 'planning_id', label: 'Planning ID', source: 'extra', readonly: true },
         { name: 'date', label: 'Production Date', source: 'direct', type: 'date' },
-        { name: 'status', label: 'Status', source: 'extra', readonly: true },
+        { name: 'status', label: 'Status', source: 'extra', readonly: true, save: false, importable: false },
         { name: 'item_name', label: 'Item Name', source: 'direct', required: true },
         { name: 'pcs_per_roll', label: 'PCS PER ROLL', source: 'extra', type: 'number' },
-        { name: 'total_roll', label: 'Total Roll', source: 'extra', type: 'number', readonly: true },
+        { name: 'total_roll', label: 'Total Roll', source: 'extra', type: 'number', readonly: true, save: false, importable: false },
         { name: 'size', label: 'SIZE', source: 'direct' },
         { name: 'width', label: 'Width', source: 'extra' },
         { name: 'length', label: 'Length', source: 'extra' },
         { name: 'ups', label: 'UPS', source: 'extra' },
         { name: 'paper_company', label: 'Paper COMPANY', source: 'extra' },
-        { name: 'quantity', label: 'PCS', source: 'direct', type: 'number', required: true },
         { name: 'label_gap', label: 'Label Gap', source: 'extra' },
         { name: 'die_type', label: 'Die Type', source: 'extra' },
-        { name: 'carton', label: 'CARTON', source: 'extra', type: 'number', readonly: true },
+        { name: 'carton', label: 'CARTON', source: 'extra', type: 'number', readonly: true, save: false, importable: false },
         { name: 'batch_no', label: 'BATCH NO.', source: 'direct' },
         { name: 'roll_per_cartoon', label: 'ROLL PER CARTOON', source: 'extra', type: 'number' },
-        { name: 'total_quantity', label: 'TOTAL Quantity', source: 'extra', type: 'number', readonly: true },
-        { name: 'available_for_dispatch', label: 'Available for Dispatch', source: 'extra', type: 'number', readonly: true },
+        { name: 'quantity', label: 'TOTAL Quantity', source: 'direct', type: 'number', required: true },
+        { name: 'available_for_dispatch', label: 'Available for Dispatch', source: 'extra', type: 'number', readonly: true, save: false, importable: false },
         { name: 'note', label: 'Remarks', source: 'note', type: 'textarea', full: true }
       ];
     }
@@ -1439,19 +1466,38 @@
           val = row[f.name] == null ? '' : row[f.name];
         } else if (f.source === 'extra') {
           val = extra[f.name] == null ? '' : extra[f.name];
+        } else if (f.source === 'meta') {
+          val = row._fgSerial || '';
         } else {
           val = note;
         }
+      } else if (f.source === 'meta') {
+        val = 'Auto';
       }
 
       var cls = f.full ? 'fg-form-field full' : 'fg-form-field';
+      if (fg_state.activeTab === 'barcode') {
+        cls += ' fg-barcode-field';
+        if (f.source === 'meta' || f.readonly) {
+          cls += ' fg-barcode-field-readonly';
+        } else if (f.name === 'quantity') {
+          cls += ' fg-barcode-field-total';
+        } else if (f.name === 'pcs_per_roll' || f.name === 'roll_per_cartoon') {
+          cls += ' fg-barcode-field-calc';
+        } else if (f.name === 'batch_no' || f.name === 'item_name' || f.name === 'size') {
+          cls += ' fg-barcode-field-key';
+        }
+      }
+      var readonlyAttr = f.readonly ? ' readonly' : '';
+      var disabledAttr = f.readonly ? ' disabled' : '';
+      var saveAttr = f.save === false ? ' data-fg-save="0"' : '';
       html += '<div class="' + cls + '">';
       html += '<label>' + fg_escapeHtml(f.label) + (f.required ? ' *' : '') + '</label>';
 
       if (f.type === 'textarea') {
-        html += '<textarea data-fg-field="' + fg_escapeHtml(f.name) + '" data-fg-source="' + fg_escapeHtml(f.source) + '"' + (f.readonly ? ' readonly' : '') + '>' + fg_escapeHtml(val) + '</textarea>';
+        html += '<textarea data-fg-field="' + fg_escapeHtml(f.name) + '" data-fg-source="' + fg_escapeHtml(f.source) + '"' + saveAttr + readonlyAttr + '>' + fg_escapeHtml(val) + '</textarea>';
       } else if (f.type === 'select') {
-        html += '<select data-fg-field="' + fg_escapeHtml(f.name) + '" data-fg-source="' + fg_escapeHtml(f.source) + '"' + (f.readonly ? ' disabled' : '') + '>';
+        html += '<select data-fg-field="' + fg_escapeHtml(f.name) + '" data-fg-source="' + fg_escapeHtml(f.source) + '"' + saveAttr + disabledAttr + '>';
         html += '<option value="">Select</option>';
         var options = f.options || [];
         for (var o = 0; o < options.length; o += 1) {
@@ -1462,7 +1508,7 @@
         html += '</select>';
       } else {
         var type = f.type || 'text';
-        html += '<input type="' + type + '" data-fg-field="' + fg_escapeHtml(f.name) + '" data-fg-source="' + fg_escapeHtml(f.source) + '" value="' + fg_escapeHtml(val) + '"' + (f.readonly ? ' readonly' : '') + '>';
+        html += '<input type="' + type + '" data-fg-field="' + fg_escapeHtml(f.name) + '" data-fg-source="' + fg_escapeHtml(f.source) + '"' + saveAttr + ' value="' + fg_escapeHtml(val) + '"' + readonlyAttr + '>';
       }
 
       html += '</div>';
@@ -1488,10 +1534,12 @@
       return;
     }
 
-    var pcsEl = fg_nodes.entryForm.querySelector('[data-fg-field="pcs"]');
+    var pcsEl = fg_nodes.entryForm.querySelector('[data-fg-field="quantity"]');
     var perCartonEl = fg_nodes.entryForm.querySelector('[data-fg-field="per_carton"]');
     var cartonEl = fg_nodes.entryForm.querySelector('[data-fg-field="carton"]');
     var totalEl = fg_nodes.entryForm.querySelector('[data-fg-field="total"]');
+    var availableEl = fg_nodes.entryForm.querySelector('[data-fg-field="available_for_dispatch"]');
+    var statusEl = fg_nodes.entryForm.querySelector('[data-fg-field="stock_status"]');
 
     if (!pcsEl || !totalEl) {
       return;
@@ -1520,6 +1568,19 @@
 
       if (cartonEl && perCartonEl && carton > 0 && pcs > 0 && perCarton <= 0) {
         perCartonEl.value = fmt(pcs / carton);
+      }
+
+      if (availableEl) {
+        availableEl.value = pcs > 0 ? fmt(pcs) : '';
+      }
+      if (statusEl) {
+        if (pcs <= 0) {
+          statusEl.value = 'Dispatched';
+        } else if (pcs <= 10) {
+          statusEl.value = 'Low';
+        } else {
+          statusEl.value = 'In Stock';
+        }
       }
     }
 
@@ -1690,6 +1751,9 @@
 
     for (var i = 0; i < fields.length; i += 1) {
       var el = fields[i];
+      if (String(el.getAttribute('data-fg-save') || '1') === '0') {
+        continue;
+      }
       var name = String(el.getAttribute('data-fg-field') || '');
       var source = String(el.getAttribute('data-fg-source') || 'direct');
       var value = String(el.value || '').trim();
@@ -1789,6 +1853,9 @@
     var targets = [];
     for (var i = 0; i < schema.length; i += 1) {
       var f = schema[i];
+      if (f.importable === false || f.save === false) {
+        continue;
+      }
       if (f.name === 'date' || f.name === 'quantity' || f.name === 'item_name' || f.name === 'item_code' || f.name === 'size' || f.name === 'gsm' || f.name === 'unit' || f.name === 'location' || f.name === 'batch_no' || f.name === 'sub_type' || f.source === 'extra' || f.source === 'note') {
         var key = f.source + ':' + f.name;
         targets.push({ key: key, label: f.label, field: f });

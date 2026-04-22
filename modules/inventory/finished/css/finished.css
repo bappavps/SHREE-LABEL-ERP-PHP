@@ -293,9 +293,9 @@
 }
 
 .fg-stock-module .fg-qty-pill-total {
-  background: #fff7ed;
-  color: #c2410c;
-  border-color: #fdba74;
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fca5a5;
 }
 
 .fg-stock-module .fg-qty-pill-available {
@@ -771,7 +771,7 @@
   position: fixed;
   inset: 0;
   z-index: 1100;
-  background: rgba(2, 6, 23, 0.45);
+  background: var(--fg-modal-surface, rgba(15, 23, 42, 0.28));
   align-items: center;
   justify-content: center;
   padding: 16px;
@@ -781,10 +781,10 @@
   width: min(980px, 96vw);
   max-height: 92vh;
   overflow: hidden;
-  background: #fff;
+  background: #ffffff;
   border-radius: 14px;
-  border: 1px solid #dbe2ea;
-  box-shadow: 0 30px 65px rgba(2, 6, 23, 0.28);
+  border: 1px solid var(--fg-modal-border, #dbe2ea);
+  box-shadow: 0 18px 36px var(--fg-modal-shadow, rgba(15, 23, 42, 0.18));
 }
 
 .fg-stock-module .fg-import-card {
@@ -802,7 +802,7 @@
   gap: 10px;
   border-bottom: 1px solid #e2e8f0;
   padding: 10px 12px;
-  background: #f8fafc;
+  background: linear-gradient(180deg, var(--fg-modal-head, #f8fafc) 0%, #ffffff 100%);
 }
 
 .fg-stock-module .fg-modal-head h3 {
@@ -835,6 +835,22 @@
 .fg-stock-module .fg-form-field input,
 .fg-stock-module .fg-form-field select {
   width: 100%;
+  background: var(--fg-input-surface, #f8fafc);
+  border: 1px solid var(--fg-input-border, #dbe2ea);
+  color: #0f172a;
+  border-radius: 10px;
+  min-height: 38px;
+  padding: 8px 10px;
+  transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+
+.fg-stock-module .fg-form-field textarea:focus,
+.fg-stock-module .fg-form-field input:focus,
+.fg-stock-module .fg-form-field select:focus {
+  outline: none;
+  border-color: var(--fg-accent, #2563eb);
+  box-shadow: 0 0 0 3px var(--fg-input-focus-ring, rgba(37, 99, 235, .28));
+  background: #ffffff;
 }
 
 .fg-stock-module .fg-form-field textarea {
@@ -853,15 +869,15 @@
 .fg-stock-module .fg-form-field.fg-suggest-pending input,
 .fg-stock-module .fg-form-field.fg-suggest-pending select,
 .fg-stock-module .fg-form-field.fg-suggest-pending textarea {
-  background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
-  border-color: #d97706;
-  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, .28);
+  background: #fffbeb;
+  border-color: #f59e0b;
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, .18);
 }
 
 .fg-stock-module .fg-form-field.fg-suggest-ok input,
 .fg-stock-module .fg-form-field.fg-suggest-ok select,
 .fg-stock-module .fg-form-field.fg-suggest-ok textarea {
-  background: #dcfce7;
+  background: #f0fdf4;
   border-color: #16a34a;
 }
 
@@ -882,6 +898,43 @@
   justify-content: center;
   pointer-events: none;
   box-shadow: 0 2px 8px rgba(22, 163, 74, .35);
+}
+
+.fg-stock-module .fg-form-field.fg-barcode-field input,
+.fg-stock-module .fg-form-field.fg-barcode-field select,
+.fg-stock-module .fg-form-field.fg-barcode-field textarea {
+  background: #f8fafc;
+  border-color: #dbe2ea;
+}
+
+.fg-stock-module .fg-form-field.fg-barcode-field-key input,
+.fg-stock-module .fg-form-field.fg-barcode-field-key select,
+.fg-stock-module .fg-form-field.fg-barcode-field-key textarea {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.fg-stock-module .fg-form-field.fg-barcode-field-calc input,
+.fg-stock-module .fg-form-field.fg-barcode-field-calc select,
+.fg-stock-module .fg-form-field.fg-barcode-field-calc textarea {
+  background: #ecfeff;
+  border-color: #99f6e4;
+}
+
+.fg-stock-module .fg-form-field.fg-barcode-field-total input,
+.fg-stock-module .fg-form-field.fg-barcode-field-total select,
+.fg-stock-module .fg-form-field.fg-barcode-field-total textarea {
+  background: #fef2f2;
+  border-color: #fecaca;
+  font-weight: 700;
+}
+
+.fg-stock-module .fg-form-field.fg-barcode-field-readonly input,
+.fg-stock-module .fg-form-field.fg-barcode-field-readonly select,
+.fg-stock-module .fg-form-field.fg-barcode-field-readonly textarea {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #475569;
 }
 
 .fg-stock-module .fg-modal-actions {
