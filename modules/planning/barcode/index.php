@@ -52,6 +52,11 @@ function barcodePlanningDisplayStatusLabel($value): string {
     return $status;
 }
 
+function barcodePlanningIsArchivedStatus($value): bool {
+    $norm = strtolower(trim(str_replace(['-', '_'], ' ', (string)$value)));
+    return in_array($norm, ['finished', 'finished production', 'finished barcode', 'finised barcode', 'packed', 'dispatched', 'complete'], true);
+}
+
 function barcodePlanningStatusTransitionMap(): array {
     return [
         'Pending' => ['Preparing Jumbo Slitting'],
@@ -551,11 +556,16 @@ function barcodePlanningFetchRows(mysqli $db): array {
                 $barcodeSize = trim($width . ($width !== '' && $height !== '' ? ' x ' : '') . $height);
             }
         }
+        $normalizedStatus = barcodePlanningNormalizeStatus($statusSource);
+        if (barcodePlanningIsArchivedStatus($normalizedStatus)) {
+            continue;
+        }
+
         $rows[] = [
             'id' => (int)($row['id'] ?? 0),
             'sl_no' => max(1, (int)($row['sequence_order'] ?? 0)),
             'planning_id' => trim((string)($row['job_no'] ?? '')),
-            'status' => barcodePlanningNormalizeStatus($statusSource),
+            'status' => $normalizedStatus,
             'job_name' => trim((string)($row['job_name'] ?? '')),
             'priority' => trim((string)($row['priority'] ?? ($extra['priority'] ?? 'Normal'))) ?: 'Normal',
             'planning_type' => trim((string)($extra['planning_type'] ?? 'Regular')) ?: 'Regular',
@@ -916,6 +926,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $rows = barcodePlanningFetchRows($db);
+$rows = array_values(array_filter($rows, static function (array $row): bool {
+    $statusRaw = barcodePlanningNormalizeStatus((string)($row['status'] ?? ''));
+    return barcodePlanningDisplayStatusLabel($statusRaw) !== 'Finised Barcode';
+}));
 $paperStockTypeOptions = barcodePlanningPaperStockTypes($db);
 $materialTypeOptions = barcodePlanningSuggestionBucket($rows, 'material_type');
 $orderQtyOptions = barcodePlanningSuggestionBucket($rows, 'order_quantity');
@@ -977,8 +991,17 @@ include __DIR__ . '/../../../includes/header.php';
 
 <?php include __DIR__ . '/../_page_switcher.php'; ?>
 
+<div class="planning-view-switch">
+    <a href="<?= e(appUrl('modules/planning/barcode/index.php')) ?>" class="planning-view-link is-active"><i class="bi bi-grid-1x2"></i> Board</a>
+    <a href="<?= e(appUrl('modules/planning/history.php?department=barcode')) ?>" class="planning-view-link"><i class="bi bi-clock-history"></i> History</a>
+</div>
+
 <style>
 :root{--bc-brand:#0ea5a4;--bc-border:#d9edf0;--bc-muted:#64748b;--bc-text:#0f172a}
+.planning-view-switch{display:flex;gap:8px;margin:0 0 14px}
+.planning-view-link{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid #dbe7ef;border-radius:10px;background:#fff;color:#334155;font-size:.8rem;font-weight:700;text-decoration:none}
+.planning-view-link:hover{border-color:#93c5fd;color:#1d4ed8}
+.planning-view-link.is-active{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
 .bc-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 .bc-header h1{font-size:1.45rem;font-weight:900;display:flex;align-items:center;gap:10px;color:var(--bc-text)}
 .bc-header h1 i{font-size:1.5rem;color:var(--bc-brand)}

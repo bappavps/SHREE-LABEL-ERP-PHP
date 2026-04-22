@@ -251,6 +251,12 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
     $jobExtra = is_array($jobDetails['job_extra_data'] ?? null) ? $jobDetails['job_extra_data'] : [];
     $operatorPayload = packing_decode_json($operatorEntry['roll_payload_json'] ?? null);
     $rollOverrides = is_array($operatorPayload['roll_overrides'] ?? null) ? $operatorPayload['roll_overrides'] : [];
+    $mixedPayload = is_array($operatorPayload['mixed'] ?? null) ? $operatorPayload['mixed'] : [];
+    $mixedEnabled = (!empty($mixedPayload['enabled']) && ((int)($mixedPayload['enabled'] ?? 0) === 1 || ($mixedPayload['enabled'] ?? false) === true));
+    $mixedPerCarton = (int)floor((float)($mixedPayload['rolls_per_carton'] ?? 0));
+    $mixedCartons = (int)floor((float)($mixedPayload['mixed_cartons'] ?? 0));
+    $mixedExtraRolls = (int)floor((float)($mixedPayload['mixed_extra_rolls'] ?? 0));
+    $mixedBatchLabels = trim((string)($mixedPayload['batch_labels'] ?? ''));
     $childRolls = packing_api_assigned_child_rolls($jobDetails);
     $barcodeMetricsResolved = packing_api_resolve_barcode_metrics($operatorPayload, $planExtra);
 
@@ -294,7 +300,11 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
             }
         }
     }
+    if ($mixedEnabled && $mixedPerCarton > 0) {
+        $perCarton = $mixedPerCarton;
+    }
     $cartonCount = (int)round((float)($operatorEntry['cartons_count'] ?? 0));
+    $looseQtyCount = (int)round((float)($operatorEntry['loose_qty'] ?? 0));
     $totalValue = $quantity;
 
     if ($packingTabKey === 'barcode') {
@@ -347,7 +357,12 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
             'barcode' => $barcode,
             'per_carton' => $perCarton > 0 ? $perCarton : '',
             'carton' => $cartonCount > 0 ? $cartonCount : '',
+            'loose_qty' => $looseQtyCount > 0 ? $looseQtyCount : 0,
             'total' => $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '',
+            'mixed_enabled' => $mixedEnabled ? 1 : 0,
+            'mixed_cartons' => $mixedCartons,
+            'mixed_extra_rolls' => $mixedExtraRolls,
+            'mixed_batch_labels' => $mixedBatchLabels,
         ],
     ];
 

@@ -143,6 +143,19 @@ function mi_compute_extra(array $row, array $extra): array {
         ];
     }
 
+    $mixedEnabled = (int)($extra['mixed_enabled'] ?? 0) === 1;
+    if ($mixedEnabled) {
+        $rpc = mi_num(mi_pick($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton']));
+        $extraQty = max(0, mi_num($extra['mixed_extra_rolls'] ?? 0));
+        $possible = max(0, (int)floor(mi_num($extra['mixed_cartons'] ?? 0)));
+        return [
+            'extra_qty' => $extraQty,
+            'unit_type' => 'PCS',
+            'per_carton' => $rpc,
+            'possible_cartons' => $possible,
+        ];
+    }
+
     $perCarton = mi_num(mi_pick($extra, ['per_carton']));
     $extraQty = $quantity;
     $possible = 0;

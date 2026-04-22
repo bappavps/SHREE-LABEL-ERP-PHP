@@ -2244,8 +2244,10 @@ include __DIR__ . '/../../includes/header.php';
                   var resultCards = [];
                   var rollBatches = [];
                   var barcodeRowsForMix = [];
+                  var paperRowsForMix = [];
                   var barcodeExtraPiecesTotal = 0;
                   var barcodeSharedRpc = 0;
+                  var paperSharedRpc = 0;
 
                   selectedRolls.forEach(function(roll, rollIdx) {
                     var rollKey = String(roll.rollNo || ('roll-' + String(rollIdx)));
@@ -2317,6 +2319,13 @@ include __DIR__ . '/../../includes/header.php';
                     totalBundlesNum += rollBundles;
                     totalCartonsNum += rollCartons;
                     totalLooseNum += rollLoose;
+                    paperRowsForMix.push({
+                      rollNo: String(roll.rollNo || '-'),
+                      extraRolls: rollLoose
+                    });
+                    if (rollRpc > 0 && paperSharedRpc <= 0) {
+                      paperSharedRpc = rollRpc;
+                    }
                     totalPhysicalNum += rollPhysical;
                     var totalRollsNode = helperCardsWrap ? helperCardsWrap.querySelector('.pk-roll-total[data-roll-key="' + rollKey.replace(/"/g, '\\"') + '"]') : null;
                     if (totalRollsNode) totalRollsNode.textContent = String(rollPhysical);
@@ -2338,22 +2347,25 @@ include __DIR__ . '/../../includes/header.php';
                     );
                   });
 
-                  if (isBarcodeMode) {
+                  if (isBarcodeMode || isPaperRollTypeTab) {
                     var mixedCfg = (operatorRollPayload && typeof operatorRollPayload === 'object' && operatorRollPayload.mixed && typeof operatorRollPayload.mixed === 'object')
                       ? operatorRollPayload.mixed
                       : {};
                     var mixedEnabled = Number(mixedCfg.enabled || 0) === 1 || mixedCfg.enabled === true;
                     var cfgRpc = Math.max(0, Math.floor(toNum(mixedCfg.rolls_per_carton || 0)));
-                    var effectiveRpc = cfgRpc > 0 ? cfgRpc : barcodeSharedRpc;
+                    var effectiveRpc = cfgRpc > 0
+                      ? cfgRpc
+                      : (isBarcodeMode ? barcodeSharedRpc : paperSharedRpc);
+                    var mixRows = isBarcodeMode ? barcodeRowsForMix : paperRowsForMix;
                     var pool = 0;
-                    barcodeRowsForMix.forEach(function(r) {
+                    mixRows.forEach(function(r) {
                       pool += Math.max(0, Math.floor(toNum(r.extraRolls)));
                     });
                     var mixedCartons = (effectiveRpc > 0) ? Math.floor(pool / effectiveRpc) : 0;
                     var mixedExtra = (effectiveRpc > 0) ? (pool % effectiveRpc) : pool;
                     if (mixedEnabled && effectiveRpc > 0) {
                       totalCartonsNum += mixedCartons;
-                      totalLooseNum = mixedExtra + barcodeExtraPiecesTotal;
+                      totalLooseNum = isBarcodeMode ? (mixedExtra + barcodeExtraPiecesTotal) : mixedExtra;
                       if (mixedCartons > 0 || mixedExtra > 0) {
                         var mixLabel = String(mixedCfg.batch_labels || '').trim() || 'MIXED';
                         rollBatches.push({
@@ -2367,7 +2379,9 @@ include __DIR__ . '/../../includes/header.php';
                         });
                       }
                     } else {
-                      totalLooseNum = barcodeExtraPiecesTotal;
+                      if (isBarcodeMode) {
+                        totalLooseNum = barcodeExtraPiecesTotal;
+                      }
                     }
                   }
 

@@ -35,6 +35,23 @@
     openBoardBtn: document.getElementById('mixOpenBoardBtn')
   };
 
+  var TAB_THEME = {
+    pos_paper_roll: { accent: '#1d4ed8', soft: '#eff6ff', border: '#bfdbfe' },
+    one_ply: { accent: '#b45309', soft: '#fff7ed', border: '#fdba74' },
+    two_ply: { accent: '#a16207', soft: '#fefce8', border: '#fde68a' },
+    barcode: { accent: '#0f766e', soft: '#ecfeff', border: '#99f6e4' },
+    printing_roll: { accent: '#7c3aed', soft: '#f5f3ff', border: '#c4b5fd' },
+    default: { accent: '#334155', soft: '#f8fafc', border: '#cbd5e1' }
+  };
+
+  function applyTabTheme(tabKey) {
+    var key = String(tabKey || '').trim();
+    var theme = TAB_THEME[key] || TAB_THEME.default;
+    root.style.setProperty('--mix-accent', theme.accent);
+    root.style.setProperty('--mix-soft', theme.soft);
+    root.style.setProperty('--mix-border', theme.border);
+  }
+
   function showMessage(msg, type) {
     if (typeof window.showERPToast === 'function') {
       window.showERPToast(String(msg || ''), type || 'info');
@@ -420,6 +437,7 @@
         throw new Error('No tabs configured.');
       }
       state.activeTab = state.tabs[0].key;
+      applyTabTheme(state.activeTab);
       renderTabs();
       loadTabCounts();
       return loadRows();
@@ -483,6 +501,7 @@
       var key = String(btn.getAttribute('data-mix-tab') || '');
       if (!key || key === state.activeTab) return;
       state.activeTab = key;
+      applyTabTheme(state.activeTab);
       state.selectedIds = {};
       state.filters = {};
       closeFilterPopup();

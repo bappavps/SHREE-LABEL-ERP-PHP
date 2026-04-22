@@ -43,6 +43,11 @@ function barcodePlanningStatusStyle($value): string {
     return erp_status_badge_style($value);
 }
 
+function paperrollPlanningIsArchivedStatus($value): bool {
+    $norm = strtolower(trim(str_replace(['-', '_'], ' ', (string)$value)));
+    return in_array($norm, ['finished', 'finished production', 'finished barcode', 'finised barcode', 'packed', 'dispatched', 'complete'], true);
+}
+
 function paperrollPlanningTypeOptions(): array {
     return [
         'pos_roll' => 'PosRoll',
@@ -888,6 +893,10 @@ function barcodePlanningFetchRows(mysqli $db): array {
                 $barcodeSize = trim($width . ($width !== '' && $height !== '' ? ' x ' : '') . $height);
             }
         }
+        if (paperrollPlanningIsArchivedStatus($statusSource)) {
+            continue;
+        }
+
         $rows[] = [
             'id' => (int)($row['id'] ?? 0),
             'sl_no' => max(1, (int)($row['sequence_order'] ?? 0)),
@@ -1061,6 +1070,15 @@ $dispatchDefault = date('Y-m-d', strtotime('+12 days'));
 $planningTypeOptions = paperrollPlanningTypeOptions();
 $planningStatusOptionsMap = paperrollPlanningStatusOptionsMap();
 $defaultPlanningType = $_planningTypeOverride !== '' ? $_planningTypeOverride : 'pos_roll';
+$historyDepartment = 'paperroll';
+$boardPageUrl = appUrl('modules/planning/paperroll/index.php');
+if ($_planningTypeOverride === 'one_ply') {
+    $historyDepartment = 'one_ply';
+    $boardPageUrl = appUrl('modules/planning/oneply/index.php');
+} elseif ($_planningTypeOverride === 'two_ply') {
+    $historyDepartment = 'two_ply';
+    $boardPageUrl = appUrl('modules/planning/twoply/index.php');
+}
 $statusOptions = paperrollPlanningStatusOptionsForType($defaultPlanningType);
 $defaultStatus = 'Pending';
 $priorityOptions = barcodePlanningPriorityOptions();
@@ -1334,8 +1352,17 @@ include __DIR__ . '/../../../includes/header.php';
 
 <?php include __DIR__ . '/../_page_switcher.php'; ?>
 
+<div class="planning-view-switch">
+    <a href="<?= e($boardPageUrl) ?>" class="planning-view-link is-active"><i class="bi bi-grid-1x2"></i> Board</a>
+    <a href="<?= e(appUrl('modules/planning/history.php?department=' . rawurlencode($historyDepartment))) ?>" class="planning-view-link"><i class="bi bi-clock-history"></i> History</a>
+</div>
+
 <style>
 :root{--bc-brand:#0ea5a4;--bc-border:#d9edf0;--bc-muted:#64748b;--bc-text:#0f172a}
+.planning-view-switch{display:flex;gap:8px;margin:0 0 14px}
+.planning-view-link{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid #dbe7ef;border-radius:10px;background:#fff;color:#334155;font-size:.8rem;font-weight:700;text-decoration:none}
+.planning-view-link:hover{border-color:#93c5fd;color:#1d4ed8}
+.planning-view-link.is-active{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
 .planning-grid > div {
     background: #fffde7 !important; /* default yellow */
     position: relative;
