@@ -46,8 +46,8 @@ function barcodePlanningStatusStyle($value): string {
 function barcodePlanningDisplayStatusLabel($value): string {
     $status = barcodePlanningNormalizeStatus($value);
     $norm = strtolower(trim(str_replace(['-', '_'], ' ', $status)));
-    if (in_array($norm, ['packed', 'packing done', 'finished barcode', 'finished production', 'ready to dispatch', 'ready to dispatched', 'ready to dispathce'], true)) {
-        return 'Ready to Dispatch';
+    if (in_array($norm, ['jumbo slitted', 'finished barcode', 'finished production', 'packed', 'packing done', 'ready to dispatch', 'ready to dispatched', 'ready to dispathce'], true)) {
+        return 'Finised Barcode';
     }
     return $status;
 }

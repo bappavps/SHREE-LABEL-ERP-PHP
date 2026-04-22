@@ -700,9 +700,9 @@ $historyCount = $finishedCount;
       <div class="jc-card-row"><span class="jc-label">Priority</span><span class="jc-value"><?= e($job['planning_priority'] ?? 'Normal') ?></span></div>
     </div>
     <?php $startedTs = $job['started_at'] ? strtotime($job['started_at']) * 1000 : 0; ?>
-    <?php $resumedTs = !empty($job['extra_data_parsed']['timer_last_resumed_at']) ? (strtotime($job['extra_data_parsed']['timer_last_resumed_at']) * 1000) : $startedTs; ?>
+    <?php $resumedTs = ($timerActive && !empty($job['extra_data_parsed']['timer_last_resumed_at'])) ? (strtotime($job['extra_data_parsed']['timer_last_resumed_at']) * 1000) : 0; ?>
     <?php $baseSeconds = (int)round((float)($job['extra_data_parsed']['timer_accumulated_seconds'] ?? 0)); ?>
-    <?php if ($sts === 'Running' && $resumedTs && $timerState !== 'paused'): ?>
+    <?php if ($sts === 'Running' && $timerActive && $resumedTs && in_array($timerState, ['running', ''], true)): ?>
     <div class="jc-card-row"><span class="jc-label">Elapsed</span><span class="jc-timer" data-base-seconds="<?= $baseSeconds ?>" data-resumed-at="<?= $resumedTs ?>" style="color:var(--jc-blue);font-weight:700">00:00:00</span></div>
     <?php endif; ?>
     <div class="jc-card-foot">

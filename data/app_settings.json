@@ -100,7 +100,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 3
+                "counter": 5
             },
             "sales_order": {
                 "prefix": "SO",
@@ -120,7 +120,7 @@
             },
             "jumbo_job": {
                 "prefix": "SLT",
-                "counter": 1
+                "counter": 0
             },
             "printing_job": {
                 "prefix": "FLX",
@@ -140,7 +140,7 @@
             },
             "paperroll_job": {
                 "prefix": "PRL",
-                "counter": 0
+                "counter": 3
             },
             "packing": {
                 "prefix": "PKG",

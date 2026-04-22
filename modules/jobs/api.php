@@ -4890,10 +4890,11 @@ try {
 
         foreach ($planRows as $p) {
             $planningExtra = json_decode((string)($p['extra_data'] ?? '{}'), true) ?: [];
+            $planStatus = trim((string)($p['status'] ?? '')) !== '' ? (string)$p['status'] : 'Pending';
             $jobs[] = [
                 'id' => 'plan-' . (int)$p['id'],
                 'job_no' => (string)($p['job_no'] ?? ''),
-                'status' => 'Pending',
+                'status' => $planStatus,
                 'job_type' => 'Planning',
                 'department' => 'planning',
                 'roll_no' => '',
@@ -4904,7 +4905,7 @@ try {
                 'gsm' => null,
                 'weight_kg' => null,
                 'planning_job_name' => (string)($p['job_name'] ?? ''),
-                'planning_status' => trim((string)($p['status'] ?? '')) !== '' ? (string)$p['status'] : 'Pending',
+                'planning_status' => $planStatus,
                 'planning_priority' => trim((string)($p['priority'] ?? '')) !== '' ? (string)$p['priority'] : 'Normal',
                 'planning_created_at' => (string)($p['created_at'] ?? ''),
                 'planning_scheduled_date' => (string)($p['scheduled_date'] ?? ''),

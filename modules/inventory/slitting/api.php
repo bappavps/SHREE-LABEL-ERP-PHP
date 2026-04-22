@@ -1037,7 +1037,13 @@ try {
             if (!$isBarcodePlanPrefix) {
                 $allowBarcodeJob = false;
             }
-            $isPaperRollPlanPrefix = stripos((string)$planNo, 'PLN-PRL/') === 0;
+            $planNoUpper = strtoupper(trim((string)$planNo));
+            $isPaperRollPlanPrefix = (
+                strpos($planNoUpper, 'PLN-PRL/') === 0
+                || strpos($planNoUpper, 'PLN-POS/') === 0
+                || strpos($planNoUpper, 'PLN-1PL/') === 0
+                || strpos($planNoUpper, 'PLN-2PL/') === 0
+            );
             if (!$isPaperRollPlanPrefix) {
                 $allowPaperRollJob = false;
             }
@@ -1050,6 +1056,15 @@ try {
                 $allocationDepartmentRoute,
                 (string)($parent['paper_type'] ?? '')
             );
+            if ($paperRollSubtype === '' && $isPaperRollPlanPrefix) {
+                if (strpos($planNoUpper, 'PLN-POS/') === 0) {
+                    $paperRollSubtype = 'pos';
+                } elseif (strpos($planNoUpper, 'PLN-1PL/') === 0) {
+                    $paperRollSubtype = 'oneply';
+                } elseif (strpos($planNoUpper, 'PLN-2PL/') === 0) {
+                    $paperRollSubtype = 'twoply';
+                }
+            }
             if ($paperRollSubtype === '' && $allowPaperRollJob && $isPaperRollPlanPrefix) {
                 // Default unclassified PLN-PRL plans to POS when no subtype marker is present.
                 $paperRollSubtype = 'pos';

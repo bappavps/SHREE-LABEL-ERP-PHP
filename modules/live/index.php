@@ -676,18 +676,14 @@ function stBadge(status){
 
 function liveStatusLabel(status){
   const s = normStatus(status||'');
-  if(s === 'delivered') return '✓ Delivered';
-  if(['packing done','packed','finished production','finished barcode'].includes(s)) return 'Ready to Dispatch';
+  if(s === 'delivered') return 'Delivered';
   return String(status||'Pending');
 }
 
 function liveStatusTitle(status){
   const s = normStatus(status||'');
-  if(s === 'delivered') return 'Delivered: client received material and the final stage is complete.';
-  if(s === 'dispatched') return 'Dispatched: material has left the plant and is in transit.';
-  if(s === 'finished barcode') return 'Finished Barcode: barcode production is completed and ready for dispatch.';
-  if(s === 'packing done' || s === 'packed') return 'Packing: material is packed and ready for dispatch.';
-  return 'Production: job is still within internal production stages.';
+  if(s === '') return 'Pending';
+  return String(status||'Pending');
 }
 
 function getChainRootId(job, byId){
@@ -720,14 +716,15 @@ function getJobSequenceToken(job){
 }
 
 function logicalJobKey(job, byId){
+  const planningId = Number((job && job.planning_id) || 0);
+  if(planningId>0) return 'pln:'+planningId;
+
   const seq = getJobSequenceToken(job);
   if(seq){
     return 'seq:'+seq;
   }
   const root = getChainRootId(job, byId);
   if(root) return root;
-  const planningId = Number((job && job.planning_id) || 0);
-  if(planningId>0) return 'pln:'+planningId;
   const name = String((job && job.planning_job_name) || '').trim().toLowerCase();
   if(name) return 'name:'+name;
   const jobNo = String((job && job.job_no) || '').trim().toLowerCase();
@@ -792,28 +789,25 @@ async function flLoad(){
     const today=new Date(); today.setHours(0,0,0,0);
     const isVisible=(j)=>{
       if(j.deleted_at) return false;
-      // Normalize status for this page; keep durable packing flag authoritative.
+      // Keep source status as-is; only backfill when status is missing.
       if (j && j.extra_data_parsed) {
         const liveStatus = normStatus(j.status || '');
         const finishedBarcodeFlag = Number(j.extra_data_parsed.finished_barcode_flag || 0) === 1 || String(j.extra_data_parsed.finished_barcode_at || '').trim() !== '';
         const finishedFlag = Number(j.extra_data_parsed.finished_production_flag || 0) === 1 || String(j.extra_data_parsed.finished_production_at || '').trim() !== '';
         const packingFlag = Number(j.extra_data_parsed.packing_done_flag || 0) === 1;
 
-        if (finishedBarcodeFlag && liveStatus !== 'dispatched') {
+        if (liveStatus === '' && finishedBarcodeFlag) {
           j.status = 'Finished Barcode';
           if (!j.completed_at && j.extra_data_parsed.finished_barcode_at) {
             j.completed_at = j.extra_data_parsed.finished_barcode_at;
           }
-        } else if (finishedFlag && liveStatus !== 'dispatched') {
+        } else if (liveStatus === '' && finishedFlag) {
           j.status = 'Finished Production';
           if (!j.completed_at && j.extra_data_parsed.finished_production_at) {
             j.completed_at = j.extra_data_parsed.finished_production_at;
           }
-        } else if (packingFlag) {
-          const isTerminal = ['dispatched', 'finished production'].includes(liveStatus);
-          if (!isTerminal) {
-            j.status = 'Packing Done';
-          }
+        } else if (liveStatus === '' && packingFlag) {
+          j.status = 'Packing Done';
           if (!j.completed_at && j.extra_data_parsed.packing_done_at) {
             j.completed_at = j.extra_data_parsed.packing_done_at;
           }

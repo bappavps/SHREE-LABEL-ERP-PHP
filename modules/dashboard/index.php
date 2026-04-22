@@ -92,6 +92,21 @@ $kpi['jobs_running_now'] = (int)safeValue($r, 'c', 0);
 $r = safeQuery($db, "SELECT COUNT(*) AS c FROM paper_stock WHERE status='Available' AND length_mtr < 500");
 $kpi['rolls_low_stock'] = (int)safeValue($r, 'c', 0);
 
+$kpi['packing_queue_ready'] = 0;
+$packingDataFile = __DIR__ . '/../packing/_data.php';
+if (is_file($packingDataFile)) {
+  require_once $packingDataFile;
+  if (function_exists('packing_fetch_ready_rows')) {
+    $packingReady = packing_fetch_ready_rows($db, [
+      'show_all_active' => true,
+      'hide_packed_in_active' => true,
+    ]);
+    $kpi['packing_queue_ready'] = is_array($packingReady['rows'] ?? null)
+      ? count($packingReady['rows'])
+      : 0;
+  }
+}
+
 // ── Breakdown: Paper Roll Status ────────────────────────────
 $paperStatusBreakdown = [];
 $r = safeQuery($db, "SELECT COALESCE(NULLIF(TRIM(status),''),'Unknown') AS status_name, COUNT(*) AS c FROM paper_stock WHERE $whereRollPeriod GROUP BY status_name ORDER BY c DESC");
@@ -305,7 +320,7 @@ $dashboardBrand = function_exists('getErpDisplayName') ? getErpDisplayName() : A
 .db-period-btn{padding:6px 12px;border-radius:999px;border:1px solid rgba(148,163,184,.35);font-size:.68rem;font-weight:800;text-transform:uppercase;color:#cbd5e1;text-decoration:none;transition:all .14s;background:rgba(255,255,255,.03)}
 .db-period-btn:hover{background:rgba(255,255,255,.12);color:#fff}
 .db-period-btn.active{background:#22c55e;border-color:#22c55e;color:#052e16}
-.db-focus-kpi{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:10px;margin-top:14px}
+.db-focus-kpi{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;margin-top:14px}
 .db-mini{background:rgba(255,255,255,.06);border:1px solid rgba(148,163,184,.2);padding:10px 12px;border-radius:10px}
 .db-mini-v{font-size:1.25rem;font-weight:900;line-height:1;color:#fff}
 .db-mini-l{font-size:.62rem;letter-spacing:.04em;text-transform:uppercase;color:#94a3b8;font-weight:800;margin-top:3px}
@@ -426,6 +441,7 @@ $barPalette = ['#16a34a','#0ea5e9','#f59e0b','#8b5cf6','#ef4444','#14b8a6','#647
     <div class="db-mini"><div class="db-mini-v"><?= $kpi['jobs_created_period'] ?></div><div class="db-mini-l">Jobs Created</div></div>
     <div class="db-mini"><div class="db-mini-v"><?= $kpi['jobs_completed_period'] ?></div><div class="db-mini-l">Jobs Completed</div></div>
     <div class="db-mini"><div class="db-mini-v"><?= $kpi['jobs_running_now'] ?></div><div class="db-mini-l">Jobs Running</div></div>
+    <div class="db-mini"><div class="db-mini-v"><?= $kpi['packing_queue_ready'] ?></div><div class="db-mini-l">Packing Queue</div></div>
     <div class="db-mini"><div class="db-mini-v"><?= $kpi['rolls_low_stock'] ?></div><div class="db-mini-l">Low Stock Rolls</div></div>
   </div>
 </div>

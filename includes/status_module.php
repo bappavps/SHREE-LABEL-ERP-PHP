@@ -544,3 +544,83 @@ function erp_status_page_normalize($status, $pageKey): string {
     }
     return erp_status_page_default($pageKey);
 }
+
+/**
+ * Global status label normalization for cross-module consistency.
+ */
+function erp_status_visual_label($status): string {
+    $raw = trim((string)$status);
+    if ($raw === '') {
+        return 'Pending';
+    }
+
+    $norm = strtolower(trim(str_replace(['-', '_'], ' ', $raw)));
+    $norm = preg_replace('/\s+/', ' ', $norm) ?? '';
+
+    if (in_array($norm, ['finished production', 'production finished'], true)) {
+        return 'Finished Production';
+    }
+    if (in_array($norm, ['finished barcode', 'barcode finished'], true)) {
+        return 'Finished Barcode';
+    }
+    if (in_array($norm, ['dispatched', 'dispatch', 'shipped'], true)) {
+        return 'Dispatched';
+    }
+    if (in_array($norm, ['packed', 'packing done', 'packing_done', 'ready to dispatch', 'ready to dispatched', 'ready to dispathce'], true)) {
+        return 'Packed';
+    }
+    if (in_array($norm, ['completed', 'complete', 'closed', 'finalized', 'qc passed', 'qc_passed'], true)) {
+        return 'Completed';
+    }
+    if (in_array($norm, ['running', 'in progress', 'in_progress', 'active'], true)) {
+        return 'Running';
+    }
+    if (in_array($norm, ['paused', 'pause', 'on hold', 'hold'], true)) {
+        return 'On Hold';
+    }
+    if (in_array($norm, ['pending', 'queued', 'queue', 'preparing'], true) || str_contains($norm, 'preparing')) {
+        return 'Preparing';
+    }
+
+    return ucwords($norm);
+}
+
+/**
+ * Global status tone key used by all module badges.
+ */
+function erp_status_visual_tone($status): string {
+    $label = erp_status_visual_label($status);
+    if (in_array($label, ['Finished Production', 'Finished Barcode', 'Dispatched', 'Packed', 'Completed'], true)) {
+        return 'success';
+    }
+    if ($label === 'Running') {
+        return 'info';
+    }
+    if ($label === 'On Hold') {
+        return 'danger';
+    }
+    if (in_array($label, ['Preparing', 'Pending'], true)) {
+        return 'warning';
+    }
+    return 'neutral';
+}
+
+/**
+ * Inline fallback style for pages that render status badges with style attributes.
+ */
+function erp_status_badge_style($status): string {
+    $tone = erp_status_visual_tone($status);
+    if ($tone === 'success') {
+        return 'background:#dcfce7;color:#166534;border:1px solid #86efac;';
+    }
+    if ($tone === 'info') {
+        return 'background:#e0f2fe;color:#0c4a6e;border:1px solid #7dd3fc;';
+    }
+    if ($tone === 'danger') {
+        return 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;';
+    }
+    if ($tone === 'warning') {
+        return 'background:#fef3c7;color:#92400e;border:1px solid #fcd34d;';
+    }
+    return 'background:#e2e8f0;color:#334155;border:1px solid #cbd5e1;';
+}

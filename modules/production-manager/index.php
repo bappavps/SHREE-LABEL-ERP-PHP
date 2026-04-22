@@ -81,27 +81,41 @@ function pm_bucket_status(array $row): string {
     return 'Pending';
 }
 
+function pm_should_show_board_status(array $row): bool {
+  $board = pm_text($row['board_status'] ?? '');
+  if ($board === '') {
+    return false;
+  }
+
+  $latestDept = strtolower(pm_text($row['latest_job_department'] ?? ''));
+  $activeDept = strtolower(pm_text($row['active_job_department'] ?? ''));
+  $latestType = strtolower(pm_text($row['latest_job_type'] ?? ''));
+  $activeType = strtolower(pm_text($row['active_job_type'] ?? ''));
+  $current = trim($latestDept . ' ' . $activeDept . ' ' . $latestType . ' ' . $activeType);
+
+  if ($current === '') {
+    return true;
+  }
+
+  // Board status is relevant for barcode/printing chain, not for downstream paperroll/POS/ply stages.
+  $downstreamNeedless = [
+    'pos', 'pos_roll', 'pos roll',
+    'paperroll', 'paper_roll', 'paper roll',
+    'oneply', 'one_ply', 'one ply',
+    'twoply', 'two_ply', 'two ply',
+    'packing', 'packaging', 'dispatch'
+  ];
+  foreach ($downstreamNeedless as $needle) {
+    if (strpos($current, $needle) !== false) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
   function pm_display_status($status): string {
-    $norm = strtolower(trim(str_replace(['-', '_'], ' ', pm_text($status))));
-    if (in_array($norm, ['ready to dispatch', 'ready to dispatched', 'ready to dispathce', 'packing done', 'packed', 'finished barcode', 'finished production'], true)) {
-      return 'Ready to Dispatch';
-    }
-    if ($norm === 'pending') {
-      return 'Pending';
-    }
-    if (in_array($norm, ['queued', 'running', 'in progress', 'preparing'], true)) {
-      return 'Production';
-    }
-    if ($norm === 'packing') {
-      return 'Packing';
-    }
-    if (in_array($norm, ['finished production', 'dispatched', 'in transit'], true)) {
-      return 'Dispatched';
-    }
-    if ($norm === 'delivered') {
-      return 'Delivered';
-    }
-    return pm_text($status);
+    return erp_status_visual_label($status);
   }
 
   function pm_decode_json_assoc($json): array {
@@ -118,28 +132,42 @@ function pm_bucket_status(array $row): string {
   function pm_status_priority_from_job($status, array $extra): array {
     $norm = strtolower(trim(str_replace(['-', '_'], ' ', pm_text($status))));
 
+    $finishedBarcodeFlag = (int)($extra['finished_barcode_flag'] ?? 0) === 1
+      || pm_text($extra['finished_barcode_at'] ?? '') !== '';
     $finishedFlag = (int)($extra['finished_production_flag'] ?? 0) === 1
       || pm_text($extra['finished_production_at'] ?? '') !== '';
     $packedFlag = (int)($extra['packing_done_flag'] ?? 0) === 1
       || (int)($extra['packing_packed_flag'] ?? 0) === 1
       || pm_text($extra['packing_done_at'] ?? '') !== '';
 
-    if ($finishedFlag || in_array($norm, ['finished production', 'dispatched', 'dispatch', 'shipped'], true)) {
+    if ($finishedFlag || $norm === 'finished production') {
       return [
         'priority' => 5,
-        'status' => ($norm === 'dispatched' || $norm === 'dispatch' || $norm === 'shipped') ? 'Dispatched' : 'Ready to Dispatch',
+        'status' => 'Finished Production',
+      ];
+    }
+    if ($finishedBarcodeFlag || $norm === 'finished barcode') {
+      return [
+        'priority' => 4,
+        'status' => 'Finished Barcode',
+      ];
+    }
+    if (in_array($norm, ['dispatched', 'dispatch', 'shipped'], true)) {
+      return [
+        'priority' => 3,
+        'status' => 'Dispatched',
       ];
     }
     if ($packedFlag || in_array($norm, ['packed', 'packing done'], true)) {
-      return ['priority' => 4, 'status' => 'Ready to Dispatch'];
+      return ['priority' => 2, 'status' => 'Packed'];
     }
     if (in_array($norm, ['completed', 'complete', 'closed', 'finalized', 'qc passed', 'qc failed'], true)) {
-      return ['priority' => 3, 'status' => 'Completed'];
+      return ['priority' => 1, 'status' => 'Completed'];
     }
     if (in_array($norm, ['running', 'in progress', 'inprogress'], true)) {
-      return ['priority' => 2, 'status' => 'Running'];
+      return ['priority' => 0, 'status' => 'Running'];
     }
-    return ['priority' => 1, 'status' => pm_display_status($status !== '' ? $status : 'Pending')];
+    return ['priority' => -1, 'status' => pm_display_status($status !== '' ? $status : 'Pending')];
   }
 /* ── Delete planning row ── */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && pm_text($_POST['action'] ?? '') === 'delete_planning') {
@@ -513,10 +541,11 @@ body{background:#f1f5f9}
 .pm-table tbody tr.rc5:hover td{background:#ccfbf1}
 /* Badges */
 .pm-badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:.65rem;font-weight:800;letter-spacing:.03em;border:1.5px solid transparent}
-.pm-badge.pending{background:#fff7ed;color:#c2410c;border-color:#fb923c}
-.pm-badge.running{background:#eff6ff;color:#1d4ed8;border-color:#60a5fa}
-.pm-badge.completed{background:#f0fdf4;color:#15803d;border-color:#4ade80}
-.pm-badge.hold{background:#fff1f2;color:#be123c;border-color:#fb7185}
+.pm-badge.warning{background:#fef3c7;color:#92400e;border-color:#fcd34d}
+.pm-badge.info{background:#e0f2fe;color:#0c4a6e;border-color:#7dd3fc}
+.pm-badge.success{background:#dcfce7;color:#166534;border-color:#86efac}
+.pm-badge.danger{background:#fee2e2;color:#991b1b;border-color:#fca5a5}
+.pm-badge.neutral{background:#e2e8f0;color:#334155;border-color:#cbd5e1}
 /* Planning status badge */
 .pm-ps-badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:.62rem;font-weight:700;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
 .pm-ps-badge.ps-open{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
@@ -602,10 +631,12 @@ body{background:#f1f5f9}
             <?php
               $rowColorClass = 'rc' . ($idx % 6);
               $bucket = (string)$row['bucket_status'];
-              $bucketClass = 'pending';
-              if ($bucket === 'Running') $bucketClass = 'running';
-              elseif ($bucket === 'Completed' || $bucket === 'Packed') $bucketClass = 'completed';
-              elseif ($bucket === 'On Hold') $bucketClass = 'hold';
+              $productionStatusRaw = pm_text($row['effective_status'] ?? '');
+              if ($productionStatusRaw === '') {
+                $productionStatusRaw = $bucket;
+              }
+              $productionStatusText = pm_display_status($productionStatusRaw);
+              $bucketClass = erp_status_visual_tone($productionStatusText);
 
               $activeJobNo = pm_text($row['active_job_no']);
               $latestJobNo = pm_text($row['latest_job_no']);
@@ -620,13 +651,13 @@ body{background:#f1f5f9}
               $planningNo = $planNo !== '' ? $planNo : ('PLAN-' . (int)$row['id']);
               $serialNo = (int)$idx + 1;
 
-              $curPos = pm_text($row['latest_job_status']);
+              // Current position should emphasize stage (department) over generic lifecycle statuses.
+              $curPos = pm_text($row['current_department_label'] ?? '');
+              if ($curPos === '' || strtolower($curPos) === 'not started') $curPos = pm_text($row['effective_status'] ?? '');
+              if ($curPos === '' || strtolower($curPos) === 'not started') $curPos = pm_text($row['planning_status']);
+              if ($curPos === '') $curPos = pm_text($row['latest_job_status']);
               if ($curPos === '') $curPos = pm_text($row['active_job_status']);
               if ($curPos === '') $curPos = pm_text($row['board_status']);
-              if ($curPos === '') $curPos = pm_text($row['planning_status']);
-                if (pm_text($row['effective_status'] ?? '') !== '') {
-                  $curPos = pm_text($row['effective_status']);
-                }
               $curPos = pm_display_status($curPos);
 
               $route = pm_text($row['department_route']);
@@ -644,10 +675,8 @@ body{background:#f1f5f9}
               <td><?= e(pm_text($row['job_name']) !== '' ? $row['job_name'] : '-') ?></td>
               <td><?= e(pm_text($row['priority']) !== '' ? $row['priority'] : 'Normal') ?></td>
               <td>
-                <span class="pm-badge <?= e($bucketClass) ?>"><?= e(pm_display_status($bucket)) ?></span>
-                <?php if (pm_text($row['board_status']) !== ''): ?>
-                  <div class="pm-muted">Board: <?= e(pm_display_status($row['board_status'])) ?></div>
-                <?php endif; ?>
+                <span class="pm-badge <?= e($bucketClass) ?>"><?= e($productionStatusText) ?></span>
+                <div class="pm-muted">Stage: <?= e(pm_text($row['current_department_label']) !== '' ? $row['current_department_label'] : '-') ?></div>
               </td>
               <td><strong><?= e($row['current_department_label']) ?></strong></td>
               <td><?= e($curPos !== '' ? $curPos : '-') ?></td>

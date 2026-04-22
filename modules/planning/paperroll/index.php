@@ -40,36 +40,7 @@ function barcodePlanningNormalizeStatus($value): string {
 }
 
 function barcodePlanningStatusStyle($value): string {
-    $status = trim((string)$value);
-    $norm = strtolower(trim(str_replace(['-', '_'], ' ', $status)));
-    $norm = preg_replace('/\s+/', ' ', $norm) ?? '';
-
-    if ($norm === 'pending') {
-        return 'background:#f59e0b;color:#ffffff;';
-    }
-    if ($norm === 'dispatched' || str_contains($norm, 'packed') || str_contains($norm, 'done')) {
-        return 'background:#16a34a;color:#ffffff;';
-    }
-    if (str_contains($norm, 'pause')) {
-        return 'background:#dc2626;color:#ffffff;';
-    }
-    if (str_contains($norm, 'preparing')) {
-        return 'background:#9ca3af;color:#ffffff;';
-    }
-
-    $exactDepartments = [
-        'slitting',
-        'posroll',
-        'barcode',
-        'packing',
-        'printing',
-        'die cutting',
-    ];
-    if (in_array($norm, $exactDepartments, true)) {
-        return 'background:#2563eb;color:#ffffff;';
-    }
-
-    return 'background:#2563eb;color:#ffffff;';
+    return erp_status_badge_style($value);
 }
 
 function paperrollPlanningTypeOptions(): array {
@@ -199,6 +170,12 @@ function paperrollPlanningStatusFromPhase(string $department, string $phase): st
     if ($department === '') {
         return 'Pending';
     }
+    if ($phase === 'finished_barcode') {
+        return 'Finished Barcode';
+    }
+    if ($phase === 'finished_production') {
+        return 'Finished Production';
+    }
     if ($phase === 'dispatched') {
         return 'Dispatched';
     }
@@ -227,10 +204,16 @@ function paperrollPlanningJobStatusPhase($status, $timerState = '', array $jobEx
     $jobStatus = strtolower(trim((string)$status));
     $timer = strtolower(trim((string)$timerState));
 
+    $hasFinishedBarcodeFlag = (int)($jobExtra['finished_barcode_flag'] ?? 0) === 1
+        || trim((string)($jobExtra['finished_barcode_at'] ?? '')) !== '';
+    if ($hasFinishedBarcodeFlag) {
+        return 'finished_barcode';
+    }
+
     $hasFinishedFlag = (int)($jobExtra['finished_production_flag'] ?? 0) === 1
         || trim((string)($jobExtra['finished_production_at'] ?? '')) !== '';
     if ($hasFinishedFlag) {
-        return 'dispatched';
+        return 'finished_production';
     }
 
     $hasPackedFlag = (int)($jobExtra['packing_done_flag'] ?? 0) === 1
@@ -288,23 +271,50 @@ function paperrollPlanningIsDisplayStatus($status): bool {
 }
 
 function paperrollPlanningUnifiedStageLabel($status): string {
-    $norm = strtolower(trim(str_replace(['-', '_'], ' ', (string)$status)));
-    if ($norm === 'pending') {
-        return 'Pending';
+    return erp_status_visual_label($status);
+}
+
+function paperrollPlanningTerminalStatusFromCandidates(array $jobs): string {
+    $best = null;
+    $priorityMap = [
+        'Finished Production' => 500,
+        'Finished Barcode' => 490,
+        'Dispatched' => 480,
+        'Packed' => 470,
+        'Completed' => 460,
+    ];
+
+    foreach ($jobs as $job) {
+        $label = erp_status_visual_label((string)($job['status'] ?? ''));
+        if (!isset($priorityMap[$label])) {
+            continue;
+        }
+
+        $candidate = [
+            'label' => $label,
+            'priority' => (int)$priorityMap[$label],
+            'ts' => (int)($job['ts'] ?? 0),
+            'id' => (int)($job['id'] ?? 0),
+        ];
+
+        if ($best === null) {
+            $best = $candidate;
+            continue;
+        }
+
+        if ($candidate['priority'] > $best['priority']) {
+            $best = $candidate;
+            continue;
+        }
+
+        if ($candidate['priority'] === $best['priority']) {
+            if ($candidate['ts'] > $best['ts'] || ($candidate['ts'] === $best['ts'] && $candidate['id'] >= $best['id'])) {
+                $best = $candidate;
+            }
+        }
     }
-    if (in_array($norm, ['queued', 'running', 'in progress', 'preparing'], true)) {
-        return 'Production';
-    }
-    if (in_array($norm, ['packing', 'packed', 'packing done'], true)) {
-        return 'Packing';
-    }
-    if (in_array($norm, ['dispatched', 'finished production', 'in transit'], true)) {
-        return 'Dispatched';
-    }
-    if ($norm === 'delivered') {
-        return 'Delivered';
-    }
-    return trim((string)$status) !== '' ? trim((string)$status) : 'Production';
+
+    return $best['label'] ?? '';
 }
 
 function paperrollPlanningNormalizeManualStatus($status, $type): string {
@@ -785,15 +795,19 @@ function barcodePlanningFetchRows(mysqli $db): array {
 
             $effectiveJobStatus = trim((string)($job['status'] ?? ''));
             $rawNormStatus = strtolower(trim(str_replace(['-', '_'], ' ', $effectiveJobStatus)));
+            $hasFinishedBarcodeFlag = (int)($jobExtra['finished_barcode_flag'] ?? 0) === 1
+                || trim((string)($jobExtra['finished_barcode_at'] ?? '')) !== '';
             $hasFinishedFlag = (int)($jobExtra['finished_production_flag'] ?? 0) === 1
                 || trim((string)($jobExtra['finished_production_at'] ?? '')) !== '';
-            if ($hasFinishedFlag) {
+            if ($hasFinishedBarcodeFlag) {
+                $effectiveJobStatus = 'Finished Barcode';
+            } elseif ($hasFinishedFlag) {
                 $effectiveJobStatus = 'Finished Production';
             } else {
                 $hasPackedFlag = (int)($jobExtra['packing_done_flag'] ?? 0) === 1
                     || (int)($jobExtra['packing_packed_flag'] ?? 0) === 1
                     || trim((string)($jobExtra['packing_done_at'] ?? '')) !== '';
-                if ($hasPackedFlag && !in_array($rawNormStatus, ['dispatched', 'finished production'], true)) {
+                if ($hasPackedFlag && !in_array($rawNormStatus, ['dispatched', 'finished production', 'finished barcode'], true)) {
                     $effectiveJobStatus = 'Packed';
                 }
             }
@@ -828,7 +842,9 @@ function barcodePlanningFetchRows(mysqli $db): array {
                 if ($selectedDepartment === 'PosRoll' && $selectedPhase === 'done') {
                     if (in_array($jobStatusNorm, ['packed', 'packing done'], true)) {
                         $statusSource = 'Packed';
-                    } elseif (in_array($jobStatusNorm, ['dispatched', 'finished production'], true)) {
+                    } elseif ($jobStatusNorm === 'finished production') {
+                        $statusSource = 'Finished Production';
+                    } elseif ($jobStatusNorm === 'dispatched') {
                         $statusSource = 'Dispatched';
                     } else {
                         $statusSource = 'PosRoll Done';
@@ -847,6 +863,11 @@ function barcodePlanningFetchRows(mysqli $db): array {
                     $statusSource = paperrollPlanningStatusFromPhase((string)($selected['department'] ?? ''), (string)($selected['phase'] ?? ''));
                 }
             }
+        }
+
+        $terminalStatus = paperrollPlanningTerminalStatusFromCandidates($jobCandidates);
+        if ($terminalStatus !== '') {
+            $statusSource = $terminalStatus;
         }
 
         $departmentRaw = strtolower(trim((string)($row['department'] ?? '')));
@@ -1143,6 +1164,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $planningId = trim((string)($idRow['job_no'] ?? $planningId));
                             $idStmt->close();
                         }
+                    } else {
+                        // Keep ID generation consistent with left-menu pages by using selected planning type.
+                        $planningId = barcodePlanningPreviewId($db, $planningType);
                     }
                     if ($planningId === '') {
                         $planningId = barcodePlanningPreviewId($db, $planningType);
@@ -1282,6 +1306,10 @@ $dieTypeOptions = barcodePlanningMergeSuggestionLists($dieTypeOptions, ['Flatbed
 $useOptions = barcodePlanningMergeSuggestionLists($useOptions, barcodePlanningSuggestionBucket($rows, 'use'));
 $flash = getFlash();
 $previewPlanningId = barcodePlanningPreviewId($db, $defaultPlanningType);
+$previewPlanningIdByType = [];
+foreach (array_keys($planningTypeOptions) as $typeKey) {
+    $previewPlanningIdByType[$typeKey] = barcodePlanningPreviewId($db, (string)$typeKey);
+}
 $previewSerial = barcodePlanningNextSerial($db);
 $previewRecordId = barcodePlanningNextRecordId($db);
 $appSettings = getAppSettings();
@@ -1567,6 +1595,7 @@ include __DIR__ . '/../../../includes/header.php';
     var planningTypeStatusOptions = <?= json_encode($planningStatusOptionsMap, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
   var hasErrors = <?= !empty($errors) ? 'true' : 'false' ?>;
                 var defaultState = { sl_no: <?= (int)$previewSerial ?>, planning_id: <?= json_encode($previewPlanningId) ?>, record_label: <?= json_encode('#' . $previewRecordId) ?>, planning_date: <?= json_encode($today) ?>, dispatch_date: <?= json_encode($dispatchDefault) ?>, planning_type: <?= json_encode($defaultPlanningType, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>, status: <?= json_encode($defaultStatus) ?>, priority: 'Normal' };
+    var planningIdByType = <?= json_encode($previewPlanningIdByType, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
   var syncing = false;
     var layoutSyncing = false;
         var lastLayoutSource = 'paper_size';
@@ -1651,6 +1680,14 @@ include __DIR__ . '/../../../includes/header.php';
           if(op.value === selected) op.selected = true;
           statusInput.appendChild(op);
       });
+  }
+  function syncPlanningIdForType(type){
+      if(!editIdInput) return;
+      if(String(editIdInput.value || '0') !== '0') return;
+      var key = String(type || defaultState.planning_type || 'pos_roll').trim();
+      var nextId = planningIdByType && planningIdByType[key] ? String(planningIdByType[key]) : String(defaultState.planning_id || '');
+      assignIfPresent('barcode-planning-id', nextId);
+      if(previewId) previewId.textContent = nextId;
   }
   function rebuildStatusSelectByDepartment(department, selectedStatus, planningType){
       if(!statusInput) return;
@@ -1742,7 +1779,7 @@ include __DIR__ . '/../../../includes/header.php';
   if(viewCloseBtn) viewCloseBtn.addEventListener('click', closeViewModal);
     // Keep add/edit modal stable while typing in linked fields; close via explicit buttons only.
   if(viewModal) viewModal.addEventListener('click', function(event){ if(event.target===viewModal) closeViewModal(); });
-    if(planningTypeInput){ planningTypeInput.addEventListener('change', function(){ rebuildStatusSelectByPlanningType(planningTypeInput.value, statusInput && statusInput.value ? statusInput.value : 'Pending'); }); }
+    if(planningTypeInput){ planningTypeInput.addEventListener('change', function(){ var selectedType = planningTypeInput.value; rebuildStatusSelectByPlanningType(selectedType, statusInput && statusInput.value ? statusInput.value : 'Pending'); syncPlanningIdForType(selectedType); }); }
   if(planningDateInput&&dispatchDateInput){ planningDateInput.addEventListener('change', function(){ if(String(editIdInput&&editIdInput.value||'0')==='0'){ dispatchDateInput.value=addDays(planningDateInput.value,12); } }); }
   if(qtyInput) qtyInput.addEventListener('input', syncFromQty);
   if(meterInput) meterInput.addEventListener('input', syncFromMeter);

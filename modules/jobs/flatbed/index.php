@@ -120,6 +120,29 @@ $jobsSql = "
 $jobsRes = $db->query($jobsSql);
 $jobs = $jobsRes instanceof mysqli_result ? $jobsRes->fetch_all(MYSQLI_ASSOC) : [];
 
+// Fallback: for jobs created without previous_job_id (e.g. backfill), pull slitting extra_data by planning_id.
+$slittingExtraByPlanning = [];
+$jobPlanningIds = array_values(array_filter(array_unique(array_map(static function ($j) {
+  return (int)($j['planning_id'] ?? 0);
+}, $jobs))));
+if (!empty($jobPlanningIds)) {
+  $ph = implode(',', array_fill(0, count($jobPlanningIds), '?'));
+  $types = str_repeat('i', count($jobPlanningIds));
+  $slStmt = $db->prepare("SELECT planning_id, extra_data FROM jobs WHERE planning_id IN ($ph) AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') AND (LOWER(COALESCE(job_type, '')) = 'slitting' OR LOWER(COALESCE(department, '')) IN ('slitting', 'jumbo_slitting')) ORDER BY id DESC");
+  if ($slStmt) {
+    $slStmt->bind_param($types, ...$jobPlanningIds);
+    $slStmt->execute();
+    $slRows = $slStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($slRows as $slr) {
+      $pid = (int)($slr['planning_id'] ?? 0);
+      if ($pid <= 0 || isset($slittingExtraByPlanning[$pid])) continue;
+      $parsed = json_decode((string)($slr['extra_data'] ?? '{}'), true) ?: [];
+      if (!is_array($parsed) || empty($parsed)) continue;
+      $slittingExtraByPlanning[$pid] = $parsed;
+    }
+  }
+}
+
 $jobParentRollNos = array_values(array_filter(array_unique(array_map(static function ($j) {
   return trim((string)($j['roll_no'] ?? ''));
 }, $jobs))));
@@ -384,9 +407,11 @@ foreach ($jobs as &$job) {
     $prevExtra = is_array($job['prev_extra_data_parsed'] ?? null) ? $job['prev_extra_data_parsed'] : [];
   }
   $grandPrevExtra = is_array($job['grandprev_extra_data_parsed'] ?? null) ? $job['grandprev_extra_data_parsed'] : [];
+  $planningId = (int)($job['planning_id'] ?? 0);
+  $planningSlittingExtra = $slittingExtraByPlanning[$planningId] ?? [];
   $sourceRows = [];
 
-  foreach ([$prevExtra, $grandPrevExtra] as $upstreamExtra) {
+  foreach ([$prevExtra, $grandPrevExtra, $planningSlittingExtra] as $upstreamExtra) {
     if (!is_array($upstreamExtra) || empty($upstreamExtra)) continue;
     foreach (['assigned_child_rolls', 'child_rolls', 'stock_rolls', 'slitting_rolls', 'remaining_rolls'] as $bucket) {
       $rows = $upstreamExtra[$bucket] ?? null;

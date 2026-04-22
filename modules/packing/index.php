@@ -84,25 +84,11 @@ $printLogoUrl = $printLogoPath !== ''
   : '';
 
 $statusClass = static function(string $status): string {
-  $norm = strtolower(trim(str_replace(['-', '_'], ' ', $status)));
-  return in_array($norm, ['packing done', 'packed', 'dispatched', 'finished production', 'finished barcode'], true) ? 'ok' : 'muted';
+  return erp_status_visual_tone($status);
 };
 
 $displayPackingStatus = static function(string $status): string {
-  $norm = strtolower(trim(str_replace(['-', '_'], ' ', $status)));
-  if ($norm === 'finished barcode') {
-    return 'Finished Barcode';
-  }
-  if ($norm === 'finished production') {
-    return 'Finished Production';
-  }
-  if ($norm === 'dispatched') {
-    return 'Dispatched';
-  }
-  if (in_array($norm, ['packing done', 'packed'], true)) {
-    return 'Packed';
-  }
-  return 'Packing';
+  return erp_status_visual_label($status);
 };
 
 $formatDate = static function(string $value): string {
@@ -125,23 +111,37 @@ $resolvePlanUrl = static function(string $planNo, array $row = []): string {
 
   $tabKey = packing_row_to_tab($row) ?? '';
   $upperPlanNo = strtoupper($planNo);
-  if (str_starts_with($upperPlanNo, 'PLN-BAR/') || $tabKey === 'barcode') {
+  if (str_starts_with($upperPlanNo, 'PLN-BAR/') || str_starts_with($upperPlanNo, 'BRC-BAR/') || $tabKey === 'barcode') {
     return BASE_URL . '/modules/planning/barcode/index.php';
   }
-  if (str_starts_with($upperPlanNo, 'PLN-PRL/')) {
-    if ($tabKey === 'one_ply') {
-      return BASE_URL . '/modules/planning/oneply/index.php';
-    }
-    if ($tabKey === 'two_ply') {
-      return BASE_URL . '/modules/planning/twoply/index.php';
-    }
-    if ($tabKey === 'pos_roll') {
-      return BASE_URL . '/modules/planning/pos/index.php';
-    }
+
+  if (
+    str_starts_with($upperPlanNo, 'PLN-1PL/')
+    || str_starts_with($upperPlanNo, 'OPL-1PL/')
+    || $tabKey === 'one_ply'
+  ) {
+    return BASE_URL . '/modules/planning/oneply/index.php';
+  }
+
+  if (
+    str_starts_with($upperPlanNo, 'PLN-2PL/')
+    || str_starts_with($upperPlanNo, 'TPL-2PL/')
+    || $tabKey === 'two_ply'
+  ) {
+    return BASE_URL . '/modules/planning/twoply/index.php';
+  }
+
+  if (
+    str_starts_with($upperPlanNo, 'PLN-POS/')
+    || str_starts_with($upperPlanNo, 'POS-PRL/')
+    || str_starts_with($upperPlanNo, 'PLN-PRL/')
+    || $tabKey === 'pos_roll'
+  ) {
     return BASE_URL . '/modules/planning/paperroll/index.php';
   }
 
-  return BASE_URL . '/modules/planning/board.php?plan_no=' . urlencode($planNo);
+  // Safe fallback: shared paperroll planning board exists in this project.
+  return BASE_URL . '/modules/planning/paperroll/index.php';
 };
 
 $resolveJobUrl = static function(string $jobNo, int $jobId = 0, array $row = []): string {
@@ -248,8 +248,11 @@ include __DIR__ . '/../../includes/header.php';
 .pk-table tr:nth-child(even) td{background:#fcfdff}
 .pk-check-col{width:38px;text-align:center}
 .pk-badge{display:inline-flex;border-radius:999px;padding:2px 8px;font-size:.62rem;font-weight:800}
-.pk-badge.ok{background:#dcfce7;color:#166534}
-.pk-badge.muted{background:#e2e8f0;color:#475569}
+.pk-badge.success{background:#dcfce7;color:#166534;border:1px solid #86efac}
+.pk-badge.info{background:#e0f2fe;color:#0c4a6e;border:1px solid #7dd3fc}
+.pk-badge.warning{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
+.pk-badge.danger{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
+.pk-badge.neutral{background:#e2e8f0;color:#475569;border:1px solid #cbd5e1}
 .pk-badge.operator-submitted{background:#dcfce7;color:#166534}
 .pk-badge.operator-pending{background:#fef3c7;color:#92400e}
 .pk-operator-flag{display:inline-flex;align-items:center;gap:6px;margin-left:8px;padding:4px 10px;border-radius:999px;background:#dcfce7;color:#166534;font-size:.7rem;font-weight:900;box-shadow:0 0 0 1px #86efac inset;animation:pkPulseSubmitted 1.5s ease-in-out infinite}

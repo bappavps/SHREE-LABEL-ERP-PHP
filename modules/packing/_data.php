@@ -257,6 +257,51 @@ function packing_tab_keys(): array {
     return array_keys(packing_department_type_map());
 }
 
+function packing_release_required_tabs(): array {
+    return ['printing_label', 'pos_roll', 'one_ply', 'two_ply', 'barcode'];
+}
+
+function packing_release_primary_tabs(): array {
+    return ['pos_roll', 'one_ply', 'two_ply'];
+}
+
+function packing_is_release_ready(array $latestByTab): bool {
+    $primaryCompleted = 0;
+
+    foreach (packing_release_primary_tabs() as $tabKey) {
+        $row = $latestByTab[$tabKey] ?? null;
+        if (!is_array($row)) {
+            continue;
+        }
+
+        if (!packing_is_completed_status((string)($row['status'] ?? ''))) {
+            return false;
+        }
+        $primaryCompleted++;
+    }
+
+    // At least one paper-roll flow is preferred, but barcode-only flow is valid too.
+    if ($primaryCompleted <= 0) {
+        $barcodeRow = $latestByTab['barcode'] ?? null;
+        if (!is_array($barcodeRow) || !packing_is_completed_status((string)($barcodeRow['status'] ?? ''))) {
+            return false;
+        }
+    }
+
+    // For label/barcode tabs, enforce completion only when that tab exists for this planning.
+    foreach (['printing_label', 'barcode'] as $tabKey) {
+        $row = $latestByTab[$tabKey] ?? null;
+        if (!is_array($row)) {
+            continue;
+        }
+        if (!packing_is_completed_status((string)($row['status'] ?? ''))) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 function packing_tab_label(string $key): string {
     $map = packing_department_type_map();
     return $map[$key]['label'] ?? $key;
@@ -1123,6 +1168,7 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     $activeByGroup  = []; // best active job per group
     $doneByGroup    = []; // best terminal job per group (for history fallback)
     $submittedByGroup = []; // any submitted operator entry exists in this group
+    $latestByPlanningTab = []; // planning_id => tab => latest row (id-desc from query)
     foreach ($rows as $row) {
         $tabKey = packing_row_to_tab($row);
         if ($tabKey === null) {
@@ -1171,6 +1217,10 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
         $row['packing_tab'] = $tabKey;
         $row['group_key'] = $groupKey;
 
+        if ($planningId > 0 && !isset($latestByPlanningTab[$planningId][$tabKey])) {
+            $latestByPlanningTab[$planningId][$tabKey] = $row;
+        }
+
         $isTerminalForActive = in_array($normStatus, ['dispatched', 'finished production', 'finished barcode'], true)
             || ($hidePackedInActive && in_array($normStatus, ['packed', 'packing done'], true));
 
@@ -1208,6 +1258,14 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
         $hasOperatorSubmission = !empty($row['operator_submitted']) || !empty($submittedByGroup[$groupKey]);
         if (!$showAllActive && !$hasOperatorSubmission && !packing_is_completed_status((string)($row['status'] ?? ''))) {
             continue;
+        }
+
+        $planningIdForGate = (int)($row['planning_id'] ?? 0);
+        if ($planningIdForGate > 0) {
+            $latestTabs = $latestByPlanningTab[$planningIdForGate] ?? [];
+            if (!packing_is_release_ready($latestTabs)) {
+                continue;
+            }
         }
 
         $completedAt = (string)($row['completed_at'] ?? '');
