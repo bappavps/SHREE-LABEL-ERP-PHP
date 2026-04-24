@@ -385,6 +385,25 @@ body {
   grid-column: 1 / -1;
 }
 
+.dispatch-module .ds-inline-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dispatch-module .ds-inline-search input {
+  flex: 1;
+}
+
+.dispatch-module .ds-inline-search .ds-btn {
+  min-height: 38px;
+  min-width: 42px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .dispatch-module .ds-field label {
   font-size: 0.74rem;
   font-weight: 600;
@@ -405,6 +424,25 @@ body {
   color: var(--ds-text);
   background: #fff;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.dispatch-module .ds-field input.ds-client-highlight {
+  background: #e8f4ff;
+  color: #0b3d66;
+  font-weight: 600;
+  border-color: #4da3ff;
+}
+
+/* Keep footer text flow normal on dispatch page (avoid right-pushed footer block). */
+body.dispatch-page .app-footer {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+body.dispatch-page .app-footer .app-footer-right {
+  margin-left: 0;
+  text-align: left;
+  white-space: normal;
 }
 
 .dispatch-module input,

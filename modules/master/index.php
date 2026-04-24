@@ -879,11 +879,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($tableExists($db, 'finished_goods_stock')) {
         $runResetQuery($db, "DELETE FROM finished_goods_stock", 'Finished goods stock cleanup');
       }
+      if ($tableExists($db, 'dispatch_items')) {
+        $runResetQuery($db, "DELETE FROM dispatch_items", 'Dispatch item allocation cleanup');
+      }
+      if ($tableExists($db, 'dispatch_entries')) {
+        $runResetQuery($db, "DELETE FROM dispatch_entries", 'Dispatch entry cleanup');
+      }
       $runResetQuery($db, "DELETE FROM jobs", 'Jobs cleanup');
       $runResetQuery($db, "DELETE FROM planning", 'Planning cleanup');
 
       // Reset auto-increment counters so fresh test entries start from #1.
-      foreach (['planning', 'jobs', 'slitting_batches', 'slitting_entries', 'roll_allocations', 'job_change_requests', 'job_notifications', 'job_delete_audit', 'packing_operator_entries', 'audit_scanned_rolls', 'inventory_audits', 'finished_goods_dispatch_log', 'finished_goods_stock'] as $resetTable) {
+      foreach (['planning', 'jobs', 'slitting_batches', 'slitting_entries', 'roll_allocations', 'job_change_requests', 'job_notifications', 'job_delete_audit', 'packing_operator_entries', 'audit_scanned_rolls', 'inventory_audits', 'finished_goods_dispatch_log', 'finished_goods_stock', 'dispatch_items', 'dispatch_entries'] as $resetTable) {
         if ($tableExists($db, $resetTable)) {
           $runResetQuery($db, "ALTER TABLE `{$resetTable}` AUTO_INCREMENT = 1", ucfirst(str_replace('_', ' ', $resetTable)) . ' auto increment reset');
         }
@@ -901,7 +907,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errors)) {
-      setFlash('success', 'Testing reset complete: all production job cards/live-floor data cleared, finished goods stock/logs cleared, all planning rows deleted, only Main/Stock paper rolls kept, related counters restarted from 0001, and DB record IDs reset for core runtime tables.');
+      setFlash('success', 'Testing reset complete: all production job cards/live-floor data cleared, finished goods + dispatch stock/log/entry data cleared, all planning rows deleted, only Main/Stock paper rolls kept, related counters restarted from 0001, and DB record IDs reset for core runtime tables.');
     } else {
       setFlash('error', 'Reset partially failed: ' . implode(' ', $errors));
     }

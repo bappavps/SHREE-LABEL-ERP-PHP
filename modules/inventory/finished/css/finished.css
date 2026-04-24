@@ -298,6 +298,12 @@
   border-color: #fca5a5;
 }
 
+.fg-stock-module .fg-qty-pill-packed {
+  background: #ecfeff;
+  color: #0e7490;
+  border-color: #67e8f9;
+}
+
 .fg-stock-module .fg-qty-pill-available {
   background: #ecfdf3;
   color: #166534;
@@ -505,8 +511,8 @@
   position: sticky;
   top: 0;
   z-index: 3;
-  background: #dbeafe;
-  color: #334155;
+  background: var(--fg-accent, #2563eb);
+  color: #fff;
   font-weight: 700;
 }
 
@@ -515,18 +521,18 @@
   background: #fff;
 }
 
-/* ── Per-row color palette (8-color cycle) ── */
-.fg-stock-module .fg-table tbody tr.fg-row-c0 td { background: #fffdf0; }
-.fg-stock-module .fg-table tbody tr.fg-row-c1 td { background: #f0fff6; }
-.fg-stock-module .fg-table tbody tr.fg-row-c2 td { background: #f0f9ff; }
-.fg-stock-module .fg-table tbody tr.fg-row-c3 td { background: #fdf0ff; }
-.fg-stock-module .fg-table tbody tr.fg-row-c4 td { background: #fff0f4; }
-.fg-stock-module .fg-table tbody tr.fg-row-c5 td { background: #f0fcff; }
-.fg-stock-module .fg-table tbody tr.fg-row-c6 td { background: #f9fff0; }
-.fg-stock-module .fg-table tbody tr.fg-row-c7 td { background: #fff7f0; }
+/* ── Per-row color palette — tinted from active tab color ── */
+.fg-stock-module .fg-table tbody tr.fg-row-c0 td { background: var(--fg-row-c0, #fffdf0); }
+.fg-stock-module .fg-table tbody tr.fg-row-c1 td { background: var(--fg-row-c1, #f0fff6); }
+.fg-stock-module .fg-table tbody tr.fg-row-c2 td { background: var(--fg-row-c2, #f0f9ff); }
+.fg-stock-module .fg-table tbody tr.fg-row-c3 td { background: var(--fg-row-c3, #fdf0ff); }
+.fg-stock-module .fg-table tbody tr.fg-row-c4 td { background: var(--fg-row-c4, #fff0f4); }
+.fg-stock-module .fg-table tbody tr.fg-row-c5 td { background: var(--fg-row-c5, #f0fcff); }
+.fg-stock-module .fg-table tbody tr.fg-row-c6 td { background: var(--fg-row-c6, #f9fff0); }
+.fg-stock-module .fg-table tbody tr.fg-row-c7 td { background: var(--fg-row-c7, #fff7f0); }
 
 .fg-stock-module .fg-table tbody tr:hover td {
-  background: #dbeafe !important;
+  background: var(--fg-row-hover, #dbeafe) !important;
   transition: background .1s;
 }
 
@@ -1087,4 +1093,46 @@
   .fg-stock-module .fg-filter-row th {
     top: 74px;
   }
+}
+
+/* Loading and error states */
+.fg-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.fg-loading i {
+  animation: fg-spin 1s linear infinite;
+}
+
+.fg-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  color: #dc2626;
+  font-size: 0.9rem;
+}
+
+.fg-error i {
+  font-size: 1.1rem;
+}
+
+@keyframes fg-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Empty state */
+.fg-empty {
+  text-align: center;
+  padding: 40px 20px !important;
+  color: #64748b;
+  font-size: 0.9rem;
 }

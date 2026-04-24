@@ -394,6 +394,12 @@
     fg_root.style.setProperty('--fg-input-surface', fg_hexToRgba(tab.color, 0.11));
     fg_root.style.setProperty('--fg-input-border', fg_hexToRgba(tab.color, 0.38));
     fg_root.style.setProperty('--fg-input-focus-ring', fg_hexToRgba(tab.color, 0.28));
+    // Row tint variables — 8 shades of the active tab color
+    var rowAlphas = [0.05, 0.08, 0.05, 0.08, 0.05, 0.08, 0.05, 0.08];
+    for (var ci = 0; ci < 8; ci++) {
+      fg_root.style.setProperty('--fg-row-c' + ci, fg_hexToRgba(tab.color, rowAlphas[ci]));
+    }
+    fg_root.style.setProperty('--fg-row-hover', fg_hexToRgba(tab.color, 0.18));
     if (fg_nodes.headerStrip) {
       fg_nodes.headerStrip.style.background = tab.color;
     }
@@ -419,7 +425,8 @@
         { key: 'pcs', label: 'PCS', numeric: true },
         { key: 'per_carton', label: 'Per carton', numeric: true },
         { key: 'carton', label: 'CARTON', numeric: true },
-        { key: 'total', label: 'TOTAL', numeric: true },
+        { key: 'after_packing_qty', label: 'After Packing Qty', numeric: true },
+        { key: 'current_total', label: 'Current Total', numeric: true },
         { key: 'available_for_dispatch', label: 'Available for Dispatch', numeric: true },
         { key: 'stock_status', label: 'Status' }
       ];
@@ -444,7 +451,8 @@
         { key: 'carton', label: 'CARTON', numeric: true },
         { key: 'batch_no', label: 'BATCH NO.' },
         { key: 'roll_per_cartoon', label: 'ROLL PER CARTOON', numeric: true },
-        { key: 'total_quantity', label: 'TOTAL Quantity', numeric: true },
+        { key: 'after_packing_qty', label: 'After Packing Qty', numeric: true },
+        { key: 'current_total', label: 'Current Total', numeric: true },
         { key: 'available_for_dispatch', label: 'Available for Dispatch', numeric: true }
       ];
     }
@@ -511,6 +519,82 @@
       }
       return '';
     }
+    function fmtQty(v) {
+      return fg_num(v).toFixed(3).replace(/\.000$/, '');
+    }
+    function mixedAdjustedTotal() {
+      var category = String((row && row.category) || fg_state.activeTab || '');
+      var supportsMixed = ['pos_paper_roll', 'one_ply', 'two_ply', 'barcode', 'printing_roll'].indexOf(category) !== -1;
+
+      var currentRaw = fg_num(row.quantity);
+      var dispatchQtyTotal = fg_num(row.dispatch_qty_total || 0);
+      var snapshotRawStr = extraPick(['total', 'total_quantity']);
+      var snapshotRaw = snapshotRawStr !== '' ? fg_num(snapshotRawStr) : 0;
+
+      var productionRaw = currentRaw + Math.max(0, dispatchQtyTotal);
+      if (snapshotRaw > productionRaw) {
+        productionRaw = snapshotRaw;
+      }
+      if (productionRaw <= 0) {
+        productionRaw = currentRaw;
+      }
+
+      function calcMixedExtra(baseRaw) {
+        if (!supportsMixed || baseRaw <= 0) {
+          return 0;
+        }
+
+        var mixedExtra = 0;
+
+        if (category === 'barcode') {
+          var mixedEnabled = String(extra.mixed_enabled || '0') === '1';
+          var rpc = Math.floor(fg_num(extraPick(['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
+
+          if (mixedEnabled) {
+            mixedExtra = Math.max(0, fg_num(extra.mixed_extra_rolls || 0));
+          } else {
+            var totalRoll = fg_num(extraPick(['total_roll', 'total_rolls', 'total_roll_value']));
+            if (totalRoll <= 0) {
+              var pcsPerRoll = fg_num(extraPick(['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
+              if (pcsPerRoll > 0 && baseRaw > 0) {
+                totalRoll = Math.ceil(baseRaw / pcsPerRoll);
+              }
+            }
+
+            if (rpc > 0 && totalRoll > 0) {
+              mixedExtra = totalRoll % rpc;
+            } else {
+              mixedExtra = totalRoll;
+            }
+          }
+        } else {
+          var mixedEnabledOther = String(extra.mixed_enabled || '0') === '1';
+          if (mixedEnabledOther) {
+            mixedExtra = Math.max(0, fg_num(extra.mixed_extra_rolls || 0));
+          } else {
+            var perCarton = fg_num(extraPick(['per_carton']));
+            if (perCarton > 0 && baseRaw > 0) {
+              mixedExtra = baseRaw % perCarton;
+            } else {
+              mixedExtra = baseRaw;
+            }
+          }
+        }
+
+        return Math.max(0, fg_num(mixedExtra));
+      }
+
+      var mixedExtra = calcMixedExtra(productionRaw);
+      var packedNet = Math.max(0, fg_num(productionRaw - mixedExtra));
+      var availableNet = Math.max(0, fg_num(currentRaw - mixedExtra));
+      return {
+        raw: currentRaw,
+        production_raw: productionRaw,
+        extra: mixedExtra,
+        packed_net: packedNet,
+        available_net: availableNet
+      };
+    }
     if (key === 'sl_no') {
       return row._fgSerial || '';
     }
@@ -556,8 +640,17 @@
 
       return '';
     }
-    if (key === 'width' || key === 'length' || key === 'core_size' || key === 'core_type' || key === 'paper_company' || key === 'barcode' || key === 'per_carton' || key === 'carton') {
+    if (key === 'width' || key === 'length' || key === 'core_size' || key === 'core_type' || key === 'paper_company' || key === 'barcode' || key === 'per_carton') {
       return String(extra[key] || '');
+    }
+    if (key === 'carton') {
+      var ratioRaw = extraPick(['per_carton', 'roll_per_cartoon', 'roll_per_carton']);
+      var ratio = fg_num(ratioRaw);
+      if (ratio > 0) {
+        var netQty = mixedAdjustedTotal().available_net;
+        return String(Math.max(0, Math.floor(netQty / ratio)));
+      }
+      return String(extra.carton || '');
     }
     if (key === 'ups') {
       return extraPick(['ups', 'up_in_production', 'ups_in_die']);
@@ -572,26 +665,25 @@
       return extraPick(['roll_per_cartoon', 'roll_per_carton', 'per_carton']);
     }
     if (key === 'total_quantity') {
-      var fromExtraTotal = extraPick(['total', 'total_quantity']);
-      if (fromExtraTotal !== '') {
-        return fromExtraTotal;
-      }
-      return fg_num(row.quantity).toFixed(3).replace(/\.000$/, '');
+      return fmtQty(mixedAdjustedTotal().packed_net);
     }
     if (key === 'material_type') {
       return String(extra.material_type || row.sub_type || '');
     }
     if (key === 'pcs') {
-      return fg_num(row.quantity).toFixed(3).replace(/\.000$/, '');
+      return fmtQty(mixedAdjustedTotal().available_net);
     }
     if (key === 'total') {
-      if (String(extra.total || '').trim() !== '') {
-        return String(extra.total);
-      }
-      return fg_num(row.quantity).toFixed(3).replace(/\.000$/, '');
+      return fmtQty(mixedAdjustedTotal().packed_net);
+    }
+    if (key === 'after_packing_qty') {
+      return fmtQty(mixedAdjustedTotal().packed_net);
+    }
+    if (key === 'current_total') {
+      return fmtQty(mixedAdjustedTotal().available_net);
     }
     if (key === 'available_for_dispatch') {
-      return fg_num(row.quantity).toFixed(3).replace(/\.000$/, '');
+      return fmtQty(mixedAdjustedTotal().available_net);
     }
     if (key === 'stock_status') {
       var q = fg_num(row.quantity);
@@ -613,7 +705,7 @@
       return row._fgNote || '';
     }
     if (key === 'quantity') {
-      return fg_num(row.quantity).toFixed(3).replace(/\.000$/, '');
+      return fmtQty(row.quantity);
     }
     if (key === 'date') {
       return row.date || '';
@@ -649,7 +741,10 @@
 
   function fg_renderCell(row, key) {
     var value = fg_value(row, key);
-    if (key === 'total_quantity') {
+    if (key === 'after_packing_qty') {
+      return '<span class="fg-qty-pill fg-qty-pill-packed">' + fg_escapeHtml(value) + '</span>';
+    }
+    if (key === 'current_total' || key === 'total_quantity') {
       return '<span class="fg-qty-pill fg-qty-pill-total">' + fg_escapeHtml(value) + '</span>';
     }
     if (key === 'total' && (fg_state.activeTab === 'pos_paper_roll' || fg_state.activeTab === 'one_ply' || fg_state.activeTab === 'two_ply')) {
@@ -695,9 +790,10 @@
     }
     var extra = row._fgExtra || {};
     var params = new URLSearchParams();
+    var dispatchQty = fg_num(fg_value(row, 'available_for_dispatch'));
     params.set('item_id', String(row.id || ''));
     params.set('packing_id', String(extra.packing_id || row.item_code || ''));
-    params.set('qty', String(fg_num(row.quantity)));
+    params.set('qty', String(dispatchQty));
     params.set('size', String(row.size || ''));
     params.set('batch', String(row.batch_no || ''));
     params.set('item_name', String(row.item_name || ''));
@@ -999,7 +1095,8 @@
       if (!bucket[key]) {
         bucket[key] = { item_name: name, total_qty: 0 };
       }
-      bucket[key].total_qty += fg_num(row.quantity);
+      // Keep dropdown totals aligned with current net dispatchable stock.
+      bucket[key].total_qty += fg_num(fg_value(row, 'available_for_dispatch'));
     }
     var out = Object.keys(bucket).map(function (k) { return bucket[k]; });
     out.sort(function (a, b) { return b.total_qty - a.total_qty; });
@@ -1067,7 +1164,7 @@
     for (var i = 0; i < rows.length; i += 1) {
       var r = rows[i] || {};
       var ex = r._fgExtra || {};
-      var qty = fg_num(r.quantity);
+      var qty = fg_num(fg_value(r, 'available_for_dispatch'));
       totalQty += qty;
 
       var bn = String(r.batch_no || '').trim() || 'N/A';
@@ -1089,7 +1186,7 @@
       detailRows += '<tr>' +
         '<td>' + (j + 1) + '</td>' +
         '<td>' + fg_escapeHtml(String(row.batch_no || 'N/A')) + '</td>' +
-        '<td>' + fg_fmt(row.quantity || 0) + '</td>' +
+        '<td>' + fg_fmt(fg_value(row, 'available_for_dispatch') || 0) + '</td>' +
         '<td>' + fg_escapeHtml(String(row.gsm || 'N/A')) + '</td>' +
         '<td>' + fg_escapeHtml(paperType) + '</td>' +
         '<td>' + fg_escapeHtml(String(row.size || '')) + '</td>' +

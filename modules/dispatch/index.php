@@ -116,18 +116,24 @@ include __DIR__ . '/../../includes/header.php';
               <label for="dsEntryDate">Date</label>
               <input id="dsEntryDate" type="date" required>
             </div>
+            <div class="ds-field">
+              <label for="dsPackingId">Packing ID Search</label>
+              <div class="ds-inline-search">
+                <input id="dsPackingId" type="text" list="dsPackingIdSuggestions" placeholder="Type packing ID (e.g. POS-7950)">
+                <button type="button" class="ds-btn ds-btn-blue" id="dsPackingSearchBtn" title="Search by Packing ID">
+                  <i class="bi bi-search"></i>
+                </button>
+              </div>
+              <datalist id="dsPackingIdSuggestions"></datalist>
+            </div>
             <div class="ds-field full">
               <label for="dsClientName">Client Name</label>
-              <input id="dsClientName" type="text" required>
+              <input id="dsClientName" class="ds-client-highlight" type="text" required>
             </div>
 
             <div class="ds-field">
               <label for="dsItemName">Item Name</label>
               <input id="dsItemName" type="text" required>
-            </div>
-            <div class="ds-field">
-              <label for="dsPackingId">Packing ID</label>
-              <input id="dsPackingId" type="text">
             </div>
             <div class="ds-field">
               <label for="dsBatchNo">Batch No</label>
@@ -139,11 +145,19 @@ include __DIR__ . '/../../includes/header.php';
             </div>
             <div class="ds-field">
               <label for="dsAvailableQty">Available Qty</label>
-              <input id="dsAvailableQty" type="number" step="0.001" readonly>
+              <input id="dsAvailableQty" type="number" step="0.001" readonly style="background:#d4edda;color:#155724;font-weight:600;border-color:#28a745;">
+            </div>
+            <div class="ds-field">
+              <label for="dsAvailableCarton">Available Carton</label>
+              <input id="dsAvailableCarton" type="number" step="0.01" readonly style="background:#cce5ff;color:#004085;font-weight:600;border-color:#007bff;" placeholder="—">
             </div>
             <div class="ds-field">
               <label for="dsDispatchQty">Dispatch Qty</label>
-              <input id="dsDispatchQty" type="number" min="0" step="0.001" required>
+              <input id="dsDispatchQty" type="number" min="0" step="0.001" required style="background:#ffe8cc;color:#7a3e00;font-weight:600;border-color:#fd7e14;">
+            </div>
+            <div class="ds-field">
+              <label for="dsDispatchCarton">Dispatch Carton</label>
+              <input id="dsDispatchCarton" type="number" step="0.01" readonly style="background:#fff3cd;color:#856404;font-weight:600;border-color:#ffc107;" placeholder="—">
             </div>
             <div class="ds-field">
               <label for="dsUnit">Unit</label>

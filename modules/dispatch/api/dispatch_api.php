@@ -333,7 +333,7 @@ function ds_next_dispatch_id(mysqli $db): string {
 }
 
 function ds_get_stock_row(mysqli $db, int $stockId): ?array {
-    $stmt = $db->prepare('SELECT id, category, item_name, item_code, size, batch_no, unit, quantity FROM finished_goods_stock WHERE id = ? LIMIT 1');
+    $stmt = $db->prepare('SELECT id, category, item_name, item_code, size, batch_no, unit, quantity, remarks FROM finished_goods_stock WHERE id = ? LIMIT 1');
     if (!$stmt) {
         return null;
     }
@@ -341,6 +341,85 @@ function ds_get_stock_row(mysqli $db, int $stockId): ?array {
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     return $row ?: null;
+}
+
+function ds_parse_remarks_extra($remarks): array {
+    $raw = trim((string)$remarks);
+    if ($raw === '' || $raw[0] !== '{') {
+        return [];
+    }
+    $parsed = json_decode($raw, true);
+    if (!is_array($parsed)) {
+        return [];
+    }
+    $extra = $parsed['extra'] ?? [];
+    return is_array($extra) ? $extra : [];
+}
+
+function ds_pick_extra(array $extra, array $keys): string {
+    foreach ($keys as $k) {
+        if (!array_key_exists($k, $extra)) {
+            continue;
+        }
+        $v = trim((string)$extra[$k]);
+        if ($v !== '') {
+            return $v;
+        }
+    }
+    return '';
+}
+
+function ds_carton_ratio_for_stock(array $stockRow): float {
+    $extra = ds_parse_remarks_extra($stockRow['remarks'] ?? '');
+    $category = strtolower(trim((string)($stockRow['category'] ?? '')));
+    if ($category === 'barcode') {
+        return ds_decimal(ds_pick_extra($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton']));
+    }
+    return ds_decimal(ds_pick_extra($extra, ['per_carton', 'roll_per_cartoon', 'roll_per_carton']));
+}
+
+function ds_available_net_for_stock(array $row): float {
+    $qty = (float)($row['quantity'] ?? 0);
+    if ($qty <= 0) {
+        return 0.0;
+    }
+    $category = strtolower(trim((string)($row['category'] ?? '')));
+    $supportsMixed = in_array($category, ['pos_paper_roll', 'one_ply', 'two_ply', 'barcode', 'printing_roll'], true);
+    if (!$supportsMixed) {
+        return $qty;
+    }
+    $extra = ds_parse_remarks_extra($row['remarks'] ?? '');
+    $mixedEnabled = (string)($extra['mixed_enabled'] ?? '0') === '1';
+    $mixedExtra = 0.0;
+    if ($category === 'barcode') {
+        $rpc = (int)floor(ds_decimal(ds_pick_extra($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
+        if ($mixedEnabled) {
+            $mixedExtra = max(0.0, ds_decimal($extra['mixed_extra_rolls'] ?? 0));
+        } else {
+            $totalRoll = ds_decimal(ds_pick_extra($extra, ['total_roll', 'total_rolls', 'total_roll_value']));
+            if ($totalRoll <= 0) {
+                $pcsPerRoll = ds_decimal(ds_pick_extra($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
+                if ($pcsPerRoll > 0) {
+                    $totalRoll = (float)ceil($qty / $pcsPerRoll);
+                }
+            }
+            if ($rpc > 0 && $totalRoll > 0) {
+                $mixedExtra = fmod($totalRoll, (float)$rpc);
+            } else {
+                $mixedExtra = $totalRoll;
+            }
+        }
+    } else {
+        if ($mixedEnabled) {
+            $mixedExtra = max(0.0, ds_decimal($extra['mixed_extra_rolls'] ?? 0));
+        } else {
+            $perCarton = ds_decimal(ds_pick_extra($extra, ['per_carton']));
+            if ($perCarton > 0) {
+                $mixedExtra = fmod($qty, $perCarton);
+            }
+        }
+    }
+    return max(0.0, round($qty - max(0.0, $mixedExtra), 3));
 }
 
 function ds_parse_batch_items($raw): array {
@@ -384,23 +463,33 @@ function ds_get_item_batches(mysqli $db, string $itemName, string $packingId = '
         return [];
     }
 
+    $normalizeRows = static function (array $rows): array {
+        foreach ($rows as &$row) {
+            $row['available_qty'] = ds_available_net_for_stock($row);
+        }
+        unset($row);
+        return $rows;
+    };
+
     if ($packingId !== '') {
-        $stmt = $db->prepare('SELECT id, item_name, item_code, batch_no, size, unit, quantity FROM finished_goods_stock WHERE item_name = ? AND item_code = ? AND quantity > 0 ORDER BY batch_no ASC, id ASC');
+        $stmt = $db->prepare('SELECT id, item_name, item_code, batch_no, size, unit, quantity, remarks, category FROM finished_goods_stock WHERE item_name = ? AND item_code = ? AND quantity > 0 ORDER BY batch_no ASC, id ASC');
         if (!$stmt) {
             return [];
         }
         $stmt->bind_param('ss', $itemName, $packingId);
         $stmt->execute();
-        return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        return $normalizeRows($rows);
     }
 
-    $stmt = $db->prepare('SELECT id, item_name, item_code, batch_no, size, unit, quantity FROM finished_goods_stock WHERE item_name = ? AND quantity > 0 ORDER BY batch_no ASC, id ASC');
+    $stmt = $db->prepare('SELECT id, item_name, item_code, batch_no, size, unit, quantity, remarks, category FROM finished_goods_stock WHERE item_name = ? AND quantity > 0 ORDER BY batch_no ASC, id ASC');
     if (!$stmt) {
         return [];
     }
     $stmt->bind_param('s', $itemName);
     $stmt->execute();
-    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    return $normalizeRows($rows);
 }
 
 function ds_adjust_stock(mysqli $db, int $stockId, float $deltaQty, string $referenceNo, string $reason, int $userId): array {
@@ -557,6 +646,88 @@ if ($action === 'get_item_batches') {
     ds_json(200, ['ok' => true, 'rows' => $rows]);
 }
 
+if ($action === 'search_packing_ids') {
+    $query = ds_clean($_GET['q'] ?? '', 120);
+    $limit = (int)($_GET['limit'] ?? 25);
+    if ($limit < 1) {
+        $limit = 1;
+    }
+    if ($limit > 50) {
+        $limit = 50;
+    }
+
+    if ($query === '') {
+        $sql = "SELECT item_code AS packing_id, item_name, COALESCE(SUM(quantity),0) AS available_qty
+            FROM finished_goods_stock
+            WHERE item_code <> '' AND quantity > 0
+            GROUP BY item_code, item_name
+            ORDER BY MAX(id) DESC
+            LIMIT {$limit}";
+        $res = $db->query($sql);
+        $rows = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
+        ds_json(200, ['ok' => true, 'rows' => $rows]);
+    }
+
+    $like = '%' . $query . '%';
+    $starts = $query . '%';
+    $stmt = $db->prepare("SELECT item_code AS packing_id, item_name, COALESCE(SUM(quantity),0) AS available_qty
+        FROM finished_goods_stock
+        WHERE item_code <> '' AND quantity > 0
+          AND (item_code LIKE ? OR item_name LIKE ?)
+        GROUP BY item_code, item_name
+        ORDER BY (item_code LIKE ?) DESC, MAX(id) DESC
+        LIMIT {$limit}");
+    if (!$stmt) {
+        ds_json(500, ['ok' => false, 'error' => 'Unable to search packing IDs.']);
+    }
+    $stmt->bind_param('sss', $like, $like, $starts);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    ds_json(200, ['ok' => true, 'rows' => $rows]);
+}
+
+if ($action === 'prefill_by_packing_id') {
+    $packingId = ds_clean($_GET['packing_id'] ?? '', 120);
+    if ($packingId === '') {
+        ds_json(422, ['ok' => false, 'error' => 'Packing ID is required.']);
+    }
+
+    $stmt = $db->prepare('SELECT id, item_name, item_code, batch_no, size, unit, quantity, remarks, category
+        FROM finished_goods_stock
+        WHERE item_code = ? AND quantity > 0
+        ORDER BY id DESC
+        LIMIT 1');
+    if (!$stmt) {
+        ds_json(500, ['ok' => false, 'error' => 'Unable to fetch packing details.']);
+    }
+    $stmt->bind_param('s', $packingId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    if (!$row) {
+        ds_json(404, ['ok' => false, 'error' => 'Packing ID not found in available finished goods.']);
+    }
+
+    $allStmt = $db->prepare('SELECT quantity, remarks, category FROM finished_goods_stock WHERE item_code = ? AND quantity > 0');
+    if ($allStmt) {
+        $allStmt->bind_param('s', $packingId);
+        $allStmt->execute();
+        $allRows = $allStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $totalNet = 0.0;
+        $totalRaw = 0.0;
+        foreach ($allRows as $sr) {
+            $totalRaw += (float)($sr['quantity'] ?? 0);
+            $totalNet += ds_available_net_for_stock($sr);
+        }
+        $row['available_qty'] = $totalNet > 0 ? $totalNet : $totalRaw;
+    } else {
+        $row['available_qty'] = (float)($row['quantity'] ?? 0);
+    }
+
+    $row['carton_ratio'] = ds_carton_ratio_for_stock($row);
+
+    ds_json(200, ['ok' => true, 'row' => $row]);
+}
+
 if ($action === 'save_dispatch') {
     if ($method !== 'POST') {
         ds_json(405, ['ok' => false, 'error' => 'Method not allowed.']);
@@ -575,6 +746,7 @@ if ($action === 'save_dispatch') {
     $availableSnapshot = ds_decimal($payload['available_qty_snapshot'] ?? 0);
     $dispatchQty = ds_decimal($payload['dispatch_qty'] ?? 0);
     $unit = ds_clean($payload['unit'] ?? 'PCS', 30);
+    $unitNorm = strtoupper($unit);
 
     $invoiceNo = ds_clean($payload['invoice_no'] ?? '', 120);
     $invoiceIdRaw = trim((string)($payload['invoice_id'] ?? ''));
@@ -626,16 +798,26 @@ if ($action === 'save_dispatch') {
     $batchNos = [];
     $firstStockId = 0;
     $firstPackingId = '';
+    $normalizedBatchItems = [];
     foreach ($batchItems as $bi) {
-        $batchQty = ds_decimal($bi['dispatch_qty'] ?? 0);
+        $batchQtyInput = ds_decimal($bi['dispatch_qty'] ?? 0);
         $itemId = (int)($bi['item_id'] ?? 0);
-        if ($itemId <= 0 || $batchQty <= 0) {
+        if ($itemId <= 0 || $batchQtyInput <= 0) {
             ds_json(422, ['ok' => false, 'error' => 'Invalid batch dispatch payload.']);
         }
 
         $stockRow = ds_get_stock_row($db, $itemId);
         if (!$stockRow) {
             ds_json(422, ['ok' => false, 'error' => 'Batch stock row not found.']);
+        }
+
+        $batchQty = $batchQtyInput;
+        if ($unitNorm === 'CARTON') {
+            $ratio = ds_carton_ratio_for_stock($stockRow);
+            if ($ratio <= 0) {
+                ds_json(422, ['ok' => false, 'error' => 'Per carton not set for selected batch. Cannot dispatch by carton.']);
+            }
+            $batchQty = ds_decimal($batchQtyInput * $ratio);
         }
 
         $currentAvail = (float)($stockRow['quantity'] ?? 0);
@@ -651,10 +833,25 @@ if ($action === 'save_dispatch') {
         $dispatchQty += $batchQty;
         $availableSnapshot += $currentAvail;
         $batchNos[] = ds_clean($bi['batch_no'] ?? ($stockRow['batch_no'] ?? ''), 120);
+
+        $normalizedBatchItems[] = [
+            'item_id' => $itemId,
+            'batch_no' => ds_clean($bi['batch_no'] ?? ($stockRow['batch_no'] ?? ''), 120),
+            'packing_id' => ds_clean($bi['packing_id'] ?? ($stockRow['item_code'] ?? ''), 120),
+            'dispatch_qty' => $batchQty,
+            'available_qty' => $currentAvail,
+        ];
     }
+
+    $batchItems = $normalizedBatchItems;
 
     if ($dispatchQty <= 0) {
         ds_json(422, ['ok' => false, 'error' => 'Dispatch quantity must be greater than zero.']);
+    }
+
+    if ($unitNorm === 'CARTON') {
+        // Quantities are normalized to PCS for stock and logs.
+        $unit = 'PCS';
     }
 
     $finishedStockId = $firstStockId;

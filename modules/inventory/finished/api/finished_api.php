@@ -93,6 +93,71 @@ function fg_parse_date($value): ?string {
     return date('Y-m-d', $ts);
 }
 
+function fg_mixed_parse_extra($remarks): array {
+    $raw = trim((string)$remarks);
+    if ($raw === '' || $raw[0] !== '{') {
+        return [];
+    }
+    $parsed = json_decode($raw, true);
+    if (!is_array($parsed)) {
+        return [];
+    }
+    $extra = $parsed['extra'] ?? [];
+    return is_array($extra) ? $extra : [];
+}
+
+function fg_mixed_pick(array $extra, array $keys): string {
+    foreach ($keys as $k) {
+        if (!array_key_exists($k, $extra)) {
+            continue;
+        }
+        $v = trim((string)$extra[$k]);
+        if ($v !== '') {
+            return $v;
+        }
+    }
+    return '';
+}
+
+function fg_mixed_extra_qty(string $category, float $quantity, array $extra): float {
+    if (!in_array($category, ['pos_paper_roll', 'one_ply', 'two_ply', 'barcode', 'printing_roll'], true)) {
+        return 0.0;
+    }
+
+    if ($category === 'barcode') {
+        $mixedEnabled = (int)($extra['mixed_enabled'] ?? 0) === 1;
+        $rpc = (int)floor(fg_decimal(fg_mixed_pick($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
+
+        if ($mixedEnabled) {
+            return max(0.0, fg_decimal($extra['mixed_extra_rolls'] ?? 0));
+        }
+
+        $totalRoll = fg_decimal(fg_mixed_pick($extra, ['total_roll', 'total_rolls']));
+        if ($totalRoll <= 0) {
+            $pcsPerRoll = fg_decimal(fg_mixed_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll']));
+            if ($pcsPerRoll > 0 && $quantity > 0) {
+                $totalRoll = ceil($quantity / $pcsPerRoll);
+            }
+        }
+
+        if ($rpc > 0 && $totalRoll > 0) {
+            return max(0.0, (float)fmod($totalRoll, $rpc));
+        }
+        return max(0.0, $totalRoll);
+    }
+
+    $mixedEnabled = (int)($extra['mixed_enabled'] ?? 0) === 1;
+    if ($mixedEnabled) {
+        return max(0.0, fg_decimal($extra['mixed_extra_rolls'] ?? 0));
+    }
+
+    $perCarton = fg_decimal(fg_mixed_pick($extra, ['per_carton']));
+    if ($perCarton > 0 && $quantity > 0) {
+        return max(0.0, (float)fmod($quantity, $perCarton));
+    }
+    return max(0.0, $quantity);
+}
+
 function fg_period_bounds(string $period): array {
     $today = new DateTime('today');
     $start = clone $today;
@@ -501,7 +566,7 @@ if ($action === 'get_stock') {
         fg_json(400, ['ok' => false, 'error' => 'Category is required.']);
     }
 
-    $stmt = $db->prepare("SELECT id, category, sub_type, item_name, item_code, size, gsm, quantity, unit, location, batch_no, date, remarks, created_by, created_at
+    $stmt = $db->prepare("SELECT id, category, sub_type, item_name, item_code, size, gsm, quantity, dispatch_qty_total, closing_stock, unit, location, batch_no, date, remarks, created_by, created_at
         FROM finished_goods_stock
         WHERE category = ?
         ORDER BY id DESC");
@@ -518,18 +583,33 @@ if ($action === 'get_summary' || $action === 'summary') {
         fg_json(400, ['ok' => false, 'error' => 'Category is required.']);
     }
 
-    $stmt = $db->prepare("SELECT COUNT(*) AS total_items, COALESCE(SUM(quantity), 0) AS total_quantity
+    $stmt = $db->prepare("SELECT id, quantity, remarks
         FROM finished_goods_stock
         WHERE category = ?");
     $stmt->bind_param('s', $category);
     $stmt->execute();
-    $summary = $stmt->get_result()->fetch_assoc() ?: ['total_items' => 0, 'total_quantity' => 0];
+
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $totalItems = count($rows);
+    $totalQuantity = 0.0;
+    $mixedExtra = 0.0;
+
+    foreach ($rows as $row) {
+        $qty = fg_decimal($row['quantity'] ?? 0);
+        $totalQuantity += $qty;
+        $extra = fg_mixed_parse_extra($row['remarks'] ?? '');
+        $mixedExtra += fg_mixed_extra_qty($category, $qty, $extra);
+    }
+
+    $effectiveQuantity = max(0.0, $totalQuantity - $mixedExtra);
 
     fg_json(200, [
         'ok' => true,
         'summary' => [
-            'total_items' => (int)($summary['total_items'] ?? 0),
-            'total_quantity' => (float)($summary['total_quantity'] ?? 0),
+            'total_items' => (int)$totalItems,
+            'total_quantity' => round($effectiveQuantity, 3),
+            'raw_total_quantity' => round($totalQuantity, 3),
+            'mixed_extra_quantity' => round($mixedExtra, 3),
         ],
     ]);
 }
