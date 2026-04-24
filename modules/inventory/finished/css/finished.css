@@ -56,7 +56,7 @@
 
 .fg-stock-module .fg-card {
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   border-radius: 12px;
   border: 1px solid #eaeaea;
   box-shadow: 0 8px 20px rgba(15, 23, 42, .06);
@@ -66,18 +66,21 @@
 .fg-stock-module .fg-header-strip {
   height: 6px;
   background: var(--fg-accent);
+  border-radius: 12px 12px 0 0;
 }
 
 .fg-stock-module .fg-tab-wrap {
   border-bottom: 2px solid #e5eaf4;
   background: linear-gradient(to bottom, #f8faff 0%, #f0f4fc 100%);
   padding: 14px 16px 0;
+  overflow: visible;
 }
 
 .fg-stock-module .fg-tabs {
   display: flex;
   gap: 8px;
   overflow-x: auto;
+  overflow-y: visible;
   padding-bottom: 14px;
   scrollbar-width: none;
 }
@@ -1092,6 +1095,222 @@
 
   .fg-stock-module .fg-filter-row th {
     top: 74px;
+  }
+}
+
+/* ── Mobile: 768px ─────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .fg-stock-module {
+    padding: 2px;
+    border-radius: 10px;
+  }
+
+  /* Page header */
+  .fg-stock-module .fg-page-header {
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .fg-stock-module .fg-top-actions {
+    width: 100%;
+  }
+
+  .fg-stock-module .fg-top-actions .fg-act-btn {
+    flex: 1;
+    justify-content: center;
+    padding: 9px 8px;
+    font-size: 0.74rem;
+  }
+
+  /* Tab wrap */
+  .fg-stock-module .fg-tab-wrap {
+    padding: 10px 10px 0;
+  }
+
+  .fg-stock-module .fg-tabs {
+    gap: 6px;
+    padding-bottom: 10px;
+  }
+
+  .fg-stock-module .fg-tab-btn {
+    padding: 7px 12px;
+    font-size: 0.74rem;
+    border-radius: 10px;
+  }
+
+  /* Summary cards — 2 columns on mobile */
+  .fg-stock-module .fg-summary {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .fg-stock-module .fg-summary-card strong {
+    font-size: 0.95rem;
+  }
+
+  /* Item summary dropdown full width */
+  .fg-stock-module .fg-item-summary-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .fg-stock-module .fg-item-summary-controls select {
+    min-width: unset;
+    max-width: unset;
+    width: 100%;
+  }
+
+  /* Toolbar — stacked */
+  .fg-stock-module .fg-toolbar {
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 10px 10px;
+  }
+
+  .fg-stock-module .fg-toolbar-left,
+  .fg-stock-module .fg-toolbar-right {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .fg-stock-module .fg-search-wrap {
+    flex: 1;
+  }
+
+  .fg-stock-module .fg-search-wrap input {
+    width: 100%;
+    min-width: unset;
+  }
+
+  .fg-stock-module .fg-toolbar-right .fg-act-btn,
+  .fg-stock-module .fg-toolbar-left .fg-act-btn {
+    flex: 1;
+    justify-content: center;
+    font-size: 0.73rem;
+    padding: 8px 8px;
+  }
+
+  /* Report filter full width */
+  .fg-stock-module .fg-report-filter-wrap {
+    width: 100%;
+  }
+
+  .fg-stock-module .fg-report-filter-wrap select {
+    width: 100%;
+    min-width: unset;
+  }
+
+  /* Table max-height on mobile */
+  .fg-stock-module .fg-table-wrap {
+    max-height: 55vh;
+  }
+
+  .fg-stock-module .fg-table {
+    min-width: 640px;
+  }
+
+  .fg-stock-module .fg-table th,
+  .fg-stock-module .fg-table td {
+    padding: 8px 8px;
+    font-size: 0.76rem;
+  }
+
+  /* Modal full-screen on mobile */
+  .fg-stock-module .fg-modal-card,
+  .fg-stock-module .fg-import-card,
+  .fg-stock-module .fg-view-modal-card {
+    width: 100%;
+    max-width: 100%;
+    max-height: 100dvh;
+    border-radius: 14px 14px 0 0;
+    align-self: flex-end;
+  }
+
+  .fg-stock-module .fg-modal {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .fg-stock-module .fg-modal-body {
+    max-height: calc(100dvh - 60px);
+    padding: 10px;
+  }
+
+  /* Form grid — 1 column */
+  .fg-stock-module .fg-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Column menu grid */
+  .fg-stock-module .fg-column-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Item insights */
+  .fg-stock-module .fg-item-insights {
+    margin: 0 10px 10px;
+  }
+
+  .fg-stock-module .fg-item-summary-box {
+    margin: 0 10px 8px;
+  }
+
+  /* Column menu */
+  .fg-stock-module .fg-column-menu {
+    margin: 0 10px 8px;
+  }
+}
+
+/* ── Mobile: 480px (small phones) ─────────────────────────────────────── */
+@media (max-width: 480px) {
+  /* Summary cards — 1 column on very small screens */
+  .fg-stock-module .fg-summary {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .fg-stock-module .fg-tab-btn {
+    padding: 6px 10px;
+    font-size: 0.72rem;
+  }
+
+  .fg-stock-module .fg-tab-count {
+    min-width: 18px;
+    height: 17px;
+    font-size: 0.66rem;
+  }
+
+  .fg-stock-module .fg-toolbar-right .fg-act-btn span {
+    display: none;
+  }
+
+  .fg-stock-module .fg-toolbar-right .fg-act-btn i {
+    font-size: 1rem;
+  }
+
+  .fg-stock-module .fg-table-wrap {
+    max-height: 50vh;
+  }
+
+  .fg-stock-module .fg-table {
+    min-width: 560px;
+  }
+
+  .fg-stock-module .fg-table th,
+  .fg-stock-module .fg-table td {
+    padding: 7px 6px;
+    font-size: 0.72rem;
+  }
+
+  .fg-stock-module .fg-column-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .fg-stock-module .fg-top-actions .fg-act-btn span {
+    display: none;
   }
 }
 

@@ -21,6 +21,7 @@
     dispatchUrl: String(fg_root.getAttribute('data-dispatch-url') || ''),
     csrf: String(fg_root.getAttribute('data-csrf-token') || ''),
     isAdmin: String(fg_root.getAttribute('data-is-admin') || '') === '1',
+    canManageRows: String(fg_root.getAttribute('data-is-admin') || '') === '1',
     tabs: [
       { key: 'pos_paper_roll', label: 'POS & Paper Roll', color: '#2563EB' },
       { key: 'one_ply', label: '1 Ply', color: '#166534' },
@@ -896,14 +897,9 @@
     }
 
     return [
-      { name: 'sub_type', label: 'Carton Type', source: 'direct', required: true },
-      { name: 'size', label: 'Size', source: 'direct' },
-      { name: 'strength', label: 'Strength', source: 'extra' },
-      { name: 'quantity', label: 'Quantity', source: 'direct', type: 'number', required: true },
-      { name: 'unit', label: 'Unit', source: 'direct', required: true },
-      { name: 'location', label: 'Location', source: 'direct' },
-      { name: 'batch_no', label: 'Batch', source: 'direct' },
-      { name: 'date', label: 'Date', source: 'direct', type: 'date' }
+      { name: 'size', label: 'Size', source: 'direct', required: true, type: 'select', options: ['57x15', '57x25', '78x25', '75mm', 'Barcode', 'Medicine', 'Custom'] },
+      { name: 'custom_size', label: 'Custom Size', source: 'extra', placeholder: 'Type new size (for custom)' },
+      { name: 'quantity', label: 'Value', source: 'direct', type: 'number', required: true }
     ];
   }
 
@@ -1305,6 +1301,11 @@
   }
 
   function fg_renderTable() {
+    if (fg_state.activeTab === 'carton') {
+      fg_renderCartonMatrixTable();
+      return;
+    }
+
     var cols = fg_getColumns(fg_state.activeTab).filter(function (c) {
       return fg_state.visibleColumns[c.key] !== false;
     });
@@ -1358,7 +1359,7 @@
       {
         body += '<td><div class="fg-row-actions">' +
           '<button type="button" class="btn btn-sm fg-view-btn" data-fg-action="view-row" data-id="' + row.id + '" title="View"><i class="bi bi-eye"></i></button>' +
-          (fg_state.isAdmin ?
+          (fg_state.canManageRows ?
           '<button type="button" class="btn btn-sm" data-fg-action="edit-row" data-id="' + row.id + '"><i class="bi bi-pencil"></i></button>' +
           '<button type="button" class="btn btn-sm btn-danger" data-fg-action="delete-row" data-id="' + row.id + '"><i class="bi bi-trash"></i></button>' : '') +
           '</div></td>';
@@ -1367,6 +1368,58 @@
     }
 
     fg_nodes.tableBody.innerHTML = body;
+  }
+
+  function fg_renderCartonMatrixTable() {
+    var rows = fg_state.filteredRows.slice();
+    var fixedOrder = ['57x15', '57x25', '78x25', '75mm', 'Barcode', 'Medicine'];
+    var order = fixedOrder.slice();
+    var qtyBySize = {};
+    var rowIdBySize = {};
+
+    for (var f = 0; f < fixedOrder.length; f += 1) {
+      qtyBySize[fixedOrder[f]] = 0;
+    }
+
+    for (var i = 0; i < rows.length; i += 1) {
+      var row = rows[i] || {};
+      var sizeText = String(fg_value(row, 'size') || row.size || row.item_name || '').trim();
+      if (!sizeText) {
+        sizeText = 'Other';
+      }
+      if (!Object.prototype.hasOwnProperty.call(qtyBySize, sizeText)) {
+        qtyBySize[sizeText] = 0;
+        order.push(sizeText);
+      }
+      if (!Object.prototype.hasOwnProperty.call(rowIdBySize, sizeText) && fg_num(row.id) > 0) {
+        rowIdBySize[sizeText] = String(row.id);
+      }
+      qtyBySize[sizeText] += fg_num(row.quantity);
+    }
+
+    var headHtml = '<tr><th>SIZE</th>';
+    var bodyHtml = '<tr><td><strong>QTY</strong></td>';
+    for (var j = 0; j < order.length; j += 1) {
+      var sizeKey = order[j];
+      headHtml += '<th>' + fg_escapeHtml(sizeKey) + '</th>';
+      var qtyCell = fg_escapeHtml(fg_fmt(qtyBySize[sizeKey]));
+      if (fg_state.canManageRows) {
+        var actionHtml = '';
+        if (rowIdBySize[sizeKey]) {
+          actionHtml = '<div class="fg-row-actions" style="justify-content:center;margin-top:6px">' +
+            '<button type="button" class="btn btn-sm" data-fg-action="edit-row" data-id="' + fg_escapeHtml(rowIdBySize[sizeKey]) + '"><i class="bi bi-pencil"></i></button>' +
+            '<button type="button" class="btn btn-sm btn-danger" data-fg-action="delete-row" data-id="' + fg_escapeHtml(rowIdBySize[sizeKey]) + '"><i class="bi bi-trash"></i></button>' +
+          '</div>';
+        }
+        qtyCell = '<div>' + qtyCell + actionHtml + '</div>';
+      }
+      bodyHtml += '<td>' + qtyCell + '</td>';
+    }
+    headHtml += '</tr>';
+    bodyHtml += '</tr>';
+
+    fg_nodes.tableHead.innerHTML = headHtml;
+    fg_nodes.tableBody.innerHTML = bodyHtml;
   }
 
   function fg_getFilterOptions(colKey) {
@@ -1516,6 +1569,11 @@
   }
 
   function fg_renderPagination() {
+    if (fg_state.activeTab === 'carton') {
+      fg_nodes.pagination.innerHTML = '';
+      return;
+    }
+
     var total = fg_state.filteredRows.length;
     var pages = Math.max(1, Math.ceil(total / fg_state.perPage));
     if (fg_state.page > pages) {
@@ -1597,6 +1655,16 @@
         html += '<select data-fg-field="' + fg_escapeHtml(f.name) + '" data-fg-source="' + fg_escapeHtml(f.source) + '"' + saveAttr + disabledAttr + '>';
         html += '<option value="">Select</option>';
         var options = f.options || [];
+        var hasSelectedValue = false;
+        for (var oi = 0; oi < options.length; oi += 1) {
+          if (String(options[oi]) === String(val)) {
+            hasSelectedValue = true;
+            break;
+          }
+        }
+        if (val !== '' && !hasSelectedValue) {
+          html += '<option value="' + fg_escapeHtml(String(val)) + '" selected>' + fg_escapeHtml(String(val)) + '</option>';
+        }
         for (var o = 0; o < options.length; o += 1) {
           var opt = String(options[o]);
           var selected = String(val) === opt ? 'selected' : '';
@@ -1605,13 +1673,41 @@
         html += '</select>';
       } else {
         var type = f.type || 'text';
-        html += '<input type="' + type + '" data-fg-field="' + fg_escapeHtml(f.name) + '" data-fg-source="' + fg_escapeHtml(f.source) + '"' + saveAttr + ' value="' + fg_escapeHtml(val) + '"' + readonlyAttr + '>';
+        var placeholderAttr = f.placeholder ? ' placeholder="' + fg_escapeHtml(String(f.placeholder)) + '"' : '';
+        html += '<input type="' + type + '" data-fg-field="' + fg_escapeHtml(f.name) + '" data-fg-source="' + fg_escapeHtml(f.source) + '"' + saveAttr + ' value="' + fg_escapeHtml(val) + '"' + placeholderAttr + readonlyAttr + '>';
       }
 
       html += '</div>';
     }
 
     fg_nodes.entryFormGrid.innerHTML = html;
+
+    if (fg_state.activeTab === 'carton') {
+      var cartonSizeEl = fg_nodes.entryForm.querySelector('[data-fg-field="size"]');
+      var cartonCustomSizeWrap = fg_nodes.entryForm.querySelector('[data-fg-field="custom_size"]');
+      var cartonCustomSizeInput = cartonCustomSizeWrap;
+      if (cartonCustomSizeWrap) {
+        cartonCustomSizeWrap = cartonCustomSizeWrap.closest('.fg-form-field');
+      }
+
+      var syncCartonCustomSize = function () {
+        if (!cartonSizeEl || !cartonCustomSizeWrap) {
+          return;
+        }
+        var selected = String(cartonSizeEl.value || '').trim();
+        var showCustom = selected === 'Custom';
+        cartonCustomSizeWrap.style.display = showCustom ? '' : 'none';
+        if (!showCustom && cartonCustomSizeInput) {
+          cartonCustomSizeInput.value = '';
+        }
+      };
+
+      if (cartonSizeEl) {
+        cartonSizeEl.addEventListener('change', syncCartonCustomSize);
+      }
+      syncCartonCustomSize();
+    }
+
     fg_attachPosAutoCalc();
     fg_attachBarcodeAutoCalc();
 
@@ -1867,6 +1963,19 @@
     }
 
     direct.quantity = fg_num(direct.quantity);
+
+    if (fg_state.activeTab === 'carton') {
+      var selectedSize = String(direct.size || '').trim();
+      var customSize = String(extra.custom_size || '').trim();
+      if (selectedSize === 'Custom') {
+        if (!customSize) {
+          throw new Error('Please enter Custom Size.');
+        }
+        direct.size = customSize;
+      }
+      delete extra.custom_size;
+    }
+
     direct.remarks = fg_packRemarks(note, extra);
 
     for (var s = 0; s < schema.length; s += 1) {
@@ -2518,7 +2627,7 @@
     }
 
     if (action === 'edit-row') {
-      if (!fg_state.isAdmin) return;
+      if (!fg_state.canManageRows) return;
       var id = target.getAttribute('data-id');
       var row = fg_findRowById(id);
       if (row) fg_openEntryModal(row);
@@ -2535,7 +2644,7 @@
     }
 
     if (action === 'delete-row') {
-      if (!fg_state.isAdmin) return;
+      if (!fg_state.canManageRows) return;
       var did = parseInt(target.getAttribute('data-id') || '0', 10);
       if (did > 0) fg_deleteRow(did);
       return;

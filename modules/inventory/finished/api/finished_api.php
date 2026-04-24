@@ -615,6 +615,7 @@ if ($action === 'get_summary' || $action === 'summary') {
 }
 
 if ($action === 'add_stock' || $action === 'add') {
+    fg_require_stock_operator();
     if ($method !== 'POST') {
         fg_json(405, ['ok' => false, 'error' => 'Method not allowed.']);
     }
