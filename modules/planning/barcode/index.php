@@ -930,6 +930,39 @@ $rows = array_values(array_filter($rows, static function (array $row): bool {
     $statusRaw = barcodePlanningNormalizeStatus((string)($row['status'] ?? ''));
     return barcodePlanningDisplayStatusLabel($statusRaw) !== 'Finised Barcode';
 }));
+
+$historyTabCount = 0;
+$historyArchivedStatusSql = "LOWER(TRIM(REPLACE(REPLACE(COALESCE(p.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finised barcode','packed','dispatched','complete')";
+$historyArchivedJobsSql = "EXISTS (
+    SELECT 1 FROM jobs j
+    WHERE j.planning_id = p.id
+      AND (
+        LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','packed','dispatched','complete','closed','finalized','completed','qc passed')
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_flag\":1%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_flag\":1%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_flag\":1%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"packing_packed_flag\":1%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_at\":%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_at\":%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_at\":%'
+      )
+)";
+$historyCountSql = "SELECT COUNT(*) AS total
+    FROM planning p
+    WHERE LOWER(COALESCE(p.department, '')) IN ('barcode','rotery','rotary')
+      AND ($historyArchivedStatusSql OR $historyArchivedJobsSql)";
+$historyCountStmt = $db->prepare($historyCountSql);
+if ($historyCountStmt) {
+    if ($historyCountStmt->execute()) {
+        $historyCountResult = $historyCountStmt->get_result();
+        if ($historyCountResult) {
+            $historyCountRow = $historyCountResult->fetch_assoc();
+            $historyTabCount = (int)($historyCountRow['total'] ?? 0);
+        }
+    }
+    $historyCountStmt->close();
+}
+
 $paperStockTypeOptions = barcodePlanningPaperStockTypes($db);
 $materialTypeOptions = barcodePlanningSuggestionBucket($rows, 'material_type');
 $orderQtyOptions = barcodePlanningSuggestionBucket($rows, 'order_quantity');
@@ -993,7 +1026,7 @@ include __DIR__ . '/../../../includes/header.php';
 
 <div class="planning-view-switch">
     <a href="<?= e(appUrl('modules/planning/barcode/index.php')) ?>" class="planning-view-link is-active"><i class="bi bi-grid-1x2"></i> Board</a>
-    <a href="<?= e(appUrl('modules/planning/history.php?department=barcode')) ?>" class="planning-view-link"><i class="bi bi-clock-history"></i> History</a>
+    <a href="<?= e(appUrl('modules/planning/history.php?department=barcode')) ?>" class="planning-view-link"><i class="bi bi-clock-history"></i> History <span class="planning-tab-counter"><?= (int)$historyTabCount ?></span></a>
 </div>
 
 <style>
@@ -1002,6 +1035,7 @@ include __DIR__ . '/../../../includes/header.php';
 .planning-view-link{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid #dbe7ef;border-radius:10px;background:#fff;color:#334155;font-size:.8rem;font-weight:700;text-decoration:none}
 .planning-view-link:hover{border-color:#93c5fd;color:#1d4ed8}
 .planning-view-link.is-active{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+.planning-tab-counter{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:#e2e8f0;color:#334155;font-size:.72rem;font-weight:800;line-height:1}
 .bc-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 .bc-header h1{font-size:1.45rem;font-weight:900;display:flex;align-items:center;gap:10px;color:var(--bc-text)}
 .bc-header h1 i{font-size:1.5rem;color:var(--bc-brand)}

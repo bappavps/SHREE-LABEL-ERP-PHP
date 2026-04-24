@@ -2,7 +2,7 @@
     "company_name": "Shree Label Creation",
     "company_legal_name": "",
     "contact_person": "",
-    "erp_display_name": "e-Flexo Enterpices",
+    "erp_display_name": "",
     "company_tagline": "ERP Master System",
     "company_email": "",
     "company_mobile": "",
@@ -10,16 +10,16 @@
     "company_currency": "INR",
     "company_address": "",
     "company_gst": "",
-    "erp_email": "debnathmriganka2010@gmail.com",
-    "erp_phone": "+917001449757",
-    "erp_address": "siliguri\r\nsiliguri",
+    "erp_email": "",
+    "erp_phone": "",
+    "erp_address": "",
     "erp_gst": "",
     "logo_path": "",
-    "erp_logo_path": "uploads/uploads/company/default/erp_logo_20260414_132519_b3a7521b.png",
+    "erp_logo_path": "",
     "flag_emoji": "🇮🇳",
     "animated_flag_path": "",
     "animated_flag_url": "",
-    "login_background_image": "uploads/uploads/library/default/lib_20260414_132546_cb70deb6.png",
+    "login_background_image": "uploads/uploads/library/default/lib_20260424_092441_94858862.png",
     "theme_mode": "light",
     "sidebar_button_color": "#22c55e",
     "sidebar_hover_color": "rgba(255,255,255,.09)",
@@ -27,49 +27,49 @@
     "sidebar_active_text": "#bbf7d0",
     "image_library": [
         {
-            "path": "uploads/uploads/library/default/lib_20260414_132531_5e40f370.png",
-            "name": "lib_20260414_132531_5e40f370.png",
-            "uploaded_at": "2026-04-14 13:25:31",
+            "path": "uploads/uploads/library/default/lib_20260424_092410_1fe75556.png",
+            "name": "lib_20260424_092410_1fe75556.png",
+            "uploaded_at": "2026-04-24 09:24:10",
             "category": "company-logo"
         },
         {
-            "path": "uploads/uploads/library/default/lib_20260414_132539_4039cd92.png",
-            "name": "lib_20260414_132539_4039cd92.png",
-            "uploaded_at": "2026-04-14 13:25:39",
+            "path": "uploads/uploads/library/default/lib_20260424_092424_2b895893.png",
+            "name": "lib_20260424_092424_2b895893.png",
+            "uploaded_at": "2026-04-24 09:24:24",
             "category": "label-asset"
         },
         {
-            "path": "uploads/uploads/library/default/lib_20260414_132546_cb70deb6.png",
-            "name": "lib_20260414_132546_cb70deb6.png",
-            "uploaded_at": "2026-04-14 13:25:46",
+            "path": "uploads/uploads/library/default/lib_20260424_092433_5c82f09e.png",
+            "name": "lib_20260424_092433_5c82f09e.png",
+            "uploaded_at": "2026-04-24 09:24:33",
+            "category": "label-asset"
+        },
+        {
+            "path": "uploads/uploads/library/default/lib_20260424_092441_94858862.png",
+            "name": "lib_20260424_092441_94858862.png",
+            "uploaded_at": "2026-04-24 09:24:41",
             "category": "background"
         },
         {
-            "path": "uploads/uploads/library/default/lib_20260414_132557_e03a7bb1.png",
-            "name": "lib_20260414_132557_e03a7bb1.png",
-            "uploaded_at": "2026-04-14 13:25:57",
+            "path": "uploads/uploads/library/default/lib_20260424_092453_16790eef.png",
+            "name": "lib_20260424_092453_16790eef.png",
+            "uploaded_at": "2026-04-24 09:24:53",
             "category": "product-type",
             "paper_type": "chromo"
         },
         {
-            "path": "uploads/uploads/library/default/lib_20260414_132606_313359c2.png",
-            "name": "lib_20260414_132606_313359c2.png",
-            "uploaded_at": "2026-04-14 13:26:06",
+            "path": "uploads/uploads/library/default/lib_20260424_092502_8b146d57.png",
+            "name": "lib_20260424_092502_8b146d57.png",
+            "uploaded_at": "2026-04-24 09:25:02",
             "category": "product-type",
             "paper_type": "PP-White"
         },
         {
-            "path": "uploads/uploads/library/default/lib_20260414_132615_e103ef6e.png",
-            "name": "lib_20260414_132615_e103ef6e.png",
-            "uploaded_at": "2026-04-14 13:26:15",
+            "path": "uploads/uploads/library/default/lib_20260424_092511_a117f5c9.png",
+            "name": "lib_20260424_092511_a117f5c9.png",
+            "uploaded_at": "2026-04-24 09:25:11",
             "category": "product-type",
             "paper_type": "Thermal Paper"
-        },
-        {
-            "path": "uploads/uploads/library/default/lib_20260417_173153_5884563c.png",
-            "name": "lib_20260417_173153_5884563c.png",
-            "uploaded_at": "2026-04-17 17:31:53",
-            "category": "label-asset"
         }
     ],
     "id_generation": {
@@ -100,7 +100,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 5
+                "counter": 1
             },
             "sales_order": {
                 "prefix": "SO",
@@ -114,8 +114,20 @@
                 "prefix": "PLN-BAR",
                 "counter": 0
             },
-            "planning_paperroll": {
-                "prefix": "PLN-PRL",
+            "planning_pos_roll": {
+                "prefix": "PLN-POS",
+                "counter": 0
+            },
+            "planning_one_ply": {
+                "prefix": "PLN-1PL",
+                "counter": 0
+            },
+            "planning_two_ply": {
+                "prefix": "PLN-2PL",
+                "counter": 0
+            },
+            "packing": {
+                "prefix": "PKG",
                 "counter": 0
             },
             "jumbo_job": {
@@ -136,30 +148,8 @@
             },
             "barcode_job": {
                 "prefix": "BRC-BAR",
-                "counter": 1
-            },
-            "paperroll_job": {
-                "prefix": "PRL",
-                "counter": 3
-            },
-            "packing": {
-                "prefix": "PKG",
-                "counter": 0
-            },
-            "planning_pos_roll": {
-                "prefix": "PLN-POS",
-                "counter": 0
-            },
-            "planning_one_ply": {
-                "prefix": "PLN-1PL",
-                "counter": 0
-            },
-            "planning_two_ply": {
-                "prefix": "PLN-2PL",
                 "counter": 0
             }
         }
-    },
-    "tally_ip": "192.168.1.22",
-    "tally_port": 9000
+    }
 }

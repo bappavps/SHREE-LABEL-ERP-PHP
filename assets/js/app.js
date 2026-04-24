@@ -397,9 +397,35 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             cancelDesktopAutoCollapse();
         });
 
-        sidebar.addEventListener('mouseleave', function () {
+        sidebar.addEventListener('mouseleave', function (e) {
+            // Verify mouse actually left sidebar bounds (not just hovering between elements)
+            var rect = sidebar.getBoundingClientRect();
+            var x = e.clientX;
+            var y = e.clientY;
+            
+            // If mouse is still within sidebar bounds, don't trigger collapse
+            if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                return;
+            }
+            
             isSidebarHovered = false;
             scheduleDesktopAutoCollapse();
+        });
+
+        // Also handle pointerout for better cross-browser support
+        sidebar.addEventListener('pointerout', function (e) {
+            if (e.pointerType === 'mouse') {
+                var rect = sidebar.getBoundingClientRect();
+                var x = e.clientX;
+                var y = e.clientY;
+                
+                if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                    return;
+                }
+                
+                isSidebarHovered = false;
+                scheduleDesktopAutoCollapse();
+            }
         });
 
         document.addEventListener('focusin', function () {

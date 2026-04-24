@@ -164,6 +164,10 @@ function paperrollPlanningDepartmentFromJob(array $job, array $jobExtra = []): s
     ];
     foreach ($sources as $source) {
         $label = paperrollPlanningNormalizeDepartmentLabel($source);
+        // If department is 'paperroll', treat as no department (bypass)
+        if (strtolower(trim($source)) === 'paperroll') {
+            return '';
+        }
         if ($label !== '') {
             return $label;
         }
@@ -208,6 +212,11 @@ function paperrollPlanningStatusFromPhase(string $department, string $phase): st
 function paperrollPlanningJobStatusPhase($status, $timerState = '', array $jobExtra = []): string {
     $jobStatus = strtolower(trim((string)$status));
     $timer = strtolower(trim((string)$timerState));
+
+    // If department is paperroll, treat as auto-complete (bypass pending)
+    if (isset($jobExtra['department']) && strtolower(trim($jobExtra['department'])) === 'paperroll') {
+        return 'done';
+    }
 
     $hasFinishedBarcodeFlag = (int)($jobExtra['finished_barcode_flag'] ?? 0) === 1
         || trim((string)($jobExtra['finished_barcode_at'] ?? '')) !== '';
@@ -323,40 +332,49 @@ function paperrollPlanningTerminalStatusFromCandidates(array $jobs): string {
 }
 
 function paperrollPlanningNormalizeManualStatus($status, $type): string {
-    $text = trim((string)$status);
+    $text = strtolower(trim((string)$status));
     if ($text === '') {
         return 'Pending';
     }
-    $allowed = paperrollPlanningStatusOptionsForType($type);
+    $allowed = array_map('strtolower', paperrollPlanningStatusOptionsForType($type));
     foreach ($allowed as $candidate) {
-        if (strcasecmp($text, $candidate) === 0) {
-            return $candidate;
+        if ($text === strtolower($candidate)) {
+            return ucfirst($candidate);
         }
     }
-    $legacyMap = [
-        'Preparing Slitting' => 'Slitting Preparing',
-        'Preparing PosRoll' => 'PosRoll Preparing',
-        'Preparing Barcode' => 'Barcode Preparing',
-        'Preparing Printing' => 'Printing Preparing',
-        'Preparing Die Cutting' => 'Die Cutting Preparing',
-        'Preparing Packing' => 'Packing',
-        'Slitted' => 'Slitting Done',
-        'PosRoll Done' => 'PosRoll Done',
-        'Barcoded' => 'Barcode Done',
-        'Printed' => 'Printing Done',
-        'Die Cut' => 'Die Cutting Done',
-        'Packing Pause' => 'Packing',
-        'Packing Done' => 'Packed',
+    // Extended mapping for all valid backend statuses
+    $statusMap = [
+        // Completed/final statuses
+        'complete' => 'Completed',
+        'completed' => 'Completed',
+        'closed' => 'Completed',
+        'finalized' => 'Completed',
+        // Packing
+        'packing' => 'Packing',
+        'packed' => 'Packed',
+        'packing done' => 'Packed',
+        // Legacy/other
+        'preparing slitting' => 'Slitting Preparing',
+        'preparing posroll' => 'PosRoll Preparing',
+        'preparing barcode' => 'Barcode Preparing',
+        'preparing printing' => 'Printing Preparing',
+        'preparing die cutting' => 'Die Cutting Preparing',
+        'preparing packing' => 'Packing',
+        'slitted' => 'Slitting Done',
+        'posroll done' => 'PosRoll Done',
+        'barcoded' => 'Barcode Done',
+        'printed' => 'Printing Done',
+        'die cut' => 'Die Cutting Done',
+        'packing pause' => 'Packing',
     ];
-    foreach ($legacyMap as $legacy => $mapped) {
-        if (strcasecmp($text, $legacy) === 0) {
-            return $mapped;
-        }
+    if (isset($statusMap[$text])) {
+        return $statusMap[$text];
     }
-    if (paperrollPlanningIsDisplayStatus($text)) {
-        return $text;
+    if (paperrollPlanningIsDisplayStatus($status)) {
+        return $status;
     }
-    return 'Pending';
+    // Only fallback to Pending if truly unknown
+    return $text !== '' ? ucfirst($text) : 'Pending';
 }
 
 function paperrollPlanningSelectCurrentJob(array $jobs): ?array {
@@ -1079,6 +1097,52 @@ if ($_planningTypeOverride === 'one_ply') {
     $historyDepartment = 'two_ply';
     $boardPageUrl = appUrl('modules/planning/twoply/index.php');
 }
+$historyTabCount = 0;
+$historyDeptWhereSql = 'p.department = ?';
+$historyDeptTypes = 's';
+$historyDeptParams = [$historyDepartment];
+if ($historyDepartment === 'one_ply') {
+    $historyDeptWhereSql = "LOWER(COALESCE(p.department, '')) = 'paperroll' AND LOWER(JSON_UNQUOTE(JSON_EXTRACT(p.extra_data, '$.planning_type'))) = 'one_ply'";
+    $historyDeptTypes = '';
+    $historyDeptParams = [];
+} elseif ($historyDepartment === 'two_ply') {
+    $historyDeptWhereSql = "LOWER(COALESCE(p.department, '')) = 'paperroll' AND LOWER(JSON_UNQUOTE(JSON_EXTRACT(p.extra_data, '$.planning_type'))) = 'two_ply'";
+    $historyDeptTypes = '';
+    $historyDeptParams = [];
+}
+$historyArchivedStatusSql = "LOWER(TRIM(REPLACE(REPLACE(COALESCE(p.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finised barcode','packed','dispatched','complete')";
+$historyArchivedJobsSql = "EXISTS (
+    SELECT 1 FROM jobs j
+    WHERE j.planning_id = p.id
+      AND (
+        LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','packed','dispatched','complete','closed','finalized','completed','qc passed')
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_flag\":1%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_flag\":1%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_flag\":1%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"packing_packed_flag\":1%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_at\":%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_at\":%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_at\":%'
+      )
+)";
+$historyCountSql = "SELECT COUNT(*) AS total
+    FROM planning p
+    WHERE ($historyDeptWhereSql)
+      AND ($historyArchivedStatusSql OR $historyArchivedJobsSql)";
+$historyCountStmt = $db->prepare($historyCountSql);
+if ($historyCountStmt) {
+    if ($historyDeptTypes !== '' && !empty($historyDeptParams)) {
+        $historyCountStmt->bind_param($historyDeptTypes, ...$historyDeptParams);
+    }
+    if ($historyCountStmt->execute()) {
+        $historyCountResult = $historyCountStmt->get_result();
+        if ($historyCountResult) {
+            $historyCountRow = $historyCountResult->fetch_assoc();
+            $historyTabCount = (int)($historyCountRow['total'] ?? 0);
+        }
+    }
+    $historyCountStmt->close();
+}
 $statusOptions = paperrollPlanningStatusOptionsForType($defaultPlanningType);
 $defaultStatus = 'Pending';
 $priorityOptions = barcodePlanningPriorityOptions();
@@ -1354,7 +1418,7 @@ include __DIR__ . '/../../../includes/header.php';
 
 <div class="planning-view-switch">
     <a href="<?= e($boardPageUrl) ?>" class="planning-view-link is-active"><i class="bi bi-grid-1x2"></i> Board</a>
-    <a href="<?= e(appUrl('modules/planning/history.php?department=' . rawurlencode($historyDepartment))) ?>" class="planning-view-link"><i class="bi bi-clock-history"></i> History</a>
+    <a href="<?= e(appUrl('modules/planning/history.php?department=' . rawurlencode($historyDepartment))) ?>" class="planning-view-link"><i class="bi bi-clock-history"></i> History <span class="planning-tab-counter"><?= (int)$historyTabCount ?></span></a>
 </div>
 
 <style>
@@ -1363,6 +1427,7 @@ include __DIR__ . '/../../../includes/header.php';
 .planning-view-link{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid #dbe7ef;border-radius:10px;background:#fff;color:#334155;font-size:.8rem;font-weight:700;text-decoration:none}
 .planning-view-link:hover{border-color:#93c5fd;color:#1d4ed8}
 .planning-view-link.is-active{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+.planning-tab-counter{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:#e2e8f0;color:#334155;font-size:.72rem;font-weight:800;line-height:1}
 .planning-grid > div {
     background: #fffde7 !important; /* default yellow */
     position: relative;

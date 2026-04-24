@@ -2477,7 +2477,7 @@ function prefixSettingsDefaults() {
                 'sales_order' => ['prefix' => 'SO', 'counter' => 0],
                 'planning' => ['prefix' => 'PLN', 'counter' => 0],
                 'planning_barcode' => ['prefix' => 'PLN-BAR', 'counter' => 0],
-                'planning_paperroll' => ['prefix' => 'PLN-PRL', 'counter' => 0],
+                // 'planning_paperroll' removed to disable PaperRoll Planning jobs
                 'planning_pos_roll' => ['prefix' => 'PLN-POS', 'counter' => 0],
                 'planning_one_ply' => ['prefix' => 'PLN-1PL', 'counter' => 0],
                 'planning_two_ply' => ['prefix' => 'PLN-2PL', 'counter' => 0],
@@ -2487,7 +2487,7 @@ function prefixSettingsDefaults() {
                 'die_cutting_job' => ['prefix' => 'DCT', 'counter' => 0],
                 'label_slitting_job' => ['prefix' => 'LSL', 'counter' => 0],
                 'barcode_job' => ['prefix' => 'BRC-BAR', 'counter' => 0],
-                'paperroll_job' => ['prefix' => 'PRL', 'counter' => 0],
+                // 'paperroll_job' => ['prefix' => 'PRL', 'counter' => 0],
             ],
         ],
     ];

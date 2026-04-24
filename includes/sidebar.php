@@ -92,8 +92,6 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
             <?= navSubItem('/modules/planning/twoply/index.php',         '2 Ply Planning',  $currentFile, [], 'nav-sub-item-nested', 'layers') ?>
             <?= navSubItem('/modules/planning/label-slitting/index.php', 'Label Slitting',  $currentFile, [], 'nav-sub-item-nested', 'layout-split') ?>
             <?= navSubItem('/modules/planning/batch/index.php',          'Batch Printing',  $currentFile, [], 'nav-sub-item-nested', 'stack') ?>
-            <?= navSubItem('/modules/planning/packing/index.php',        'Packaging',       $currentFile, [], 'nav-sub-item-nested', 'box') ?>
-            <?= navSubItem('/modules/planning/dispatch/index.php',       'Dispatch',        $currentFile, [], 'nav-sub-item-nested', 'truck') ?>
           </div>
         </div>
       </div>

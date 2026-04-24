@@ -134,7 +134,9 @@ function planning_department_options() {
     'printing',
     'die-cutting',
     'barcode',
-    'paperroll',
+    'pos-roll',
+    'one-ply',
+    'two-ply',
     'label-slitting',
     'batch-printing',
     'packaging',
@@ -150,7 +152,9 @@ function planning_department_label($department) {
     'printing' => 'Printing',
     'die-cutting' => 'Die-Cutting',
     'barcode' => 'Barcode',
-    'paperroll' => 'PaperRoll',
+    'pos-roll' => 'PosRoll',
+    'one-ply' => '1Ply',
+    'two-ply' => '2Ply',
     'label-slitting' => 'Label Slitting',
     'batch-printing' => 'Batch Printing',
     'packaging' => 'Packaging',
@@ -1186,6 +1190,39 @@ $planningStatusTransitionMap = planning_status_transition_map();
 $boardUrl = appUrl('modules/planning/index.php?department=' . rawurlencode($department));
 $historyUrl = appUrl('modules/planning/history.php?department=' . rawurlencode($department));
 
+$historyTabCount = 0;
+$historyArchivedStatusSql = "LOWER(TRIM(REPLACE(REPLACE(COALESCE(p.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finised barcode','packed','dispatched','complete')";
+$historyArchivedJobsSql = "EXISTS (
+    SELECT 1 FROM jobs j
+    WHERE j.planning_id = p.id
+      AND (
+        LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','packed','dispatched','complete','closed','finalized','completed','qc passed')
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_flag\":1%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_flag\":1%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_flag\":1%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"packing_packed_flag\":1%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_at\":%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_at\":%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_at\":%'
+      )
+)";
+$historyCountSql = "SELECT COUNT(*) AS total
+    FROM planning p
+    WHERE p.department = ?
+      AND ($historyArchivedStatusSql OR $historyArchivedJobsSql)";
+$historyCountStmt = $db->prepare($historyCountSql);
+if ($historyCountStmt) {
+    $historyCountStmt->bind_param('s', $department);
+    if ($historyCountStmt->execute()) {
+        $historyCountResult = $historyCountStmt->get_result();
+        if ($historyCountResult) {
+            $historyCountRow = $historyCountResult->fetch_assoc();
+            $historyTabCount = (int)($historyCountRow['total'] ?? 0);
+        }
+    }
+    $historyCountStmt->close();
+}
+
 // Granular permissions: admin always gets full access
 $canAdd    = currentPageAction('add');
 $canEdit   = currentPageAction('edit');
@@ -1202,7 +1239,7 @@ include __DIR__ . '/../../includes/header.php';
 
 <div class="planning-view-switch">
   <a href="<?= e($boardUrl) ?>" class="planning-view-link is-active"><i class="bi bi-grid-1x2"></i> Board</a>
-  <a href="<?= e($historyUrl) ?>" class="planning-view-link"><i class="bi bi-clock-history"></i> History</a>
+  <a href="<?= e($historyUrl) ?>" class="planning-view-link"><i class="bi bi-clock-history"></i> History <span class="planning-tab-counter"><?= (int)$historyTabCount ?></span></a>
 </div>
 
 <div class="page-header">
@@ -3559,6 +3596,7 @@ include __DIR__ . '/../../includes/header.php';
   border-color: #bfdbfe;
   color: #1d4ed8;
 }
+.planning-tab-counter{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:#e2e8f0;color:#334155;font-size:.72rem;font-weight:800;line-height:1}
 .planning-board-wrap { max-height: 74vh; overflow: auto; }
 .planning-board-table { min-width: 1700px; }
 .planning-board-table th,

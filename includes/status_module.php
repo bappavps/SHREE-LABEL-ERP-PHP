@@ -569,6 +569,14 @@ function erp_status_visual_label($status): string {
     if (in_array($norm, ['packed', 'packing done', 'packing_done', 'ready to dispatch', 'ready to dispatched', 'ready to dispathce'], true)) {
         return 'Packed';
     }
+    // Special handling for packing context: if called from packing/index.php and not packed, show 'Packing'
+    $isPackingContext = false;
+    if (isset($_SERVER['SCRIPT_NAME']) && strpos($_SERVER['SCRIPT_NAME'], '/modules/packing/index.php') !== false) {
+        $isPackingContext = true;
+    }
+    if ($isPackingContext && in_array($norm, ['completed', 'complete', 'closed', 'finalized', 'qc passed', 'qc_passed'], true)) {
+        return 'Packing';
+    }
     if (in_array($norm, ['completed', 'complete', 'closed', 'finalized', 'qc passed', 'qc_passed'], true)) {
         return 'Completed';
     }

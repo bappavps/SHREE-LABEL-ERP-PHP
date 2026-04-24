@@ -783,15 +783,173 @@ foreach ($planExtraArr as $k => $v) {
 
 // Last job status for dispatch inference
 $lastJob = !empty($chain) ? end($chain) : null;
-$chainDone = $lastJob && in_array(strtolower($lastJob['status'] ?? ''), ['completed','qc passed','finalized','closed'], true);
 
-// Stage progress state
+function dos_normalize_status(string $sts): string {
+    return strtolower(trim(str_replace(['-', '_'], ' ', $sts)));
+}
+
+function dos_is_terminal_status(string $sts): bool {
+    $s = dos_normalize_status($sts);
+    return in_array($s, ['completed', 'qc passed', 'finalized', 'closed', 'finished', 'finished production', 'finished barcode', 'packed', 'dispatched'], true);
+}
+
 function dos_stepState(string $sts): string {
-    $s = strtolower(trim($sts));
-    if (in_array($s, ['completed','finalized','closed','qc passed'], true)) return 'done';
+    $s = dos_normalize_status($sts);
+    if (dos_is_terminal_status($sts)) return 'done';
     if ($s === 'qc failed') return 'failed';
-    if (in_array($s, ['running','in progress'], true)) return 'active';
+    if (in_array($s, ['running', 'in progress', 'processing'], true)) return 'active';
     return 'pending';
+}
+
+function dos_job_is_completed(array $job): bool {
+    $status = (string)($job['status'] ?? '');
+    if (dos_is_terminal_status($status)) {
+        return true;
+    }
+
+    $completedAt = trim((string)($job['completed_at'] ?? ''));
+    if ($completedAt !== '' && $completedAt !== '0000-00-00 00:00:00') {
+        return true;
+    }
+
+    $extra = $job['_extra'] ?? [];
+    if (!is_array($extra)) {
+        $extra = [];
+    }
+
+    $deptNorm = dos_normalize_status((string)($job['department'] ?? ''));
+    $typeNorm = dos_normalize_status((string)($job['job_type'] ?? ''));
+    $isPaperrollStage = ($deptNorm === 'paperroll' || $typeNorm === 'paperroll');
+
+    if ($isPaperrollStage) {
+      $assignedChildRollCount = (int)(
+        $extra['assigned_child_roll_count']
+        ?? $extra['assigned_child_rolls_count']
+        ?? $extra['child_roll_count']
+        ?? 0
+      );
+      $assignedLastBatchNo = trim((string)(
+        $extra['assigned_last_batch_no']
+        ?? $extra['last_batch_no']
+        ?? $extra['batch_no']
+        ?? ''
+      ));
+      $directBypass = $extra['direct_paperroll_bypass'] ?? null;
+      $isDirectBypass = (
+        $directBypass === 1
+        || $directBypass === '1'
+        || $directBypass === true
+        || $directBypass === 'true'
+        || in_array(strtolower(trim((string)$directBypass)), ['yes', 'y', 'on'], true)
+      );
+      if ($assignedChildRollCount > 0 || $assignedLastBatchNo !== '' || $isDirectBypass) {
+        return true;
+      }
+    }
+
+    foreach (['finished_production_flag', 'finished_barcode_flag', 'packing_done_flag', 'packing_packed_flag', 'auto_created_from_slitting'] as $flagKey) {
+        $flagVal = $extra[$flagKey] ?? null;
+        if ($flagVal === 1 || $flagVal === '1' || $flagVal === true || $flagVal === 'true') {
+            return true;
+        }
+    }
+
+    $timerState = dos_normalize_status((string)($extra['timer_state'] ?? ''));
+    if ($timerState === 'completed') {
+        return true;
+    }
+
+    return false;
+}
+
+$effectiveStatusByJobId = [];
+$effectiveStateByJobId = [];
+$effectiveDoneByJobId = [];
+$chainDone = false;
+
+if (!empty($chain)) {
+    $jobById = [];
+    $childrenByParentId = [];
+    $baseDoneByJobId = [];
+
+    foreach ($chain as $jobRow) {
+        $jobId = (int)($jobRow['id'] ?? 0);
+        if ($jobId <= 0) {
+            continue;
+        }
+        $jobById[$jobId] = $jobRow;
+        $parentId = (int)($jobRow['previous_job_id'] ?? 0);
+        if ($parentId > 0) {
+            if (!isset($childrenByParentId[$parentId])) {
+                $childrenByParentId[$parentId] = [];
+            }
+            $childrenByParentId[$parentId][] = $jobId;
+        }
+        $baseDoneByJobId[$jobId] = dos_job_is_completed($jobRow);
+    }
+
+    $hasCompletedOutputDescendant = function (int $jobId, array $visited = []) use (&$hasCompletedOutputDescendant, $childrenByParentId, $jobById, $baseDoneByJobId): bool {
+        if (isset($visited[$jobId])) {
+            return false;
+        }
+        $visited[$jobId] = true;
+        $childIds = $childrenByParentId[$jobId] ?? [];
+        foreach ($childIds as $childId) {
+            $child = $jobById[$childId] ?? null;
+            if (!$child) {
+                continue;
+            }
+            $childDept = dos_normalize_status((string)($child['department'] ?? ''));
+            $childType = dos_normalize_status((string)($child['job_type'] ?? ''));
+            // Output departments: pos, pos_roll, paperroll, one_ply, two_ply (plus variants)
+            $isOutputDepartment = in_array($childDept, ['pos', 'pos roll', 'paperroll', 'one ply', 'two ply'], true)
+                || in_array($childType, ['pos', 'pos roll', 'paperroll', 'one ply', 'two ply'], true)
+                || strpos($childDept, 'pos') === 0 || strpos($childType, 'pos') === 0;
+            if ($isOutputDepartment && !empty($baseDoneByJobId[$childId])) {
+                return true;
+            }
+            if ($hasCompletedOutputDescendant($childId, $visited)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    foreach ($chain as $jobRow) {
+        $jobId = (int)($jobRow['id'] ?? 0);
+        if ($jobId <= 0) {
+            continue;
+        }
+        $rawStatus = trim((string)($jobRow['status'] ?? ''));
+        $done = !empty($baseDoneByJobId[$jobId]);
+
+        $deptNorm = dos_normalize_status((string)($jobRow['department'] ?? ''));
+        $typeNorm = dos_normalize_status((string)($jobRow['job_type'] ?? ''));
+        $isPaperrollStage = ($deptNorm === 'paperroll' || $typeNorm === 'paperroll');
+        if (!$done && $isPaperrollStage && $hasCompletedOutputDescendant($jobId)) {
+            $done = true;
+            $rawStatus = 'Completed';
+        }
+
+        // If effective completion is true but stored status is still non-terminal
+        // (e.g., Pending/Running), show a terminal status in dossier UI.
+        if ($done) {
+          $rawNorm = dos_normalize_status($rawStatus);
+          if ($rawNorm === '' || in_array($rawNorm, ['pending', 'queued', 'running', 'in progress', 'processing'], true)) {
+            $rawStatus = 'Completed';
+          }
+        }
+
+        if ($rawStatus === '') {
+            $rawStatus = $done ? 'Completed' : 'Pending';
+        }
+
+        $effectiveStatusByJobId[$jobId] = $rawStatus;
+        $effectiveStateByJobId[$jobId] = $done ? 'done' : dos_stepState($rawStatus);
+        $effectiveDoneByJobId[$jobId] = $done;
+    }
+
+    $chainDone = !empty($effectiveDoneByJobId) && count(array_filter($effectiveDoneByJobId)) === count($effectiveDoneByJobId);
 }
 ?>
 
@@ -850,7 +1008,13 @@ function dos_stepState(string $sts): string {
         $steps[] = ['label' => 'Planning', 'icon' => 'bi-clipboard2-check', 'status' => $planStatus ?: 'Completed', 'state' => $planStatus ? dos_stepState($planStatus) : 'done'];
     }
     foreach ($chain as $idx => $cj) {
-        $steps[] = ['label' => dos_deptLabel($cj), 'icon' => dos_deptIcon($cj), 'status' => $cj['status'], 'state' => dos_stepState($cj['status'])];
+        $jobId = (int)($cj['id'] ?? 0);
+        $stepStatus = $effectiveStatusByJobId[$jobId] ?? trim((string)($cj['status'] ?? 'Pending'));
+        if ($stepStatus === '') {
+            $stepStatus = 'Pending';
+        }
+        $stepState = $effectiveStateByJobId[$jobId] ?? dos_stepState($stepStatus);
+        $steps[] = ['label' => dos_deptLabel($cj), 'icon' => dos_deptIcon($cj), 'status' => $stepStatus, 'state' => $stepState];
     }
     $steps[] = ['label' => 'QC', 'icon' => 'bi-patch-check', 'status' => $qcStatus ?: 'Pending', 'state' => $qcStatus ? dos_stepState($qcStatus) : 'pending'];
     $steps[] = ['label' => 'Dispatch', 'icon' => 'bi-truck', 'status' => $chainDone ? 'Ready' : 'Pending', 'state' => $chainDone ? 'done' : 'pending'];
@@ -967,7 +1131,8 @@ function dos_stepState(string $sts): string {
 <!-- ═══ PRODUCTION STAGES (one per job in chain) ════════════ -->
 <?php foreach ($chain as $stageIdx => $job):
   $extra = $job['_extra'];
-  $sts   = (string)($job['status'] ?? 'Pending');
+  $jobId = (int)($job['id'] ?? 0);
+  $sts   = (string)($effectiveStatusByJobId[$jobId] ?? ($job['status'] ?? 'Pending'));
   [$bgC, $txC, $dtC] = dos_statusColor($sts);
   $deptLabel = dos_deptLabel($job);
   $deptIcon  = dos_deptIcon($job);
@@ -1259,7 +1424,7 @@ function dos_stepState(string $sts): string {
 <!-- ─── PHYSICAL JOB CARD for this stage ─────────────────── -->
 <?php
   $jcExtra  = $job['_extra'];
-  $jcSts    = (string)($job['status'] ?? 'Pending');
+  $jcSts    = (string)($effectiveStatusByJobId[$jobId] ?? ($job['status'] ?? 'Pending'));
   [$jcBg, $jcTx, $jcDt] = dos_statusColor($jcSts);
   $jcDeptLabel = dos_deptLabel($job);
   $jcDeptIcon  = dos_deptIcon($job);
@@ -1568,7 +1733,10 @@ $dispatchNotes  = trim((string)(json_decode((string)($planning['extra_data'] ?? 
 <!-- ═══ SUMMARY STATS ═══════════════════════════════════════ -->
 <?php
 $totalDuration = array_sum(array_column($chain, 'duration_minutes'));
-$completedStages = count(array_filter($chain, fn($j) => in_array(strtolower($j['status']), ['completed','finalized','closed','qc passed'], true)));
+$completedStages = count(array_filter($chain, function ($j) use ($effectiveDoneByJobId) {
+    $jobId = (int)($j['id'] ?? 0);
+    return !empty($effectiveDoneByJobId[$jobId]);
+}));
 ?>
 <div class="ds-card" style="margin-top:8px">
   <div class="ds-card-title"><i class="bi bi-bar-chart-fill"></i> Production Summary</div>

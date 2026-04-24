@@ -22,7 +22,7 @@ $planningPageRoutes = [
       'url' => appUrl('/modules/planning/barcode/index.php'),
     ],
     'paperroll' => [
-      'label' => 'PaperRoll',
+      'label' => 'PosRoll/1Ply/2Ply',
       'url' => appUrl('/modules/planning/paperroll/index.php'),
     ],
     'label-slitting' => [
