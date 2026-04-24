@@ -4885,8 +4885,8 @@ try {
             ) latest ON latest.max_id = j.id
             WHERE (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')
                 AND (
-                    j.job_type IN ('Slitting','Jumbo','Printing','Finishing','POS','Paperroll','OnePly','TwoPly','Packing')
-                    OR LOWER(COALESCE(j.department, '')) IN ('jumbo_slitting','pos','paperroll','oneply','twoply','packing')
+                    j.job_type IN ('Slitting','Jumbo','Printing','Finishing','POS','Paperroll','OnePly','TwoPly','Packing','Barcode','LabelSlitting','DieCutting')
+                    OR LOWER(COALESCE(j.department, '')) IN ('jumbo_slitting','pos','paperroll','oneply','twoply','packing','barcode','rotery','rotary','label_slitting','die_cutting','flatbed')
                 )
             ORDER BY j.id DESC
             LIMIT ?
@@ -4991,6 +4991,78 @@ try {
                 $sanitizedJobs[] = $packingJob;
             }
         }
+
+        // ─── Planning rows that have NO linked active job yet ───────────
+        // Collects the planning_ids already represented in sanitizedJobs
+        $coveredPlanningIds = [];
+        foreach ($sanitizedJobs as $sj) {
+            $spid = (int)($sj['planning_id'] ?? 0);
+            if ($spid > 0) {
+                $coveredPlanningIds[$spid] = true;
+            }
+        }
+
+        $planOnlySql = "SELECT p.id, p.job_no, p.job_name, p.status, p.priority,
+                               p.created_at, p.scheduled_date, p.extra_data, p.department
+                        FROM planning p
+                        LEFT JOIN jobs j ON j.planning_id = p.id
+                            AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')
+                        WHERE j.id IS NULL
+                        ORDER BY p.created_at DESC
+                        LIMIT ?";
+        $planOnlyStmt = $db->prepare($planOnlySql);
+        $planOnlyStmt->bind_param('i', $limit);
+        $planOnlyStmt->execute();
+        $planOnlyRows = $planOnlyStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+        foreach ($planOnlyRows as $p) {
+            $ppid = (int)($p['id'] ?? 0);
+            if (isset($coveredPlanningIds[$ppid])) continue;
+
+            $planningExtra = json_decode((string)($p['extra_data'] ?? '{}'), true) ?: [];
+            $planStatus = trim((string)($p['status'] ?? '')) !== '' ? (string)$p['status'] : 'Pending';
+            $planJobNo  = (string)($p['job_no'] ?? '');
+            $sanitizedJobs[] = [
+                'id'                    => 'plan-' . $ppid,
+                'planning_id'           => $ppid,
+                'job_no'                => $planJobNo,
+                'status'                => $planStatus,
+                'job_type'              => 'Planning',
+                'department'            => 'planning',
+                'planning_id'           => $ppid,
+                'roll_no'               => '',
+                'paper_type'            => '',
+                'company'               => '',
+                'width_mm'              => null,
+                'length_mtr'            => null,
+                'gsm'                   => null,
+                'weight_kg'             => null,
+                'roll_status'           => '',
+                'planning_job_name'     => (string)($p['job_name'] ?? $planJobNo),
+                'planning_status'       => $planStatus,
+                'planning_priority'     => trim((string)($p['priority'] ?? '')) !== '' ? (string)$p['priority'] : 'Normal',
+                'planning_created_at'   => (string)($p['created_at'] ?? ''),
+                'planning_scheduled_date' => (string)($p['scheduled_date'] ?? ''),
+                'planning_extra_data'   => (string)($p['extra_data'] ?? '{}'),
+                'prev_job_no'           => '',
+                'prev_job_status'       => '',
+                'pending_change_requests' => 0,
+                'extra_data'            => '{}',
+                'extra_data_parsed'     => [],
+                'created_at'            => (string)($p['created_at'] ?? ''),
+                'started_at'            => null,
+                'completed_at'          => null,
+                'deleted_at'            => null,
+                'previous_job_id'       => 0,
+                // Planning extra fields for routing / stage inference
+                'planning_die'          => trim((string)($planningExtra['die'] ?? '')),
+                'planning_image_path'   => jobs_pick_planning_image($planningExtra),
+                'planning_image_url'    => jobs_join_base_url(jobs_pick_planning_image($planningExtra)),
+                'planning_job_date'     => jobs_first_non_empty($planningExtra, ['job_date','date'], (string)($p['scheduled_date'] ?? '')),
+                'printing_planning'     => trim((string)($planningExtra['printing_planning'] ?? '')),
+            ];
+        }
+
         echo json_encode(['ok' => true, 'jobs' => $sanitizedJobs]);
         break;
 

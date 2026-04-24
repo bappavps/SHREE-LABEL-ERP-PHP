@@ -1019,7 +1019,12 @@ function inferPlannedStageKeys(base, stageMap, actualJobs){
     if(has('pos') || planningStatus.includes('pos') || planningStatus.includes('finished barcode') || planningStatus.includes('barcode') || (!has('print') && !has('barcode') && !has('die') && actualJobs.length > 0)) add('pos');
     // Do NOT add barcode for paperroll/PRL jobs
   }else{
-    if(!directFlexoBypass && (has('print') || planningStatus.includes('printing') || has('die') || has('barcode') || has('lsl'))){
+    // Print stage is only included if:
+    // - an actual print job exists, OR
+    // - planning status explicitly mentions printing, OR
+    // - die/lsl stages exist (they require printing upstream)
+    // NOTE: barcode alone does NOT imply flexo printing (barcode-only flow is valid).
+    if(!directFlexoBypass && (has('print') || planningStatus.includes('printing') || has('die') || has('lsl'))){
       add('print');
     }
 
@@ -1156,7 +1161,7 @@ function buildLiveCard(rows){
         currentKey = 'pack';
         activeJob = packingJob;
       } else if ([
-        'packed','packing done','finalized','closed','completed','dispatched','delivered'
+        'packed','packing done','finalized','closed','completed','dispatched','delivered','finished production','finished barcode'
       ].includes(s)) {
         // Packing is done, move to next logical stage
         // Find first non-done stage after 'pack'
@@ -1183,13 +1188,25 @@ function buildLiveCard(rows){
       }
     }
   } else {
-    // No packing job, use default logic
-    for(let i=actualJobs.length-1;i>=0;i--){
-      const job = actualJobs[i];
-      if(!isDoneStatus(job.status||'')){
-        activeJob = job;
-        currentKey = getStageKeyForJob(job);
+    // No packing job, use default logic.
+    // 1) Prefer any actively running/started job.
+    // 2) Fall back to the FIRST non-done job in workflow order (the real bottleneck).
+    for(let i=0;i<actualJobs.length;i++){
+      const s = normStatus(actualJobs[i].status||'');
+      if(s === 'running' || s === 'started' || s === 'in progress'){
+        activeJob = actualJobs[i];
+        currentKey = getStageKeyForJob(activeJob);
         break;
+      }
+    }
+    if(!activeJob){
+      for(let i=0;i<actualJobs.length;i++){
+        const job = actualJobs[i];
+        if(!isDoneStatus(job.status||'')){
+          activeJob = job;
+          currentKey = getStageKeyForJob(job);
+          break;
+        }
       }
     }
     if(!activeJob && actualJobs.length > 0){
@@ -1205,10 +1222,9 @@ function buildLiveCard(rows){
       }
     }
     if(activeJob){
-      const activeKey = getStageKeyForJob(activeJob);
-      if(stageIndex(planningKey) > stageIndex(activeKey) && pathKeys.includes(planningKey)){
-        currentKey = planningKey;
-      }
+      // Trust the actual active job's stage. planningKey indicates the job's
+      // intended destination/type, NOT the current active stage when real jobs exist.
+      // Do NOT override currentKey with planningKey here.
     }
     if(actualJobs.length === 0){
       currentKey = planningKey || 'planning';
@@ -1228,18 +1244,21 @@ function buildLiveCard(rows){
       let stageJob = stageMap.get(key) || null;
       let state = 'later';
       if(index < currentIndex) state = 'done';
+      else if(index === currentIndex && key === 'finished_production') state = 'done'; // terminal — always green tick
       else if(index === currentIndex && stageJob) state = 'now';
-      else if(index === currentIndex && key === 'finished_production' && !stageJob) state = 'now';
       if(actualJobs.length === 0 && key === 'planning') state = 'now';
 
-      if (hasFinishedProductionEvidence && key === 'finished_production') {
+      if (hasFinishedProductionEvidence && key === 'finished_production' && index !== currentIndex) {
         state = 'done';
       }
 
       let stageStatus = meta.label;
 
-      // --- POS Roll: Always force completed if packing exists ---
-      if(key === 'pos') {
+      // Finished Production: always green done when evidence exists
+      if (key === 'finished_production' && hasFinishedProductionEvidence) {
+        stageStatus = 'Finished Production';
+        state = 'done';
+      } else if(key === 'pos') {
         if (packingJob || hasCompletedPosOutput || hasPaperrollConsumption || stageMap.has('barcode') || stageMap.has('lsl') || stageMap.has('pack')) {
           // POS is completed if packing/downstream exists or any POS-family output is completed.
           stageStatus = 'Completed';
@@ -1251,9 +1270,6 @@ function buildLiveCard(rows){
       // --- End POS Roll override ---
       else if(key === 'planning'){
         stageStatus = state === 'done' ? 'Planned' : planningLabel;
-      } else if(key === 'finished_production' && hasFinishedProductionEvidence) {
-        stageStatus = 'Finished Production';
-        state = 'done';
       } else if(stageJob) {
         // --- Packing stage logic: Packing job status is the only authority ---
         if(key === 'pack') {

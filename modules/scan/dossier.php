@@ -213,28 +213,71 @@ if ($jn === '') {
     $st->execute();
     $scannedJob = $st->get_result()->fetch_assoc();
 
+    // 1b. Fallback: PLN-* job numbers live in the planning table, not jobs table.
+    //     Look it up there and build a synthetic job so the dossier can render.
+    if (!$scannedJob && preg_match('/^PLN-/i', $jn)) {
+        $stPlan = $db->prepare('SELECT * FROM planning WHERE job_no = ? LIMIT 1');
+        $stPlan->bind_param('s', $jn);
+        $stPlan->execute();
+        $planRow = $stPlan->get_result()->fetch_assoc();
+        if ($planRow) {
+            // Treat the planning row itself as a synthetic job so the chain renders
+            $scannedJob = [
+                'id'              => 0,
+                'job_no'          => (string)($planRow['job_no'] ?? $jn),
+                'job_type'        => 'Planning',
+                'department'      => (string)($planRow['department'] ?? 'planning'),
+                'status'          => (string)($planRow['status'] ?? 'Pending'),
+                'planning_id'     => (int)($planRow['id'] ?? 0),
+                'roll_no'         => '',
+                'sequence_order'  => 0,
+                'previous_job_id' => 0,
+                'extra_data'      => (string)($planRow['extra_data'] ?? '{}'),
+                'notes'           => (string)($planRow['notes'] ?? ''),
+                'created_at'      => (string)($planRow['created_at'] ?? ''),
+                'started_at'      => null,
+                'completed_at'    => null,
+                'deleted_at'      => null,
+                '_is_planning_only' => true,
+            ];
+            // Load the planning record directly
+            $planning    = $planRow;
+            $planningId  = (int)($planRow['id'] ?? 0);
+            // chain = empty for planning-only dossier
+            $chain = [];
+        }
+    }
+
     if (!$scannedJob) {
         $error = 'Job card not found: ' . htmlspecialchars($jn, ENT_QUOTES);
     } else {
-        // 2. Walk UP to chain root
-        $root  = dos_find_root($db, $scannedJob);
-        $chain = dos_get_chain($db, (int)$root['id']);
+        // For planning-only rows (PLN-* with no linked job), skip chain building.
+        $isPlanningOnly = !empty($scannedJob['_is_planning_only']);
 
-        // 3. Also include sibling jobs sharing same planning_id (not already captured)
-        $planningId = (int)($root['planning_id'] ?? 0);
-        if ($planningId > 0) {
-            $inIds = array_map(fn($j) => (int)$j['id'], $chain);
-            $ph = implode(',', array_fill(0, count($inIds), '?'));
-            $ts = str_repeat('i', count($inIds));
-            $st2 = $db->prepare("SELECT * FROM jobs WHERE planning_id = ? AND id NOT IN ($ph) AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY sequence_order ASC, created_at ASC");
-            $params = array_merge([$planningId], $inIds);
-            $types  = 'i' . $ts;
-            $st2->bind_param($types, ...$params);
-            $st2->execute();
-            foreach ($st2->get_result()->fetch_all(MYSQLI_ASSOC) as $sibling) {
-                $chain[] = $sibling;
+        // 2. Walk UP to chain root (skip for planning-only rows)
+        if ($isPlanningOnly) {
+            $planningId = (int)($scannedJob['planning_id'] ?? 0);
+            // $chain is already [] and $planning already loaded in fallback above
+        } else {
+            $root  = dos_find_root($db, $scannedJob);
+            $chain = dos_get_chain($db, (int)$root['id']);
+
+            // 3. Also include sibling jobs sharing same planning_id (not already captured)
+            $planningId = (int)($root['planning_id'] ?? 0);
+            if ($planningId > 0) {
+                $inIds = array_map(fn($j) => (int)$j['id'], $chain);
+                $ph = implode(',', array_fill(0, count($inIds), '?'));
+                $ts = str_repeat('i', count($inIds));
+                $st2 = $db->prepare("SELECT * FROM jobs WHERE planning_id = ? AND id NOT IN ($ph) AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') ORDER BY sequence_order ASC, created_at ASC");
+                $params = array_merge([$planningId], $inIds);
+                $types  = 'i' . $ts;
+                $st2->bind_param($types, ...$params);
+                $st2->execute();
+                foreach ($st2->get_result()->fetch_all(MYSQLI_ASSOC) as $sibling) {
+                    $chain[] = $sibling;
+                }
             }
-        }
+        } // end non-planning-only chain building
 
         // 4. Sort chain: by sequence_order then created_at
         usort($chain, function($a, $b) {
@@ -357,6 +400,9 @@ if ($jn === '') {
 $jobName = '';
 if (!empty($chain)) {
     $jobName = trim((string)($planning['job_name'] ?? ($chain[0]['_extra']['job_name'] ?? '')));
+    if ($jobName === '') $jobName = $jn;
+} elseif ($planning) {
+    $jobName = trim((string)($planning['job_name'] ?? ''));
     if ($jobName === '') $jobName = $jn;
 }
 
