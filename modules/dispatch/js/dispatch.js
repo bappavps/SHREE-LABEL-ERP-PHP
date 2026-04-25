@@ -12,6 +12,7 @@
     rows: [],
     filteredRows: [],
     batchRows: [],
+    cartonRatio: 0,
     activeModuleTab: 'operations',
     activeInsightTab: 'pos',
     lastItemInsightHash: '',
@@ -87,10 +88,14 @@
     clientName: document.getElementById('dsClientName'),
     itemName: document.getElementById('dsItemName'),
     packingId: document.getElementById('dsPackingId'),
+    packingSearchBtn: document.getElementById('dsPackingSearchBtn'),
+    packingIdSuggestions: document.getElementById('dsPackingIdSuggestions'),
     batchNo: document.getElementById('dsBatchNo'),
     size: document.getElementById('dsSize'),
     availableQty: document.getElementById('dsAvailableQty'),
+    availableCarton: document.getElementById('dsAvailableCarton'),
     dispatchQty: document.getElementById('dsDispatchQty'),
+    dispatchCarton: document.getElementById('dsDispatchCarton'),
     loadBatchesBtn: document.getElementById('dsLoadBatchesBtn'),
     batchTableBody: document.getElementById('dsBatchTableBody'),
     batchTotal: document.getElementById('dsBatchTotal'),
@@ -379,8 +384,129 @@
         nodes.unit.value = res.row.unit || nodes.unit.value;
         nodes.availableQty.value = res.row.quantity || nodes.availableQty.value;
         loadBatches();
+        syncUnitInputMode();
       });
+    } else if (String(nodes.packingId.value || '').trim() !== '') {
+      prefillByPackingId(true);
     }
+
+    syncUnitInputMode();
+    updateCartonFields();
+  }
+
+  function renderPackingIdSuggestions(rows) {
+    if (!nodes.packingIdSuggestions) {
+      return;
+    }
+    var list = Array.isArray(rows) ? rows : [];
+    var html = '';
+    for (var i = 0; i < list.length; i += 1) {
+      var r = list[i] || {};
+      var packingId = String(r.packing_id || '').trim();
+      if (!packingId) {
+        continue;
+      }
+      var itemName = String(r.item_name || '').trim();
+      var qty = fmt(r.available_qty || 0);
+      var label = packingId + (itemName ? ' | ' + itemName : '') + ' | Avl: ' + qty;
+      html += '<option value="' + esc(packingId) + '" label="' + esc(label) + '"></option>';
+    }
+    nodes.packingIdSuggestions.innerHTML = html;
+  }
+
+  function updateCartonFields() {
+    var ratio = state.cartonRatio || 0;
+    if (ratio <= 0) {
+      if (nodes.availableCarton) { nodes.availableCarton.value = ''; }
+      if (nodes.dispatchCarton) { nodes.dispatchCarton.value = ''; }
+      return;
+    }
+    var avail = parseFloat(nodes.availableQty.value || 0);
+    var disp = parseFloat(nodes.dispatchQty.value || 0);
+    if (nodes.availableCarton) {
+      nodes.availableCarton.value = avail > 0 ? (avail / ratio).toFixed(2) : '';
+    }
+    if (nodes.dispatchCarton) {
+      nodes.dispatchCarton.value = disp > 0 ? (disp / ratio).toFixed(2) : '';
+    }
+  }
+
+  function syncDispatchQtyFromCarton() {
+    var ratio = state.cartonRatio || 0;
+    var carton = num(nodes.dispatchCarton ? nodes.dispatchCarton.value : 0);
+    if (ratio <= 0 || carton <= 0) {
+      nodes.dispatchQty.value = '';
+      return;
+    }
+    nodes.dispatchQty.value = String(Number((carton * ratio).toFixed(3)));
+  }
+
+  function syncUnitInputMode() {
+    var isCarton = String(nodes.unit.value || 'PCS').toUpperCase() === 'CARTON';
+    nodes.dispatchQty.readOnly = isCarton;
+    if (nodes.dispatchCarton) {
+      nodes.dispatchCarton.readOnly = !isCarton;
+    }
+
+    if (isCarton) {
+      if (nodes.dispatchQty.value && (!nodes.dispatchCarton || !nodes.dispatchCarton.value)) {
+        updateCartonFields();
+      }
+      syncDispatchQtyFromCarton();
+    } else {
+      updateCartonFields();
+    }
+  }
+
+  function loadPackingIdSuggestions(query) {
+    return api('search_packing_ids', {
+      q: String(query || '').trim(),
+      limit: 25
+    }, 'GET').then(function (res) {
+      if (!res || !res.ok) {
+        throw new Error((res && res.error) || 'Unable to load packing ID suggestions.');
+      }
+      renderPackingIdSuggestions(res.rows || []);
+    }).catch(function () {
+      renderPackingIdSuggestions([]);
+    });
+  }
+
+  function prefillByPackingId(silent) {
+    var packingId = String(nodes.packingId.value || '').trim();
+    if (packingId === '') {
+      return Promise.resolve();
+    }
+
+    if (!silent) {
+      setLoading(true);
+    }
+
+    return api('prefill_by_packing_id', { packing_id: packingId }, 'GET').then(function (res) {
+      if (!res || !res.ok || !res.row) {
+        throw new Error((res && res.error) || 'Packing ID not found in finished goods.');
+      }
+      var row = res.row;
+      nodes.form.setAttribute('data-stock-id', String(row.id || 0));
+      nodes.itemName.value = row.item_name || nodes.itemName.value;
+      nodes.batchNo.value = row.batch_no || nodes.batchNo.value;
+      nodes.size.value = row.size || nodes.size.value;
+      nodes.unit.value = row.unit || nodes.unit.value;
+      nodes.availableQty.value = String(row.available_qty || row.quantity || nodes.availableQty.value || '');
+      state.cartonRatio = parseFloat(row.carton_ratio || 0);
+      updateCartonFields();
+      syncUnitInputMode();
+      loadBatches();
+      return loadPackingIdSuggestions(packingId);
+    }).catch(function (err) {
+      if (!silent) {
+        showMessage(err.message || 'Packing ID search failed.', 'error');
+      }
+    }).finally(function () {
+      if (!silent) {
+        setLoading(false);
+      }
+    });
   }
 
   function renderBatchRows() {
@@ -504,6 +630,13 @@
     nodes.dispatchDate.value = today();
     nodes.transportCost.value = '0';
     nodes.availableQty.value = '';
+    if (nodes.availableCarton) {
+      nodes.availableCarton.value = '';
+    }
+    if (nodes.dispatchCarton) {
+      nodes.dispatchCarton.value = '';
+    }
+    state.cartonRatio = 0;
     state.batchRows = [];
     renderBatchRows();
     nodes.form.removeAttribute('data-stock-id');
@@ -2348,6 +2481,12 @@
       });
     }
 
+    if (nodes.packingSearchBtn) {
+      nodes.packingSearchBtn.addEventListener('click', function () {
+        prefillByPackingId(false);
+      });
+    }
+
     var batchReloadTimer = null;
     nodes.itemName.addEventListener('change', function () {
       loadBatches();
@@ -2355,6 +2494,39 @@
     nodes.packingId.addEventListener('input', function () {
       clearTimeout(batchReloadTimer);
       batchReloadTimer = setTimeout(loadBatches, 250);
+    });
+    nodes.packingId.addEventListener('focus', function () {
+      loadPackingIdSuggestions(nodes.packingId.value || '');
+    });
+    nodes.packingId.addEventListener('input', function () {
+      loadPackingIdSuggestions(nodes.packingId.value || '');
+    });
+    nodes.packingId.addEventListener('change', function () {
+      prefillByPackingId(true);
+    });
+    nodes.packingId.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        prefillByPackingId(false);
+      }
+    });
+
+    nodes.dispatchQty.addEventListener('input', function () {
+      if (String(nodes.unit.value || '').toUpperCase() !== 'CARTON') {
+        updateCartonFields();
+      }
+    });
+
+    if (nodes.dispatchCarton) {
+      nodes.dispatchCarton.addEventListener('input', function () {
+        if (String(nodes.unit.value || '').toUpperCase() === 'CARTON') {
+          syncDispatchQtyFromCarton();
+        }
+      });
+    }
+
+    nodes.unit.addEventListener('change', function () {
+      syncUnitInputMode();
     });
 
     if (nodes.batchTableBody) {
