@@ -1467,7 +1467,7 @@ function planningNotificationRouteInfo($planningDepartment = '') {
 }
 
 function createDepartmentNotifications(mysqli $db, array $departments, $jobId, $message, $type = 'info') {
-    static $routePathColumnChecked = false;
+    static $routePathSchemaState = null;
 
     $jobId = (int)$jobId;
     $message = trim((string)$message);
@@ -1488,33 +1488,68 @@ function createDepartmentNotifications(mysqli $db, array $departments, $jobId, $
     }, $departments))));
     if (empty($departments)) return;
 
-    if (!$routePathColumnChecked) {
-        $routePathColumnChecked = true;
-        $colRes = $db->query("SHOW COLUMNS FROM job_notifications LIKE 'route_path'");
-        if ($colRes && !$colRes->fetch_assoc()) {
-            $db->query("ALTER TABLE job_notifications ADD COLUMN route_path VARCHAR(255) NOT NULL DEFAULT '' AFTER type");
+    $hasRoutePath = false;
+    if ($routePathSchemaState !== false) {
+        try {
+            $colRes = $db->query("SHOW COLUMNS FROM job_notifications LIKE 'route_path'");
+            if ($colRes instanceof mysqli_result) {
+                $hasRoutePath = (bool)$colRes->fetch_assoc();
+                $colRes->close();
+            }
+
+            if (!$hasRoutePath && $routePathSchemaState === null) {
+                try {
+                    $db->query("ALTER TABLE job_notifications ADD COLUMN route_path VARCHAR(255) NOT NULL DEFAULT '' AFTER type");
+                } catch (Throwable $e) {
+                    // Shared hosting may block ALTER TABLE; notification writes should still work.
+                }
+
+                $verifyRes = $db->query("SHOW COLUMNS FROM job_notifications LIKE 'route_path'");
+                if ($verifyRes instanceof mysqli_result) {
+                    $hasRoutePath = (bool)$verifyRes->fetch_assoc();
+                    $verifyRes->close();
+                }
+            }
+        } catch (Throwable $e) {
+            $hasRoutePath = false;
+        }
+    }
+    $routePathSchemaState = $hasRoutePath;
+
+    $stmt = null;
+    if ($hasRoutePath) {
+        try {
+            $stmt = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type, route_path) VALUES (?, ?, ?, ?, ?)");
+        } catch (Throwable $e) {
+            $stmt = null;
+            $hasRoutePath = false;
+            $routePathSchemaState = false;
         }
     }
 
-    $hasRoutePath = false;
-    $routeColRes = $db->query("SHOW COLUMNS FROM job_notifications LIKE 'route_path'");
-    if ($routeColRes && $routeColRes->fetch_assoc()) {
-        $hasRoutePath = true;
+    if (!$stmt) {
+        try {
+            $stmt = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, ?)");
+        } catch (Throwable $e) {
+            $stmt = null;
+        }
     }
-
-    $stmt = $hasRoutePath
-        ? $db->prepare("INSERT INTO job_notifications (job_id, department, message, type, route_path) VALUES (?, ?, ?, ?, ?)")
-        : $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, ?)");
     if (!$stmt) return;
 
     foreach ($departments as $department) {
-        if ($hasRoutePath) {
-            $stmt->bind_param('issss', $jobId, $department, $message, $type, $routePath);
-        } else {
-            $stmt->bind_param('isss', $jobId, $department, $message, $type);
+        try {
+            if ($hasRoutePath) {
+                $stmt->bind_param('issss', $jobId, $department, $message, $type, $routePath);
+            } else {
+                $stmt->bind_param('isss', $jobId, $department, $message, $type);
+            }
+            $stmt->execute();
+        } catch (Throwable $e) {
+            continue;
         }
-        $stmt->execute();
     }
+
+    $stmt->close();
 }
 
 function erpNotificationAdminChannel(string $scope): string {

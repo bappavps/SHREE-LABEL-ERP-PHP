@@ -873,11 +873,24 @@ function packing_table_has_column(mysqli $db, string $table, string $column): bo
 function packing_fetch_operator_entry(mysqli $db, string $jobNo, int $jobId = 0, string $jobCreatedAt = ''): ?array {
     $jobNo = trim($jobNo);
     if ($jobNo === '') return null;
-    $stmt = $db->prepare("SELECT * FROM packing_operator_entries WHERE job_no = ? LIMIT 1");
+    if (!packing_table_has_column($db, 'packing_operator_entries', 'job_no')) {
+        return null;
+    }
+
+    try {
+        $stmt = $db->prepare("SELECT * FROM packing_operator_entries WHERE job_no = ? LIMIT 1");
+    } catch (Throwable $e) {
+        return null;
+    }
     if (!$stmt) return null;
     $stmt->bind_param('s', $jobNo);
-    $stmt->execute();
-    $res = $stmt->get_result();
+    try {
+        $stmt->execute();
+        $res = $stmt->get_result();
+    } catch (Throwable $e) {
+        $stmt->close();
+        return null;
+    }
     $row = $res ? $res->fetch_assoc() : null;
     $stmt->close();
     if (!$row) {
@@ -1146,20 +1159,29 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     // Keep a fast lookup of jobs that already have operator-submitted entries.
     // Such rows must remain visible to managers until explicitly marked finished.
     $operatorEntryByJobNo = [];
-    $hasSubmittedLock = packing_table_has_column($db, 'packing_operator_entries', 'submitted_lock');
-    $opSql = $hasSubmittedLock
-        ? "SELECT job_no, job_id, submitted_lock, submitted_at, packed_qty, cartons_count, loose_qty, bundles_count, roll_payload_json FROM packing_operator_entries WHERE job_no IS NOT NULL AND TRIM(job_no) <> ''"
-        : "SELECT job_no, job_id, submitted_at, packed_qty, cartons_count, loose_qty, bundles_count, roll_payload_json FROM packing_operator_entries WHERE job_no IS NOT NULL AND TRIM(job_no) <> ''";
-    $opRes = $db->query($opSql);
-    if ($opRes) {
-        while ($opRow = $opRes->fetch_assoc()) {
-            $jn = strtolower(trim((string)($opRow['job_no'] ?? '')));
-            if ($jn !== '' && packing_operator_entry_is_submitted($opRow)) {
-                $operatorEntryByJobNo[$jn][] = [
-                    'job_id' => (int)($opRow['job_id'] ?? 0),
-                    'submitted_at' => trim((string)($opRow['submitted_at'] ?? '')),
-                    'entry' => $opRow,
-                ];
+    $hasOperatorEntriesTable = packing_table_has_column($db, 'packing_operator_entries', 'job_no');
+    if ($hasOperatorEntriesTable) {
+        $hasSubmittedLock = packing_table_has_column($db, 'packing_operator_entries', 'submitted_lock');
+        $opSql = $hasSubmittedLock
+            ? "SELECT job_no, job_id, submitted_lock, submitted_at, packed_qty, cartons_count, loose_qty, bundles_count, roll_payload_json FROM packing_operator_entries WHERE job_no IS NOT NULL AND TRIM(job_no) <> ''"
+            : "SELECT job_no, job_id, submitted_at, packed_qty, cartons_count, loose_qty, bundles_count, roll_payload_json FROM packing_operator_entries WHERE job_no IS NOT NULL AND TRIM(job_no) <> ''";
+
+        try {
+            $opRes = $db->query($opSql);
+        } catch (Throwable $e) {
+            $opRes = false;
+        }
+
+        if ($opRes) {
+            while ($opRow = $opRes->fetch_assoc()) {
+                $jn = strtolower(trim((string)($opRow['job_no'] ?? '')));
+                if ($jn !== '' && packing_operator_entry_is_submitted($opRow)) {
+                    $operatorEntryByJobNo[$jn][] = [
+                        'job_id' => (int)($opRow['job_id'] ?? 0),
+                        'submitted_at' => trim((string)($opRow['submitted_at'] ?? '')),
+                        'entry' => $opRow,
+                    ];
+                }
             }
         }
     }
