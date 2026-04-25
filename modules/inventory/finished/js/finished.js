@@ -21,7 +21,7 @@
     dispatchUrl: String(fg_root.getAttribute('data-dispatch-url') || ''),
     csrf: String(fg_root.getAttribute('data-csrf-token') || ''),
     isAdmin: String(fg_root.getAttribute('data-is-admin') || '') === '1',
-    canManageRows: String(fg_root.getAttribute('data-is-admin') || '') === '1',
+    canManageRows: String(fg_root.getAttribute('data-can-manage-rows') || fg_root.getAttribute('data-is-admin') || '') === '1',
     tabs: [
       { key: 'pos_paper_roll', label: 'POS & Paper Roll', color: '#2563EB' },
       { key: 'one_ply', label: '1 Ply', color: '#166534' },

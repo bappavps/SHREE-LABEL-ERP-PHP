@@ -4,6 +4,7 @@ require_once __DIR__ . '/../../../includes/functions.php';
 require_once __DIR__ . '/../../../includes/auth_check.php';
 
 $isAdminUser = isAdmin();
+$canManageRows = $isAdminUser || (function_exists('canAccessPath') && canAccessPath('/modules/inventory/finished/index.php'));
 $csrfToken = generateCSRF();
 $moduleVersion = @filemtime(__DIR__ . '/js/finished.js') ?: time();
 
@@ -36,7 +37,7 @@ include __DIR__ . '/../../../includes/header.php';
   data-dispatch-url="<?= e(BASE_URL) ?>/modules/dispatch/index.php"
      data-csrf-token="<?= e($csrfToken) ?>"
      data-is-admin="<?= $isAdminUser ? '1' : '0' ?>"
-  data-can-manage-rows="<?= $isAdminUser ? '1' : '0' ?>"
+  data-can-manage-rows="<?= $canManageRows ? '1' : '0' ?>"
      data-co-name="<?= e($co_name) ?>"
      data-co-tagline="<?= e($co_tagline) ?>"
      data-co-address="<?= e($co_address) ?>"

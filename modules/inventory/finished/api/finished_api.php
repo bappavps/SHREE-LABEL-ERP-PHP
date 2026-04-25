@@ -785,6 +785,22 @@ if ($action === 'add_stock' || $action === 'add') {
     }
 
     $payload = fg_get_payload();
+    $addQty = fg_decimal($payload['quantity'] ?? 0);
+
+    // Check if a matching row already exists; if so, accumulate quantity.
+    $existingId = fg_resolve_row_id($db, $payload);
+    if ($existingId > 0 && $addQty > 0) {
+        $upd = $db->prepare("UPDATE finished_goods_stock SET quantity = quantity + ? WHERE id = ?");
+        if (!$upd) {
+            fg_json(500, ['ok' => false, 'error' => 'Unable to prepare stock accumulate query.']);
+        }
+        $upd->bind_param('di', $addQty, $existingId);
+        if (!$upd->execute()) {
+            fg_json(500, ['ok' => false, 'error' => 'Unable to accumulate stock quantity.']);
+        }
+        fg_json(200, ['ok' => true, 'message' => 'Stock quantity added successfully.']);
+    }
+
     if (!fg_insert_row($db, $payload, $userId)) {
         fg_json(500, ['ok' => false, 'error' => 'Unable to add stock entry.']);
     }
@@ -793,7 +809,7 @@ if ($action === 'add_stock' || $action === 'add') {
 }
 
 if ($action === 'update_stock') {
-    fg_require_admin();
+    fg_require_stock_operator();
     if ($method !== 'POST') {
         fg_json(405, ['ok' => false, 'error' => 'Method not allowed.']);
     }
@@ -822,7 +838,8 @@ if ($action === 'update_stock') {
     $remarks = trim((string)($payload['remarks'] ?? ''));
 
     $stmt = $db->prepare("UPDATE finished_goods_stock
-        SET category = ?, sub_type = ?, item_name = ?, item_code = ?, size = ?, gsm = ?, quantity = ?, unit = ?, location = ?, batch_no = ?, date = ?, remarks = ?
+        SET category = ?, sub_type = ?, item_name = ?, item_code = ?, size = ?, gsm = ?, quantity = ?, unit = ?, location = ?, batch_no = ?, date = ?, remarks = ?,
+            dispatch_qty_total = 0, closing_stock = 0
         WHERE id = ?");
     $stmt->bind_param(
         'ssssssdsssssi',
@@ -849,7 +866,7 @@ if ($action === 'update_stock') {
 }
 
 if ($action === 'delete_stock') {
-    fg_require_admin();
+    fg_require_stock_operator();
     if ($method !== 'POST') {
         fg_json(405, ['ok' => false, 'error' => 'Method not allowed.']);
     }
