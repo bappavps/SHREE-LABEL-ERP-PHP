@@ -248,6 +248,39 @@ function fg_ensure_table(mysqli $db): void {
     if (!$db->query($dispatchSql)) {
         fg_json(500, ['ok' => false, 'error' => 'Unable to initialize dispatch log table: ' . $db->error]);
     }
+
+    // Ensure carton minimum threshold column exists.
+    $check = $db->query("SHOW COLUMNS FROM carton_items LIKE 'min_qty'");
+    $exists = $check && $check->num_rows > 0;
+    if ($check) {
+        $check->close();
+    }
+    if (!$exists) {
+        $db->query("ALTER TABLE carton_items ADD COLUMN min_qty INT UNSIGNED NOT NULL DEFAULT 0 AFTER item_name");
+    }
+}
+
+function fg_fetch_carton_min_rows(mysqli $db): array {
+    $sql = "SELECT id, item_name, COALESCE(min_qty, 0) AS min_qty
+            FROM carton_items
+            ORDER BY item_name ASC";
+    $res = $db->query($sql);
+    if (!$res) {
+        return [];
+    }
+    $rows = [];
+    while ($row = $res->fetch_assoc()) {
+        $size = trim((string)($row['item_name'] ?? ''));
+        if ($size === '') {
+            continue;
+        }
+        $rows[] = [
+            'id' => (int)($row['id'] ?? 0),
+            'size' => $size,
+            'min_qty' => max(0, (int)floor((float)($row['min_qty'] ?? 0))),
+        ];
+    }
+    return $rows;
 }
 
 function fg_insert_row(mysqli $db, array $row, int $userId): bool {
@@ -574,7 +607,138 @@ if ($action === 'get_stock') {
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
+    if ($category === 'carton') {
+        $minRows = fg_fetch_carton_min_rows($db);
+        $minByKey = [];
+        $idByKey = [];
+        $labelByKey = [];
+        foreach ($minRows as $mrow) {
+            $mSize = trim((string)($mrow['size'] ?? ''));
+            if ($mSize === '') {
+                continue;
+            }
+            $mKey = strtolower($mSize);
+            $minByKey[$mKey] = (int)($mrow['min_qty'] ?? 0);
+            $idByKey[$mKey] = (int)($mrow['id'] ?? 0);
+            $labelByKey[$mKey] = $mSize;
+        }
+
+        $qtyByKey = [];
+        $presentKeys = [];
+        foreach ($rows as $row) {
+            $sizeText = trim((string)($row['size'] ?? $row['item_name'] ?? ''));
+            if ($sizeText === '') {
+                continue;
+            }
+            $key = strtolower($sizeText);
+            $presentKeys[$key] = true;
+            if (!isset($labelByKey[$key])) {
+                $labelByKey[$key] = $sizeText;
+            }
+            $qtyByKey[$key] = ($qtyByKey[$key] ?? 0.0) + fg_decimal($row['quantity'] ?? 0);
+        }
+
+        foreach ($rows as $idx => $row) {
+            $sizeText = trim((string)($row['size'] ?? $row['item_name'] ?? ''));
+            $key = strtolower($sizeText);
+            $minQty = (int)($minByKey[$key] ?? 0);
+            $aggQty = (float)($qtyByKey[$key] ?? 0.0);
+            $rows[$idx]['min_qty'] = $minQty;
+            $rows[$idx]['stock_status'] = ($minQty > 0 && $aggQty < $minQty) ? 'Low Quantity' : 'In Stock';
+        }
+
+        foreach ($minByKey as $key => $minQty) {
+            if (isset($presentKeys[$key])) {
+                continue;
+            }
+            $sizeLabel = (string)($labelByKey[$key] ?? $key);
+            $rows[] = [
+                'id' => (int)($idByKey[$key] ?? 0),
+                'category' => 'carton',
+                'sub_type' => '',
+                'item_name' => $sizeLabel,
+                'item_code' => '',
+                'size' => $sizeLabel,
+                'gsm' => '',
+                'quantity' => 0,
+                'dispatch_qty_total' => 0,
+                'closing_stock' => 0,
+                'unit' => 'PCS',
+                'location' => '',
+                'batch_no' => '',
+                'date' => '',
+                'remarks' => '',
+                'created_by' => 0,
+                'created_at' => '',
+                'min_qty' => (int)$minQty,
+                'stock_status' => ((int)$minQty > 0) ? 'Low Quantity' : 'In Stock',
+            ];
+        }
+    }
+
     fg_json(200, ['ok' => true, 'rows' => $rows]);
+}
+
+if ($action === 'set_carton_min_qty') {
+    fg_require_admin();
+    if ($method !== 'POST') {
+        fg_json(405, ['ok' => false, 'error' => 'Method not allowed.']);
+    }
+
+    $payload = fg_get_payload();
+    $id = (int)($payload['id'] ?? 0);
+    $size = fg_clean_text($payload['size'] ?? '', 120);
+    $minQty = max(0, (int)($payload['min_qty'] ?? 0));
+
+    if ($id <= 0 && $size === '') {
+        fg_json(400, ['ok' => false, 'error' => 'Carton item id or size is required.']);
+    }
+
+    if ($id > 0) {
+        $stmt = $db->prepare("UPDATE carton_items SET min_qty = ? WHERE id = ? LIMIT 1");
+        if (!$stmt) {
+            fg_json(500, ['ok' => false, 'error' => 'Unable to prepare carton minimum update.']);
+        }
+        $stmt->bind_param('ii', $minQty, $id);
+        if (!$stmt->execute()) {
+            fg_json(500, ['ok' => false, 'error' => 'Unable to save carton minimum.']);
+        }
+        $stmt->close();
+    } else {
+        $sel = $db->prepare("SELECT id FROM carton_items WHERE item_name = ? LIMIT 1");
+        if (!$sel) {
+            fg_json(500, ['ok' => false, 'error' => 'Unable to prepare carton lookup.']);
+        }
+        $sel->bind_param('s', $size);
+        $sel->execute();
+        $row = $sel->get_result()->fetch_assoc();
+        $sel->close();
+
+        if ($row) {
+            $foundId = (int)$row['id'];
+            $up = $db->prepare("UPDATE carton_items SET min_qty = ? WHERE id = ? LIMIT 1");
+            if (!$up) {
+                fg_json(500, ['ok' => false, 'error' => 'Unable to prepare carton minimum update.']);
+            }
+            $up->bind_param('ii', $minQty, $foundId);
+            if (!$up->execute()) {
+                fg_json(500, ['ok' => false, 'error' => 'Unable to save carton minimum.']);
+            }
+            $up->close();
+        } else {
+            $ins = $db->prepare("INSERT INTO carton_items (item_name, min_qty, status) VALUES (?, ?, 'ACTIVE')");
+            if (!$ins) {
+                fg_json(500, ['ok' => false, 'error' => 'Unable to prepare carton item insert.']);
+            }
+            $ins->bind_param('si', $size, $minQty);
+            if (!$ins->execute()) {
+                fg_json(500, ['ok' => false, 'error' => 'Unable to create carton item.']);
+            }
+            $ins->close();
+        }
+    }
+
+    fg_json(200, ['ok' => true, 'message' => 'Carton minimum saved successfully.']);
 }
 
 if ($action === 'get_summary' || $action === 'summary') {

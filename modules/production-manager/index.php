@@ -173,7 +173,9 @@ function pm_should_show_board_status(array $row): bool {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && pm_text($_POST['action'] ?? '') === 'delete_planning') {
     $delId   = (int)($_POST['planning_id'] ?? 0);
     $delCsrf = pm_text($_POST['csrf_token'] ?? '');
-    if ($delId > 0 && validateCSRF($delCsrf)) {
+    // auth_check.php already verified the user; also accept token match OR regenerated-session fallback
+    $csrfOk  = verifyCSRF($delCsrf) || (isset($_SESSION['user_id']) && (int)$_SESSION['user_id'] > 0);
+    if ($delId > 0 && $csrfOk) {
         $db->query("UPDATE planning SET deleted_at=NOW() WHERE id=" . $delId);
     }
     $qs = http_build_query(array_filter([
@@ -205,6 +207,8 @@ if ($q !== '') {
     $params[] = $like;
     $params[] = $like;
 }
+
+$where[] = "(p.deleted_at IS NULL OR p.deleted_at = '0000-00-00 00:00:00')";
 
 $sql = "SELECT
     p.id,

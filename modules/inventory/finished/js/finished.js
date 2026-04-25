@@ -1375,10 +1375,12 @@
     var fixedOrder = ['57x15', '57x25', '78x25', '75mm', 'Barcode', 'Medicine'];
     var order = fixedOrder.slice();
     var qtyBySize = {};
+    var minBySize = {};
     var rowIdBySize = {};
 
     for (var f = 0; f < fixedOrder.length; f += 1) {
       qtyBySize[fixedOrder[f]] = 0;
+      minBySize[fixedOrder[f]] = 0;
     }
 
     for (var i = 0; i < rows.length; i += 1) {
@@ -1389,20 +1391,29 @@
       }
       if (!Object.prototype.hasOwnProperty.call(qtyBySize, sizeText)) {
         qtyBySize[sizeText] = 0;
+        minBySize[sizeText] = 0;
         order.push(sizeText);
       }
       if (!Object.prototype.hasOwnProperty.call(rowIdBySize, sizeText) && fg_num(row.id) > 0) {
         rowIdBySize[sizeText] = String(row.id);
       }
       qtyBySize[sizeText] += fg_num(row.quantity);
+      if (fg_num(row.min_qty) > 0) {
+        minBySize[sizeText] = Math.max(minBySize[sizeText], fg_num(row.min_qty));
+      }
     }
 
     var headHtml = '<tr><th>SIZE</th>';
     var bodyHtml = '<tr><td><strong>QTY</strong></td>';
+    var minHtml = '<tr><td><strong>MIN REQ</strong></td>';
+    var statusHtml = '<tr><td><strong>STATUS</strong></td>';
     for (var j = 0; j < order.length; j += 1) {
       var sizeKey = order[j];
       headHtml += '<th>' + fg_escapeHtml(sizeKey) + '</th>';
-      var qtyCell = fg_escapeHtml(fg_fmt(qtyBySize[sizeKey]));
+      var qtyNum = Math.floor(fg_num(qtyBySize[sizeKey]));
+      var minNum = Math.max(0, Math.floor(fg_num(minBySize[sizeKey])));
+      var isLow = minNum > 0 && qtyNum < minNum;
+      var qtyCell = fg_escapeHtml(String(qtyNum));
       if (fg_state.canManageRows) {
         var actionHtml = '';
         if (rowIdBySize[sizeKey]) {
@@ -1413,13 +1424,44 @@
         }
         qtyCell = '<div>' + qtyCell + actionHtml + '</div>';
       }
+      var minCell = fg_state.canManageRows
+        ? '<input type="number" min="0" step="1" class="fg-carton-min-input" data-size="' + fg_escapeHtml(sizeKey) + '" data-id="' + fg_escapeHtml(String(rowIdBySize[sizeKey] || '')) + '" value="' + fg_escapeHtml(String(minNum)) + '" style="width:90px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;text-align:center">'
+        : '<span>' + fg_escapeHtml(String(minNum)) + '</span>';
+      var statusCell = isLow
+        ? '<span style="display:inline-block;padding:3px 8px;border-radius:999px;background:#fee2e2;color:#b91c1c;font-weight:800;font-size:.72rem">Low Quantity</span>'
+        : '<span style="display:inline-block;padding:3px 8px;border-radius:999px;background:#dcfce7;color:#166534;font-weight:800;font-size:.72rem">In Stock</span>';
       bodyHtml += '<td>' + qtyCell + '</td>';
+      minHtml += '<td style="text-align:center">' + minCell + '</td>';
+      statusHtml += '<td style="text-align:center">' + statusCell + '</td>';
     }
     headHtml += '</tr>';
     bodyHtml += '</tr>';
+    minHtml += '</tr>';
+    statusHtml += '</tr>';
 
     fg_nodes.tableHead.innerHTML = headHtml;
-    fg_nodes.tableBody.innerHTML = bodyHtml;
+    fg_nodes.tableBody.innerHTML = bodyHtml + minHtml + statusHtml;
+
+    if (fg_state.canManageRows) {
+      Array.prototype.slice.call(fg_nodes.tableBody.querySelectorAll('.fg-carton-min-input')).forEach(function(inp) {
+        inp.addEventListener('change', function() {
+          var idVal = parseInt(String(inp.getAttribute('data-id') || '0'), 10) || 0;
+          var sizeVal = String(inp.getAttribute('data-size') || '').trim();
+          var minVal = Math.max(0, Math.floor(fg_num(inp.value)));
+          inp.value = String(minVal);
+          fg_api('set_carton_min_qty', { id: idVal, size: sizeVal, min_qty: minVal }, 'POST')
+            .then(function(res) {
+              if (!res || !res.ok) {
+                throw new Error((res && res.error) || 'Failed to save minimum quantity.');
+              }
+              fg_loadTable();
+            })
+            .catch(function(err) {
+              fg_showMessage(err.message || 'Failed to save minimum quantity.', 'error');
+            });
+        });
+      });
+    }
   }
 
   function fg_getFilterOptions(colKey) {

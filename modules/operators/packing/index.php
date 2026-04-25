@@ -377,6 +377,9 @@ include __DIR__ . '/../../../includes/header.php';
   var activeJobId = 0;
   var activeJobNo = '';
   var activeJobData = null;
+  var opCartonStatusMap = {};
+  var opCartonStatusLoaded = false;
+  var opCartonStatusPromise = null;
 
   // ── Tab switching ──
   var tabs  = document.querySelectorAll('.op-tab');
@@ -419,6 +422,67 @@ include __DIR__ . '/../../../includes/header.php';
 
   function escHtml(v) {
     return String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  function opNormCartonKey(v) {
+    return String(v || '').toLowerCase().replace(/\s+/g, '');
+  }
+
+  function opGetCartonStatus(sizeText) {
+    var key = opNormCartonKey(sizeText);
+    if (!key || !Object.prototype.hasOwnProperty.call(opCartonStatusMap, key)) {
+      return { qty: null, min_qty: 0, is_low: false };
+    }
+    return opCartonStatusMap[key];
+  }
+
+  function opCartonBadgeHtml(sizeText) {
+    var st = opGetCartonStatus(sizeText);
+    if (st.qty === null || typeof st.qty === 'undefined') {
+      return '<span style="display:inline-block;margin-left:6px;padding:2px 7px;border-radius:999px;background:#e2e8f0;color:#475569;font-size:.68rem;font-weight:800">Qty: -</span>';
+    }
+    if (st.is_low) {
+      return '<span style="display:inline-block;margin-left:6px;padding:2px 7px;border-radius:999px;background:#fee2e2;color:#b91c1c;font-size:.68rem;font-weight:900">Qty: ' + escHtml(String(st.qty)) + ' (Low Quantity)</span>';
+    }
+    return '<span style="display:inline-block;margin-left:6px;padding:2px 7px;border-radius:999px;background:#dcfce7;color:#166534;font-size:.68rem;font-weight:900">Qty: ' + escHtml(String(st.qty)) + '</span>';
+  }
+
+  function opLoadCartonStatus(forceReload) {
+    if (!forceReload && opCartonStatusLoaded) {
+      return Promise.resolve(opCartonStatusMap);
+    }
+    if (opCartonStatusPromise) {
+      return opCartonStatusPromise;
+    }
+    opCartonStatusPromise = fetch(baseUrl + '/modules/packing/api.php?action=get_carton_stock_status', { credentials: 'same-origin' })
+      .then(function(r) { return r.json(); })
+      .then(function(res) {
+        var nextMap = {};
+        var rows = (res && Array.isArray(res.rows)) ? res.rows : [];
+        rows.forEach(function(row) {
+          var rawSize = String((row && row.size) || '').trim();
+          var key = opNormCartonKey(rawSize);
+          if (!key) return;
+          nextMap[key] = {
+            qty: Math.max(0, Math.floor(Number(row.qty || 0))),
+            min_qty: Math.max(0, Math.floor(Number(row.min_qty || 0))),
+            is_low: !!row.is_low
+          };
+        });
+        opCartonStatusMap = nextMap;
+        opCartonStatusLoaded = true;
+        if (modal && modal.classList.contains('show')) {
+          updateLiveMetrics();
+        }
+        return opCartonStatusMap;
+      })
+      .catch(function() {
+        return opCartonStatusMap;
+      })
+      .finally(function() {
+        opCartonStatusPromise = null;
+      });
+    return opCartonStatusPromise;
   }
 
   function pickFirst(sources, keys) {
@@ -911,6 +975,13 @@ include __DIR__ . '/../../../includes/header.php';
       return Number.isFinite(n) ? n : 0;
     }
 
+    function normCsizeText(v) {
+      var t = String(v || '').toLowerCase().replace(/\s+/g, '');
+      if (t === '75' || t === '75mm') return '75mm';
+      if (t === '57x15' || t === '57x25' || t === '78x25' || t === 'barcode' || t === 'medicine') return t;
+      return '75mm';
+    }
+
     function getDefaultDistributedQty(totalQty, totalRollCount, rollIndex) {
       var safeTotal = Math.max(0, Math.floor(toNum(totalQty)));
       var safeCount = Math.max(1, Math.floor(toNum(totalRollCount)));
@@ -983,6 +1054,7 @@ include __DIR__ . '/../../../includes/header.php';
           var extraRolls = packCalc.extraRolls;
           var extraPieces = Object.prototype.hasOwnProperty.call(st, 'extra_pcs') ? Math.max(0, Math.floor(toNum(st.extra_pcs))) : 0;
           var csizeText = String(st.csize_text || '75 mm').trim() || '75 mm';
+          var csizeBadge = opCartonBadgeHtml(csizeText);
           // Physical = total_rolls × bpr + extra_pcs
           var physical = Math.max(0, totalRollsBarcode * bpr + extraPieces);
           return ''
@@ -995,7 +1067,7 @@ include __DIR__ . '/../../../includes/header.php';
             + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#0f766e">Total cartons <span style="font-weight:500;color:#94a3b8">(auto)</span></label><div style="width:100%;padding:5px 8px;border:1px solid #99f6e4;border-radius:6px;background:#f0fdfa;font-size:.85rem;font-weight:900;color:#0f766e;min-height:28px" class="op-bc-cartons-display" data-roll-key="' + escHtml(key) + '">' + String(cartonsBarcode) + '</div></div>'
             + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#7c3aed">Extra rolls <span style="font-weight:500;color:#94a3b8">(auto)</span></label><div style="width:100%;padding:5px 8px;border:1px solid #ddd6fe;border-radius:6px;background:#f5f3ff;font-size:.85rem;font-weight:900;color:#7c3aed;min-height:28px" class="op-bc-extra-rolls-display" data-roll-key="' + escHtml(key) + '">' + String(extraRolls) + '</div></div>'
             + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#92400e">Extra pieces (loose)</label><input type="number" class="op-bc-extra-pcs-input" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(extraPieces) + '" style="width:100%;padding:5px 6px;border:1px solid #fdba74;border-radius:6px"></div>'
-            + '    <div style="grid-column:span 2"><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Carton size</label><input type="text" class="op-bc-csize-input" data-roll-key="' + escHtml(key) + '" value="' + escHtml(csizeText) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
+            + '    <div style="grid-column:span 2"><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Carton size ' + csizeBadge + '</label><input type="text" class="op-bc-csize-input" data-roll-key="' + escHtml(key) + '" value="' + escHtml(csizeText) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
             + '  </div>'
             + '  <div style="margin-top:8px;padding:7px 9px;border:1px solid #86efac;border-radius:7px;background:#dcfce7;color:#166534;font-size:.8rem;font-weight:900">'
             + '    Physical: <span class="op-roll-total-rolls" data-roll-key="' + escHtml(key) + '">' + String(physical) + '</span>'
@@ -1012,13 +1084,15 @@ include __DIR__ . '/../../../includes/header.php';
         var cartons = Object.prototype.hasOwnProperty.call(st, 'cartons') ? Math.max(0, Math.floor(toNum(st.cartons))) : Math.floor(qty / rpc);
         var extra = Object.prototype.hasOwnProperty.call(st, 'extra') ? Math.max(0, Math.floor(toNum(st.extra))) : autoExtra;
         var totalRolls = Math.max(0, cartons * rpc + extra);
+        var csizeNow = normCsizeText(st.csize_text || '75mm');
+        var csizeBadgeNonBarcode = opCartonBadgeHtml(csizeNow);
         return ''
           + '<div style="border:1px solid #fdba74;border-radius:10px;padding:10px;background:#fff">'
           + '  <div style="font-size:.74rem;font-weight:900;color:#9a3412;margin-bottom:8px">Roll: ' + escHtml(String(roll.rollNo || '-')) + '</div>'
           + '  <div style="display:grid;grid-template-columns:repeat(2,minmax(110px,1fr));gap:8px">'
           + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Rolls per shrink wrap</label><input type="number" class="op-roll-rps" data-roll-key="' + escHtml(key) + '" min="1" step="1" value="' + String(rps) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
           + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Rolls per carton</label><input type="number" class="op-roll-rpc-input" data-roll-key="' + escHtml(key) + '" min="1" step="1" value="' + String(rpc) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
-          + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Carton size (mm)</label><select class="op-roll-csize" data-roll-key="' + escHtml(key) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc"><option value="75" selected>75 mm</option></select></div>'
+          + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Carton size (mm) ' + csizeBadgeNonBarcode + '</label><select class="op-roll-csize" data-roll-key="' + escHtml(key) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc">' + ['57x15','57x25','78x25','75mm','Barcode','Medicine'].map(function(s){var sel=(s.toLowerCase()===csizeNow.toLowerCase()?' selected':'');return '<option value="'+s+'"'+sel+'>'+s+'</option>';}).join('') + '</select></div>'
           + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Cartons</label><input type="number" class="op-roll-cartons-input" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(cartons) + '" style="width:100%;padding:5px 6px;border:1px solid #86efac;border-radius:6px"></div>'
           + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#92400e">Extra rolls</label><input type="number" class="op-roll-extra-input" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(extra) + '" style="width:100%;padding:5px 6px;border:1px solid #fdba74;border-radius:6px"></div>'
           + '  </div>'
@@ -1060,7 +1134,7 @@ include __DIR__ . '/../../../includes/header.php';
         input.addEventListener('change', function() { saveAndRecalc(input, 'rpc'); });
       });
       Array.prototype.slice.call(perRollOutput.querySelectorAll('.op-roll-csize')).forEach(function(input) {
-        input.addEventListener('change', function() { saveAndRecalc(input, 'csize'); });
+        input.addEventListener('change', function() { saveAndRecalc(input, 'csize_text', true); });
       });
       Array.prototype.slice.call(perRollOutput.querySelectorAll('.op-roll-cartons-input')).forEach(function(input) {
         input.addEventListener('change', function() { saveAndRecalc(input, 'cartons'); });
@@ -1089,6 +1163,7 @@ include __DIR__ . '/../../../includes/header.php';
     }
 
     function updateLiveMetrics() {
+      opLoadCartonStatus(false);
 
       var selectedRolls = [];
       if (rollSelectNodes.length) {
@@ -1780,7 +1855,7 @@ include __DIR__ . '/../../../includes/header.php';
         payloadOverrides[key] = {
           rps: rps,
           rpc: rpc,
-          csize: 75,
+            csize_text: String(st.csize_text || '75mm').trim() || '75mm',
           cartons: cartons,
           extra: extra
         };
