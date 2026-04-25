@@ -896,8 +896,27 @@
       ];
     }
 
+    var cartonSizeOptions = (function () {
+      var seen = {};
+      var list = [];
+      var fallback = ['57x15', '57x25', '78x25', '75mm', 'Barcode', 'Medicine'];
+      var rows = fg_state.rows || [];
+      for (var ri = 0; ri < rows.length; ri += 1) {
+        var sz = String(rows[ri].size || rows[ri].item_name || '').trim();
+        if (sz && !seen[sz.toLowerCase()]) {
+          seen[sz.toLowerCase()] = true;
+          list.push(sz);
+        }
+      }
+      if (!list.length) {
+        list = fallback;
+      }
+      list.sort();
+      if (!seen['custom']) { list.push('Custom'); }
+      return list;
+    }());
     return [
-      { name: 'size', label: 'Size', source: 'direct', required: true, type: 'select', options: ['57x15', '57x25', '78x25', '75mm', 'Barcode', 'Medicine', 'Custom'] },
+      { name: 'size', label: 'Size', source: 'direct', required: true, type: 'select', options: cartonSizeOptions },
       { name: 'custom_size', label: 'Custom Size', source: 'extra', placeholder: 'Type new size (for custom)' },
       { name: 'quantity', label: 'Value', source: 'direct', type: 'number', required: true }
     ];
@@ -1418,7 +1437,7 @@
         var actionHtml = '';
         if (rowIdBySize[sizeKey]) {
           actionHtml = '<div class="fg-row-actions" style="justify-content:center;margin-top:6px">' +
-            '<button type="button" class="btn btn-sm" data-fg-action="edit-row" data-id="' + fg_escapeHtml(rowIdBySize[sizeKey]) + '"><i class="bi bi-pencil"></i></button>' +
+            '<button type="button" class="btn btn-sm" data-fg-action="edit-row" data-id="' + fg_escapeHtml(rowIdBySize[sizeKey]) + '" data-agg-qty="' + qtyNum + '"><i class="bi bi-pencil"></i></button>' +
             '<button type="button" class="btn btn-sm btn-danger" data-fg-action="delete-row" data-id="' + fg_escapeHtml(rowIdBySize[sizeKey]) + '"><i class="bi bi-trash"></i></button>' +
           '</div>';
         }
@@ -2671,8 +2690,14 @@
     if (action === 'edit-row') {
       if (!fg_state.canManageRows) return;
       var id = target.getAttribute('data-id');
+      var aggQtyAttr = target.getAttribute('data-agg-qty');
       var row = fg_findRowById(id);
-      if (row) fg_openEntryModal(row);
+      if (row) {
+        if (aggQtyAttr !== null && fg_state.activeTab === 'carton') {
+          row = Object.assign({}, row, { quantity: fg_num(aggQtyAttr) });
+        }
+        fg_openEntryModal(row);
+      }
       return;
     }
 

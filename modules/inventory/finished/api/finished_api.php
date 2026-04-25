@@ -335,55 +335,50 @@ function fg_resolve_row_id(mysqli $db, array $payload): int {
     }
 
     $category = fg_clean_text($payload['category'] ?? '', 60);
+    if ($category === '') {
+        return 0;
+    }
+
     $itemCode = fg_clean_text($payload['item_code'] ?? '', 120);
-    $batchNo = fg_clean_text($payload['batch_no'] ?? '', 120);
     $subType = fg_clean_text($payload['sub_type'] ?? '', 120);
     $itemName = fg_clean_text($payload['item_name'] ?? '', 255);
     $size = fg_clean_text($payload['size'] ?? '', 120);
-    $location = fg_clean_text($payload['location'] ?? '', 120);
+    $gsm = fg_clean_text($payload['gsm'] ?? '', 60);
 
+    // Match on stable identity fields only.
+    // Do not match using volatile fields like batch/location/date to keep add behavior consistent.
     $where = [];
     $types = '';
     $params = [];
 
-    if ($category !== '') {
-        $where[] = 'category = ?';
-        $types .= 's';
-        $params[] = $category;
-    }
+    $where[] = "LOWER(TRIM(COALESCE(category, ''))) = ?";
+    $types .= 's';
+    $params[] = strtolower($category);
+
     if ($itemCode !== '') {
-        $where[] = 'item_code = ?';
+        $where[] = "LOWER(TRIM(COALESCE(item_code, ''))) = ?";
         $types .= 's';
-        $params[] = $itemCode;
-    }
-    if ($batchNo !== '') {
-        $where[] = 'batch_no = ?';
-        $types .= 's';
-        $params[] = $batchNo;
+        $params[] = strtolower($itemCode);
     }
     if ($subType !== '') {
-        $where[] = 'sub_type = ?';
+        $where[] = "LOWER(TRIM(COALESCE(sub_type, ''))) = ?";
         $types .= 's';
-        $params[] = $subType;
+        $params[] = strtolower($subType);
     }
     if ($itemName !== '') {
-        $where[] = 'item_name = ?';
+        $where[] = "LOWER(TRIM(COALESCE(item_name, ''))) = ?";
         $types .= 's';
-        $params[] = $itemName;
+        $params[] = strtolower($itemName);
     }
     if ($size !== '') {
-        $where[] = 'size = ?';
+        $where[] = "LOWER(TRIM(COALESCE(size, ''))) = ?";
         $types .= 's';
-        $params[] = $size;
+        $params[] = strtolower($size);
     }
-    if ($location !== '') {
-        $where[] = 'location = ?';
+    if ($gsm !== '') {
+        $where[] = "LOWER(TRIM(COALESCE(gsm, ''))) = ?";
         $types .= 's';
-        $params[] = $location;
-    }
-
-    if (empty($where)) {
-        return 0;
+        $params[] = strtolower($gsm);
     }
 
     $sql = 'SELECT id FROM finished_goods_stock WHERE ' . implode(' AND ', $where) . ' ORDER BY id DESC LIMIT 1';
@@ -837,6 +832,66 @@ if ($action === 'update_stock') {
     $dateValue = fg_parse_date($payload['date'] ?? '');
     $remarks = trim((string)($payload['remarks'] ?? ''));
 
+    $targetId = $id;
+
+    // Carton matrix can send carton_items.id for synthetic rows.
+    // Resolve to real finished_goods_stock row by carton size, or insert if missing.
+    if ($category === 'carton') {
+        $isRealCartonRow = false;
+        $checkStmt = $db->prepare("SELECT id FROM finished_goods_stock WHERE id = ? AND category = 'carton' LIMIT 1");
+        if ($checkStmt) {
+            $checkStmt->bind_param('i', $targetId);
+            $checkStmt->execute();
+            $isRealCartonRow = (bool)$checkStmt->get_result()->fetch_assoc();
+            $checkStmt->close();
+        }
+
+        if (!$isRealCartonRow) {
+            $targetId = 0;
+            $sizeKey = strtolower(trim($size !== '' ? $size : $itemName));
+            if ($sizeKey !== '') {
+                $resolveStmt = $db->prepare("SELECT id
+                    FROM finished_goods_stock
+                    WHERE category = 'carton'
+                      AND LOWER(TRIM(COALESCE(NULLIF(size, ''), item_name, ''))) = ?
+                    ORDER BY id DESC
+                    LIMIT 1");
+                if ($resolveStmt) {
+                    $resolveStmt->bind_param('s', $sizeKey);
+                    $resolveStmt->execute();
+                    $resolved = $resolveStmt->get_result()->fetch_assoc();
+                    $resolveStmt->close();
+                    if ($resolved) {
+                        $targetId = (int)($resolved['id'] ?? 0);
+                    }
+                }
+            }
+        }
+
+        if ($targetId <= 0) {
+            $insertPayload = [
+                'category' => $category,
+                'sub_type' => $subType,
+                'item_name' => ($itemName !== '' ? $itemName : $size),
+                'item_code' => $itemCode,
+                'size' => $size,
+                'gsm' => $gsm,
+                'quantity' => $quantity,
+                'unit' => ($unit !== '' ? $unit : 'PCS'),
+                'location' => $location,
+                'batch_no' => $batchNo,
+                'date' => $dateValue,
+                'remarks' => $remarks,
+            ];
+
+            if (!fg_insert_row($db, $insertPayload, $userId)) {
+                fg_json(500, ['ok' => false, 'error' => 'Unable to create carton stock entry.']);
+            }
+
+            fg_json(200, ['ok' => true, 'message' => 'Stock entry updated successfully.']);
+        }
+    }
+
     $stmt = $db->prepare("UPDATE finished_goods_stock
         SET category = ?, sub_type = ?, item_name = ?, item_code = ?, size = ?, gsm = ?, quantity = ?, unit = ?, location = ?, batch_no = ?, date = ?, remarks = ?,
             dispatch_qty_total = 0, closing_stock = 0
@@ -855,11 +910,42 @@ if ($action === 'update_stock') {
         $batchNo,
         $dateValue,
         $remarks,
-        $id
+        $targetId
     );
 
     if (!$stmt->execute()) {
         fg_json(500, ['ok' => false, 'error' => 'Unable to update stock entry.']);
+    }
+
+    // For carton: zero-out all other rows for the same size so aggregate stays correct.
+    if ($category === 'carton' && $targetId > 0) {
+        $sizeForMerge = strtolower(trim($size !== '' ? $size : $itemName));
+        if ($sizeForMerge !== '') {
+            $zeroStmt = $db->prepare("UPDATE finished_goods_stock
+                SET quantity = 0
+                WHERE id != ?
+                  AND category = 'carton'
+                  AND LOWER(TRIM(COALESCE(NULLIF(size, ''), item_name, ''))) = ?");
+            if ($zeroStmt) {
+                $zeroStmt->bind_param('is', $targetId, $sizeForMerge);
+                $zeroStmt->execute();
+                $zeroStmt->close();
+            }
+        }
+    }
+
+    if ($stmt->affected_rows < 1) {
+        $existsStmt = $db->prepare('SELECT id FROM finished_goods_stock WHERE id = ? LIMIT 1');
+        if (!$existsStmt) {
+            fg_json(500, ['ok' => false, 'error' => 'Unable to verify stock row.']);
+        }
+        $existsStmt->bind_param('i', $targetId);
+        $existsStmt->execute();
+        $exists = $existsStmt->get_result()->fetch_assoc();
+        $existsStmt->close();
+        if (!$exists) {
+            fg_json(404, ['ok' => false, 'error' => 'Stock row not found.']);
+        }
     }
 
     fg_json(200, ['ok' => true, 'message' => 'Stock entry updated successfully.']);

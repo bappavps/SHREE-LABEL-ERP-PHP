@@ -475,11 +475,11 @@ function packing_api_fetch_carton_status_rows(mysqli $db): array {
                    COALESCE(fg.qty, 0) AS qty
             FROM carton_items ci
             LEFT JOIN (
-                SELECT LOWER(TRIM(size)) AS size_key,
+                SELECT LOWER(TRIM(COALESCE(NULLIF(size, ''), item_name, ''))) AS size_key,
                        COALESCE(SUM(quantity), 0) AS qty
                 FROM finished_goods_stock
                 WHERE category = 'carton'
-                GROUP BY LOWER(TRIM(size))
+                GROUP BY LOWER(TRIM(COALESCE(NULLIF(size, ''), item_name, '')))
             ) fg ON fg.size_key = LOWER(TRIM(ci.item_name))
             ORDER BY ci.item_name ASC";
     $res = $db->query($sql);
@@ -487,11 +487,14 @@ function packing_api_fetch_carton_status_rows(mysqli $db): array {
         return [];
     }
     $rows = [];
+    $seen = [];
     while ($row = $res->fetch_assoc()) {
         $size = trim((string)($row['item_name'] ?? ''));
         if ($size === '') {
             continue;
         }
+        $sizeKey = strtolower($size);
+        $seen[$sizeKey] = true;
         $qty = (int)max(0, floor((float)($row['qty'] ?? 0)));
         $minQty = max(0, (int)floor((float)($row['min_qty'] ?? 0)));
         $rows[] = [
@@ -502,6 +505,43 @@ function packing_api_fetch_carton_status_rows(mysqli $db): array {
             'is_low' => ($minQty > 0 && $qty < $minQty),
         ];
     }
+
+    // Include carton sizes created directly in Finished Goods > Carton even if not present in carton_items.
+    $fgOnlySql = "SELECT LOWER(TRIM(COALESCE(NULLIF(size, ''), item_name, ''))) AS size_key,
+                         TRIM(COALESCE(NULLIF(size, ''), item_name, '')) AS size_label,
+                         COALESCE(SUM(quantity), 0) AS qty
+                  FROM finished_goods_stock
+                  WHERE category = 'carton'
+                    AND TRIM(COALESCE(NULLIF(size, ''), item_name, '')) <> ''
+                  GROUP BY LOWER(TRIM(COALESCE(NULLIF(size, ''), item_name, ''))),
+                           TRIM(COALESCE(NULLIF(size, ''), item_name, ''))";
+    $fgOnlyRes = $db->query($fgOnlySql);
+    if ($fgOnlyRes) {
+        while ($fgRow = $fgOnlyRes->fetch_assoc()) {
+            $sizeKey = strtolower(trim((string)($fgRow['size_key'] ?? '')));
+            if ($sizeKey === '' || isset($seen[$sizeKey])) {
+                continue;
+            }
+            $sizeLabel = trim((string)($fgRow['size_label'] ?? ''));
+            if ($sizeLabel === '') {
+                continue;
+            }
+            $seen[$sizeKey] = true;
+            $qty = (int)max(0, floor((float)($fgRow['qty'] ?? 0)));
+            $rows[] = [
+                'id' => 0,
+                'size' => $sizeLabel,
+                'qty' => $qty,
+                'min_qty' => 0,
+                'is_low' => false,
+            ];
+        }
+    }
+
+    usort($rows, static function (array $a, array $b): int {
+        return strcasecmp((string)($a['size'] ?? ''), (string)($b['size'] ?? ''));
+    });
+
     return $rows;
 }
 
@@ -572,6 +612,81 @@ function packing_api_deduct_carton_from_finished_goods(mysqli $db, string $size,
     $upd->close();
     $sel->close();
     return round($deducted, 3);
+}
+
+function packing_api_apply_carton_usage_deduction(mysqli $db, array $opEntry, string $jobNo, int $jobId, string $stageLabel): void {
+    $opPayload = packing_decode_json($opEntry['roll_payload_json'] ?? null);
+    $rollOverrides = is_array($opPayload['roll_overrides'] ?? null) ? $opPayload['roll_overrides'] : [];
+    $mixedData = is_array($opPayload['mixed'] ?? null) ? $opPayload['mixed'] : [];
+    $cartonUsage = []; // [ 'size' => qty ]
+
+    foreach ($rollOverrides as $override) {
+        if (!is_array($override)) {
+            continue;
+        }
+        $size = trim((string)($override['csize_text'] ?? '75mm'));
+        if ($size === '') {
+            $size = '75mm';
+        }
+        $qty = max(0, (int)($override['cartons'] ?? 0));
+        if ($qty > 0) {
+            $cartonUsage[$size] = ($cartonUsage[$size] ?? 0) + $qty;
+        }
+    }
+
+    // Mixed carton: use csize_text of first roll, or default.
+    if (!empty($mixedData['enabled']) && (int)($mixedData['mixed_cartons'] ?? 0) > 0) {
+        $mixedQty = (int)$mixedData['mixed_cartons'];
+        $firstSize = '75mm';
+        foreach ($rollOverrides as $override) {
+            if (is_array($override) && !empty($override['csize_text'])) {
+                $firstSize = trim((string)$override['csize_text']);
+                break;
+            }
+        }
+        $cartonUsage[$firstSize] = ($cartonUsage[$firstSize] ?? 0) + $mixedQty;
+    }
+
+    foreach ($cartonUsage as $size => $usedQty) {
+        if ($usedQty <= 0) {
+            continue;
+        }
+
+        // Find or create carton_items record.
+        $itemId = 0;
+        $itemSel = $db->prepare("SELECT id FROM carton_items WHERE item_name = ? LIMIT 1");
+        if ($itemSel) {
+            $itemSel->bind_param('s', $size);
+            $itemSel->execute();
+            $itemRow = $itemSel->get_result()->fetch_assoc();
+            $itemSel->close();
+
+            if ($itemRow) {
+                $itemId = (int)$itemRow['id'];
+            } else {
+                $itemIns = $db->prepare("INSERT INTO carton_items (item_name, status) VALUES (?, 'ACTIVE')");
+                if ($itemIns) {
+                    $itemIns->bind_param('s', $size);
+                    $itemIns->execute();
+                    $itemId = (int)$db->insert_id;
+                    $itemIns->close();
+                }
+            }
+        }
+
+        if ($itemId > 0) {
+            $remarks = 'Auto-deducted: Job ' . $jobNo . ' ' . $stageLabel . ' [FG_SYNCED]';
+            $stockIns = $db->prepare("INSERT INTO carton_stock (item_id, qty, type, ref_type, ref_id, remarks) VALUES (?, ?, 'CONSUME', 'JOB', ?, ?)");
+            if ($stockIns) {
+                $stockIns->bind_param('iiis', $itemId, $usedQty, $jobId, $remarks);
+                $stockIns->execute();
+                $stockIns->close();
+            }
+        }
+
+        // Keep Finished > Carton inventory in sync immediately.
+        packing_api_deduct_carton_from_finished_goods($db, (string)$size, (int)$usedQty);
+    }
 }
 
 $db = getDB();
@@ -843,6 +958,14 @@ try {
         }
         $stmt->close();
 
+        if ($tabKey === 'printing_label') {
+            $dispatchJobNoForDeduct = trim((string)($statusRow['job_no'] ?? ''));
+            $dispatchOpEntry = $dispatchJobNoForDeduct !== '' ? packing_fetch_operator_entry($db, $dispatchJobNoForDeduct) : null;
+            if (is_array($dispatchOpEntry) && packing_operator_entry_is_submitted($dispatchOpEntry)) {
+                packing_api_apply_carton_usage_deduction($db, $dispatchOpEntry, $dispatchJobNoForDeduct, $jobId, 'Dispatched');
+            }
+        }
+
         $dispatchJobNo = trim((string)($statusRow['job_no'] ?? ''));
         $advanceTargets = function_exists('jobsAdvanceNotificationTargets')
             ? jobsAdvanceNotificationTargets('packing', [])
@@ -939,6 +1062,8 @@ try {
                     }
                 }
             }
+
+            packing_api_apply_carton_usage_deduction($db, $opEntry, $jobNo, $jobId, 'Finished Barcode');
 
             $db->commit();
         } catch (Throwable $e) {
@@ -1043,67 +1168,7 @@ try {
                 }
             }
 
-                // ── Auto-deduct carton stock ──
-                $opPayload = packing_decode_json($opEntry['roll_payload_json'] ?? null);
-                $rollOverrides = is_array($opPayload['roll_overrides'] ?? null) ? $opPayload['roll_overrides'] : [];
-                $mixedData     = is_array($opPayload['mixed'] ?? null) ? $opPayload['mixed'] : [];
-                $cartonUsage   = []; // [ 'size' => qty ]
-                foreach ($rollOverrides as $override) {
-                    if (!is_array($override)) continue;
-                    $sz  = trim((string)($override['csize_text'] ?? '75mm'));
-                    if ($sz === '') $sz = '75mm';
-                    $qty = max(0, (int)($override['cartons'] ?? 0));
-                    if ($qty > 0) {
-                        $cartonUsage[$sz] = ($cartonUsage[$sz] ?? 0) + $qty;
-                    }
-                }
-                // Mixed carton: use csize_text of first roll, or default
-                if (!empty($mixedData['enabled']) && (int)($mixedData['mixed_cartons'] ?? 0) > 0) {
-                    $mixedQty = (int)$mixedData['mixed_cartons'];
-                    $firstSz  = '75mm';
-                    foreach ($rollOverrides as $ov) {
-                        if (is_array($ov) && !empty($ov['csize_text'])) {
-                            $firstSz = trim((string)$ov['csize_text']);
-                            break;
-                        }
-                    }
-                    $cartonUsage[$firstSz] = ($cartonUsage[$firstSz] ?? 0) + $mixedQty;
-                }
-                foreach ($cartonUsage as $size => $usedQty) {
-                    if ($usedQty <= 0) continue;
-                    // Find or create carton_items record
-                    $ciSel = $db->prepare("SELECT id FROM carton_items WHERE item_name = ? LIMIT 1");
-                    $itemId = 0;
-                    if ($ciSel) {
-                        $ciSel->bind_param('s', $size);
-                        $ciSel->execute();
-                        $ciRow = $ciSel->get_result()->fetch_assoc();
-                        $ciSel->close();
-                        if ($ciRow) {
-                            $itemId = (int)$ciRow['id'];
-                        } else {
-                            $ciIns = $db->prepare("INSERT INTO carton_items (item_name, status) VALUES (?, 'ACTIVE')");
-                            if ($ciIns) {
-                                $ciIns->bind_param('s', $size);
-                                $ciIns->execute();
-                                $itemId = (int)$db->insert_id;
-                                $ciIns->close();
-                            }
-                        }
-                    }
-                    if ($itemId > 0) {
-                        $remarks = 'Auto-deducted: Job ' . $jobNo . ' Finished Production [FG_SYNCED]';
-                        $csStmt = $db->prepare("INSERT INTO carton_stock (item_id, qty, type, ref_type, ref_id, remarks) VALUES (?, ?, 'CONSUME', 'JOB', ?, ?)");
-                        if ($csStmt) {
-                            $csStmt->bind_param('iiis', $itemId, $usedQty, $jobId, $remarks);
-                            $csStmt->execute();
-                            $csStmt->close();
-                        }
-                    }
-
-                    // Keep finished carton inventory in sync so Finished > Carton tab reflects deductions immediately.
-                    packing_api_deduct_carton_from_finished_goods($db, (string)$size, (int)$usedQty);
-                }
+            packing_api_apply_carton_usage_deduction($db, $opEntry, $jobNo, $jobId, 'Finished Production');
 
             $db->commit();
 

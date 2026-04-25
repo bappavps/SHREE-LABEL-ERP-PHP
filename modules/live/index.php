@@ -942,7 +942,11 @@ function getStageKeyForJob(job){
   
   if(jt === 'slitting' || dept === 'jumbo_slitting' || dept.includes('jumbo')) return 'slit';
   if(jt === 'printing' || jt === 'flexo' || dept === 'flexo_printing' || dept.includes('print') || jobNo.startsWith('FLX/')) return 'print';
-  if(dept === 'barcode' || jt === 'barcode' || jobNo.startsWith('BRC/')) return 'barcode';
+  if(
+    dept === 'barcode' || dept.includes('barcode') || dept.includes('rotary') || dept.includes('rotery') ||
+    jt === 'barcode' || jt.includes('rotary') || jt.includes('rotery') ||
+    jobNo.startsWith('BRC/') || jobNo.startsWith('BAR/') || jobNo.startsWith('ROT/')
+  ) return 'barcode';
   if(dept === 'pos' || dept === 'paperroll' || jt === 'pos' || jt === 'paperroll' || jobNo.startsWith('POS/') || jobNo.startsWith('OPL/') || jobNo.startsWith('TPL/') || jobNo.startsWith('PRL/')) return 'pos';
   if(dept === 'packing' || jt === 'packing') return 'pack';
   if(dept.includes('dispatch')) return 'dispatch';
