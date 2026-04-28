@@ -108,13 +108,15 @@ function mi_compute_extra(array $row, array $extra): array {
     if ($category === 'barcode') {
         $mixedEnabled = (int)($extra['mixed_enabled'] ?? 0) === 1;
         $rpc = (int)floor(mi_num(mi_pick($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
+        $looseQty = max(0, mi_num(mi_pick($extra, ['loose_qty'])));
 
         if ($mixedEnabled) {
-            $extraQty = max(0, mi_num($extra['mixed_extra_rolls'] ?? 0));
+            $extraQty = $looseQty;
             $possible = max(0, (int)floor(mi_num($extra['mixed_cartons'] ?? 0)));
+
             return [
                 'extra_qty' => $extraQty,
-                'unit_type' => 'ROLL',
+                'unit_type' => 'PCS',
                 'per_carton' => $rpc,
                 'possible_cartons' => $possible,
             ];
@@ -128,16 +130,29 @@ function mi_compute_extra(array $row, array $extra): array {
             }
         }
 
-        $extraQty = $totalRoll;
+        $extraQty = $looseQty;
         $possible = 0;
         if ($rpc > 0 && $totalRoll > 0) {
             $possible = (int)floor($totalRoll / $rpc);
-            $extraQty = fmod($totalRoll, $rpc);
+        }
+
+        if ($extraQty <= 0) {
+            // Fallback: if loose qty missing in old rows, convert remainder rolls to pcs.
+            $rollRemainder = 0;
+            if ($rpc > 0 && $totalRoll > 0) {
+                $rollRemainder = fmod($totalRoll, $rpc);
+            } else {
+                $rollRemainder = $totalRoll;
+            }
+            $pcsPerRoll = mi_num(mi_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll']));
+            if ($rollRemainder > 0 && $pcsPerRoll > 0) {
+                $extraQty = $rollRemainder * $pcsPerRoll;
+            }
         }
 
         return [
             'extra_qty' => max(0, $extraQty),
-            'unit_type' => 'ROLL',
+            'unit_type' => 'PCS',
             'per_carton' => $rpc,
             'possible_cartons' => $possible,
         ];

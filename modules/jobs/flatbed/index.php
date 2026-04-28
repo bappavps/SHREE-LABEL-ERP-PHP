@@ -210,6 +210,26 @@ foreach ($jobs as &$job) {
   $job['planning_size_width_mm'] = $sizeWidth;
   $job['planning_size_height_mm'] = $sizeHeight;
   $job['planning_repeat'] = (string)($planningExtra['repeat'] ?? ($planningExtra['barcode_repeat'] ?? ($planningExtra['cylinder_repeat'] ?? ($planningExtra['pitch'] ?? ''))));
+  $jobExtra = is_array($job['extra_data_parsed'] ?? null) ? $job['extra_data_parsed'] : [];
+  $planningUpsBucket = is_array($planningExtra['ups'] ?? null) ? $planningExtra['ups'] : [];
+  $planningUpsScalar = is_scalar($planningExtra['ups'] ?? null) ? (string)$planningExtra['ups'] : '';
+  $jobUpsScalar = is_scalar($jobExtra['ups'] ?? null) ? (string)$jobExtra['ups'] : '';
+  $job['planning_up_in_roll'] = (string)($planningExtra['up_in_roll']
+    ?? ($planningExtra['ups_in_roll']
+    ?? ($planningExtra['up_roll']
+    ?? ($planningUpsBucket['in_roll']
+    ?? ($planningUpsBucket['roll']
+    ?? ($jobExtra['up_in_roll'] ?? ($jobExtra['ups_in_roll'] ?? ($jobExtra['up_roll'] ?? ''))))))));
+  $job['planning_up_in_production'] = (string)($planningExtra['up_in_production']
+    ?? ($planningExtra['ups_in_production']
+    ?? ($planningExtra['up_in_die']
+    ?? ($planningUpsScalar
+    ?? ($planningExtra['up']
+    ?? ($planningUpsBucket['in_production']
+    ?? ($planningUpsBucket['production']
+    ?? ($jobExtra['up_in_production']
+    ?? ($jobExtra['ups_in_production']
+    ?? ($jobExtra['up_in_die'] ?? ($jobUpsScalar !== '' ? $jobUpsScalar : ($jobExtra['up'] ?? ''))))))))))));
   $job['planning_order_qty'] = (string)($planningExtra['order_quantity_user'] ?? ($planningExtra['order_quantity'] ?? ($planningExtra['qty_pcs'] ?? '')));
   $job['planning_pcs_per_roll'] = (string)($planningExtra['pcs_per_roll'] ?? ($planningExtra['pieces_per_roll'] ?? ($planningExtra['pcs_roll'] ?? ($planningExtra['qty_per_roll'] ?? ''))));
   $planningTotalRolls = (string)($planningExtra['total_rolls'] ?? ($planningExtra['total_roll_count'] ?? ($planningExtra['roll_count'] ?? ($planningExtra['rolls_required'] ?? ''))));
@@ -964,6 +984,8 @@ include __DIR__ . '/../../../includes/header.php';
       <div class="dc-card-row"><span class="dc-label">Order Qty (Pcs)</span><span class="dc-value"><?= e($job['planning_order_qty'] ?: '—') ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Pcs per Roll</span><span class="dc-value"><?= e($job['planning_pcs_per_roll'] ?: '—') ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Total Rolls</span><span class="dc-value"><?= e($job['planning_total_rolls'] ?: '—') ?></span></div>
+      <div class="dc-card-row"><span class="dc-label">Up in Roll</span><span class="dc-value"><?= e($job['planning_up_in_roll'] ?: '—') ?></span></div>
+      <div class="dc-card-row"><span class="dc-label">Up in Production</span><span class="dc-value"><?= e($job['planning_up_in_production'] ?: '—') ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Total Length (Mtr)</span><span class="dc-value"><?= e($job['length_mtr'] ?? '—') ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Started</span><span class="dc-value"><?= e($startedAt) ?></span></div>
       <?php if ($sts === 'Running' && $resumedTs && $timerState !== 'paused'): ?>
@@ -1028,6 +1050,8 @@ include __DIR__ . '/../../../includes/header.php';
       <div class="dc-card-row"><span class="dc-label">Order Qty</span><span class="dc-value"><?= e($job['planning_order_qty'] ?: '—') ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Pcs per Roll</span><span class="dc-value"><?= e($job['planning_pcs_per_roll'] ?: '—') ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Total Rolls</span><span class="dc-value"><?= e($job['planning_total_rolls'] ?: '—') ?></span></div>
+      <div class="dc-card-row"><span class="dc-label">Up in Roll</span><span class="dc-value"><?= e($job['planning_up_in_roll'] ?: '—') ?></span></div>
+      <div class="dc-card-row"><span class="dc-label">Up in Production</span><span class="dc-value"><?= e($job['planning_up_in_production'] ?: '—') ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Started</span><span class="dc-value"><?= e($startedAt) ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Completed</span><span class="dc-value"><?= e($completedAt) ?></span></div>
     </div>
@@ -2669,6 +2693,8 @@ async function openJobDetail(id, mode) {
     <div class="dc-op-field"><label>Order Quantity (Pcs)</label><div class="fv">${esc(job.planning_order_qty || '—')}</div></div>
     <div class="dc-op-field"><label>Pcs per Roll</label><div class="fv">${esc(job.planning_pcs_per_roll || '—')}</div></div>
     <div class="dc-op-field"><label>Total Rolls</label><div class="fv">${esc(job.planning_total_rolls || '—')}</div></div>
+    <div class="dc-op-field"><label>Up in Roll</label><div class="fv">${esc(job.planning_up_in_roll || '—')}</div></div>
+    <div class="dc-op-field"><label>Up in Production</label><div class="fv">${esc(job.planning_up_in_production || '—')}</div></div>
     <div class="dc-op-field"><label>Paper Roll Length (mtr)</label><div class="fv">${esc((job.length_mtr ?? '—') + '')}</div></div>
     <div class="dc-op-field"><label>Item Width</label><div class="fv">${esc(itemWidthText)}</div></div>
     <div class="dc-op-field"><label>Item Length</label><div class="fv">${esc(itemLengthText)}</div></div>
@@ -3078,6 +3104,7 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Paper Type</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(paperTypeTextPrint)}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Paper Company</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:900">${esc(paperCompanyPrint)}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Item Size</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#0f766e">${esc(itemSizeTextPrint)}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Order Quantity (Pcs)</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_order_qty || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Pcs per Roll</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_pcs_per_roll || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Total Rolls</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_total_rolls || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Up in Roll</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_up_in_roll || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Up in Production</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_up_in_production || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Paper Roll Length (mtr)</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.length_mtr || '—') + '')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Item Width</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(itemWidthTextPrint)}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Item Length</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(itemLengthTextPrint)}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Roll Dia</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(diaTextPrint)}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Core Size</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(coreSizeTextPrint)}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Core</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(coreSizeTextPrint)}</td></tr>
@@ -3088,6 +3115,7 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Client Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_client_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Material</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_material || job.paper_type || '—')}</td></tr>
           ${DC_SHOW_PAPER_COMPANY_IN_DETAILS ? `<tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Paper Company</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.paper_company_name || job.company || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800"></td><td style="padding:5px 7px;border:1px solid #cbd5e1"></td></tr>` : ''}
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Die Size</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#0f766e">${esc(job.planning_die_size || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Repeat</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_repeat || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Up in Roll</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_up_in_roll || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Up in Production</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_up_in_production || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Order Qty</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_order_qty || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Pcs per Roll</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_pcs_per_roll || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Total Rolls</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_total_rolls || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Roll</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(assignedRollSummary)}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Total Length</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.length_mtr || '—') + ' m')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">GSM</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.gsm || '—')}</td></tr>

@@ -327,10 +327,8 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $barcodeTotalRolls = (int)($barcodeMetricsResolved['total_rolls'] ?? 0);
         $rollsPerCartoon = (int)($barcodeMetricsResolved['rolls_per_carton'] ?? 0);
 
-        if ($barcodePerRoll > 0 && $barcodeTotalRolls > 0) {
-            $quantity = round((float)($barcodePerRoll * $barcodeTotalRolls), 3);
-            $totalValue = $quantity;
-        }
+        // Keep operator submitted physical quantity as finished stock quantity.
+        $totalValue = $quantity;
 
         $perCarton = $rollsPerCartoon > 0 ? $rollsPerCartoon : $perCarton;
     }
@@ -374,7 +372,9 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $mixedEnabled = !empty($barcodeMetricsResolved['mixed_enabled']);
         $labelGap = trim((string)($planExtra['label_gap'] ?? ''));
         $dieType = trim((string)($planExtra['die_type'] ?? ''));
-        $ups = trim((string)($planExtra['up_in_production'] ?? ($planExtra['ups'] ?? '')));
+        $upInRoll = trim((string)($planExtra['up_in_roll'] ?? ($planExtra['ups_in_roll'] ?? '')));
+        $upInProduction = trim((string)($planExtra['up_in_production'] ?? ($planExtra['up_in_die'] ?? ($planExtra['ups'] ?? ''))));
+        $ups = $upInRoll !== '' ? $upInRoll : ($upInProduction !== '' ? $upInProduction : '');
 
         $remarksPayload['extra']['planning_id'] = '';
         $remarksPayload['extra']['pcs_per_roll'] = $barcodePerRoll > 0 ? $barcodePerRoll : '';
@@ -382,6 +382,8 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $remarksPayload['extra']['roll_per_cartoon'] = $rollsPerCartoon > 0 ? $rollsPerCartoon : '';
         $remarksPayload['extra']['label_gap'] = $labelGap;
         $remarksPayload['extra']['die_type'] = $dieType;
+        $remarksPayload['extra']['up_in_roll'] = $upInRoll;
+        $remarksPayload['extra']['up_in_production'] = $upInProduction;
         $remarksPayload['extra']['ups'] = $ups;
         $remarksPayload['extra']['total_quantity'] = $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '';
         $remarksPayload['extra']['available_for_dispatch'] = $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '';

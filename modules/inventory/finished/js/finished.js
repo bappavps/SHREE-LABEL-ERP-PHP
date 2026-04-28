@@ -649,6 +649,13 @@
       if (row.category === 'carton') {
         return fmtQty(row.quantity);
       }
+      // For barcode tab, use stored carton value (not recalculated)
+      if (fg_state.activeTab === 'barcode') {
+        var storedCarton = extraPick(['carton']);
+        if (storedCarton !== '') {
+          return storedCarton;
+        }
+      }
       // For other categories, calculate cartons needed based on quantity and ratio
       var ratioRaw = extraPick(['per_carton', 'roll_per_cartoon', 'roll_per_carton']);
       var ratio = fg_num(ratioRaw);
@@ -659,7 +666,11 @@
       return '';
     }
     if (key === 'ups') {
-      return extraPick(['ups', 'up_in_production', 'ups_in_die']);
+      var fromRow = String((row && (row.up_in_roll || row.up_in_production)) || '').trim();
+      if (fromRow !== '') {
+        return fromRow;
+      }
+      return extraPick(['up_in_roll', 'ups_in_roll', 'ups', 'up_in_production', 'ups_in_die']);
     }
     if (key === 'label_gap') {
       return extraPick(['label_gap']);

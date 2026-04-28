@@ -1889,7 +1889,7 @@ include __DIR__ . '/../../includes/header.php';
       if (!src || typeof src !== 'object') return;
       var state = {};
       if (isBarcodeMode) {
-        ['bpr', 'total_rolls', 'rolls_per_carton', 'extra_pcs'].forEach(function(field) {
+        ['bpr', 'total_rolls', 'rolls_per_carton', 'extra_pcs', 'extra_pcs_manual'].forEach(function(field) {
           if (!Object.prototype.hasOwnProperty.call(src, field)) return;
           var raw = Math.floor(toNum(src[field]));
           if (!isNaN(raw)) {
@@ -2146,6 +2146,29 @@ include __DIR__ . '/../../includes/header.php';
                     extraRolls: extraRolls,
                   };
                 }
+
+                function resolveBarcodeExtraPieces(st, qtyInput, bpr, totalRollsBarcode) {
+                  var safeQty = Math.max(0, Math.floor(toNum(qtyInput)));
+                  var safeBpr = Math.max(1, Math.floor(toNum(bpr)));
+                  var remainder = safeQty % safeBpr;
+                  if (!Object.prototype.hasOwnProperty.call(st, 'extra_pcs')) {
+                    return remainder;
+                  }
+                  var extra = Math.max(0, Math.floor(toNum(st.extra_pcs)));
+                  var isManualExtra = Number(st.extra_pcs_manual || 0) === 1 || st.extra_pcs_manual === true;
+                  if (isManualExtra) {
+                    return extra;
+                  }
+                  var hasManualTotalRolls = Object.prototype.hasOwnProperty.call(st, 'total_rolls') && Math.floor(toNum(st.total_rolls)) > 0;
+                  // Legacy payloads may contain stale extra_pcs from old ceil-based logic.
+                  if (!hasManualTotalRolls) {
+                    var computedPhysical = (Math.max(0, Math.floor(toNum(totalRollsBarcode))) * safeBpr) + extra;
+                    if (computedPhysical !== safeQty) {
+                      return remainder;
+                    }
+                  }
+                  return extra;
+                }
                 
                 function seedSubmittedDefaultsForSelection(selectedRolls) {
                   if (!operatorHasSubmitted || !operatorEntry || !Array.isArray(selectedRolls) || selectedRolls.length !== 1) return;
@@ -2195,9 +2218,7 @@ include __DIR__ . '/../../includes/header.php';
                       var rollsPerCarton = packCalc.rollsPerCarton;
                       var cartonsBarcode = packCalc.cartonsBarcode;
                       var extraRolls = packCalc.extraRolls;
-                      var extraPieces = Object.prototype.hasOwnProperty.call(st, 'extra_pcs')
-                        ? Math.max(0, Math.floor(toNum(st.extra_pcs)))
-                        : Math.max(0, qty % Math.max(1, bpr));
+                      var extraPieces = resolveBarcodeExtraPieces(st, qty, bpr, totalRollsBarcode);
                       var barcodeCartonOptions = pkGetCartonSizeOptions();
                       var csizeTextRaw = String(st.csize_text || '75mm').trim() || '75mm';
                       var csizeNorm = normCsizeText(csizeTextRaw);
@@ -2223,7 +2244,7 @@ include __DIR__ . '/../../includes/header.php';
                         + '  </div>'
                         + '  <div style="margin-top:8px;padding:7px 9px;border:1px solid #86efac;border-radius:7px;background:#dcfce7;color:#166534;font-size:.8rem;font-weight:900">'
                         + '    Physical: <span class="pk-roll-total" data-roll-key="' + escHtml(key) + '">' + String(physical) + '</span>'
-                        + '    <span style="font-weight:500;font-size:.72rem;color:#16a34a;margin-left:8px">(' + String(totalRollsBarcode) + ' rolls × ' + String(bpr) + ' bpr' + (extraPieces > 0 ? ' + ' + String(extraPieces) + ' pcs' : '') + ')</span>'
+                        + '    <span class="pk-roll-formula" data-roll-key="' + escHtml(key) + '" style="font-weight:500;font-size:.72rem;color:#16a34a;margin-left:8px">(' + String(totalRollsBarcode) + ' rolls × ' + String(bpr) + ' bpr' + (extraPieces > 0 ? ' + ' + String(extraPieces) + ' pcs' : '') + ')</span>'
                         + '  </div>'
                         + '</div>';
                     }
@@ -2270,8 +2291,14 @@ include __DIR__ . '/../../includes/header.php';
                     var raw = Math.floor(toNum(node.value));
                     if (isBarcodeMode) {
                       rollHelperOverrides[key][field] = (field === 'bpr') ? Math.max(1, raw) : Math.max(0, raw);
+                      if (field === 'extra_pcs') {
+                        rollHelperOverrides[key].extra_pcs_manual = 1;
+                      }
                       if (field === 'bpr') {
                         delete rollHelperOverrides[key].total_rolls;
+                        if (!(Number(rollHelperOverrides[key].extra_pcs_manual || 0) === 1 || rollHelperOverrides[key].extra_pcs_manual === true)) {
+                          delete rollHelperOverrides[key].extra_pcs;
+                        }
                       }
                     } else {
                       rollHelperOverrides[key][field] = field === 'rps' || field === 'rpc' ? Math.max(1, raw) : Math.max(0, raw);
@@ -2395,9 +2422,7 @@ include __DIR__ . '/../../includes/header.php';
                       var rollsPerCarton = packCalc.rollsPerCarton;
                       var cartonsBarcode = packCalc.cartonsBarcode;
                       var extraRolls = packCalc.extraRolls;
-                      var extraPieces = Object.prototype.hasOwnProperty.call(st, 'extra_pcs')
-                        ? Math.max(0, Math.floor(toNum(st.extra_pcs)))
-                        : Math.max(0, qty % Math.max(1, bpr));
+                      var extraPieces = resolveBarcodeExtraPieces(st, qty, bpr, totalRollsBarcode);
                       var rollPhysical = Math.max(0, totalRollsBarcode * bpr + extraPieces);
 
                       totalBundlesNum += totalRollsBarcode;
@@ -2418,6 +2443,26 @@ include __DIR__ . '/../../includes/header.php';
                       if (cartonsDisplay) cartonsDisplay.textContent = String(cartonsBarcode);
                       var extraRollsDisplay = helperCardsWrap ? helperCardsWrap.querySelector('.pk-bc-extra-rolls-display[data-roll-key="' + rollKey.replace(/"/g, '\\"') + '"]') : null;
                       if (extraRollsDisplay) extraRollsDisplay.textContent = String(extraRolls);
+                      var extraPiecesInput = helperCardsWrap ? helperCardsWrap.querySelector('.pk-bc-extra-pcs-input[data-roll-key="' + rollKey.replace(/"/g, '\\"') + '"]') : null;
+                      if (extraPiecesInput) {
+                        var hasManualTotalRolls = Object.prototype.hasOwnProperty.call(st, 'total_rolls') && Math.floor(toNum(st.total_rolls)) > 0;
+                        var rawExtra = Object.prototype.hasOwnProperty.call(st, 'extra_pcs') ? Math.max(0, Math.floor(toNum(st.extra_pcs))) : null;
+                        var isManualExtra = Number(st.extra_pcs_manual || 0) === 1 || st.extra_pcs_manual === true;
+                        var needsAutoExtraSync = !isManualExtra && (
+                          !Object.prototype.hasOwnProperty.call(st, 'extra_pcs')
+                          || (!hasManualTotalRolls && rawExtra !== null && ((totalRollsBarcode * Math.max(1, bpr)) + rawExtra) !== Math.max(0, Math.floor(toNum(qty))))
+                        );
+                        if (needsAutoExtraSync) {
+                          extraPiecesInput.value = String(extraPieces);
+                          if (!rollHelperOverrides[rollKey] || typeof rollHelperOverrides[rollKey] !== 'object') rollHelperOverrides[rollKey] = {};
+                          rollHelperOverrides[rollKey].extra_pcs = extraPieces;
+                          rollHelperOverrides[rollKey].extra_pcs_manual = 0;
+                        }
+                      }
+                      var formulaNode = helperCardsWrap ? helperCardsWrap.querySelector('.pk-roll-formula[data-roll-key="' + rollKey.replace(/"/g, '\\"') + '"]') : null;
+                      if (formulaNode) {
+                        formulaNode.textContent = '(' + String(totalRollsBarcode) + ' rolls × ' + String(bpr) + ' bpr' + (extraPieces > 0 ? (' + ' + String(extraPieces) + ' pcs') : '') + ')';
+                      }
 
                       if (!Object.prototype.hasOwnProperty.call(st, 'total_rolls') || st.total_rolls === 0) {
                         var totalRollInput = helperCardsWrap ? helperCardsWrap.querySelector('.pk-bc-total-rolls-input[data-roll-key="' + rollKey.replace(/"/g, '\\"') + '"]') : null;

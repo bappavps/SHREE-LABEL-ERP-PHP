@@ -713,7 +713,7 @@ include __DIR__ . '/../../../includes/header.php';
         var src = payloadOverrides[key];
         if (!src || typeof src !== 'object') return;
         var dst = {};
-        ['rps','rpc','csize','cartons','extra','bpr','total_rolls','qty','extra_pcs','rolls_per_carton'].forEach(function(field) {
+        ['rps','rpc','csize','cartons','extra','bpr','total_rolls','qty','extra_pcs','extra_pcs_manual','rolls_per_carton'].forEach(function(field) {
           var raw = Math.floor(toNum(src[field]));
           if (!Number.isFinite(raw)) return;
           if (field === 'rps' || field === 'rpc' || field === 'csize') {
@@ -878,7 +878,7 @@ include __DIR__ . '/../../../includes/header.php';
             '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Order Qty</b><span style="font-size:.95rem;font-weight:900;color:#0f172a">' + escHtml(orderQtyRaw) + '</span></div>' +
             '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Production Qty</b><span style="font-size:.95rem;font-weight:900;color:#0f172a">' + escHtml(prodQtyRaw) + '</span></div>' +
             '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Total Roll Value</b><span style="font-size:.95rem;font-weight:900;color:#0f172a">' + escHtml(totalRollValueRaw || '-') + '</span></div>' +
-            '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Barcode in 1 roll</b><span style="font-size:.95rem;font-weight:900;color:#0f172a">' + escHtml(isBarcodeMode ? '250' : '-') + '</span></div>' +
+            '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Barcode in 1 roll</b><span style="font-size:.95rem;font-weight:900;color:#0f172a">' + escHtml(isBarcodeMode ? String(barcodePerRollDefault) : '-') + '</span></div>' +
             '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Shrink Bundles</b><span id="opLiveShrinkBundles" style="font-size:.95rem;font-weight:900;color:#7c3aed">-</span></div>' +
             '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Cartons Required</b><span id="opLiveCartonsRequired" style="font-size:.95rem;font-weight:900;color:#9a3412">-</span></div>' +
             '<div style="border:1px solid #bbf7d0;border-radius:8px;padding:8px;background:#f0fdf4"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#166534;margin-bottom:2px">Physical Qty</b><span id="opLivePhysicalQty" style="font-size:.95rem;font-weight:900;color:#166534">-</span></div>' +
@@ -1049,6 +1049,29 @@ include __DIR__ . '/../../../includes/header.php';
       };
     }
 
+    function resolveBarcodeExtraPieces(st, qtyInput, bpr, totalRollsBarcode) {
+      var safeQty = Math.max(0, Math.floor(toNum(qtyInput)));
+      var safeBpr = Math.max(1, Math.floor(toNum(bpr)));
+      var remainder = safeQty % safeBpr;
+      if (!Object.prototype.hasOwnProperty.call(st, 'extra_pcs')) {
+        return remainder;
+      }
+      var extra = Math.max(0, Math.floor(toNum(st.extra_pcs)));
+      var isManualExtra = Number(st.extra_pcs_manual || 0) === 1 || st.extra_pcs_manual === true;
+      if (isManualExtra) {
+        return extra;
+      }
+      var hasManualTotalRolls = Object.prototype.hasOwnProperty.call(st, 'total_rolls') && Math.floor(toNum(st.total_rolls)) > 0;
+      // Legacy payloads may contain stale extra_pcs from old ceil-based logic.
+      if (!hasManualTotalRolls) {
+        var computedPhysical = (Math.max(0, Math.floor(toNum(totalRollsBarcode))) * safeBpr) + extra;
+        if (computedPhysical !== safeQty) {
+          return remainder;
+        }
+      }
+      return extra;
+    }
+
     function computeMixedBarcodePool(rows, sharedRpc) {
       var pool = 0;
       (rows || []).forEach(function(row) {
@@ -1082,9 +1105,7 @@ include __DIR__ . '/../../../includes/header.php';
           var rollsPerCarton = packCalc.rollsPerCarton;
           var cartonsBarcode = packCalc.cartonsBarcode;
           var extraRolls = packCalc.extraRolls;
-          var extraPieces = Object.prototype.hasOwnProperty.call(st, 'extra_pcs')
-            ? Math.max(0, Math.floor(toNum(st.extra_pcs)))
-            : Math.max(0, qtyIn % Math.max(1, bpr));
+          var extraPieces = resolveBarcodeExtraPieces(st, qtyIn, bpr, totalRollsBarcode);
           var barcodeCartonOptions = opGetCartonSizeOptions();
           var csizeTextRaw = String(st.csize_text || '75mm').trim() || '75mm';
           var csizeNorm = normCsizeText(csizeTextRaw);
@@ -1111,7 +1132,7 @@ include __DIR__ . '/../../../includes/header.php';
             + '  </div>'
             + '  <div style="margin-top:8px;padding:7px 9px;border:1px solid #86efac;border-radius:7px;background:#dcfce7;color:#166534;font-size:.8rem;font-weight:900">'
             + '    Physical: <span class="op-roll-total-rolls" data-roll-key="' + escHtml(key) + '">' + String(physical) + '</span>'
-            + '    <span style="font-weight:500;font-size:.72rem;color:#16a34a;margin-left:8px">(' + String(totalRollsBarcode) + ' rolls × ' + String(bpr) + ' bpr' + (extraPieces > 0 ? ' + ' + String(extraPieces) + ' pcs' : '') + ')'
+            + '    <span class="op-roll-formula" data-roll-key="' + escHtml(key) + '" style="font-weight:500;font-size:.72rem;color:#16a34a;margin-left:8px">(' + String(totalRollsBarcode) + ' rolls × ' + String(bpr) + ' bpr' + (extraPieces > 0 ? ' + ' + String(extraPieces) + ' pcs' : '') + ')'
             + '    </span>'
             + '  </div>'
             + '</div>';
@@ -1165,6 +1186,14 @@ include __DIR__ . '/../../../includes/header.php';
           rollLooseOverrides[key][field] = Math.max(1, raw);
         } else {
           rollLooseOverrides[key][field] = Math.max(0, raw);
+        }
+
+        if (isBarcodeMode) {
+          if (field === 'extra_pcs') {
+            rollLooseOverrides[key].extra_pcs_manual = 1;
+          } else if (field === 'bpr' && !(Number(rollLooseOverrides[key].extra_pcs_manual || 0) === 1 || rollLooseOverrides[key].extra_pcs_manual === true)) {
+            delete rollLooseOverrides[key].extra_pcs;
+          }
         }
 
         // For barcode: bpr change resets total_rolls auto-calc (remove override)
@@ -1302,9 +1331,7 @@ include __DIR__ . '/../../../includes/header.php';
           var rollsPerCarton = packCalc.rollsPerCarton;
           var cartonsBarcode = packCalc.cartonsBarcode;
           var extraRolls = packCalc.extraRolls;
-          var extraPieces = Object.prototype.hasOwnProperty.call(st, 'extra_pcs')
-            ? Math.max(0, Math.floor(toNum(st.extra_pcs)))
-            : Math.max(0, qtyInput % Math.max(1, bpr));
+          var extraPieces = resolveBarcodeExtraPieces(st, qtyInput, bpr, totalRollsBarcode);
           var csizeText = String(st.csize_text || '75 mm').trim() || '75 mm';
           // Physical = total_rolls × bpr + extra_pcs
           var rollPhysical = Math.max(0, totalRollsBarcode * bpr + extraPieces);
@@ -1330,6 +1357,26 @@ include __DIR__ . '/../../../includes/header.php';
           if (cartonsDisplay) cartonsDisplay.textContent = String(cartonsBarcode);
           var extraRollsDisplay = perRollOutput ? perRollOutput.querySelector('.op-bc-extra-rolls-display[data-roll-key="' + rollKey.replace(/"/g, '\\"') + '"]') : null;
           if (extraRollsDisplay) extraRollsDisplay.textContent = String(extraRolls);
+          var extraPiecesInput = perRollOutput ? perRollOutput.querySelector('.op-bc-extra-pcs-input[data-roll-key="' + rollKey.replace(/"/g, '\\"') + '"]') : null;
+          if (extraPiecesInput) {
+            var hasManualTotalRolls = Object.prototype.hasOwnProperty.call(st, 'total_rolls') && Math.floor(toNum(st.total_rolls)) > 0;
+            var rawExtra = Object.prototype.hasOwnProperty.call(st, 'extra_pcs') ? Math.max(0, Math.floor(toNum(st.extra_pcs))) : null;
+            var isManualExtra = Number(st.extra_pcs_manual || 0) === 1 || st.extra_pcs_manual === true;
+            var needsAutoExtraSync = !isManualExtra && (
+              !Object.prototype.hasOwnProperty.call(st, 'extra_pcs')
+              || (!hasManualTotalRolls && rawExtra !== null && ((totalRollsBarcode * Math.max(1, bpr)) + rawExtra) !== Math.max(0, Math.floor(toNum(qtyInput))))
+            );
+            if (needsAutoExtraSync) {
+              extraPiecesInput.value = String(extraPieces);
+              if (!rollLooseOverrides[rollKey] || typeof rollLooseOverrides[rollKey] !== 'object') rollLooseOverrides[rollKey] = {};
+              rollLooseOverrides[rollKey].extra_pcs = extraPieces;
+              rollLooseOverrides[rollKey].extra_pcs_manual = 0;
+            }
+          }
+          var formulaNode = perRollOutput ? perRollOutput.querySelector('.op-roll-formula[data-roll-key="' + rollKey.replace(/"/g, '\\"') + '"]') : null;
+          if (formulaNode) {
+            formulaNode.textContent = '(' + String(totalRollsBarcode) + ' rolls × ' + String(bpr) + ' bpr' + (extraPieces > 0 ? (' + ' + String(extraPieces) + ' pcs') : '') + ')';
+          }
           // Update total_rolls input if it was auto-calculated (no manual override set)
           if (!Object.prototype.hasOwnProperty.call(st, 'total_rolls') || st.total_rolls === 0) {
             var totalRollsInput = perRollOutput ? perRollOutput.querySelector('.op-bc-total-rolls-input[data-roll-key="' + rollKey.replace(/"/g, '\\"') + '"]') : null;
@@ -1904,9 +1951,8 @@ include __DIR__ . '/../../../includes/header.php';
             cartons: cartonsRecalc,
             rolls_per_carton: rollsPerCartonSubmit,
             qty: Math.max(0, Math.floor(lotQty)),
-            extra_pcs: Object.prototype.hasOwnProperty.call(st, 'extra_pcs')
-              ? Math.max(0, Math.floor(toNum(st.extra_pcs)))
-              : Math.max(0, Math.floor(lotQty) % Math.max(1, bpr)),
+            extra_pcs: resolveBarcodeExtraPieces(st, Math.max(0, Math.floor(lotQty)), bpr, totalRollsSubmit),
+            extra_pcs_manual: (Number(st.extra_pcs_manual || 0) === 1 || st.extra_pcs_manual === true) ? 1 : 0,
             csize_text: String(st.csize_text || '75 mm').trim() || '75 mm'
           };
           return;

@@ -158,6 +158,31 @@ function fg_mixed_extra_qty(string $category, float $quantity, array $extra): fl
     return max(0.0, $quantity);
 }
 
+function fg_barcode_display_quantity(array $row): float {
+    $category = trim((string)($row['category'] ?? ''));
+    $quantity = fg_decimal($row['quantity'] ?? 0);
+    if ($category !== 'barcode') {
+        return $quantity;
+    }
+
+    $extra = fg_mixed_parse_extra($row['remarks'] ?? '');
+    $looseQty = fg_decimal(fg_mixed_pick($extra, ['loose_qty']));
+    if ($looseQty <= 0) {
+        return $quantity;
+    }
+
+    $bpr = fg_decimal(fg_mixed_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll']));
+    $totalRoll = fg_decimal(fg_mixed_pick($extra, ['total_roll', 'total_rolls']));
+    $rollBased = ($bpr > 0 && $totalRoll > 0) ? ($bpr * $totalRoll) : 0.0;
+
+    // Backward compatibility: older rows stored only roll*bpr in quantity.
+    if ($rollBased > 0 && abs($quantity - $rollBased) < 0.001) {
+        return fg_decimal($rollBased + $looseQty);
+    }
+
+    return $quantity;
+}
+
 function fg_period_bounds(string $period): array {
     $today = new DateTime('today');
     $start = clone $today;
@@ -281,6 +306,57 @@ function fg_fetch_carton_min_rows(mysqli $db): array {
         ];
     }
     return $rows;
+}
+
+function fg_fetch_barcode_ups_map(mysqli $db, array $jobNos): array {
+    $clean = [];
+    foreach ($jobNos as $jn) {
+        $v = trim((string)$jn);
+        if ($v !== '') {
+            $clean[$v] = true;
+        }
+    }
+    $jobNos = array_keys($clean);
+    if (empty($jobNos)) {
+        return [];
+    }
+
+    $ph = implode(',', array_fill(0, count($jobNos), '?'));
+    $types = str_repeat('s', count($jobNos));
+    $sql = "SELECT j.job_no, j.extra_data AS job_extra_data, p.extra_data AS plan_extra_data
+            FROM jobs j
+            LEFT JOIN planning p ON p.id = j.planning_id
+            WHERE j.job_no IN ($ph)
+            ORDER BY j.id DESC";
+    $stmt = $db->prepare($sql);
+    if (!$stmt) {
+        return [];
+    }
+    $stmt->bind_param($types, ...$jobNos);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+
+    $map = [];
+    foreach ($rows as $row) {
+        $jobNo = trim((string)($row['job_no'] ?? ''));
+        if ($jobNo === '' || isset($map[$jobNo])) {
+            continue;
+        }
+        $jobExtra = fg_mixed_parse_extra($row['job_extra_data'] ?? '');
+        $planParsed = json_decode((string)($row['plan_extra_data'] ?? ''), true);
+        $planExtra = is_array($planParsed) ? $planParsed : [];
+
+        $upInRoll = trim((string)($planExtra['up_in_roll'] ?? ($jobExtra['up_in_roll'] ?? ($planExtra['ups_in_roll'] ?? ''))));
+        $upInProduction = trim((string)($planExtra['up_in_production'] ?? ($jobExtra['up_in_production'] ?? ($planExtra['up_in_die'] ?? ($planExtra['ups'] ?? '')))));
+
+        $map[$jobNo] = [
+            'up_in_roll' => $upInRoll,
+            'up_in_production' => $upInProduction,
+        ];
+    }
+
+    return $map;
 }
 
 function fg_insert_row(mysqli $db, array $row, int $userId): bool {
@@ -601,6 +677,26 @@ if ($action === 'get_stock') {
     $stmt->bind_param('s', $category);
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+    if ($category === 'barcode') {
+        $jobNos = [];
+        foreach ($rows as $row) {
+            $jn = trim((string)($row['batch_no'] ?? ''));
+            if ($jn !== '') {
+                $jobNos[] = $jn;
+            }
+        }
+        $upsMap = fg_fetch_barcode_ups_map($db, $jobNos);
+
+        foreach ($rows as $idx => $row) {
+            $rows[$idx]['quantity'] = fg_barcode_display_quantity($row);
+            $jn = trim((string)($row['batch_no'] ?? ''));
+            if ($jn !== '' && isset($upsMap[$jn])) {
+                $rows[$idx]['up_in_roll'] = (string)($upsMap[$jn]['up_in_roll'] ?? '');
+                $rows[$idx]['up_in_production'] = (string)($upsMap[$jn]['up_in_production'] ?? '');
+            }
+        }
+    }
 
     if ($category === 'carton') {
         $minRows = fg_fetch_carton_min_rows($db);
