@@ -676,6 +676,51 @@ function getDisplayJobRef(job){
   return String(job.job_no||'—').trim();
 }
 
+function extractPlanningLikeRef(text){
+  const m = String(text||'').toUpperCase().match(/(PLN(?:-[A-Z0-9]+)?\/\d{4}\/\d{3,6})/);
+  return m && m[1] ? m[1] : '';
+}
+
+function inferPlanningPrefixFromCard(card){
+  const src = (card && (card.displaySource || card.activeJob || card.latestJob)) || {};
+  const extra = parsePlanningExtra(src);
+  const pt = normalizePlanningType(extra && extra.planning_type || '');
+  if(pt === 'pos_roll' || pt === 'posroll') return 'PLN-POS';
+  if(pt === 'one_ply' || pt === 'oneply') return 'PLN-1PL';
+  if(pt === 'two_ply' || pt === 'twoply') return 'PLN-2PL';
+  if(pt === 'paperroll' || pt === 'paper_roll') return 'PLN-PRL';
+
+  const keys = Array.isArray(card && card.stages) ? card.stages.map(s => s.key) : [];
+  const hasPos = keys.includes('pos');
+  const hasPrintLike = keys.includes('print') || keys.includes('die') || keys.includes('barcode') || keys.includes('lsl');
+  if(hasPos && !hasPrintLike) return 'PLN-POS';
+  return 'PLN';
+}
+
+function getCardDisplayRef(card){
+  const candidates = [];
+  if(card){
+    candidates.push(card.job_no, card.planning_job_name);
+    if(Array.isArray(card.rows)){
+      card.rows.forEach((r)=>{ candidates.push(r && r.job_no, r && r.prev_job_no, r && r.planning_job_name); });
+    }
+  }
+
+  for(let i=0;i<candidates.length;i++){
+    const ref = extractPlanningLikeRef(candidates[i]);
+    if(ref) return ref;
+  }
+
+  // Build planning-like id from shared sequence when raw PLN ref is unavailable.
+  const seqSrc = candidates.find(v => /\d{4}\/\d{3,6}$/i.test(String(v||''))) || '';
+  const seqMatch = String(seqSrc).toUpperCase().match(/(\d{4}\/\d{3,6})$/);
+  if(seqMatch && seqMatch[1]){
+    return inferPlanningPrefixFromCard(card) + '/' + seqMatch[1];
+  }
+
+  return getDisplayJobRef((card && (card.displaySource || card)) || card);
+}
+
 function stBadge(status){
   const s=normStatus(status||'');
   const map={running:'background:#dbeafe;color:#1e40af',pending:'background:#fef3c7;color:#92400e',queued:'background:#fef3c7;color:#92400e',closed:'background:#dcfce7;color:#166534',finalized:'background:#dcfce7;color:#166534',completed:'background:#dcfce7;color:#166534','qc passed':'background:#dcfce7;color:#166534','qc failed':'background:#fee2e2;color:#dc2626','packing done':'background:#dcfce7;color:#166534',packed:'background:#dcfce7;color:#166534','finished production':'background:#dcfce7;color:#166534','finished barcode':'background:#dcfce7;color:#166534',dispatched:'background:#dcfce7;color:#166534',delivered:'background:#dcfce7;color:#166534'};
@@ -843,15 +888,17 @@ function dedupeLogicalJobs(rows){
 
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
 
-const STAGE_ORDER = ['planning','slit','print','die','barcode','lsl','pos','pack','finished_production','dispatch'];
+// Master sequence: Planning > Jumbo Slitting > Flexo Printing > DieCutting > Barcode > PaperRoll > Label Slitting > BatchPrinting > Packaging > Finished Production > Dispatch
+const STAGE_ORDER = ['planning','slit','print','die','barcode','pos','lsl','batch','pack','finished_production','dispatch'];
 const STAGE_META = {
   planning:{label:'Planning', dept:'plan', badge:'PLN'},
   slit:{label:'Jumbo Slitting', dept:'slit', badge:'JMB'},
   print:{label:'Flexo Printing', dept:'print', badge:'FLX'},
   die:{label:'Die Cutting', dept:'die', badge:'DCT'},
   barcode:{label:'Barcode', dept:'die', badge:'BRC'},
+  pos:{label:'POS Roll', dept:'pack', badge:'PRL'},
   lsl:{label:'Label Slitting', dept:'lsl', badge:'LSL'},
-  pos:{label:'POS Roll', dept:'pack', badge:'PRL'}, // POS Roll stage for paperroll jobs
+  batch:{label:'Batch Printing', dept:'print', badge:'BPR'},
   pack:{label:'Packing', dept:'pack', badge:'PKG'},
   finished_production:{label:'Finished Production', dept:'pack', badge:'FPD'},
   dispatch:{label:'Dispatch', dept:'pack', badge:'DSP'}
@@ -885,6 +932,55 @@ function uniqStageKeys(keys){
     out.push(key);
   });
   return out;
+}
+
+/* ─── Department route extraction & normalization ─── */
+function extractDepartmentRoute(planningExtra){
+  if(!planningExtra || typeof planningExtra !== 'object') return null;
+  const raw = planningExtra.department_route || planningExtra.department || planningExtra.departments || '';
+  if(!raw) return null;
+  if(Array.isArray(raw)) return raw.length > 0 ? raw : null;
+  if(typeof raw === 'string'){
+    // Supports "A -> B -> C", "A > B > C", "A,B,C", "A|B|C"
+    const parts = raw.split(/\s*(?:->|>|,|\|)\s*/).map(s=>s.trim()).filter(Boolean);
+    return parts.length > 0 ? parts : null;
+  }
+  return null;
+}
+
+function normalizeRouteAlias(name){
+  const s = String(name||'').trim().toLowerCase().replace(/[\s\-_\/]+/g,'');
+  if(!s) return null;
+  if(s === 'planning') return 'planning';
+  if(s.includes('jumbo') || s === 'slitting' || s === 'jumboslitting') return 'slit';
+  if(s === 'flexoprinting' || (s.includes('flexo') && s.includes('print')) || (s.includes('print') && !s.includes('batch'))) return 'print';
+  if(s.includes('diecut') || s === 'die' || s === 'diecutting') return 'die';
+  if(s.includes('barcode') && !s.includes('finished')) return 'barcode';
+  if(s.includes('paperroll') || s.includes('posroll') || s === '1ply' || s === '2ply' || s === 'pos' || s === 'posroll') return 'pos';
+  if(s.includes('labelslit') || s === 'lsl' || s === 'labelslitting') return 'lsl';
+  if(s.includes('batch') || s === 'batchprinting') return 'batch';
+  if(s.includes('pack') || s === 'packaging' || s === 'packing') return 'pack';
+  if(s.includes('finishedprod') || s === 'finishedproduction' || s === 'finished') return 'finished_production';
+  if(s.includes('dispatch') || s === 'dispatched') return 'dispatch';
+  return null;
+}
+
+function buildRouteFromDepartmentRoute(routeNames){
+  const keys = [];
+  routeNames.forEach(name => {
+    const key = normalizeRouteAlias(name);
+    if(key) keys.push(key);
+  });
+  return uniqStageKeys(keys);
+}
+
+function hasBatchEvidence(stageMap, planningStatus, planningExtra){
+  if(stageMap && stageMap.has('batch')) return true;
+  const statusNorm = normStatus(planningStatus || '');
+  if(statusNorm.includes('batch')) return true;
+  const printingPlanNorm = normStatus(planningExtra && planningExtra.printing_planning || '');
+  if(printingPlanNorm.includes('batch')) return true;
+  return false;
 }
 
 function normalizePlanningType(type){
@@ -922,8 +1018,9 @@ function doneStatusForStage(key){
     print:'Printed',
     die:'Die Cut',
     barcode:'Barcoded',
-    lsl:'Label Slitted',
     pos:'PosRoll Done',
+    lsl:'Label Slitted',
+    batch:'Batch Printed',
     pack:'Packed',
     finished_production:'Finished Production',
     dispatch:'Dispatched'
@@ -951,6 +1048,7 @@ function getStageKeyForJob(job){
   if(dept === 'packing' || jt === 'packing') return 'pack';
   if(dept.includes('dispatch')) return 'dispatch';
   if(dept.includes('label-slitting') || dept.includes('label slitting') || jobNo.startsWith('LSL/')) return 'lsl';
+  if(dept.includes('batch') || jt.includes('batch') || jobNo.startsWith('BPR/')) return 'batch';
   if(dept.includes('flatbed') || dept.includes('die') || jt.includes('die') || jobNo.startsWith('DCT/') || jobNo.startsWith('ROT/')) return 'die';
   return 'planning';
 }
@@ -996,8 +1094,34 @@ function inferPlannedStageKeys(base, stageMap, actualJobs){
   const planningExtra = parsePlanningExtra(base);
   const progress = planningProgressInfo(base, planningExtra);
   const planningStatus = progress.norm;
+  const batchEvidence = hasBatchEvidence(stageMap, planningStatus, planningExtra);
+
+  /* ── Route-based path: use department_route from planning extra data ── */
+  const routeNames = extractDepartmentRoute(planningExtra);
+  if(routeNames && routeNames.length > 0){
+    const selectedKeys = buildRouteFromDepartmentRoute(routeNames);
+    // Ensure planning is always first
+    const keys = (selectedKeys.includes('planning') ? selectedKeys.slice() : ['planning'].concat(selectedKeys))
+      .filter((key) => key !== 'batch' || batchEvidence);
+
+    // Packing fallback: if an actual packing job exists but pack/finished_production not in selected route → append
+    const hasActualPackingJob = stageMap.has('pack');
+    if(hasActualPackingJob && !keys.includes('pack')) keys.push('pack');
+    if((hasActualPackingJob || keys.includes('pack')) && !keys.includes('finished_production')) keys.push('finished_production');
+
+      // Dispatch only when evidence exists (never default-add it)
+    const hasDispatchEvidence = stageMap.has('dispatch') || progress.key === 'dispatch' ||
+      planningStatus.includes('dispatch') || planningStatus.includes('delivered');
+    if(hasDispatchEvidence && !keys.includes('dispatch')) keys.push('dispatch');
+
+      // Trust the selected route strictly — do NOT add unselected stages from actual jobs
+      return uniqStageKeys(keys.filter(k => k !== 'dispatch' || hasDispatchEvidence)).sort((a,b)=>stageIndex(a)-stageIndex(b));
+  }
+
+  /* ── Fallback: existing inference logic (backward compatibility) ── */
   const planType = normalizePlanningType(planningExtra.planning_type || '');
   const planningDie = String(base.planning_die || planningExtra.die || '').toLowerCase();
+  const routeRaw = String(planningExtra.department_route || '').toLowerCase();
   const actualKeys = actualJobs.map(getStageKeyForJob);
   const actualSet = new Set(actualKeys);
   const keys = ['planning'];
@@ -1007,6 +1131,7 @@ function inferPlannedStageKeys(base, stageMap, actualJobs){
 
   const directFlexoBypass = Boolean(planningExtra.direct_flexo_bypass) || actualJobs.some(j => Boolean(j.extra_data_parsed && j.extra_data_parsed.direct_flexo_bypass));
   const directBarcodeBypass = Boolean(planningExtra.direct_barcode_bypass) || actualJobs.some(j => Boolean(j.extra_data_parsed && j.extra_data_parsed.direct_barcode_bypass));
+  const explicitBatchRequested = (planningStatus.includes('batch') || routeRaw.includes('batch')) && batchEvidence;
   // Fix: include PLN-PRL/ in paperroll detection
   const isPaperroll = ['pos_roll','one_ply','two_ply'].includes(planType)
     || /^PLN-(POS|1PL|2PL|PRL)\//.test(String(base.job_no || '').toUpperCase())
@@ -1019,7 +1144,7 @@ function inferPlannedStageKeys(base, stageMap, actualJobs){
 
   if(isPaperroll){
     if(has('print') || planningStatus.includes('printing')) add('print');
-    // Never show barcode stage for paperroll/PRL jobs (Fix 4)
+    // Never show barcode stage for paperroll/PRL jobs
     if(has('pos') || planningStatus.includes('pos') || planningStatus.includes('finished barcode') || planningStatus.includes('barcode') || (!has('print') && !has('barcode') && !has('die') && actualJobs.length > 0)) add('pos');
     // Do NOT add barcode for paperroll/PRL jobs
   }else{
@@ -1038,14 +1163,18 @@ function inferPlannedStageKeys(base, stageMap, actualJobs){
     if(needsDie) add('die');
     if(needsBarcode && !directBarcodeBypass) add('barcode');
     if(has('lsl') || planningStatus.includes('label slitting')) add('lsl');
+    if(explicitBatchRequested) add('batch');
   }
 
-  // Always add Packing and Finished Production at the end
+  // Always add Packing and Finished Production at the end (fallback mode preserves legacy behavior)
   add('pack');
   add('finished_production');
   if(has('dispatch') || planningStatus.includes('dispatch') || planningStatus.includes('delivered')) add('dispatch');
 
-  actualKeys.forEach(add);
+  actualKeys.forEach((key)=>{
+    if(key === 'batch' && !explicitBatchRequested) return;
+    add(key);
+  });
   return uniqStageKeys(keys).sort((a,b)=>stageIndex(a)-stageIndex(b));
 }
 
@@ -1078,7 +1207,7 @@ function buildLiveCard(rows){
     const completedAt = String(job.completed_at || '').trim();
     const hasCompletedAt = completedAt !== '' && completedAt !== '0000-00-00 00:00:00';
     const extra = job.extra_data_parsed && typeof job.extra_data_parsed === 'object' ? job.extra_data_parsed : {};
-    const hasCompletionFlag = ['finished_production_flag', 'finished_barcode_flag', 'packing_done_flag', 'packing_packed_flag', 'auto_created_from_slitting']
+    const hasCompletionFlag = ['finished_production_flag', 'finished_barcode_flag', 'packing_done_flag', 'packing_packed_flag']
       .some((k) => extra[k] === 1 || extra[k] === '1' || extra[k] === true || extra[k] === 'true');
 
     return isDoneStatus(job.status || '') || hasCompletedAt || hasCompletionFlag;
@@ -1090,6 +1219,13 @@ function buildLiveCard(rows){
     const extra = job.extra_data_parsed && typeof job.extra_data_parsed === 'object' ? job.extra_data_parsed : {};
     const finishedFlag = Number(extra.finished_production_flag || 0) === 1 || String(extra.finished_production_at || '').trim() !== '';
     return finishedFlag;
+  });
+
+  const isFinishedProductionComplete = actualJobs.some((job) => {
+    const s = normStatus(job.status || '');
+    if (s === 'finished production') return true;
+    const extra = job.extra_data_parsed && typeof job.extra_data_parsed === 'object' ? job.extra_data_parsed : {};
+    return Number(extra.finished_production_flag || 0) === 1 || String(extra.finished_production_at || '').trim() !== '';
   });
 
   // Paperroll can be effectively completed even when raw status is still pending,
@@ -1263,12 +1399,15 @@ function buildLiveCard(rows){
         stageStatus = 'Finished Production';
         state = 'done';
       } else if(key === 'pos') {
-        if (packingJob || hasCompletedPosOutput || hasPaperrollConsumption || stageMap.has('barcode') || stageMap.has('lsl') || stageMap.has('pack')) {
-          // POS is completed if packing/downstream exists or any POS-family output is completed.
-          stageStatus = 'Completed';
+        const posDoneByStatus = !!(stageJob && isDoneStatus(stageJob.status || ''));
+        const posDoneByEvidence = hasCompletedPosOutput;
+        if(state === 'done' || posDoneByStatus || posDoneByEvidence){
           state = 'done';
+          stageStatus = posDoneByStatus && stageJob ? liveStatusLabel(stageJob.status) : 'Completed';
         } else if(stageJob) {
-          stageStatus = liveStatusLabel(stageJob.status);
+          stageStatus = state === 'now' ? liveStatusLabel(stageJob.status) : 'Queued';
+        } else {
+          stageStatus = state === 'later' ? 'Queued' : meta.label;
         }
       }
       // --- End POS Roll override ---
@@ -1359,6 +1498,7 @@ function buildLiveCard(rows){
     currentStageKey: currentStage.key,
     currentStageLabel: currentStage.label,
     currentStatus: currentStage.statusText,
+    isFinishedProductionComplete,
     displaySource,
     activeJob,
     latestJob,
@@ -1494,7 +1634,9 @@ async function flLoad(){
       }
     });
 
-    FL_ALL_JOBS = aggregateLiveCards(jobs);
+    const allCards = aggregateLiveCards(jobs);
+    // Hide cards that have completed Finished Production from live floor view.
+    FL_ALL_JOBS = allCards.filter((card) => !card.isFinishedProductionComplete);
     renderStats(FL_ALL_JOBS);
     renderFilterCounts(FL_ALL_JOBS);
     renderJobs(FL_ALL_JOBS.filter(matchFilter));
@@ -1528,7 +1670,7 @@ function renderJobs(jobs){
   jobs.forEach((job,i)=>{
     const dept  = getCardDept(job);
     const pri   = (job.planning_priority||'Normal').toLowerCase();
-    const ref   = getDisplayJobRef(job.displaySource || job);
+    const ref   = getCardDisplayRef(job);
     const cr    = Number(job.pending_change_requests||0);
     const imgURL= String(job.planning_image_url||'').trim();
     const dispDate = String(job.planning_dispatch_date||'').trim();
