@@ -2052,37 +2052,43 @@
     var items = Array.isArray(batchItems) ? batchItems : [];
     var logoHtml = company.logo ? '<img src="' + esc(company.logo) + '" alt="Logo" class="ds-challan-logo">' : '';
     var addressLine = [company.address, company.phone ? ('Ph: ' + company.phone) : '', company.email].filter(Boolean).join(' | ');
+    var challanStatus = String(row.delivery_status || 'Pending');
+    var challanStatusKey = challanStatus.toLowerCase();
+    var challanStatusClass = challanStatusKey === 'delivered' ? 'delivered' : (challanStatusKey === 'in transit' ? 'transit' : 'pending');
     var itemRows = '';
     if (!items.length) {
-      itemRows = '<tr><td colspan="5" class="ds-challan-empty-row">No batches available</td></tr>';
+      itemRows = '<tr><td colspan="6" class="ds-challan-empty-row">No batches available</td></tr>';
     } else {
       for (var i = 0; i < items.length; i += 1) {
         var item = items[i];
-        itemRows += '<tr>' +
-          '<td>' + esc(item.item_name || row.item_name || '') + '</td>' +
+        itemRows += '<tr class="ds-challan-row">' +
+          '<td class="ds-challan-sl">' + String(i + 1) + '</td>' +
+          '<td class="ds-challan-item">' + esc(item.item_name || row.item_name || '') + '</td>' +
           '<td>' + esc(item.batch_no || '') + '</td>' +
           '<td>' + esc(item.packing_id || '') + '</td>' +
           '<td>' + esc(item.size || row.size || '') + '</td>' +
-          '<td class="ds-challan-num">' + fmt(item.dispatch_qty || 0) + ' ' + esc(item.unit || row.unit || '') + '</td>' +
+          '<td class="ds-challan-num"><span class="ds-qty-badge">' + fmt(item.dispatch_qty || 0) + ' ' + esc(item.unit || row.unit || '') + '</span></td>' +
         '</tr>';
       }
     }
 
     return '<div class="ds-challan">' +
+      '<div class="ds-challan-accent-bar"></div>' +
       '<div class="ds-challan-header">' +
-        '<div class="ds-challan-brand">' + logoHtml + '<div><div class="ds-challan-company">' + esc(company.name) + '</div>' +
+        '<div class="ds-challan-brand">' + logoHtml + '<div><div class="ds-challan-company">' + esc(company.name || 'Shree Label Creation ERP') + '</div>' +
         (company.tagline ? '<div class="ds-challan-tagline">' + esc(company.tagline) + '</div>' : '') +
         '<div class="ds-challan-address">' + esc(addressLine) + '</div></div></div>' +
-        '<div class="ds-challan-head-meta"><div class="ds-challan-title">Dispatch Challan</div><div class="ds-challan-id">' + esc(row.dispatch_id || '') + '</div></div>' +
+        '<div class="ds-challan-head-meta"><div class="ds-challan-title">Dispatch Challan</div><div class="ds-challan-id">' + esc(row.dispatch_id || '') + '</div><div class="ds-challan-status-chip ' + challanStatusClass + '">' + esc(challanStatus) + '</div></div>' +
       '</div>' +
       '<div class="ds-challan-section-grid">' +
         '<div class="ds-challan-section"><div class="ds-challan-section-title">Client Section</div><div><strong>Client Name:</strong> ' + esc(row.client_name || '') + '</div><div><strong>Invoice No:</strong> ' + esc(row.invoice_no || '-') + '</div></div>' +
         '<div class="ds-challan-section"><div class="ds-challan-section-title">Dispatch Info</div><div><strong>Date:</strong> ' + esc(row.dispatch_date || row.entry_date || '') + '</div><div><strong>Status:</strong> ' + esc(row.delivery_status || 'Pending') + '</div></div>' +
       '</div>' +
-      '<div class="ds-challan-table-wrap"><table class="ds-challan-table"><thead><tr><th>Item</th><th>Batch</th><th>Packing ID</th><th>Size</th><th>Qty</th></tr></thead><tbody>' + itemRows + '</tbody></table></div>' +
+      '<div class="ds-challan-table-wrap"><table class="ds-challan-table"><thead><tr><th>SL</th><th>Item</th><th>Batch</th><th>Packing ID</th><th>Size</th><th>Qty</th></tr></thead><tbody>' + itemRows + '</tbody></table></div>' +
       '<div class="ds-challan-section"><div class="ds-challan-section-title">Transport Section</div><div class="ds-challan-transport-grid"><div><strong>Transport Type:</strong> ' + esc(row.transport_type || '-') + '</div><div><strong>Vehicle Number:</strong> ' + esc(row.vehicle_no || '-') + '</div><div><strong>Driver Name:</strong> ' + esc(row.driver_name || '-') + '</div><div><strong>Driver Phone:</strong> ' + esc(row.driver_phone || '-') + '</div><div><strong>Cost:</strong> ' + fmt(row.transport_cost || 0, 2) + '</div></div></div>' +
       '<div class="ds-challan-remarks"><strong>Remarks:</strong> ' + esc(row.remarks || '-') + '</div>' +
       '<div class="ds-sign-row"><div class="ds-sign-box">Prepared By</div><div class="ds-sign-box">Dispatch In-charge</div><div class="ds-sign-box">Receiver Signature</div></div>' +
+      '<div class="ds-challan-foot"><span>Version : 1.0</span><span>&copy; 2026 Shree Label Creation ERP &bull; ERP Master System v1.0 | @ Developed by Mriganka Bhusan Debnath</span></div>' +
     '</div>';
   }
 
@@ -2095,8 +2101,12 @@
       '.ds-report{padding:14px}' +
       '.ds-report-card{background:#fff;border:1px solid #dbe5ef;border-radius:14px;overflow:hidden;box-shadow:0 10px 28px rgba(15,23,42,.08)}' +
       '.ds-report-head{background:linear-gradient(120deg,#0f766e 0%,#2563eb 52%,#7c3aed 100%);color:#fff;padding:14px 16px}' +
+      '.ds-report-brandline{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.9}' +
+      '.ds-report-title-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px}' +
+      '.ds-report-chip{display:inline-block;padding:4px 10px;border:1px solid rgba(255,255,255,.5);border-radius:999px;font-size:11px;font-weight:700;background:rgba(255,255,255,.18);white-space:nowrap}' +
       '.ds-report-head h2{margin:0;font-size:20px;letter-spacing:.01em}' +
       '.ds-report-head p{margin:4px 0 0;font-size:12px;opacity:.95}' +
+      '.ds-report-subtitle{margin-top:6px}' +
       '.ds-report-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:12px 14px;background:#f8fbff;border-bottom:1px solid #dbe5ef}' +
       '.ds-kpi-box{border:1px solid #dbe5ef;border-radius:10px;padding:10px;background:#fff}' +
       '.ds-kpi-box span{display:block;font-size:11px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.04em}' +
@@ -2110,38 +2120,55 @@
       '.ds-report-meta strong{color:#0f172a}' +
       '.ds-report-table-wrap{padding:12px 14px}' +
       '.ds-report table{width:100%;border-collapse:collapse}' +
-      '.ds-report th,.ds-report td{border:1px solid #d5deea;padding:8px 9px;font-size:12px;vertical-align:top}' +
-      '.ds-report th{background:#eaf2ff;color:#1e293b;text-align:left;font-weight:700}' +
+      '.ds-report-table{border-radius:12px;overflow:hidden}' +
+      '.ds-report th,.ds-report td{border:1px solid #d5deea;padding:9px 10px;font-size:12px;vertical-align:top}' +
+      '.ds-report th{background:linear-gradient(90deg,#eff6ff 0%,#f5f3ff 100%);color:#1e293b;text-align:left;font-weight:800;letter-spacing:.02em}' +
       '.ds-report tbody tr:nth-child(even) td{background:#fbfdff}' +
+      '.ds-report tbody tr:nth-child(odd) td{background:#ffffff}' +
       '.ds-row-pending td{background:#fff7ed !important}' +
       '.ds-row-transit td{background:#eff6ff !important}' +
       '.ds-row-delivered td{background:#ecfdf3 !important}' +
+      '.ds-status-pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.02em}' +
+      '.ds-status-pill.is-pending{color:#9a3412;background:#ffedd5;border:1px solid #fdba74}' +
+      '.ds-status-pill.is-transit{color:#1d4ed8;background:#dbeafe;border:1px solid #93c5fd}' +
+      '.ds-status-pill.is-delivered{color:#166534;background:#dcfce7;border:1px solid #86efac}' +
       '.ds-report-cell-right{text-align:right;white-space:nowrap}' +
       '.ds-no-data,.ds-challan-empty{padding:20px;text-align:center;color:#64748b;font-weight:600}' +
-      '.ds-report-foot{padding:10px 14px;border-top:1px solid #dbe5ef;background:#f8fafc;color:#334155;font-size:11px}' +
-      '.ds-challan{width:100%;background:#fff;padding:20px;box-sizing:border-box}' +
-      '.ds-challan-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;border-bottom:2px solid #cbd5e1;padding-bottom:12px;margin-bottom:14px}' +
+      '.ds-report-foot{padding:10px 14px;border-top:1px solid #dbe5ef;background:#f8fafc;color:#334155;font-size:11px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}' +
+        '.ds-challan{width:100%;background:#fff;padding:20px;box-sizing:border-box;border:1px solid #dbe5ef;border-radius:14px;overflow:hidden;box-shadow:0 10px 28px rgba(15,23,42,.08)}' +
+        '.ds-challan-accent-bar{height:8px;background:linear-gradient(90deg,#0f766e 0%,#2563eb 52%,#7c3aed 100%);margin:-20px -20px 14px}' +
+        '.ds-challan-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;border-bottom:2px solid #cbd5e1;padding-bottom:12px;margin-bottom:14px}' +
       '.ds-challan-brand{display:flex;gap:12px;align-items:flex-start}' +
       '.ds-challan-logo{height:52px;max-width:140px;object-fit:contain}' +
-      '.ds-challan-company{font-size:18px;font-weight:800}' +
+        '.ds-challan-company{font-size:20px;font-weight:900;letter-spacing:.01em}' +
       '.ds-challan-tagline,.ds-challan-address{font-size:12px;color:#475569;margin-top:3px}' +
       '.ds-challan-head-meta{text-align:right}' +
       '.ds-challan-title{font-size:18px;font-weight:800}' +
       '.ds-challan-id{font-size:12px;color:#475569;margin-top:4px}' +
+        '.ds-challan-status-chip{display:inline-block;margin-top:8px;padding:4px 10px;border-radius:999px;background:#e0f2fe;border:1px solid #7dd3fc;color:#075985;font-size:11px;font-weight:800}' +
+      '.ds-challan-status-chip.delivered{background:#dcfce7;border-color:#86efac;color:#166534}' +
+      '.ds-challan-status-chip.transit{background:#dbeafe;border-color:#93c5fd;color:#1d4ed8}' +
+      '.ds-challan-status-chip.pending{background:#ffedd5;border-color:#fdba74;color:#9a3412}' +
       '.ds-challan-section-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:14px}' +
-      '.ds-challan-section{border:1px solid #dbe5ef;border-radius:10px;padding:10px 12px;font-size:12px;background:#f8fafc}' +
+        '.ds-challan-section{border:1px solid #dbe5ef;border-radius:10px;padding:10px 12px;font-size:12px;background:linear-gradient(180deg,#f8fafc,#ffffff)}' +
       '.ds-challan-section-title{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#334155;margin-bottom:6px}' +
       '.ds-challan-table-wrap{margin-bottom:14px}' +
       '.ds-challan-table{width:100%;border-collapse:collapse}' +
-      '.ds-challan-table th,.ds-challan-table td{border:1px solid #cbd5e1;padding:8px;font-size:12px;vertical-align:top}' +
-      '.ds-challan-table th{background:#e2e8f0;text-align:left}' +
+        '.ds-challan-table th,.ds-challan-table td{border:1px solid #cbd5e1;padding:8px;font-size:12px;vertical-align:top}' +
+        '.ds-challan-table th{background:#e7efff;text-align:left;font-weight:800;border-bottom:2px solid #94a3b8}' +
+        '.ds-challan-table tbody tr:nth-child(even) td{background:#fbfdff}' +
+      '.ds-challan-row td:first-child{background:#f1f5ff;font-weight:800;color:#1e40af}' +
+      '.ds-challan-item{font-weight:700;color:#1f2937}' +
+      '.ds-challan-sl{text-align:center;min-width:42px}' +
+      '.ds-qty-badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#eefcf3;border:1px solid #86efac;color:#166534;font-weight:800}' +
       '.ds-challan-empty-row{text-align:center;color:#64748b;font-weight:600}' +
       '.ds-challan-num{text-align:right;white-space:nowrap}' +
       '.ds-challan-transport-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}' +
       '.ds-challan-remarks{font-size:12px;margin:12px 0 18px}' +
       '.ds-sign-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px}' +
       '.ds-sign-box{padding-top:28px;border-top:1px solid #94a3b8;font-size:12px;font-weight:700;text-align:center}' +
-      '@media print{.no-print{display:none}body{background:#fff;margin:0;font-size:12px}.ds-report,.ds-challan{padding:0}.ds-challan{width:100%}.ds-challan-table{border-collapse:collapse}}';
+        '.ds-challan-foot{margin-top:14px;padding-top:8px;border-top:1px dashed #cbd5e1;font-size:11px;color:#475569;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}' +
+        '@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}.no-print{display:none}body{background:#fff;margin:0;font-size:12px}.ds-report,.ds-challan{padding:0}.ds-challan{width:100%}.ds-challan-table{border-collapse:collapse}}';
   }
 
   function printHtml(title, html) {
@@ -2196,8 +2223,9 @@
 
     var html = '<div class="ds-report"><div class="ds-report-card">' +
       '<div class="ds-report-head">' +
-        '<h2>Dispatch Entries Report</h2>' +
-        '<p>' + esc(company.name || 'ERP') + ' | Professional Dispatch Export</p>' +
+        '<div class="ds-report-brandline">' + esc(company.name || 'Shree Label Creation ERP') + '</div>' +
+        '<div class="ds-report-title-row"><h2>Dispatch Entries Report</h2><span class="ds-report-chip">Dispatch Module</span></div>' +
+        '<p class="ds-report-subtitle">Professional Export Format | Clean, Color-coded and Print Ready</p>' +
       '</div>' +
       '<div class="ds-report-kpis">' +
         '<div class="ds-kpi-box ds-kpi-blue"><span>Total Entries</span><strong>' + esc(String(state.filteredRows.length)) + '</strong></div>' +
@@ -2221,11 +2249,12 @@
     if (!state.filteredRows.length) {
       html += '<div class="ds-no-data">No dispatch entries found for selected filters.</div>';
     } else {
-      html += '<table><thead><tr><th>SL</th><th>Dispatch ID</th><th>Date</th><th>Client</th><th>Item</th><th>Qty</th><th>Invoice No</th><th>Transport Type</th><th>Delivery Status</th><th>Cost</th></tr></thead><tbody>';
+      html += '<table class="ds-report-table"><thead><tr><th>SL</th><th>Dispatch ID</th><th>Date</th><th>Client</th><th>Item</th><th>Qty</th><th>Invoice No</th><th>Transport Type</th><th>Delivery Status</th><th>Cost</th></tr></thead><tbody>';
       for (var i = 0; i < state.filteredRows.length; i += 1) {
         var r = state.filteredRows[i];
         var statusText = String(r.delivery_status || '').toLowerCase();
         var rowClass = statusText === 'delivered' ? 'ds-row-delivered' : (statusText === 'in transit' ? 'ds-row-transit' : 'ds-row-pending');
+        var statusClass = statusText === 'delivered' ? 'is-delivered' : (statusText === 'in transit' ? 'is-transit' : 'is-pending');
         html += '<tr class="' + rowClass + '">' +
           '<td>' + String(i + 1) + '</td>' +
           '<td>' + esc(r.dispatch_id || '') + '</td>' +
@@ -2235,14 +2264,14 @@
           '<td class="ds-report-cell-right">' + fmt(r.dispatch_qty || 0) + ' ' + esc(r.unit || '') + '</td>' +
           '<td>' + esc(r.invoice_no || '') + '</td>' +
           '<td>' + esc(r.transport_type || '') + '</td>' +
-          '<td>' + esc(r.delivery_status || '') + '</td>' +
+          '<td><span class="ds-status-pill ' + statusClass + '">' + esc(r.delivery_status || '') + '</span></td>' +
           '<td class="ds-report-cell-right">' + fmtCurrency(r.transport_cost || 0) + '</td>' +
         '</tr>';
       }
       html += '</tbody></table>';
     }
 
-    html += '</div><div class="ds-report-foot">Generated on: ' + esc(generatedText) + ' | Powered by Dispatch Module</div></div></div>';
+    html += '</div><div class="ds-report-foot"><span>Version : 1.0</span><span>&copy; 2026 Shree Label Creation ERP &bull; ERP Master System v1.0 | @ Developed by Mriganka Bhusan Debnath</span></div></div></div>';
     return html;
   }
 
