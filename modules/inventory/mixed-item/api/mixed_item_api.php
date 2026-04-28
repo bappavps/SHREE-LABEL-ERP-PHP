@@ -105,13 +105,16 @@ function mi_compute_extra(array $row, array $extra): array {
     $category = (string)($row['category'] ?? '');
     $quantity = mi_num($row['quantity'] ?? 0);
 
-    if ($category === 'barcode') {
+    if ($category === 'barcode' || $category === 'printing_label') {
         $mixedEnabled = (int)($extra['mixed_enabled'] ?? 0) === 1;
         $rpc = (int)floor(mi_num(mi_pick($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
         $looseQty = max(0, mi_num(mi_pick($extra, ['loose_qty'])));
 
         if ($mixedEnabled) {
             $extraQty = $looseQty;
+            if ($extraQty <= 0) {
+                $extraQty = max(0, mi_num($extra['mixed_extra_rolls'] ?? 0));
+            }
             $possible = max(0, (int)floor(mi_num($extra['mixed_cartons'] ?? 0)));
 
             return [
@@ -124,7 +127,7 @@ function mi_compute_extra(array $row, array $extra): array {
 
         $totalRoll = mi_num(mi_pick($extra, ['total_roll', 'total_rolls']));
         if ($totalRoll <= 0) {
-            $pcsPerRoll = mi_num(mi_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll']));
+            $pcsPerRoll = mi_num(mi_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
             if ($pcsPerRoll > 0 && $quantity > 0) {
                 $totalRoll = ceil($quantity / $pcsPerRoll);
             }
@@ -144,7 +147,7 @@ function mi_compute_extra(array $row, array $extra): array {
             } else {
                 $rollRemainder = $totalRoll;
             }
-            $pcsPerRoll = mi_num(mi_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll']));
+            $pcsPerRoll = mi_num(mi_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
             if ($rollRemainder > 0 && $pcsPerRoll > 0) {
                 $extraQty = $rollRemainder * $pcsPerRoll;
             }
@@ -191,9 +194,9 @@ function mi_fetch_rows(mysqli $db, string $category = ''): array {
     $map = mi_categories();
     $allCats = array_keys($map);
 
-    $sql = "SELECT id, category, sub_type, item_name, item_code, size, gsm, quantity, unit, location, batch_no, date, remarks, created_by, created_at
+        $sql = "SELECT id, category, sub_type, item_name, item_code, size, gsm, quantity, unit, location, batch_no, date, remarks, created_by, created_at
             FROM finished_goods_stock
-            WHERE category IN ('pos_paper_roll','one_ply','two_ply','barcode','printing_roll')
+            WHERE category IN ('pos_paper_roll','one_ply','two_ply','barcode','printing_roll','printing_label')
             ORDER BY id DESC";
     $res = $db->query($sql);
     if (!$res) {
@@ -203,8 +206,14 @@ function mi_fetch_rows(mysqli $db, string $category = ''): array {
     $rows = [];
     while ($row = $res->fetch_assoc()) {
         $cat = (string)($row['category'] ?? '');
-        if ($category !== '' && $cat !== $category) {
-            continue;
+        if ($category !== '') {
+            if ($category === 'printing_roll') {
+                if ($cat !== 'printing_roll' && $cat !== 'printing_label') {
+                    continue;
+                }
+            } elseif ($cat !== $category) {
+                continue;
+            }
         }
 
         $extra = mi_parse_extra($row['remarks'] ?? '');
@@ -223,7 +232,7 @@ function mi_fetch_rows(mysqli $db, string $category = ''): array {
             'id' => $cat . '-' . (int)$row['id'],
             'source_id' => (int)$row['id'],
             'category' => $cat,
-            'category_label' => $map[$cat] ?? $cat,
+            'category_label' => ($cat === 'printing_label' ? ($map['printing_roll'] ?? 'Printing Extra') : ($map[$cat] ?? $cat)),
             'item_name' => (string)($row['item_name'] ?? ''),
             'item_code' => (string)($row['item_code'] ?? ''),
             'size' => (string)($row['size'] ?? ''),
@@ -300,6 +309,9 @@ if ($action === 'get_tab_counts') {
     $rows = mi_fetch_rows($db, '');
     foreach ($rows as $row) {
         $cat = (string)($row['category'] ?? '');
+        if ($cat === 'printing_label') {
+            $cat = 'printing_roll';
+        }
         if ($cat !== '' && array_key_exists($cat, $counts)) {
             $counts[$cat] += 1;
         }

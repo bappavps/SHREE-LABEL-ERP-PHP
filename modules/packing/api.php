@@ -241,6 +241,9 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
     } elseif ($packingTabKey === 'barcode') {
         $category = 'barcode';
         $subTypeDerived = 'Barcode';
+    } elseif ($packingTabKey === 'printing_label') {
+        $category = 'printing_label';
+        $subTypeDerived = 'Printing Label';
     }
 
     $packingId = trim((string)($jobDetails['packing_display_id'] ?? ''));
@@ -333,6 +336,16 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $perCarton = $rollsPerCartoon > 0 ? $rollsPerCartoon : $perCarton;
     }
 
+    if ($packingTabKey === 'printing_label') {
+        $labelPerRoll = (int)($barcodeMetricsResolved['bpr'] ?? 0);
+        $labelTotalRolls = (int)($barcodeMetricsResolved['total_rolls'] ?? 0);
+        $rollsPerCartoon = (int)($barcodeMetricsResolved['rolls_per_carton'] ?? 0);
+
+        // For printing label, keep operator submitted physical quantity as finished stock quantity.
+        $totalValue = $quantity;
+        $perCarton = $rollsPerCartoon > 0 ? $rollsPerCartoon : $perCarton;
+    }
+
     if ($packingId === '' || $jobNo === '' || $quantity <= 0) {
         $msg = 'Finished goods requires packing id, job no, and submitted physical quantity';
         if ($throwOnError) {
@@ -385,6 +398,30 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $remarksPayload['extra']['up_in_roll'] = $upInRoll;
         $remarksPayload['extra']['up_in_production'] = $upInProduction;
         $remarksPayload['extra']['ups'] = $ups;
+        $remarksPayload['extra']['total_quantity'] = $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '';
+        $remarksPayload['extra']['available_for_dispatch'] = $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '';
+        $remarksPayload['extra']['mixed_enabled'] = $mixedEnabled ? 1 : 0;
+        $remarksPayload['extra']['mixed_cartons'] = (int)($mixedPayload['mixed_cartons'] ?? 0);
+        $remarksPayload['extra']['mixed_extra_rolls'] = (int)($mixedPayload['mixed_extra_rolls'] ?? 0);
+        $remarksPayload['extra']['mixed_batch_labels'] = trim((string)($mixedPayload['batch_labels'] ?? ''));
+    }
+    if ($packingTabKey === 'printing_label') {
+        $labelPerRoll = (int)($barcodeMetricsResolved['bpr'] ?? 0);
+        $labelTotalRolls = (int)($barcodeMetricsResolved['total_rolls'] ?? 0);
+        $rollsPerCartoon = (int)($barcodeMetricsResolved['rolls_per_carton'] ?? 0);
+        $mixedPayload = is_array($barcodeMetricsResolved['mixed'] ?? null) ? $barcodeMetricsResolved['mixed'] : [];
+        $mixedEnabled = !empty($barcodeMetricsResolved['mixed_enabled']);
+
+        $remarksPayload['extra']['job_name'] = trim((string)($jobDetails['plan_name'] ?? $itemName));
+        $remarksPayload['extra']['order_date'] = trim((string)($jobDetails['order_date'] ?? ($planExtra['order_date'] ?? '')));
+        $remarksPayload['extra']['dispatch_date'] = trim((string)($jobDetails['dispatch_date'] ?? ($planExtra['dispatch_date'] ?? '')));
+        $remarksPayload['extra']['mtrs'] = trim((string)($planExtra['mtrs'] ?? ($planExtra['meter'] ?? ($jobDetails['paper_length_mtr'] ?? ''))));
+        $remarksPayload['extra']['qty'] = $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '';
+        $remarksPayload['extra']['qty_per_roll'] = $labelPerRoll > 0 ? $labelPerRoll : '';
+        $remarksPayload['extra']['direction'] = trim((string)($planExtra['direction'] ?? ($jobExtra['direction'] ?? '')));
+        $remarksPayload['extra']['pcs_per_roll'] = $labelPerRoll > 0 ? $labelPerRoll : '';
+        $remarksPayload['extra']['total_roll'] = $labelTotalRolls > 0 ? $labelTotalRolls : '';
+        $remarksPayload['extra']['roll_per_cartoon'] = $rollsPerCartoon > 0 ? $rollsPerCartoon : '';
         $remarksPayload['extra']['total_quantity'] = $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '';
         $remarksPayload['extra']['available_for_dispatch'] = $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '';
         $remarksPayload['extra']['mixed_enabled'] = $mixedEnabled ? 1 : 0;
@@ -1185,6 +1222,107 @@ try {
         }
 
         packing_api_respond(['ok' => true, 'already_done' => false, 'status' => 'Finished Production']);
+    }
+
+    if ($action === 'mark_finished_label') {
+        if ($method !== 'POST') {
+            packing_api_respond(['ok' => false, 'message' => 'Method not allowed'], 405);
+        }
+        if (!packing_api_can_finalize()) {
+            packing_api_respond(['ok' => false, 'message' => 'Only manager/admin can finish label packing'], 403);
+        }
+
+        $jobId = (int)($_POST['job_id'] ?? 0);
+        if ($jobId <= 0) {
+            packing_api_respond(['ok' => false, 'message' => 'Invalid job id'], 400);
+        }
+
+        $jobDetails = packing_fetch_job_details($db, $jobId);
+        if (!$jobDetails) {
+            packing_api_respond(['ok' => false, 'message' => 'Job not found'], 404);
+        }
+
+        $tabKey = packing_row_to_tab([
+            'job_no' => (string)($jobDetails['job_no'] ?? ''),
+            'department' => (string)($jobDetails['department'] ?? ''),
+            'plan_department' => (string)($jobDetails['plan_extra_data']['department'] ?? ''),
+            'job_type' => (string)($jobDetails['job_type'] ?? ''),
+            'extra_data' => $jobDetails['job_extra_data'] ?? [],
+            'plan_extra_data' => $jobDetails['plan_extra_data'] ?? [],
+        ]);
+        if ($tabKey !== 'printing_label') {
+            packing_api_respond(['ok' => false, 'message' => 'Finished Label is available only for Printing Label packing'], 409);
+        }
+
+        $currentStatus = strtolower(trim(str_replace(['-', '_'], ' ', packing_effective_status_from_row([
+            'status' => (string)($jobDetails['status'] ?? ''),
+            'extra_data' => $jobDetails['job_extra_data'] ?? [],
+        ]))));
+        if ($currentStatus === 'finished label') {
+            packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Finished Label']);
+        }
+        if (!in_array($currentStatus, ['packed', 'packing done'], true)) {
+            packing_api_respond(['ok' => false, 'message' => 'Job must be Packed before Finished Label'], 409);
+        }
+
+        $jobNo = trim((string)($jobDetails['job_no'] ?? ''));
+        $opEntry = $jobNo !== '' ? packing_fetch_operator_entry($db, $jobNo) : null;
+        if (!$opEntry || !packing_operator_entry_is_submitted($opEntry)) {
+            packing_api_respond(['ok' => false, 'message' => 'Operator submitted physical production is required'], 409);
+        }
+
+        $db->begin_transaction();
+        try {
+            packing_api_upsert_finished_goods($db, $jobDetails, $opEntry, $userId, $tabKey);
+
+            $stmt = $db->prepare("UPDATE jobs SET status = 'Finished Label', completed_at = COALESCE(completed_at, NOW()), updated_at = NOW() WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+            if (!$stmt) {
+                throw new RuntimeException('Finished Label update prepare failed');
+            }
+            $stmt->bind_param('i', $jobId);
+            if (!$stmt->execute()) {
+                $err = (string)$stmt->error;
+                $stmt->close();
+                throw new RuntimeException('Finished Label update failed: ' . $err);
+            }
+            $stmt->close();
+
+            $extraSel = $db->prepare("SELECT extra_data FROM jobs WHERE id = ? LIMIT 1");
+            if ($extraSel) {
+                $extraSel->bind_param('i', $jobId);
+                $extraSel->execute();
+                $extraRow = $extraSel->get_result()->fetch_assoc();
+                $extraSel->close();
+
+                $extra = packing_decode_json($extraRow['extra_data'] ?? null);
+                $extra['finished_label_flag'] = 1;
+                $extra['finished_label_at'] = date('Y-m-d H:i:s');
+                $extraJson = json_encode($extra, JSON_UNESCAPED_UNICODE);
+                if ($extraJson !== false) {
+                    $extraUpd = $db->prepare("UPDATE jobs SET extra_data = ? WHERE id = ? LIMIT 1");
+                    if ($extraUpd) {
+                        $extraUpd->bind_param('si', $extraJson, $jobId);
+                        $extraUpd->execute();
+                        $extraUpd->close();
+                    }
+                }
+            }
+
+            packing_api_apply_carton_usage_deduction($db, $opEntry, $jobNo, $jobId, 'Finished Label');
+
+            $db->commit();
+        } catch (Throwable $e) {
+            $db->rollback();
+            packing_api_respond(['ok' => false, 'message' => $e->getMessage()], 500);
+        }
+
+        $advanceTargets = function_exists('jobsAdvanceNotificationTargets')
+            ? jobsAdvanceNotificationTargets('packing', [])
+            : [];
+        $finishedLabelJobNo = trim((string)($jobDetails['job_no'] ?? ''));
+        packing_api_create_notifications($db, $jobId, $finishedLabelJobNo, 'marked as Finished Label.', 'success', $advanceTargets);
+
+        packing_api_respond(['ok' => true, 'already_done' => false, 'status' => 'Finished Label']);
     }
 
     if ($action === 'backfill_finished_barcode_stock') {

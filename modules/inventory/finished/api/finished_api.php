@@ -120,11 +120,11 @@ function fg_mixed_pick(array $extra, array $keys): string {
 }
 
 function fg_mixed_extra_qty(string $category, float $quantity, array $extra): float {
-    if (!in_array($category, ['pos_paper_roll', 'one_ply', 'two_ply', 'barcode', 'printing_roll'], true)) {
+    if (!in_array($category, ['pos_paper_roll', 'one_ply', 'two_ply', 'barcode', 'printing_label', 'printing_roll'], true)) {
         return 0.0;
     }
 
-    if ($category === 'barcode') {
+    if ($category === 'barcode' || $category === 'printing_label') {
         $mixedEnabled = (int)($extra['mixed_enabled'] ?? 0) === 1;
         $rpc = (int)floor(fg_decimal(fg_mixed_pick($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
 
@@ -134,7 +134,7 @@ function fg_mixed_extra_qty(string $category, float $quantity, array $extra): fl
 
         $totalRoll = fg_decimal(fg_mixed_pick($extra, ['total_roll', 'total_rolls']));
         if ($totalRoll <= 0) {
-            $pcsPerRoll = fg_decimal(fg_mixed_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll']));
+            $pcsPerRoll = fg_decimal(fg_mixed_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
             if ($pcsPerRoll > 0 && $quantity > 0) {
                 $totalRoll = ceil($quantity / $pcsPerRoll);
             }
@@ -547,11 +547,15 @@ if ($action === 'get_prc_suggestions') {
 }
 
 if ($action === 'get_tab_counts') {
-    $categories = ['pos_paper_roll', 'one_ply', 'two_ply', 'barcode', 'printing_roll', 'ribbon', 'core', 'carton'];
+    $categories = ['printing_label', 'pos_paper_roll', 'one_ply', 'two_ply', 'barcode', 'ribbon', 'core', 'carton'];
     $counts = [];
     foreach ($categories as $cat) {
-        $stmt = $db->prepare("SELECT COUNT(*) AS cnt FROM finished_goods_stock WHERE category = ?");
-        $stmt->bind_param('s', $cat);
+        if ($cat === 'printing_label') {
+            $stmt = $db->prepare("SELECT COUNT(*) AS cnt FROM finished_goods_stock WHERE category IN ('printing_label','printing_roll')");
+        } else {
+            $stmt = $db->prepare("SELECT COUNT(*) AS cnt FROM finished_goods_stock WHERE category = ?");
+            $stmt->bind_param('s', $cat);
+        }
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $counts[$cat] = (int)($row['cnt'] ?? 0);
@@ -573,29 +577,54 @@ if ($action === 'get_period_report') {
 
     [$fromDate, $toDate] = fg_period_bounds($period);
 
+    $reportCategories = ($category === 'printing_label') ? ['printing_label', 'printing_roll'] : [$category];
+
     // Inward during period (using stock row date, fallback to created_at date)
-    $inwardStmt = $db->prepare("SELECT COALESCE(SUM(quantity),0) AS inward_qty
-        FROM finished_goods_stock
-        WHERE category = ?
-          AND DATE(COALESCE(date, created_at)) BETWEEN ? AND ?");
-    $inwardStmt->bind_param('sss', $category, $fromDate, $toDate);
+    if (count($reportCategories) === 2) {
+        $inwardStmt = $db->prepare("SELECT COALESCE(SUM(quantity),0) AS inward_qty
+            FROM finished_goods_stock
+            WHERE category IN (?, ?)
+              AND DATE(COALESCE(date, created_at)) BETWEEN ? AND ?");
+        $inwardStmt->bind_param('ssss', $reportCategories[0], $reportCategories[1], $fromDate, $toDate);
+    } else {
+        $inwardStmt = $db->prepare("SELECT COALESCE(SUM(quantity),0) AS inward_qty
+            FROM finished_goods_stock
+            WHERE category = ?
+              AND DATE(COALESCE(date, created_at)) BETWEEN ? AND ?");
+        $inwardStmt->bind_param('sss', $category, $fromDate, $toDate);
+    }
     $inwardStmt->execute();
     $inward = (float)(($inwardStmt->get_result()->fetch_assoc() ?: ['inward_qty' => 0])['inward_qty'] ?? 0);
 
     // Dispatch during period from deduction logs
-    $dispatchStmt = $db->prepare("SELECT COALESCE(SUM(deducted_qty),0) AS dispatch_qty
-        FROM finished_goods_dispatch_log
-        WHERE category = ?
-          AND DATE(created_at) BETWEEN ? AND ?");
-    $dispatchStmt->bind_param('sss', $category, $fromDate, $toDate);
+    if (count($reportCategories) === 2) {
+        $dispatchStmt = $db->prepare("SELECT COALESCE(SUM(deducted_qty),0) AS dispatch_qty
+            FROM finished_goods_dispatch_log
+            WHERE category IN (?, ?)
+              AND DATE(created_at) BETWEEN ? AND ?");
+        $dispatchStmt->bind_param('ssss', $reportCategories[0], $reportCategories[1], $fromDate, $toDate);
+    } else {
+        $dispatchStmt = $db->prepare("SELECT COALESCE(SUM(deducted_qty),0) AS dispatch_qty
+            FROM finished_goods_dispatch_log
+            WHERE category = ?
+              AND DATE(created_at) BETWEEN ? AND ?");
+        $dispatchStmt->bind_param('sss', $category, $fromDate, $toDate);
+    }
     $dispatchStmt->execute();
     $dispatch = (float)(($dispatchStmt->get_result()->fetch_assoc() ?: ['dispatch_qty' => 0])['dispatch_qty'] ?? 0);
 
     // Closing stock (current)
-    $closingStmt = $db->prepare("SELECT COALESCE(SUM(quantity),0) AS closing_qty
-        FROM finished_goods_stock
-        WHERE category = ?");
-    $closingStmt->bind_param('s', $category);
+    if (count($reportCategories) === 2) {
+        $closingStmt = $db->prepare("SELECT COALESCE(SUM(quantity),0) AS closing_qty
+            FROM finished_goods_stock
+            WHERE category IN (?, ?)");
+        $closingStmt->bind_param('ss', $reportCategories[0], $reportCategories[1]);
+    } else {
+        $closingStmt = $db->prepare("SELECT COALESCE(SUM(quantity),0) AS closing_qty
+            FROM finished_goods_stock
+            WHERE category = ?");
+        $closingStmt->bind_param('s', $category);
+    }
     $closingStmt->execute();
     $closing = (float)(($closingStmt->get_result()->fetch_assoc() ?: ['closing_qty' => 0])['closing_qty'] ?? 0);
 
@@ -607,26 +636,46 @@ if ($action === 'get_period_report') {
         $monthlyInward = [];
         $monthlyDispatch = [];
 
-        $mi = $db->prepare("SELECT DATE_FORMAT(DATE(COALESCE(date, created_at)),'%Y-%m') AS ym, COALESCE(SUM(quantity),0) AS qty
-            FROM finished_goods_stock
-            WHERE category = ?
-              AND DATE(COALESCE(date, created_at)) BETWEEN ? AND ?
-            GROUP BY ym
-            ORDER BY ym ASC");
-        $mi->bind_param('sss', $category, $fromDate, $toDate);
+                if (count($reportCategories) === 2) {
+                        $mi = $db->prepare("SELECT DATE_FORMAT(DATE(COALESCE(date, created_at)),'%Y-%m') AS ym, COALESCE(SUM(quantity),0) AS qty
+                                FROM finished_goods_stock
+                                WHERE category IN (?, ?)
+                                    AND DATE(COALESCE(date, created_at)) BETWEEN ? AND ?
+                                GROUP BY ym
+                                ORDER BY ym ASC");
+                        $mi->bind_param('ssss', $reportCategories[0], $reportCategories[1], $fromDate, $toDate);
+                } else {
+                        $mi = $db->prepare("SELECT DATE_FORMAT(DATE(COALESCE(date, created_at)),'%Y-%m') AS ym, COALESCE(SUM(quantity),0) AS qty
+                                FROM finished_goods_stock
+                                WHERE category = ?
+                                    AND DATE(COALESCE(date, created_at)) BETWEEN ? AND ?
+                                GROUP BY ym
+                                ORDER BY ym ASC");
+                        $mi->bind_param('sss', $category, $fromDate, $toDate);
+                }
         $mi->execute();
         $miRes = $mi->get_result();
         while ($r = $miRes->fetch_assoc()) {
             $monthlyInward[(string)$r['ym']] = (float)($r['qty'] ?? 0);
         }
 
-        $md = $db->prepare("SELECT DATE_FORMAT(DATE(created_at),'%Y-%m') AS ym, COALESCE(SUM(deducted_qty),0) AS qty
-            FROM finished_goods_dispatch_log
-            WHERE category = ?
-              AND DATE(created_at) BETWEEN ? AND ?
-            GROUP BY ym
-            ORDER BY ym ASC");
-        $md->bind_param('sss', $category, $fromDate, $toDate);
+                if (count($reportCategories) === 2) {
+                        $md = $db->prepare("SELECT DATE_FORMAT(DATE(created_at),'%Y-%m') AS ym, COALESCE(SUM(deducted_qty),0) AS qty
+                                FROM finished_goods_dispatch_log
+                                WHERE category IN (?, ?)
+                                    AND DATE(created_at) BETWEEN ? AND ?
+                                GROUP BY ym
+                                ORDER BY ym ASC");
+                        $md->bind_param('ssss', $reportCategories[0], $reportCategories[1], $fromDate, $toDate);
+                } else {
+                        $md = $db->prepare("SELECT DATE_FORMAT(DATE(created_at),'%Y-%m') AS ym, COALESCE(SUM(deducted_qty),0) AS qty
+                                FROM finished_goods_dispatch_log
+                                WHERE category = ?
+                                    AND DATE(created_at) BETWEEN ? AND ?
+                                GROUP BY ym
+                                ORDER BY ym ASC");
+                        $md->bind_param('sss', $category, $fromDate, $toDate);
+                }
         $md->execute();
         $mdRes = $md->get_result();
         while ($r2 = $mdRes->fetch_assoc()) {
@@ -670,13 +719,28 @@ if ($action === 'get_stock') {
         fg_json(400, ['ok' => false, 'error' => 'Category is required.']);
     }
 
-    $stmt = $db->prepare("SELECT id, category, sub_type, item_name, item_code, size, gsm, quantity, dispatch_qty_total, closing_stock, unit, location, batch_no, date, remarks, created_by, created_at
-        FROM finished_goods_stock
-        WHERE category = ?
-        ORDER BY id DESC");
-    $stmt->bind_param('s', $category);
+    if ($category === 'printing_label') {
+        $stmt = $db->prepare("SELECT id, category, sub_type, item_name, item_code, size, gsm, quantity, dispatch_qty_total, closing_stock, unit, location, batch_no, date, remarks, created_by, created_at
+            FROM finished_goods_stock
+            WHERE category IN ('printing_label','printing_roll')
+            ORDER BY id DESC");
+    } else {
+        $stmt = $db->prepare("SELECT id, category, sub_type, item_name, item_code, size, gsm, quantity, dispatch_qty_total, closing_stock, unit, location, batch_no, date, remarks, created_by, created_at
+            FROM finished_goods_stock
+            WHERE category = ?
+            ORDER BY id DESC");
+        $stmt->bind_param('s', $category);
+    }
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+    if ($category === 'printing_label') {
+        foreach ($rows as $idx => $row) {
+            if ((string)($row['category'] ?? '') === 'printing_roll') {
+                $rows[$idx]['category'] = 'printing_label';
+            }
+        }
+    }
 
     if ($category === 'barcode') {
         $jobNos = [];
@@ -866,10 +930,16 @@ if ($action === 'get_summary' || $action === 'summary') {
         fg_json(400, ['ok' => false, 'error' => 'Category is required.']);
     }
 
-    $stmt = $db->prepare("SELECT id, quantity, remarks
-        FROM finished_goods_stock
-        WHERE category = ?");
-    $stmt->bind_param('s', $category);
+    if ($category === 'printing_label') {
+        $stmt = $db->prepare("SELECT id, category, quantity, remarks
+            FROM finished_goods_stock
+            WHERE category IN ('printing_label','printing_roll')");
+    } else {
+        $stmt = $db->prepare("SELECT id, category, quantity, remarks
+            FROM finished_goods_stock
+            WHERE category = ?");
+        $stmt->bind_param('s', $category);
+    }
     $stmt->execute();
 
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -880,8 +950,12 @@ if ($action === 'get_summary' || $action === 'summary') {
     foreach ($rows as $row) {
         $qty = fg_decimal($row['quantity'] ?? 0);
         $totalQuantity += $qty;
+        $rowCategory = trim((string)($row['category'] ?? ''));
+        if ($category === 'printing_label' && $rowCategory === 'printing_roll') {
+            $rowCategory = 'printing_label';
+        }
         $extra = fg_mixed_parse_extra($row['remarks'] ?? '');
-        $mixedExtra += fg_mixed_extra_qty($category, $qty, $extra);
+        $mixedExtra += fg_mixed_extra_qty($rowCategory !== '' ? $rowCategory : $category, $qty, $extra);
     }
 
     $effectiveQuantity = max(0.0, $totalQuantity - $mixedExtra);

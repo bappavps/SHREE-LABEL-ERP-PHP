@@ -23,16 +23,16 @@
     isAdmin: String(fg_root.getAttribute('data-is-admin') || '') === '1',
     canManageRows: String(fg_root.getAttribute('data-can-manage-rows') || fg_root.getAttribute('data-is-admin') || '') === '1',
     tabs: [
+      { key: 'printing_label', label: 'Printing Label', color: '#DC2626' },
       { key: 'pos_paper_roll', label: 'POS & Paper Roll', color: '#2563EB' },
       { key: 'one_ply', label: '1 Ply', color: '#166534' },
       { key: 'two_ply', label: '2 Ply', color: '#0f766e' },
       { key: 'barcode', label: 'Barcode', color: '#16A34A' },
-      { key: 'printing_roll', label: 'Printing Roll', color: '#7E22CE' },
       { key: 'ribbon', label: 'Ribbon', color: '#EA580C' },
       { key: 'core', label: 'Core', color: '#0F766E' },
       { key: 'carton', label: 'Carton', color: '#92400E' }
     ],
-    activeTab: 'pos_paper_roll',
+    activeTab: 'printing_label',
     rows: [],
     filteredRows: [],
     summary: { total_items: 0, total_quantity: 0 },
@@ -458,6 +458,35 @@
       ];
     }
 
+    if (tabKey === 'printing_label') {
+      return [
+        { key: 'sl_no', label: 'SL.NO', numeric: true },
+        { key: 'packing_id', label: 'Packing ID' },
+        { key: 'production_date', label: 'Production Date' },
+        { key: 'job_name', label: 'Job Name' },
+        { key: 'order_date', label: 'Order Date' },
+        { key: 'dispatch_date', label: 'Dispatch Date' },
+        { key: 'size', label: 'Size' },
+        { key: 'width', label: 'Width' },
+        { key: 'length', label: 'Length' },
+        { key: 'gsm', label: 'GSM' },
+        { key: 'mtrs', label: 'MTRS' },
+        { key: 'qty', label: 'QTY', numeric: true },
+        { key: 'qty_per_roll', label: 'Qty/Roll', numeric: true },
+        { key: 'direction', label: 'Direction' },
+        { key: 'core_size', label: 'Core size' },
+        { key: 'core_type', label: 'core type' },
+        { key: 'paper_company', label: 'Paper COMPANY' },
+        { key: 'material_type', label: 'Material Type' },
+        { key: 'per_carton', label: 'Per carton', numeric: true },
+        { key: 'carton', label: 'CARTON', numeric: true },
+        { key: 'after_packing_qty', label: 'After Packing Qty', numeric: true },
+        { key: 'current_total', label: 'Current Total', numeric: true },
+        { key: 'available_for_dispatch', label: 'Available for Dispatch', numeric: true },
+        { key: 'status', label: 'Status' }
+      ];
+    }
+
     if (tabKey === 'printing_roll') {
       return [
         { key: 'item_name', label: 'Item Name' },
@@ -525,7 +554,7 @@
     }
     function mixedAdjustedTotal() {
       var category = String((row && row.category) || fg_state.activeTab || '');
-      var supportsMixed = ['pos_paper_roll', 'one_ply', 'two_ply', 'barcode', 'printing_roll'].indexOf(category) !== -1;
+      var supportsMixed = ['pos_paper_roll', 'one_ply', 'two_ply', 'barcode', 'printing_label', 'printing_roll'].indexOf(category) !== -1;
 
       var currentRaw = fg_num(row.quantity);
       var dispatchQtyTotal = fg_num(row.dispatch_qty_total || 0);
@@ -547,7 +576,7 @@
 
         var mixedExtra = 0;
 
-        if (category === 'barcode') {
+        if (category === 'barcode' || category === 'printing_label') {
           var mixedEnabled = String(extra.mixed_enabled || '0') === '1';
           var rpc = Math.floor(fg_num(extraPick(['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
 
@@ -617,6 +646,27 @@
         return fg_num(row.quantity) <= 0 ? 'Dispatched' : 'Ready to Dispatch';
       }
       return fg_num(row.quantity) <= 0 ? 'Dispatched' : 'In Stock';
+    }
+    if (key === 'job_name') {
+      return extraPick(['job_name']) || row.item_name || '';
+    }
+    if (key === 'order_date') {
+      return extraPick(['order_date']);
+    }
+    if (key === 'dispatch_date') {
+      return extraPick(['dispatch_date']);
+    }
+    if (key === 'mtrs') {
+      return extraPick(['mtrs', 'meter']);
+    }
+    if (key === 'qty') {
+      return fmtQty(mixedAdjustedTotal().packed_net);
+    }
+    if (key === 'qty_per_roll') {
+      return extraPick(['qty_per_roll', 'pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll']);
+    }
+    if (key === 'direction') {
+      return extraPick(['direction']);
     }
     if (key === 'pcs_per_roll') {
       return extraPick(['pcs_per_roll', 'pieces_per_roll', 'pices_per_roll', 'barcode_in_1_roll', 'qty_per_roll']);
@@ -806,7 +856,7 @@
   }
 
   function fg_isDispatchTab() {
-    return fg_state.activeTab === 'pos_paper_roll' || fg_state.activeTab === 'one_ply' || fg_state.activeTab === 'two_ply' || fg_state.activeTab === 'barcode';
+    return fg_state.activeTab === 'pos_paper_roll' || fg_state.activeTab === 'one_ply' || fg_state.activeTab === 'two_ply' || fg_state.activeTab === 'barcode' || fg_state.activeTab === 'printing_label';
   }
 
   function fg_dispatchRow(row) {
@@ -882,6 +932,34 @@
         { name: 'roll_per_cartoon', label: 'ROLL PER CARTOON', source: 'extra', type: 'number' },
         { name: 'quantity', label: 'TOTAL Quantity', source: 'direct', type: 'number', required: true },
         { name: 'available_for_dispatch', label: 'Available for Dispatch', source: 'extra', type: 'number', readonly: true, save: false, importable: false },
+        { name: 'note', label: 'Remarks', source: 'note', type: 'textarea', full: true }
+      ];
+    }
+
+    if (tabKey === 'printing_label') {
+      return [
+        { name: 'sl_no', label: 'SL.NO', source: 'meta', readonly: true, save: false, importable: false },
+        { name: 'packing_id', label: 'Packing ID', source: 'extra', readonly: true },
+        { name: 'date', label: 'Production Date', source: 'direct', type: 'date' },
+        { name: 'job_name', label: 'Job Name', source: 'extra' },
+        { name: 'order_date', label: 'Order Date', source: 'extra' },
+        { name: 'dispatch_date', label: 'Dispatch Date', source: 'extra' },
+        { name: 'size', label: 'Size', source: 'direct' },
+        { name: 'width', label: 'Width', source: 'extra' },
+        { name: 'length', label: 'Length', source: 'extra' },
+        { name: 'gsm', label: 'GSM', source: 'direct' },
+        { name: 'mtrs', label: 'MTRS', source: 'extra' },
+        { name: 'quantity', label: 'QTY', source: 'direct', type: 'number', required: true },
+        { name: 'qty_per_roll', label: 'Qty/Roll', source: 'extra', type: 'number' },
+        { name: 'direction', label: 'Direction', source: 'extra' },
+        { name: 'core_size', label: 'Core size', source: 'extra' },
+        { name: 'core_type', label: 'core type', source: 'extra' },
+        { name: 'paper_company', label: 'Paper COMPANY', source: 'extra' },
+        { name: 'material_type', label: 'Material Type', source: 'extra' },
+        { name: 'per_carton', label: 'Per carton', source: 'extra', type: 'number' },
+        { name: 'carton', label: 'CARTON', source: 'extra', type: 'number', readonly: true, save: false, importable: false },
+        { name: 'available_for_dispatch', label: 'Available for Dispatch', source: 'extra', type: 'number', readonly: true, save: false, importable: false },
+        { name: 'status', label: 'Status', source: 'extra', readonly: true, save: false, importable: false },
         { name: 'note', label: 'Remarks', source: 'note', type: 'textarea', full: true }
       ];
     }
