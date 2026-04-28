@@ -953,7 +953,7 @@ if ($action === 'get_stock') {
             if ($mSize === '') {
                 continue;
             }
-            $mKey = strtolower($mSize);
+            $mKey = strtolower(preg_replace('/\s+/', '', $mSize));
             $minByKey[$mKey] = (int)($mrow['min_qty'] ?? 0);
             $idByKey[$mKey] = (int)($mrow['id'] ?? 0);
             $labelByKey[$mKey] = $mSize;
@@ -966,17 +966,22 @@ if ($action === 'get_stock') {
             if ($sizeText === '') {
                 continue;
             }
-            $key = strtolower($sizeText);
+            $key = strtolower(preg_replace('/\s+/', '', $sizeText));
             $presentKeys[$key] = true;
-            if (!isset($labelByKey[$key])) {
-                $labelByKey[$key] = $sizeText;
-            }
+            // Prefer the stock row's label (e.g. '75 mm') over the carton_items label (e.g. '75mm').
+            $labelByKey[$key] = $sizeText;
             $qtyByKey[$key] = ($qtyByKey[$key] ?? 0.0) + fg_decimal($row['quantity'] ?? 0);
         }
 
+        // Normalize each row's size to the canonical label so JS sees consistent strings.
         foreach ($rows as $idx => $row) {
             $sizeText = trim((string)($row['size'] ?? $row['item_name'] ?? ''));
-            $key = strtolower($sizeText);
+            $key = strtolower(preg_replace('/\s+/', '', $sizeText));
+            if (isset($labelByKey[$key]) && $labelByKey[$key] !== $sizeText) {
+                $rows[$idx]['size'] = $labelByKey[$key];
+                $rows[$idx]['item_name'] = $labelByKey[$key];
+                $sizeText = $labelByKey[$key];
+            }
             $minQty = (int)($minByKey[$key] ?? 0);
             $aggQty = (float)($qtyByKey[$key] ?? 0.0);
             $rows[$idx]['carton_item_id'] = (int)($idByKey[$key] ?? 0);

@@ -1062,7 +1062,7 @@
     var cartonSizeOptions = (function () {
       var seen = {};
       var list = [];
-      var fallback = ['57x15', '57x25', '78x25', '75mm', 'Barcode', 'Medicine'];
+      var fallback = ['57x15', '57x25', '78x25', '75 mm', 'Barcode', 'Medicine'];
       var rows = fg_state.rows || [];
       for (var ri = 0; ri < rows.length; ri += 1) {
         var sz = String(rows[ri].size || rows[ri].item_name || '').trim();
@@ -1554,7 +1554,7 @@
 
   function fg_renderCartonMatrixTable() {
     var rows = fg_state.filteredRows.slice();
-    var fixedOrder = ['57x15', '57x25', '78x25', '75mm', 'Barcode', 'Medicine'];
+    var fixedOrder = ['57x15', '57x25', '78x25', '75 mm', 'Barcode', 'Medicine'];
     var order = fixedOrder.slice();
     var qtyBySize = {};
     var minBySize = {};
@@ -1569,7 +1569,7 @@
 
     for (var i = 0; i < rows.length; i += 1) {
       var row = rows[i] || {};
-      var sizeText = String(fg_value(row, 'size') || row.size || row.item_name || '').trim();
+      var sizeText = String(fg_value(row, 'size') || row.size || row.item_name || '').trim().replace(/\s+/g, ' ');
       if (!sizeText) {
         sizeText = 'Other';
       }
