@@ -442,13 +442,29 @@ function planning_get_columns(mysqli $db, $department, array $defaultColumns) {
 }
 
 function planning_get_rows(mysqli $db, $department) {
+    $archivedStatusSql = "LOWER(TRIM(REPLACE(REPLACE(COALESCE(p.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finished label','finised barcode','packed','dispatched','complete','completed')";
+    $archivedJobsSql = "EXISTS (
+        SELECT 1 FROM jobs j
+        WHERE j.planning_id = p.id
+          AND (
+            LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finished label','packed','dispatched','complete','closed','finalized','completed','qc passed')
+            OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_flag\":1%'
+            OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_flag\":1%'
+            OR COALESCE(j.extra_data, '') LIKE '%\"finished_label_flag\":1%'
+            OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_flag\":1%'
+            OR COALESCE(j.extra_data, '') LIKE '%\"packing_packed_flag\":1%'
+            OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_at\":%'
+            OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_at\":%'
+            OR COALESCE(j.extra_data, '') LIKE '%\"finished_label_at\":%'
+            OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_at\":%'
+          )
+    )";
+
     $stmt = $db->prepare("SELECT p.*, so.order_no, so.client_name
         FROM planning p
         LEFT JOIN sales_orders so ON so.id = p.sales_order_id
         WHERE p.department = ?
-          AND LOWER(TRIM(COALESCE(p.status, ''))) <> 'finished'
-          AND LOWER(TRIM(COALESCE(p.status, ''))) <> 'complete'
-          AND LOWER(TRIM(COALESCE(p.status, ''))) <> 'completed'
+          AND NOT ($archivedStatusSql OR $archivedJobsSql)
         ORDER BY
           CASE WHEN p.sequence_order > 0 THEN 0 ELSE 1 END ASC,
           p.sequence_order ASC,
@@ -1191,18 +1207,20 @@ $boardUrl = appUrl('modules/planning/index.php?department=' . rawurlencode($depa
 $historyUrl = appUrl('modules/planning/history.php?department=' . rawurlencode($department));
 
 $historyTabCount = 0;
-$historyArchivedStatusSql = "LOWER(TRIM(REPLACE(REPLACE(COALESCE(p.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finised barcode','packed','dispatched','complete')";
+$historyArchivedStatusSql = "LOWER(TRIM(REPLACE(REPLACE(COALESCE(p.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finished label','finised barcode','packed','dispatched','complete')";
 $historyArchivedJobsSql = "EXISTS (
     SELECT 1 FROM jobs j
     WHERE j.planning_id = p.id
       AND (
-        LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','packed','dispatched','complete','closed','finalized','completed','qc passed')
+        LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finished label','packed','dispatched','complete','closed','finalized','completed','qc passed')
         OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_flag\":1%'
         OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_flag\":1%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_label_flag\":1%'
         OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_flag\":1%'
         OR COALESCE(j.extra_data, '') LIKE '%\"packing_packed_flag\":1%'
         OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_at\":%'
         OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_at\":%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_label_at\":%'
         OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_at\":%'
       )
 )";

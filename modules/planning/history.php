@@ -93,6 +93,9 @@ function planning_history_dispatch_date(array $row, array $extra) {
 function planning_history_status_label($value) {
   $raw = trim((string)$value);
   $norm = strtolower(trim(str_replace(['-', '_'], ' ', $raw)));
+  if (in_array($norm, ['finished label'], true)) {
+    return 'Finished Label';
+  }
   if (in_array($norm, ['finished', 'finished production', 'packed', 'dispatched', 'complete'], true)) {
     return 'Finished Production';
   }
@@ -151,18 +154,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $deptWhere = planning_history_department_where($department);
-$archivedStatusSql = "LOWER(TRIM(REPLACE(REPLACE(COALESCE(p.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finised barcode','packed','dispatched','complete')";
+$archivedStatusSql = "LOWER(TRIM(REPLACE(REPLACE(COALESCE(p.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finished label','finised barcode','packed','dispatched','complete')";
 $archivedJobsSql = "EXISTS (
     SELECT 1 FROM jobs j
     WHERE j.planning_id = p.id
       AND (
-        LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','packed','dispatched','complete','closed','finalized','completed','qc passed')
+        LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finished label','packed','dispatched','complete','closed','finalized','completed','qc passed')
         OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_flag\":1%'
         OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_flag\":1%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_label_flag\":1%'
         OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_flag\":1%'
         OR COALESCE(j.extra_data, '') LIKE '%\"packing_packed_flag\":1%'
         OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_at\":%'
         OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_at\":%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_label_at\":%'
         OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_at\":%'
       )
   )";
@@ -318,18 +323,20 @@ if ($printSummary !== '') {
 
 $years = [];
 $yearWhere = planning_history_department_where($department, '');
-$yearArchivedStatusSql = "LOWER(TRIM(REPLACE(REPLACE(COALESCE(p.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finised barcode','packed','dispatched','complete')";
+$yearArchivedStatusSql = "LOWER(TRIM(REPLACE(REPLACE(COALESCE(p.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finished label','finised barcode','packed','dispatched','complete')";
 $yearArchivedJobsSql = "EXISTS (
     SELECT 1 FROM jobs j
     WHERE j.planning_id = p.id
       AND (
-        LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','packed','dispatched','complete','closed','finalized','completed','qc passed')
+        LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finished label','packed','dispatched','complete','closed','finalized','completed','qc passed')
         OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_flag\":1%'
         OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_flag\":1%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_label_flag\":1%'
         OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_flag\":1%'
         OR COALESCE(j.extra_data, '') LIKE '%\"packing_packed_flag\":1%'
         OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_at\":%'
         OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_at\":%'
+        OR COALESCE(j.extra_data, '') LIKE '%\"finished_label_at\":%'
         OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_at\":%'
       )
   )";

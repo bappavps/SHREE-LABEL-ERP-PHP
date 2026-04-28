@@ -159,6 +159,15 @@ include __DIR__ . '/../../includes/header.php';
               <label for="dsDispatchCarton">Dispatch Carton</label>
               <input id="dsDispatchCarton" type="number" step="0.01" readonly style="background:#fff3cd;color:#856404;font-weight:600;border-color:#ffc107;" placeholder="—">
             </div>
+            <div class="ds-field" id="dsExtraDispatchQtyWrap" style="display:none;">
+              <label for="dsExtraDispatchQty">Extra PCS (Mixed)</label>
+              <input id="dsExtraDispatchQty" type="number" min="0" step="0.001" style="background:#fff0f6;color:#9d174d;font-weight:600;border-color:#f472b6;" placeholder="0">
+              <small id="dsExtraDispatchHint" class="ds-muted">Available mixed extra: 0 PCS</small>
+            </div>
+            <div class="ds-field" id="dsExtraDispatchCartonWrap" style="display:none;">
+              <label for="dsExtraDispatchCarton">Extra Carton (Mixed)</label>
+              <input id="dsExtraDispatchCarton" type="number" min="0" step="0.01" readonly style="background:#fff0f6;color:#9d174d;font-weight:600;border-color:#f472b6;" placeholder="—">
+            </div>
             <div class="ds-field">
               <label for="dsUnit">Unit</label>
               <select id="dsUnit">

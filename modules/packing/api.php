@@ -1101,6 +1101,16 @@ try {
             }
             $stmt->close();
 
+            $planningId = (int)($jobDetails['planning_id'] ?? 0);
+            if ($planningId > 0) {
+                $planUpd = $db->prepare("UPDATE planning SET status = 'Finished Production', updated_at = NOW() WHERE id = ? LIMIT 1");
+                if ($planUpd) {
+                    $planUpd->bind_param('i', $planningId);
+                    $planUpd->execute();
+                    $planUpd->close();
+                }
+            }
+
             $extraSel = $db->prepare("SELECT extra_data FROM jobs WHERE id = ? LIMIT 1");
             if ($extraSel) {
                 $extraSel->bind_param('i', $jobId);

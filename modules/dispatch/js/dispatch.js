@@ -14,6 +14,10 @@
     batchRows: [],
     cartonRatio: 0,
     availableCartons: 0,
+    currentCategory: '',
+    prefillTab: '',
+    mixedExtraMaxQty: 0,
+    mixedExtraCategory: '',
     activeModuleTab: 'operations',
     activeInsightTab: 'pos',
     lastItemInsightHash: '',
@@ -97,6 +101,11 @@
     availableCarton: document.getElementById('dsAvailableCarton'),
     dispatchQty: document.getElementById('dsDispatchQty'),
     dispatchCarton: document.getElementById('dsDispatchCarton'),
+    extraDispatchQtyWrap: document.getElementById('dsExtraDispatchQtyWrap'),
+    extraDispatchQty: document.getElementById('dsExtraDispatchQty'),
+    extraDispatchCartonWrap: document.getElementById('dsExtraDispatchCartonWrap'),
+    extraDispatchCarton: document.getElementById('dsExtraDispatchCarton'),
+    extraDispatchHint: document.getElementById('dsExtraDispatchHint'),
     loadBatchesBtn: document.getElementById('dsLoadBatchesBtn'),
     batchTableBody: document.getElementById('dsBatchTableBody'),
     batchTotal: document.getElementById('dsBatchTotal'),
@@ -361,6 +370,7 @@
   function parsePrefill() {
     var p = new URLSearchParams(window.location.search);
     var itemId = parseInt(p.get('item_id') || '0', 10);
+    state.prefillTab = String(p.get('tab') || '').trim().toLowerCase();
 
     nodes.packingId.value = p.get('packing_id') || '';
     nodes.batchNo.value = p.get('batch') || '';
@@ -383,14 +393,18 @@
         nodes.batchNo.value = res.row.batch_no || nodes.batchNo.value;
         nodes.size.value = res.row.size || nodes.size.value;
         nodes.unit.value = res.row.unit || nodes.unit.value;
-        nodes.availableQty.value = res.row.quantity || nodes.availableQty.value;
+        nodes.availableQty.value = String(res.row.available_qty || res.row.quantity || nodes.availableQty.value || '');
+        state.currentCategory = String(res.row.category || '').trim().toLowerCase();
         state.cartonRatio = parseFloat(res.row.carton_ratio || 0);
         state.availableCartons = num(res.row.available_cartons || 0);
+        setMixedExtraContext(res.row.category || '', res.row.mixed_extra_qty || 0);
         loadBatches();
         syncUnitInputMode();
       });
     } else if (String(nodes.packingId.value || '').trim() !== '') {
       prefillByPackingId(true);
+    } else {
+      setMixedExtraContext('', 0);
     }
 
     syncUnitInputMode();
@@ -427,11 +441,12 @@
     var avail = parseFloat(nodes.availableQty.value || 0);
     var disp = parseFloat(nodes.dispatchQty.value || 0);
     var availableCartonsExact = num(state.availableCartons || 0);
+    var category = String(state.currentCategory || '').toLowerCase();
     var availCarton = avail > 0 ? (avail / ratio) : 0;
     var dispCarton = disp > 0 ? (disp / ratio) : 0;
 
-    // Keep barcode carton display aligned with finished stock full-carton value.
-    if (availableCartonsExact > 0) {
+    // Keep barcode/printing_label carton display aligned with finished stock carton value.
+    if ((category === 'barcode' || category === 'printing_label') && availableCartonsExact > 0) {
       availCarton = availableCartonsExact;
       if (disp > 0 && avail > 0 && Math.abs(disp - avail) < 0.001) {
         dispCarton = availableCartonsExact;
@@ -444,6 +459,7 @@
     if (nodes.dispatchCarton) {
       nodes.dispatchCarton.value = dispCarton > 0 ? Number(dispCarton.toFixed(2)).toString() : '';
     }
+    syncExtraCartonField();
   }
 
   function syncDispatchQtyFromCarton() {
@@ -462,15 +478,80 @@
     if (nodes.dispatchCarton) {
       nodes.dispatchCarton.readOnly = !isCarton;
     }
+    if (nodes.extraDispatchQty) {
+      nodes.extraDispatchQty.readOnly = isCarton;
+    }
+    if (nodes.extraDispatchCarton) {
+      nodes.extraDispatchCarton.readOnly = !isCarton;
+    }
 
     if (isCarton) {
       if (nodes.dispatchQty.value && (!nodes.dispatchCarton || !nodes.dispatchCarton.value)) {
         updateCartonFields();
       }
       syncDispatchQtyFromCarton();
+      syncExtraQtyFromCarton();
     } else {
       updateCartonFields();
     }
+  }
+
+  function isPrintingLabelMixedEligible(category) {
+    var cat = String(category || '').trim().toLowerCase();
+    if (cat === 'printing_label') {
+      return true;
+    }
+    return state.prefillTab === 'printing_label';
+  }
+
+  function setMixedExtraContext(category, mixedQty) {
+    var maxQty = Math.max(0, num(mixedQty || 0));
+    state.mixedExtraCategory = String(category || '').trim().toLowerCase();
+    state.mixedExtraMaxQty = maxQty;
+
+    var show = isPrintingLabelMixedEligible(state.mixedExtraCategory) && maxQty > 0;
+    if (nodes.extraDispatchQtyWrap) {
+      nodes.extraDispatchQtyWrap.style.display = show ? '' : 'none';
+    }
+    if (nodes.extraDispatchCartonWrap) {
+      nodes.extraDispatchCartonWrap.style.display = show ? '' : 'none';
+    }
+    if (nodes.extraDispatchHint) {
+      nodes.extraDispatchHint.textContent = 'Available mixed extra: ' + fmt(maxQty) + ' PCS';
+    }
+    if (nodes.extraDispatchQty) {
+      nodes.extraDispatchQty.value = show ? String(maxQty) : '';
+    }
+    if (nodes.extraDispatchCarton) {
+      nodes.extraDispatchCarton.value = '';
+    }
+    syncExtraCartonField();
+  }
+
+  function syncExtraCartonField() {
+    if (!nodes.extraDispatchQty || !nodes.extraDispatchCarton) {
+      return;
+    }
+    var ratio = state.cartonRatio || 0;
+    if (ratio <= 0) {
+      nodes.extraDispatchCarton.value = '';
+      return;
+    }
+    var extraQty = num(nodes.extraDispatchQty.value || 0);
+    nodes.extraDispatchCarton.value = extraQty > 0 ? Number((extraQty / ratio).toFixed(2)).toString() : '';
+  }
+
+  function syncExtraQtyFromCarton() {
+    if (!nodes.extraDispatchQty || !nodes.extraDispatchCarton) {
+      return;
+    }
+    var ratio = state.cartonRatio || 0;
+    var carton = num(nodes.extraDispatchCarton.value || 0);
+    if (ratio <= 0 || carton <= 0) {
+      nodes.extraDispatchQty.value = '';
+      return;
+    }
+    nodes.extraDispatchQty.value = String(Number((carton * ratio).toFixed(3)));
   }
 
   function loadPackingIdSuggestions(query) {
@@ -508,8 +589,10 @@
       nodes.size.value = row.size || nodes.size.value;
       nodes.unit.value = row.unit || nodes.unit.value;
       nodes.availableQty.value = String(row.available_qty || row.quantity || nodes.availableQty.value || '');
+      state.currentCategory = String(row.category || '').trim().toLowerCase();
       state.cartonRatio = parseFloat(row.carton_ratio || 0);
       state.availableCartons = num(row.available_cartons || 0);
+      setMixedExtraContext(row.category || '', row.mixed_extra_qty || 0);
       updateCartonFields();
       syncUnitInputMode();
       loadBatches();
@@ -652,8 +735,16 @@
     if (nodes.dispatchCarton) {
       nodes.dispatchCarton.value = '';
     }
+    if (nodes.extraDispatchQty) {
+      nodes.extraDispatchQty.value = '';
+    }
+    if (nodes.extraDispatchCarton) {
+      nodes.extraDispatchCarton.value = '';
+    }
     state.cartonRatio = 0;
     state.availableCartons = 0;
+    state.currentCategory = '';
+    setMixedExtraContext('', 0);
     state.batchRows = [];
     renderBatchRows();
     nodes.form.removeAttribute('data-stock-id');
@@ -689,6 +780,7 @@
       size: nodes.size.value,
       available_qty_snapshot: nodes.availableQty.value || '0',
       dispatch_qty: nodes.dispatchQty.value,
+      extra_dispatch_qty: nodes.extraDispatchQty ? (nodes.extraDispatchQty.value || '0') : '0',
       batch_items: batchItems,
       unit: nodes.unit.value,
       invoice_no: nodes.invoiceNo.value,
@@ -719,8 +811,18 @@
     }
 
     var dq = num(payload.dispatch_qty);
+    var extraQty = Math.max(0, num(payload.extra_dispatch_qty || 0));
     if (!(dq > 0)) {
-      return 'Dispatch quantity must be greater than zero.';
+      if (!(extraQty > 0)) {
+        return 'Dispatch quantity must be greater than zero.';
+      }
+    }
+
+    if (extraQty > 0 && !isPrintingLabelMixedEligible(state.mixedExtraCategory)) {
+      return 'Extra mixed dispatch is allowed only for Printing Label jobs.';
+    }
+    if (extraQty > num(state.mixedExtraMaxQty || 0)) {
+      return 'Extra mixed quantity cannot exceed available mixed extra.';
     }
 
     var batchItems = Array.isArray(payload.batch_items) ? payload.batch_items : [];
@@ -744,8 +846,13 @@
       dq = total;
     }
 
+    var totalDispatchToValidate = dq + extraQty;
     var av = num(payload.available_qty_snapshot);
-    if (payload.finished_stock_id > 0 && dq > av && parseInt(payload.id || '0', 10) <= 0) {
+    var allowedSnapshot = av;
+    if (isPrintingLabelMixedEligible(state.mixedExtraCategory)) {
+      allowedSnapshot += num(state.mixedExtraMaxQty || 0);
+    }
+    if (payload.finished_stock_id > 0 && totalDispatchToValidate > allowedSnapshot && parseInt(payload.id || '0', 10) <= 0) {
       return 'Cannot dispatch more than available qty.';
     }
 
@@ -2419,16 +2526,18 @@
         nodes.expectedDeliveryDate.value = d.expected_delivery_date || '';
         nodes.deliveryStatus.value = d.delivery_status || 'Pending';
         nodes.remarks.value = d.remarks || '';
+        setMixedExtraContext('', 0);
 
         var batchItems = Array.isArray(res.batch_items) ? res.batch_items : [];
         loadBatches().then(function () {
           if (batchItems.length) {
             var map = {};
             for (var bi = 0; bi < batchItems.length; bi += 1) {
-              map[String(batchItems[bi].item_id)] = num(batchItems[bi].dispatch_qty || 0);
+              var mapKey = String(batchItems[bi].item_id) + '|' + String(batchItems[bi].batch_no || '').trim().toLowerCase();
+              map[mapKey] = num(batchItems[bi].dispatch_qty || 0);
             }
             for (var br = 0; br < state.batchRows.length; br += 1) {
-              var key = String(state.batchRows[br].item_id || '');
+              var key = String(state.batchRows[br].item_id || '') + '|' + String(state.batchRows[br].batch_no || '').trim().toLowerCase();
               if (Object.prototype.hasOwnProperty.call(map, key)) {
                 state.batchRows[br].dispatch_qty = map[key];
               }
@@ -2563,10 +2672,37 @@
       }
     });
 
+    if (nodes.extraDispatchQty) {
+      nodes.extraDispatchQty.addEventListener('input', function () {
+        var q = num(nodes.extraDispatchQty.value || 0);
+        var maxQ = num(state.mixedExtraMaxQty || 0);
+        if (q < 0) q = 0;
+        if (maxQ > 0 && q > maxQ) q = maxQ;
+        nodes.extraDispatchQty.value = q > 0 ? String(Number(q.toFixed(3))) : '';
+        syncExtraCartonField();
+      });
+    }
+
     if (nodes.dispatchCarton) {
       nodes.dispatchCarton.addEventListener('input', function () {
         if (String(nodes.unit.value || '').toUpperCase() === 'CARTON') {
           syncDispatchQtyFromCarton();
+        }
+      });
+    }
+
+    if (nodes.extraDispatchCarton) {
+      nodes.extraDispatchCarton.addEventListener('input', function () {
+        if (String(nodes.unit.value || '').toUpperCase() === 'CARTON') {
+          syncExtraQtyFromCarton();
+          if (nodes.extraDispatchQty) {
+            var q = num(nodes.extraDispatchQty.value || 0);
+            var maxQ = num(state.mixedExtraMaxQty || 0);
+            if (maxQ > 0 && q > maxQ) {
+              nodes.extraDispatchQty.value = String(Number(maxQ.toFixed(3)));
+              syncExtraCartonField();
+            }
+          }
         }
       });
     }

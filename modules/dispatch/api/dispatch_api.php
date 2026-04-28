@@ -395,6 +395,13 @@ function ds_carton_count_for_stock(array $stockRow): float {
     $category = strtolower(trim((string)($stockRow['category'] ?? '')));
     $qty = max(0.0, ds_decimal($stockRow['quantity'] ?? 0));
 
+    if ($category === 'printing_label') {
+        $explicitCarton = ds_decimal(ds_pick_extra($extra, ['carton', 'cartons', 'carton_count', 'cartons_count', 'display_carton', 'display_cartons']));
+        if ($explicitCarton > 0) {
+            return floor($explicitCarton);
+        }
+    }
+
     if ($category === 'barcode') {
         $pcsPerRoll = ds_decimal(ds_pick_extra($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
         $rollPerCarton = ds_decimal(ds_pick_extra($extra, ['roll_per_cartoon', 'roll_per_carton']));
@@ -417,17 +424,28 @@ function ds_available_net_for_stock(array $row): float {
         return 0.0;
     }
     $category = strtolower(trim((string)($row['category'] ?? '')));
-    $supportsMixed = in_array($category, ['pos_paper_roll', 'one_ply', 'two_ply', 'barcode', 'printing_roll'], true);
+    $supportsMixed = in_array($category, ['pos_paper_roll', 'one_ply', 'two_ply', 'barcode', 'printing_roll', 'printing_label'], true);
     if (!$supportsMixed) {
         return $qty;
     }
+    $mixedExtra = ds_mixed_extra_for_stock($row);
+    return max(0.0, round($qty - max(0.0, $mixedExtra), 3));
+}
+
+function ds_mixed_extra_for_stock(array $row): float {
+    $qty = (float)($row['quantity'] ?? 0);
+    if ($qty <= 0) {
+        return 0.0;
+    }
+    $category = strtolower(trim((string)($row['category'] ?? '')));
     $extra = ds_parse_remarks_extra($row['remarks'] ?? '');
     $mixedEnabled = (string)($extra['mixed_enabled'] ?? '0') === '1';
     $mixedExtra = 0.0;
+
     if ($category === 'barcode') {
         $rpc = (int)floor(ds_decimal(ds_pick_extra($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
         if ($mixedEnabled) {
-            $mixedExtra = max(0.0, ds_decimal($extra['mixed_extra_rolls'] ?? 0));
+            $mixedExtra = max(0.0, ds_decimal(ds_pick_extra($extra, ['loose_qty', 'mixed_extra_rolls'])));
         } else {
             $totalRoll = ds_decimal(ds_pick_extra($extra, ['total_roll', 'total_rolls', 'total_roll_value']));
             if ($totalRoll <= 0) {
@@ -444,7 +462,7 @@ function ds_available_net_for_stock(array $row): float {
         }
     } else {
         if ($mixedEnabled) {
-            $mixedExtra = max(0.0, ds_decimal($extra['mixed_extra_rolls'] ?? 0));
+            $mixedExtra = max(0.0, ds_decimal(ds_pick_extra($extra, ['loose_qty', 'mixed_extra_rolls'])));
         } else {
             $perCarton = ds_decimal(ds_pick_extra($extra, ['per_carton']));
             if ($perCarton > 0) {
@@ -452,7 +470,7 @@ function ds_available_net_for_stock(array $row): float {
             }
         }
     }
-    return max(0.0, round($qty - max(0.0, $mixedExtra), 3));
+    return max(0.0, round($mixedExtra, 3));
 }
 
 function ds_parse_batch_items($raw): array {
@@ -523,6 +541,75 @@ function ds_get_item_batches(mysqli $db, string $itemName, string $packingId = '
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     return $normalizeRows($rows);
+}
+
+function ds_related_prefill_rows(mysqli $db, array $seedRow): array {
+    $rows = [];
+    $seen = [];
+
+    $appendRows = static function(array $items) use (&$rows, &$seen): void {
+        foreach ($items as $r) {
+            $id = (int)($r['id'] ?? 0);
+            if ($id > 0) {
+                if (isset($seen[$id])) {
+                    continue;
+                }
+                $seen[$id] = true;
+            }
+            $rows[] = $r;
+        }
+    };
+
+    $seedId = (int)($seedRow['id'] ?? 0);
+    if ($seedId > 0) {
+        $appendRows([$seedRow]);
+    }
+
+    $packingId = ds_clean($seedRow['item_code'] ?? '', 120);
+    if ($packingId !== '') {
+        $stmtByPacking = $db->prepare('SELECT id, category, quantity, remarks, batch_no, item_code FROM finished_goods_stock WHERE item_code = ? AND quantity > 0');
+        if ($stmtByPacking) {
+            $stmtByPacking->bind_param('s', $packingId);
+            $stmtByPacking->execute();
+            $appendRows($stmtByPacking->get_result()->fetch_all(MYSQLI_ASSOC));
+            $stmtByPacking->close();
+        }
+    }
+
+    $category = strtolower(trim((string)($seedRow['category'] ?? '')));
+    $jobNo = ds_clean($seedRow['batch_no'] ?? '', 120);
+    if ($category === 'printing_label' && $jobNo !== '') {
+        $stmtByJob = $db->prepare("SELECT id, category, quantity, remarks, batch_no, item_code FROM finished_goods_stock WHERE category = 'printing_label' AND batch_no = ? AND quantity > 0");
+        if ($stmtByJob) {
+            $stmtByJob->bind_param('s', $jobNo);
+            $stmtByJob->execute();
+            $appendRows($stmtByJob->get_result()->fetch_all(MYSQLI_ASSOC));
+            $stmtByJob->close();
+        }
+    }
+
+    return $rows;
+}
+
+function ds_prefill_totals_from_rows(array $rows): array {
+    $totalNet = 0.0;
+    $totalRaw = 0.0;
+    $totalCartons = 0.0;
+    $totalMixed = 0.0;
+
+    foreach ($rows as $sr) {
+        $totalRaw += (float)($sr['quantity'] ?? 0);
+        $totalNet += ds_available_net_for_stock($sr);
+        $totalCartons += ds_carton_count_for_stock($sr);
+        $totalMixed += ds_mixed_extra_for_stock($sr);
+    }
+
+    return [
+        'raw' => $totalRaw,
+        'net' => $totalNet,
+        'cartons' => $totalCartons,
+        'mixed' => $totalMixed,
+    ];
 }
 
 function ds_recalc_carton_in_remarks(float $newQty, string $remarks, string $category = ''): string {
@@ -727,6 +814,10 @@ if ($action === 'prefill_stock') {
 
     $row['carton_ratio'] = ds_carton_ratio_for_stock($row);
     $row['available_cartons'] = ds_carton_count_for_stock($row);
+    $row['available_qty'] = ds_available_net_for_stock($row);
+    $mixedRows = ds_related_prefill_rows($db, $row);
+    $mixedTotals = ds_prefill_totals_from_rows($mixedRows);
+    $row['mixed_extra_qty'] = $mixedTotals['mixed'];
 
     ds_json(200, ['ok' => true, 'row' => $row]);
 }
@@ -816,25 +907,24 @@ if ($action === 'prefill_by_packing_id') {
         ds_json(404, ['ok' => false, 'error' => 'Packing ID not found in available finished goods.']);
     }
 
-    $allStmt = $db->prepare('SELECT quantity, remarks, category FROM finished_goods_stock WHERE item_code = ? AND quantity > 0');
+    $baseRows = [];
+    $allStmt = $db->prepare('SELECT id, category, quantity, remarks, batch_no, item_code FROM finished_goods_stock WHERE item_code = ? AND quantity > 0');
     if ($allStmt) {
         $allStmt->bind_param('s', $packingId);
         $allStmt->execute();
-        $allRows = $allStmt->get_result()->fetch_all(MYSQLI_ASSOC);
-        $totalNet = 0.0;
-        $totalRaw = 0.0;
-        $totalCartons = 0.0;
-        foreach ($allRows as $sr) {
-            $totalRaw += (float)($sr['quantity'] ?? 0);
-            $totalNet += ds_available_net_for_stock($sr);
-            $totalCartons += ds_carton_count_for_stock($sr);
-        }
-        $row['available_qty'] = $totalNet > 0 ? $totalNet : $totalRaw;
-        $row['available_cartons'] = $totalCartons;
-    } else {
-        $row['available_qty'] = (float)($row['quantity'] ?? 0);
-        $row['available_cartons'] = ds_carton_count_for_stock($row);
+        $baseRows = $allStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $allStmt->close();
     }
+    if (empty($baseRows)) {
+        $baseRows = [$row];
+    }
+    $baseTotals = ds_prefill_totals_from_rows($baseRows);
+    $row['available_qty'] = $baseTotals['net'] > 0 ? $baseTotals['net'] : $baseTotals['raw'];
+    $row['available_cartons'] = $baseTotals['cartons'];
+
+    $mixedRows = ds_related_prefill_rows($db, $row);
+    $mixedTotals = ds_prefill_totals_from_rows($mixedRows);
+    $row['mixed_extra_qty'] = $mixedTotals['mixed'];
 
     $row['carton_ratio'] = ds_carton_ratio_for_stock($row);
 
@@ -858,6 +948,7 @@ if ($action === 'save_dispatch') {
     $size = ds_clean($payload['size'] ?? '', 120);
     $availableSnapshot = ds_decimal($payload['available_qty_snapshot'] ?? 0);
     $dispatchQty = ds_decimal($payload['dispatch_qty'] ?? 0);
+    $extraDispatchQtyInput = ds_decimal($payload['extra_dispatch_qty'] ?? 0);
     $unit = ds_clean($payload['unit'] ?? 'PCS', 30);
     $unitNorm = strtoupper($unit);
 
@@ -893,7 +984,7 @@ if ($action === 'save_dispatch') {
         ];
     }
 
-    if (empty($batchItems)) {
+    if (empty($batchItems) && $extraDispatchQtyInput <= 0) {
         ds_json(422, ['ok' => false, 'error' => 'At least one batch quantity is required.']);
     }
 
@@ -905,6 +996,9 @@ if ($action === 'save_dispatch') {
     }
     if ($itemName === '') {
         ds_json(422, ['ok' => false, 'error' => 'Item name is required.']);
+    }
+    if ($extraDispatchQtyInput < 0) {
+        ds_json(422, ['ok' => false, 'error' => 'Extra mixed quantity cannot be negative.']);
     }
     $dispatchQty = 0;
     $availableSnapshot = 0;
@@ -958,10 +1052,6 @@ if ($action === 'save_dispatch') {
 
     $batchItems = $normalizedBatchItems;
 
-    if ($dispatchQty <= 0) {
-        ds_json(422, ['ok' => false, 'error' => 'Dispatch quantity must be greater than zero.']);
-    }
-
     if ($unitNorm === 'CARTON') {
         // Quantities are normalized to PCS for stock and logs.
         $unit = 'PCS';
@@ -986,6 +1076,34 @@ if ($action === 'save_dispatch') {
         if (!$stock) {
             ds_json(422, ['ok' => false, 'error' => 'Selected stock item not found in finished goods.']);
         }
+
+        if ($extraDispatchQtyInput > 0) {
+            $stockCategory = strtolower(trim((string)($stock['category'] ?? '')));
+            if ($stockCategory !== 'printing_label') {
+                ds_json(422, ['ok' => false, 'error' => 'Extra mixed dispatch is allowed only for Printing Label category.']);
+            }
+            $mixedAvailable = ds_mixed_extra_for_stock($stock);
+            if ($pk <= 0 && $extraDispatchQtyInput > $mixedAvailable) {
+                ds_json(422, ['ok' => false, 'error' => 'Extra mixed dispatch quantity exceeds available mixed stock.']);
+            }
+
+            $extraDispatchQty = ds_decimal($extraDispatchQtyInput);
+            if ($extraDispatchQty > 0) {
+                $dispatchQty += $extraDispatchQty;
+                $availableSnapshot += max(0.0, $mixedAvailable);
+                $batchItems[] = [
+                    'item_id' => $finishedStockId,
+                    'batch_no' => ds_clean(($stock['batch_no'] ?? $batchNo) . ' [Mixed Extra]', 120),
+                    'packing_id' => ds_clean($stock['item_code'] ?? $packingId, 120),
+                    'dispatch_qty' => $extraDispatchQty,
+                    'available_qty' => max(0.0, $mixedAvailable),
+                ];
+            }
+        }
+    }
+
+    if ($dispatchQty <= 0) {
+        ds_json(422, ['ok' => false, 'error' => 'Dispatch quantity must be greater than zero.']);
     }
 
     if ($paidBy !== 'Company' && $paidBy !== 'Client') {
