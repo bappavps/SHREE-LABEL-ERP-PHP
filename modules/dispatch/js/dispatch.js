@@ -13,6 +13,7 @@
     filteredRows: [],
     batchRows: [],
     cartonRatio: 0,
+    availableCartons: 0,
     activeModuleTab: 'operations',
     activeInsightTab: 'pos',
     lastItemInsightHash: '',
@@ -383,6 +384,8 @@
         nodes.size.value = res.row.size || nodes.size.value;
         nodes.unit.value = res.row.unit || nodes.unit.value;
         nodes.availableQty.value = res.row.quantity || nodes.availableQty.value;
+        state.cartonRatio = parseFloat(res.row.carton_ratio || 0);
+        state.availableCartons = num(res.row.available_cartons || 0);
         loadBatches();
         syncUnitInputMode();
       });
@@ -423,11 +426,23 @@
     }
     var avail = parseFloat(nodes.availableQty.value || 0);
     var disp = parseFloat(nodes.dispatchQty.value || 0);
+    var availableCartonsExact = num(state.availableCartons || 0);
+    var availCarton = avail > 0 ? (avail / ratio) : 0;
+    var dispCarton = disp > 0 ? (disp / ratio) : 0;
+
+    // Keep barcode carton display aligned with finished stock full-carton value.
+    if (availableCartonsExact > 0) {
+      availCarton = availableCartonsExact;
+      if (disp > 0 && avail > 0 && Math.abs(disp - avail) < 0.001) {
+        dispCarton = availableCartonsExact;
+      }
+    }
+
     if (nodes.availableCarton) {
-      nodes.availableCarton.value = avail > 0 ? (avail / ratio).toFixed(2) : '';
+      nodes.availableCarton.value = availCarton > 0 ? Number(availCarton.toFixed(2)).toString() : '';
     }
     if (nodes.dispatchCarton) {
-      nodes.dispatchCarton.value = disp > 0 ? (disp / ratio).toFixed(2) : '';
+      nodes.dispatchCarton.value = dispCarton > 0 ? Number(dispCarton.toFixed(2)).toString() : '';
     }
   }
 
@@ -494,6 +509,7 @@
       nodes.unit.value = row.unit || nodes.unit.value;
       nodes.availableQty.value = String(row.available_qty || row.quantity || nodes.availableQty.value || '');
       state.cartonRatio = parseFloat(row.carton_ratio || 0);
+      state.availableCartons = num(row.available_cartons || 0);
       updateCartonFields();
       syncUnitInputMode();
       loadBatches();
@@ -637,6 +653,7 @@
       nodes.dispatchCarton.value = '';
     }
     state.cartonRatio = 0;
+    state.availableCartons = 0;
     state.batchRows = [];
     renderBatchRows();
     nodes.form.removeAttribute('data-stock-id');

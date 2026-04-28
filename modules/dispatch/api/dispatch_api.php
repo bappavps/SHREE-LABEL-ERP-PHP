@@ -373,9 +373,42 @@ function ds_carton_ratio_for_stock(array $stockRow): float {
     $extra = ds_parse_remarks_extra($stockRow['remarks'] ?? '');
     $category = strtolower(trim((string)($stockRow['category'] ?? '')));
     if ($category === 'barcode') {
-        return ds_decimal(ds_pick_extra($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton']));
+        $directQtyPerCarton = ds_decimal(ds_pick_extra($extra, ['qty_per_carton', 'pcs_per_carton', 'per_carton_qty']));
+        if ($directQtyPerCarton > 0) {
+            return $directQtyPerCarton;
+        }
+
+        $rollPerCarton = ds_decimal(ds_pick_extra($extra, ['roll_per_cartoon', 'roll_per_carton']));
+        $pcsPerRoll = ds_decimal(ds_pick_extra($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
+        if ($rollPerCarton > 0 && $pcsPerRoll > 0) {
+            return ds_decimal($rollPerCarton * $pcsPerRoll);
+        }
+
+        // Legacy fallback: some old rows store qty-per-carton under per_carton.
+        return ds_decimal(ds_pick_extra($extra, ['per_carton']));
     }
     return ds_decimal(ds_pick_extra($extra, ['per_carton', 'roll_per_cartoon', 'roll_per_carton']));
+}
+
+function ds_carton_count_for_stock(array $stockRow): float {
+    $extra = ds_parse_remarks_extra($stockRow['remarks'] ?? '');
+    $category = strtolower(trim((string)($stockRow['category'] ?? '')));
+    $qty = max(0.0, ds_decimal($stockRow['quantity'] ?? 0));
+
+    if ($category === 'barcode') {
+        $pcsPerRoll = ds_decimal(ds_pick_extra($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
+        $rollPerCarton = ds_decimal(ds_pick_extra($extra, ['roll_per_cartoon', 'roll_per_carton']));
+        if ($pcsPerRoll > 0 && $rollPerCarton > 0 && $qty > 0) {
+            $fullRolls = floor($qty / $pcsPerRoll);
+            return floor($fullRolls / $rollPerCarton);
+        }
+    }
+
+    $ratio = ds_carton_ratio_for_stock($stockRow);
+    if ($ratio > 0 && $qty > 0) {
+        return floor($qty / $ratio);
+    }
+    return 0.0;
 }
 
 function ds_available_net_for_stock(array $row): float {
@@ -492,12 +525,81 @@ function ds_get_item_batches(mysqli $db, string $itemName, string $packingId = '
     return $normalizeRows($rows);
 }
 
+function ds_recalc_carton_in_remarks(float $newQty, string $remarks, string $category = ''): string {
+    $raw = trim((string)$remarks);
+    if ($raw === '' || $raw[0] !== '{') {
+        return $remarks;
+    }
+
+    $parsed = json_decode($raw, true);
+    if (!is_array($parsed) || !isset($parsed['extra']) || !is_array($parsed['extra'])) {
+        return $remarks;
+    }
+
+    $extra = $parsed['extra'];
+    $normalizedCategory = strtolower(trim($category));
+    if ($normalizedCategory === '') {
+        $normalizedCategory = strtolower(trim((string)($extra['category'] ?? '')));
+    }
+
+    // Helper to pick first available key from extra
+    $pick = function($keys) use ($extra) {
+        foreach ($keys as $k) {
+            if (array_key_exists($k, $extra) && trim((string)$extra[$k]) !== '') {
+                return ds_decimal($extra[$k]);
+            }
+        }
+        return 0.0;
+    };
+
+    // Barcode: recalc based on qty_per_carton or roll-based ratio
+    if ($normalizedCategory === 'barcode') {
+        $qtyPerCarton = $pick(['qty_per_carton', 'pcs_per_carton', 'per_carton_qty']);
+        $pcsPerRoll = $pick(['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']);
+        $rollPerCarton = $pick(['roll_per_cartoon', 'roll_per_carton']);
+
+        if ($pcsPerRoll > 0) {
+            $fullRolls = floor($newQty / $pcsPerRoll);
+            $extra['total_roll'] = $fullRolls;
+            $extra['total_rolls'] = $fullRolls;
+            $extra['loose_qty'] = max(0, (float)fmod($newQty, $pcsPerRoll));
+            if ($rollPerCarton > 0) {
+                $extra['carton'] = floor($fullRolls / $rollPerCarton);
+            }
+        }
+
+        if ($qtyPerCarton <= 0) {
+            if ($rollPerCarton > 0 && $pcsPerRoll > 0) {
+                $qtyPerCarton = $rollPerCarton * $pcsPerRoll;
+            }
+        }
+        if ($qtyPerCarton > 0) {
+            $newCartonCount = floor($newQty / $qtyPerCarton);
+            $newLooseQty = (float)fmod($newQty, $qtyPerCarton);
+            $extra['carton'] = $newCartonCount;
+            $extra['loose_qty'] = max(0, $newLooseQty);
+        }
+    } else {
+        // Non-barcode: recalc based on per_carton
+        $perCarton = $pick(['per_carton']);
+        if ($perCarton > 0) {
+            $newCartonCount = floor($newQty / $perCarton);
+            $newLooseQty = (float)fmod($newQty, $perCarton);
+            $extra['carton'] = $newCartonCount;
+            $extra['loose_qty'] = max(0, $newLooseQty);
+        }
+    }
+
+    $parsed['extra'] = $extra;
+    return json_encode($parsed, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+}
+
 function ds_adjust_stock(mysqli $db, int $stockId, float $deltaQty, string $referenceNo, string $reason, int $userId): array {
     if ($deltaQty == 0.0) {
         return ['ok' => true];
     }
 
-    $stmt = $db->prepare('SELECT id, category, quantity FROM finished_goods_stock WHERE id = ? FOR UPDATE');
+    $stmt = $db->prepare('SELECT id, category, quantity, remarks FROM finished_goods_stock WHERE id = ? FOR UPDATE');
     if (!$stmt) {
         return ['ok' => false, 'error' => 'Unable to lock stock row.'];
     }
@@ -511,6 +613,7 @@ function ds_adjust_stock(mysqli $db, int $stockId, float $deltaQty, string $refe
 
     $current = (float)($row['quantity'] ?? 0);
     $category = (string)($row['category'] ?? '');
+    $remarks = (string)($row['remarks'] ?? '');
     $alreadyDispatched = ds_already_dispatched_qty($db, $stockId);
     $totalProduction = round($current + $alreadyDispatched, 3);
     $available = round($totalProduction - $alreadyDispatched, 3);
@@ -536,11 +639,14 @@ function ds_adjust_stock(mysqli $db, int $stockId, float $deltaQty, string $refe
         $newQty = 0;
     }
 
-    $up = $db->prepare('UPDATE finished_goods_stock SET quantity = ?, dispatch_qty_total = ?, closing_stock = ? WHERE id = ?');
+    // Recalculate carton count in remarks based on new quantity
+    $newRemarks = ds_recalc_carton_in_remarks($newQty, $remarks, $category);
+
+    $up = $db->prepare('UPDATE finished_goods_stock SET quantity = ?, dispatch_qty_total = ?, closing_stock = ?, remarks = ? WHERE id = ?');
     if (!$up) {
         return ['ok' => false, 'error' => 'Unable to update stock quantity.'];
     }
-    $up->bind_param('dddi', $newQty, $newDispatched, $newQty, $stockId);
+    $up->bind_param('dddsi', $newQty, $newDispatched, $newQty, $newRemarks, $stockId);
     if (!$up->execute()) {
         return ['ok' => false, 'error' => 'Stock update failed.'];
     }
@@ -618,6 +724,9 @@ if ($action === 'prefill_stock') {
     if (!$row) {
         ds_json(404, ['ok' => false, 'error' => 'Stock item not found.']);
     }
+
+    $row['carton_ratio'] = ds_carton_ratio_for_stock($row);
+    $row['available_cartons'] = ds_carton_count_for_stock($row);
 
     ds_json(200, ['ok' => true, 'row' => $row]);
 }
@@ -714,13 +823,17 @@ if ($action === 'prefill_by_packing_id') {
         $allRows = $allStmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $totalNet = 0.0;
         $totalRaw = 0.0;
+        $totalCartons = 0.0;
         foreach ($allRows as $sr) {
             $totalRaw += (float)($sr['quantity'] ?? 0);
             $totalNet += ds_available_net_for_stock($sr);
+            $totalCartons += ds_carton_count_for_stock($sr);
         }
         $row['available_qty'] = $totalNet > 0 ? $totalNet : $totalRaw;
+        $row['available_cartons'] = $totalCartons;
     } else {
         $row['available_qty'] = (float)($row['quantity'] ?? 0);
+        $row['available_cartons'] = ds_carton_count_for_stock($row);
     }
 
     $row['carton_ratio'] = ds_carton_ratio_for_stock($row);

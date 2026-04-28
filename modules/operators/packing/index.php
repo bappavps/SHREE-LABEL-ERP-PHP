@@ -1923,7 +1923,31 @@ include __DIR__ . '/../../../includes/header.php';
         });
       }
       var payloadOverrides = {};
-      selectedRollPayloadKeys.forEach(function(key) {
+      var submitSplitMeta = selectedRollPayloadKeys.map(function(key) {
+        var lotForKey = null;
+        for (var si = 0; si < rollLots.length; si++) {
+          if (String(rollLots[si].rollNo || ('roll-' + String(si))) === key) {
+            lotForKey = rollLots[si];
+            break;
+          }
+        }
+        var rollNo = String((lotForKey && lotForKey.rollNo) || '').trim();
+        var qtyVal = lotForKey ? Math.max(0, Math.min(toNum(lotForKey.productionQty), toNum(lotForKey.availableQty))) : 0;
+        var parentKey = rollNo.replace(/-[A-Za-z0-9]+$/, '');
+        return { key: key, lot: lotForKey, qty: qtyVal, parentKey: parentKey };
+      });
+      var submitParentSet = {};
+      var submitQtySet = {};
+      submitSplitMeta.forEach(function(meta) {
+        if (meta.parentKey) submitParentSet[meta.parentKey] = true;
+        submitQtySet[String(meta.qty)] = true;
+      });
+      var submitSharedSplitMode = submitSplitMeta.length > 1
+        && Object.keys(submitParentSet).length === 1
+        && Object.keys(submitQtySet).length === 1;
+      var submitSharedReceivedQty = submitSharedSplitMode && submitSplitMeta.length ? submitSplitMeta[0].qty : 0;
+
+      selectedRollPayloadKeys.forEach(function(key, payloadIdx) {
         var lot = null;
         for (var i = 0; i < rollLots.length; i++) {
           if (String(rollLots[i].rollNo || ('roll-' + String(i))) === key) {
@@ -1931,7 +1955,9 @@ include __DIR__ . '/../../../includes/header.php';
             break;
           }
         }
-        var lotQty = lot ? Math.max(0, Math.min(toNum(lot.productionQty), toNum(lot.availableQty))) : 0;
+        var lotQty = submitSharedSplitMode
+          ? getDefaultDistributedQty(submitSharedReceivedQty, selectedRollPayloadKeys.length, payloadIdx)
+          : (lot ? Math.max(0, Math.min(toNum(lot.productionQty), toNum(lot.availableQty))) : 0);
         var st = (rollLooseOverrides[key] && typeof rollLooseOverrides[key] === 'object') ? rollLooseOverrides[key] : {};
         if (isBarcodeMode) {
           // CARTON DEDUCTION FIX: recalc cartons at submit time using same formula as display

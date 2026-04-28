@@ -622,6 +622,14 @@
       return extraPick(['pcs_per_roll', 'pieces_per_roll', 'pices_per_roll', 'barcode_in_1_roll', 'qty_per_roll']);
     }
     if (key === 'total_roll') {
+      if (fg_state.activeTab === 'barcode') {
+        var currentQty = fg_num(mixedAdjustedTotal().available_net);
+        var currentPcsPerRoll = fg_num(extraPick(['pcs_per_roll', 'pieces_per_roll', 'pices_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
+        if (currentQty > 0 && currentPcsPerRoll > 0) {
+          return String(Math.floor(currentQty / currentPcsPerRoll));
+        }
+      }
+
       var totalRollDirect = extraPick(['total_roll', 'total_rolls', 'total_roll_value']);
       if (totalRollDirect !== '') {
         return totalRollDirect;
@@ -649,13 +657,18 @@
       if (row.category === 'carton') {
         return fmtQty(row.quantity);
       }
-      // For barcode tab, use stored carton value (not recalculated)
+
+      // For barcode tab, calculate carton by current full rolls and roll-per-carton.
       if (fg_state.activeTab === 'barcode') {
-        var storedCarton = extraPick(['carton']);
-        if (storedCarton !== '') {
-          return storedCarton;
+        var barcodeQty = fg_num(mixedAdjustedTotal().available_net);
+        var barcodePcsPerRoll = fg_num(extraPick(['pcs_per_roll', 'pieces_per_roll', 'pices_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
+        var barcodeRollPerCarton = fg_num(extraPick(['roll_per_cartoon', 'roll_per_carton']));
+        if (barcodeQty > 0 && barcodePcsPerRoll > 0 && barcodeRollPerCarton > 0) {
+          var barcodeFullRolls = Math.floor(barcodeQty / barcodePcsPerRoll);
+          return String(Math.max(0, Math.floor(barcodeFullRolls / barcodeRollPerCarton)));
         }
       }
+
       // For other categories, calculate cartons needed based on quantity and ratio
       var ratioRaw = extraPick(['per_carton', 'roll_per_cartoon', 'roll_per_carton']);
       var ratio = fg_num(ratioRaw);

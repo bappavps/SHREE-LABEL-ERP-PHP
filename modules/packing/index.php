@@ -1878,6 +1878,7 @@ include __DIR__ . '/../../includes/header.php';
       ? operatorRollPayload.roll_overrides
       : {};
     var rollHelperOverrides = {};
+    var ignoreSubmittedBarcodeTotalRolls = isBarcodeMode && operatorHasSubmitted && operatorSelectedRollKeys.length > 1;
 
     function toNum(v) {
       var n = Number(String(v || '').replace(/,/g, '').trim());
@@ -1890,6 +1891,7 @@ include __DIR__ . '/../../includes/header.php';
       var state = {};
       if (isBarcodeMode) {
         ['bpr', 'total_rolls', 'rolls_per_carton', 'extra_pcs', 'extra_pcs_manual'].forEach(function(field) {
+          if (ignoreSubmittedBarcodeTotalRolls && field === 'total_rolls') return;
           if (!Object.prototype.hasOwnProperty.call(src, field)) return;
           var raw = Math.floor(toNum(src[field]));
           if (!isNaN(raw)) {
