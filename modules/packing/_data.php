@@ -8,7 +8,11 @@ function packing_completed_statuses(): array {
         'complete',
         'qc passed',
         'qc_passed',
+        'label slitted',
+        'label_slitted',
         'packed',
+        'finished label',
+        'finished_label',
         'finished production',
         'finished_production',
         'finished barcode',
@@ -57,7 +61,7 @@ function packing_effective_status_from_row(array $row): string {
     $hasPackedFlag = (int)($extra['packing_done_flag'] ?? 0) === 1
         || (int)($extra['packing_packed_flag'] ?? 0) === 1
         || trim((string)($extra['packing_done_at'] ?? '')) !== '';
-    if ($hasPackedFlag && !in_array($normRaw, ['dispatched', 'finished production', 'finished barcode'], true)) {
+    if ($hasPackedFlag && !in_array($normRaw, ['dispatched', 'finished production', 'finished barcode', 'finished label'], true)) {
         return 'Packed';
     }
 
@@ -68,8 +72,8 @@ function packing_department_type_map(): array {
     return [
         'printing_label' => [
             'label' => 'Printing Label',
-            'departments' => ['label-printing', 'label printing', 'label_printing', 'printing_label', 'printing label'],
-            'planning_types' => ['label-printing', 'label_printing', 'printing_label'],
+            'departments' => ['label-printing', 'label printing', 'label_printing', 'printing_label', 'printing label', 'label-slitting', 'label_slitting', 'label slitting'],
+            'planning_types' => ['label-printing', 'label_printing', 'printing_label', 'label', 'label-slitting', 'label_slitting'],
             'department_label' => 'Label Slitting',
         ],
         'pos_roll' => [
@@ -131,7 +135,7 @@ function packing_planning_board_key($value): string {
     if ($norm === '') {
         return '';
     }
-    if (in_array($norm, ['label_printing', 'printing_label', 'label'], true)) {
+    if (in_array($norm, ['label_printing', 'printing_label', 'label', 'label_slitting'], true)) {
         return 'label';
     }
     if (in_array($norm, ['barcode', 'rotery', 'rotary'], true)) {
@@ -280,10 +284,21 @@ function packing_is_release_ready(array $latestByTab): bool {
         $primaryCompleted++;
     }
 
-    // At least one paper-roll flow is preferred, but barcode-only flow is valid too.
+    // At least one paper-roll flow is preferred.
+    // If no paper-roll flow exists, barcode-only OR label-only flow is valid.
     if ($primaryCompleted <= 0) {
         $barcodeRow = $latestByTab['barcode'] ?? null;
-        if (!is_array($barcodeRow) || !packing_is_completed_status((string)($barcodeRow['status'] ?? ''))) {
+        $labelRow = $latestByTab['printing_label'] ?? null;
+
+        if (is_array($barcodeRow)) {
+            if (!packing_is_completed_status((string)($barcodeRow['status'] ?? ''))) {
+                return false;
+            }
+        } elseif (is_array($labelRow)) {
+            if (!packing_is_completed_status((string)($labelRow['status'] ?? ''))) {
+                return false;
+            }
+        } else {
             return false;
         }
     }
@@ -1096,7 +1111,7 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     }
     $allDepartments = array_values(array_unique(array_filter($allDepartments)));
 
-    $trackedPlanDepartments = ['paperroll', 'barcode', 'rotery', 'rotary', 'label-printing'];
+    $trackedPlanDepartments = ['paperroll', 'barcode', 'rotery', 'rotary', 'label-printing', 'label_printing', 'label printing', 'label', 'label-slitting', 'label_slitting', 'label slitting'];
 
     $quotedDepartments = [];
     foreach ($allDepartments as $dept) {
@@ -1113,8 +1128,8 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
     $where .= " OR LOWER(COALESCE(p.department, '')) IN (" . implode(',', $quotedPlanDepartments) . "))";
 
     // Keep Packed jobs visible in manager dashboard for final completion step.
-    // Dispatched / Finished Production / Finished Barcode should leave active tabs.
-    $where .= " AND LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status,''),'-',' '),'_',' '))) NOT IN ('dispatched','finished production','finished barcode')";
+    // Dispatched / Finished Production / Finished Barcode / Finished Label should leave active tabs.
+    $where .= " AND LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status,''),'-',' '),'_',' '))) NOT IN ('dispatched','finished production','finished barcode','finished label')";
 
     // Status filter: if provided, filter by exact status match
     if ($status !== '') {
@@ -1243,7 +1258,7 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
             $latestByPlanningTab[$planningId][$tabKey] = $row;
         }
 
-        $isTerminalForActive = in_array($normStatus, ['dispatched', 'finished production', 'finished barcode'], true)
+        $isTerminalForActive = in_array($normStatus, ['dispatched', 'finished production', 'finished barcode', 'finished label'], true)
             || ($hidePackedInActive && in_array($normStatus, ['packed', 'packing done'], true));
 
         if ($isTerminalForActive) {
@@ -1456,7 +1471,7 @@ function packing_fetch_history_rows(mysqli $db, array $filters = []): array {
         }
 
         $effectiveNorm = strtolower(trim(str_replace(['-', '_'], ' ', $effectiveStatus)));
-        $isPackingOutcome = in_array($effectiveNorm, ['packed', 'packing done', 'finished production', 'finished barcode', 'dispatched'], true);
+        $isPackingOutcome = in_array($effectiveNorm, ['packed', 'packing done', 'finished production', 'finished barcode', 'finished label', 'dispatched'], true);
         if (!$isPackingOutcome) {
             continue;
         }

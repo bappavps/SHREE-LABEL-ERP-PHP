@@ -108,7 +108,7 @@
             },
             "planning": {
                 "prefix": "PLN",
-                "counter": 0
+                "counter": 2
             },
             "planning_barcode": {
                 "prefix": "PLN-BAR",
@@ -136,19 +136,19 @@
             },
             "printing_job": {
                 "prefix": "FLX",
-                "counter": 0
+                "counter": 1
             },
             "die_cutting_job": {
                 "prefix": "DCT",
-                "counter": 0
+                "counter": 1
             },
             "label_slitting_job": {
                 "prefix": "LSL",
-                "counter": 0
+                "counter": 1
             },
             "barcode_job": {
                 "prefix": "BRC-BAR",
-                "counter": 1
+                "counter": 0
             }
         }
     }

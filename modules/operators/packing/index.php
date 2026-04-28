@@ -585,9 +585,10 @@ include __DIR__ . '/../../../includes/header.php';
     var prevExtra = parseExtraData(job.prev_job_extra_data);
     var grandPrevExtra = parseExtraData(job.grandprev_job_extra_data);
     var sources   = [job, planExtra, jobExtra, prevExtra, grandPrevExtra];
-    var isBarcodeMode = String(job.packing_tab || '').toLowerCase() === 'barcode'
-      || /^PLN-BAR\//i.test(String(pickFirst(sources, ['plan_no', 'plan_number']) || ''));
     var tabKeyNorm = String(job.packing_tab || '').toLowerCase();
+    var isBarcodeMode = tabKeyNorm === 'barcode'
+      || tabKeyNorm === 'printing_label'
+      || /^PLN-BAR\//i.test(String(pickFirst(sources, ['plan_no', 'plan_number']) || ''));
     var isPaperRollTypeTab = tabKeyNorm === 'pos_roll' || tabKeyNorm === 'one_ply' || tabKeyNorm === 'two_ply';
 
     var orderQtyRaw = pickFirstLoose(sources, ['order_quantity','order_qty','quantity','qty_pcs']);
@@ -611,6 +612,14 @@ include __DIR__ . '/../../../includes/header.php';
       }
     }
     if (!(barcodePerRollDefault > 0)) barcodePerRollDefault = 100;
+
+    // Derive total roll display: use stored value if non-zero, else calculate from prodQty / bpr
+    var totalRollNumStored = Math.max(0, Math.floor(numFromAny(totalRollValueRaw)));
+    var totalRollDisplay = totalRollNumStored > 0
+      ? String(totalRollNumStored)
+      : (isBarcodeMode && prodQty > 0 && barcodePerRollDefault > 0
+          ? String(Math.floor(prodQty / barcodePerRollDefault))
+          : (totalRollValueRaw || '-'));
 
     var opEntry = (job.operator_entry && typeof job.operator_entry==='object') ? job.operator_entry : null;
     var opEntrySubmitted = !!opEntry && Number(opEntry.is_submitted || 0) === 1;
@@ -812,8 +821,8 @@ include __DIR__ . '/../../../includes/header.php';
       ['Status',         pickFirst(sources,['status'])],
       ['Order Quantity', orderQtyRaw],
       ['Production Qty', prodQtyRaw],
-      ['Total Roll Value', totalRollValueRaw],
-      ['Barcode in 1 roll', String(barcodePerRollDefault)],
+      ['Total Roll Value', totalRollDisplay],
+      ['Labels In 1 Roll', String(barcodePerRollDefault)],
       ['Item Width', itemWidthRaw ? String(itemWidthRaw) + ' mm' : '-'],
       ['Item Length', itemLengthRaw ? String(itemLengthRaw) + ' mm' : '-'],
       ['Paper Size', paperSizeRaw || '-'],
@@ -858,7 +867,7 @@ include __DIR__ . '/../../../includes/header.php';
         '<div class="op-top-item dispatch"><b>Dispatch Date</b><span>' + escHtml(pickFirst(sources,['dispatch_date','due_date'])) + '</span></div>' +
         '<div class="op-top-item"><b>Order Qty</b><span>' + escHtml(orderQtyRaw) + '</span></div>' +
         '<div class="op-top-item"><b>Production Qty</b><span>' + escHtml(prodQtyRaw) + '</span></div>' +
-        '<div class="op-top-item"><b>Total Roll Value</b><span>' + escHtml(totalRollValueRaw) + '</span></div>' +
+        '<div class="op-top-item"><b>Total Roll Value</b><span>' + escHtml(totalRollDisplay) + '</span></div>' +
       '</div>' +
 
       // Section A
@@ -877,8 +886,8 @@ include __DIR__ . '/../../../includes/header.php';
           '<div style="margin-bottom:14px;padding:12px;border:1px solid #fef3c7;border-radius:10px;background:linear-gradient(120deg,#fffbeb 0%,#fff 100%)"><div style="font-size:.74rem;font-weight:900;color:#92400e;margin-bottom:8px">Live Production Metrics</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">' +
             '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Order Qty</b><span style="font-size:.95rem;font-weight:900;color:#0f172a">' + escHtml(orderQtyRaw) + '</span></div>' +
             '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Production Qty</b><span style="font-size:.95rem;font-weight:900;color:#0f172a">' + escHtml(prodQtyRaw) + '</span></div>' +
-            '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Total Roll Value</b><span style="font-size:.95rem;font-weight:900;color:#0f172a">' + escHtml(totalRollValueRaw || '-') + '</span></div>' +
-            '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Barcode in 1 roll</b><span style="font-size:.95rem;font-weight:900;color:#0f172a">' + escHtml(isBarcodeMode ? String(barcodePerRollDefault) : '-') + '</span></div>' +
+            '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Total Roll Value</b><span style="font-size:.95rem;font-weight:900;color:#0f172a">' + escHtml(totalRollDisplay) + '</span></div>' +
+            '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Labels In 1 Roll</b><span style="font-size:.95rem;font-weight:900;color:#0f172a">' + escHtml((isBarcodeMode || tabKeyNorm === 'printing_label') ? String(barcodePerRollDefault) : '-') + '</span></div>' +
             '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Shrink Bundles</b><span id="opLiveShrinkBundles" style="font-size:.95rem;font-weight:900;color:#7c3aed">-</span></div>' +
             '<div style="border:1px solid #fde68a;border-radius:8px;padding:8px;background:#fff"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#92400e;margin-bottom:2px">Cartons Required</b><span id="opLiveCartonsRequired" style="font-size:.95rem;font-weight:900;color:#9a3412">-</span></div>' +
             '<div style="border:1px solid #bbf7d0;border-radius:8px;padding:8px;background:#f0fdf4"><b style="display:block;font-size:.62rem;text-transform:uppercase;color:#166534;margin-bottom:2px">Physical Qty</b><span id="opLivePhysicalQty" style="font-size:.95rem;font-weight:900;color:#166534">-</span></div>' +
@@ -1122,7 +1131,7 @@ include __DIR__ . '/../../../includes/header.php';
             + '<div style="border:1px solid #fdba74;border-radius:10px;padding:10px;background:#fff">'
             + '  <div style="font-size:.74rem;font-weight:900;color:#9a3412;margin-bottom:8px">Roll: ' + escHtml(String(roll.rollNo || '-')) + '</div>'
             + '  <div style="display:grid;grid-template-columns:repeat(2,minmax(110px,1fr));gap:8px">'
-            + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Barcode in 1 roll (bpr)</label><input type="number" class="op-bc-per-roll" data-roll-key="' + escHtml(key) + '" min="1" step="1" value="' + String(bpr) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
+            + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Labels In 1 Roll (bpr)</label><input type="number" class="op-bc-per-roll" data-roll-key="' + escHtml(key) + '" min="1" step="1" value="' + String(bpr) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
             + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Total rolls <span style="font-weight:500;color:#94a3b8">(auto=floor(qty÷bpr))</span></label><input type="number" class="op-bc-total-rolls-input" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(totalRollsBarcode) + '" style="width:100%;padding:5px 6px;border:1px solid #86efac;border-radius:6px"></div>'
             + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Roll in 1 carton</label><input type="number" class="op-bc-rolls-per-carton-input" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(rollsPerCarton) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
             + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#0f766e">Total cartons <span style="font-weight:500;color:#94a3b8">(auto)</span></label><div style="width:100%;padding:5px 8px;border:1px solid #99f6e4;border-radius:6px;background:#f0fdfa;font-size:.85rem;font-weight:900;color:#0f766e;min-height:28px" class="op-bc-cartons-display" data-roll-key="' + escHtml(key) + '">' + String(cartonsBarcode) + '</div></div>'
