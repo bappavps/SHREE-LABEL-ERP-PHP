@@ -448,7 +448,10 @@
     // Keep barcode/printing_label carton display aligned with finished stock carton value.
     if ((category === 'barcode' || category === 'printing_label') && availableCartonsExact > 0) {
       availCarton = availableCartonsExact;
-      if (disp > 0 && avail > 0 && Math.abs(disp - avail) < 0.001) {
+      // Dispatch = net available (may be less than raw if mixed extra exists) → full cartons.
+      var mixedExtra = num(state.mixedExtraMaxQty || 0);
+      var rawAvail = avail + (mixedExtra > 0 ? mixedExtra : 0);
+      if (disp > 0 && (Math.abs(disp - avail) < 0.001 || (mixedExtra > 0 && Math.abs(disp - (rawAvail - mixedExtra)) < 0.001))) {
         dispCarton = availableCartonsExact;
       }
     }
@@ -647,6 +650,7 @@
     if (nodes.batchTotal) {
       nodes.batchTotal.textContent = 'Total Dispatch: ' + fmt(totalDispatch);
     }
+    updateCartonFields();
   }
 
   function loadBatches() {
@@ -675,7 +679,7 @@
           item_id: parseInt(r.id || '0', 10),
           batch_no: String(r.batch_no || ''),
           packing_id: String(r.item_code || ''),
-          available_qty: num(r.quantity || 0),
+          available_qty: num(r.available_qty || r.quantity || 0),
           dispatch_qty: 0
         };
       });
@@ -2717,6 +2721,7 @@
         if (!el) {
           return;
         }
+        var tr = el.closest('tr');
         var idx = parseInt(el.getAttribute('data-batch-index') || '-1', 10);
         if (idx < 0 || idx >= state.batchRows.length) {
           return;
@@ -2726,7 +2731,10 @@
           q = 0;
         }
         state.batchRows[idx].dispatch_qty = q;
-        renderBatchRows();
+        if (tr) {
+          tr.classList.toggle('ds-batch-row-invalid', q > num(state.batchRows[idx].available_qty || 0));
+        }
+        syncBatchTotals();
       });
     }
 

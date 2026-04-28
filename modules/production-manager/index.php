@@ -135,12 +135,14 @@ function pm_should_show_board_status(array $row): bool {
     $finishedBarcodeFlag = (int)($extra['finished_barcode_flag'] ?? 0) === 1
       || pm_text($extra['finished_barcode_at'] ?? '') !== '';
     $finishedFlag = (int)($extra['finished_production_flag'] ?? 0) === 1
-      || pm_text($extra['finished_production_at'] ?? '') !== '';
+      || pm_text($extra['finished_production_at'] ?? '') !== ''
+      || (int)($extra['finished_label_flag'] ?? 0) === 1
+      || pm_text($extra['finished_label_at'] ?? '') !== '';
     $packedFlag = (int)($extra['packing_done_flag'] ?? 0) === 1
       || (int)($extra['packing_packed_flag'] ?? 0) === 1
       || pm_text($extra['packing_done_at'] ?? '') !== '';
 
-    if ($finishedFlag || $norm === 'finished production') {
+    if ($finishedFlag || $norm === 'finished production' || $norm === 'finished label') {
       return [
         'priority' => 5,
         'status' => 'Finished Production',

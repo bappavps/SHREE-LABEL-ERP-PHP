@@ -1340,6 +1340,16 @@ try {
 
             packing_api_apply_carton_usage_deduction($db, $opEntry, $jobNo, $jobId, 'Finished Label');
 
+            $labelPlanningId = (int)($jobDetails['planning_id'] ?? 0);
+            if ($labelPlanningId > 0) {
+                $labelPlanUpd = $db->prepare("UPDATE planning SET status = 'Finished Production', updated_at = NOW() WHERE id = ? LIMIT 1");
+                if ($labelPlanUpd) {
+                    $labelPlanUpd->bind_param('i', $labelPlanningId);
+                    $labelPlanUpd->execute();
+                    $labelPlanUpd->close();
+                }
+            }
+
             $db->commit();
         } catch (Throwable $e) {
             $db->rollback();

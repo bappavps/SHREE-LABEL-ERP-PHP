@@ -1082,7 +1082,17 @@ if ($action === 'save_dispatch') {
             if ($stockCategory !== 'printing_label') {
                 ds_json(422, ['ok' => false, 'error' => 'Extra mixed dispatch is allowed only for Printing Label category.']);
             }
-            $mixedAvailable = ds_mixed_extra_for_stock($stock);
+
+            $mixedSourceRows = ds_related_prefill_rows($db, $stock);
+            if (empty($mixedSourceRows)) {
+                $mixedSourceRows = [$stock];
+            }
+
+            $mixedAvailable = 0.0;
+            foreach ($mixedSourceRows as $mixedRow) {
+                $mixedAvailable += max(0.0, ds_mixed_extra_for_stock($mixedRow));
+            }
+
             if ($pk <= 0 && $extraDispatchQtyInput > $mixedAvailable) {
                 ds_json(422, ['ok' => false, 'error' => 'Extra mixed dispatch quantity exceeds available mixed stock.']);
             }
@@ -1091,13 +1101,38 @@ if ($action === 'save_dispatch') {
             if ($extraDispatchQty > 0) {
                 $dispatchQty += $extraDispatchQty;
                 $availableSnapshot += max(0.0, $mixedAvailable);
-                $batchItems[] = [
-                    'item_id' => $finishedStockId,
-                    'batch_no' => ds_clean(($stock['batch_no'] ?? $batchNo) . ' [Mixed Extra]', 120),
-                    'packing_id' => ds_clean($stock['item_code'] ?? $packingId, 120),
-                    'dispatch_qty' => $extraDispatchQty,
-                    'available_qty' => max(0.0, $mixedAvailable),
-                ];
+
+                $remainingExtra = $extraDispatchQty;
+                foreach ($mixedSourceRows as $mixedRow) {
+                    if ($remainingExtra <= 0) {
+                        break;
+                    }
+                    $mixedRowId = (int)($mixedRow['id'] ?? 0);
+                    if ($mixedRowId <= 0) {
+                        continue;
+                    }
+                    $rowMixedAvail = max(0.0, ds_mixed_extra_for_stock($mixedRow));
+                    if ($rowMixedAvail <= 0) {
+                        continue;
+                    }
+                    $take = ds_decimal(min($remainingExtra, $rowMixedAvail));
+                    if ($take <= 0) {
+                        continue;
+                    }
+
+                    $batchItems[] = [
+                        'item_id' => $mixedRowId,
+                        'batch_no' => ds_clean(((string)($mixedRow['batch_no'] ?? $batchNo)) . ' [Mixed Extra]', 120),
+                        'packing_id' => ds_clean($mixedRow['item_code'] ?? $packingId, 120),
+                        'dispatch_qty' => $take,
+                        'available_qty' => $rowMixedAvail,
+                    ];
+                    $remainingExtra = ds_decimal($remainingExtra - $take);
+                }
+
+                if ($remainingExtra > 0) {
+                    ds_json(422, ['ok' => false, 'error' => 'Extra mixed dispatch allocation failed. Please reload and try again.']);
+                }
             }
         }
     }
