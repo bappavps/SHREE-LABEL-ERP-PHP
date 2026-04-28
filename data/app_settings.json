@@ -100,7 +100,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 5
+                "counter": 0
             },
             "sales_order": {
                 "prefix": "SO",
@@ -148,7 +148,7 @@
             },
             "barcode_job": {
                 "prefix": "BRC-BAR",
-                "counter": 1
+                "counter": 0
             }
         }
     }

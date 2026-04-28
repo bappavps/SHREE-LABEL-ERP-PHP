@@ -1883,11 +1883,22 @@ include __DIR__ . '/../../../includes/header.php';
         var lotQty = lot ? Math.max(0, Math.min(toNum(lot.productionQty), toNum(lot.availableQty))) : 0;
         var st = (rollLooseOverrides[key] && typeof rollLooseOverrides[key] === 'object') ? rollLooseOverrides[key] : {};
         if (isBarcodeMode) {
+          // CARTON DEDUCTION FIX: recalc cartons at submit time using same formula as display
+          var bpr = Object.prototype.hasOwnProperty.call(st, 'bpr') ? Math.max(1, Math.floor(toNum(st.bpr))) : barcodePerRollDefault;
+          var totalRollsSubmit = (Object.prototype.hasOwnProperty.call(st, 'total_rolls') && Math.floor(toNum(st.total_rolls)) > 0)
+            ? Math.max(0, Math.floor(toNum(st.total_rolls)))
+            : Math.max(0, Math.ceil(lotQty / Math.max(1, bpr)));
+          var rollsPerCartonSubmit = Object.prototype.hasOwnProperty.call(st, 'rolls_per_carton')
+            ? Math.max(0, Math.floor(toNum(st.rolls_per_carton)))
+            : 0;
+          var cartonsRecalc = (rollsPerCartonSubmit > 0)
+            ? Math.floor(totalRollsSubmit / rollsPerCartonSubmit)
+            : 0;
           payloadOverrides[key] = {
-            bpr: Object.prototype.hasOwnProperty.call(st, 'bpr') ? Math.max(1, Math.floor(toNum(st.bpr))) : barcodePerRollDefault,
-            total_rolls: Math.max(0, Math.floor(toNum(st.total_rolls || 0))),
-            cartons: Math.max(0, Math.floor(toNum(st.cartons || 0))),
-            rolls_per_carton: Math.max(0, Math.floor(toNum(st.rolls_per_carton || 0))),
+            bpr: bpr,
+            total_rolls: totalRollsSubmit,
+            cartons: cartonsRecalc,
+            rolls_per_carton: rollsPerCartonSubmit,
             qty: Math.max(0, Math.floor(lotQty)),
             extra_pcs: Math.max(0, Math.floor(toNum(st.extra_pcs || 0))),
             csize_text: String(st.csize_text || '75 mm').trim() || '75 mm'

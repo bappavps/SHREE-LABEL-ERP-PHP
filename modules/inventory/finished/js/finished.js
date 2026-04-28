@@ -645,13 +645,18 @@
       return String(extra[key] || '');
     }
     if (key === 'carton') {
+      // For carton category, show actual carton quantity from inventory
+      if (row.category === 'carton') {
+        return fmtQty(row.quantity);
+      }
+      // For other categories, calculate cartons needed based on quantity and ratio
       var ratioRaw = extraPick(['per_carton', 'roll_per_cartoon', 'roll_per_carton']);
       var ratio = fg_num(ratioRaw);
       if (ratio > 0) {
         var netQty = mixedAdjustedTotal().available_net;
         return String(Math.max(0, Math.floor(netQty / ratio)));
       }
-      return String(extra.carton || '');
+      return '';
     }
     if (key === 'ups') {
       return extraPick(['ups', 'up_in_production', 'ups_in_die']);
@@ -1438,7 +1443,7 @@
         if (rowIdBySize[sizeKey]) {
           actionHtml = '<div class="fg-row-actions" style="justify-content:center;margin-top:6px">' +
             '<button type="button" class="btn btn-sm" data-fg-action="edit-row" data-id="' + fg_escapeHtml(rowIdBySize[sizeKey]) + '" data-agg-qty="' + qtyNum + '"><i class="bi bi-pencil"></i></button>' +
-            '<button type="button" class="btn btn-sm btn-danger" data-fg-action="delete-row" data-id="' + fg_escapeHtml(rowIdBySize[sizeKey]) + '"><i class="bi bi-trash"></i></button>' +
+            '<button type="button" class="btn btn-sm btn-danger" data-fg-action="delete-row" data-id="' + fg_escapeHtml(rowIdBySize[sizeKey]) + '" data-category="carton" data-size="' + fg_escapeHtml(sizeKey) + '"><i class="bi bi-trash"></i></button>' +
           '</div>';
         }
         qtyCell = '<div>' + qtyCell + actionHtml + '</div>';
@@ -2084,9 +2089,15 @@
     });
   }
 
-  function fg_deleteRow(id) {
+  function fg_deleteRow(id, meta) {
     fg_confirm('Delete this stock row?', function () {
-      fg_api('delete_stock', { id: id }, 'POST').then(function (res) {
+      var payload = { id: id };
+      if (meta && typeof meta === 'object') {
+        if (meta.category) payload.category = String(meta.category);
+        if (meta.size) payload.size = String(meta.size);
+      }
+
+      fg_api('delete_stock', payload, 'POST').then(function (res) {
         if (!res || !res.ok) {
           throw new Error((res && res.error) || 'Delete failed.');
         }
@@ -2713,7 +2724,12 @@
     if (action === 'delete-row') {
       if (!fg_state.canManageRows) return;
       var did = parseInt(target.getAttribute('data-id') || '0', 10);
-      if (did > 0) fg_deleteRow(did);
+      if (did > 0) {
+        fg_deleteRow(did, {
+          category: String(target.getAttribute('data-category') || ''),
+          size: String(target.getAttribute('data-size') || '')
+        });
+      }
       return;
     }
 

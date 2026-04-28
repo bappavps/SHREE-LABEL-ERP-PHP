@@ -963,13 +963,101 @@ if ($action === 'delete_stock') {
         fg_json(400, ['ok' => false, 'error' => 'Invalid row id.']);
     }
 
-    $stmt = $db->prepare("DELETE FROM finished_goods_stock WHERE id = ? LIMIT 1");
-    $stmt->bind_param('i', $id);
-    if (!$stmt->execute()) {
-        fg_json(500, ['ok' => false, 'error' => 'Unable to delete stock entry.']);
-    }
+    $category = strtolower(fg_clean_text($payload['category'] ?? '', 60));
+    $size = fg_clean_text($payload['size'] ?? '', 120);
+    $sizeKey = strtolower(trim($size));
 
-    fg_json(200, ['ok' => true, 'message' => 'Stock entry deleted successfully.']);
+    try {
+        $db->begin_transaction();
+
+        if ($category === 'carton' && $sizeKey !== '') {
+            $deletedStock = 0;
+            $deletedCartonItem = 0;
+
+            // Remove child dispatch logs first to satisfy FK constraints.
+            $delLog = $db->prepare("DELETE l FROM finished_goods_dispatch_log l
+                INNER JOIN finished_goods_stock s ON s.id = l.stock_id
+                WHERE s.category = 'carton'
+                  AND LOWER(TRIM(COALESCE(NULLIF(s.size, ''), s.item_name, ''))) = ?");
+            if (!$delLog) {
+                throw new Exception('Unable to prepare carton dispatch-log delete query.');
+            }
+            $delLog->bind_param('s', $sizeKey);
+            $delLog->execute();
+            $delLog->close();
+
+            $delStock = $db->prepare("DELETE FROM finished_goods_stock
+                WHERE category = 'carton'
+                  AND LOWER(TRIM(COALESCE(NULLIF(size, ''), item_name, ''))) = ?");
+            if (!$delStock) {
+                throw new Exception('Unable to prepare carton stock delete query.');
+            }
+            $delStock->bind_param('s', $sizeKey);
+            $delStock->execute();
+            $deletedStock = (int)$delStock->affected_rows;
+            $delStock->close();
+
+            // carton_stock has FK to carton_items (ON DELETE RESTRICT), so remove child rows first.
+            $delCartonStock = $db->prepare("DELETE cs FROM carton_stock cs
+                INNER JOIN carton_items ci ON ci.id = cs.item_id
+                WHERE LOWER(TRIM(ci.item_name)) = ?");
+            if (!$delCartonStock) {
+                throw new Exception('Unable to prepare carton stock-ledger delete query.');
+            }
+            $delCartonStock->bind_param('s', $sizeKey);
+            $delCartonStock->execute();
+            $delCartonStock->close();
+
+            $delMin = $db->prepare("DELETE FROM carton_items WHERE LOWER(TRIM(item_name)) = ?");
+            if (!$delMin) {
+                throw new Exception('Unable to prepare carton item delete query.');
+            }
+            $delMin->bind_param('s', $sizeKey);
+            $delMin->execute();
+            $deletedCartonItem = (int)$delMin->affected_rows;
+            $delMin->close();
+
+            if ($deletedStock < 1 && $deletedCartonItem < 1) {
+                $db->rollback();
+                fg_json(404, ['ok' => false, 'error' => 'Stock row not found.']);
+            }
+
+            $db->commit();
+            fg_json(200, ['ok' => true, 'message' => 'Stock entry deleted successfully.']);
+        }
+
+        // Remove child dispatch logs first to satisfy FK constraints.
+        $delLogById = $db->prepare("DELETE FROM finished_goods_dispatch_log WHERE stock_id = ?");
+        if (!$delLogById) {
+            throw new Exception('Unable to prepare dispatch-log delete query.');
+        }
+        $delLogById->bind_param('i', $id);
+        $delLogById->execute();
+        $delLogById->close();
+
+        $stmt = $db->prepare("DELETE FROM finished_goods_stock WHERE id = ? LIMIT 1");
+        if (!$stmt) {
+            throw new Exception('Unable to prepare stock delete query.');
+        }
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        if ($stmt->affected_rows < 1) {
+            $stmt->close();
+            $db->rollback();
+            fg_json(404, ['ok' => false, 'error' => 'Stock row not found.']);
+        }
+        $stmt->close();
+
+        $db->commit();
+        fg_json(200, ['ok' => true, 'message' => 'Stock entry deleted successfully.']);
+    } catch (Throwable $e) {
+        try {
+            $db->rollback();
+        } catch (Throwable $ignore) {
+            // no-op
+        }
+        fg_json(500, ['ok' => false, 'error' => 'Unable to delete stock entry: ' . $e->getMessage()]);
+    }
 }
 
 if ($action === 'import_excel') {
