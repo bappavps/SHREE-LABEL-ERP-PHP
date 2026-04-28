@@ -638,6 +638,7 @@ if ($action === 'get_stock') {
             $key = strtolower($sizeText);
             $minQty = (int)($minByKey[$key] ?? 0);
             $aggQty = (float)($qtyByKey[$key] ?? 0.0);
+            $rows[$idx]['carton_item_id'] = (int)($idByKey[$key] ?? 0);
             $rows[$idx]['min_qty'] = $minQty;
             $rows[$idx]['stock_status'] = ($minQty > 0 && $aggQty < $minQty) ? 'Low Quantity' : 'In Stock';
         }
@@ -649,6 +650,7 @@ if ($action === 'get_stock') {
             $sizeLabel = (string)($labelByKey[$key] ?? $key);
             $rows[] = [
                 'id' => (int)($idByKey[$key] ?? 0),
+                'carton_item_id' => (int)($idByKey[$key] ?? 0),
                 'category' => 'carton',
                 'sub_type' => '',
                 'item_name' => $sizeLabel,
@@ -689,6 +691,9 @@ if ($action === 'set_carton_min_qty') {
         fg_json(400, ['ok' => false, 'error' => 'Carton item id or size is required.']);
     }
 
+    $sizeKey = strtolower(trim($size));
+    $isSaved = false;
+
     if ($id > 0) {
         $stmt = $db->prepare("UPDATE carton_items SET min_qty = ? WHERE id = ? LIMIT 1");
         if (!$stmt) {
@@ -698,13 +703,34 @@ if ($action === 'set_carton_min_qty') {
         if (!$stmt->execute()) {
             fg_json(500, ['ok' => false, 'error' => 'Unable to save carton minimum.']);
         }
+
+        if ($stmt->affected_rows > 0) {
+            $isSaved = true;
+        } else {
+            // If value remained unchanged, row still exists and save is valid.
+            $existsStmt = $db->prepare("SELECT id FROM carton_items WHERE id = ? LIMIT 1");
+            if ($existsStmt) {
+                $existsStmt->bind_param('i', $id);
+                $existsStmt->execute();
+                $existsRow = $existsStmt->get_result()->fetch_assoc();
+                $isSaved = (bool)$existsRow;
+                $existsStmt->close();
+            }
+        }
         $stmt->close();
-    } else {
-        $sel = $db->prepare("SELECT id FROM carton_items WHERE item_name = ? LIMIT 1");
+
+        // If id did not map to carton_items (e.g., stock id was sent), fallback by size.
+        if (!$isSaved && $sizeKey === '') {
+            fg_json(400, ['ok' => false, 'error' => 'Invalid carton item id for MOQ update.']);
+        }
+    }
+
+    if (!$isSaved) {
+        $sel = $db->prepare("SELECT id FROM carton_items WHERE LOWER(TRIM(item_name)) = ? LIMIT 1");
         if (!$sel) {
             fg_json(500, ['ok' => false, 'error' => 'Unable to prepare carton lookup.']);
         }
-        $sel->bind_param('s', $size);
+        $sel->bind_param('s', $sizeKey);
         $sel->execute();
         $row = $sel->get_result()->fetch_assoc();
         $sel->close();
@@ -720,6 +746,7 @@ if ($action === 'set_carton_min_qty') {
                 fg_json(500, ['ok' => false, 'error' => 'Unable to save carton minimum.']);
             }
             $up->close();
+            $isSaved = true;
         } else {
             $ins = $db->prepare("INSERT INTO carton_items (item_name, min_qty, status) VALUES (?, ?, 'ACTIVE')");
             if (!$ins) {
@@ -730,6 +757,7 @@ if ($action === 'set_carton_min_qty') {
                 fg_json(500, ['ok' => false, 'error' => 'Unable to create carton item.']);
             }
             $ins->close();
+            $isSaved = true;
         }
     }
 

@@ -1400,7 +1400,9 @@
     var order = fixedOrder.slice();
     var qtyBySize = {};
     var minBySize = {};
-    var rowIdBySize = {};
+    var stockRowIdBySize = {};
+    var cartonItemIdBySize = {};
+    var actionIdBySize = {};
 
     for (var f = 0; f < fixedOrder.length; f += 1) {
       qtyBySize[fixedOrder[f]] = 0;
@@ -1418,12 +1420,27 @@
         minBySize[sizeText] = 0;
         order.push(sizeText);
       }
-      if (!Object.prototype.hasOwnProperty.call(rowIdBySize, sizeText) && fg_num(row.id) > 0) {
-        rowIdBySize[sizeText] = String(row.id);
+      var cartonItemId = parseInt(String(row.carton_item_id || '0'), 10) || 0;
+      if (!Object.prototype.hasOwnProperty.call(cartonItemIdBySize, sizeText) && cartonItemId > 0) {
+        cartonItemIdBySize[sizeText] = String(cartonItemId);
+      }
+
+      // Actions (edit/delete) should target real finished_goods_stock rows, not carton_items synthetic rows.
+      var isRealStockRow = String(row.created_at || '').trim() !== '';
+      if (!Object.prototype.hasOwnProperty.call(stockRowIdBySize, sizeText) && isRealStockRow && fg_num(row.id) > 0) {
+        stockRowIdBySize[sizeText] = String(row.id);
+        actionIdBySize[sizeText] = String(row.id);
       }
       qtyBySize[sizeText] += fg_num(row.quantity);
       if (fg_num(row.min_qty) > 0) {
         minBySize[sizeText] = Math.max(minBySize[sizeText], fg_num(row.min_qty));
+      }
+    }
+
+    for (var ck in cartonItemIdBySize) {
+      if (!Object.prototype.hasOwnProperty.call(cartonItemIdBySize, ck)) continue;
+      if (!Object.prototype.hasOwnProperty.call(actionIdBySize, ck) && cartonItemIdBySize[ck]) {
+        actionIdBySize[ck] = cartonItemIdBySize[ck];
       }
     }
 
@@ -1440,16 +1457,16 @@
       var qtyCell = fg_escapeHtml(String(qtyNum));
       if (fg_state.canManageRows) {
         var actionHtml = '';
-        if (rowIdBySize[sizeKey]) {
+        if (actionIdBySize[sizeKey]) {
           actionHtml = '<div class="fg-row-actions" style="justify-content:center;margin-top:6px">' +
-            '<button type="button" class="btn btn-sm" data-fg-action="edit-row" data-id="' + fg_escapeHtml(rowIdBySize[sizeKey]) + '" data-agg-qty="' + qtyNum + '"><i class="bi bi-pencil"></i></button>' +
-            '<button type="button" class="btn btn-sm btn-danger" data-fg-action="delete-row" data-id="' + fg_escapeHtml(rowIdBySize[sizeKey]) + '" data-category="carton" data-size="' + fg_escapeHtml(sizeKey) + '"><i class="bi bi-trash"></i></button>' +
+            '<button type="button" class="btn btn-sm" data-fg-action="edit-row" data-id="' + fg_escapeHtml(actionIdBySize[sizeKey]) + '" data-agg-qty="' + qtyNum + '"><i class="bi bi-pencil"></i></button>' +
+            '<button type="button" class="btn btn-sm btn-danger" data-fg-action="delete-row" data-id="' + fg_escapeHtml(actionIdBySize[sizeKey]) + '" data-category="carton" data-size="' + fg_escapeHtml(sizeKey) + '"><i class="bi bi-trash"></i></button>' +
           '</div>';
         }
         qtyCell = '<div>' + qtyCell + actionHtml + '</div>';
       }
       var minCell = fg_state.canManageRows
-        ? '<input type="number" min="0" step="1" class="fg-carton-min-input" data-size="' + fg_escapeHtml(sizeKey) + '" data-id="' + fg_escapeHtml(String(rowIdBySize[sizeKey] || '')) + '" value="' + fg_escapeHtml(String(minNum)) + '" style="width:90px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;text-align:center">'
+        ? '<input type="number" min="0" step="1" class="fg-carton-min-input" data-size="' + fg_escapeHtml(sizeKey) + '" data-id="' + fg_escapeHtml(String(cartonItemIdBySize[sizeKey] || '')) + '" value="' + fg_escapeHtml(String(minNum)) + '" style="width:90px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;text-align:center">'
         : '<span>' + fg_escapeHtml(String(minNum)) + '</span>';
       var statusCell = isLow
         ? '<span style="display:inline-block;padding:3px 8px;border-radius:999px;background:#fee2e2;color:#b91c1c;font-weight:800;font-size:.72rem">Low Quantity</span>'

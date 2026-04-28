@@ -1021,10 +1021,10 @@ include __DIR__ . '/../../../includes/header.php';
     }
 
     function resolveBarcodePackState(st, qtyInput, bpr) {
-      // total_rolls = ceil(production_qty / bpr), or manual override
+      // total_rolls = floor(production_qty / bpr), or manual override
       var totalRollsBarcode = (Object.prototype.hasOwnProperty.call(st, 'total_rolls') && Math.floor(toNum(st.total_rolls)) > 0)
         ? Math.max(0, Math.floor(toNum(st.total_rolls)))
-        : Math.max(0, Math.ceil(qtyInput / Math.max(1, bpr)));
+        : Math.max(0, Math.floor(qtyInput / Math.max(1, bpr)));
 
       // rolls_per_carton: user input
       var rollsPerCarton = Object.prototype.hasOwnProperty.call(st, 'rolls_per_carton')
@@ -1082,7 +1082,9 @@ include __DIR__ . '/../../../includes/header.php';
           var rollsPerCarton = packCalc.rollsPerCarton;
           var cartonsBarcode = packCalc.cartonsBarcode;
           var extraRolls = packCalc.extraRolls;
-          var extraPieces = Object.prototype.hasOwnProperty.call(st, 'extra_pcs') ? Math.max(0, Math.floor(toNum(st.extra_pcs))) : 0;
+          var extraPieces = Object.prototype.hasOwnProperty.call(st, 'extra_pcs')
+            ? Math.max(0, Math.floor(toNum(st.extra_pcs)))
+            : Math.max(0, qtyIn % Math.max(1, bpr));
           var barcodeCartonOptions = opGetCartonSizeOptions();
           var csizeTextRaw = String(st.csize_text || '75mm').trim() || '75mm';
           var csizeNorm = normCsizeText(csizeTextRaw);
@@ -1100,7 +1102,7 @@ include __DIR__ . '/../../../includes/header.php';
             + '  <div style="font-size:.74rem;font-weight:900;color:#9a3412;margin-bottom:8px">Roll: ' + escHtml(String(roll.rollNo || '-')) + '</div>'
             + '  <div style="display:grid;grid-template-columns:repeat(2,minmax(110px,1fr));gap:8px">'
             + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Barcode in 1 roll (bpr)</label><input type="number" class="op-bc-per-roll" data-roll-key="' + escHtml(key) + '" min="1" step="1" value="' + String(bpr) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
-            + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Total rolls <span style="font-weight:500;color:#94a3b8">(auto=ceil(qty÷bpr))</span></label><input type="number" class="op-bc-total-rolls-input" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(totalRollsBarcode) + '" style="width:100%;padding:5px 6px;border:1px solid #86efac;border-radius:6px"></div>'
+            + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Total rolls <span style="font-weight:500;color:#94a3b8">(auto=floor(qty÷bpr))</span></label><input type="number" class="op-bc-total-rolls-input" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(totalRollsBarcode) + '" style="width:100%;padding:5px 6px;border:1px solid #86efac;border-radius:6px"></div>'
             + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Roll in 1 carton</label><input type="number" class="op-bc-rolls-per-carton-input" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(rollsPerCarton) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
             + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#0f766e">Total cartons <span style="font-weight:500;color:#94a3b8">(auto)</span></label><div style="width:100%;padding:5px 8px;border:1px solid #99f6e4;border-radius:6px;background:#f0fdfa;font-size:.85rem;font-weight:900;color:#0f766e;min-height:28px" class="op-bc-cartons-display" data-roll-key="' + escHtml(key) + '">' + String(cartonsBarcode) + '</div></div>'
             + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#7c3aed">Extra rolls <span style="font-weight:500;color:#94a3b8">(auto)</span></label><div style="width:100%;padding:5px 8px;border:1px solid #ddd6fe;border-radius:6px;background:#f5f3ff;font-size:.85rem;font-weight:900;color:#7c3aed;min-height:28px" class="op-bc-extra-rolls-display" data-roll-key="' + escHtml(key) + '">' + String(extraRolls) + '</div></div>'
@@ -1300,7 +1302,9 @@ include __DIR__ . '/../../../includes/header.php';
           var rollsPerCarton = packCalc.rollsPerCarton;
           var cartonsBarcode = packCalc.cartonsBarcode;
           var extraRolls = packCalc.extraRolls;
-          var extraPieces = Object.prototype.hasOwnProperty.call(st, 'extra_pcs') ? Math.max(0, Math.floor(toNum(st.extra_pcs))) : 0;
+          var extraPieces = Object.prototype.hasOwnProperty.call(st, 'extra_pcs')
+            ? Math.max(0, Math.floor(toNum(st.extra_pcs)))
+            : Math.max(0, qtyInput % Math.max(1, bpr));
           var csizeText = String(st.csize_text || '75 mm').trim() || '75 mm';
           // Physical = total_rolls × bpr + extra_pcs
           var rollPhysical = Math.max(0, totalRollsBarcode * bpr + extraPieces);
@@ -1887,7 +1891,7 @@ include __DIR__ . '/../../../includes/header.php';
           var bpr = Object.prototype.hasOwnProperty.call(st, 'bpr') ? Math.max(1, Math.floor(toNum(st.bpr))) : barcodePerRollDefault;
           var totalRollsSubmit = (Object.prototype.hasOwnProperty.call(st, 'total_rolls') && Math.floor(toNum(st.total_rolls)) > 0)
             ? Math.max(0, Math.floor(toNum(st.total_rolls)))
-            : Math.max(0, Math.ceil(lotQty / Math.max(1, bpr)));
+            : Math.max(0, Math.floor(lotQty / Math.max(1, bpr)));
           var rollsPerCartonSubmit = Object.prototype.hasOwnProperty.call(st, 'rolls_per_carton')
             ? Math.max(0, Math.floor(toNum(st.rolls_per_carton)))
             : 0;
@@ -1900,7 +1904,9 @@ include __DIR__ . '/../../../includes/header.php';
             cartons: cartonsRecalc,
             rolls_per_carton: rollsPerCartonSubmit,
             qty: Math.max(0, Math.floor(lotQty)),
-            extra_pcs: Math.max(0, Math.floor(toNum(st.extra_pcs || 0))),
+            extra_pcs: Object.prototype.hasOwnProperty.call(st, 'extra_pcs')
+              ? Math.max(0, Math.floor(toNum(st.extra_pcs)))
+              : Math.max(0, Math.floor(lotQty) % Math.max(1, bpr)),
             csize_text: String(st.csize_text || '75 mm').trim() || '75 mm'
           };
           return;

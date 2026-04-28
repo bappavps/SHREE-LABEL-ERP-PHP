@@ -2129,7 +2129,7 @@ include __DIR__ . '/../../includes/header.php';
                 function resolveBarcodePackState(st, qtyInput, bpr) {
                   var totalRollsBarcode = (Object.prototype.hasOwnProperty.call(st, 'total_rolls') && Math.floor(toNum(st.total_rolls)) > 0)
                     ? Math.max(0, Math.floor(toNum(st.total_rolls)))
-                    : Math.max(0, Math.ceil(qtyInput / Math.max(1, bpr)));
+                    : Math.max(0, Math.floor(qtyInput / Math.max(1, bpr)));
                   var rollsPerCarton = Object.prototype.hasOwnProperty.call(st, 'rolls_per_carton')
                     ? Math.max(0, Math.floor(toNum(st.rolls_per_carton)))
                     : 0;
@@ -2195,7 +2195,9 @@ include __DIR__ . '/../../includes/header.php';
                       var rollsPerCarton = packCalc.rollsPerCarton;
                       var cartonsBarcode = packCalc.cartonsBarcode;
                       var extraRolls = packCalc.extraRolls;
-                      var extraPieces = Object.prototype.hasOwnProperty.call(st, 'extra_pcs') ? Math.max(0, Math.floor(toNum(st.extra_pcs))) : 0;
+                      var extraPieces = Object.prototype.hasOwnProperty.call(st, 'extra_pcs')
+                        ? Math.max(0, Math.floor(toNum(st.extra_pcs)))
+                        : Math.max(0, qty % Math.max(1, bpr));
                       var barcodeCartonOptions = pkGetCartonSizeOptions();
                       var csizeTextRaw = String(st.csize_text || '75mm').trim() || '75mm';
                       var csizeNorm = normCsizeText(csizeTextRaw);
@@ -2212,7 +2214,7 @@ include __DIR__ . '/../../includes/header.php';
                         + '  <div style="font-size:.74rem;font-weight:900;color:#9a3412;margin-bottom:8px">Roll: ' + escHtml(String(roll.rollNo || '-')) + '</div>'
                         + '  <div style="display:grid;grid-template-columns:repeat(2,minmax(110px,1fr));gap:8px">'
                         + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Barcode in 1 roll (bpr)</label><input type="number" class="pk-bc-per-roll" data-roll-key="' + escHtml(key) + '" min="1" step="1" value="' + String(bpr) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
-                        + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Total rolls <span style="font-weight:500;color:#94a3b8">(auto=ceil(qty÷bpr))</span></label><input type="number" class="pk-bc-total-rolls-input" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(totalRollsBarcode) + '" style="width:100%;padding:5px 6px;border:1px solid #86efac;border-radius:6px"></div>'
+                        + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Total rolls <span style="font-weight:500;color:#94a3b8">(auto=floor(qty÷bpr))</span></label><input type="number" class="pk-bc-total-rolls-input" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(totalRollsBarcode) + '" style="width:100%;padding:5px 6px;border:1px solid #86efac;border-radius:6px"></div>'
                         + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#64748b">Roll in 1 carton</label><input type="number" class="pk-bc-rolls-per-carton-input" data-roll-key="' + escHtml(key) + '" min="0" step="1" value="' + String(rollsPerCarton) + '" style="width:100%;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px"></div>'
                         + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#0f766e">Total cartons <span style="font-weight:500;color:#94a3b8">(auto)</span></label><div class="pk-bc-cartons-display" data-roll-key="' + escHtml(key) + '" style="width:100%;padding:5px 8px;border:1px solid #99f6e4;border-radius:6px;background:#f0fdfa;font-size:.85rem;font-weight:900;color:#0f766e;min-height:28px">' + String(cartonsBarcode) + '</div></div>'
                         + '    <div><label style="display:block;font-size:.68rem;font-weight:700;color:#7c3aed">Extra rolls <span style="font-weight:500;color:#94a3b8">(auto)</span></label><div class="pk-bc-extra-rolls-display" data-roll-key="' + escHtml(key) + '" style="width:100%;padding:5px 8px;border:1px solid #ddd6fe;border-radius:6px;background:#f5f3ff;font-size:.85rem;font-weight:900;color:#7c3aed;min-height:28px">' + String(extraRolls) + '</div></div>'
@@ -2393,7 +2395,9 @@ include __DIR__ . '/../../includes/header.php';
                       var rollsPerCarton = packCalc.rollsPerCarton;
                       var cartonsBarcode = packCalc.cartonsBarcode;
                       var extraRolls = packCalc.extraRolls;
-                      var extraPieces = Object.prototype.hasOwnProperty.call(st, 'extra_pcs') ? Math.max(0, Math.floor(toNum(st.extra_pcs))) : 0;
+                      var extraPieces = Object.prototype.hasOwnProperty.call(st, 'extra_pcs')
+                        ? Math.max(0, Math.floor(toNum(st.extra_pcs)))
+                        : Math.max(0, qty % Math.max(1, bpr));
                       var rollPhysical = Math.max(0, totalRollsBarcode * bpr + extraPieces);
 
                       totalBundlesNum += totalRollsBarcode;
