@@ -101,10 +101,19 @@
   }
 
   function columnValue(row, key) {
-    if (key === 'total_qty' || key === 'per_carton' || key === 'extra_qty') {
+    if (key === 'total_qty' || key === 'extra_qty') {
       return fmt(row[key] || 0);
     }
+    if (key === 'per_carton') {
+      if (row[key] == null || row[key] === '') {
+        return '-';
+      }
+      return fmt(row[key]);
+    }
     if (key === 'possible_cartons') {
+      if (row[key] == null || row[key] === '') {
+        return '-';
+      }
       return String(Math.round(num(row[key] || 0)));
     }
     return String(row[key] == null || row[key] === '' ? '-' : row[key]);

@@ -129,6 +129,10 @@ function fg_mixed_extra_qty(string $category, float $quantity, array $extra): fl
         $rpc = (int)floor(fg_decimal(fg_mixed_pick($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
 
         if ($mixedEnabled) {
+            $looseQty = max(0.0, fg_decimal(fg_mixed_pick($extra, ['loose_qty'])));
+            if ($looseQty > 0) {
+                return $looseQty;
+            }
             return max(0.0, fg_decimal($extra['mixed_extra_rolls'] ?? 0));
         }
 
@@ -353,6 +357,150 @@ function fg_fetch_barcode_ups_map(mysqli $db, array $jobNos): array {
         $map[$jobNo] = [
             'up_in_roll' => $upInRoll,
             'up_in_production' => $upInProduction,
+        ];
+    }
+
+    return $map;
+}
+
+function fg_decode_assoc($raw): array {
+    $decoded = json_decode((string)$raw, true);
+    return is_array($decoded) ? $decoded : [];
+}
+
+function fg_format_measure($value, string $suffix = ''): string {
+    $raw = trim((string)$value);
+    if ($raw === '') {
+        return '';
+    }
+    if (preg_match('/-?[0-9]+(?:\.[0-9]+)?/', $raw, $m)) {
+        $num = rtrim(rtrim(number_format((float)$m[0], 3, '.', ''), '0'), '.');
+        return $suffix !== '' ? ($num . ' ' . $suffix) : $num;
+    }
+    return $raw;
+}
+
+function fg_first_numeric($value): float {
+    $raw = trim((string)$value);
+    if ($raw === '') {
+        return 0.0;
+    }
+    if (preg_match('/-?[0-9]+(?:\.[0-9]+)?/', $raw, $m)) {
+        return fg_decimal($m[0]);
+    }
+    return 0.0;
+}
+
+function fg_parse_label_dimensions(string $text): array {
+    $raw = trim($text);
+    if ($raw === '') {
+        return ['width' => '', 'length' => ''];
+    }
+    if (preg_match('/([0-9]+(?:\.[0-9]+)?)\s*mm?\s*[xX×]\s*([0-9]+(?:\.[0-9]+)?)/i', $raw, $m)) {
+        return [
+            'width' => fg_format_measure($m[1], 'mm'),
+            'length' => fg_format_measure($m[2], 'mm'),
+        ];
+    }
+    return ['width' => '', 'length' => ''];
+}
+
+function fg_fetch_printing_label_context(mysqli $db, array $jobNos): array {
+    $clean = [];
+    foreach ($jobNos as $jobNo) {
+        $value = trim((string)$jobNo);
+        if ($value !== '') {
+            $clean[$value] = true;
+        }
+    }
+    $jobNos = array_keys($clean);
+    if (empty($jobNos)) {
+        return [];
+    }
+
+    $ph = implode(',', array_fill(0, count($jobNos), '?'));
+    $types = str_repeat('s', count($jobNos));
+    $sql = "SELECT pe.job_no, pe.packed_qty, pe.cartons_count, pe.loose_qty, pe.bundles_count, pe.roll_payload_json,
+                   p.extra_data AS plan_extra_data
+            FROM packing_operator_entries pe
+            LEFT JOIN planning p ON p.id = pe.planning_id
+            WHERE pe.job_no IN ($ph)
+            ORDER BY pe.id DESC";
+    $stmt = $db->prepare($sql);
+    if (!$stmt) {
+        return [];
+    }
+    $stmt->bind_param($types, ...$jobNos);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+
+    $map = [];
+    foreach ($rows as $row) {
+        $jobNo = trim((string)($row['job_no'] ?? ''));
+        if ($jobNo === '' || isset($map[$jobNo])) {
+            continue;
+        }
+
+        $planExtra = fg_decode_assoc($row['plan_extra_data'] ?? '');
+        $rollPayload = fg_decode_assoc($row['roll_payload_json'] ?? '');
+        $rollOverrides = is_array($rollPayload['roll_overrides'] ?? null) ? $rollPayload['roll_overrides'] : [];
+        $mixedPayload = is_array($rollPayload['mixed'] ?? null) ? $rollPayload['mixed'] : [];
+
+        $labelDims = fg_parse_label_dimensions((string)($planExtra['size'] ?? ($planExtra['label_size'] ?? '')));
+        $packedQty = fg_decimal($row['packed_qty'] ?? 0);
+        $looseQty = fg_decimal($row['loose_qty'] ?? 0);
+        $pcsPerRoll = 0.0;
+        $displayPerCarton = 0.0;
+
+        foreach ($rollOverrides as $override) {
+            if (!is_array($override)) {
+                continue;
+            }
+            if ($pcsPerRoll <= 0) {
+                $pcsPerRoll = fg_decimal($override['bpr'] ?? 0);
+            }
+            if ($displayPerCarton <= 0) {
+                $displayPerCarton = fg_decimal($override['rolls_per_carton'] ?? ($override['rpc'] ?? 0));
+            }
+            if ($pcsPerRoll > 0 && $displayPerCarton > 0) {
+                break;
+            }
+        }
+
+        if ($pcsPerRoll <= 0) {
+            $pcsPerRoll = fg_first_numeric((string)($planExtra['qty_per_roll'] ?? ''));
+        }
+
+        $displayRollCount = fg_decimal($rollPayload['total_rolls'] ?? 0);
+        if ($displayRollCount <= 0) {
+            $displayRollCount = fg_decimal($row['bundles_count'] ?? 0);
+        }
+        if ($displayRollCount <= 0 && $pcsPerRoll > 0 && $packedQty > 0) {
+            $displayRollCount = floor($packedQty / $pcsPerRoll);
+        }
+
+        $cartonCount = max(0, (int)floor((float)($row['cartons_count'] ?? 0)));
+        $mixedExtraRolls = fg_decimal($mixedPayload['mixed_extra_rolls'] ?? 0);
+        $netQty = max(0.0, $packedQty - $looseQty);
+        if ($mixedExtraRolls > 0 && $pcsPerRoll > 0) {
+            $netQty = max(0.0, $netQty - ($mixedExtraRolls * $pcsPerRoll));
+        }
+
+        $map[$jobNo] = [
+            'paper_size' => trim((string)($planExtra['paper_size'] ?? '')),
+            'width' => $labelDims['width'],
+            'length' => $labelDims['length'],
+            'mtrs' => fg_format_measure((string)($planExtra['allocate_mtrs'] ?? ($planExtra['mtrs'] ?? ($planExtra['meter'] ?? ''))), 'mtr'),
+            'direction' => trim((string)($planExtra['roll_direction'] ?? ($planExtra['direction'] ?? ''))),
+            'qty_per_roll_actual' => $pcsPerRoll > 0 ? rtrim(rtrim(number_format($pcsPerRoll, 3, '.', ''), '0'), '.') : '',
+            'display_roll_count' => $displayRollCount > 0 ? rtrim(rtrim(number_format($displayRollCount, 3, '.', ''), '0'), '.') : '',
+            'display_per_carton' => $displayPerCarton > 0 ? rtrim(rtrim(number_format($displayPerCarton, 3, '.', ''), '0'), '.') : '',
+            'carton' => $cartonCount > 0 ? (string)$cartonCount : '',
+            'after_packing_qty' => rtrim(rtrim(number_format($netQty, 3, '.', ''), '0'), '.'),
+            'current_total' => rtrim(rtrim(number_format($netQty, 3, '.', ''), '0'), '.'),
+            'available_for_dispatch' => rtrim(rtrim(number_format($netQty, 3, '.', ''), '0'), '.'),
+            'loose_qty' => $looseQty > 0 ? rtrim(rtrim(number_format($looseQty, 3, '.', ''), '0'), '.') : '0',
         ];
     }
 
@@ -739,6 +887,39 @@ if ($action === 'get_stock') {
             if ((string)($row['category'] ?? '') === 'printing_roll') {
                 $rows[$idx]['category'] = 'printing_label';
             }
+        }
+
+        $jobNos = [];
+        foreach ($rows as $row) {
+            $jobNo = trim((string)($row['batch_no'] ?? ''));
+            if ($jobNo !== '') {
+                $jobNos[] = $jobNo;
+            }
+        }
+        $labelContextMap = fg_fetch_printing_label_context($db, $jobNos);
+        foreach ($rows as $idx => $row) {
+            $jobNo = trim((string)($row['batch_no'] ?? ''));
+            if ($jobNo === '' || !isset($labelContextMap[$jobNo])) {
+                continue;
+            }
+            $context = $labelContextMap[$jobNo];
+            $parsed = json_decode((string)($row['remarks'] ?? ''), true);
+            if (!is_array($parsed)) {
+                $parsed = ['note' => '', 'extra' => []];
+            }
+            if (!isset($parsed['extra']) || !is_array($parsed['extra'])) {
+                $parsed['extra'] = [];
+            }
+            foreach ($context as $ctxKey => $ctxValue) {
+                if ($ctxValue === '' || $ctxValue === null) {
+                    continue;
+                }
+                $parsed['extra'][$ctxKey] = $ctxValue;
+            }
+            if (!empty($context['paper_size'])) {
+                $rows[$idx]['size'] = (string)$context['paper_size'];
+            }
+            $rows[$idx]['remarks'] = json_encode($parsed, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         }
     }
 

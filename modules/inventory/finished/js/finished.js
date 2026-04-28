@@ -466,6 +466,7 @@
         { key: 'job_name', label: 'Job Name' },
         { key: 'order_date', label: 'Order Date' },
         { key: 'dispatch_date', label: 'Dispatch Date' },
+        { key: 'batch_no', label: 'Batch No.' },
         { key: 'size', label: 'Size' },
         { key: 'width', label: 'Width' },
         { key: 'length', label: 'Length' },
@@ -475,7 +476,6 @@
         { key: 'qty_per_roll', label: 'Qty/Roll', numeric: true },
         { key: 'direction', label: 'Direction' },
         { key: 'core_size', label: 'Core size' },
-        { key: 'core_type', label: 'core type' },
         { key: 'paper_company', label: 'Paper COMPANY' },
         { key: 'material_type', label: 'Material Type' },
         { key: 'per_carton', label: 'Per carton', numeric: true },
@@ -581,7 +581,10 @@
           var rpc = Math.floor(fg_num(extraPick(['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
 
           if (mixedEnabled) {
-            mixedExtra = Math.max(0, fg_num(extra.mixed_extra_rolls || 0));
+            mixedExtra = Math.max(0, fg_num(extraPick(['loose_qty'])));
+            if (mixedExtra <= 0) {
+              mixedExtra = Math.max(0, fg_num(extra.mixed_extra_rolls || 0));
+            }
           } else {
             var totalRoll = fg_num(extraPick(['total_roll', 'total_rolls', 'total_roll_value']));
             if (totalRoll <= 0) {
@@ -663,6 +666,9 @@
       return fmtQty(mixedAdjustedTotal().packed_net);
     }
     if (key === 'qty_per_roll') {
+      if (fg_state.activeTab === 'printing_label') {
+        return extraPick(['display_roll_count', 'total_roll', 'total_rolls', 'qty_per_roll']);
+      }
       return extraPick(['qty_per_roll', 'pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll']);
     }
     if (key === 'direction') {
@@ -699,7 +705,13 @@
 
       return '';
     }
-    if (key === 'width' || key === 'length' || key === 'core_size' || key === 'core_type' || key === 'paper_company' || key === 'barcode' || key === 'per_carton') {
+    if (key === 'width' || key === 'length' || key === 'core_size' || key === 'core_type' || key === 'paper_company' || key === 'barcode') {
+      return String(extra[key] || '');
+    }
+    if (key === 'per_carton') {
+      if (fg_state.activeTab === 'printing_label') {
+        return extraPick(['display_per_carton', 'per_carton']);
+      }
       return String(extra[key] || '');
     }
     if (key === 'carton') {
@@ -716,6 +728,13 @@
         if (barcodeQty > 0 && barcodePcsPerRoll > 0 && barcodeRollPerCarton > 0) {
           var barcodeFullRolls = Math.floor(barcodeQty / barcodePcsPerRoll);
           return String(Math.max(0, Math.floor(barcodeFullRolls / barcodeRollPerCarton)));
+        }
+      }
+
+      if (fg_state.activeTab === 'printing_label') {
+        var printingCarton = extraPick(['carton']);
+        if (printingCarton !== '') {
+          return printingCarton;
         }
       }
 
@@ -757,12 +776,30 @@
       return fmtQty(mixedAdjustedTotal().packed_net);
     }
     if (key === 'after_packing_qty') {
+      if (fg_state.activeTab === 'printing_label') {
+        var labelAfterPacking = extraPick(['after_packing_qty']);
+        if (labelAfterPacking !== '') {
+          return labelAfterPacking;
+        }
+      }
       return fmtQty(mixedAdjustedTotal().packed_net);
     }
     if (key === 'current_total') {
+      if (fg_state.activeTab === 'printing_label') {
+        var labelCurrentTotal = extraPick(['current_total']);
+        if (labelCurrentTotal !== '') {
+          return labelCurrentTotal;
+        }
+      }
       return fmtQty(mixedAdjustedTotal().available_net);
     }
     if (key === 'available_for_dispatch') {
+      if (fg_state.activeTab === 'printing_label') {
+        var labelDispatchQty = extraPick(['available_for_dispatch']);
+        if (labelDispatchQty !== '') {
+          return labelDispatchQty;
+        }
+      }
       return fmtQty(mixedAdjustedTotal().available_net);
     }
     if (key === 'stock_status') {
@@ -819,8 +856,28 @@
     return baseUrl + '/modules/scan/index.php?qr=' + encodeURIComponent(txt);
   }
 
+  function fg_batchJourneyHref(row) {
+    var batchNo = String((row && row.batch_no) || '').trim();
+    if (!batchNo) {
+      return '';
+    }
+    var apiUrl = String(fg_state.apiUrl || '');
+    var baseUrl = apiUrl.replace(/\/modules\/inventory\/finished\/api\/finished_api\.php.*$/i, '');
+    if (!baseUrl) {
+      return '';
+    }
+    return baseUrl + '/modules/scan/dossier.php?jn=' + encodeURIComponent(batchNo);
+  }
+
   function fg_renderCell(row, key) {
     var value = fg_value(row, key);
+    if (key === 'batch_no' && fg_state.activeTab === 'printing_label') {
+      var batchTxt = String(value || '').trim();
+      var batchHref = fg_batchJourneyHref(row);
+      if (batchHref && batchTxt !== '') {
+        return '<a href="' + fg_escapeHtml(batchHref) + '" target="_blank" rel="noopener noreferrer" style="color:#2563eb;font-weight:700;text-decoration:underline">' + fg_escapeHtml(batchTxt) + '</a>';
+      }
+    }
     if (key === 'after_packing_qty') {
       return '<span class="fg-qty-pill fg-qty-pill-packed">' + fg_escapeHtml(value) + '</span>';
     }
@@ -953,7 +1010,6 @@
         { name: 'qty_per_roll', label: 'Qty/Roll', source: 'extra', type: 'number' },
         { name: 'direction', label: 'Direction', source: 'extra' },
         { name: 'core_size', label: 'Core size', source: 'extra' },
-        { name: 'core_type', label: 'core type', source: 'extra' },
         { name: 'paper_company', label: 'Paper COMPANY', source: 'extra' },
         { name: 'material_type', label: 'Material Type', source: 'extra' },
         { name: 'per_carton', label: 'Per carton', source: 'extra', type: 'number' },

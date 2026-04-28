@@ -101,6 +101,83 @@ function mi_categories(): array {
     ];
 }
 
+function mi_decode_assoc($raw): array {
+    $decoded = json_decode((string)$raw, true);
+    return is_array($decoded) ? $decoded : [];
+}
+
+function mi_format_measure($value, string $suffix = ''): string {
+    $raw = trim((string)$value);
+    if ($raw === '') {
+        return '';
+    }
+    if (preg_match('/-?[0-9]+(?:\.[0-9]+)?/', $raw, $m)) {
+        $num = rtrim(rtrim(number_format((float)$m[0], 3, '.', ''), '0'), '.');
+        return $suffix !== '' ? ($num . ' ' . $suffix) : $num;
+    }
+    return $raw;
+}
+
+function mi_parse_label_dimensions(string $text): array {
+    $raw = trim($text);
+    if ($raw === '') {
+        return ['width' => '', 'length' => ''];
+    }
+    if (preg_match('/([0-9]+(?:\.[0-9]+)?)\s*mm?\s*[xX×]\s*([0-9]+(?:\.[0-9]+)?)/i', $raw, $m)) {
+        return [
+            'width' => mi_format_measure($m[1], 'mm'),
+            'length' => mi_format_measure($m[2], 'mm'),
+        ];
+    }
+    return ['width' => '', 'length' => ''];
+}
+
+function mi_fetch_printing_label_context(mysqli $db, array $jobNos): array {
+    $clean = [];
+    foreach ($jobNos as $jobNo) {
+        $value = trim((string)$jobNo);
+        if ($value !== '') {
+            $clean[$value] = true;
+        }
+    }
+    $jobNos = array_keys($clean);
+    if (empty($jobNos)) {
+        return [];
+    }
+
+    $ph = implode(',', array_fill(0, count($jobNos), '?'));
+    $types = str_repeat('s', count($jobNos));
+    $sql = "SELECT pe.job_no, p.extra_data AS plan_extra_data
+            FROM packing_operator_entries pe
+            LEFT JOIN planning p ON p.id = pe.planning_id
+            WHERE pe.job_no IN ($ph)
+            ORDER BY pe.id DESC";
+    $stmt = $db->prepare($sql);
+    if (!$stmt) {
+        return [];
+    }
+    $stmt->bind_param($types, ...$jobNos);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+
+    $map = [];
+    foreach ($rows as $row) {
+        $jobNo = trim((string)($row['job_no'] ?? ''));
+        if ($jobNo === '' || isset($map[$jobNo])) {
+            continue;
+        }
+        $planExtra = mi_decode_assoc($row['plan_extra_data'] ?? '');
+        $dims = mi_parse_label_dimensions((string)($planExtra['size'] ?? ($planExtra['label_size'] ?? '')));
+        $map[$jobNo] = [
+            'width' => $dims['width'],
+            'length' => $dims['length'],
+        ];
+    }
+
+    return $map;
+}
+
 function mi_compute_extra(array $row, array $extra): array {
     $category = (string)($row['category'] ?? '');
     $quantity = mi_num($row['quantity'] ?? 0);
@@ -115,13 +192,12 @@ function mi_compute_extra(array $row, array $extra): array {
             if ($extraQty <= 0) {
                 $extraQty = max(0, mi_num($extra['mixed_extra_rolls'] ?? 0));
             }
-            $possible = max(0, (int)floor(mi_num($extra['mixed_cartons'] ?? 0)));
 
             return [
                 'extra_qty' => $extraQty,
                 'unit_type' => 'PCS',
-                'per_carton' => $rpc,
-                'possible_cartons' => $possible,
+                'per_carton' => '',
+                'possible_cartons' => '',
             ];
         }
 
@@ -156,8 +232,8 @@ function mi_compute_extra(array $row, array $extra): array {
         return [
             'extra_qty' => max(0, $extraQty),
             'unit_type' => 'PCS',
-            'per_carton' => $rpc,
-            'possible_cartons' => $possible,
+            'per_carton' => '',
+            'possible_cartons' => '',
         ];
     }
 
@@ -192,9 +268,9 @@ function mi_compute_extra(array $row, array $extra): array {
 
 function mi_fetch_rows(mysqli $db, string $category = ''): array {
     $map = mi_categories();
-    $allCats = array_keys($map);
+    $labelContextMap = [];
 
-        $sql = "SELECT id, category, sub_type, item_name, item_code, size, gsm, quantity, unit, location, batch_no, date, remarks, created_by, created_at
+    $sql = "SELECT id, category, sub_type, item_name, item_code, size, gsm, quantity, unit, location, batch_no, date, remarks, created_by, created_at
             FROM finished_goods_stock
             WHERE category IN ('pos_paper_roll','one_ply','two_ply','barcode','printing_roll','printing_label')
             ORDER BY id DESC";
@@ -203,8 +279,19 @@ function mi_fetch_rows(mysqli $db, string $category = ''): array {
         return [];
     }
 
+    $allRows = $res->fetch_all(MYSQLI_ASSOC);
+    foreach ($allRows as $seedRow) {
+        if ((string)($seedRow['category'] ?? '') === 'printing_label') {
+            $jobNo = trim((string)($seedRow['batch_no'] ?? ''));
+            if ($jobNo !== '') {
+                $labelContextMap[$jobNo] = true;
+            }
+        }
+    }
+    $labelContextMap = mi_fetch_printing_label_context($db, array_keys($labelContextMap));
+
     $rows = [];
-    while ($row = $res->fetch_assoc()) {
+    foreach ($allRows as $row) {
         $cat = (string)($row['category'] ?? '');
         if ($category !== '') {
             if ($category === 'printing_roll') {
@@ -225,8 +312,20 @@ function mi_fetch_rows(mysqli $db, string $category = ''): array {
 
         $width = mi_pick($extra, ['width']);
         $length = mi_pick($extra, ['length']);
-        $perCarton = $calc['per_carton'] ?? 0;
-        $possible = (int)($calc['possible_cartons'] ?? 0);
+        if ($cat === 'printing_label') {
+            $jobNo = trim((string)($row['batch_no'] ?? ''));
+            if ($jobNo !== '' && isset($labelContextMap[$jobNo])) {
+                $ctx = $labelContextMap[$jobNo];
+                if (($ctx['width'] ?? '') !== '') {
+                    $width = (string)$ctx['width'];
+                }
+                if (($ctx['length'] ?? '') !== '') {
+                    $length = (string)$ctx['length'];
+                }
+            }
+        }
+        $perCarton = $calc['per_carton'] ?? '';
+        $possible = $calc['possible_cartons'] ?? '';
 
         $rows[] = [
             'id' => $cat . '-' . (int)$row['id'],
@@ -242,7 +341,7 @@ function mi_fetch_rows(mysqli $db, string $category = ''): array {
             'total_qty' => mi_num($row['quantity'] ?? 0),
             'extra_qty' => $extraQty,
             'unit_type' => (string)($calc['unit_type'] ?? 'PCS'),
-            'per_carton' => mi_num($perCarton),
+            'per_carton' => $perCarton,
             'possible_cartons' => $possible,
             'width' => $width,
             'length' => $length,

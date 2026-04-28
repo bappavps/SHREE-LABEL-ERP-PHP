@@ -291,6 +291,7 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $barcode = packing_api_build_pos_barcode($childRolls);
     }
     $perCarton = 0;
+    $displayPerCarton = 0;
     if (!empty($rollOverrides)) {
         foreach ($rollOverrides as $ov) {
             if (!is_array($ov)) {
@@ -299,6 +300,7 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
             $candidate = (int)round((float)($ov['rpc'] ?? ($ov['rolls_per_carton'] ?? 0)));
             if ($candidate > 0) {
                 $perCarton = $candidate;
+                $displayPerCarton = $candidate;
                 break;
             }
         }
@@ -412,18 +414,36 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $mixedPayload = is_array($barcodeMetricsResolved['mixed'] ?? null) ? $barcodeMetricsResolved['mixed'] : [];
         $mixedEnabled = !empty($barcodeMetricsResolved['mixed_enabled']);
 
+        $labelSizeRaw = trim((string)($planExtra['size'] ?? ($planExtra['label_size'] ?? '')));
+        if ($labelSizeRaw !== '' && preg_match('/([0-9]+(?:\.[0-9]+)?)\s*mm?\s*[xX×]\s*([0-9]+(?:\.[0-9]+)?)/i', $labelSizeRaw, $m)) {
+            $width = rtrim(rtrim(number_format((float)$m[1], 3, '.', ''), '0'), '.') . ' mm';
+            $length = rtrim(rtrim(number_format((float)$m[2], 3, '.', ''), '0'), '.') . ' mm';
+        }
+
+        $displayRollCount = $labelTotalRolls > 0 ? $labelTotalRolls : (int)round((float)($operatorEntry['bundles_count'] ?? 0));
+        $netPackedQty = max(0, $totalValue - $looseQtyCount);
+        $mixedExtraRollsQty = (int)($mixedPayload['mixed_extra_rolls'] ?? 0);
+        if ($mixedExtraRollsQty > 0 && $labelPerRoll > 0) {
+            $netPackedQty = max(0, $netPackedQty - ($mixedExtraRollsQty * $labelPerRoll));
+        }
+
         $remarksPayload['extra']['job_name'] = trim((string)($jobDetails['plan_name'] ?? $itemName));
         $remarksPayload['extra']['order_date'] = trim((string)($jobDetails['order_date'] ?? ($planExtra['order_date'] ?? '')));
         $remarksPayload['extra']['dispatch_date'] = trim((string)($jobDetails['dispatch_date'] ?? ($planExtra['dispatch_date'] ?? '')));
-        $remarksPayload['extra']['mtrs'] = trim((string)($planExtra['mtrs'] ?? ($planExtra['meter'] ?? ($jobDetails['paper_length_mtr'] ?? ''))));
+        $remarksPayload['extra']['mtrs'] = trim((string)($planExtra['allocate_mtrs'] ?? ($planExtra['mtrs'] ?? ($planExtra['meter'] ?? ($jobDetails['paper_length_mtr'] ?? '')))));
         $remarksPayload['extra']['qty'] = $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '';
         $remarksPayload['extra']['qty_per_roll'] = $labelPerRoll > 0 ? $labelPerRoll : '';
-        $remarksPayload['extra']['direction'] = trim((string)($planExtra['direction'] ?? ($jobExtra['direction'] ?? '')));
+        $remarksPayload['extra']['direction'] = trim((string)($planExtra['roll_direction'] ?? ($planExtra['direction'] ?? ($jobExtra['direction'] ?? ''))));
         $remarksPayload['extra']['pcs_per_roll'] = $labelPerRoll > 0 ? $labelPerRoll : '';
         $remarksPayload['extra']['total_roll'] = $labelTotalRolls > 0 ? $labelTotalRolls : '';
         $remarksPayload['extra']['roll_per_cartoon'] = $rollsPerCartoon > 0 ? $rollsPerCartoon : '';
         $remarksPayload['extra']['total_quantity'] = $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '';
-        $remarksPayload['extra']['available_for_dispatch'] = $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '';
+        $remarksPayload['extra']['available_for_dispatch'] = rtrim(rtrim(number_format($netPackedQty, 3, '.', ''), '0'), '.');
+        $remarksPayload['extra']['after_packing_qty'] = rtrim(rtrim(number_format($netPackedQty, 3, '.', ''), '0'), '.');
+        $remarksPayload['extra']['current_total'] = rtrim(rtrim(number_format($netPackedQty, 3, '.', ''), '0'), '.');
+        $remarksPayload['extra']['display_roll_count'] = $displayRollCount > 0 ? $displayRollCount : '';
+        $remarksPayload['extra']['display_per_carton'] = $displayPerCarton > 0 ? $displayPerCarton : '';
+        $remarksPayload['extra']['paper_size'] = trim((string)($planExtra['paper_size'] ?? $size));
         $remarksPayload['extra']['mixed_enabled'] = $mixedEnabled ? 1 : 0;
         $remarksPayload['extra']['mixed_cartons'] = (int)($mixedPayload['mixed_cartons'] ?? 0);
         $remarksPayload['extra']['mixed_extra_rolls'] = (int)($mixedPayload['mixed_extra_rolls'] ?? 0);
