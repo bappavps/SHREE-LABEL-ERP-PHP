@@ -3151,6 +3151,16 @@ async function submitAndComplete(id) {
   }
   const form = document.getElementById('dm-operator-form');
   if (!form) return updateFPStatus(id, 'Completed');
+
+  // Validate Production Total Quantity is filled
+  const qtyInput = form.querySelector('[name="actual_qty"]');
+  const qtyVal = qtyInput ? parseFloat(qtyInput.value) : NaN;
+  if (!qtyInput || isNaN(qtyVal) || qtyVal <= 0) {
+    erpToast('Please enter Production Total Quantity before completing the job.', 'warning');
+    if (qtyInput) { qtyInput.focus(); qtyInput.style.outline = '2px solid #f59e0b'; setTimeout(function(){ qtyInput.style.outline = ''; }, 2500); }
+    return;
+  }
+
   if (!validateAniloxLaneQuantities(form)) return;
   const extraData = buildPrintingExtraDataFromForm(job, form);
   if (!extraData) return updateFPStatus(id, 'Completed');

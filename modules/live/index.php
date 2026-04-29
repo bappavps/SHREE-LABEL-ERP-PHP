@@ -1013,6 +1013,8 @@ function planningProgressInfo(base, planningExtra){
   if(norm.includes('label slitting')) return {raw, norm, key:'lsl', statusText:raw};
   if(norm.includes('die') || norm.includes('flat') || norm.includes('binding')) return {raw, norm, key:'die', statusText:raw};
   if(norm.includes('printing')) return {raw, norm, key:'print', statusText:raw};
+  // For paperroll/POS-roll/1-ply jobs, 'Preparing Slitting' means paper-roll slitting (POS stage), NOT Jumbo Slitting
+  if(isPaperrollType && (norm.includes('slitting') || norm.includes('preparing'))) return {raw, norm, key:'pos', statusText:raw};
   if(norm.includes('slitting') || norm.includes('preparing')) return {raw, norm, key:'slit', statusText:raw};
   return {raw, norm, key:'planning', statusText:raw || 'Pending'};
 }
@@ -1070,6 +1072,9 @@ function planningStatusStageKey(status, planningExtra){
   if(s.includes('die') || s.includes('flat') || s.includes('binding')) return 'die';
   if(s.includes('printing')) return 'print';
   if(s.includes('pos')) return 'pos';
+  // For paperroll/1-ply jobs, 'Preparing Slitting' means POS-roll slitting, not Jumbo Slitting
+  const isPRType = ['pos_roll','one_ply','two_ply'].includes(planType);
+  if(isPRType && (s.includes('slitting') || s.includes('preparing'))) return 'pos';
   if(s.includes('slitting') || s.includes('preparing')) return 'slit';
   if(['pos_roll','one_ply','two_ply'].includes(planType) && s !== '' && s !== 'pending') return 'pos';
   return 'planning';
@@ -1138,7 +1143,9 @@ function inferPlannedStageKeys(base, stageMap, actualJobs){
   const directFlexoBypass = Boolean(planningExtra.direct_flexo_bypass) || actualJobs.some(j => Boolean(j.extra_data_parsed && j.extra_data_parsed.direct_flexo_bypass));
   const directBarcodeBypass = Boolean(planningExtra.direct_barcode_bypass) || actualJobs.some(j => Boolean(j.extra_data_parsed && j.extra_data_parsed.direct_barcode_bypass));
   const explicitBatchRequested = (planningStatus.includes('batch') || routeRaw.includes('batch')) && batchEvidence;
-  const explicitSlitRequested = planningStatus.includes('slitting') || planningStatus.includes('preparing') || routeRaw.includes('slitting') || routeRaw.includes('jumbo');
+  // Detect paperroll-type early so we don't falsely trigger explicitSlitRequested for POS-roll/1-ply jobs
+  const isPaperrollQuick = ['pos_roll','one_ply','two_ply'].includes(planType) || /^PLN-(POS|1PL|2PL|PRL)\//.test(String(base.job_no || '').toUpperCase());
+  const explicitSlitRequested = (!isPaperrollQuick && (planningStatus.includes('slitting') || planningStatus.includes('preparing'))) || routeRaw.includes('slitting') || routeRaw.includes('jumbo');
   const isBarcodeFocused = ['barcode','barcoding'].includes(planType)
     || /^PLN-BAR\//.test(String(base.job_no || '').toUpperCase())
     || planningStatus.includes('barcode')

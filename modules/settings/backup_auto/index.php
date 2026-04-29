@@ -27,6 +27,11 @@ require_once __DIR__ . '/backup_auto_helper.php';
 .auto-backup-help-title { color:#1e293b; font-size:1.02rem; font-weight:700; display:flex; align-items:center; gap:8px; }
 .auto-backup-help-btn { border:none; border-radius:10px; padding:10px 14px; background:#2563eb; color:#fff; font-weight:600; cursor:pointer; }
 .auto-backup-help-btn:hover { background:#1d4ed8; }
+.auto-backup-inline-status { margin-left:16px; font-weight:500; }
+.auto-backup-rclone-formrow { margin-top:8px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.auto-backup-rclone-formrow input { width:100%; max-width:220px; }
+.auto-backup-history-wrap { overflow-x:auto; }
+.auto-backup-cron-cmd { display:inline-block; margin-top:4px; font-family:Consolas, Monaco, 'Courier New', monospace; word-break:break-all; }
 .auto-backup-guide-modal { position:fixed; inset:0; background:rgba(2,6,23,0.55); display:none; align-items:center; justify-content:center; z-index:1100; padding:20px; }
 .auto-backup-guide-modal.open { display:flex; }
 .auto-backup-guide-dialog { background:#fff; width:min(980px, 96vw); max-height:88vh; border-radius:16px; overflow:hidden; box-shadow:0 24px 64px rgba(15,23,42,0.35); border:1px solid #cbd5e1; }
@@ -44,6 +49,25 @@ require_once __DIR__ . '/backup_auto_helper.php';
 .auto-backup-guide-content ul, .auto-backup-guide-content ol { margin:8px 0 10px 20px; }
 .auto-backup-guide-content pre { margin:8px 0 10px; padding:10px 12px; background:#0f172a; color:#e2e8f0; border-radius:8px; overflow:auto; }
 @media (max-width: 768px) {
+  .auto-backup-wrapper .card { padding:14px; border-radius:12px; }
+  .auto-backup-section-title { font-size:1.03rem; }
+  .auto-backup-toggle { flex-wrap:wrap; }
+  .auto-backup-frequency { flex-direction:column; gap:8px; }
+  .auto-backup-frequency label { display:flex; align-items:center; gap:8px; }
+  .auto-backup-time label { display:block; margin-bottom:6px; }
+  #auto-backup-time,
+  #auto-backup-storage,
+  #auto-backup-rclone-remote,
+  #auto-backup-rclone-folder,
+  #auto-backup-rclone-test,
+  #auto-backup-now-btn,
+  .auto-backup-help-btn { width:100%; max-width:100%; }
+  .auto-backup-rclone-formrow { display:grid; grid-template-columns:1fr; gap:8px; }
+  .auto-backup-rclone-formrow label { margin:0; }
+  .auto-backup-rclone-formrow input { max-width:100%; }
+  .auto-backup-inline-status { display:block; margin-left:0; margin-top:10px; }
+  .auto-backup-history-table { min-width:640px; }
+  .auto-backup-cron-cmd { font-size:.84rem; }
   .auto-backup-guide-dialog { width:100%; max-height:92vh; }
   .auto-backup-guide-content { padding:14px; max-height:calc(92vh - 68px); }
   .auto-backup-help-trigger { flex-direction:column; align-items:flex-start; }
@@ -73,7 +97,7 @@ require_once __DIR__ . '/backup_auto_helper.php';
   <div class="card">
     <div class="auto-backup-section-title"><i class="bi bi-play-circle"></i> Manual Backup</div>
     <button id="auto-backup-now-btn" class="btn btn-primary"><i class="bi bi-cloud-arrow-up"></i> Backup Now</button>
-    <span id="auto-backup-now-status" style="margin-left:16px;font-weight:500;"></span>
+    <span id="auto-backup-now-status" class="auto-backup-inline-status"></span>
   </div>
 
   <!-- 3. Storage Card -->
@@ -102,7 +126,7 @@ require_once __DIR__ . '/backup_auto_helper.php';
           <li>Run <code>rclone config</code> and add a Google Drive remote (follow prompts).</li>
           <li>Paste your remote name and folder path below.</li>
         </ol>
-        <div style="margin-top:8px;display:flex;align-items:center;gap:12px;">
+        <div class="auto-backup-rclone-formrow">
           <label>Remote Name:</label> <input type="text" id="auto-backup-rclone-remote" style="width:120px;" placeholder="e.g. gdrive">
           <label>Folder Path:</label> <input type="text" id="auto-backup-rclone-folder" style="width:180px;" placeholder="e.g. ERP_Backups/">
           <button id="auto-backup-rclone-test" class="btn btn-primary" type="button"><i class="bi bi-link-45deg"></i> Test Connection</button>
@@ -124,20 +148,22 @@ require_once __DIR__ . '/backup_auto_helper.php';
   <!-- 5. History Table -->
   <div class="card">
     <div class="auto-backup-section-title"><i class="bi bi-clock"></i> Backup History</div>
-    <table class="auto-backup-history-table">
-      <thead>
-        <tr><th>Date</th><th>File</th><th>Location</th><th>Status</th><th>Actions</th></tr>
-      </thead>
-      <tbody id="auto-backup-history-body">
-        <tr><td colspan="5" style="text-align:center;color:#64748b">No backups yet.</td></tr>
-      </tbody>
-    </table>
+    <div class="auto-backup-history-wrap">
+      <table class="auto-backup-history-table">
+        <thead>
+          <tr><th>Date</th><th>File</th><th>Location</th><th>Status</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="auto-backup-history-body">
+          <tr><td colspan="5" style="text-align:center;color:#64748b">No backups yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <!-- 6. Cron Info Card -->
   <div class="card">
     <div class="auto-backup-section-title"><i class="bi bi-terminal"></i> Cron Setup</div>
-    <div><strong>Cron Command:</strong> <span id="auto-backup-cron-cmd">php /path/to/backup_auto_helper.php --run-scheduled</span></div>
+    <div><strong>Cron Command:</strong> <span id="auto-backup-cron-cmd" class="auto-backup-cron-cmd">php /path/to/backup_auto_helper.php --run-scheduled</span></div>
     <div style="color:#f59e0b;margin-top:8px;"><i class="bi bi-exclamation-triangle"></i> If cron is not available on your hosting, automatic backups may not run. Ask your provider for help.</div>
   </div>
 

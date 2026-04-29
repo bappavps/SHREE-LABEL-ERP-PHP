@@ -1554,7 +1554,7 @@
 
   function fg_renderCartonMatrixTable() {
     var rows = fg_state.filteredRows.slice();
-    var fixedOrder = ['57x15', '57x25', '78x25', '75 mm', 'Barcode', 'Medicine'];
+    var fixedOrder = ['57x15', '57x25', '78x25', 'Barcode', 'Medicine'];
     var order = fixedOrder.slice();
     var qtyBySize = {};
     var minBySize = {};
