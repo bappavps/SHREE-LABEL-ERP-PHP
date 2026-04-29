@@ -7,5 +7,14 @@
         "storage_type": "Local",
         "upload_status": "Not Requested",
         "size": 93176
+    },
+    {
+        "date": "2026-04-29 14:25:47",
+        "file": "backup_2026-04-29_14-25-41.zip",
+        "location": "Google Drive",
+        "status": "Success",
+        "storage_type": "Google Drive",
+        "upload_status": "Success",
+        "size": 93174
     }
 ]

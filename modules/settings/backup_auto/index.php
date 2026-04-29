@@ -23,9 +23,31 @@ require_once __DIR__ . '/backup_auto_helper.php';
 .auto-backup-action-btn { border:none; background:none; color:#6366f1; cursor:pointer; font-size:1.1rem; margin-right:8px; }
 .auto-backup-action-btn.delete { color:#ef4444; }
 .auto-backup-help-section { background:linear-gradient(120deg,#f1f5f9 0%,#e0e7ff 100%); border-radius:12px; padding:18px 22px; margin-top:18px; }
-.auto-backup-collapsible { cursor:pointer; color:#6366f1; font-weight:600; display:flex; align-items:center; gap:6px; }
-.auto-backup-collapsible-content { display:none; margin-top:10px; }
-.auto-backup-collapsible.open .auto-backup-collapsible-content { display:block; }
+.auto-backup-help-trigger { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.auto-backup-help-title { color:#1e293b; font-size:1.02rem; font-weight:700; display:flex; align-items:center; gap:8px; }
+.auto-backup-help-btn { border:none; border-radius:10px; padding:10px 14px; background:#2563eb; color:#fff; font-weight:600; cursor:pointer; }
+.auto-backup-help-btn:hover { background:#1d4ed8; }
+.auto-backup-guide-modal { position:fixed; inset:0; background:rgba(2,6,23,0.55); display:none; align-items:center; justify-content:center; z-index:1100; padding:20px; }
+.auto-backup-guide-modal.open { display:flex; }
+.auto-backup-guide-dialog { background:#fff; width:min(980px, 96vw); max-height:88vh; border-radius:16px; overflow:hidden; box-shadow:0 24px 64px rgba(15,23,42,0.35); border:1px solid #cbd5e1; }
+.auto-backup-guide-header { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:16px 20px; border-bottom:1px solid #e2e8f0; background:#f8fafc; }
+.auto-backup-guide-header h2 { margin:0; font-size:1.1rem; color:#0f172a; }
+.auto-backup-guide-actions { display:flex; align-items:center; gap:10px; }
+.auto-backup-guide-print { border:none; border-radius:8px; padding:7px 12px; background:#0f766e; color:#fff; font-weight:600; cursor:pointer; }
+.auto-backup-guide-print:hover { background:#0d9488; }
+.auto-backup-guide-close { border:none; background:transparent; color:#475569; font-size:1.5rem; line-height:1; cursor:pointer; padding:2px 6px; border-radius:6px; }
+.auto-backup-guide-close:hover { background:#e2e8f0; color:#0f172a; }
+.auto-backup-guide-content { padding:20px; overflow:auto; max-height:calc(88vh - 72px); color:#1e293b; font-size:.96rem; line-height:1.6; }
+.auto-backup-guide-content h3 { margin:18px 0 8px; color:#0f172a; font-size:1.02rem; }
+.auto-backup-guide-content hr { border:none; border-top:1px solid #e2e8f0; margin:14px 0; }
+.auto-backup-guide-content p { margin:7px 0; }
+.auto-backup-guide-content ul, .auto-backup-guide-content ol { margin:8px 0 10px 20px; }
+.auto-backup-guide-content pre { margin:8px 0 10px; padding:10px 12px; background:#0f172a; color:#e2e8f0; border-radius:8px; overflow:auto; }
+@media (max-width: 768px) {
+  .auto-backup-guide-dialog { width:100%; max-height:92vh; }
+  .auto-backup-guide-content { padding:14px; max-height:calc(92vh - 68px); }
+  .auto-backup-help-trigger { flex-direction:column; align-items:flex-start; }
+}
 </style>
 <div class="auto-backup-wrapper">
   <!-- 1. Backup Control Card -->
@@ -121,29 +143,231 @@ require_once __DIR__ . '/backup_auto_helper.php';
 
   <!-- 7. Help Section -->
   <div class="auto-backup-help-section">
-    <div class="auto-backup-collapsible">
-      <i class="bi bi-question-circle"></i> How to Setup Auto Backup <span style="margin-left:auto"><i class="bi bi-chevron-down"></i></span>
-      <div class="auto-backup-collapsible-content">
-        <ol style="margin:10px 0 0 18px;font-size:.98rem;">
-          <li>Enable Auto Backup and set your preferred schedule.</li>
-          <li>Choose storage location: Local or Google Drive (Rclone).</li>
-          <li>If using Google Drive, follow the Rclone setup steps above.</li>
-          <li>Click "Backup Now" to test, or wait for the next scheduled backup.</li>
-          <li>Check backup status and download/delete backups from the history table.</li>
+    <div class="auto-backup-help-trigger">
+      <div class="auto-backup-help-title"><i class="bi bi-question-circle"></i> How to Setup Auto Backup</div>
+      <button id="auto-backup-open-guide" class="auto-backup-help-btn" type="button">Open Setup Guide</button>
+    </div>
+  </div>
+
+  <div id="auto-backup-guide-modal" class="auto-backup-guide-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="auto-backup-guide-heading">
+    <div class="auto-backup-guide-dialog">
+      <div class="auto-backup-guide-header">
+        <h2 id="auto-backup-guide-heading">AUTO BACKUP SETUP GUIDE</h2>
+        <div class="auto-backup-guide-actions">
+          <button id="auto-backup-print-guide" class="auto-backup-guide-print" type="button"><i class="bi bi-printer"></i> Print Guide</button>
+          <button id="auto-backup-close-guide" class="auto-backup-guide-close" type="button" aria-label="Close">&times;</button>
+        </div>
+      </div>
+      <div class="auto-backup-guide-content">
+        <h3>🔷 AUTO BACKUP SETUP GUIDE</h3>
+        <hr>
+
+        <h3>1. Overview</h3>
+        <p>The Auto Backup system allows you to safely store your ERP database backups.</p>
+        <p>It supports:</p>
+        <ul>
+          <li>Local backups (stored on your server)</li>
+          <li>Cloud backups (Google Drive via Rclone)</li>
+        </ul>
+        <p>Backups can be created manually or automatically.</p>
+        <hr>
+
+        <h3>2. Manual Backup (Basic Usage)</h3>
+        <ol>
+          <li>Go to: Settings → Auto Backup</li>
+          <li>Click the <strong>"Backup Now"</strong> button</li>
+          <li>The system will:
+            <ul>
+              <li>Generate a database backup</li>
+              <li>Save it locally</li>
+              <li>Upload to Google Drive (if enabled)</li>
+            </ul>
+          </li>
+          <li>You can view all backups in the <strong>Backup History</strong> table</li>
         </ol>
+        <hr>
+
+        <h3>3. Install Rclone (Required for Google Drive)</h3>
+        <p>Rclone is required for cloud backup.</p>
+        <p>Steps:</p>
+        <ol>
+          <li>Download Rclone from official website</li>
+          <li>Extract the ZIP file</li>
+          <li>Copy <code>rclone.exe</code> to:</li>
+        </ol>
+        <pre>C:\Windows\System32\</pre>
+        <ol start="4">
+          <li>Open PowerShell and run:</li>
+        </ol>
+        <pre>rclone --version</pre>
+        <p>If version is displayed, installation is successful.</p>
+        <hr>
+
+        <h3>4. Configure Google Drive (Rclone Setup)</h3>
+        <p>Run the following command:</p>
+        <pre>rclone config</pre>
+        <p>Follow the steps:</p>
+        <ul>
+          <li>Press: n (New remote)</li>
+          <li>Name: gdrive</li>
+          <li>Storage: drive (Google Drive)</li>
+          <li>Client ID: Press Enter</li>
+          <li>Client Secret: Press Enter</li>
+          <li>Scope: 1 (Full access)</li>
+          <li>Root folder: Press Enter</li>
+          <li>Service account: Press Enter</li>
+          <li>Advanced config: n</li>
+          <li>Auto config: y</li>
+        </ul>
+        <p>A browser window will open:</p>
+        <ul>
+          <li>Login to your Google account</li>
+          <li>Allow access</li>
+        </ul>
+        <p>Finally press:</p>
+        <ul>
+          <li>y (Yes, save configuration)</li>
+        </ul>
+        <hr>
+
+        <h3>5. Verify Rclone Connection</h3>
+        <p>Run:</p>
+        <pre>rclone listremotes</pre>
+        <p>Expected output:</p>
+        <pre>gdrive:</pre>
+        <p>Optional test:</p>
+        <pre>rclone lsd gdrive:</pre>
+        <hr>
+
+        <h3>6. Create Backup Folder (IMPORTANT)</h3>
+        <p>Run:</p>
+        <pre>rclone mkdir gdrive:ERP_Backups</pre>
+        <p>This creates a folder for storing backups.</p>
+        <hr>
+
+        <h3>7. Connect Google Drive in ERP</h3>
+        <p>Go to:</p>
+        <p>Settings → Auto Backup</p>
+        <p>Enter:</p>
+        <ul>
+          <li>Storage Location: Google Drive</li>
+          <li>Remote Name: gdrive</li>
+          <li>Folder Path: ERP_Backups</li>
+        </ul>
+        <p>Click:</p>
+        <p>Test Connection</p>
+        <p>Expected:</p>
+        <p>Connected successfully</p>
+        <hr>
+
+        <h3>8. Run Backup with Google Drive</h3>
+        <p>Click:</p>
+        <p>Backup Now</p>
+        <p>The system will:</p>
+        <ul>
+          <li>Create local backup</li>
+          <li>Upload to Google Drive</li>
+          <li>Save backup history</li>
+        </ul>
+        <hr>
+
+        <h3>9. Automatic Backup (Advanced)</h3>
+        <p>Enable Auto Backup:</p>
+        <ul>
+          <li>Turn ON Auto Backup</li>
+          <li>Select Frequency:
+            <ul>
+              <li>Daily</li>
+              <li>Weekly</li>
+              <li>Monthly</li>
+            </ul>
+          </li>
+          <li>Set Backup Time</li>
+        </ul>
+        <hr>
+
+        <h3>10. Setup Cron Job / Task Scheduler</h3>
+        <p>For Windows (Localhost):</p>
+        <p>Use Task Scheduler:</p>
+        <p>Program:</p>
+        <pre>C:\xampp\php\php.exe</pre>
+        <p>Arguments:</p>
+        <pre>C:\xampp\htdocs\calipot-erp\shree-label-php\modules\settings\backup_auto\backup_auto_helper.php --run-scheduled</pre>
+        <hr>
+
+        <p>For Hosting (Linux / VPS):</p>
+        <p>Cron command:</p>
+        <pre>php /path/to/backup_auto_helper.php --run-scheduled</pre>
+        <hr>
+
+        <h3>11. Backup Safety Features</h3>
+        <ul>
+          <li>If Google Drive upload fails:<br>→ Backup is saved locally</li>
+          <li>Backup history is always maintained</li>
+          <li>No data loss</li>
+        </ul>
+        <hr>
+
+        <h3>12. Best Practices</h3>
+        <ul>
+          <li>Always test connection before backup</li>
+          <li>Keep Google Drive enabled for safety</li>
+          <li>Monitor backup history regularly</li>
+          <li>Do not delete recent backups manually</li>
+        </ul>
       </div>
     </div>
   </div>
 </div>
 <script>
-// UI interactivity for storage selection and help section
+// UI interactivity for storage selection and guide modal
 document.getElementById('auto-backup-storage').addEventListener('change', function() {
   document.getElementById('auto-backup-rclone-section').style.display = this.value === 'gdrive' ? '' : 'none';
 });
-document.querySelectorAll('.auto-backup-collapsible').forEach(function(el){
-  el.addEventListener('click', function(){
-    el.classList.toggle('open');
-  });
+
+var autoBackupGuideModal = document.getElementById('auto-backup-guide-modal');
+var autoBackupGuideOpen = document.getElementById('auto-backup-open-guide');
+var autoBackupGuideClose = document.getElementById('auto-backup-close-guide');
+var autoBackupGuidePrint = document.getElementById('auto-backup-print-guide');
+var autoBackupGuideContent = document.querySelector('.auto-backup-guide-content');
+
+function autoBackupOpenGuide() {
+  autoBackupGuideModal.classList.add('open');
+  autoBackupGuideModal.setAttribute('aria-hidden', 'false');
+}
+
+function autoBackupCloseGuide() {
+  autoBackupGuideModal.classList.remove('open');
+  autoBackupGuideModal.setAttribute('aria-hidden', 'true');
+}
+
+autoBackupGuideOpen.addEventListener('click', autoBackupOpenGuide);
+autoBackupGuideClose.addEventListener('click', autoBackupCloseGuide);
+autoBackupGuidePrint.addEventListener('click', function() {
+  var printWindow = window.open('', '_blank', 'width=900,height=700');
+  if (!printWindow) {
+    return;
+  }
+  var printHtml = '<!doctype html><html><head><meta charset="utf-8"><title>Auto Backup Setup Guide</title>' +
+    '<style>body{font-family:Segoe UI,Arial,sans-serif;color:#0f172a;line-height:1.6;padding:24px;max-width:900px;margin:0 auto}h3{margin:18px 0 8px}hr{border:none;border-top:1px solid #cbd5e1;margin:14px 0}pre{margin:8px 0 10px;padding:10px 12px;background:#0f172a;color:#e2e8f0;border-radius:6px;white-space:pre-wrap}ul,ol{margin:8px 0 10px 20px}</style>' +
+    '</head><body>' + autoBackupGuideContent.innerHTML + '</body></html>';
+  printWindow.document.open();
+  printWindow.document.write(printHtml);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+});
+
+autoBackupGuideModal.addEventListener('click', function(e) {
+  if (e.target === autoBackupGuideModal) {
+    autoBackupCloseGuide();
+  }
+});
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && autoBackupGuideModal.classList.contains('open')) {
+    autoBackupCloseGuide();
+  }
 });
 
 // Rclone status check
