@@ -704,7 +704,8 @@ $tenantSettingsZipPath = tenantSettingsZipPath($projectRoot, $tenantSettingsPath
 $tenantSettingsDisplayPath = str_replace($projectRoot . '/', '', str_replace('\\', '/', $tenantSettingsPath));
 
 $activeTab = $_GET['tab'] ?? 'company';
-$allowedTabs = ['company', 'library', 'theme', 'status-workflow', 'tally', 'backup', 'update', 'tenant'];
+// Add 'auto_backup' to allowedTabs
+$allowedTabs = ['company', 'library', 'theme', 'status-workflow', 'tally', 'backup', 'auto_backup', 'update', 'tenant'];
 if (!in_array($activeTab, $allowedTabs, true)) $activeTab = 'company';
 
 $statusWorkflowSettings = sanitizeStatusWorkflowPayload($settings['status_workflow_matrix'] ?? statusWorkflowDefaults());
@@ -1717,6 +1718,7 @@ include __DIR__ . '/../../includes/header.php';
     <a class="settings-tab <?= $activeTab==='tally'?'active':'' ?>" href="?tab=tally">Tally Integration</a>
     <a class="settings-tab <?= $activeTab==='tenant'?'active':'' ?>" href="?tab=tenant">Tenant Provision</a>
     <a class="settings-tab <?= $activeTab==='backup'?'active':'' ?>" href="?tab=backup">Backup &amp; Restore</a>
+    <a class="settings-tab <?= $activeTab==='auto_backup'?'active':'' ?>" href="?tab=auto_backup">Auto Backup</a>
     <a class="settings-tab <?= $activeTab==='update'?'active':'' ?>" href="?tab=update">System Update</a>
   </div>
 
@@ -3046,6 +3048,10 @@ include __DIR__ . '/../../includes/header.php';
           </table>
         </div>
       </div>
+    <?php endif; ?>
+
+    <?php if ($activeTab === 'auto_backup'): ?>
+      <?php include __DIR__ . '/backup_auto/index.php'; ?>
     <?php endif; ?>
 
     <?php if ($activeTab === 'update'): ?>
