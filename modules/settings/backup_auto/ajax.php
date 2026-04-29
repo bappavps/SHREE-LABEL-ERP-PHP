@@ -39,6 +39,30 @@ try {
         exit;
     }
 
+    if ($action === 'get_settings') {
+        echo json_encode(['success' => true, 'settings' => auto_backup_get_settings()]);
+        exit;
+    }
+
+    if ($action === 'save_settings') {
+        $saved = auto_backup_save_settings([
+            'enabled' => $_POST['enabled'] ?? null,
+            'frequency' => $_POST['frequency'] ?? null,
+            'backup_time' => $_POST['backup_time'] ?? null,
+            'storage' => $_POST['storage'] ?? null,
+            'remote' => $_POST['remote'] ?? null,
+            'folder' => $_POST['folder'] ?? null,
+        ]);
+
+        if (!is_array($saved)) {
+            echo json_encode(['success' => false, 'error' => 'Could not save settings.']);
+            exit;
+        }
+
+        echo json_encode(['success' => true, 'settings' => $saved]);
+        exit;
+    }
+
     if ($action === 'test_rclone_conn') {
         $remote = $_POST['remote'] ?? '';
         $folder = $_POST['folder'] ?? '';

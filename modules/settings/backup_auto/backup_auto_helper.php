@@ -14,6 +14,38 @@ function auto_backup_config_file() {
   return $backupDir === '' ? '' : ($backupDir . '/config.json');
 }
 
+function auto_backup_default_settings() {
+  return [
+    'enabled' => true,
+    'frequency' => 'daily',
+    'backup_time' => '02:00',
+    'storage' => 'local',
+    'remote' => '',
+    'folder' => '',
+    'saved_at' => date('Y-m-d H:i:s'),
+  ];
+}
+
+function auto_backup_clean_enabled($enabled) {
+  if (is_bool($enabled)) {
+    return $enabled;
+  }
+  return in_array((string)$enabled, ['1', 'true', 'on', 'yes'], true);
+}
+
+function auto_backup_clean_frequency($frequency) {
+  $frequency = strtolower(trim((string)$frequency));
+  if (!in_array($frequency, ['daily', 'weekly', 'monthly'], true)) {
+    return 'daily';
+  }
+  return $frequency;
+}
+
+function auto_backup_clean_backup_time($time) {
+  $time = trim((string)$time);
+  return preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time) ? $time : '02:00';
+}
+
 function auto_backup_clean_storage_type($storage) {
   return ((string)$storage === 'gdrive') ? 'gdrive' : 'local';
 }
@@ -34,23 +66,65 @@ function auto_backup_clean_folder_path($folder) {
   return trim($folder, '/');
 }
 
-function auto_backup_get_storage_config() {
-  $config = [
-    'storage' => 'local',
-    'remote' => '',
-    'folder' => '',
-  ];
-
+function auto_backup_get_settings() {
+  $settings = auto_backup_default_settings();
   $cfgFile = auto_backup_config_file();
+
   if ($cfgFile !== '' && is_file($cfgFile)) {
     $raw = @file_get_contents($cfgFile);
     $arr = json_decode((string)$raw, true);
     if (is_array($arr)) {
-      $config['storage'] = auto_backup_clean_storage_type($arr['storage'] ?? 'local');
-      $config['remote'] = auto_backup_clean_remote_name($arr['remote'] ?? '');
-      $config['folder'] = auto_backup_clean_folder_path($arr['folder'] ?? '');
+      $settings['enabled'] = auto_backup_clean_enabled($arr['enabled'] ?? true);
+      $settings['frequency'] = auto_backup_clean_frequency($arr['frequency'] ?? 'daily');
+      $settings['backup_time'] = auto_backup_clean_backup_time($arr['backup_time'] ?? '02:00');
+      $settings['storage'] = auto_backup_clean_storage_type($arr['storage'] ?? 'local');
+      $settings['remote'] = auto_backup_clean_remote_name($arr['remote'] ?? '');
+      $settings['folder'] = auto_backup_clean_folder_path($arr['folder'] ?? '');
+      $settings['saved_at'] = (string)($arr['saved_at'] ?? $settings['saved_at']);
     }
   }
+
+  return $settings;
+}
+
+function auto_backup_save_settings($data) {
+  $backupDir = auto_backup_dir();
+  $cfgFile = auto_backup_config_file();
+  if ($backupDir === '' || $cfgFile === '') {
+    return false;
+  }
+
+  if (!is_dir($backupDir) && !@mkdir($backupDir, 0775, true)) {
+    return false;
+  }
+
+  $current = auto_backup_get_settings();
+  if (!is_array($data)) {
+    $data = [];
+  }
+
+  $current['enabled'] = array_key_exists('enabled', $data) ? auto_backup_clean_enabled($data['enabled']) : $current['enabled'];
+  $current['frequency'] = array_key_exists('frequency', $data) ? auto_backup_clean_frequency($data['frequency']) : $current['frequency'];
+  $current['backup_time'] = array_key_exists('backup_time', $data) ? auto_backup_clean_backup_time($data['backup_time']) : $current['backup_time'];
+  $current['storage'] = array_key_exists('storage', $data) ? auto_backup_clean_storage_type($data['storage']) : $current['storage'];
+  $current['remote'] = array_key_exists('remote', $data) ? auto_backup_clean_remote_name($data['remote']) : $current['remote'];
+  $current['folder'] = array_key_exists('folder', $data) ? auto_backup_clean_folder_path($data['folder']) : $current['folder'];
+  $current['saved_at'] = date('Y-m-d H:i:s');
+
+  if (@file_put_contents($cfgFile, json_encode($current, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) === false) {
+    return false;
+  }
+
+  return $current;
+}
+
+function auto_backup_get_storage_config() {
+  $settings = auto_backup_get_settings();
+  $config = [
+    'storage' => $settings['storage'],
+    'remote' => $settings['remote'],
+    'folder' => $settings['folder'],
+  ];
 
   // Allow request values to override saved config for current run.
   $reqStorage = $_POST['storage'] ?? $_POST['auto_backup_storage'] ?? null;
@@ -77,24 +151,13 @@ function auto_backup_get_storage_config() {
 }
 
 function auto_backup_save_storage_config($storage, $remote, $folder) {
-  $backupDir = auto_backup_dir();
-  $cfgFile = auto_backup_config_file();
-  if ($backupDir === '' || $cfgFile === '') {
-    return false;
-  }
-
-  if (!is_dir($backupDir) && !@mkdir($backupDir, 0775, true)) {
-    return false;
-  }
-
-  $data = [
+  $data = auto_backup_save_settings([
     'storage' => auto_backup_clean_storage_type($storage),
     'remote' => auto_backup_clean_remote_name($remote),
     'folder' => auto_backup_clean_folder_path($folder),
-    'saved_at' => date('Y-m-d H:i:s'),
-  ];
+  ]);
 
-  return @file_put_contents($cfgFile, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) !== false;
+  return is_array($data);
 }
 
 function auto_backup_rclone_remote_exists($remote) {

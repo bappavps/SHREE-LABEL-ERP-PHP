@@ -1,6 +1,9 @@
 {
+    "enabled": true,
+    "frequency": "daily",
+    "backup_time": "02:00",
     "storage": "gdrive",
     "remote": "gdrive",
     "folder": "ERP_Backups",
-    "saved_at": "2026-04-29 14:24:55"
+    "saved_at": "2026-04-29 15:09:26"
 }

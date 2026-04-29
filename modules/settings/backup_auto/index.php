@@ -330,6 +330,11 @@ var autoBackupGuideOpen = document.getElementById('auto-backup-open-guide');
 var autoBackupGuideClose = document.getElementById('auto-backup-close-guide');
 var autoBackupGuidePrint = document.getElementById('auto-backup-print-guide');
 var autoBackupGuideContent = document.querySelector('.auto-backup-guide-content');
+var autoBackupEnabledEl = document.getElementById('auto-backup-enabled');
+var autoBackupTimeEl = document.getElementById('auto-backup-time');
+var autoBackupStorageEl = document.getElementById('auto-backup-storage');
+var autoBackupRemoteEl = document.getElementById('auto-backup-rclone-remote');
+var autoBackupFolderEl = document.getElementById('auto-backup-rclone-folder');
 
 function autoBackupOpenGuide() {
   autoBackupGuideModal.classList.add('open');
@@ -370,6 +375,63 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
+function autoBackupSelectedFrequency() {
+  var selected = document.querySelector('input[name="auto-backup-frequency"]:checked');
+  return selected ? selected.value : 'daily';
+}
+
+function autoBackupApplySettings(settings) {
+  if (!settings || typeof settings !== 'object') {
+    return;
+  }
+
+  autoBackupEnabledEl.checked = !!settings.enabled;
+  autoBackupTimeEl.value = settings.backup_time || '02:00';
+  autoBackupStorageEl.value = settings.storage === 'gdrive' ? 'gdrive' : 'local';
+
+  var freq = settings.frequency || 'daily';
+  var freqEl = document.querySelector('input[name="auto-backup-frequency"][value="' + freq + '"]');
+  if (freqEl) {
+    freqEl.checked = true;
+  }
+
+  autoBackupRemoteEl.value = settings.remote || '';
+  autoBackupFolderEl.value = settings.folder || '';
+
+  document.getElementById('auto-backup-rclone-section').style.display = autoBackupStorageEl.value === 'gdrive' ? '' : 'none';
+  if (autoBackupStorageEl.value === 'gdrive') {
+    updateRcloneStatus();
+  }
+}
+
+function autoBackupSaveSettings() {
+  var body = new URLSearchParams();
+  body.append('action', 'save_settings');
+  body.append('enabled', autoBackupEnabledEl.checked ? '1' : '0');
+  body.append('frequency', autoBackupSelectedFrequency());
+  body.append('backup_time', autoBackupTimeEl.value || '02:00');
+  body.append('storage', autoBackupStorageEl.value || 'local');
+  body.append('remote', autoBackupRemoteEl.value.trim());
+  body.append('folder', autoBackupFolderEl.value.trim());
+
+  fetch('backup_auto/ajax.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString()
+  }).catch(function(){});
+}
+
+function autoBackupLoadSettings() {
+  fetch('backup_auto/ajax.php?action=get_settings')
+    .then(r => r.json())
+    .then(function(res) {
+      if (res && res.success && res.settings) {
+        autoBackupApplySettings(res.settings);
+      }
+    })
+    .catch(function(){});
+}
+
 // Rclone status check
 function updateRcloneStatus() {
   fetch('backup_auto/ajax.php?action=get_rclone_status')
@@ -396,8 +458,16 @@ function updateRcloneStatus() {
 document.getElementById('auto-backup-storage').addEventListener('change', function() {
   document.getElementById('auto-backup-rclone-section').style.display = this.value === 'gdrive' ? '' : 'none';
   if (this.value === 'gdrive') updateRcloneStatus();
+  autoBackupSaveSettings();
 });
-if (document.getElementById('auto-backup-storage').value === 'gdrive') updateRcloneStatus();
+
+autoBackupEnabledEl.addEventListener('change', autoBackupSaveSettings);
+autoBackupTimeEl.addEventListener('change', autoBackupSaveSettings);
+document.querySelectorAll('input[name="auto-backup-frequency"]').forEach(function(el) {
+  el.addEventListener('change', autoBackupSaveSettings);
+});
+autoBackupRemoteEl.addEventListener('change', autoBackupSaveSettings);
+autoBackupFolderEl.addEventListener('change', autoBackupSaveSettings);
 
 // Test Connection logic
 document.getElementById('auto-backup-rclone-test').addEventListener('click', function() {
@@ -431,23 +501,33 @@ document.getElementById('auto-backup-rclone-test').addEventListener('click', fun
 document.getElementById('auto-backup-now-btn').addEventListener('click', function() {
   var btn = this;
   var status = document.getElementById('auto-backup-now-status');
+  var selectedStorage = autoBackupStorageEl.value || 'local';
+  var remote = autoBackupRemoteEl.value.trim();
+  var folder = autoBackupFolderEl.value.trim();
   status.textContent = 'Processing...';
   btn.disabled = true;
+
+  var body = new URLSearchParams();
+  body.append('action', 'backup_now');
+  body.append('storage', selectedStorage);
+  body.append('remote', remote);
+  body.append('folder', folder);
+
   fetch('backup_auto/ajax.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'action=backup_now'
+    body: body.toString()
   })
   .then(r => r.json())
   .then(function(res) {
     if (res.success) {
-      status.textContent = 'Backup successful! (' + res.file + ')';
+      status.textContent = res.message || ('Backup successful! (' + res.file + ')');
       status.style.color = '#22c55e';
       updateAutoBackupHistory();
       document.getElementById('auto-backup-last-time').textContent = res.date;
-      document.getElementById('auto-backup-last-status').textContent = 'Success';
+      document.getElementById('auto-backup-last-status').textContent = res.upload_status || 'Success';
       document.getElementById('auto-backup-last-size').textContent = (res.size/1024).toFixed(1) + ' KB';
-      document.getElementById('auto-backup-last-location').textContent = 'Local';
+      document.getElementById('auto-backup-last-location').textContent = res.location || 'Local';
     } else {
       status.textContent = res.error || 'Backup failed.';
       status.style.color = '#ef4444';
@@ -521,5 +601,6 @@ function autoBackupDelete(file) {
   });
 }
 // Initial load
+autoBackupLoadSettings();
 updateAutoBackupHistory();
 </script>
