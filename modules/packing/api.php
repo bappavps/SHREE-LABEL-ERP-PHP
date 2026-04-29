@@ -871,8 +871,8 @@ try {
         if ($currentStatus === 'finished production') {
             packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Finished Production']);
         }
-        if ($currentStatus === 'finished barcode') {
-            packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Finished Barcode']);
+        if ($currentStatus === 'finished barcode' || $currentStatus === 'finished production') {
+            packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Finished Production']);
         }
         if (in_array($currentStatus, ['packed', 'packing done'], true)) {
             packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Packed']);
@@ -1089,15 +1089,15 @@ try {
         try {
             packing_api_upsert_finished_goods($db, $jobDetails, $opEntry, $userId, $tabKey);
 
-            $stmt = $db->prepare("UPDATE jobs SET status = 'Finished Barcode', completed_at = COALESCE(completed_at, NOW()), updated_at = NOW() WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+            $stmt = $db->prepare("UPDATE jobs SET status = 'Finished Production', completed_at = COALESCE(completed_at, NOW()), updated_at = NOW() WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
             if (!$stmt) {
-                throw new RuntimeException('Finished Barcode update prepare failed');
+                throw new RuntimeException('Finished Production update prepare failed');
             }
             $stmt->bind_param('i', $jobId);
             if (!$stmt->execute()) {
                 $err = (string)$stmt->error;
                 $stmt->close();
-                throw new RuntimeException('Finished Barcode update failed: ' . $err);
+                throw new RuntimeException('Finished Production update failed: ' . $err);
             }
             $stmt->close();
 
@@ -1121,6 +1121,8 @@ try {
                 $extra = packing_decode_json($extraRow['extra_data'] ?? null);
                 $extra['finished_barcode_flag'] = 1;
                 $extra['finished_barcode_at'] = date('Y-m-d H:i:s');
+                $extra['finished_production_flag'] = 1;
+                $extra['finished_production_at'] = date('Y-m-d H:i:s');
                 $extraJson = json_encode($extra, JSON_UNESCAPED_UNICODE);
                 if ($extraJson !== false) {
                     $extraUpd = $db->prepare("UPDATE jobs SET extra_data = ? WHERE id = ? LIMIT 1");
@@ -1132,7 +1134,7 @@ try {
                 }
             }
 
-            packing_api_apply_carton_usage_deduction($db, $opEntry, $jobNo, $jobId, 'Finished Barcode');
+            packing_api_apply_carton_usage_deduction($db, $opEntry, $jobNo, $jobId, 'Finished Production');
 
             $db->commit();
         } catch (Throwable $e) {
@@ -1144,9 +1146,9 @@ try {
             ? jobsAdvanceNotificationTargets('packing', [])
             : [];
         $finishedBarcodeJobNo = trim((string)($jobDetails['job_no'] ?? ''));
-        packing_api_create_notifications($db, $jobId, $finishedBarcodeJobNo, 'marked as Finished Barcode.', 'success', $advanceTargets);
+        packing_api_create_notifications($db, $jobId, $finishedBarcodeJobNo, 'marked as Finished Production.', 'success', $advanceTargets);
 
-        packing_api_respond(['ok' => true, 'already_done' => false, 'status' => 'Finished Barcode']);
+        packing_api_respond(['ok' => true, 'already_done' => false, 'status' => 'Finished Production']);
     }
 
     if ($action === 'mark_finished_production') {
@@ -1288,11 +1290,11 @@ try {
             'status' => (string)($jobDetails['status'] ?? ''),
             'extra_data' => $jobDetails['job_extra_data'] ?? [],
         ]))));
-        if ($currentStatus === 'finished label') {
-            packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Finished Label']);
+        if ($currentStatus === 'finished label' || $currentStatus === 'finished production') {
+            packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Finished Production']);
         }
         if (!in_array($currentStatus, ['packed', 'packing done'], true)) {
-            packing_api_respond(['ok' => false, 'message' => 'Job must be Packed before Finished Label'], 409);
+            packing_api_respond(['ok' => false, 'message' => 'Job must be Packed before Finished Production'], 409);
         }
 
         $jobNo = trim((string)($jobDetails['job_no'] ?? ''));
@@ -1305,15 +1307,15 @@ try {
         try {
             packing_api_upsert_finished_goods($db, $jobDetails, $opEntry, $userId, $tabKey);
 
-            $stmt = $db->prepare("UPDATE jobs SET status = 'Finished Label', completed_at = COALESCE(completed_at, NOW()), updated_at = NOW() WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+            $stmt = $db->prepare("UPDATE jobs SET status = 'Finished Production', completed_at = COALESCE(completed_at, NOW()), updated_at = NOW() WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
             if (!$stmt) {
-                throw new RuntimeException('Finished Label update prepare failed');
+                throw new RuntimeException('Finished Production update prepare failed');
             }
             $stmt->bind_param('i', $jobId);
             if (!$stmt->execute()) {
                 $err = (string)$stmt->error;
                 $stmt->close();
-                throw new RuntimeException('Finished Label update failed: ' . $err);
+                throw new RuntimeException('Finished Production update failed: ' . $err);
             }
             $stmt->close();
 
@@ -1327,6 +1329,8 @@ try {
                 $extra = packing_decode_json($extraRow['extra_data'] ?? null);
                 $extra['finished_label_flag'] = 1;
                 $extra['finished_label_at'] = date('Y-m-d H:i:s');
+                $extra['finished_production_flag'] = 1;
+                $extra['finished_production_at'] = date('Y-m-d H:i:s');
                 $extraJson = json_encode($extra, JSON_UNESCAPED_UNICODE);
                 if ($extraJson !== false) {
                     $extraUpd = $db->prepare("UPDATE jobs SET extra_data = ? WHERE id = ? LIMIT 1");
@@ -1338,7 +1342,7 @@ try {
                 }
             }
 
-            packing_api_apply_carton_usage_deduction($db, $opEntry, $jobNo, $jobId, 'Finished Label');
+            packing_api_apply_carton_usage_deduction($db, $opEntry, $jobNo, $jobId, 'Finished Production');
 
             $labelPlanningId = (int)($jobDetails['planning_id'] ?? 0);
             if ($labelPlanningId > 0) {
@@ -1360,9 +1364,9 @@ try {
             ? jobsAdvanceNotificationTargets('packing', [])
             : [];
         $finishedLabelJobNo = trim((string)($jobDetails['job_no'] ?? ''));
-        packing_api_create_notifications($db, $jobId, $finishedLabelJobNo, 'marked as Finished Label.', 'success', $advanceTargets);
+        packing_api_create_notifications($db, $jobId, $finishedLabelJobNo, 'marked as Finished Production.', 'success', $advanceTargets);
 
-        packing_api_respond(['ok' => true, 'already_done' => false, 'status' => 'Finished Label']);
+        packing_api_respond(['ok' => true, 'already_done' => false, 'status' => 'Finished Production']);
     }
 
     if ($action === 'backfill_finished_barcode_stock') {

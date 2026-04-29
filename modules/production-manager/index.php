@@ -142,16 +142,11 @@ function pm_should_show_board_status(array $row): bool {
       || (int)($extra['packing_packed_flag'] ?? 0) === 1
       || pm_text($extra['packing_done_at'] ?? '') !== '';
 
-    if ($finishedFlag || $norm === 'finished production' || $norm === 'finished label') {
+    // Unify: treat finished barcode as finished production for all barcode/label jobs
+    if ($finishedFlag || $norm === 'finished production' || $norm === 'finished label' || $finishedBarcodeFlag || $norm === 'finished barcode') {
       return [
         'priority' => 5,
         'status' => 'Finished Production',
-      ];
-    }
-    if ($finishedBarcodeFlag || $norm === 'finished barcode') {
-      return [
-        'priority' => 4,
-        'status' => 'Finished Barcode',
       ];
     }
     if (in_array($norm, ['dispatched', 'dispatch', 'shipped'], true)) {
@@ -170,6 +165,96 @@ function pm_should_show_board_status(array $row): bool {
       return ['priority' => 0, 'status' => 'Running'];
     }
     return ['priority' => -1, 'status' => pm_display_status($status !== '' ? $status : 'Pending')];
+  }
+
+  function pm_is_upstream_finished_for_packing(array $row): bool {
+    $haystack = strtolower(pm_text(
+      ($row['effective_status'] ?? '') . ' ' .
+      ($row['latest_job_status'] ?? '') . ' ' .
+      ($row['active_job_status'] ?? '') . ' ' .
+      ($row['board_status'] ?? '') . ' ' .
+      ($row['planning_status'] ?? '')
+    ));
+
+    $doneSignals = [
+      'finished barcode',
+      'barcoded',
+      'label slitted',
+      'label slitting finished',
+      'completed',
+      'closed',
+      'finalized',
+      'qc passed',
+      'finished',
+    ];
+    foreach ($doneSignals as $signal) {
+      if (strpos($haystack, $signal) !== false) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function pm_should_apply_packing_fallback(array $row): bool {
+    $current = strtolower(pm_text(($row['effective_status'] ?? '') ?: ($row['latest_job_status'] ?? '') ?: ($row['active_job_status'] ?? '')));
+    if (
+      strpos($current, 'pack') !== false ||
+      strpos($current, 'dispatch') !== false ||
+      strpos($current, 'finished production') !== false
+    ) {
+      return false;
+    }
+    return pm_is_upstream_finished_for_packing($row);
+  }
+
+  function pm_route_has_packing(array $row): bool {
+    $route = strtolower(pm_text($row['department_route'] ?? ''));
+    $planningDept = strtolower(pm_text($row['planning_department'] ?? ''));
+    if ($route !== '' && (strpos($route, 'pack') !== false || strpos($route, 'packag') !== false)) {
+      return true;
+    }
+    if ($planningDept !== '' && (strpos($planningDept, 'pack') !== false || strpos($planningDept, 'packag') !== false)) {
+      return true;
+    }
+    return false;
+  }
+
+  function pm_barcode_completed_should_move_to_packing(array $row): bool {
+    $latestDept = strtolower(pm_text($row['latest_job_department'] ?? ''));
+    $activeDept = strtolower(pm_text($row['active_job_department'] ?? ''));
+    $latestStatus = strtolower(pm_text($row['latest_job_status'] ?? ''));
+    $activeStatus = strtolower(pm_text($row['active_job_status'] ?? ''));
+    $planningStatus = strtolower(pm_text($row['planning_status'] ?? ''));
+
+    $deptLooksBarcode =
+      strpos($latestDept, 'barcode') !== false ||
+      strpos($activeDept, 'barcode') !== false;
+
+    if (!$deptLooksBarcode) {
+      return false;
+    }
+
+    $statusBag = $latestStatus . ' ' . $activeStatus . ' ' . $planningStatus;
+    $barcodeDone =
+      strpos($statusBag, 'barcoded') !== false ||
+      strpos($statusBag, 'finished barcode') !== false ||
+      strpos($statusBag, 'barcode:completed') !== false ||
+      strpos($statusBag, 'completed') !== false;
+
+    if (!$barcodeDone) {
+      return false;
+    }
+
+    // If already terminal, do not force Packing fallback.
+    if (
+      strpos($statusBag, 'finished production') !== false ||
+      strpos($statusBag, 'dispatched') !== false ||
+      strpos($statusBag, 'delivered') !== false
+    ) {
+      return false;
+    }
+
+    return true;
   }
 /* ── Delete planning row ── */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && pm_text($_POST['action'] ?? '') === 'delete_planning') {
@@ -298,6 +383,7 @@ if ($stmt) {
 }
 
 $effectiveStatusByPlanning = [];
+$packingStatusByPlanning = [];
 if (!empty($rows)) {
   $planningIds = array_values(array_unique(array_map(static function ($row) {
     return (int)($row['id'] ?? 0);
@@ -367,6 +453,49 @@ if (!empty($rows)) {
       $jobStmt->close();
     }
   }
+
+  if (!empty($planningIds)) {
+    $hasPackingTable = false;
+    $packingTableRes = $db->query("SHOW TABLES LIKE 'packing_operator_entries'");
+    if ($packingTableRes instanceof mysqli_result) {
+      $hasPackingTable = ($packingTableRes->num_rows > 0);
+      $packingTableRes->close();
+    }
+
+    if ($hasPackingTable) {
+      $in = implode(',', array_fill(0, count($planningIds), '?'));
+      $types2 = str_repeat('i', count($planningIds));
+      $packingSql = "SELECT
+            COALESCE(NULLIF(pe.planning_id, 0), j.planning_id) AS planning_id,
+            MAX(CASE WHEN pe.submitted_at IS NOT NULL THEN 1 ELSE 0 END) AS has_submitted,
+            COUNT(*) AS entry_count
+          FROM packing_operator_entries pe
+          LEFT JOIN jobs j ON j.id = pe.job_id
+          WHERE COALESCE(NULLIF(pe.planning_id, 0), j.planning_id) IN ($in)
+          GROUP BY COALESCE(NULLIF(pe.planning_id, 0), j.planning_id)";
+      $packingStmt = $db->prepare($packingSql);
+      if ($packingStmt) {
+        $packingStmt->bind_param($types2, ...$planningIds);
+        $packingStmt->execute();
+        $packingRes = $packingStmt->get_result();
+        if ($packingRes instanceof mysqli_result) {
+          while ($packingRow = $packingRes->fetch_assoc()) {
+            $pid = (int)($packingRow['planning_id'] ?? 0);
+            if ($pid <= 0) {
+              continue;
+            }
+            $hasSubmitted = (int)($packingRow['has_submitted'] ?? 0) === 1;
+            $entryCount = (int)($packingRow['entry_count'] ?? 0);
+            if ($entryCount <= 0) {
+              continue;
+            }
+            $packingStatusByPlanning[$pid] = $hasSubmitted ? 'Packed' : 'Packing';
+          }
+        }
+        $packingStmt->close();
+      }
+    }
+  }
 }
 
 $filtered = [];
@@ -374,6 +503,30 @@ foreach ($rows as $row) {
   $planningId = (int)($row['id'] ?? 0);
   if ($planningId > 0 && isset($effectiveStatusByPlanning[$planningId]['status'])) {
     $row['effective_status'] = pm_text($effectiveStatusByPlanning[$planningId]['status']);
+  }
+
+  if (
+    $planningId > 0 &&
+    isset($packingStatusByPlanning[$planningId]) &&
+    pm_should_apply_packing_fallback($row)
+  ) {
+    $row['effective_status'] = $packingStatusByPlanning[$planningId];
+    $row['latest_job_department'] = 'packing';
+  } elseif (
+    pm_should_apply_packing_fallback($row) &&
+    (pm_route_has_packing($row) || pm_barcode_completed_should_move_to_packing($row))
+  ) {
+    // Route-level fallback: upstream done + packaging in route => show as Packing stage.
+    $row['effective_status'] = 'Packing';
+    $row['latest_job_department'] = 'packing';
+  }
+
+  $effectiveNorm = strtolower(pm_text($row['effective_status'] ?? ''));
+  if (
+    ($effectiveNorm === 'packing' || $effectiveNorm === 'packed' || $effectiveNorm === 'packing done' || $effectiveNorm === 'finished production') &&
+    pm_text($row['latest_job_department'] ?? '') === ''
+  ) {
+    $row['latest_job_department'] = 'packing';
   }
 
   $currentDept = pm_department_label($row['latest_job_department'] ?: $row['active_job_department'] ?: $row['planning_department'], $row['latest_job_type'] ?: $row['active_job_type']);

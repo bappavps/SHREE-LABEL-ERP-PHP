@@ -530,6 +530,9 @@ include __DIR__ . '/../../includes/header.php';
             <?php else: ?>
               <?php foreach ($tabRows as $idx => $row): ?>
                 <?php if ($tabKey === 'history'): ?>
+                  <?php
+                    $displayStatus = ($row['status'] === 'Finished Barcode') ? 'Finished Production' : ($row['status'] ?? '-');
+                  ?>
                   <tr data-row-id="<?= (int)$row['id'] ?>">
                     <td><?= (int)$idx + 1 ?></td>
                     <td>
@@ -558,7 +561,7 @@ include __DIR__ . '/../../includes/header.php';
                     </td>
                     <td><?= e(($row['client_name'] ?? '') !== '' ? $row['client_name'] : '-') ?></td>
                     <td><?= e($row['last_department'] ?? '-') ?></td>
-                    <td><span class="pk-badge <?= e($statusClass((string)($row['status'] ?? ''))) ?>"><?= e($row['status'] ?? '-') ?></span></td>
+                    <td><span class="pk-badge <?= e($statusClass($displayStatus)) ?>"><?= e($displayStatus) ?></span></td>
                     <td><?= e(($row['event_time'] ?? '') !== '' ? date('d M Y H:i', strtotime((string)$row['event_time'])) : '-') ?></td>
                     <td style="text-align:center">
                       <a class="pk-id-btn pk-open-modal" href="#" data-job-id="<?= (int)$row['id'] ?>" title="View Details" style="padding:3px 6px;font-size:.68rem;text-decoration:none;display:inline-block">
@@ -1852,10 +1855,10 @@ include __DIR__ . '/../../includes/header.php';
     var isPacked = (jobStatusNorm === 'packed' || jobStatusNorm === 'packing done');
     var isDispatched = jobStatusNorm === 'dispatched';
     var isFinishedProduction = jobStatusNorm === 'finished production';
-    var finishLabelText = tabKeyNorm === 'printing_label' ? 'Finished Label' : 'Finished Barcode';
-    var isFinishedBarcode = jobStatusNorm === 'finished barcode' || (tabKeyNorm === 'printing_label' && jobStatusNorm === 'finished label');
+    var finishLabelText = (tabKeyNorm === 'barcode' || tabKeyNorm === 'printing_label') ? 'Finished Production' : 'Finished Barcode';
+    var isFinishedBarcode = (jobStatusNorm === 'finished barcode' || jobStatusNorm === 'finished production') && (tabKeyNorm === 'barcode' || tabKeyNorm === 'printing_label');
     var isTerminal = isPacked || isDispatched || isFinishedProduction || isFinishedBarcode;
-    var jobStatusText = isFinishedBarcode ? finishLabelText : (isFinishedProduction ? 'Finished Production' : (isDispatched ? 'Dispatched' : (isPacked ? 'Packed' : 'Packing')));
+    var jobStatusText = (isFinishedBarcode || isFinishedProduction) ? 'Finished Production' : (isDispatched ? 'Dispatched' : (isPacked ? 'Packed' : 'Packing'));
     var isAdminUser = !!canDeleteJobs;
     var sectionBLocked = isTerminal && !canDeleteJobs;
     var targetPaperStockId = Number(job.paper_stock_id || 0);
@@ -2766,13 +2769,13 @@ include __DIR__ . '/../../includes/header.php';
       var adminEditBadge = section.querySelector('#pkSectionBAdminEditBadge');
       var sectionCancelBtn = section.querySelector('#pkSectionBCancelBtn');
       var adminEditMode = false;
-      var finishStatusDoneText = tabKeyNorm === 'printing_label' ? 'Finished Label' : 'Finished Barcode';
-      var finishStatusDoneNorm = tabKeyNorm === 'printing_label' ? 'finished label' : 'finished barcode';
+      var finishStatusDoneText = tabKeyNorm === 'printing_label' ? 'Finished Production' : 'Finished Barcode';
+      var finishStatusDoneNorm = tabKeyNorm === 'printing_label' ? 'finished production' : 'finished barcode';
       var modalStatusNow = String(job.status || '').trim().toLowerCase().replace(/[-_]/g, ' ');
       var isPackedNow = (modalStatusNow === 'packed' || modalStatusNow === 'packing done');
       var isDispatchedNow = modalStatusNow === 'dispatched';
       var isFinishedProductionNow = modalStatusNow === 'finished production';
-      var isFinishedBarcodeNow = modalStatusNow === 'finished barcode' || (tabKeyNorm === 'printing_label' && modalStatusNow === 'finished label');
+      var isFinishedBarcodeNow = modalStatusNow === 'finished barcode' || (tabKeyNorm === 'printing_label' && (modalStatusNow === 'finished label' || modalStatusNow === 'finished production'));
       var isTerminalNow = isPackedNow || isDispatchedNow || isFinishedProductionNow || isFinishedBarcodeNow;
       var operatorSubmittedNow = operatorHasSubmitted;
       var pendingPrintType = '';

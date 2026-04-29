@@ -559,10 +559,13 @@ function normStatus(v){
 
 function isDoneStatus(v){
   // Only treat these as done; 'Packing' is NOT done
+  // Unify: treat finished barcode as finished production
+  const s = normStatus(v);
+  if (s === 'finished barcode') return true;
   return [
     'closed','finalized','completed','qc passed','qc failed',
-    'dispatched','delivered','packing done','packed','finished production','finished barcode'
-  ].includes(normStatus(v));
+    'dispatched','delivered','packing done','packed','finished production','finished label'
+  ].includes(s);
 }
 
 /* ─── Stage Detection ─── */
@@ -572,7 +575,7 @@ function getStageIdx(job){
   const dept = getDept(job);
 
   if(ps.includes('dispatch') || s==='dispatched' || s === 'delivered') return 6;
-  if(ps.includes('packing') || s==='packing done' || s==='packed' || s==='finished production' || s==='finished barcode') return 5;
+  if(ps.includes('packing') || s==='packing done' || s==='packed' || s==='finished production' || s==='finished barcode' || s==='finished label') return 5;
 
   if(dept==='lsl'){
     return isDoneStatus(s) ? 5 : 4;
@@ -685,14 +688,17 @@ function inferPlanningPrefixFromCard(card){
   const src = (card && (card.displaySource || card.activeJob || card.latestJob)) || {};
   const extra = parsePlanningExtra(src);
   const pt = normalizePlanningType(extra && extra.planning_type || '');
+  if(pt === 'barcode' || pt === 'barcoding') return 'PLN-BAR';
   if(pt === 'pos_roll' || pt === 'posroll') return 'PLN-POS';
   if(pt === 'one_ply' || pt === 'oneply') return 'PLN-1PL';
   if(pt === 'two_ply' || pt === 'twoply') return 'PLN-2PL';
   if(pt === 'paperroll' || pt === 'paper_roll') return 'PLN-PRL';
 
   const keys = Array.isArray(card && card.stages) ? card.stages.map(s => s.key) : [];
+  const hasBarcode = keys.includes('barcode');
   const hasPos = keys.includes('pos');
   const hasPrintLike = keys.includes('print') || keys.includes('die') || keys.includes('barcode') || keys.includes('lsl');
+  if(hasBarcode && !hasPos) return 'PLN-BAR';
   if(hasPos && !hasPrintLike) return 'PLN-POS';
   return 'PLN';
 }
@@ -723,7 +729,7 @@ function getCardDisplayRef(card){
 
 function stBadge(status){
   const s=normStatus(status||'');
-  const map={running:'background:#dbeafe;color:#1e40af',pending:'background:#fef3c7;color:#92400e',queued:'background:#fef3c7;color:#92400e',closed:'background:#dcfce7;color:#166534',finalized:'background:#dcfce7;color:#166534',completed:'background:#dcfce7;color:#166534','qc passed':'background:#dcfce7;color:#166534','qc failed':'background:#fee2e2;color:#dc2626','packing done':'background:#dcfce7;color:#166534',packed:'background:#dcfce7;color:#166534','finished production':'background:#dcfce7;color:#166534','finished barcode':'background:#dcfce7;color:#166534',dispatched:'background:#dcfce7;color:#166534',delivered:'background:#dcfce7;color:#166534'};
+  const map={running:'background:#dbeafe;color:#1e40af',pending:'background:#fef3c7;color:#92400e',queued:'background:#fef3c7;color:#92400e',closed:'background:#dcfce7;color:#166534',finalized:'background:#dcfce7;color:#166534',completed:'background:#dcfce7;color:#166534','qc passed':'background:#dcfce7;color:#166534','qc failed':'background:#fee2e2;color:#dc2626','packing done':'background:#dcfce7;color:#166534',packed:'background:#dcfce7;color:#166534','finished production':'background:#dcfce7;color:#166534','finished barcode':'background:#dcfce7;color:#166534','finished label':'background:#dcfce7;color:#166534',dispatched:'background:#dcfce7;color:#166534',delivered:'background:#dcfce7;color:#166534'};
   return map[s]||'background:#f1f5f9;color:#64748b';
 }
 
@@ -997,10 +1003,10 @@ function planningProgressInfo(base, planningExtra){
   const norm = normStatus(raw);
 
   const isPaperrollType = ['pos_roll','one_ply','two_ply'].includes(planType);
-  if(norm.includes('finished production')) return {raw, norm, key:'finished_production', statusText:'Finished Production'};
+  if(norm.includes('finished production') || norm.includes('finished label') || norm.includes('finished barcode')) return {raw, norm, key:'finished_production', statusText:'Finished Production'};
   if(norm.includes('finished barcode')) return {raw, norm, key: isPaperrollType ? 'pos' : 'barcode', statusText:'Finished Barcode'};
   if(norm.includes('dispatch') || norm.includes('delivered')) return {raw, norm, key:'dispatch', statusText:raw};
-  if(norm.includes('packing') || norm.includes('packed')) return {raw, norm, key:'pos', statusText:raw};
+  if(norm.includes('packing') || norm.includes('packed')) return {raw, norm, key:'pack', statusText:raw};
   // Never show barcode stage for paperroll/PRL jobs
   if(isPaperrollType && (norm.includes('barcoded') || norm === 'barcode done' || norm.includes('barcode'))) return {raw, norm, key:'pos', statusText:raw};
   if(norm.includes('barcoded') || norm === 'barcode done' || norm.includes('barcode')) return {raw, norm, key:'barcode', statusText:raw};
@@ -1057,7 +1063,7 @@ function planningStatusStageKey(status, planningExtra){
   const s = normStatus(status||'');
   const planType = normalizePlanningType(planningExtra && planningExtra.planning_type || '');
   if(s.includes('dispatch') || s.includes('delivered')) return 'dispatch';
-  if(s.includes('finished production')) return 'finished_production';
+  if(s.includes('finished production') || s.includes('finished label')) return 'finished_production';
   if(s.includes('packing') || s.includes('packed') || s.includes('finished barcode')) return 'pack';
   if(s.includes('label slitting')) return 'lsl';
   if((s.includes('barcode') && !s.includes('finished barcode')) || s.includes('rotary')) return 'barcode';
@@ -1132,13 +1138,18 @@ function inferPlannedStageKeys(base, stageMap, actualJobs){
   const directFlexoBypass = Boolean(planningExtra.direct_flexo_bypass) || actualJobs.some(j => Boolean(j.extra_data_parsed && j.extra_data_parsed.direct_flexo_bypass));
   const directBarcodeBypass = Boolean(planningExtra.direct_barcode_bypass) || actualJobs.some(j => Boolean(j.extra_data_parsed && j.extra_data_parsed.direct_barcode_bypass));
   const explicitBatchRequested = (planningStatus.includes('batch') || routeRaw.includes('batch')) && batchEvidence;
+  const explicitSlitRequested = planningStatus.includes('slitting') || planningStatus.includes('preparing') || routeRaw.includes('slitting') || routeRaw.includes('jumbo');
+  const isBarcodeFocused = ['barcode','barcoding'].includes(planType)
+    || /^PLN-BAR\//.test(String(base.job_no || '').toUpperCase())
+    || planningStatus.includes('barcode')
+    || progress.key === 'barcode';
   // Fix: include PLN-PRL/ in paperroll detection
   const isPaperroll = ['pos_roll','one_ply','two_ply'].includes(planType)
     || /^PLN-(POS|1PL|2PL|PRL)\//.test(String(base.job_no || '').toUpperCase())
     || has('pos');
   const hasPaperrollDownstream = has('print') || has('barcode') || has('die') || has('pos') || ['print','die','barcode','pos','dispatch'].includes(progress.key);
 
-  if(has('slit') || (!isPaperroll && (planningStatus.includes('slitting') || planningStatus.includes('preparing') || actualJobs.length > 0)) || (isPaperroll && (planningStatus.includes('slitting') || actualJobs.length > 0))){
+  if(explicitSlitRequested || (has('slit') && !isBarcodeFocused)){
     add('slit');
   }
 
@@ -1215,17 +1226,37 @@ function buildLiveCard(rows){
 
   const hasFinishedProductionEvidence = actualJobs.some((job) => {
     const s = normStatus(job.status || '');
-    if (s === 'finished production' || s === 'finished barcode') return true;
+    if (s.replace(/\s+/g, ' ').trim() === 'finished production' || s.replace(/\s+/g, ' ').trim() === 'finished label') return true;
     const extra = job.extra_data_parsed && typeof job.extra_data_parsed === 'object' ? job.extra_data_parsed : {};
-    const finishedFlag = Number(extra.finished_production_flag || 0) === 1 || String(extra.finished_production_at || '').trim() !== '';
+    const finishedFlag = Number(extra.finished_production_flag || 0) === 1
+      || String(extra.finished_production_at || '').trim() !== ''
+      || Number(extra.finished_label_flag || 0) === 1
+      || String(extra.finished_label_at || '').trim() !== ''
+      || Number(extra.finished_barcode_flag || 0) === 1
+      || String(extra.finished_barcode_at || '').trim() !== '';
+    // Also treat status 'Finished Production' with any casing/spacing as finished
+    if (String(job.status || '').toLowerCase().replace(/\s+/g, ' ').trim() === 'finished production') return true;
     return finishedFlag;
+  });
+
+  const hasPackingEvidence = actualJobs.some((job) => {
+    const s = normStatus(job.status || '');
+    if (s === 'packing done' || s === 'packed') return true;
+    const extra = job.extra_data_parsed && typeof job.extra_data_parsed === 'object' ? job.extra_data_parsed : {};
+    return Number(extra.packing_done_flag || 0) === 1
+      || Number(extra.packing_packed_flag || 0) === 1
+      || String(extra.packing_done_at || '').trim() !== ''
+      || String(extra.packing_packed_at || '').trim() !== '';
   });
 
   const isFinishedProductionComplete = actualJobs.some((job) => {
     const s = normStatus(job.status || '');
-    if (s === 'finished production') return true;
+    if (s === 'finished production' || s === 'finished label') return true;
     const extra = job.extra_data_parsed && typeof job.extra_data_parsed === 'object' ? job.extra_data_parsed : {};
-    return Number(extra.finished_production_flag || 0) === 1 || String(extra.finished_production_at || '').trim() !== '';
+    return Number(extra.finished_production_flag || 0) === 1
+      || String(extra.finished_production_at || '').trim() !== ''
+      || Number(extra.finished_label_flag || 0) === 1
+      || String(extra.finished_label_at || '').trim() !== '';
   });
 
   // Paperroll can be effectively completed even when raw status is still pending,
@@ -1301,7 +1332,7 @@ function buildLiveCard(rows){
         currentKey = 'pack';
         activeJob = packingJob;
       } else if ([
-        'packed','packing done','finalized','closed','completed','dispatched','delivered','finished production','finished barcode'
+        'packed','packing done','finalized','closed','completed','dispatched','delivered','finished production','finished barcode','finished label'
       ].includes(s)) {
         // Packing is done, move to next logical stage
         // Find first non-done stage after 'pack'
@@ -1358,7 +1389,13 @@ function buildLiveCard(rows){
       // If all jobs are done, set currentKey to the last stage in pathKeys
       const allJobsDone = actualJobs.every(job => isDoneStatus(job.status || ''));
       if(allJobsDone && pathKeys.length > 0) {
-        currentKey = pathKeys[pathKeys.length - 1];
+        if(hasFinishedProductionEvidence && pathKeys.includes('finished_production')){
+          currentKey = 'finished_production';
+        }else if(hasPackingEvidence && pathKeys.includes('pack')){
+          currentKey = 'pack';
+        }else if(pathKeys.includes(lastActualKey)){
+          currentKey = lastActualKey;
+        }
       }
     }
     if(activeJob){
@@ -1375,6 +1412,30 @@ function buildLiveCard(rows){
     currentKey = 'finished_production';
   }
 
+  // If no dedicated packing job exists yet, but immediate upstream stage is done,
+  // keep card on Packing as active instead of leaving it as queued.
+  // Do NOT force this when packing is already done.
+  if (!packingJob && pathKeys.includes('pack') && !hasFinishedProductionEvidence && !hasPackingEvidence) {
+    const packIdx = pathKeys.indexOf('pack');
+    if (packIdx > 0) {
+      const upstreamKey = pathKeys[packIdx - 1];
+      const upstreamJob = stageMap.get(upstreamKey);
+      if (upstreamJob && isDoneStatus(upstreamJob.status || '')) {
+        currentKey = 'pack';
+      }
+    }
+  }
+
+  // If packing evidence exists but no dedicated packing row exists,
+  // treat packing as completed and advance focus to finished production queue.
+  if (!packingJob && hasPackingEvidence && !hasFinishedProductionEvidence) {
+    if (pathKeys.includes('finished_production')) {
+      currentKey = 'finished_production';
+    } else if (pathKeys.includes('pack')) {
+      currentKey = 'pack';
+    }
+  }
+
   const currentIndex = Math.max(0, pathKeys.indexOf(currentKey));
   const planningLabel = String(base.planning_status || base.status || 'Planning').trim() || 'Planning';
 
@@ -1384,8 +1445,7 @@ function buildLiveCard(rows){
       let stageJob = stageMap.get(key) || null;
       let state = 'later';
       if(index < currentIndex) state = 'done';
-      else if(index === currentIndex && key === 'finished_production') state = 'done'; // terminal — always green tick
-      else if(index === currentIndex && stageJob) state = 'now';
+      else if(index === currentIndex) state = 'now';
       if(actualJobs.length === 0 && key === 'planning') state = 'now';
 
       if (hasFinishedProductionEvidence && key === 'finished_production' && index !== currentIndex) {
@@ -1394,10 +1454,14 @@ function buildLiveCard(rows){
 
       let stageStatus = meta.label;
 
-      // Finished Production: always green done when evidence exists
-      if (key === 'finished_production' && hasFinishedProductionEvidence) {
-        stageStatus = 'Finished Production';
-        state = 'done';
+      // Finished Production turns green only after explicit finish evidence.
+      if (key === 'finished_production') {
+        if (hasFinishedProductionEvidence) {
+          stageStatus = 'Finished Production';
+          state = 'done';
+        } else {
+          stageStatus = 'Queued';
+        }
       } else if(key === 'pos') {
         const posDoneByStatus = !!(stageJob && isDoneStatus(stageJob.status || ''));
         const posDoneByEvidence = hasCompletedPosOutput;
@@ -1442,9 +1506,14 @@ function buildLiveCard(rows){
         }
       } else if(key === planningKey) {
         stageStatus = progress.statusText;
+      } else if(key === 'pack' && hasPackingEvidence) {
+        stageStatus = 'Packed';
+        state = 'done';
       } else if(key === 'pack' && hasFinishedProductionEvidence) {
         stageStatus = 'Packed';
         state = 'done';
+      } else if(key === 'pack' && state === 'now' && !stageJob) {
+        stageStatus = 'Packing';
       } else if(index < currentIndex) {
         stageStatus = doneStatusForStage(key);
       } else if(state === 'now') {
@@ -1614,6 +1683,7 @@ async function flLoad(){
       }
 
       const extra = j.extra_data_parsed || {};
+      const stageKey = getStageKeyForJob(j);
       const liveStatus = normStatus(j.status || '');
       const finishedFlag = Number(extra.finished_production_flag || 0) === 1 || String(extra.finished_production_at || '').trim() !== '';
       const packingFlag = Number(extra.packing_done_flag || 0) === 1 || String(extra.packing_done_at || '').trim() !== '';
@@ -1623,8 +1693,8 @@ async function flLoad(){
         if (!j.completed_at && extra.finished_production_at) {
           j.completed_at = extra.finished_production_at;
         }
-      } else if (packingFlag) {
-        const isTerminal = ['dispatched', 'delivered', 'finished production'].includes(liveStatus);
+      } else if (packingFlag && stageKey === 'pack') {
+        const isTerminal = ['dispatched', 'delivered', 'finished production', 'finished label'].includes(liveStatus);
         if (!isTerminal) {
           j.status = 'Packing Done';
         }
@@ -1636,7 +1706,13 @@ async function flLoad(){
 
     const allCards = aggregateLiveCards(jobs);
     // Hide cards that have completed Finished Production from live floor view.
-    FL_ALL_JOBS = allCards.filter((card) => !card.isFinishedProductionComplete);
+    FL_ALL_JOBS = allCards.filter((card) => {
+      // Hide if evidence or if currentStatus is 'Finished Production' (robust)
+      const status = (card.currentStatus || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      if (card.isFinishedProductionComplete) return false;
+      if (status === 'finished production') return false;
+      return true;
+    });
     renderStats(FL_ALL_JOBS);
     renderFilterCounts(FL_ALL_JOBS);
     renderJobs(FL_ALL_JOBS.filter(matchFilter));
