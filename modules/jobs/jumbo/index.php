@@ -82,7 +82,9 @@ function jumboHydrateMissingStockRows(mysqli $db, array $extra): array {
   }
   if (is_array($rawParents)) {
     foreach ($rawParents as $pr) {
-      $prn = trim((string)$pr);
+      $prn = is_array($pr)
+        ? trim((string)($pr['roll_no'] ?? ($pr['parent_roll_no'] ?? '')))
+        : trim((string)$pr);
       if ($prn !== '') $allowedParents[$prn] = true;
     }
   }
@@ -264,7 +266,9 @@ foreach ($allJumboRows as $row) {
   }
   if (is_array($parentRollsRaw)) {
     foreach ($parentRollsRaw as $pr) {
-      $prn = trim((string)$pr);
+      $prn = is_array($pr)
+        ? trim((string)($pr['roll_no'] ?? ''))
+        : trim((string)$pr);
       if ($prn !== '') $allRollNos[$prn] = true;
     }
   }
@@ -331,7 +335,9 @@ foreach ($allJumboRows as $row) {
   }
   if (is_array($parentRollsRaw)) {
     foreach ($parentRollsRaw as $pr) {
-      $prn = trim((string)$pr);
+      $prn = is_array($pr)
+        ? trim((string)($pr['roll_no'] ?? ''))
+        : trim((string)$pr);
       if ($prn !== '' && isset($rollMap[$prn])) {
         $row['live_roll_map'][$prn] = $rollMap[$prn];
       }
@@ -346,6 +352,11 @@ foreach ($allJumboRows as $row) {
         $row['live_roll_map'][$rn] = $rollMap[$rn];
         $r['remarks_live'] = (string)($rollMap[$rn]['remarks'] ?? '');
           $r['status_live']  = (string)($rollMap[$rn]['status'] ?? '');
+      }
+      // Also add parent_roll_no to live_roll_map so JS can look up parent width
+      $prn = trim((string)($r['parent_roll_no'] ?? ''));
+      if ($prn !== '' && isset($rollMap[$prn]) && !isset($row['live_roll_map'][$prn])) {
+        $row['live_roll_map'][$prn] = $rollMap[$prn];
       }
     }
     unset($r);
@@ -1761,7 +1772,10 @@ function jumboBuildRequiredParentRolls(job) {
   const parentRollsRaw = extra.parent_rolls;
   if (Array.isArray(parentRollsRaw)) {
     parentRollsRaw.forEach(function(pr) {
-      addRoll(pr, { paper_type: job?.paper_type || '', width: job?.width_mm ?? '', length: job?.length_mtr ?? '' });
+      const prn = (pr && typeof pr === 'object')
+        ? (pr.roll_no || pr.parent_roll_no || '')
+        : pr;
+      addRoll(prn, { paper_type: job?.paper_type || '', width: job?.width_mm ?? '', length: job?.length_mtr ?? '' });
     });
   } else if (typeof parentRollsRaw === 'string' && parentRollsRaw.trim() !== '') {
     parentRollsRaw.split(',').forEach(function(pr) {
@@ -1802,6 +1816,62 @@ function resolveRollStatusForCard(row, liveEntry, fallbackStatus) {
   const rowStatus = String((row && row.status) || '').trim();
   if (rowStatus !== '') return rowStatus;
   return String(fallbackStatus || '').trim();
+}
+
+function jumboBuildParentRollFallbackMeta(extra, parentRollNo, primaryMeta) {
+  const target = jumboNormalizeRollNo(parentRollNo);
+  const out = {};
+
+  function setIfMissing(key, value) {
+    if (out[key] !== undefined) return;
+    if (value === undefined || value === null) return;
+    if (typeof value === 'string') {
+      const s = value.trim();
+      if (s === '') return;
+      out[key] = s;
+      return;
+    }
+    out[key] = value;
+  }
+
+  function absorbRowMeta(row) {
+    if (!row || typeof row !== 'object') return;
+    setIfMissing('company', row.company);
+    setIfMissing('paper_type', row.paper_type || row.type || row.material);
+    setIfMissing('width_mm', row.width_mm !== undefined ? row.width_mm : row.width);
+    setIfMissing('length_mtr', row.length_mtr !== undefined ? row.length_mtr : row.length);
+    setIfMissing('weight_kg', row.weight_kg !== undefined ? row.weight_kg : row.weight);
+    setIfMissing('sqm', row.sqm);
+    setIfMissing('gsm', row.gsm);
+    setIfMissing('status', row.status_live || row.status);
+    setIfMissing('remarks', row.remarks);
+  }
+
+  const parentRollsRaw = extra && extra.parent_rolls;
+  if (Array.isArray(parentRollsRaw)) {
+    parentRollsRaw.forEach(function(pr) {
+      if (!pr || typeof pr !== 'object') return;
+      const rn = jumboNormalizeRollNo(pr.roll_no || pr.parent_roll_no || pr.roll || '');
+      if (rn !== '' && rn === target) absorbRowMeta(pr);
+    });
+  }
+
+  ['child_rolls', 'stock_rolls'].forEach(function(bucket) {
+    const rows = Array.isArray(extra && extra[bucket]) ? extra[bucket] : [];
+    rows.forEach(function(r) {
+      const prn = jumboNormalizeRollNo(r && r.parent_roll_no ? r.parent_roll_no : '');
+      if (prn !== '' && prn === target) absorbRowMeta(r);
+    });
+  });
+
+  if (primaryMeta && typeof primaryMeta === 'object') {
+    const primaryNorm = jumboNormalizeRollNo(primaryMeta.roll_no || '');
+    if (primaryNorm !== '' && primaryNorm === target) {
+      absorbRowMeta(primaryMeta);
+    }
+  }
+
+  return out;
 }
 
 function jumboShowVerificationMessage(el, kind, text) {
@@ -2450,7 +2520,9 @@ async function openJobDetail(id, mode) {
     const parentRollsRaw = extra.parent_rolls;
     if (Array.isArray(parentRollsRaw)) {
       parentRollsRaw.forEach(function(pr) {
-        const prn = String(pr || '').trim();
+        const prn = (pr && typeof pr === 'object')
+          ? String(pr.roll_no || pr.parent_roll_no || '').trim()
+          : String(pr || '').trim();
         if (prn !== '') seenParents[prn] = true;
       });
     } else if (typeof parentRollsRaw === 'string' && parentRollsRaw.trim() !== '') {
@@ -2469,20 +2541,39 @@ async function openJobDetail(id, mode) {
     });
     const allParentRollNos = Object.keys(seenParents);
     if (allParentRollNos.length > 0) {
+      // Build child-width-per-parent map for no-machine highlight on parent rows
+      const parentChildWidthsMap = {};
+      [...(Array.isArray(extra.child_rolls) ? extra.child_rolls : []), ...(Array.isArray(extra.stock_rolls) ? extra.stock_rolls : [])].forEach(function(r) {
+        const prn2 = String(r.parent_roll_no || '').trim();
+        if (!prn2) return;
+        const w2 = parseFloat(r.width ?? r.width_mm);
+        if (Number.isFinite(w2) && w2 > 0) {
+          if (!parentChildWidthsMap[prn2]) parentChildWidthsMap[prn2] = [];
+          parentChildWidthsMap[prn2].push(w2);
+        }
+      });
+
       let parentTableHtml = '<table class="jc-op-roll-table"><tr><th>Roll No</th><th>Paper Company</th><th>Material</th><th>Width</th><th>Length</th><th>Weight</th><th>Sqr Mtr</th><th>GSM</th><th>Status</th><th>Remarks</th></tr>';
       allParentRollNos.forEach(function(prn) {
         const live      = liveRollMap[prn] || {};
         const isPrimary = (prn === primaryPRN);
-        const company   = live.company    || (isPrimary ? (p.company    || job.company    || '') : '');
-        const ptype     = live.paper_type || (isPrimary ? (p.paper_type || job.paper_type || '') : '');
-        const width     = live.width_mm   !== undefined ? live.width_mm   : (isPrimary ? (p.width_mm  ?? job.width_mm  ?? '--') : '--');
-        const length    = live.length_mtr !== undefined ? live.length_mtr : (isPrimary ? (p.length_mtr ?? job.length_mtr ?? '--') : '--');
-        const weight    = live.weight_kg  !== undefined ? live.weight_kg  : (isPrimary ? (p.weight_kg ?? job.weight_kg ?? '--') : '--');
-        const sqm       = isPrimary ? (p.sqm ?? '--') : '--';
-        const gsm       = live.gsm !== undefined ? live.gsm : (isPrimary ? (p.gsm ?? job.gsm ?? '--') : '--');
-        const liveStatus  = live.status  || '--';
-        const liveRemarks = live.remarks !== undefined ? live.remarks : (isPrimary ? (p.remarks || '') : '');
-        parentTableHtml += `<tr><td style="color:var(--jc-brand);font-weight:700">${esc(prn)}</td><td>${esc(company || '--')}</td><td>${esc(ptype || '--')}</td><td>${esc(width + '')}</td><td>${esc(length + '')}</td><td>${esc(weight + '')}</td><td>${esc(sqm + '')}</td><td>${esc(gsm + '')}</td><td>${esc(liveStatus)}</td><td>${esc(liveRemarks || '--')}</td></tr>`;
+        const fallback  = jumboBuildParentRollFallbackMeta(extra, prn, isPrimary ? p : null);
+        const company   = live.company    || fallback.company    || (isPrimary ? (p.company    || job.company    || '') : '');
+        const ptype     = live.paper_type || fallback.paper_type || (isPrimary ? (p.paper_type || job.paper_type || '') : '');
+        const width     = live.width_mm   !== undefined ? live.width_mm   : (fallback.width_mm !== undefined ? fallback.width_mm : (isPrimary ? (p.width_mm  ?? job.width_mm  ?? '--') : '--'));
+        const length    = live.length_mtr !== undefined ? live.length_mtr : (fallback.length_mtr !== undefined ? fallback.length_mtr : (isPrimary ? (p.length_mtr ?? job.length_mtr ?? '--') : '--'));
+        const weight    = live.weight_kg  !== undefined ? live.weight_kg  : (fallback.weight_kg !== undefined ? fallback.weight_kg : (isPrimary ? (p.weight_kg ?? job.weight_kg ?? '--') : '--'));
+        const sqm       = fallback.sqm !== undefined ? fallback.sqm : (isPrimary ? (p.sqm ?? '--') : '--');
+        const gsm       = live.gsm !== undefined ? live.gsm : (fallback.gsm !== undefined ? fallback.gsm : (isPrimary ? (p.gsm ?? job.gsm ?? '--') : '--'));
+        const liveStatus  = live.status || fallback.status || '--';
+        const liveRemarks = live.remarks !== undefined ? live.remarks : (fallback.remarks !== undefined ? fallback.remarks : (isPrimary ? (p.remarks || '') : ''));
+        // No-machine highlight for parent row
+        const parentW = parseFloat(width);
+        const childWidths = parentChildWidthsMap[prn] || [];
+        const noMachineParent = Number.isFinite(parentW) && parentW > 0 && childWidths.some(function(cw) { return Math.abs(cw - parentW) <= 1; });
+        const rowBgP = noMachineParent ? 'background:#fef9c3;' : '';
+        const noMachineBadgeP = noMachineParent ? ' <span style="display:inline-block;padding:1px 6px;background:#f59e0b;color:#fff;border-radius:10px;font-size:.58rem;font-weight:800;vertical-align:middle;margin-left:4px" title="No machine slitting needed">ADJUST</span>' : '';
+        parentTableHtml += `<tr style="${rowBgP}"><td style="color:var(--jc-brand);font-weight:700">${esc(prn)}${noMachineBadgeP}</td><td>${esc(company || '--')}</td><td>${esc(ptype || '--')}</td><td>${esc(width + '')}</td><td>${esc(length + '')}</td><td>${esc(weight + '')}</td><td>${esc(sqm + '')}</td><td>${esc(gsm + '')}</td><td>${esc(liveStatus)}</td><td>${esc(liveRemarks || '--')}</td></tr>`;
       });
       parentTableHtml += '</table>';
       html += `<div class="jc-op-section"><div class="jc-op-h"><i class="bi bi-inbox"></i> Parent Roll${allParentRollNos.length > 1 ? 's' : ''}</div><div class="jc-op-b" style="overflow-x:auto">${parentTableHtml}</div></div>`;
@@ -2529,10 +2620,43 @@ async function openJobDetail(id, mode) {
     });
   });
 
+  // Build parent width lookup for no-machine highlight
+  const parentWidthMap = {};
+  {
+    const lrm = job.live_roll_map || {};
+    const ep = extra.parent_details || {};
+    Object.keys(lrm).forEach(function(k) { if (lrm[k].width_mm !== undefined) parentWidthMap[k] = parseFloat(lrm[k].width_mm); });
+    if (ep.roll_no && ep.width_mm !== undefined) parentWidthMap[ep.roll_no] = parseFloat(ep.width_mm);
+    // also absorb from parent_rolls objects
+    const prRaw = extra.parent_rolls;
+    (Array.isArray(prRaw) ? prRaw : []).forEach(function(pr) {
+      if (pr && typeof pr === 'object' && (pr.roll_no || pr.parent_roll_no) && pr.width_mm !== undefined) {
+        parentWidthMap[pr.roll_no || pr.parent_roll_no] = parseFloat(pr.width_mm);
+      }
+    });
+  }
+  function jumboIsNoMachineSlit(row) {
+    const childW = parseFloat(row.width);
+    if (!Number.isFinite(childW) || childW <= 0) return false;
+    const prn = String(row.parent_roll_no || '').trim();
+    if (!prn) return false;
+    const parentW = parentWidthMap[prn];
+    if (!Number.isFinite(parentW) || parentW <= 0) return false;
+    return Math.abs(childW - parentW) <= 1;
+  }
+
   if (allRows.length) {
-    let allRollHtml = '<table class="jc-op-roll-table"><tr><th>Parent Roll No</th><th>Child Roll NO.</th><th>Width</th><th>Length</th><th>Type</th><th>Weight</th><th>Sqr Mtr</th><th>GSM</th><th>Wastage</th><th>Status</th><th>Remarks</th></tr>';
+    let allRollHtml = '<table class="jc-op-roll-table">';
+    allRollHtml += '<tr><th colspan="11" style="background:#f8fafc;padding:6px 8px;text-align:left;font-size:.62rem;border-bottom:1px solid #d1e7dd">';
+    allRollHtml += '<span style="display:inline-flex;align-items:center;gap:10px">';
+    allRollHtml += '<span style="display:inline-block;width:12px;height:12px;background:#fef9c3;border:1px solid #fde68a;border-radius:3px"></span>';
+    allRollHtml += '<span style="color:#92400e;font-weight:700">No machine slitting needed (width matches parent)</span></span></th></tr>';
+    allRollHtml += '<tr><th>Parent Roll No</th><th>Child Roll NO.</th><th>Width</th><th>Length</th><th>Type</th><th>Weight</th><th>Sqr Mtr</th><th>GSM</th><th>Wastage</th><th>Status</th><th>Remarks</th></tr>';
     allRows.forEach(function(r) {
-      allRollHtml += `<tr><td style="color:#334155;font-weight:700">${esc(r.parent_roll_no || '--')}</td><td style="color:var(--jc-brand);font-weight:700">${esc(r.roll_no || '--')}</td><td>${esc((r.width ?? '--') + '')}</td><td>${esc((r.length ?? '--') + '')}</td><td>${esc(r.type || '--')}</td><td>${esc((r.weight_kg ?? '--') + '')}</td><td>${esc((r.sqm ?? '--') + '')}</td><td>${esc((r.gsm ?? '--') + '')}</td><td>${esc((r.wastage ?? 0) + '')}</td><td>${esc(r.status || '--')}</td><td>${esc(r.remarks || '--')}</td></tr>`;
+      const noMachine = jumboIsNoMachineSlit(r);
+      const rowBg = noMachine ? 'background:#fef9c3;' : '';
+      const noMachineBadge = noMachine ? ' <span style="display:inline-block;padding:1px 6px;background:#f59e0b;color:#fff;border-radius:10px;font-size:.58rem;font-weight:800;vertical-align:middle;margin-left:4px" title="No machine slitting needed">ADJUST</span>' : '';
+      allRollHtml += `<tr style="${rowBg}"><td style="color:#334155;font-weight:700">${esc(r.parent_roll_no || '--')}</td><td style="color:var(--jc-brand);font-weight:700">${esc(r.roll_no || '--')}${noMachineBadge}</td><td>${esc((r.width ?? '--') + '')}</td><td>${esc((r.length ?? '--') + '')}</td><td>${esc(r.type || '--')}</td><td>${esc((r.weight_kg ?? '--') + '')}</td><td>${esc((r.sqm ?? '--') + '')}</td><td>${esc((r.gsm ?? '--') + '')}</td><td>${esc((r.wastage ?? 0) + '')}</td><td>${esc(r.status || '--')}</td><td>${esc(r.remarks || '--')}</td></tr>`;
     });
     allRollHtml += '</table>';
     html += `<div class="jc-op-section"><div class="jc-op-h"><i class="bi bi-table"></i> All Child Rolls</div><div class="jc-op-b" style="overflow-x:auto">${allRollHtml}</div></div>`;
@@ -3240,7 +3364,12 @@ function renderJumboPrintCardHtml(job, qrDataUrl) {
   const seenParents = {};
   if (primaryPRN !== '') seenParents[primaryPRN] = true;
   const parentRollsRaw = extra.parent_rolls;
-  if (Array.isArray(parentRollsRaw)) parentRollsRaw.forEach(pr => { const s = String(pr||'').trim(); if (s) seenParents[s] = true; });
+  if (Array.isArray(parentRollsRaw)) parentRollsRaw.forEach(pr => {
+    const s = (pr && typeof pr === 'object')
+      ? String(pr.roll_no || pr.parent_roll_no || '').trim()
+      : String(pr || '').trim();
+    if (s) seenParents[s] = true;
+  });
   else if (typeof parentRollsRaw === 'string' && parentRollsRaw.trim()) parentRollsRaw.split(',').forEach(pr => { const s = String(pr||'').trim(); if (s) seenParents[s] = true; });
   (Array.isArray(extra.child_rolls) ? extra.child_rolls : []).forEach(r => { const s = String(r.parent_roll_no||'').trim(); if (s) seenParents[s] = true; });
   (Array.isArray(extra.stock_rolls) ? extra.stock_rolls : []).forEach(r => { const s = String(r.parent_roll_no||'').trim(); if (s) seenParents[s] = true; });
@@ -3261,19 +3390,37 @@ function renderJumboPrintCardHtml(job, qrDataUrl) {
           <th style="padding:5px 6px;border:1px solid #bbf7d0;background:#dcfce7;color:#166534;font-weight:800;font-size:.62rem">Status</th>
           <th style="padding:5px 6px;border:1px solid #bbf7d0;background:#dcfce7;color:#166534;font-weight:800;font-size:.62rem">Remarks</th>
         </tr></thead><tbody>`;
+    // Build child-width-per-parent map for no-machine parent highlight (print)
+    const printParentChildWidths = {};
+    [...(Array.isArray(extra.child_rolls) ? extra.child_rolls : []), ...(Array.isArray(extra.stock_rolls) ? extra.stock_rolls : [])].forEach(r => {
+      const prn2 = String(r.parent_roll_no || '').trim();
+      if (!prn2) return;
+      const w2 = parseFloat(r.width ?? r.width_mm);
+      if (Number.isFinite(w2) && w2 > 0) {
+        if (!printParentChildWidths[prn2]) printParentChildWidths[prn2] = [];
+        printParentChildWidths[prn2].push(w2);
+      }
+    });
     allParentRollNos.forEach(prn => {
       const live = liveRollMap[prn] || {};
       const isPrimary = (prn === primaryPRN);
-      const company = live.company || (isPrimary ? (p.company || job.company || '') : '');
-      const ptype = live.paper_type || (isPrimary ? (p.paper_type || job.paper_type || '') : '');
-      const width = live.width_mm !== undefined ? live.width_mm : (isPrimary ? (p.width_mm ?? job.width_mm ?? '—') : '—');
-      const length = live.length_mtr !== undefined ? live.length_mtr : (isPrimary ? (p.length_mtr ?? job.length_mtr ?? '—') : '—');
-      const weight = live.weight_kg !== undefined ? live.weight_kg : (isPrimary ? (p.weight_kg ?? job.weight_kg ?? '—') : '—');
-      const gsm = live.gsm !== undefined ? live.gsm : (isPrimary ? (p.gsm ?? job.gsm ?? '—') : '—');
-      const rstatus = live.status || '—';
-      const remarks = live.remarks !== undefined ? live.remarks : (isPrimary ? (p.remarks || '') : '');
-      parentTableHtml += `<tr>
-        <td style="padding:5px 6px;border:1px solid #d1e7dd;font-weight:800;color:#166534">${esc(prn)}</td>
+      const fallback = jumboBuildParentRollFallbackMeta(extra, prn, isPrimary ? p : null);
+      const company = live.company || fallback.company || (isPrimary ? (p.company || job.company || '') : '');
+      const ptype = live.paper_type || fallback.paper_type || (isPrimary ? (p.paper_type || job.paper_type || '') : '');
+      const width = live.width_mm !== undefined ? live.width_mm : (fallback.width_mm !== undefined ? fallback.width_mm : (isPrimary ? (p.width_mm ?? job.width_mm ?? '—') : '—'));
+      const length = live.length_mtr !== undefined ? live.length_mtr : (fallback.length_mtr !== undefined ? fallback.length_mtr : (isPrimary ? (p.length_mtr ?? job.length_mtr ?? '—') : '—'));
+      const weight = live.weight_kg !== undefined ? live.weight_kg : (fallback.weight_kg !== undefined ? fallback.weight_kg : (isPrimary ? (p.weight_kg ?? job.weight_kg ?? '—') : '—'));
+      const gsm = live.gsm !== undefined ? live.gsm : (fallback.gsm !== undefined ? fallback.gsm : (isPrimary ? (p.gsm ?? job.gsm ?? '—') : '—'));
+      const rstatus = live.status || fallback.status || '—';
+      const remarks = live.remarks !== undefined ? live.remarks : (fallback.remarks !== undefined ? fallback.remarks : (isPrimary ? (p.remarks || '') : ''));
+      // No-machine parent highlight (print)
+      const parentWP = parseFloat(width);
+      const cwList = printParentChildWidths[prn] || [];
+      const noMachineP = Number.isFinite(parentWP) && parentWP > 0 && cwList.some(cw => Math.abs(cw - parentWP) <= 1);
+      const rowBgPrint = noMachineP ? 'background:#fef9c3;' : '';
+      const noMachineBadgePrint = noMachineP ? ' <span style="display:inline-block;padding:1px 5px;background:#f59e0b;color:#fff;border-radius:8px;font-size:.55rem;font-weight:800">ADJUST</span>' : '';
+      parentTableHtml += `<tr style="${rowBgPrint}">
+        <td style="padding:5px 6px;border:1px solid #d1e7dd;font-weight:800;color:#166534">${esc(prn)}${noMachineBadgePrint}</td>
         <td style="padding:5px 6px;border:1px solid #d1e7dd">${esc(company||'—')}</td>
         <td style="padding:5px 6px;border:1px solid #d1e7dd">${esc(ptype||'—')}</td>
         <td style="padding:5px 6px;border:1px solid #d1e7dd">${esc(width+'')}</td>
@@ -3336,12 +3483,36 @@ function renderJumboPrintCardHtml(job, qrDataUrl) {
           <th style="padding:5px 6px;border:1px solid #bfdbfe;background:#dbeafe;color:#1e40af;font-weight:800;font-size:.62rem">Wastage</th>
           <th style="padding:5px 6px;border:1px solid #bfdbfe;background:#dbeafe;color:#1e40af;font-weight:800;font-size:.62rem">Remarks</th>
         </tr></thead><tbody>`;
+    // Build parent width map for print card no-machine highlight
+    const printParentWidthMap = {};
+    {
+      const lrm2 = liveRollMap;
+      const ep2 = p;
+      Object.keys(lrm2).forEach(k => { if (lrm2[k].width_mm !== undefined) printParentWidthMap[k] = parseFloat(lrm2[k].width_mm); });
+      if (ep2.roll_no && ep2.width_mm !== undefined) printParentWidthMap[ep2.roll_no] = parseFloat(ep2.width_mm);
+      const prRaw2 = extra.parent_rolls;
+      (Array.isArray(prRaw2) ? prRaw2 : []).forEach(pr => {
+        if (pr && typeof pr === 'object' && (pr.roll_no || pr.parent_roll_no) && pr.width_mm !== undefined)
+          printParentWidthMap[pr.roll_no || pr.parent_roll_no] = parseFloat(pr.width_mm);
+      });
+    }
+    function printIsNoMachineSlit(row) {
+      const childW = parseFloat(row.width);
+      if (!Number.isFinite(childW) || childW <= 0) return false;
+      const prn = String(row.parent_roll_no || '').trim();
+      if (!prn) return false;
+      const parentW = printParentWidthMap[prn];
+      if (!Number.isFinite(parentW) || parentW <= 0) return false;
+      return Math.abs(childW - parentW) <= 1;
+    }
     allRows.forEach((r, i) => {
-      const bg = i % 2 === 0 ? '#ffffff' : '#f8fafc';
+      const noMachine = printIsNoMachineSlit(r);
+      const bg = noMachine ? '#fef9c3' : (i % 2 === 0 ? '#ffffff' : '#f8fafc');
+      const noMachineBadge = noMachine ? ' <span style="display:inline-block;padding:1px 5px;background:#f59e0b;color:#fff;border-radius:8px;font-size:.55rem;font-weight:800">ADJUST</span>' : '';
       childTableHtml += `<tr style="background:${bg}">
         <td style="padding:5px 6px;border:1px solid #e2e8f0;color:#94a3b8;text-align:center">${i+1}</td>
         <td style="padding:5px 6px;border:1px solid #e2e8f0;font-weight:700">${esc(r.parent_roll_no||'—')}</td>
-        <td style="padding:5px 6px;border:1px solid #e2e8f0;font-weight:800;color:#166534">${esc(r.roll_no||'—')}</td>
+        <td style="padding:5px 6px;border:1px solid #e2e8f0;font-weight:800;color:#166534">${esc(r.roll_no||'—')}${noMachineBadge}</td>
         <td style="padding:5px 6px;border:1px solid #e2e8f0">${esc(r.type||'—')}</td>
         <td style="padding:5px 6px;border:1px solid #e2e8f0">${esc(r.width+'')}</td>
         <td style="padding:5px 6px;border:1px solid #e2e8f0">${esc(r.length+'')}</td>

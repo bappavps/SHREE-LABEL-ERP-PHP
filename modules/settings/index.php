@@ -590,21 +590,89 @@ function restoreDatabaseFromSql(mysqli $db, string $sqlDump): array {
   $db->query('SET FOREIGN_KEY_CHECKS=0');
   $restoreOk = true;
 
-  if (!$db->multi_query($sqlDump)) {
-    $restoreOk = false;
-    $restoreErr = $db->error;
-  } else {
-    do {
-      if ($res = $db->store_result()) {
-        $res->free();
+  $statements = [];
+  $buffer = '';
+  $len = strlen($sqlDump);
+  $inSingle = false;
+  $inDouble = false;
+  $inLineComment = false;
+  $inBlockComment = false;
+
+  for ($i = 0; $i < $len; $i++) {
+    $ch = $sqlDump[$i];
+    $next = ($i + 1 < $len) ? $sqlDump[$i + 1] : '';
+
+    if ($inLineComment) {
+      if ($ch === "\n") {
+        $inLineComment = false;
+        $buffer .= $ch;
       }
-      if (!$db->more_results()) break;
-      if (!$db->next_result()) {
-        $restoreOk = false;
-        $restoreErr = $db->error;
-        break;
+      continue;
+    }
+
+    if ($inBlockComment) {
+      if ($ch === '*' && $next === '/') {
+        $inBlockComment = false;
+        $i++;
       }
-    } while (true);
+      continue;
+    }
+
+    if (!$inSingle && !$inDouble) {
+      $next2 = ($i + 2 < $len) ? $sqlDump[$i + 2] : '';
+      if ($ch === '-' && $next === '-' && ($next2 === '' || ctype_space($next2))) {
+        $inLineComment = true;
+        $i++;
+        continue;
+      }
+      if ($ch === '#') {
+        $inLineComment = true;
+        continue;
+      }
+      if ($ch === '/' && $next === '*') {
+        $inBlockComment = true;
+        $i++;
+        continue;
+      }
+    }
+
+    if ($ch === "'" && !$inDouble) {
+      $escaped = ($i > 0 && $sqlDump[$i - 1] === '\\');
+      if (!$escaped) $inSingle = !$inSingle;
+      $buffer .= $ch;
+      continue;
+    }
+
+    if ($ch === '"' && !$inSingle) {
+      $escaped = ($i > 0 && $sqlDump[$i - 1] === '\\');
+      if (!$escaped) $inDouble = !$inDouble;
+      $buffer .= $ch;
+      continue;
+    }
+
+    if ($ch === ';' && !$inSingle && !$inDouble) {
+      $stmt = trim($buffer);
+      if ($stmt !== '') {
+        $statements[] = $stmt;
+      }
+      $buffer = '';
+      continue;
+    }
+
+    $buffer .= $ch;
+  }
+
+  $tail = trim($buffer);
+  if ($tail !== '') {
+    $statements[] = $tail;
+  }
+
+  foreach ($statements as $statement) {
+    if (!$db->query($statement)) {
+      $restoreOk = false;
+      $restoreErr = $db->error;
+      break;
+    }
   }
 
   $db->query('SET FOREIGN_KEY_CHECKS=1');

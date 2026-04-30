@@ -108,7 +108,7 @@
             },
             "planning": {
                 "prefix": "PLN",
-                "counter": 0
+                "counter": 1
             },
             "planning_barcode": {
                 "prefix": "PLN-BAR",

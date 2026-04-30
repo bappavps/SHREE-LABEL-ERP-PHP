@@ -944,7 +944,7 @@ if (!$isEmbedded) {
         <div class="meta-item"><div class="meta-key">Plate No</div><div class="meta-val" id="plateCalcPlateNo">-</div></div>
         <div class="meta-item"><div class="meta-key">Job Name</div><div class="meta-val" id="plateCalcJobName">-</div></div>
       </div>
-      <div style="font-size:.74rem;color:#9a3412;margin-top:8px;">Enter Quantity to get Meter, or enter Meter to get Quantity. Formula: If Qty.Roll available → Meter = Qty / Qty.Roll; else → Meter = (Qty / UPS) × (Repeat / 1000)</div>
+      <div style="font-size:.74rem;color:#9a3412;margin-top:8px;">Enter Quantity to get Meter, or enter Meter to get Quantity. Formula: Meter = Qty × Repeat / 1000 / UPS</div>
     </div>
   <?php endif; ?>
 
@@ -1406,9 +1406,6 @@ if (!$isEmbedded) {
       if (!params || !params.selected) {
         return ['Plate Selection'];
       }
-      if (params.qtyRoll > 0) {
-        return [];
-      }
       var missing = [];
       if (params.ups <= 0) missing.push('UPS');
       if (params.repeatValue <= 0) missing.push('Repeat Value');
@@ -1435,12 +1432,7 @@ if (!$isEmbedded) {
         return;
       }
 
-      var meter = 0;
-      if (p.qtyRoll > 0) {
-        meter = qty / p.qtyRoll;
-      } else if (p.ups > 0 && p.repeatValue > 0) {
-        meter = (qty / p.ups) * (p.repeatValue / 1000);
-      }
+      var meter = qty * p.repeatValue / 1000 / p.ups;
       hideCalcMissingModal(true);
       calcMeter.value = meter > 0 ? meter.toFixed(2) : '';
     }
@@ -1456,12 +1448,7 @@ if (!$isEmbedded) {
         return;
       }
 
-      var qty = 0;
-      if (p.qtyRoll > 0) {
-        qty = meter * p.qtyRoll;
-      } else if (p.ups > 0 && p.repeatValue > 0) {
-        qty = (meter / (p.repeatValue / 1000)) * p.ups;
-      }
+      var qty = meter * 1000 * p.ups / p.repeatValue;
       hideCalcMissingModal(true);
       calcQty.value = qty > 0 ? Math.round(qty) : '';
     }

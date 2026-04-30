@@ -3591,6 +3591,24 @@ async function openJobDetail(id, mode) {
       if (key !== '') parentMetaByRoll[key] = meta;
     });
     if (allParentRollNos.length > 0) {
+      // Build child-width-per-parent map for no-machine highlight
+      const opParentChildWidths = {};
+      [...(Array.isArray(extra.child_rolls) ? extra.child_rolls : []), ...(Array.isArray(extra.stock_rolls) ? extra.stock_rolls : [])].forEach(function(r) {
+        const prn2 = String(r.parent_roll_no || '').trim();
+        if (!prn2) return;
+        const w2 = parseFloat(r.width ?? r.width_mm);
+        if (Number.isFinite(w2) && w2 > 0) {
+          if (!opParentChildWidths[prn2]) opParentChildWidths[prn2] = [];
+          opParentChildWidths[prn2].push(w2);
+        }
+      });
+      function opParentIsNoMachine(prn, width) {
+        const parentW = parseFloat(width);
+        if (!Number.isFinite(parentW) || parentW <= 0) return false;
+        const cwList = opParentChildWidths[prn] || [];
+        return cwList.some(function(cw) { return Math.abs(cw - parentW) <= 1; });
+      }
+
       let parentTableHtml = '<table class="jc-soft-table"><tr><th>Roll No</th><th>Paper Company</th><th>Material</th><th>Width</th><th>Length</th><th>Weight</th><th>Sqr Mtr</th><th>GSM</th><th>Status</th><th>Remarks</th></tr>';
       allParentRollNos.forEach(function(prn) {
         const meta = parentMetaByRoll[prn] || {};
@@ -3603,7 +3621,10 @@ async function openJobDetail(id, mode) {
         const gsm = (meta.gsm ?? '--');
         const liveStatus = meta.status || '--';
         const liveRemarks = meta.remarks || '';
-        parentTableHtml += `<tr><td style="color:var(--jc-brand);font-weight:700">${esc(prn)}</td><td>${esc(company || '--')}</td><td>${esc(ptype || '--')}</td><td>${esc(width + '')}</td><td>${esc(length + '')}</td><td>${esc(weight + '')}</td><td>${esc(sqm + '')}</td><td>${esc(gsm + '')}</td><td>${esc(liveStatus)}</td><td>${esc(liveRemarks || '--')}</td></tr>`;
+        const noMacParent = opParentIsNoMachine(prn, width);
+        const noMacBg = noMacParent ? 'background:#fef9c3;' : '';
+        const noMacBadge = noMacParent ? ' <span style="display:inline-block;padding:1px 5px;background:#f59e0b;color:#fff;border-radius:8px;font-size:.56rem;font-weight:800;vertical-align:middle;margin-left:3px">ADJUST</span>' : '';
+        parentTableHtml += `<tr style="${noMacBg}"><td style="color:var(--jc-brand);font-weight:700">${esc(prn)}${noMacBadge}</td><td>${esc(company || '--')}</td><td>${esc(ptype || '--')}</td><td>${esc(width + '')}</td><td>${esc(length + '')}</td><td>${esc(weight + '')}</td><td>${esc(sqm + '')}</td><td>${esc(gsm + '')}</td><td>${esc(liveStatus)}</td><td>${esc(liveRemarks || '--')}</td></tr>`;
       });
       parentTableHtml += '</table>';
       executionRollHtml += `<div class="jc-detail-section"><h3><i class="bi bi-inbox"></i> Parent Roll${allParentRollNos.length > 1 ? 's' : ''}</h3><div class="jc-table-shell jc-parent-shell"><div style="overflow-x:auto">${parentTableHtml}</div></div></div>`;
@@ -3621,7 +3642,10 @@ async function openJobDetail(id, mode) {
         const gsm = (meta.gsm ?? '--');
         const liveStatus = meta.status || '--';
         const liveRemarks = meta.remarks || '';
-        editParentTableHtml += `<tr data-roll="${esc(prn)}"><td style="text-align:center"><input type="checkbox" class="dm-parent-select-cb" value="${esc(prn)}"></td><td style="color:var(--jc-brand);font-weight:700">${esc(prn)}</td><td>${esc(company || '--')}</td><td>${esc(ptype || '--')}</td><td>${esc(width + '')}</td><td>${esc(length + '')}</td><td>${esc(weight + '')}</td><td>${esc(sqm + '')}</td><td>${esc(gsm + '')}</td><td>${esc(liveStatus)}</td><td>${esc(liveRemarks || '--')}</td></tr>`;
+        const noMacParentE = opParentIsNoMachine(prn, width);
+        const noMacBgE = noMacParentE ? 'background:#fef9c3;' : '';
+        const noMacBadgeE = noMacParentE ? ' <span style="display:inline-block;padding:1px 5px;background:#f59e0b;color:#fff;border-radius:8px;font-size:.56rem;font-weight:800;vertical-align:middle;margin-left:3px">ADJUST</span>' : '';
+        editParentTableHtml += `<tr data-roll="${esc(prn)}" style="${noMacBgE}"><td style="text-align:center"><input type="checkbox" class="dm-parent-select-cb" value="${esc(prn)}"></td><td style="color:var(--jc-brand);font-weight:700">${esc(prn)}${noMacBadgeE}</td><td>${esc(company || '--')}</td><td>${esc(ptype || '--')}</td><td>${esc(width + '')}</td><td>${esc(length + '')}</td><td>${esc(weight + '')}</td><td>${esc(sqm + '')}</td><td>${esc(gsm + '')}</td><td>${esc(liveStatus)}</td><td>${esc(liveRemarks || '--')}</td></tr>`;
       });
       editParentTableHtml += '</table>';
       editHtml += `<div class="jc-detail-section"><h3><i class="bi bi-inbox"></i> Parent Roll${allParentRollNos.length > 1 ? 's' : ''} <span style="font-size:.75rem;font-weight:400;color:#64748b">(select to change)</span></h3><div class="jc-table-shell jc-parent-shell"><div style="overflow-x:auto">${editParentTableHtml}</div></div></div>`;
@@ -3670,9 +3694,41 @@ async function openJobDetail(id, mode) {
     allRows.sort(function(a, b) {
       return String(a.roll_no || '').localeCompare(String(b.roll_no || ''), undefined, { numeric: true, sensitivity: 'base' });
     });
-    let executionRowsHtml = '<table class="jc-soft-table"><thead><tr><th>Parent Roll</th><th>Child Roll</th><th>Type</th><th>Width</th><th>Length</th><th>Status</th><th>Wastage</th><th>Remarks</th></tr></thead><tbody>';
+
+    // Build parent width map for no-machine-slitting highlight
+    const opParentWidthMap = {};
+    {
+      const lrm = job.live_roll_map || {};
+      const ep = (job.extra_data_parsed && job.extra_data_parsed.parent_details) || {};
+      Object.keys(lrm).forEach(function(k) { if (lrm[k].width_mm !== undefined) opParentWidthMap[k] = parseFloat(lrm[k].width_mm); });
+      if (ep.roll_no && ep.width_mm !== undefined) opParentWidthMap[ep.roll_no] = parseFloat(ep.width_mm);
+      const prRawOp = extra.parent_rolls;
+      (Array.isArray(prRawOp) ? prRawOp : []).forEach(function(pr) {
+        if (pr && typeof pr === 'object' && (pr.roll_no || pr.parent_roll_no) && pr.width_mm !== undefined)
+          opParentWidthMap[pr.roll_no || pr.parent_roll_no] = parseFloat(pr.width_mm);
+      });
+    }
+    function opIsNoMachineSlit(r) {
+      const childW = parseFloat(r.width);
+      if (!Number.isFinite(childW) || childW <= 0) return false;
+      const prn = String(r.parent_roll_no || '').trim();
+      if (!prn) return false;
+      const parentW = opParentWidthMap[prn];
+      if (!Number.isFinite(parentW) || parentW <= 0) return false;
+      return Math.abs(childW - parentW) <= 1;
+    }
+
+    let executionRowsHtml = '<table class="jc-soft-table"><thead>';
+    executionRowsHtml += '<tr><th colspan="8" style="background:#fef9c3;padding:5px 8px;text-align:left;font-size:.6rem;font-weight:700;color:#92400e;border-bottom:1px solid #fde68a">';
+    executionRowsHtml += '<span style="display:inline-flex;align-items:center;gap:8px">';
+    executionRowsHtml += '<span style="display:inline-block;width:11px;height:11px;background:#fef9c3;border:1px solid #f59e0b;border-radius:2px"></span>';
+    executionRowsHtml += 'No machine slitting needed (width matches parent roll)</span></th></tr>';
+    executionRowsHtml += '<tr><th>Parent Roll</th><th>Child Roll</th><th>Type</th><th>Width</th><th>Length</th><th>Status</th><th>Wastage</th><th>Remarks</th></tr></thead><tbody>';
     allRows.forEach(function(r) {
-      executionRowsHtml += `<tr><td style="font-weight:700">${esc(r.parent_roll_no || '—')}</td><td style="color:var(--jc-brand);font-weight:700">${esc(r.roll_no || '—')}</td><td>${esc(r.type || '—')}</td><td>${esc((r.width ?? '—') + '')}</td><td>${esc((r.length ?? '—') + '')}</td><td>${esc(r.status || '—')}</td><td>${esc((r.wastage ?? 0) + '')}</td><td>${esc(r.remarks || '—')}</td></tr>`;
+      const noMachine = opIsNoMachineSlit(r);
+      const rowBg = noMachine ? 'background:#fef9c3;' : '';
+      const badge = noMachine ? ' <span style="display:inline-block;padding:1px 5px;background:#f59e0b;color:#fff;border-radius:8px;font-size:.56rem;font-weight:800;vertical-align:middle;margin-left:3px">ADJUST</span>' : '';
+      executionRowsHtml += `<tr style="${rowBg}"><td style="font-weight:700">${esc(r.parent_roll_no || '—')}</td><td style="color:var(--jc-brand);font-weight:700">${esc(r.roll_no || '—')}${badge}</td><td>${esc(r.type || '—')}</td><td>${esc((r.width ?? '—') + '')}</td><td>${esc((r.length ?? '—') + '')}</td><td>${esc(r.status || '—')}</td><td>${esc((r.wastage ?? 0) + '')}</td><td>${esc(r.remarks || '—')}</td></tr>`;
     });
     executionRowsHtml += '</tbody></table>';
     executionRollHtml += `<div class="jc-detail-section"><h3><i class="bi bi-table"></i> Child / Stock Rolls</h3><div class="jc-table-shell jc-child-shell"><div style="overflow-x:auto">${executionRowsHtml}</div></div></div>`;
@@ -4029,6 +4085,17 @@ function renderJumboPrintCardHtml(job, qrDataUrl) {
           <th style="padding:5px 6px;border:1px solid #bbf7d0;background:#dcfce7;color:#166534;font-weight:800;font-size:.62rem">Status</th>
           <th style="padding:5px 6px;border:1px solid #bbf7d0;background:#dcfce7;color:#166534;font-weight:800;font-size:.62rem">Remarks</th>
         </tr></thead><tbody>`;
+    // Build child-width-per-parent map for no-machine highlight (operators print)
+    const opPrintParentChildWidths = {};
+    [...(Array.isArray(extra.child_rolls) ? extra.child_rolls : []), ...(Array.isArray(extra.stock_rolls) ? extra.stock_rolls : [])].forEach(r => {
+      const prn2 = String(r.parent_roll_no || '').trim();
+      if (!prn2) return;
+      const w2 = parseFloat(r.width ?? r.width_mm);
+      if (Number.isFinite(w2) && w2 > 0) {
+        if (!opPrintParentChildWidths[prn2]) opPrintParentChildWidths[prn2] = [];
+        opPrintParentChildWidths[prn2].push(w2);
+      }
+    });
     allParentRollNos.forEach(prn => {
       const meta = parentMetaByRoll[prn] || {};
       const company = meta.company || '—';
@@ -4039,8 +4106,13 @@ function renderJumboPrintCardHtml(job, qrDataUrl) {
       const gsm = (meta.gsm ?? '—');
       const rstatus = meta.status || '—';
       const remarks = meta.remarks || '';
-      parentTableHtml += `<tr>
-        <td style="padding:5px 6px;border:1px solid #d1e7dd;font-weight:800;color:#166534">${esc(prn)}</td>
+      const parentWPrint = parseFloat(width);
+      const cwListPrint = opPrintParentChildWidths[prn] || [];
+      const noMacPrint = Number.isFinite(parentWPrint) && parentWPrint > 0 && cwListPrint.some(cw => Math.abs(cw - parentWPrint) <= 1);
+      const rowBgOpPrint = noMacPrint ? 'background:#fef9c3;' : '';
+      const badgeOpPrint = noMacPrint ? ' <span style="display:inline-block;padding:1px 5px;background:#f59e0b;color:#fff;border-radius:8px;font-size:.55rem;font-weight:800">ADJUST</span>' : '';
+      parentTableHtml += `<tr style="${rowBgOpPrint}">
+        <td style="padding:5px 6px;border:1px solid #d1e7dd;font-weight:800;color:#166534">${esc(prn)}${badgeOpPrint}</td>
         <td style="padding:5px 6px;border:1px solid #d1e7dd">${esc(company||'—')}</td>
         <td style="padding:5px 6px;border:1px solid #d1e7dd">${esc(ptype||'—')}</td>
         <td style="padding:5px 6px;border:1px solid #d1e7dd">${esc(width+'')}</td>

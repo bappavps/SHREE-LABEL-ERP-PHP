@@ -1751,15 +1751,13 @@ include __DIR__ . '/../../includes/header.php';
 
   function calculateMeterFromQty(params, qty) {
     if (qty <= 0) return '';
-    if (params.qtyRoll > 0) return (qty / params.qtyRoll).toFixed(2);
-    if (params.ups > 0 && params.repeatValue > 0) return ((qty / params.ups) * (params.repeatValue / 1000)).toFixed(2);
+    if (params.ups > 0 && params.repeatValue > 0) return ((qty * params.repeatValue) / 1000 / params.ups).toFixed(2);
     return '';
   }
 
   function calculateQtyFromMeter(params, meter) {
     if (meter <= 0) return '';
-    if (params.qtyRoll > 0) return String(Math.round(meter * params.qtyRoll));
-    if (params.ups > 0 && params.repeatValue > 0) return String(Math.round((meter / (params.repeatValue / 1000)) * params.ups));
+    if (params.ups > 0 && params.repeatValue > 0) return String(Math.round((meter * 1000 * params.ups) / params.repeatValue));
     return '';
   }
 
