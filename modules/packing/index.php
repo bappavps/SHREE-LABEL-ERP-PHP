@@ -2902,8 +2902,8 @@ include __DIR__ . '/../../includes/header.php';
           var raw = String(v).replace(/\s*mm$/i, '').trim();
           if (!raw) return '';
           var n = Number(raw.replace(/,/g, ''));
-          // Guardrail: sticker item width should be realistic, not long meter values.
-          if (isNaN(n) || n <= 0 || n > 2000) return '';
+          // Guardrail: sticker item width should be realistic, not paper-roll widths.
+          if (isNaN(n) || n <= 0 || n > 500) return '';
           return Math.abs(n - Math.round(n)) < 0.001 ? String(Math.round(n)) : String(n.toFixed(2)).replace(/\.00$/, '');
         }
 
@@ -2923,15 +2923,13 @@ include __DIR__ . '/../../includes/header.php';
           }
         }
 
-        // Second priority: width shown in roll table.
-        var widthCell = section.querySelector('.pk-jc-rolls tbody tr td:nth-child(4)');
-        if (widthCell) {
-          candidate = normalizeWidth(widthCell.textContent || '');
-          if (candidate) return candidate;
-        }
-
         var picks = [
+          job && job.planning_size_width_mm,
+          job && job.item_width_mm,
           job && job.item_width,
+          planExtra.planning_size_width_mm,
+          planExtra.size_width_mm,
+          planExtra.item_width_mm,
           job && job.width_mm,
           job && job.paper_width_mm,
           job && job.paper_width,
@@ -2947,6 +2945,13 @@ include __DIR__ . '/../../includes/header.php';
 
         for (var i = 0; i < picks.length; i++) {
           candidate = normalizeWidth(picks[i]);
+          if (candidate) return candidate;
+        }
+
+        // Final fallback: width shown in roll table.
+        var widthCell = section.querySelector('.pk-jc-rolls tbody tr td:nth-child(4)');
+        if (widthCell) {
+          candidate = normalizeWidth(widthCell.textContent || '');
           if (candidate) return candidate;
         }
 

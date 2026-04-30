@@ -549,6 +549,8 @@ const PLACEHOLDERS = {
   GENERAL: [
     { key:'{{job.companyName}}', label:'Company Name', icon:'bi-building', preview:'Shree Label Creation' },
     { key:'{{job.companyAddress}}', label:'Company Address', icon:'bi-file-text', preview:'Phase 1, Industrial Estate' },
+    { key:'{{job.erpLogo}}', label:'ERP Logo (Image URL)', icon:'bi-image', preview:(ERP_BASE_URL + '/assets/img/logo.svg') },
+    { key:'{{job.tenantLogo}}', label:'Tenant Logo (Image URL)', icon:'bi-image', preview:(ERP_BASE_URL + '/assets/img/logo.svg') },
     { key:'{{job.date}}', label:'Current Print Date', icon:'bi-calendar3', preview:'3/30/2026' },
     { key:'{{received_date}}', label:'Received Date', icon:'bi-calendar-event', preview:'30 Mar 2026' },
     { key:'{{job.receivedDate}}', label:'Received Date Slash', icon:'bi-calendar-event', preview:'3/29/2026' },
@@ -700,6 +702,7 @@ let psZoom = 1;
 let psGridSnap = 5;
 let psShowGrid = true;
 let psLastHighlightSignature = '';
+let psErpFieldSearchTerm = '';
 
 // ============================================================
 // HELPERS
@@ -711,12 +714,24 @@ function psUuid() {
 function psEscHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 function psProcessText(text) { if(!text) return ''; return text.replace(/\{\{(.+?)\}\}/g, (m,k) => PREVIEW_DATA[k.trim()]||m); }
 function psInsertDateVariable(code) {
-  psAddElement('text', null, code);
+  psInsertVariableCode(code);
 }
 
 function psInsertVariableCode(code) {
   const normalized = String(code || '').trim();
   if (!normalized) return;
+  const selectedEl = currentTemplate && selectedElementId
+    ? currentTemplate.elements.find(e => e.id === selectedElementId)
+    : null;
+  if (selectedEl && selectedEl.type === 'image') {
+    selectedEl.content = normalized;
+    selectedEl.placeholder = normalized;
+    psRenderCanvas();
+    psRenderProps();
+    psRefreshErpFieldHighlights();
+    psToast('Image source variable applied','success');
+    return;
+  }
   if (normalized === '{{sourceMaterials}}' || normalized === '{{slittingOutputs}}') {
     psAddElement('table', normalized.replace(/[{}]/g,''));
     return;
@@ -1070,11 +1085,18 @@ function psRenderComponents() {
 function psRenderErpFields() {
   const c = document.getElementById('ps-erp-fields');
   let html = '';
-  html += '<div style="padding:10px 10px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc">';
-  html += '<p style="font-size:8px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px">Date Format Picker</p>';
+  html += '<div style="padding:10px;border-bottom:1px solid #e2e8f0;background:#fff">';
+  html += '<label style="font-size:8px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;display:block;margin:0 0 6px">Search Variables</label>';
+  html += '<div style="position:relative">';
+  html += '<i class="bi bi-search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:11px;color:#94a3b8"></i>';
+  html += '<input type="text" class="ps-prop-input" value="'+psEscHtml(psErpFieldSearchTerm)+'" placeholder="Type name or {{code}}" oninput="psFilterErpFieldDirectory(this.value)" style="margin-top:0;padding-left:30px;height:32px">';
+  html += '</div>';
+  html += '</div>';
+  html += '<div data-erp-section="date-format" style="padding:10px 10px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc">';
+  html += '<p data-erp-section-title data-erp-search="date format picker current print date received date" style="font-size:8px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px">Date Format Picker</p>';
   html += '<div style="display:grid;gap:6px">';
   DATE_FORMAT_OPTIONS.forEach(function(opt) {
-    html += '<button class="ps-field-code-btn" onclick="psInsertDateVariable(\''+psEscHtml(opt.value)+'\')">';
+    html += '<button class="ps-field-code-btn" data-erp-item data-erp-search="'+psEscHtml((opt.label + ' ' + opt.value + ' ' + opt.preview).toLowerCase())+'" onclick="psInsertDateVariable(\''+psEscHtml(opt.value)+'\')">';
     html += '<span class="ps-field-code-label">'+psEscHtml(opt.label)+'</span>';
     html += '<code class="ps-field-code-value">'+psEscHtml(opt.value)+'</code>';
     html += '<span class="ps-field-code-preview">'+psEscHtml(opt.preview)+'</span>';
@@ -1082,34 +1104,65 @@ function psRenderErpFields() {
   });
   html += '</div></div>';
   Object.entries(PLACEHOLDERS).forEach(([group, fields]) => {
-    html += '<div style="padding:8px"><p style="font-size:8px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;padding:0 6px;margin:0 0 4px">'+group+'</p>';
+    html += '<div data-erp-section="'+psEscHtml(group.toLowerCase().replace(/\s+/g, '-'))+'" style="padding:8px"><p data-erp-section-title data-erp-search="'+psEscHtml(String(group || '').toLowerCase())+'" style="font-size:8px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;padding:0 6px;margin:0 0 4px">'+group+'</p>';
     fields.forEach(f => {
       const isTable = f.preview === 'TABLE';
-      const isBarcodeField = String(f.key || '').toLowerCase() === '{{barcode_value}}';
       const onclick = isTable
         ? "psAddElement('table','"+f.key.replace(/[{}]/g,'')+"')"
-        : (isBarcodeField ? "psAddElement('barcode',null,'"+f.key+"')" : "psAddElement('text',null,'"+f.key+"')");
-      html += '<button class="ps-field-btn" data-placeholder-code="'+psEscHtml(f.key)+'" onclick="'+onclick+'"><i class="bi '+f.icon+'"></i><span>'+f.label+'</span></button>';
+        : "psInsertVariableCode('"+f.key+"')";
+      html += '<button class="ps-field-btn" data-placeholder-code="'+psEscHtml(f.key)+'" data-erp-item data-erp-search="'+psEscHtml((String(f.label || '') + ' ' + String(f.key || '') + ' ' + String(f.preview || '')).toLowerCase())+'" onclick="'+onclick+'"><i class="bi '+f.icon+'"></i><span>'+f.label+'</span></button>';
     });
     html += '</div>';
   });
-  html += '<div style="padding:10px;border-top:1px solid #e2e8f0;background:#fff">';
-  html += '<p style="font-size:8px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px">Job Card Variable Codes</p>';
+  html += '<div data-erp-section="job-card-codes" style="padding:10px;border-top:1px solid #e2e8f0;background:#fff">';
+  html += '<p data-erp-section-title data-erp-search="job card variable codes" style="font-size:8px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px">Job Card Variable Codes</p>';
   Object.entries(JOB_CARD_VARIABLE_GROUPS).forEach(function(entry) {
     const group = entry[0];
     const codes = entry[1];
-    html += '<div style="margin-bottom:10px">';
-    html += '<div style="font-size:8px;font-weight:800;color:#cbd5e1;text-transform:uppercase;letter-spacing:1px;padding:0 4px 4px">'+psEscHtml(group)+'</div>';
+    html += '<div data-erp-section="job-card-'+psEscHtml(String(group || '').toLowerCase().replace(/\s+/g, '-'))+'" style="margin-bottom:10px">';
+    html += '<div data-erp-section-title data-erp-search="'+psEscHtml(String(group || '').toLowerCase())+'" style="font-size:8px;font-weight:800;color:#cbd5e1;text-transform:uppercase;letter-spacing:1px;padding:0 4px 4px">'+psEscHtml(group)+'</div>';
     codes.forEach(function(code) {
-      html += '<button class="ps-field-code-btn" data-placeholder-code="'+psEscHtml(code)+'" onclick="psInsertVariableCode(\''+psEscHtml(code)+'\')">';
+      html += '<button class="ps-field-code-btn" data-placeholder-code="'+psEscHtml(code)+'" data-erp-item data-erp-search="'+psEscHtml(String(code || '').toLowerCase())+'" onclick="psInsertVariableCode(\''+psEscHtml(code)+'\')">';
       html += '<code class="ps-field-code-value">'+psEscHtml(code)+'</code>';
       html += '</button>';
     });
     html += '</div>';
   });
   html += '</div>';
+  html += '<div id="ps-erp-search-empty" style="display:none;padding:10px;font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">No matching variables</div>';
   c.innerHTML = html;
+  psFilterErpFieldDirectory(psErpFieldSearchTerm);
   psRefreshErpFieldHighlights();
+}
+
+function psFilterErpFieldDirectory(rawTerm) {
+  const c = document.getElementById('ps-erp-fields');
+  if (!c) return;
+  const termRaw = String(rawTerm || '').trim();
+  const term = termRaw.toLowerCase();
+  psErpFieldSearchTerm = termRaw;
+  let visibleSectionCount = 0;
+
+  c.querySelectorAll('[data-erp-section]').forEach(function(section) {
+    const titleNode = section.querySelector('[data-erp-section-title]');
+    const titleHay = String((titleNode && (titleNode.getAttribute('data-erp-search') || titleNode.textContent)) || '').toLowerCase();
+    const titleMatch = term !== '' && titleHay.indexOf(term) !== -1;
+    let visibleItems = 0;
+
+    section.querySelectorAll('[data-erp-item]').forEach(function(item) {
+      const itemHay = String(item.getAttribute('data-erp-search') || item.textContent || '').toLowerCase();
+      const matched = term === '' || titleMatch || itemHay.indexOf(term) !== -1;
+      item.style.display = matched ? '' : 'none';
+      if (matched) visibleItems += 1;
+    });
+
+    const showSection = term === '' || titleMatch || visibleItems > 0;
+    section.style.display = showSection ? '' : 'none';
+    if (showSection) visibleSectionCount += 1;
+  });
+
+  const emptyNode = document.getElementById('ps-erp-search-empty');
+  if (emptyNode) emptyNode.style.display = visibleSectionCount === 0 ? '' : 'none';
 }
 
 // ============================================================
@@ -1303,7 +1356,8 @@ function psRenderElementContent(el, c) {
 
     case 'image':
       Object.assign(c.style, { borderRadius:br, opacity:op });
-      if (el.content) { c.innerHTML = '<img src="'+psEscHtml(el.content)+'" style="width:100%;height:100%;object-fit:contain;border-radius:'+br+'" alt="">'; }
+      var imgSrc = psProcessText(el.content || el.placeholder || '');
+      if (imgSrc) { c.innerHTML = '<img src="'+psEscHtml(imgSrc)+'" style="width:100%;height:100%;object-fit:contain;border-radius:'+br+'" alt="">'; }
       else { c.innerHTML = '<div style="width:100%;height:100%;border:2px dashed #d1d5db;display:flex;align-items:center;justify-content:center;font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase">No Image</div>'; }
       break;
 

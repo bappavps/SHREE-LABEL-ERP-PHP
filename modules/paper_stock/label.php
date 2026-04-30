@@ -10,9 +10,11 @@ require_once __DIR__ . '/../../includes/auth_check.php';
 $db = getDB();
 $appSettings = getAppSettings();
 $companyName = $appSettings['company_name'] ?? APP_NAME;
-$logoPath = $appSettings['logo_path'] ?? '';
-$logoUrl = $logoPath ? (BASE_URL . '/' . $logoPath) : '';
-$companyLogoUrl = $logoUrl !== '' ? $logoUrl : (BASE_URL . '/assets/img/logo.svg');
+$tenantLogoPath = (string)($appSettings['logo_path'] ?? '');
+$erpLogoPath = (string)($appSettings['erp_logo_path'] ?? '');
+$tenantLogoUrl = $tenantLogoPath !== '' ? appUrl($tenantLogoPath) : appUrl('assets/img/logo.svg');
+$erpLogoUrl = $erpLogoPath !== '' ? appUrl($erpLogoPath) : $tenantLogoUrl;
+$companyLogoUrl = $tenantLogoUrl;
 $themeColor = (string)($appSettings['sidebar_button_color'] ?? '#22c55e');
 
 if (!function_exists('resolveLabelBackUrl')) {
@@ -191,7 +193,7 @@ $printDateSlash = $printNow->format('n/j/Y');
 $printDateFormatted = $printNow->format('d M Y');
 $printDateDdMmYyyy = $printNow->format('d/m/Y');
 $printDateYmd = $printNow->format('Y-m-d');
-$jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSlash, $printDateFormatted, $printDateDdMmYyyy, $printDateYmd, $bundlePcs, $itemWidthParam, $batchNoParam, $batchLabelsParam, $jobNameParam, $rollsPerCarton, $jobNoToId, $rollNoToJobNo) {
+$jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSlash, $printDateFormatted, $printDateDdMmYyyy, $printDateYmd, $bundlePcs, $itemWidthParam, $batchNoParam, $batchLabelsParam, $jobNameParam, $rollsPerCarton, $jobNoToId, $rollNoToJobNo, $printType, $erpLogoUrl, $tenantLogoUrl) {
     $dateFormatted  = ($r['date_received'] ?? '') ? date('d M Y', strtotime($r['date_received'])) : '';
     $dateSlash      = ($r['date_received'] ?? '') ? date('n/j/Y', strtotime($r['date_received'])) : '';
     $dateDdMmYyyy   = ($r['date_received'] ?? '') ? date('d/m/Y', strtotime($r['date_received'])) : '';
@@ -225,6 +227,7 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSla
     $posBatchNo     = $batchBaseRaw !== '' ? ($batchBaseRaw . ' / ' . $companyCode) : ('NA / ' . $companyCode);
     $batchLabelsVal = trim((string)$batchLabelsParam);
     $itemWidthVal   = trim((string)$itemWidthParam) !== '' ? trim((string)$itemWidthParam) : $widthVal;
+    $templateWidthVal = in_array($printType, ['sticker', 'label'], true) ? $itemWidthVal : $widthVal;
     $bundlePcsVal   = trim((string)$bundlePcs) !== '' ? trim((string)$bundlePcs) : '0';
     $rollsPerCartonVal = trim((string)$rollsPerCarton) !== '' ? trim((string)$rollsPerCarton) : '0';
     $resolvedJobName = trim((string)$jobNameParam) !== '' ? trim((string)$jobNameParam) : (string)($r['job_name'] ?? '');
@@ -253,6 +256,10 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSla
         'remarks'         => $r['remarks'] ?? '',
         'company_name'    => $companyName,
         'company_address' => $companyAddr,
+        'erp_logo_url'    => $erpLogoUrl,
+        'tenant_logo_url' => $tenantLogoUrl,
+        'erp_logo'        => $erpLogoUrl,
+        'tenant_logo'     => $tenantLogoUrl,
         'paper_roll_title'=> 'PAPER ROLL',
         'item_width'      => $itemWidthVal,
         'bundle_pcs'      => $bundlePcsVal,
@@ -275,7 +282,7 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSla
         'scan_barcode_url'=> BASE_URL . '/modules/scan/index.php?qr=' . rawurlencode($jobToken !== '' ? $jobToken : ($jobNo !== '' ? ('JOB:' . $jobNo) : $rollToken)),
         // ── Firebase Print Studio aliases ──
         'paper_company'       => $paperCompany,
-        'width'               => $widthVal,
+        'width'               => $templateWidthVal,
         'length'              => $lengthVal,
         'weight'              => $weightVal,
         'roll_url'            => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$r['id'],
@@ -283,6 +290,10 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSla
         'job_card_url'        => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$r['id'],
         'job.companyName'     => $companyName,
         'job.companyAddress'  => $companyAddr,
+        'job.erpLogo'         => $erpLogoUrl,
+        'job.tenantLogo'      => $tenantLogoUrl,
+        'job.erpLogoUrl'      => $erpLogoUrl,
+        'job.tenantLogoUrl'   => $tenantLogoUrl,
         // Use actual print date for template field job.date.
         'job.date'            => $printDateSlash,
         'print_date'          => $printDateSlash,
@@ -321,7 +332,7 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSla
         'job.rollNo'          => $rollNo,
         'job.paperType'       => $paperType,
         'job.paperCompany'    => $paperCompany,
-        'job.width'           => $widthVal,
+        'job.width'           => $templateWidthVal,
         'job.length'          => $lengthVal,
         'job.gsm'             => $gsmVal,
         'job.weight'          => $weightVal,
@@ -532,12 +543,12 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f1f5f9; color: #
     height: 100%;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    justify-content: flex-start;
     text-align: center;
     font-family: Arial, Helvetica, sans-serif;
     color: #000;
     padding: 12px 14px;
-    gap: 0;
+    gap: 2px;
     background: #fff;
 }
 .pk150-title { 
@@ -558,18 +569,18 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f1f5f9; color: #
 .pk150-divider {
     height: 2px;
     background: #000;
-    margin: 6px 0;
+    margin: 4px 0;
     flex: 0 0 auto;
 }
 .pk150-barcode-wrap {
     display: flex;
     justify-content: center;
     align-items: center;
-    margin: 4px 0;
+    margin: 2px 0;
     flex: 0 0 auto;
 }
 .pk150-barcode-wrap svg {
-    max-width: 95%;
+    max-width: 78%;
     height: auto;
 }
 .pk150-product { 
@@ -968,10 +979,10 @@ function renderBuiltinLabel(roll, tpl) {
                     try {
                         JsBarcode(pk150Svg, barcodeValue, {
                             format: 'CODE128',
-                            width: 1.2,
-                            height: 28,
+                            width: 0.85,
+                            height: 24,
                             displayValue: true,
-                            fontSize: 10,
+                            fontSize: 9,
                             margin: 2
                         });
                     } catch (e) {
@@ -1265,7 +1276,7 @@ function renderCustomLabel(roll, tpl) {
             if (parseFloat(sty.borderRadius) > 0) {
                 imgWrap.style.borderRadius = sty.borderRadius + 'px';
             }
-            var imgSrc = el.content || el.src || '';
+            var imgSrc = replacePlaceholders(el.content || el.src || el.placeholder || '', roll);
             if (imgSrc) {
                 var img = document.createElement('img');
                 img.src = imgSrc;
