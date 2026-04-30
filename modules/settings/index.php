@@ -741,6 +741,15 @@ if ($libraryFilter !== 'all' && !isset($libraryCategories[$libraryFilter])) {
   $libraryFilter = 'all';
 }
 
+// Fetch paper types for autocomplete
+$paperTypeOptions = [];
+$paperTypesResult = $db->query("SELECT DISTINCT paper_type_name FROM (SELECT TRIM(COALESCE(paper_type, '')) AS paper_type_name FROM paper_stock UNION SELECT TRIM(COALESCE(name, '')) AS paper_type_name FROM master_paper_types) AS t WHERE paper_type_name <> '' ORDER BY paper_type_name ASC");
+if ($paperTypesResult) {
+  while ($row = $paperTypesResult->fetch_assoc()) {
+    $paperTypeOptions[] = trim((string)($row['paper_type_name'] ?? ''));
+  }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!verifyCSRF($_POST['csrf_token'] ?? '')) {
     setFlash('error', 'Security token mismatch. Please retry.');
@@ -1806,7 +1815,12 @@ include __DIR__ . '/../../includes/header.php';
             <option value="<?= e($k) ?>"><?= e($label) ?></option>
           <?php endforeach; ?>
         </select>
-        <input type="text" name="paper_type_tag" id="paper-type-tag-input" class="form-control" placeholder="Paper type name (e.g. Thermal Paper)" style="display:none;max-width:220px">
+        <input type="text" name="paper_type_tag" id="paper-type-tag-input" class="form-control" placeholder="Paper type (e.g. Thermal Paper)" style="display:none;max-width:220px" list="paperTypeList" autocomplete="off">
+        <datalist id="paperTypeList">
+          <?php foreach ($paperTypeOptions as $opt): ?>
+            <option value="<?= e($opt) ?>"></option>
+          <?php endforeach; ?>
+        </datalist>
         <input type="file" name="library_image" accept="image/png,image/jpeg,image/webp,image/gif" required>
         <button class="btn btn-primary" type="submit"><i class="bi bi-upload"></i> Upload</button>
       </form>
@@ -3376,7 +3390,12 @@ include __DIR__ . '/../../includes/header.php';
       
       <div style="margin-bottom:16px">
         <label style="display:block;font-weight:600;margin-bottom:8px;color:#334155">Paper Type Name</label>
-        <input type="text" name="paper_type" id="modalPaperType" placeholder="e.g., Thermal Paper, Chromo Matt" style="width:100%;padding:8px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:.95rem" required>
+        <input type="text" name="paper_type" id="modalPaperType" placeholder="e.g., Thermal Paper, Chromo Matt" style="width:100%;padding:8px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:.95rem" list="modalPaperTypeList" autocomplete="off" required>
+        <datalist id="modalPaperTypeList">
+          <?php foreach ($paperTypeOptions as $opt): ?>
+            <option value="<?= e($opt) ?>"></option>
+          <?php endforeach; ?>
+        </datalist>
       </div>
       
       <div style="display:flex;gap:12px;justify-content:space-between">
