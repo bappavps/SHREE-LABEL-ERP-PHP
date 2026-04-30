@@ -349,6 +349,36 @@ include __DIR__ . '/../../includes/header.php';
   </div>
 </div>
 
+<!-- ======================== VARIABLE DETAILS MODAL ======================== -->
+<div id="ps-variable-details-modal" style="display:none;position:fixed;inset:0;background:rgba(2,6,23,.58);z-index:10002;align-items:center;justify-content:center;padding:20px">
+  <div style="width:95%;max-width:1160px;max-height:88vh;background:white;border-radius:14px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px rgba(2,6,23,.3)">
+    <div style="padding:16px 20px;border-bottom:1px solid #e2e8f0;background:linear-gradient(120deg,#eff6ff,#f8fafc);display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+      <div>
+        <h3 style="margin:0;font-weight:900;text-transform:uppercase;font-size:1rem;display:flex;align-items:center;gap:8px"><i class="bi bi-journal-richtext" style="color:#2563eb"></i> Variable Documentation</h3>
+        <p style="margin:4px 0 0;font-size:.78rem;color:#475569;font-weight:600">Reference for custom label or sticker design using variables, components, and usage patterns.</p>
+      </div>
+      <button class="btn btn-sm btn-ghost" onclick="psCloseVariableDetails()" title="Close"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div style="padding:14px 20px;border-bottom:1px solid #e2e8f0;background:#fff;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px" id="ps-var-docs-summary"></div>
+    <div style="padding:10px 20px;border-bottom:1px solid #e2e8f0;background:#fff">
+      <div style="position:relative;max-width:440px">
+        <i class="bi bi-search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:12px;color:#94a3b8"></i>
+        <input id="ps-var-docs-search" type="text" class="ps-prop-input" placeholder="Search variable / code / section / component" oninput="psFilterVariableDetails(this.value)" style="margin-top:0;padding-left:32px;height:34px">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1.1fr 1fr;gap:0;min-height:0;flex:1">
+      <div style="border-right:1px solid #e2e8f0;overflow:auto">
+        <div style="padding:12px 20px;font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid #f1f5f9">Variable Catalog</div>
+        <div id="ps-var-docs-list" style="padding:10px 14px 14px"></div>
+      </div>
+      <div style="overflow:auto">
+        <div style="padding:12px 20px;font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid #f1f5f9">Component Guide</div>
+        <div id="ps-component-docs-list" style="padding:10px 14px 14px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ======================== FULL-SCREEN EDITOR ======================== -->
 <div id="ps-editor" style="display:none;position:fixed;inset:0;z-index:9999;background:#f1f5f9;flex-direction:column;font-family:Inter,sans-serif">
   <!-- Top Toolbar -->
@@ -370,6 +400,7 @@ include __DIR__ . '/../../includes/header.php';
         <button class="btn btn-xs" id="ps-snap-btn" onclick="psToggleSnap()" title="Grid Snap" style="color:#6366f1"><i class="bi bi-magnet"></i></button>
         <button class="btn btn-xs" id="ps-grid-btn" onclick="psToggleGrid()" title="Guidelines" style="color:#6366f1"><i class="bi bi-grid-3x3"></i></button>
       </div>
+      <button class="btn btn-sm" style="border:1px solid #e2e8f0;font-weight:700;font-size:.72rem" onclick="psOpenVariableDetails()"><i class="bi bi-journal-text"></i> Variable Details</button>
       <button class="btn btn-sm" style="border:1px solid #e2e8f0;font-weight:700;font-size:.72rem" onclick="psExportCurrent()"><i class="bi bi-download"></i> Export</button>
       <button class="btn btn-sm" style="border:1px solid #e2e8f0;font-weight:700;font-size:.72rem" id="ps-print-btn" onclick="psPrint()"><i class="bi bi-printer"></i> Print</button>
       <button class="btn btn-sm btn-primary" style="font-weight:800;padding:8px 20px" id="ps-save-btn" onclick="psSave()"><i class="bi bi-save"></i> Save</button>
@@ -497,6 +528,13 @@ textarea.ps-prop-input { resize:vertical;min-height:50px; }
 .ps-map-badge-secondary { background:#d1fae5; color:#047857; }
 .ps-map-badge-tertiary { background:#fef3c7; color:#b45309; }
 .ps-map-badge-quaternary { background:#f3e8ff; color:#7e22ce; }
+.ps-doc-stat { border:1px solid #dbeafe; background:#f8fbff; border-radius:10px; padding:10px 12px; }
+.ps-doc-stat-label { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color:#64748b; }
+.ps-doc-stat-value { margin-top:3px; font-size:18px; font-weight:900; color:#1e3a8a; }
+.ps-doc-card { border:1px solid #e2e8f0; border-radius:10px; padding:10px; margin-bottom:8px; background:#fff; }
+.ps-doc-card:hover { border-color:#bfdbfe; background:#f8fbff; }
+.ps-doc-code { display:inline-block; padding:3px 8px; border-radius:999px; background:#e0e7ff; color:#3730a3; font-size:10px; font-weight:800; }
+.ps-doc-meta { font-size:10px; color:#64748b; margin-top:5px; line-height:1.45; }
 @media print { #ps-editor, #ps-gallery, .ps-toast, #ps-create-modal, #ps-delete-modal { display:none!important; } }
 </style>
 
@@ -583,6 +621,8 @@ const PLACEHOLDERS = {
     { key:'{{paper_roll_title}}', label:'Paper Roll Title', icon:'bi-type-h1', preview:'PAPER ROLL' },
     { key:'{{paper_type}}', label:'Material Type', icon:'bi-file-text', preview:'THERMAL PAPER' },
     { key:'{{item_width}}', label:'Item Width (MM)', icon:'bi-arrows-expand', preview:'78' },
+    { key:'{{item_length}}', label:'Item Length (MM)', icon:'bi-arrow-left-right', preview:'100' },
+    { key:'{{pcs_per_roll}}', label:'Pcs Per Roll', icon:'bi-123', preview:'250' },
     { key:'{{bundle_pcs}}', label:'Rolls per Shrink Wrap', icon:'bi-123', preview:'5' },
     { key:'{{pos_batch_no}}', label:'POS Batch No', icon:'bi-upc', preview:'SLC/2026/0364-C/AB' },
     { key:'{{batch_display}}', label:'Batch Display (Multi-Roll)', icon:'bi-upc', preview:'SLC/2026/0365-B-A, SLC/2026/0365-B-B / AB' },
@@ -600,6 +640,8 @@ const PLACEHOLDERS = {
     { key:'{{batch_display}}', label:'Batch Display', icon:'bi-upc', preview:'SLC/2026/0365-B-A, SLC/2026/0365-B-B / AB' },
     { key:'{{job_name}}', label:'Product Name', icon:'bi-tag', preview:'THERMAL PAPER ROLL' },
     { key:'{{rolls_per_carton}}', label:'Qty Per Carton', icon:'bi-123', preview:'5' },
+    { key:'{{pcs_per_roll}}', label:'Pcs Per Roll', icon:'bi-123', preview:'250' },
+    { key:'{{total_pcs_per_carton}}', label:'Total Pcs Per Carton', icon:'bi-calculator', preview:'1250' },
     { key:'{{item_width}}', label:'Item Width (MM)', icon:'bi-arrows-expand', preview:'78' },
     { key:'{{company_name}}', label:'Company Name', icon:'bi-building', preview:'Shree Label' },
     { key:'{{company_address}}', label:'Company Address', icon:'bi-geo-alt', preview:'Kolkata, India' },
@@ -610,6 +652,24 @@ const PLACEHOLDERS = {
     { key:'{{scan_barcode_url}}', label:'Barcode Scan Link', icon:'bi-link-45deg', preview:(ERP_BASE_URL + '/modules/scan/index.php?qr=J6') },
     { key:'{{scan_job_url}}', label:'Job Scan URL', icon:'bi-link-45deg', preview:(ERP_BASE_URL + '/modules/scan/job.php?jn=OPL-PRL%2F2026%2F0006') },
     { key:'{{barcode_value}}', label:'Barcode Value', icon:'bi-upc-scan', preview:'J6' }
+  ],
+  'Label Printing': [
+    { key:'{{label_job_name}}', label:'Label Job Name', icon:'bi-tag', preview:'Bopp White 80x50' },
+    { key:'{{label_size}}', label:'Label Size (W×H mm)', icon:'bi-aspect-ratio', preview:'80 × 50 mm' },
+    { key:'{{label_width}}', label:'Label Width (MM)', icon:'bi-arrows-expand', preview:'80' },
+    { key:'{{label_height}}', label:'Label Height (MM)', icon:'bi-arrow-bar-down', preview:'50' },
+    { key:'{{label_material}}', label:'Label Material', icon:'bi-file-earmark', preview:'BOPP White' },
+    { key:'{{label_core_size}}', label:'Core Size', icon:'bi-circle', preview:'40mm' },
+    { key:'{{label_qty_per_roll}}', label:'Qty Per Roll', icon:'bi-123', preview:'1000' },
+    { key:'{{label_repeat_mm}}', label:'Repeat (MM)', icon:'bi-arrow-repeat', preview:'52' },
+    { key:'{{label_die_no}}', label:'Die Cut No', icon:'bi-scissors', preview:'D-1024' },
+    { key:'{{label_plate_no}}', label:'Plate No', icon:'bi-layers', preview:'P-5012' },
+    { key:'{{label_direction}}', label:'Print Direction', icon:'bi-arrow-clockwise', preview:'Outside' },
+    { key:'{{label_dispatch_date}}', label:'Dispatch Date', icon:'bi-calendar-check', preview:'05 May 2026' },
+    { key:'{{label_job_no}}', label:'Label Job Number', icon:'bi-briefcase', preview:'FLX/2026/0089' },
+    { key:'{{label_batch_no}}', label:'Label Batch No', icon:'bi-upc', preview:'SLC/2026/0089-A' },
+    { key:'{{label_company_name}}', label:'Client Company Name', icon:'bi-building', preview:'Shree Label' },
+    { key:'{{label_company_address}}', label:'Client Address', icon:'bi-geo-alt', preview:'Kolkata, India' }
   ]
 };
 
@@ -622,6 +682,17 @@ const DATE_FORMAT_OPTIONS = [
   { value:'{{job.receivedDate}}', label:'Received date slash', preview:'3/29/2026' },
   { value:'{{received_date_ddmmyyyy}}', label:'Received date DD/MM/YYYY', preview:'29/03/2026' },
   { value:'{{received_date_yyyymmdd}}', label:'Received date YYYY-MM-DD', preview:'2026-03-29' }
+];
+
+const PS_COMPONENT_CATALOG = [
+  { type:'text', icon:'bi-type', label:'Text', description:'Normal text, dynamic variable text, notes, item names.', recommended:'Product name, batch, width or length, qty info.' },
+  { type:'image', icon:'bi-image', label:'Image', description:'Logo or static image block. Supports variable URL like {{job.erpLogo}}.', recommended:'ERP logo, Tenant logo, brand icon.' },
+  { type:'rectangle', icon:'bi-square', label:'Shape', description:'Box or highlight region to separate sections.', recommended:'Header highlight, important info box.' },
+  { type:'line', icon:'bi-dash-lg', label:'Divider', description:'Horizontal or vertical separator.', recommended:'Split title, barcode area and footer.' },
+  { type:'barcode', icon:'bi-upc-scan', label:'Barcode', description:'Code128 or EAN barcode from variable/fixed value.', recommended:'Use {{barcode_value}} for label scan.' },
+  { type:'qr', icon:'bi-qr-code', label:'QR Code', description:'QR generated from URL/token variable.', recommended:'Use {{scan_job_url}} or {{scan_barcode_url}}.' },
+  { type:'circle', icon:'bi-circle', label:'Circle', description:'Badge or mark shape.', recommended:'Company code mark and QA seal style.' },
+  { type:'table', icon:'bi-table', label:'Table', description:'Structured multi-row data block.', recommended:'Job card source or output summary rows.' }
 ];
 
 const JOB_CARD_VARIABLE_GROUPS = {
@@ -703,6 +774,7 @@ let psGridSnap = 5;
 let psShowGrid = true;
 let psLastHighlightSignature = '';
 let psErpFieldSearchTerm = '';
+let psVarDocsSearchTerm = '';
 
 // ============================================================
 // HELPERS
@@ -1068,18 +1140,135 @@ function psDeselect(e) { if (e.target.id === 'ps-canvas-area' || e.target.id ===
 // LEFT SIDEBAR: COMPONENTS
 // ============================================================
 function psRenderComponents() {
-  const comps = [
-    { type:'text', icon:'bi-type', label:'Text' },
-    { type:'image', icon:'bi-image', label:'Image' },
-    { type:'rectangle', icon:'bi-square', label:'Shape' },
-    { type:'line', icon:'bi-dash-lg', label:'Divider' },
-    { type:'barcode', icon:'bi-upc-scan', label:'Barcode' },
-    { type:'qr', icon:'bi-qr-code', label:'QR Code' },
-    { type:'circle', icon:'bi-circle', label:'Circle' },
-    { type:'table', icon:'bi-table', label:'Table' }
-  ];
   const c = document.getElementById('ps-components');
-  c.innerHTML = comps.map(x => '<button class="ps-comp-btn" onclick="psAddElement(\''+x.type+'\')"><i class="bi '+x.icon+'"></i><span>'+x.label+'</span></button>').join('');
+  c.innerHTML = PS_COMPONENT_CATALOG.map(function(x) {
+    return '<button class="ps-comp-btn" onclick="psAddElement(\''+x.type+'\')"><i class="bi '+x.icon+'"></i><span>'+x.label+'</span></button>';
+  }).join('');
+}
+
+function psGetVariableDocs() {
+  const docs = [];
+  Object.entries(PLACEHOLDERS).forEach(function(entry) {
+    const section = entry[0];
+    const fields = entry[1] || [];
+    fields.forEach(function(field) {
+      docs.push({
+        section: section,
+        code: String(field.key || '').trim(),
+        label: String(field.label || field.key || '').trim(),
+        preview: String(field.preview || '').trim(),
+        type: 'Field Directory',
+        guidance: 'Use in text, barcode, QR, or image element as needed.'
+      });
+    });
+  });
+  Object.entries(JOB_CARD_VARIABLE_GROUPS).forEach(function(entry) {
+    const group = entry[0];
+    const codes = entry[1] || [];
+    codes.forEach(function(code) {
+      const normalized = String(code || '').trim();
+      if (!normalized) return;
+      const exists = docs.some(function(d) { return d.code === normalized; });
+      if (exists) return;
+      docs.push({
+        section: 'Job Card ' + group,
+        code: normalized,
+        label: normalized,
+        preview: PREVIEW_DATA[normalized.replace(/[{}]/g, '')] || '',
+        type: 'Job Card Code',
+        guidance: 'Best for technical job card mapping and machine-side docs.'
+      });
+    });
+  });
+  return docs;
+}
+
+function psRenderVariableDetails(termRaw) {
+  const term = String(termRaw || '').trim().toLowerCase();
+  const allVars = psGetVariableDocs();
+  const filteredVars = allVars.filter(function(v) {
+    if (!term) return true;
+    const hay = (v.section + ' ' + v.code + ' ' + v.label + ' ' + v.preview + ' ' + v.type + ' ' + v.guidance).toLowerCase();
+    return hay.indexOf(term) !== -1;
+  });
+  const filteredComps = PS_COMPONENT_CATALOG.filter(function(cmp) {
+    if (!term) return true;
+    const hay = (cmp.type + ' ' + cmp.label + ' ' + cmp.description + ' ' + cmp.recommended).toLowerCase();
+    return hay.indexOf(term) !== -1;
+  });
+
+  const sections = {};
+  allVars.forEach(function(v) { sections[v.section] = true; });
+  const summary = document.getElementById('ps-var-docs-summary');
+  if (summary) {
+    summary.innerHTML = ''
+      + '<div class="ps-doc-stat"><div class="ps-doc-stat-label">Total Variables</div><div class="ps-doc-stat-value">' + allVars.length + '</div></div>'
+      + '<div class="ps-doc-stat"><div class="ps-doc-stat-label">Filtered Variables</div><div class="ps-doc-stat-value">' + filteredVars.length + '</div></div>'
+      + '<div class="ps-doc-stat"><div class="ps-doc-stat-label">Variable Sections</div><div class="ps-doc-stat-value">' + Object.keys(sections).length + '</div></div>'
+      + '<div class="ps-doc-stat"><div class="ps-doc-stat-label">Components</div><div class="ps-doc-stat-value">' + PS_COMPONENT_CATALOG.length + '</div></div>';
+  }
+
+  const varList = document.getElementById('ps-var-docs-list');
+  if (varList) {
+    if (!filteredVars.length) {
+      varList.innerHTML = '<div style="padding:14px;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase">No variable matched your search.</div>';
+    } else {
+      varList.innerHTML = filteredVars.map(function(v) {
+        const previewText = v.preview !== '' ? v.preview : '-';
+        return ''
+          + '<div class="ps-doc-card">'
+          + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
+          + '<div style="font-size:11px;font-weight:800;color:#0f172a">' + psEscHtml(v.label) + '</div>'
+          + '<span class="ps-doc-code">' + psEscHtml(v.type) + '</span>'
+          + '</div>'
+          + '<div style="margin-top:7px"><code class="ps-field-code-value">' + psEscHtml(v.code) + '</code></div>'
+          + '<div class="ps-doc-meta"><strong>Section:</strong> ' + psEscHtml(v.section) + '</div>'
+          + '<div class="ps-doc-meta"><strong>Preview:</strong> ' + psEscHtml(previewText) + '</div>'
+          + '<div class="ps-doc-meta"><strong>Usage:</strong> ' + psEscHtml(v.guidance) + '</div>'
+          + '</div>';
+      }).join('');
+    }
+  }
+
+  const compList = document.getElementById('ps-component-docs-list');
+  if (compList) {
+    if (!filteredComps.length) {
+      compList.innerHTML = '<div style="padding:14px;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase">No component matched your search.</div>';
+    } else {
+      compList.innerHTML = filteredComps.map(function(cmp) {
+        return ''
+          + '<div class="ps-doc-card">'
+          + '<div style="display:flex;align-items:center;gap:8px">'
+          + '<i class="bi ' + psEscHtml(cmp.icon) + '" style="font-size:15px;color:#2563eb"></i>'
+          + '<div style="font-size:12px;font-weight:800;color:#0f172a">' + psEscHtml(cmp.label) + '</div>'
+          + '</div>'
+          + '<div class="ps-doc-meta"><strong>Type:</strong> ' + psEscHtml(cmp.type) + '</div>'
+          + '<div class="ps-doc-meta"><strong>Details:</strong> ' + psEscHtml(cmp.description) + '</div>'
+          + '<div class="ps-doc-meta"><strong>Best Use:</strong> ' + psEscHtml(cmp.recommended) + '</div>'
+          + '</div>';
+      }).join('');
+    }
+  }
+}
+
+function psOpenVariableDetails() {
+  const modal = document.getElementById('ps-variable-details-modal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  const input = document.getElementById('ps-var-docs-search');
+  if (input) input.value = psVarDocsSearchTerm;
+  psRenderVariableDetails(psVarDocsSearchTerm);
+}
+
+function psFilterVariableDetails(term) {
+  psVarDocsSearchTerm = String(term || '').trim();
+  psRenderVariableDetails(psVarDocsSearchTerm);
+}
+
+function psCloseVariableDetails() {
+  const modal = document.getElementById('ps-variable-details-modal');
+  if (!modal) return;
+  modal.style.display = 'none';
 }
 
 function psRenderErpFields() {
@@ -1835,7 +2024,7 @@ document.addEventListener('keydown', function(e) {
   psSyncDocTypeDefaults();
 
   // Close modals on click outside
-  ['ps-create-modal','ps-delete-modal','ps-library-modal'].forEach(id => {
+  ['ps-create-modal','ps-delete-modal','ps-library-modal','ps-variable-details-modal'].forEach(id => {
     const modal = document.getElementById(id);
     if (modal) modal.addEventListener('click', function(e) { if (e.target === modal) modal.style.display = 'none'; });
   });

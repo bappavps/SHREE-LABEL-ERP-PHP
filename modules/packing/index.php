@@ -2958,6 +2958,52 @@ include __DIR__ . '/../../includes/header.php';
         return '';
       }
 
+      function getStickerItemLength() {
+        function normalizeLen(v) {
+          if (v === null || typeof v === 'undefined') return '';
+          var raw = String(v).replace(/\s*mm$/i, '').trim();
+          if (!raw) return '';
+          var n = Number(raw.replace(/,/g, ''));
+          if (isNaN(n) || n <= 0 || n > 1000) return '';
+          return Math.abs(n - Math.round(n)) < 0.001 ? String(Math.round(n)) : String(n.toFixed(2)).replace(/\.00$/, '');
+        }
+
+        var candidate = '';
+        var jobExtra = (job && job.job_extra_data && typeof job.job_extra_data === 'object') ? job.job_extra_data : {};
+        var planExtra = (job && job.plan_extra_data && typeof job.plan_extra_data === 'object') ? job.plan_extra_data : {};
+
+        // First priority: "Item Length" value from Section A detail grid.
+        var detailItems = section.querySelectorAll('.pk-jc-detail-item');
+        for (var d = 0; d < detailItems.length; d++) {
+          var labelNode = detailItems[d].querySelector('b');
+          var valueNode = detailItems[d].querySelector('span');
+          var lbl = labelNode ? String(labelNode.textContent || '').trim().toLowerCase() : '';
+          if (lbl === 'item length') {
+            candidate = normalizeLen(valueNode ? valueNode.textContent : '');
+            if (candidate) return candidate;
+          }
+        }
+
+        var picks = [
+          job && job.planning_size_height_mm,
+          job && job.item_length_mm,
+          job && job.item_length,
+          planExtra.planning_size_height_mm,
+          planExtra.size_height_mm,
+          planExtra.item_length_mm,
+          planExtra.item_length,
+          jobExtra.item_length_mm,
+          jobExtra.item_length
+        ];
+
+        for (var i = 0; i < picks.length; i++) {
+          candidate = normalizeLen(picks[i]);
+          if (candidate) return candidate;
+        }
+
+        return '';
+      }
+
       function resolvePaperStockId() {
         if (targetPaperStockId > 0) {
           return Promise.resolve(targetPaperStockId);
@@ -3073,6 +3119,8 @@ include __DIR__ . '/../../includes/header.php';
         var rollsPerShrinkWrap = Number((section.querySelector('.pk-roll-rps') || {}).value || 0);
         if (!rollsPerShrinkWrap || rollsPerShrinkWrap < 1) rollsPerShrinkWrap = 5;
         var stickerItemWidth = getStickerItemWidth();
+        var stickerItemLength = getStickerItemLength();
+        var stickerPcsPerRoll = bprFromSources > 0 ? bprFromSources : '';
         var batches = (Array.isArray(currentPackingBatches) && currentPackingBatches.length) ? currentPackingBatches : null;
         var backUrl = window.location.href;
 
@@ -3099,6 +3147,8 @@ include __DIR__ . '/../../includes/header.php';
                 + '&bundle_pcs=' + encodeURIComponent(String(rollsPerShrinkWrap))
                 + '&rolls_per_carton=' + encodeURIComponent(String(rollsPerCarton || 0))
                 + '&item_width=' + encodeURIComponent(String(stickerItemWidth || ''))
+                + '&item_length=' + encodeURIComponent(String(stickerItemLength || ''))
+                + '&pcs_per_roll=' + encodeURIComponent(String(stickerPcsPerRoll || ''))
                 + '&job_name=' + encodeURIComponent(labelJobName)
                 + '&batch_labels=' + encodeURIComponent(labelBatchNo)
                 + '&batch_no=' + encodeURIComponent(labelBatchNo)
@@ -3115,6 +3165,8 @@ include __DIR__ . '/../../includes/header.php';
                 + '&label_size=' + encodeURIComponent(sizeParam)
                 + '&bundle_pcs=' + encodeURIComponent(String(rollsPerShrinkWrap))
                 + '&item_width=' + encodeURIComponent(String(stickerItemWidth || ''))
+                + '&item_length=' + encodeURIComponent(String(stickerItemLength || ''))
+                + '&pcs_per_roll=' + encodeURIComponent(String(stickerPcsPerRoll || ''))
                 + (selectedRollInfo ? ('&batch_no=' + encodeURIComponent(selectedRollInfo.batchNo) + '&batch_label=' + encodeURIComponent(selectedRollInfo.rollNo)) : '')
             ];
           } else {
@@ -3130,6 +3182,8 @@ include __DIR__ . '/../../includes/header.php';
                 + '&label_size=' + encodeURIComponent(sizeParam)
                 + '&bundle_pcs=' + encodeURIComponent(String(rollsPerShrinkWrap))
                 + '&item_width=' + encodeURIComponent(String(stickerItemWidth || ''))
+                + '&item_length=' + encodeURIComponent(String(stickerItemLength || ''))
+                + '&pcs_per_roll=' + encodeURIComponent(String(stickerPcsPerRoll || ''))
                 + '&batch_label=' + encodeURIComponent(batchLabel);
             }).filter(function(v) { return v !== ''; });
           }
@@ -3351,6 +3405,8 @@ include __DIR__ . '/../../includes/header.php';
         var rollsPerShrinkWrap = Number((section.querySelector('.pk-roll-rps') || {}).value || 0);
         if (!rollsPerShrinkWrap || rollsPerShrinkWrap < 1) rollsPerShrinkWrap = 5;
         var stickerItemWidth = getStickerItemWidth();
+        var stickerItemLength = getStickerItemLength();
+        var stickerPcsPerRoll = bprFromSources > 0 ? bprFromSources : '';
         var backUrl = window.location.href;
 
         // Use the same barcode value as sticker print: for each selected roll, batch_no and batch_labels should be the roll number
@@ -3381,6 +3437,8 @@ include __DIR__ . '/../../includes/header.php';
             + '&bundle_pcs=' + encodeURIComponent(String(rollsPerShrinkWrap))
             + '&rolls_per_carton=' + encodeURIComponent(String(rollsPerCarton || 0))
             + '&item_width=' + encodeURIComponent(String(stickerItemWidth || ''))
+            + '&item_length=' + encodeURIComponent(String(stickerItemLength || ''))
+            + '&pcs_per_roll=' + encodeURIComponent(String(stickerPcsPerRoll || ''))
             + '&job_name=' + encodeURIComponent(labelJobName)
             + '&batch_labels=' + encodeURIComponent(batchLabels)
             + '&batch_no=' + encodeURIComponent(batchNo)

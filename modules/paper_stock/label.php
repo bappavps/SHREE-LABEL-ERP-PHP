@@ -54,11 +54,14 @@ if ($printType === '' && in_array($sizeParam, ['40x25', '40×25', '40*25'], true
 $bundlePcsParam = trim((string)($_GET['bundle_pcs'] ?? ''));
 $bundlePcs = is_numeric($bundlePcsParam) ? (string)(int)$bundlePcsParam : '';
 $itemWidthParam = trim((string)($_GET['item_width'] ?? ''));
+$itemLengthParam = trim((string)($_GET['item_length'] ?? ''));
 $batchNoParam = trim((string)($_GET['batch_no'] ?? ''));
 $batchLabelsParam = trim((string)($_GET['batch_labels'] ?? ''));
 $jobNameParam = trim((string)($_GET['job_name'] ?? ''));
 $rollsPerCartonParam = trim((string)($_GET['rolls_per_carton'] ?? ''));
 $rollsPerCarton = is_numeric($rollsPerCartonParam) ? (string)(int)$rollsPerCartonParam : '';
+$pcsPerRollParam = trim((string)($_GET['pcs_per_roll'] ?? ''));
+$pcsPerRoll = is_numeric($pcsPerRollParam) ? (string)(int)$pcsPerRollParam : '';
 $mixedEnabledParam = (int)($_GET['mixed_enabled'] ?? 0);
 $mixedCartonsParam = trim((string)($_GET['mixed_cartons'] ?? ''));
 $mixedExtraRollsParam = trim((string)($_GET['mixed_extra_rolls'] ?? ''));
@@ -188,12 +191,13 @@ if ($tplRes) { while ($t = $tplRes->fetch_assoc()) $templates[] = $t; }
 
 // JS-safe roll data (includes Firebase Print Studio compatible aliases)
 $companyAddr = $appSettings['company_address'] ?? '';
+$companyAddrSafe = trim((string)$companyAddr) !== '' ? (string)$companyAddr : '-';
 $printNow = new DateTime('now', new DateTimeZone('Asia/Kolkata'));
 $printDateSlash = $printNow->format('n/j/Y');
 $printDateFormatted = $printNow->format('d M Y');
 $printDateDdMmYyyy = $printNow->format('d/m/Y');
 $printDateYmd = $printNow->format('Y-m-d');
-$jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSlash, $printDateFormatted, $printDateDdMmYyyy, $printDateYmd, $bundlePcs, $itemWidthParam, $batchNoParam, $batchLabelsParam, $jobNameParam, $rollsPerCarton, $jobNoToId, $rollNoToJobNo, $printType, $erpLogoUrl, $tenantLogoUrl) {
+$jsRolls = array_map(function($r) use ($companyName, $companyAddrSafe, $printDateSlash, $printDateFormatted, $printDateDdMmYyyy, $printDateYmd, $bundlePcs, $itemWidthParam, $itemLengthParam, $batchNoParam, $batchLabelsParam, $jobNameParam, $rollsPerCarton, $pcsPerRoll, $jobNoToId, $rollNoToJobNo, $printType, $erpLogoUrl, $tenantLogoUrl) {
     $dateFormatted  = ($r['date_received'] ?? '') ? date('d M Y', strtotime($r['date_received'])) : '';
     $dateSlash      = ($r['date_received'] ?? '') ? date('n/j/Y', strtotime($r['date_received'])) : '';
     $dateDdMmYyyy   = ($r['date_received'] ?? '') ? date('d/m/Y', strtotime($r['date_received'])) : '';
@@ -227,9 +231,24 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSla
     $posBatchNo     = $batchBaseRaw !== '' ? ($batchBaseRaw . ' / ' . $companyCode) : ('NA / ' . $companyCode);
     $batchLabelsVal = trim((string)$batchLabelsParam);
     $itemWidthVal   = trim((string)$itemWidthParam) !== '' ? trim((string)$itemWidthParam) : $widthVal;
+    $itemLengthVal  = trim((string)$itemLengthParam) !== '' ? trim((string)$itemLengthParam) : '';
     $templateWidthVal = in_array($printType, ['sticker', 'label'], true) ? $itemWidthVal : $widthVal;
     $bundlePcsVal   = trim((string)$bundlePcs) !== '' ? trim((string)$bundlePcs) : '0';
     $rollsPerCartonVal = trim((string)$rollsPerCarton) !== '' ? trim((string)$rollsPerCarton) : '0';
+    $pcsPerRollFallback = '';
+    $pcsRollKeys = ['barcode_in_1_roll', 'barcode_per_roll', 'barcode_qty_per_roll', 'pcs_per_roll', 'pieces_per_roll', 'qty_per_roll', 'quantity_per_roll', 'planning_pcs_per_roll'];
+    foreach ($pcsRollKeys as $pcsKey) {
+        if (isset($r[$pcsKey]) && is_numeric((string)$r[$pcsKey]) && (int)$r[$pcsKey] > 0) {
+            $pcsPerRollFallback = (string)(int)$r[$pcsKey];
+            break;
+        }
+    }
+    $pcsPerRollVal = trim((string)$pcsPerRoll) !== '' && is_numeric((string)$pcsPerRoll) && (int)$pcsPerRoll > 0
+        ? (string)(int)$pcsPerRoll
+        : $pcsPerRollFallback;
+    $totalPcsPerCartonVal = (is_numeric($pcsPerRollVal) && is_numeric($rollsPerCartonVal) && (int)$rollsPerCartonVal > 0)
+        ? (string)((int)$pcsPerRollVal * (int)$rollsPerCartonVal)
+        : '';
     $resolvedJobName = trim((string)$jobNameParam) !== '' ? trim((string)$jobNameParam) : (string)($r['job_name'] ?? '');
     $productTitle = 'SLC - ' . ($resolvedJobName !== '' ? $resolvedJobName : '-');
     return [
@@ -255,16 +274,19 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSla
         'company_code'    => $companyCode,
         'remarks'         => $r['remarks'] ?? '',
         'company_name'    => $companyName,
-        'company_address' => $companyAddr,
+        'company_address' => $companyAddrSafe,
         'erp_logo_url'    => $erpLogoUrl,
         'tenant_logo_url' => $tenantLogoUrl,
         'erp_logo'        => $erpLogoUrl,
         'tenant_logo'     => $tenantLogoUrl,
         'paper_roll_title'=> 'PAPER ROLL',
         'item_width'      => $itemWidthVal,
+        'item_length'     => $itemLengthVal,
         'bundle_pcs'      => $bundlePcsVal,
         'rolls_per_shrink_wrap' => $bundlePcsVal,
         'rolls_per_carton' => $rollsPerCartonVal,
+        'pcs_per_roll'    => $pcsPerRollVal,
+        'total_pcs_per_carton' => $totalPcsPerCartonVal,
         'batch_no'        => $posBatchNo,
         'batch_labels'    => $batchLabelsVal,
         'batch_display'   => $batchLabelsVal !== '' ? ($batchLabelsVal . ' / ' . $companyCode) : $posBatchNo,
@@ -289,11 +311,28 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddr, $printDateSla
         'view_url'            => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$r['id'],
         'job_card_url'        => BASE_URL . '/modules/paper_stock/view.php?id=' . (int)$r['id'],
         'job.companyName'     => $companyName,
-        'job.companyAddress'  => $companyAddr,
+        'job.companyAddress'  => $companyAddrSafe,
         'job.erpLogo'         => $erpLogoUrl,
         'job.tenantLogo'      => $tenantLogoUrl,
         'job.erpLogoUrl'      => $erpLogoUrl,
         'job.tenantLogoUrl'   => $tenantLogoUrl,
+        // Label Printing aliases
+        'label_job_name'      => $resolvedJobName,
+        'label_size'          => ($itemWidthVal !== '' && $itemLengthVal !== '') ? ($itemWidthVal . ' × ' . $itemLengthVal . ' mm') : (($itemWidthVal !== '') ? ($itemWidthVal . ' mm') : ''),
+        'label_width'         => $itemWidthVal,
+        'label_height'        => $itemLengthVal,
+        'label_material'      => $paperType,
+        'label_core_size'     => (string)($r['job_size'] ?? ''),
+        'label_qty_per_roll'  => $pcsPerRollVal,
+        'label_repeat_mm'     => '',
+        'label_die_no'        => '',
+        'label_plate_no'      => '',
+        'label_direction'     => '',
+        'label_dispatch_date' => '',
+        'label_job_no'        => $jobNo,
+        'label_batch_no'      => $posBatchNo,
+        'label_company_name'  => $companyName,
+        'label_company_address' => $companyAddrSafe,
         // Use actual print date for template field job.date.
         'job.date'            => $printDateSlash,
         'print_date'          => $printDateSlash,
@@ -848,8 +887,8 @@ function getStatusClass(status) {
 function replacePlaceholders(text, roll) {
     return String(text || '').replace(/\{\{([^}]+)\}\}|\{(\w+)\}/g, function(match, dblKey, sglKey) {
         var key = (dblKey || sglKey || '').trim();
-        if (roll[key] !== undefined && roll[key] !== null && roll[key] !== '') return roll[key];
-        return match;
+        if (roll[key] !== undefined && roll[key] !== null) return String(roll[key]);
+        return '';
     });
 }
 
