@@ -2231,12 +2231,14 @@ include __DIR__ . '/../../includes/header.php';
                   }
                 }
 
-                function renderHelperCards(selectedRolls) {
+                function renderHelperCards(selectedRolls, splitQtyArr) {
                   if (!helperCardsWrap) return;
                   helperCardsWrap.innerHTML = selectedRolls.map(function(roll, idx) {
                     var key = String(roll.rollNo || ('roll-' + String(idx)));
                     var st = rollHelperOverrides[key] || {};
-                    var qty = Math.max(0, Math.min(toNum(roll.productionQty), toNum(roll.availableQty)));
+                    var qty = (splitQtyArr && splitQtyArr[idx] != null)
+                      ? splitQtyArr[idx]
+                      : Math.max(0, Math.min(toNum(roll.productionQty), toNum(roll.availableQty)));
                     if (isBarcodeMode) {
                       var bprDefault = barcodePerRollNum;
                       var bpr = Object.prototype.hasOwnProperty.call(st, 'bpr') ? Math.max(1, Math.floor(toNum(st.bpr))) : bprDefault;
@@ -2334,19 +2336,15 @@ include __DIR__ . '/../../includes/header.php';
                   }
                   if (isBarcodeMode) {
                     Array.prototype.slice.call(helperCardsWrap.querySelectorAll('.pk-bc-per-roll')).forEach(function(node) {
-                      node.addEventListener('input', function() { saveAndRecalc(node, 'bpr'); });
                       node.addEventListener('change', function() { saveAndRecalc(node, 'bpr'); });
                     });
                     Array.prototype.slice.call(helperCardsWrap.querySelectorAll('.pk-bc-total-rolls-input')).forEach(function(node) {
-                      node.addEventListener('input', function() { saveAndRecalc(node, 'total_rolls'); });
                       node.addEventListener('change', function() { saveAndRecalc(node, 'total_rolls'); });
                     });
                     Array.prototype.slice.call(helperCardsWrap.querySelectorAll('.pk-bc-rolls-per-carton-input')).forEach(function(node) {
-                      node.addEventListener('input', function() { saveAndRecalc(node, 'rolls_per_carton'); });
                       node.addEventListener('change', function() { saveAndRecalc(node, 'rolls_per_carton'); });
                     });
                     Array.prototype.slice.call(helperCardsWrap.querySelectorAll('.pk-bc-extra-pcs-input')).forEach(function(node) {
-                      node.addEventListener('input', function() { saveAndRecalc(node, 'extra_pcs'); });
                       node.addEventListener('change', function() { saveAndRecalc(node, 'extra_pcs'); });
                     });
                     Array.prototype.slice.call(helperCardsWrap.querySelectorAll('.pk-bc-csize')).forEach(function(node) {
@@ -2403,8 +2401,14 @@ include __DIR__ . '/../../includes/header.php';
                   });
                   var parentKeyCount = Object.keys(parentKeySet).length;
                   var qtyCount = Object.keys(qtySet).length;
-                  var sharedSplitMode = selectedRolls.length > 1 && parentKeyCount === 1 && qtyCount === 1;
-                  var sharedReceivedQty = sharedSplitMode && splitMeta.length ? splitMeta[0].qty : 0;
+                  // If all selected rolls carry the same source qty, treat it as a shared lot
+                  // and split production across selected rolls (even when parent rolls differ).
+                  var sharedSplitMode = selectedRolls.length > 1 && qtyCount === 1;
+                  var sharedReceivedQty = 0;
+                  if (sharedSplitMode) {
+                    var splitBaseQty = splitMeta.length ? splitMeta[0].qty : 0;
+                    sharedReceivedQty = prodQty > 0 ? Math.min(prodQty, splitBaseQty) : splitBaseQty;
+                  }
 
                   if (!selectedRolls.length) {
                     if (helperCardsWrap) helperCardsWrap.innerHTML = '';
@@ -2419,7 +2423,12 @@ include __DIR__ . '/../../includes/header.php';
                   }
                   seedSubmittedDefaultsForSelection(selectedRolls);
                   if (helperHiddenMsg) helperHiddenMsg.style.display = 'none';
-                  renderHelperCards(selectedRolls);
+                  var splitQtyArr = sharedSplitMode
+                    ? selectedRolls.map(function(r, ri) {
+                        return Math.max(0, Math.floor(sharedReceivedQty / Math.max(1, selectedRolls.length)) + (ri < (Math.floor(sharedReceivedQty) % Math.max(1, selectedRolls.length)) ? 1 : 0));
+                      })
+                    : null;
+                  renderHelperCards(selectedRolls, splitQtyArr);
                   bindHelperCardEvents();
 
                   var totalBundlesNum = 0;

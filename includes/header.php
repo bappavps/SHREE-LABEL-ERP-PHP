@@ -131,8 +131,8 @@ $notificationDeptCsv = implode(',', $notificationDepartments);
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title><?= e($pageTitle) ?> — <?= e($erpDisplayName) ?></title>
 <meta name="csrf-token" content="<?= e($csrfToken) ?>">
-<link rel="icon" href="<?= e($companyLogoUrl) ?>">
-<link rel="apple-touch-icon" href="<?= e($companyLogoUrl) ?>">
+<link rel="icon" type="image/png" sizes="192x192" href="<?= e(appUrl('pwa_icon.php?size=192')) ?>">
+<link rel="apple-touch-icon" sizes="192x192" href="<?= e(appUrl('pwa_icon.php?size=192')) ?>">
 <link rel="manifest" href="<?= e(appUrl('manifest.php')) ?>">
 <meta name="theme-color" content="<?= e($themeColor) ?>">
 <link rel="preconnect" href="https://fonts.googleapis.com">

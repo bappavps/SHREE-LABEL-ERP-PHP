@@ -1301,7 +1301,9 @@ include __DIR__ . '/../../../includes/header.php';
       });
       var parentKeyCount = Object.keys(parentKeySet).length;
       var qtyCount = Object.keys(qtySet).length;
-      var sharedSplitMode = selectedRolls.length > 1 && parentKeyCount === 1 && qtyCount === 1;
+      // If all selected rolls carry the same source qty, treat it as a shared lot
+      // and split production across selected rolls (even when parent rolls differ).
+      var sharedSplitMode = selectedRolls.length > 1 && qtyCount === 1;
       var sharedReceivedQty = sharedSplitMode && splitMeta.length ? splitMeta[0].qty : 0;
 
       renderPerRollCards(selectedRolls.map(function(roll, idx) {

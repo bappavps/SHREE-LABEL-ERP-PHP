@@ -8,6 +8,8 @@ $erpLogoPath = trim((string)($settings['erp_logo_path'] ?? ''));
 $logoPath = trim((string)($settings['logo_path'] ?? ''));
 $iconPath = $erpLogoPath !== '' ? $erpLogoPath : $logoPath;
 $iconSrc = $iconPath !== '' ? appUrl($iconPath) : appUrl('assets/img/logo.svg');
+$pwaIcon192 = appUrl('pwa_icon.php?size=192');
+$pwaIcon512 = appUrl('pwa_icon.php?size=512');
 $themeColor = trim((string)($settings['sidebar_button_color'] ?? '#22c55e')) ?: '#22c55e';
 $iconExt = strtolower(pathinfo($iconSrc, PATHINFO_EXTENSION));
 $mimeMap = [
@@ -31,16 +33,22 @@ $manifest = [
     'theme_color' => $themeColor,
     'icons' => [
         [
-            'src' => $iconSrc,
+            'src' => $pwaIcon192,
             'sizes' => '192x192',
-            'type' => $iconType,
-            'purpose' => 'any maskable'
+            'type' => 'image/png',
+            'purpose' => 'any'
         ],
         [
-            'src' => $iconSrc,
+            'src' => $pwaIcon512,
             'sizes' => '512x512',
-            'type' => $iconType,
-            'purpose' => 'any maskable'
+            'type' => 'image/png',
+            'purpose' => 'any'
+        ],
+        [
+            'src' => $pwaIcon512,
+            'sizes' => '512x512',
+            'type' => 'image/png',
+            'purpose' => 'maskable'
         ]
     ]
 ];
