@@ -2,34 +2,61 @@
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';
 require_once __DIR__ . '/../../includes/auth_check.php';
+require_once __DIR__ . '/../../artwork-system/config.php';
+require_once __DIR__ . '/../../artwork-system/includes/Db.php';
+require_once __DIR__ . '/../../artwork-system/includes/functions.php';
 
-$pageTitle = 'Artwork Gallery';
-include __DIR__ . '/../../includes/header.php';
-?>
+// auth_check.php already validated current ERP session and RBAC page access.
+$erpUserId = (int)($_SESSION['user_id'] ?? 0);
+$erpEmail = trim((string)($_SESSION['user_email'] ?? ''));
+$erpName = trim((string)($_SESSION['user_name'] ?? ''));
+$erpRole = trim((string)($_SESSION['role'] ?? ''));
 
-<div class="breadcrumb">
-  <a href="<?= BASE_URL ?>/modules/dashboard/index.php">Dashboard</a>
-  <span class="breadcrumb-sep">&#8250;</span>
-  <span>Design & Prepress</span>
-  <span class="breadcrumb-sep">&#8250;</span>
-  <span>Artwork Gallery</span>
-</div>
+if ($erpUserId <= 0) {
+    setFlash('error', 'Unable to start Artwork plugin session. Please sign in again.');
+    redirect(BASE_URL . '/auth/login.php');
+}
 
-<div class="page-header">
-  <div>
-    <h1>Artwork Gallery</h1>
-    <p>This module is under development.</p>
-  </div>
-</div>
+if ($erpName === '') {
+    $erpName = 'ERP User ' . $erpUserId;
+}
+if ($erpEmail === '') {
+    $erpEmail = 'erp-user-' . $erpUserId . '@local.invalid';
+}
 
-<div class="card">
-  <div class="card-header">
-    <span class="card-title">Artwork Gallery</span>
-  </div>
-  <div style="padding:40px;text-align:center;color:#6b7280">
-    <i class="bi bi-tools" style="font-size:2.5rem;opacity:.3"></i>
-    <p style="margin-top:12px;font-size:.9rem">This page will be implemented in the next phase.</p>
-  </div>
-</div>
+$pluginRole = ($erpRole === 'admin') ? 'admin' : 'designer';
 
-<?php include __DIR__ . '/../../includes/footer.php'; ?>
+try {
+    $artDb = Db::getInstance();
+    ensureDefaultAuthUsers($artDb);
+
+    $find = $artDb->prepare('SELECT id FROM artwork_users WHERE email = ? LIMIT 1');
+    $find->execute([$erpEmail]);
+    $pluginUserId = (int)$find->fetchColumn();
+
+    if ($pluginUserId > 0) {
+        $upd = $artDb->prepare('UPDATE artwork_users SET name = ?, role = ? WHERE id = ?');
+        $upd->execute([$erpName, $pluginRole, $pluginUserId]);
+    } else {
+        $randomPasswordHash = password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT);
+        $ins = $artDb->prepare('INSERT INTO artwork_users (name, email, password, role) VALUES (?, ?, ?, ?)');
+        $ins->execute([$erpName, $erpEmail, $randomPasswordHash, $pluginRole]);
+        $pluginUserId = (int)$artDb->lastInsertId();
+    }
+
+    if ($pluginUserId <= 0) {
+        throw new RuntimeException('Plugin account provisioning failed.');
+    }
+
+    setAuthSession([
+        'id' => $pluginUserId,
+        'name' => $erpName,
+        'role' => $pluginRole,
+    ]);
+
+    redirect(BASE_URL . '/artwork-system/designer/index.php');
+} catch (Throwable $e) {
+    error_log('Artwork bridge error: ' . $e->getMessage());
+    setFlash('error', 'Artwork plugin is temporarily unavailable. Please contact admin.');
+    redirect(BASE_URL . '/modules/dashboard/index.php');
+}

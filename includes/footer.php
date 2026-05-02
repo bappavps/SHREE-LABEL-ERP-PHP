@@ -12,6 +12,7 @@
 
 </div><!-- /.main-wrapper -->
 </div><!-- /.app-shell -->
+<script src="<?= BASE_URL ?>/assets/js/push-notification.js?v=<?= @filemtime(__DIR__ . '/../assets/js/push-notification.js') ?: time() ?>"></script>
 <script src="<?= BASE_URL ?>/assets/js/app.js?v=<?= @filemtime(__DIR__ . '/../assets/js/app.js') ?: time() ?>"></script>
 </body>
 </html>

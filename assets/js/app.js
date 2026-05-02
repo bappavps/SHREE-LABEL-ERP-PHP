@@ -1099,14 +1099,29 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                     notifDot.style.display = unread > 0 ? 'inline-block' : 'none';
                     if (unreadOnly) {
                         var latest = null;
+                        var newlySeen = [];
                         rows.forEach(function (n) {
                             var id = String(n.id || '');
                             if (!id) return;
                             if (!seenUnreadIds[id]) {
                                 seenUnreadIds[id] = true;
                                 latest = n;
+                                newlySeen.push(n);
                             }
                         });
+                        if (!firstUnreadFetch && window.erpDesktopNotifications && typeof window.erpDesktopNotifications.show === 'function') {
+                            newlySeen.forEach(function (n) {
+                                var dept = String((n && n.department) || '').trim().toLowerCase();
+                                if (!window.erpDesktopNotifications.isImportantDepartment(dept)) return;
+
+                                var deptLabel = notificationDepartmentLabel(dept);
+                                var titleJob = String((n && n.job_no) || '').trim();
+                                var title = titleJob !== '' ? (titleJob + ' - ' + deptLabel) : deptLabel;
+                                var message = notificationStageText(n);
+                                var dedupeId = String((n && n.id) || '').trim();
+                                window.erpDesktopNotifications.show(title, message, { dedupeId: dedupeId });
+                            });
+                        }
                         // Popup toasts are intentionally disabled for notifications.
                         // Users open details directly from the bell panel.
                         firstUnreadFetch = false;

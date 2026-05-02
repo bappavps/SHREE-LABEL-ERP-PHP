@@ -71,6 +71,24 @@ if (strpos($currentPath, '/modules/planning/oneply/') === 0 || strpos($currentPa
 if (strpos($currentPath, '/modules/operators/packing/') === 0 || strpos($currentPath, '/modules/jobs/packing/') === 0) {
   $notificationDepartments[] = 'packing';
 }
+
+// --- SAFE ADDITIONS (DO NOT REMOVE OR CHANGE EXISTING CODE) ---
+$departments = &$notificationDepartments;
+
+// Packing module subscription (Manager + all packing pages)
+if (strpos((string)($_SERVER['REQUEST_URI'] ?? ''), '/modules/packing') !== false) {
+  if (!in_array('packing', $departments, true)) {
+    $departments[] = 'packing';
+  }
+}
+
+// Dispatch module subscription
+if (strpos((string)($_SERVER['REQUEST_URI'] ?? ''), '/modules/dispatch') !== false) {
+  if (!in_array('dispatch', $departments, true)) {
+    $departments[] = 'dispatch';
+  }
+}
+
 if (strpos($currentPath, '/modules/planning/') === 0) {
   $notificationDepartments[] = 'planning';
 }

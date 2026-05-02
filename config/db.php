@@ -356,6 +356,7 @@ function getDB() {
                 . '<br>Set ERP_DB_HOST / ERP_DB_PORT (or create config/db.runtime.php) and ensure MySQL is running in XAMPP.</p>');
         }
         $conn->set_charset('utf8mb4');
+        $conn->query("SET time_zone = '+05:30'");
     }
     return $conn;
 }
