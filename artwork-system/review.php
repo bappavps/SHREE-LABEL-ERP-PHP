@@ -486,10 +486,37 @@ function annotationLabel(array $comment, int $index): string {
             white-space: nowrap;
         }
 
+        .reply-textarea {
+            font-family: inherit;
+            font-size: 0.9rem;
+        }
+
         .review-header-actions {
             display: flex;
             align-items: center;
             gap: 0.75rem;
+        }
+
+        .review-header-main {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .review-header-main-divider {
+            width: 1px;
+            height: 32px;
+            background: #f1f5f9;
+        }
+
+        .reviewing-chip {
+            background: #f8fafc;
+            padding: 0.5rem 1.25rem;
+            border-radius: 30px;
+            border: 1px solid #f1f5f9;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-muted);
         }
 
         .btn-toggle-comments {
@@ -1134,41 +1161,41 @@ function annotationLabel(array $comment, int $index): string {
         
         .pin { 
             position: absolute; 
-            width: 34px; 
-            height: 34px; 
+            width: 44px; 
+            height: 44px; 
             background: var(--primary-gradient); 
-            border: 2px solid white; 
+            border: 2.5px solid white; 
             border-radius: 50%; 
             color: white; 
             display: flex; 
             align-items: center; 
             justify-content: center; 
-            font-size: 13px; 
+            font-size: 15px; 
             font-weight: 800; 
             transform: translate(-50%, -50%); 
             cursor: pointer; 
             z-index: 10; 
-            box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.4); 
-            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 10px 20px -3px rgba(99, 102, 241, 0.45); 
+            transition: all 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
 
         .pin::after {
             content: '';
             position: absolute;
-            inset: -6px;
+            inset: -7px;
             border-radius: 999px;
-            border: 2px solid rgba(20, 184, 166, 0.45);
-            animation: none;
+            border: 2px solid rgba(20, 184, 166, 0.55);
+            animation: pin-ring 2s ease-out infinite;
             pointer-events: none;
         }
 
         .pin.temp-pin {
-            animation: pin-drop 0.22s ease-out;
+            animation: pin-drop 0.28s cubic-bezier(0.175, 0.885, 0.32, 1.5);
         }
 
         .pin:hover { 
-            transform: translate(-50%, -50%) scale(1.3); 
-            box-shadow: 0 20px 25px -5px rgba(99, 102, 241, 0.4);
+            transform: translate(-50%, -50%) scale(1.28); 
+            box-shadow: 0 20px 30px -5px rgba(99, 102, 241, 0.5);
         }
 
         .pin.active-link,
@@ -1235,28 +1262,33 @@ function annotationLabel(array $comment, int $index): string {
 
         .pin[data-type="point"] {
             background: linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%);
-            box-shadow: 0 10px 15px -3px rgba(14, 165, 233, 0.38);
+            box-shadow: 0 10px 20px -3px rgba(14, 165, 233, 0.45);
         }
+        .pin[data-type="point"]::after { border-color: rgba(14, 165, 233, 0.6); }
 
         .pin[data-type="area"] {
             background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
-            box-shadow: 0 10px 15px -3px rgba(139, 92, 246, 0.38);
+            box-shadow: 0 10px 20px -3px rgba(139, 92, 246, 0.45);
         }
+        .pin[data-type="area"]::after { border-color: rgba(139, 92, 246, 0.6); }
 
         .pin[data-type="arrow"] {
             background: linear-gradient(135deg, #f97316 0%, #fb923c 100%);
-            box-shadow: 0 10px 15px -3px rgba(249, 115, 22, 0.38);
+            box-shadow: 0 10px 20px -3px rgba(249, 115, 22, 0.45);
         }
+        .pin[data-type="arrow"]::after { border-color: rgba(249, 115, 22, 0.6); }
 
         .pin[data-type="pen"] {
             background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
-            box-shadow: 0 10px 15px -3px rgba(15, 118, 110, 0.38);
+            box-shadow: 0 10px 20px -3px rgba(15, 118, 110, 0.45);
         }
+        .pin[data-type="pen"]::after { border-color: rgba(20, 184, 166, 0.6); }
 
         .pin[data-type="highlighter"] {
             background: linear-gradient(135deg, #ca8a04 0%, #facc15 100%);
-            box-shadow: 0 10px 15px -3px rgba(202, 138, 4, 0.38);
+            box-shadow: 0 10px 20px -3px rgba(202, 138, 4, 0.45);
         }
+        .pin[data-type="highlighter"]::after { border-color: rgba(234, 179, 8, 0.65); }
 
         .comment-area:hover, .comment-area.active {
             background: rgba(99, 102, 241, 0.15);
@@ -1598,12 +1630,12 @@ function annotationLabel(array $comment, int $index): string {
         }
 
         .markup-stroke.markup-pen {
-            stroke-dasharray: 10 8;
+            stroke-dasharray: none;
             animation: none;
         }
 
         .markup-stroke.markup-arrow {
-            stroke-dasharray: 18 8;
+            stroke-dasharray: none;
             animation: none;
         }
 
@@ -1632,8 +1664,8 @@ function annotationLabel(array $comment, int $index): string {
 
         .arrow-note-text {
             fill: #ffffff;
-            font-size: 13px;
-            font-weight: 700;
+            font-size: 17px;
+            font-weight: 800;
             font-family: 'Manrope', sans-serif;
             dominant-baseline: middle;
         }
@@ -1667,23 +1699,27 @@ function annotationLabel(array $comment, int $index): string {
 
         @keyframes pin-ring {
             0% {
-                transform: scale(0.85);
-                opacity: 0.6;
+                transform: scale(0.82);
+                opacity: 0.7;
             }
-            70% {
-                transform: scale(1.22);
+            60% {
+                transform: scale(1.45);
                 opacity: 0;
             }
             100% {
-                transform: scale(1.22);
+                transform: scale(1.45);
                 opacity: 0;
             }
         }
 
         @keyframes pin-drop {
             0% {
-                transform: translate(-50%, -50%) scale(0.3);
+                transform: translate(-50%, -50%) scale(0.2);
                 opacity: 0;
+            }
+            70% {
+                transform: translate(-50%, -50%) scale(1.15);
+                opacity: 1;
             }
             100% {
                 transform: translate(-50%, -50%) scale(1);
@@ -1749,52 +1785,199 @@ function annotationLabel(array $comment, int $index): string {
         }
 
         @media (max-width: 860px) {
-            .review-container {
+            body {
+                min-height: 100dvh;
+                height: auto;
+                overflow: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .review-header {
+                padding: 0.8rem 0.85rem;
                 flex-direction: column;
+                align-items: stretch;
+                gap: 0.65rem;
             }
 
-            .toolbar {
-                left: 1rem;
-                top: 1rem;
-                transform: none;
-                flex-direction: row;
-                flex-wrap: wrap;
-                max-width: calc(100% - 2rem);
+            .review-header-main {
+                gap: 0.65rem;
+                width: 100%;
             }
 
-            .toolbar-handle {
+            .review-header-main-divider {
                 display: none;
             }
 
-            .toolbar-divider,
+            .review-header-main h4 {
+                font-size: 0.95rem;
+            }
+
+            .review-header-main p {
+                font-size: 0.74rem !important;
+            }
+
+            .review-header-actions {
+                width: 100%;
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 0.45rem;
+                align-items: stretch;
+            }
+
+            .reviewing-chip {
+                grid-column: 1 / -1;
+                text-align: center;
+                padding: 0.55rem 0.7rem;
+                border-radius: 12px;
+                font-size: 0.8rem;
+            }
+
+            .btn-toggle-comments,
+            .btn-print-design,
+            .btn-approve,
+            .btn-changes {
+                min-height: 44px;
+                justify-content: center;
+                font-size: 0.8rem;
+                padding: 0.52rem 0.6rem;
+            }
+
+            .review-container {
+                flex-direction: column;
+                min-height: calc(100dvh - 190px);
+            }
+
+            .tool-status-pill,
+            .tool-guide {
+                display: none;
+            }
+
+            .toolbar {
+                position: fixed;
+                left: 0.45rem;
+                right: 0.45rem;
+                top: auto;
+                bottom: max(0.5rem, env(safe-area-inset-bottom));
+                transform: none;
+                flex-direction: row;
+                flex-wrap: nowrap;
+                max-width: none;
+                gap: 0.45rem;
+                padding: 0.45rem 0.55rem;
+                overflow-x: auto;
+                overflow-y: hidden;
+                z-index: 1200;
+                scrollbar-width: none;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .toolbar::-webkit-scrollbar {
+                display: none;
+            }
+
+            .tool-btn {
+                width: 42px;
+                height: 42px;
+                min-width: 42px;
+                font-size: 1rem;
+            }
+
+            .toolbar-handle,
+            .toolbar-divider {
+                display: none;
+            }
+
             .color-picker {
+                display: inline-flex;
+                min-width: 42px;
+                width: 42px;
+                height: 42px;
+                flex: 0 0 42px;
+                border-radius: 12px;
+                border: 1px solid rgba(20, 184, 166, 0.28);
+                background: rgba(255, 255, 255, 0.92);
+                padding: 2px;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .color-input {
+                width: 34px;
+                height: 34px;
+                border-radius: 9px;
+                padding: 0;
+                border: none;
+                background: transparent;
+            }
+
+            .color-preview {
+                display: none;
+            }
+
+            .history-sidebar {
                 display: none;
             }
 
             .comment-sidebar {
+                position: fixed;
                 top: auto;
                 bottom: 0;
                 right: 0;
                 left: 0;
                 width: 100% !important;
                 max-width: 100%;
-                border-radius: 16px 16px 0 0;
-                max-height: 60vh;
-            }
-            .comment-sidebar.panel-hidden {
-                transform: translateY(110%);
+                border-radius: 18px 18px 0 0;
+                max-height: min(74dvh, calc(100dvh - 88px));
+                box-shadow: 0 -12px 32px rgba(15, 23, 42, 0.22);
+                padding-bottom: env(safe-area-inset-bottom);
+                transform: translateY(0);
+                z-index: 1400;
             }
 
-            .history-sidebar {
-                width: 100%;
-                min-width: 0;
-                max-height: 34vh;
-                border-right: none;
-                border-bottom: 1px solid #e2e8f0;
+            .comment-sidebar.panel-hidden {
+                transform: translateY(calc(100% + env(safe-area-inset-bottom)));
+            }
+
+            .comment-header {
+                padding: 1rem;
+                font-size: 1.05rem;
+                position: sticky;
+                top: 0;
+                z-index: 2;
+                background: rgba(239, 246, 255, 0.96);
+                backdrop-filter: blur(8px);
+            }
+
+            .comment-header::before {
+                content: '';
+                position: absolute;
+                top: 0.36rem;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 42px;
+                height: 4px;
+                border-radius: 999px;
+                background: rgba(100, 116, 139, 0.45);
+            }
+
+            .comment-list {
+                padding: 0.95rem;
+                padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+                overscroll-behavior: contain;
+            }
+
+            .comment-item {
+                padding: 0.95rem;
+                margin-bottom: 0.75rem;
             }
 
             .comment-resizer {
                 display: none;
+            }
+
+            .artwork-viewer {
+                min-height: 52vh;
+                padding-bottom: 4.2rem;
             }
 
             .ruler-top,
@@ -1805,9 +1988,40 @@ function annotationLabel(array $comment, int $index): string {
                 display: none !important;
             }
 
-            .btn-approve, .btn-changes {
-                font-size: 0.75rem;
-                padding: 0.4rem 0.75rem;
+            #new-comment-box,
+            #comment-view-popup {
+                position: fixed !important;
+                left: 50% !important;
+                right: auto !important;
+                top: auto !important;
+                bottom: calc(4.2rem + env(safe-area-inset-bottom));
+                transform: translateX(-50%);
+                width: min(94vw, 420px);
+                max-width: 94vw;
+                max-height: 52vh;
+                overflow: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            #comment-textarea,
+            #cvp-reply-textarea,
+            .reply-textarea {
+                font-size: 16px !important;
+                min-height: 82px;
+            }
+
+            .app-footer {
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+                gap: 0.3rem;
+                padding: 0.6rem 0.8rem calc(0.6rem + env(safe-area-inset-bottom));
+            }
+
+            .app-footer-left,
+            .app-footer-right {
+                white-space: normal;
+                font-size: 0.72rem;
             }
         }
         @media print {
@@ -1866,12 +2080,12 @@ function annotationLabel(array $comment, int $index): string {
 </head>
 <body>
     <header class="review-header">
-        <div style="display: flex; align-items: center; gap: 1.5rem;">
+        <div class="review-header-main">
             <div class="erp-brand-wrap">
                 <img src="<?php echo sanitize($erpLogoUrl); ?>" alt="ERP Logo">
                 <span class="erp-brand-text"><?php echo sanitize(APP_NAME); ?></span>
             </div>
-            <div style="width: 1px; height: 32px; background: #f1f5f9;"></div>
+            <div class="review-header-main-divider"></div>
             <div>
                 <h4 style="margin: 0; font-weight: 800; letter-spacing: -0.01em;"><?php echo sanitize($project['title']); ?></h4>
                 <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); font-weight: 500;">
@@ -1897,7 +2111,7 @@ function annotationLabel(array $comment, int $index): string {
             <button type="button" class="btn-print-design" onclick="triggerPrintDesign()" title="Print Artwork">
                 <i class="fas fa-print"></i> Print
             </button>
-            <div style="background: #f8fafc; padding: 0.5rem 1.25rem; border-radius: 30px; border: 1px solid #f1f5f9; font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">
+            <div class="reviewing-chip">
                 Reviewing as <span style="color: var(--text-main);"><?php echo sanitize($project['client_name']); ?></span>
             </div>
         </div>

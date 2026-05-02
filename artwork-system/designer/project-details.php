@@ -3,6 +3,15 @@ $pageTitle = 'Project Details';
 $activePage = 'projects';
 require_once __DIR__ . '/../includes/header.php';
 
+// Read company name dynamically from ERP settings (non-hardcoded)
+$_erpSettingsFile = __DIR__ . '/../../data/app_settings.json';
+$_erpCompanyName = '';
+if (file_exists($_erpSettingsFile)) {
+    $_erpSettings = json_decode(file_get_contents($_erpSettingsFile), true);
+    $_erpCompanyName = trim((string)($_erpSettings['company_name'] ?? ''));
+}
+if (!$_erpCompanyName) $_erpCompanyName = defined('APP_NAME') ? APP_NAME : 'Enterprise ERP';
+
 $db = Db::getInstance();
 $projectId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
@@ -490,7 +499,8 @@ const projectShareMeta = {
     remark: <?php echo json_encode((string) ($project['job_remark'] ?? '')); ?>,
     createdAt: <?php echo json_encode((string) ($project['created_at'] ?? '')); ?>,
     reviewLink: <?php echo json_encode((string) $reviewLink); ?>,
-    portalLink: <?php echo json_encode((string) $portalReviewLink); ?>
+    portalLink: <?php echo json_encode((string) $portalReviewLink); ?>,
+    appName: <?php echo json_encode($_erpCompanyName); ?>
 };
 
 function formatDateTime(value) {
@@ -527,7 +537,7 @@ function buildEmailDraft(linkValue) {
         '',
         'Dear Valued Client,',
         '',
-        'Greetings from the Artwork Approval Desk.',
+        `Greetings from ${projectShareMeta.appName || 'Artwork Approval Hub'}.`,
         '',
         `We hope you are doing well. This is to formally notify you that the artwork package for "${jobName}" is now ready for your review and approval.`,
         'For your convenience, we have shared the complete project brief and approval access below.',
@@ -545,7 +555,8 @@ function buildEmailDraft(linkValue) {
         '',
         'Regards,',
         'Design & Prepress Team',
-        'Artwork Approval Hub'
+        'Artwork Approval Hub',
+        projectShareMeta.appName || ''
     ].join('\n');
 }
 
@@ -563,20 +574,28 @@ function buildEmailHtmlDraft(linkValue) {
         </div>
         <div style="padding:22px;">
             <p style="margin:0 0 12px;">Dear Valued Client,</p>
-            <p style="margin:0 0 12px;">Greetings from the Artwork Approval Desk.</p>
+            <p style="margin:0 0 12px;">Greetings from <strong>${escapeHtml(projectShareMeta.appName || 'Artwork Approval Hub')}</strong>.</p>
             <p style="margin:0 0 16px;">We hope you are doing well. This is to formally notify you that the artwork package for <strong>${escapeHtml(jobName)}</strong> is now ready for your review and approval.</p>
 
             <div style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin:0 0 16px;">
                 <div style="background:#f8fafc;padding:10px 12px;font-size:12px;font-weight:700;letter-spacing:.04em;color:#334155;text-transform:uppercase;">Project Summary</div>
-                <div style="padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;font-size:13px;">
-                    <div><strong>Client Name:</strong><br>${escapeHtml(projectShareMeta.clientName || 'N/A')}</div>
-                    <div><strong>Job Name/ID:</strong><br>${escapeHtml(jobName)}</div>
-                    <div><strong>Job Size:</strong><br>${escapeHtml(projectShareMeta.jobSize || 'N/A')}</div>
-                    <div><strong>Job Color:</strong><br>${escapeHtml(projectShareMeta.jobColor || 'N/A')}</div>
-                    <div><strong>Project Created:</strong><br>${escapeHtml(createdOn)}</div>
-                    <div><strong>Mail Drafted:</strong><br>${escapeHtml(draftedOn)}</div>
-                </div>
-                <div style="padding:0 12px 12px;font-size:13px;"><strong>Remarks:</strong> ${escapeHtml(projectShareMeta.remark || 'N/A')}</div>
+                <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:13px;padding:12px;">
+                    <tr>
+                        <td width="50%" style="padding:5px 7px;vertical-align:top;"><strong>Client Name:</strong><br>${escapeHtml(projectShareMeta.clientName || 'N/A')}</td>
+                        <td width="50%" style="padding:5px 7px;vertical-align:top;"><strong>Job Name/ID:</strong><br>${escapeHtml(jobName)}</td>
+                    </tr>
+                    <tr>
+                        <td width="50%" style="padding:5px 7px;vertical-align:top;"><strong>Job Size:</strong><br>${escapeHtml(projectShareMeta.jobSize || 'N/A')}</td>
+                        <td width="50%" style="padding:5px 7px;vertical-align:top;"><strong>Job Color:</strong><br>${escapeHtml(projectShareMeta.jobColor || 'N/A')}</td>
+                    </tr>
+                    <tr>
+                        <td width="50%" style="padding:5px 7px;vertical-align:top;"><strong>Project Created:</strong><br>${escapeHtml(createdOn)}</td>
+                        <td width="50%" style="padding:5px 7px;vertical-align:top;"><strong>Mail Drafted:</strong><br>${escapeHtml(draftedOn)}</td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="padding:5px 7px;vertical-align:top;"><strong>Remarks:</strong> ${escapeHtml(projectShareMeta.remark || 'N/A')}</td>
+                    </tr>
+                </table>
             </div>
 
             <p style="margin:0 0 16px;">Kindly review the artwork and share your approval or correction comments at your earliest convenience so we can proceed without delay.</p>
@@ -591,7 +610,7 @@ function buildEmailHtmlDraft(linkValue) {
             </p>
             <p style="margin:0;font-size:13px;color:#334155;">If you need any clarification, please reply to this email and our team will assist you immediately.</p>
 
-            <p style="margin:18px 0 0;">Regards,<br><strong>Design &amp; Prepress Team</strong><br>Artwork Approval Hub</p>
+            <p style="margin:18px 0 0;">Regards,<br><strong>Design &amp; Prepress Team</strong><br>Artwork Approval Hub<br>${escapeHtml(projectShareMeta.appName || '')}</p>
         </div>
     </div>
 </div>`.trim();

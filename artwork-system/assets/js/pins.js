@@ -77,6 +77,9 @@ document.addEventListener('DOMContentLoaded', function () {
     let mouseResizeActive = false;
     let spacePanActive = false;
     let spacePanPreviousTool = 'select';
+    let touchPanActive = false;
+    let activeTouchId = null;
+    let lastTouchClient = null;
     const markupRecords = [];
     const viewStateStorageKey = 'review-view-state-' + (window.projectToken || 'default');
     const viewRestoreOnceKey = viewStateStorageKey + '-restore-once';
@@ -87,8 +90,27 @@ document.addEventListener('DOMContentLoaded', function () {
         cursor: 'default'
     }) : null;
 
+    // Expose for diagnostics and safer runtime checks in the review screen.
+    window.__reviewPanzoom = panzoom;
+
     if (panzoom) {
         viewer.addEventListener('wheel', panzoom.zoomWithWheel);
+    }
+
+    // ── Counter-scale pins so they always appear at a fixed visual size ──
+    function updatePinScales() {
+        const scale = panzoom && typeof panzoom.getScale === 'function'
+            ? Math.max(0.05, panzoom.getScale())
+            : 1;
+        const inv = 1 / scale;
+        document.querySelectorAll('#pins-container .pin').forEach(function (pin) {
+            pin.style.transform = 'translate(-50%, -50%) scale(' + inv + ')';
+        });
+    }
+
+    if (panzoom) {
+        wrapper.addEventListener('panzoomchange', updatePinScales);
+        wrapper.addEventListener('panzoomzoom', updatePinScales);
     }
 
     function clamp(value, min, max) {
@@ -127,7 +149,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const s = toPixels(start);
         const e = toPixels(end);
         const angle = Math.atan2(e.y - s.y, e.x - s.x);
-        const headLength = 16;
+        const headLength = 20;
         const wingAngle = Math.PI / 7;
         const head1 = { x: e.x - headLength * Math.cos(angle - wingAngle), y: e.y - headLength * Math.sin(angle - wingAngle) };
         const head2 = { x: e.x - headLength * Math.cos(angle + wingAngle), y: e.y - headLength * Math.sin(angle + wingAngle) };
@@ -273,6 +295,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 requestAnimationFrame(function () {
                     resizeDrawingCanvas();
                     redrawStoredMarkup();
+                    updatePinScales();
                 });
                 return true;
             }
@@ -338,6 +361,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 requestAnimationFrame(function () {
                     resizeDrawingCanvas();
                     redrawStoredMarkup();
+                    updatePinScales();
                 });
             });
         });
@@ -394,12 +418,27 @@ document.addEventListener('DOMContentLoaded', function () {
         wrapper.style.cursor = cursor;
         interactionLayer.style.cursor = cursor;
         if (panzoom) panzoom.setOptions({ disablePan: tool !== 'pan' });
-        const drawingTools = ['pen', 'highlighter', 'arrow', 'area'];
+        const drawingTools = ['pen', 'highlighter', 'arrow', 'area', 'pan'];
         pinsContainer.classList.toggle('pins-pass-through', drawingTools.includes(tool));
         const toolNames = { select: 'Select', point: 'Add Point', area: 'Select Area', arrow: 'Arrow Comment', pen: 'Pen Markup', highlighter: 'Highlight', pan: 'Pan Tool' };
         const toolGuides = { select: 'Select tool keeps the canvas neutral for browsing and closing floating boxes.', point: 'Click on the artwork to place a pin and add a comment.', area: 'Click and drag to select an area and add a comment.', arrow: 'Click and drag to draw an arrow pointing to a specific area.', pen: 'Draw freehand on the artwork to mark areas.', highlighter: 'Draw freehand highlights over the artwork.', pan: 'Click and drag to pan the artwork. Use mouse wheel to zoom.' };
         if (toolStatus) toolStatus.textContent = toolNames[tool] || tool;
         if (toolGuide) toolGuide.textContent = toolGuides[tool] || '';
+
+        // If the artwork is fully out of viewport, recover it when pan is activated.
+        if (tool === 'pan' && viewer && wrapper && panzoom) {
+            const viewerRect = viewer.getBoundingClientRect();
+            const wrapperRect = wrapper.getBoundingClientRect();
+            const isOutside =
+                wrapperRect.right < viewerRect.left ||
+                wrapperRect.left > viewerRect.right ||
+                wrapperRect.bottom < viewerRect.top ||
+                wrapperRect.top > viewerRect.bottom;
+            if (isOutside) {
+                fitArtworkToViewer();
+            }
+        }
+
         syncToolColorUi();
     }
 
@@ -433,9 +472,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const noteText = rawText.length > 34 ? rawText.slice(0, 31) + '...' : rawText;
         const startPx = toPixels(start);
         const endPx = toPixels(end);
-        const paddingX = 9;
-        const noteHeight = 24;
-        const noteWidth = clamp(Math.round((noteText.length * 7.1) + (paddingX * 2)), 66, 260);
+        const paddingX = 13;
+        const noteHeight = 34;
+        const noteWidth = clamp(Math.round((noteText.length * 9.2) + (paddingX * 2)), 100, 360);
         const margin = 6;
 
         const dx = endPx.x - startPx.x;
@@ -492,7 +531,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function renderRecord(record, includeHit) {
         if (record.type === 'arrow') {
             const geom = buildArrowGeometry(record.start, record.end);
-            appendSvgPath(geom.visiblePath, record.color, 5, 1, 'markup-stroke markup-arrow');
+            appendSvgPath(geom.visiblePath, record.color, 8, 1, 'markup-stroke markup-arrow');
             appendArrowCallout(record.start, record.end, record.text, record.color);
             if (includeHit) {
                 const hit = appendSvgPath(geom.hitPath, 'transparent', 24, null, 'markup-hit');
@@ -502,7 +541,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         } else if (Array.isArray(record.path)) {
             const pathData = buildPathString(record.path);
-            appendSvgPath(pathData, record.color, record.type === 'highlighter' ? 22 : 5, record.type === 'highlighter' ? 0.45 : 1, record.type === 'pen' ? 'markup-stroke markup-pen' : 'markup-stroke');
+            appendSvgPath(pathData, record.color, record.type === 'highlighter' ? 22 : 8, record.type === 'highlighter' ? 0.45 : 1, record.type === 'pen' ? 'markup-stroke markup-pen' : 'markup-stroke');
             if (includeHit) {
                 const hit = appendSvgPath(pathData, 'transparent', 28, null, 'markup-hit');
                 hit.dataset.id = String(record.id);
@@ -719,10 +758,41 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Toggle comments panel
     const toggleCommentsBtn = document.getElementById('toggle-comments-btn');
+    function setCommentsPanelVisibility(show) {
+        if (!commentSidebar || !toggleCommentsBtn) {
+            return;
+        }
+
+        const isMobile = window.innerWidth <= 860;
+        commentSidebar.classList.toggle('panel-hidden', !show);
+        toggleCommentsBtn.classList.toggle('active', show);
+
+        // Force transform state explicitly to avoid stale transition matrices on mobile.
+        if (isMobile) {
+            commentSidebar.style.transform = show
+                ? 'translateY(0)'
+                : 'translateY(calc(100% + env(safe-area-inset-bottom)))';
+        } else {
+            commentSidebar.style.transform = show
+                ? 'translateX(0)'
+                : 'translateX(calc(100% + 1.5rem))';
+        }
+        commentSidebar.style.opacity = show ? '1' : '0';
+        commentSidebar.style.pointerEvents = show ? 'auto' : 'none';
+    }
+
     if (toggleCommentsBtn && commentSidebar) {
+        // Sync initial visual state with markup.
+        setCommentsPanelVisibility(!commentSidebar.classList.contains('panel-hidden'));
+
         toggleCommentsBtn.addEventListener('click', function () {
-            const isHidden = commentSidebar.classList.toggle('panel-hidden');
-            toggleCommentsBtn.classList.toggle('active', !isHidden);
+            const shouldShow = commentSidebar.classList.contains('panel-hidden');
+            setCommentsPanelVisibility(shouldShow);
+        });
+
+        window.addEventListener('resize', function () {
+            const currentlyVisible = !commentSidebar.classList.contains('panel-hidden');
+            setCommentsPanelVisibility(currentlyVisible);
         });
     }
 
@@ -843,28 +913,132 @@ document.addEventListener('DOMContentLoaded', function () {
 
     window.addEventListener('blur', stopGuideDrag);
 
+    function startPanGesture(e, captureTarget) {
+        if (currentTool !== 'pan') {
+            return false;
+        }
+        if (!panzoom || typeof panzoom.pan !== 'function') {
+            return false;
+        }
+        e.preventDefault();
+        isPanning = true;
+        activePointerId = e.pointerId;
+        lastPanClient = { x: e.clientX, y: e.clientY };
+        try {
+            captureTarget?.setPointerCapture?.(e.pointerId);
+        } catch (err) {
+            // Some browsers throw when capture is unavailable for the current pointer.
+        }
+        wrapper.style.cursor = 'grabbing';
+        viewer.style.cursor = 'grabbing';
+        return true;
+    }
+
+    function handlePanMove(e) {
+        if (currentTool !== 'pan' || !isPanning || activePointerId !== e.pointerId || !panzoom || !lastPanClient) {
+            return false;
+        }
+        e.preventDefault();
+        const dx = e.clientX - lastPanClient.x;
+        const dy = e.clientY - lastPanClient.y;
+        const scale = (typeof panzoom.getScale === 'function' && Number.isFinite(Number(panzoom.getScale())))
+            ? Math.max(0.05, Number(panzoom.getScale()))
+            : 1;
+        const normDx = dx / scale;
+        const normDy = dy / scale;
+        if (typeof panzoom.pan === 'function') {
+            if (typeof panzoom.getPan === 'function') {
+                const currentPan = panzoom.getPan() || { x: 0, y: 0 };
+                const nextX = Number(currentPan.x || 0) + normDx;
+                const nextY = Number(currentPan.y || 0) + normDy;
+                panzoom.pan(nextX, nextY, { animate: false });
+            } else {
+                panzoom.pan(normDx, normDy, { relative: true, animate: false });
+            }
+        }
+        lastPanClient = { x: e.clientX, y: e.clientY };
+        return true;
+    }
+
+    function stopPanGesture(e, releaseTarget) {
+        if (currentTool !== 'pan' || !isPanning || activePointerId !== e.pointerId) {
+            return false;
+        }
+        isPanning = false;
+        activePointerId = null;
+        lastPanClient = null;
+        try {
+            releaseTarget?.releasePointerCapture?.(e.pointerId);
+        } catch (err) {
+            // Ignore release errors so pan finalization always completes.
+        }
+        const panCursor = getToolCursor('pan');
+        wrapper.style.cursor = panCursor;
+        viewer.style.cursor = panCursor;
+        return true;
+    }
+
+    function startTouchPanGesture(touch) {
+        if (currentTool !== 'pan' || !panzoom || typeof panzoom.pan !== 'function' || !touch) {
+            return false;
+        }
+        touchPanActive = true;
+        activeTouchId = touch.identifier;
+        lastTouchClient = { x: touch.clientX, y: touch.clientY };
+        wrapper.style.cursor = 'grabbing';
+        viewer.style.cursor = 'grabbing';
+        return true;
+    }
+
+    function handleTouchPanMove(touch) {
+        if (!touchPanActive || currentTool !== 'pan' || !touch || !lastTouchClient || !panzoom || typeof panzoom.pan !== 'function') {
+            return false;
+        }
+        const dx = touch.clientX - lastTouchClient.x;
+        const dy = touch.clientY - lastTouchClient.y;
+        const scale = (typeof panzoom.getScale === 'function' && Number.isFinite(Number(panzoom.getScale())))
+            ? Math.max(0.05, Number(panzoom.getScale()))
+            : 1;
+        const normDx = dx / scale;
+        const normDy = dy / scale;
+        if (typeof panzoom.getPan === 'function') {
+            const currentPan = panzoom.getPan() || { x: 0, y: 0 };
+            panzoom.pan(Number(currentPan.x || 0) + normDx, Number(currentPan.y || 0) + normDy, { animate: false });
+        } else {
+            panzoom.pan(normDx, normDy, { relative: true, animate: false });
+        }
+        lastTouchClient = { x: touch.clientX, y: touch.clientY };
+        return true;
+    }
+
+    function stopTouchPanGesture() {
+        if (!touchPanActive) {
+            return false;
+        }
+        touchPanActive = false;
+        activeTouchId = null;
+        lastTouchClient = null;
+        const panCursor = getToolCursor('pan');
+        wrapper.style.cursor = panCursor;
+        viewer.style.cursor = panCursor;
+        return true;
+    }
+
     interactionLayer.addEventListener('pointerdown', function (e) {
         if (e.target.closest('.toolbar')) {
             return;
         }
-        const drawingTools = ['pen', 'highlighter', 'arrow', 'area'];
+        const drawingTools = ['pen', 'highlighter', 'arrow', 'area', 'pan'];
         if (!drawingTools.includes(currentTool)) {
             if (e.target.closest('.pin') || e.target.closest('.comment-area')) {
                 return;
             }
         }
-        if (interactionLayer.dataset.readonly === '1') { return; }
-
-        if (currentTool === 'pan') {
-            e.preventDefault();
-            isPanning = true;
-            activePointerId = e.pointerId;
-            lastPanClient = { x: e.clientX, y: e.clientY };
-            interactionLayer.setPointerCapture?.(e.pointerId);
-            wrapper.style.cursor = 'grabbing';
-            viewer.style.cursor = 'grabbing';
+        if (startPanGesture(e, interactionLayer)) {
             return;
         }
+
+        if (interactionLayer.dataset.readonly === '1') { return; }
 
         if (currentTool === 'area') {
             e.preventDefault();
@@ -941,14 +1115,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     interactionLayer.addEventListener('pointermove', function (e) {
-        if (currentTool === 'pan' && isPanning && activePointerId === e.pointerId && panzoom && lastPanClient) {
-            e.preventDefault();
-            const dx = e.clientX - lastPanClient.x;
-            const dy = e.clientY - lastPanClient.y;
-            if (typeof panzoom.pan === 'function') {
-                panzoom.pan(dx, dy, { relative: true, animate: false });
-            }
-            lastPanClient = { x: e.clientX, y: e.clientY };
+        if (handlePanMove(e)) {
             return;
         }
 
@@ -983,14 +1150,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     interactionLayer.addEventListener('pointerup', function (e) {
-        if (currentTool === 'pan' && isPanning && activePointerId === e.pointerId) {
-            isPanning = false;
-            activePointerId = null;
-            lastPanClient = null;
-            interactionLayer.releasePointerCapture?.(e.pointerId);
-            const panCursor = getToolCursor('pan');
-            wrapper.style.cursor = panCursor;
-            viewer.style.cursor = panCursor;
+        if (stopPanGesture(e, interactionLayer)) {
             return;
         }
 
@@ -1102,6 +1262,9 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     interactionLayer.addEventListener('pointercancel', function (e) {
+        if (stopPanGesture(e, interactionLayer)) {
+            return;
+        }
         if (activePointerId !== e.pointerId) {
             return;
         }
@@ -1119,6 +1282,90 @@ document.addEventListener('DOMContentLoaded', function () {
         interactionLayer.releasePointerCapture?.(e.pointerId);
         redrawStoredMarkup();
     });
+
+    viewer.addEventListener('pointerdown', function (e) {
+        if (currentTool !== 'pan') {
+            return;
+        }
+        if (e.target.closest('.toolbar') || e.target.closest('.comment-sidebar') || e.target.closest('#new-comment-box') || e.target.closest('#comment-view-popup')) {
+            return;
+        }
+        startPanGesture(e, viewer);
+    });
+
+    viewer.addEventListener('pointermove', function (e) {
+        handlePanMove(e);
+    });
+
+    viewer.addEventListener('pointerup', function (e) {
+        stopPanGesture(e, viewer);
+    });
+
+    viewer.addEventListener('pointercancel', function (e) {
+        stopPanGesture(e, viewer);
+    });
+
+    function findActiveTouch(touchList) {
+        if (!touchList || activeTouchId == null) {
+            return null;
+        }
+        for (let i = 0; i < touchList.length; i++) {
+            if (touchList[i].identifier === activeTouchId) {
+                return touchList[i];
+            }
+        }
+        return null;
+    }
+
+    function handlePanTouchStart(e) {
+        if (currentTool !== 'pan') {
+            return;
+        }
+        if (e.target.closest('.toolbar') || e.target.closest('.comment-sidebar') || e.target.closest('#new-comment-box') || e.target.closest('#comment-view-popup')) {
+            return;
+        }
+        const touch = e.changedTouches && e.changedTouches[0] ? e.changedTouches[0] : null;
+        if (!touch) {
+            return;
+        }
+        if (startTouchPanGesture(touch)) {
+            e.preventDefault();
+        }
+    }
+
+    function handlePanTouchMove(e) {
+        if (!touchPanActive) {
+            return;
+        }
+        const touch = findActiveTouch(e.changedTouches) || findActiveTouch(e.touches);
+        if (!touch) {
+            return;
+        }
+        if (handleTouchPanMove(touch)) {
+            e.preventDefault();
+        }
+    }
+
+    function handlePanTouchEnd(e) {
+        if (!touchPanActive) {
+            return;
+        }
+        const touch = findActiveTouch(e.changedTouches);
+        if (!touch) {
+            return;
+        }
+        stopTouchPanGesture();
+        e.preventDefault();
+    }
+
+    viewer.addEventListener('touchstart', handlePanTouchStart, { passive: false });
+    viewer.addEventListener('touchmove', handlePanTouchMove, { passive: false });
+    viewer.addEventListener('touchend', handlePanTouchEnd, { passive: false });
+    viewer.addEventListener('touchcancel', function () { stopTouchPanGesture(); }, { passive: false });
+    interactionLayer.addEventListener('touchstart', handlePanTouchStart, { passive: false });
+    interactionLayer.addEventListener('touchmove', handlePanTouchMove, { passive: false });
+    interactionLayer.addEventListener('touchend', handlePanTouchEnd, { passive: false });
+    interactionLayer.addEventListener('touchcancel', function () { stopTouchPanGesture(); }, { passive: false });
 
     if (refInput && refPreview) {
         refInput.addEventListener('change', function () {
@@ -1152,6 +1399,7 @@ document.addEventListener('DOMContentLoaded', function () {
         pin.style.top  = y + '%';
         pin.textContent = '?';
         pinsContainer.appendChild(pin);
+        updatePinScales();
     }
 
     // ── Helper: show the comment composer panel ──────────────────────────
@@ -1368,7 +1616,7 @@ document.addEventListener('DOMContentLoaded', function () {
             ctx.lineTo((currentStroke[i].x / 100) * w, (currentStroke[i].y / 100) * h);
         }
         ctx.strokeStyle = currentColor;
-        ctx.lineWidth = currentTool === 'highlighter' ? 22 : 5;
+        ctx.lineWidth = currentTool === 'highlighter' ? 22 : 8;
         ctx.globalAlpha = currentTool === 'highlighter' ? 0.45 : 1;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
@@ -1390,12 +1638,12 @@ document.addEventListener('DOMContentLoaded', function () {
         const ex = (currentArrow.end.x   / 100) * w;
         const ey = (currentArrow.end.y   / 100) * h;
         const angle = Math.atan2(ey - sy, ex - sx);
-        const headLen = 14;
+        const headLen = 20;
         ctx.beginPath();
         ctx.moveTo(sx, sy);
         ctx.lineTo(ex, ey);
         ctx.strokeStyle = currentColor;
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 6;
         ctx.lineCap = 'round';
         ctx.stroke();
         ctx.beginPath();
@@ -1403,6 +1651,14 @@ document.addEventListener('DOMContentLoaded', function () {
         ctx.lineTo(ex - headLen * Math.cos(angle - Math.PI / 6), ey - headLen * Math.sin(angle - Math.PI / 6));
         ctx.moveTo(ex, ey);
         ctx.lineTo(ex - headLen * Math.cos(angle + Math.PI / 6), ey - headLen * Math.sin(angle + Math.PI / 6));
+        ctx.stroke();
+        // Start dot
+        ctx.beginPath();
+        ctx.arc(sx, sy, 9, 0, Math.PI * 2);
+        ctx.fillStyle = currentColor;
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.5;
         ctx.stroke();
     }
 
@@ -1737,6 +1993,15 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (data && data.start && data.end) {
                         type = 'arrow';
                         markupRecords.push({ id: Number(comment.id), type: 'arrow', color: data.color || '#f97316', start: data.start, end: data.end, text: data.text || comment.comment || '' });
+                        // Arrow start pin (DOM div — gets counter-scale, animation, click)
+                        const arrowPin = document.createElement('div');
+                        arrowPin.className = 'pin';
+                        arrowPin.dataset.id   = comment.id;
+                        arrowPin.dataset.type = 'arrow';
+                        arrowPin.style.left = data.start.x + '%';
+                        arrowPin.style.top  = data.start.y + '%';
+                        arrowPin.textContent = index + 1;
+                        pinsContainer.appendChild(arrowPin);
                     } else if (data && Array.isArray(data.path) && data.path.length > 1) {
                         const normalizedType = data.tool === 'highlighter' || data.tool === 'pen' ? data.tool : type;
                         type = normalizedType;
@@ -1776,6 +2041,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         redrawStoredMarkup();
+        updatePinScales();
 
         document.querySelectorAll('#pins-container .pin:not(.temp-pin), #pins-container .comment-area').forEach(function (node) {
             node.addEventListener('mouseenter', function (event) {

@@ -132,6 +132,35 @@ document.addEventListener('DOMContentLoaded', function() {
     const notifList = document.getElementById('notif-list');
     const notifWrap = document.getElementById('notification-wrap');
     let notificationItems = [];
+    let latestNotificationId = 0;
+    const notifSeenStorageKey = 'artwork-notif-last-seen-id';
+
+    function readLastSeenNotificationId() {
+        try {
+            return Number(localStorage.getItem(notifSeenStorageKey) || 0);
+        } catch (e) {
+            return 0;
+        }
+    }
+
+    function writeLastSeenNotificationId(id) {
+        try {
+            localStorage.setItem(notifSeenStorageKey, String(Math.max(0, Number(id) || 0)));
+        } catch (e) {
+            // Ignore storage failures (private mode/quota).
+        }
+    }
+
+    function getLatestNotificationId(items) {
+        if (!Array.isArray(items) || items.length === 0) {
+            return 0;
+        }
+
+        return items.reduce(function(maxId, item) {
+            const id = Number(item && item.id);
+            return Number.isFinite(id) ? Math.max(maxId, id) : maxId;
+        }, 0);
+    }
 
     function escapeHtml(text) {
         return String(text)
@@ -180,9 +209,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (data.status === 'success') {
                     const count = Number((data.data || {}).unread_count || 0);
                     notificationItems = Array.isArray((data.data || {}).items) ? data.data.items : [];
+                    latestNotificationId = getLatestNotificationId(notificationItems);
                     if (notifBadge) {
+                        const lastSeenId = readLastSeenNotificationId();
+                        const hasNew = latestNotificationId > lastSeenId && count > 0;
                         notifBadge.innerText = String(count);
-                        notifBadge.style.display = count > 0 ? 'block' : 'none';
+                        notifBadge.style.display = hasNew ? 'block' : 'none';
                     }
                     renderNotifications();
                 }
@@ -202,6 +234,12 @@ document.addEventListener('DOMContentLoaded', function() {
             notifDropdown.style.display = isOpen ? 'none' : 'block';
             notifBell.classList.toggle('active', !isOpen);
             if (!isOpen) {
+                if (latestNotificationId > 0) {
+                    writeLastSeenNotificationId(latestNotificationId);
+                }
+                if (notifBadge) {
+                    notifBadge.style.display = 'none';
+                }
                 renderNotifications();
             }
         });
