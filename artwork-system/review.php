@@ -61,6 +61,7 @@ if (!$openHub) {
         }
         .intro-shell {
             width: min(980px, 100%);
+            max-width: 940px;
             border-radius: 24px;
             overflow: hidden;
             border: 1px solid rgba(148, 163, 184, 0.34);
@@ -70,8 +71,12 @@ if (!$openHub) {
             display: grid;
             grid-template-columns: 1.05fr 1fr;
         }
+        .intro-shell-wrap {
+            width: min(980px, 100%);
+            max-width: 940px;
+        }
         .intro-visual {
-            min-height: 460px;
+            min-height: 400px;
             background: linear-gradient(160deg, #0d1f2d 0%, #0f3d38 60%, #0f766e 100%);
             color: #ffffff;
             padding: 1.6rem;
@@ -109,21 +114,24 @@ if (!$openHub) {
             border-radius: 6px;
             padding: 2px;
         }
-        .erp-footer-strip {
-            position: fixed;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(15, 23, 42, 0.86);
-            color: #e2e8f0;
-            font-size: 0.73rem;
-            padding: 8px 12px;
+        .intro-footer-note {
+            margin-top: 0.7rem;
+            font-size: 0.82rem;
+            line-height: 1.25;
+            color: #000000;
+            font-family: 'Segoe UI', Arial, sans-serif;
             text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-shadow: none;
+            font-weight: 700;
             letter-spacing: 0.01em;
-            line-height: 1.35;
+            -webkit-font-smoothing: antialiased;
+            text-rendering: geometricPrecision;
         }
         .artwork-preview-wrap {
-            flex: 1;
+            flex: 0 0 auto;
             border-radius: 14px;
             overflow: hidden;
             background: rgba(255,255,255,0.06);
@@ -133,16 +141,20 @@ if (!$openHub) {
             justify-content: center;
             position: relative;
             z-index: 1;
-            min-height: 220px;
+            min-height: 170px;
+            height: clamp(170px, 24vh, 210px);
+            max-width: 100%;
         }
         .artwork-preview-wrap img {
-            width: 100%;
+            width: auto;
+            max-width: 100%;
             height: 100%;
             object-fit: contain;
             display: block;
         }
         #intro-pdf-canvas {
-            width: 100% !important;
+            width: auto !important;
+            max-width: 100% !important;
             height: 100% !important;
             object-fit: contain;
             display: block;
@@ -250,6 +262,7 @@ if (!$openHub) {
     </style>
 </head>
 <body>
+    <div class="intro-shell-wrap">
     <div class="intro-shell">
         <div class="intro-visual">
             <div class="intro-brand"><img src="<?php echo sanitize($erpLogoUrl); ?>" alt="ERP Logo"> <?php echo sanitize(APP_NAME); ?></div>
@@ -299,7 +312,8 @@ if (!$openHub) {
             <a href="<?php echo $openHubUrl; ?>" class="open-btn"><i class="fas fa-eye"></i> Open Artwork Approval Hub</a>
         </div>
     </div>
-    <div class="erp-footer-strip">Version : <?php echo sanitize(defined('APP_VERSION') ? APP_VERSION : '1.0.0'); ?> &bull; &copy; <?php echo date('Y'); ?> <?php echo sanitize(APP_NAME); ?> &bull; ERP Master System v<?php echo sanitize(defined('APP_VERSION') ? APP_VERSION : '1.0.0'); ?> | @ Developed by Mriganka Bhusan Debnath</div>
+    <div class="intro-footer-note">Version : <?php echo sanitize(defined('APP_VERSION') ? APP_VERSION : '1.0.0'); ?> &bull; &copy; <?php echo date('Y'); ?> <?php echo sanitize(APP_NAME); ?> &bull; ERP Master System v<?php echo sanitize(defined('APP_VERSION') ? APP_VERSION : '1.0.0'); ?> | @ Developed by Mriganka Bhusan Debnath</div>
+    </div>
 <?php if ($isCurrentPdf): ?>
 <script>
 (function() {
@@ -813,6 +827,11 @@ function annotationLabel(array $comment, int $index): string {
             border-radius: 4px;
             transform-origin: 0 0;
             cursor: inherit !important;
+            transition: opacity 120ms ease;
+        }
+
+        .artwork-wrapper.artwork-loading {
+            opacity: 0;
         }
 
         .artwork-wrapper img { 
@@ -1115,8 +1134,8 @@ function annotationLabel(array $comment, int $index): string {
         
         .pin { 
             position: absolute; 
-            width: 28px; 
-            height: 28px; 
+            width: 34px; 
+            height: 34px; 
             background: var(--primary-gradient); 
             border: 2px solid white; 
             border-radius: 50%; 
@@ -1124,7 +1143,7 @@ function annotationLabel(array $comment, int $index): string {
             display: flex; 
             align-items: center; 
             justify-content: center; 
-            font-size: 11px; 
+            font-size: 13px; 
             font-weight: 800; 
             transform: translate(-50%, -50%); 
             cursor: pointer; 
@@ -1139,12 +1158,12 @@ function annotationLabel(array $comment, int $index): string {
             inset: -6px;
             border-radius: 999px;
             border: 2px solid rgba(20, 184, 166, 0.45);
-            animation: pin-ring 1.8s ease-out infinite;
+            animation: none;
             pointer-events: none;
         }
 
         .pin.temp-pin {
-            animation: pin-drop 0.28s ease-out, pin-bob 1.25s ease-in-out infinite 0.3s;
+            animation: pin-drop 0.22s ease-out;
         }
 
         .pin:hover { 
@@ -1196,7 +1215,7 @@ function annotationLabel(array $comment, int $index): string {
             background: rgba(139, 92, 246, 0.13);
             pointer-events: none;
             z-index: 5;
-            animation: area-breathe 1.2s ease-in-out infinite, dotted-flash 0.8s linear infinite;
+            animation: none;
         }
 
         .comment-area {
@@ -1206,7 +1225,7 @@ function annotationLabel(array $comment, int $index): string {
             z-index: 4;
             cursor: pointer;
             transition: all 0.2s;
-            animation: area-breathe 2s ease-in-out infinite;
+            animation: none;
         }
 
         .comment-area[data-type="area"] {
@@ -1580,12 +1599,12 @@ function annotationLabel(array $comment, int $index): string {
 
         .markup-stroke.markup-pen {
             stroke-dasharray: 10 8;
-            animation: pen-flow 1.05s linear infinite;
+            animation: none;
         }
 
         .markup-stroke.markup-arrow {
             stroke-dasharray: 18 8;
-            animation: arrow-pulse 1.1s ease-in-out infinite;
+            animation: none;
         }
 
         .markup-hit {
@@ -1613,7 +1632,7 @@ function annotationLabel(array $comment, int $index): string {
 
         .arrow-note-text {
             fill: #ffffff;
-            font-size: 11px;
+            font-size: 13px;
             font-weight: 700;
             font-family: 'Manrope', sans-serif;
             dominant-baseline: middle;
@@ -2255,6 +2274,11 @@ function annotationLabel(array $comment, int $index): string {
             if (!canvas || !pdfPath) {
                 return;
             }
+            const wrapper = document.getElementById('artwork-wrapper');
+
+            window.artworkCanvasReady = false;
+            canvas.style.visibility = 'hidden';
+            canvas.style.opacity = '0';
 
             const pdfjsLib = await ensurePdfJsLoaded();
             if (!pdfjsLib) {
@@ -2302,10 +2326,27 @@ function annotationLabel(array $comment, int $index): string {
                 canvas.style.height = Math.floor(viewport.height) + 'px';
                 context.setTransform(renderScale, 0, 0, renderScale, 0, 0);
                 context.imageSmoothingEnabled = true;
+                context.fillStyle = '#ffffff';
+                context.fillRect(0, 0, canvas.width, canvas.height);
 
                 await page.render({ canvasContext: context, viewport: viewport }).promise;
+                canvas.style.visibility = 'visible';
+                canvas.style.opacity = '1';
+
+                window.requestAnimationFrame(function() {
+                    if (wrapper) {
+                        wrapper.classList.remove('artwork-loading');
+                    }
+                    window.artworkCanvasReady = true;
+                    window.dispatchEvent(new CustomEvent('artwork:ready'));
+                });
             } catch (error) {
                 console.error('Failed to render PDF preview', error);
+                canvas.style.visibility = 'visible';
+                canvas.style.opacity = '1';
+                if (wrapper) {
+                    wrapper.classList.remove('artwork-loading');
+                }
             }
         }
 
@@ -2326,8 +2367,11 @@ function annotationLabel(array $comment, int $index): string {
             const imageTypes = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 
             if (ext === 'pdf') {
+                wrapper.classList.add('artwork-loading');
                 const canvas = document.createElement('canvas');
                 canvas.id = 'pdf-canvas';
+                canvas.style.background = '#ffffff';
+                canvas.style.transition = 'opacity 120ms ease';
                 wrapper.insertBefore(canvas, markupLayer);
                 window.filePath = filePath;
                 window.isPdf = true;
@@ -2336,10 +2380,17 @@ function annotationLabel(array $comment, int $index): string {
             }
 
             if (imageTypes.includes(ext)) {
+                wrapper.classList.add('artwork-loading');
                 const img = document.createElement('img');
                 img.id = 'artwork-img';
                 img.alt = 'Artwork';
                 img.src = filePath;
+                img.onload = function() {
+                    wrapper.classList.remove('artwork-loading');
+                };
+                img.onerror = function() {
+                    wrapper.classList.remove('artwork-loading');
+                };
                 wrapper.insertBefore(img, markupLayer);
                 window.filePath = filePath;
                 window.isPdf = false;
@@ -2357,6 +2408,7 @@ function annotationLabel(array $comment, int $index): string {
                 + '<h3 style="font-weight:800;margin-bottom:0.5rem;">Preview Unavailable</h3>'
                 + '<p style="color:var(--text-muted);margin-bottom:0;">This file type cannot be previewed in-browser from client view.</p>';
             wrapper.insertBefore(unsupported, markupLayer);
+            wrapper.classList.remove('artwork-loading');
             window.isPdf = false;
         }
 

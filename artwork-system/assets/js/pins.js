@@ -139,12 +139,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function getRelativePosition(clientX, clientY) {
         const wrapperRect = wrapper.getBoundingClientRect();
-        const baseWidth = Math.max(1, wrapperRect.width);
-        const baseHeight = Math.max(1, wrapperRect.height);
+        const baseWidth = Math.max(1, wrapper.clientWidth || wrapperRect.width);
+        const baseHeight = Math.max(1, wrapper.clientHeight || wrapperRect.height);
+        const scale = panzoom && typeof panzoom.getScale === 'function'
+            ? Math.max(0.0001, Number(panzoom.getScale()) || 1)
+            : Math.max(0.0001, wrapperRect.width / baseWidth);
 
-        // Use transformed wrapper bounds so pan/zoom and centering offsets stay aligned.
-        const localX = clientX - wrapperRect.left;
-        const localY = clientY - wrapperRect.top;
+        // Convert the pointer back into wrapper-local coordinates so saved markup
+        // stays stable even when it was drawn while zoomed or panned.
+        const localX = (clientX - wrapperRect.left) / scale;
+        const localY = (clientY - wrapperRect.top) / scale;
 
         const x = (localX / baseWidth) * 100;
         const y = (localY / baseHeight) * 100;
@@ -266,6 +270,10 @@ document.addEventListener('DOMContentLoaded', function () {
                     toolbar.style.top       = state.toolbarTop || '';
                     toolbar.style.transform = state.toolbarTransform !== undefined ? state.toolbarTransform : '';
                 }
+                requestAnimationFrame(function () {
+                    resizeDrawingCanvas();
+                    redrawStoredMarkup();
+                });
                 return true;
             }
         } catch(e) {}
@@ -277,17 +285,30 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        const tryCount = Number(attempt || 0);
-        const maxRetries = 40;
-        const media = wrapper.querySelector('#pdf-canvas, #artwork-img');
-        const mediaNotReady = media && media.tagName === 'IMG' && !media.complete;
-        const widthNotReady = wrapper.clientWidth < 600 || wrapper.clientHeight < 600;
+        // For PDFs: wait for the artwork:ready event (dispatched after page.render completes).
+        // For images: retry until img.complete is true.
+        const canvas = wrapper.querySelector('#pdf-canvas');
+        const img = wrapper.querySelector('#artwork-img');
 
-        if ((mediaNotReady || widthNotReady) && tryCount < maxRetries) {
-            window.setTimeout(function () {
-                fitArtworkToViewer(tryCount + 1);
-            }, 120);
-            return;
+        if (canvas) {
+            // PDF path — only proceed once artworkCanvasReady flag is set by renderPdfCanvas
+            if (!window.artworkCanvasReady) {
+                return; // will be called again via artwork:ready event listener below
+            }
+        } else if (img) {
+            const tryCount = Number(attempt || 0);
+            const maxRetries = 60;
+            if ((!img.complete || img.naturalWidth === 0) && tryCount < maxRetries) {
+                window.setTimeout(function () { fitArtworkToViewer(tryCount + 1); }, 120);
+                return;
+            }
+        } else {
+            // No media yet — retry
+            const tryCount = Number(attempt || 0);
+            if (tryCount < 60) {
+                window.setTimeout(function () { fitArtworkToViewer(tryCount + 1); }, 120);
+                return;
+            }
         }
 
         const rulerOffset = 24;
@@ -313,6 +334,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 const dy = targetTop - postRect.top;
                 const currentPan = panzoom.getPan ? (panzoom.getPan() || { x: 0, y: 0 }) : { x: 0, y: 0 };
                 panzoom.pan(Number(currentPan.x || 0) + dx, Number(currentPan.y || 0) + dy, { animate: false });
+
+                requestAnimationFrame(function () {
+                    resizeDrawingCanvas();
+                    redrawStoredMarkup();
+                });
             });
         });
     }
@@ -392,6 +418,7 @@ document.addEventListener('DOMContentLoaded', function () {
         path.setAttribute('class', className);
         path.setAttribute('stroke', color);
         path.setAttribute('stroke-width', String(width));
+        path.setAttribute('vector-effect', 'non-scaling-stroke');
         if (opacity != null) path.setAttribute('opacity', String(opacity));
         markupLayer.appendChild(path);
         return path;
@@ -406,9 +433,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const noteText = rawText.length > 34 ? rawText.slice(0, 31) + '...' : rawText;
         const startPx = toPixels(start);
         const endPx = toPixels(end);
-        const paddingX = 7;
-        const noteHeight = 20;
-        const noteWidth = clamp(Math.round((noteText.length * 6.2) + (paddingX * 2)), 52, 220);
+        const paddingX = 9;
+        const noteHeight = 24;
+        const noteWidth = clamp(Math.round((noteText.length * 7.1) + (paddingX * 2)), 66, 260);
         const margin = 6;
 
         const dx = endPx.x - startPx.x;
@@ -465,7 +492,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function renderRecord(record, includeHit) {
         if (record.type === 'arrow') {
             const geom = buildArrowGeometry(record.start, record.end);
-            appendSvgPath(geom.visiblePath, record.color, 4, 1, 'markup-stroke markup-arrow');
+            appendSvgPath(geom.visiblePath, record.color, 5, 1, 'markup-stroke markup-arrow');
             appendArrowCallout(record.start, record.end, record.text, record.color);
             if (includeHit) {
                 const hit = appendSvgPath(geom.hitPath, 'transparent', 24, null, 'markup-hit');
@@ -475,7 +502,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         } else if (Array.isArray(record.path)) {
             const pathData = buildPathString(record.path);
-            appendSvgPath(pathData, record.color, record.type === 'highlighter' ? 18 : 4, record.type === 'highlighter' ? 0.38 : 1, record.type === 'pen' ? 'markup-stroke markup-pen' : 'markup-stroke');
+            appendSvgPath(pathData, record.color, record.type === 'highlighter' ? 22 : 5, record.type === 'highlighter' ? 0.45 : 1, record.type === 'pen' ? 'markup-stroke markup-pen' : 'markup-stroke');
             if (includeHit) {
                 const hit = appendSvgPath(pathData, 'transparent', 28, null, 'markup-hit');
                 hit.dataset.id = String(record.id);
@@ -1341,8 +1368,8 @@ document.addEventListener('DOMContentLoaded', function () {
             ctx.lineTo((currentStroke[i].x / 100) * w, (currentStroke[i].y / 100) * h);
         }
         ctx.strokeStyle = currentColor;
-        ctx.lineWidth = currentTool === 'highlighter' ? 18 : 3;
-        ctx.globalAlpha = currentTool === 'highlighter' ? 0.4 : 1;
+        ctx.lineWidth = currentTool === 'highlighter' ? 22 : 5;
+        ctx.globalAlpha = currentTool === 'highlighter' ? 0.45 : 1;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.stroke();
@@ -1815,17 +1842,47 @@ document.addEventListener('DOMContentLoaded', function () {
         shouldRestoreOnce = false;
     }
 
-    if (shouldRestoreOnce) {
-        if (!restoreViewState()) {
+    // Expose so renderPdfCanvas (in review.php) can call it after PDF pixels are painted
+    window.fitArtworkToViewer = fitArtworkToViewer;
+
+    // Guard against duplicate initial fit/restore calls that can cause a visible jerk.
+    let initialViewApplied = false;
+    function applyInitialViewOnce() {
+        if (initialViewApplied) {
+            return;
+        }
+        initialViewApplied = true;
+
+        if (shouldRestoreOnce) {
+            if (!restoreViewState()) {
+                fitArtworkToViewer();
+            }
+        } else {
             fitArtworkToViewer();
         }
-    } else {
-        fitArtworkToViewer();
     }
 
+    // For PDFs, artwork:ready fires after page.render() completes; apply fit then.
+    window.addEventListener('artwork:ready', function () {
+        applyInitialViewOnce();
+    }, { once: true });
+
+    const hasPdfCanvas = !!wrapper.querySelector('#pdf-canvas');
+    if (hasPdfCanvas && !window.artworkCanvasReady) {
+        // Wait for artwork:ready to avoid fit-before-render jump for PDFs.
+    } else {
+        applyInitialViewOnce();
+    }
+
+    let resizeRedrawTimer = null;
     window.addEventListener('resize', function () {
-        resizeDrawingCanvas();
-        redrawStoredMarkup();
+        if (resizeRedrawTimer) {
+            window.clearTimeout(resizeRedrawTimer);
+        }
+        resizeRedrawTimer = window.setTimeout(function () {
+            resizeDrawingCanvas();
+            redrawStoredMarkup();
+        }, 80);
     });
 });
 
