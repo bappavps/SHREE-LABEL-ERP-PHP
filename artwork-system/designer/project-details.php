@@ -126,8 +126,8 @@ function dashboardAnnotationLabel(array $comment): string {
     return 'Pin';
 }
 
-$reviewLink = ARTWORK_BASE_URL . "/review.php?token=" . $project['token'];
-$portalReviewLink = ARTWORK_BASE_URL . "/review.php?token=" . $project['token'] . "&open=1";
+$reviewLink = ARTWORK_BASE_URL . "/review.php?token=" . $project['token'] . "&view=client";
+$portalReviewLink = ARTWORK_BASE_URL . "/review.php?token=" . $project['token'] . "&open=1&view=designer";
 $finalFileStmt = $db->prepare("SELECT * FROM artwork_files WHERE project_id = ? AND is_final = 1 ORDER BY version DESC LIMIT 1");
 $finalFileStmt->execute([$projectId]);
 $finalFile = $finalFileStmt->fetch();
@@ -272,10 +272,20 @@ $isAdmin = (($designer['role'] ?? '') === 'admin');
                 <?php if (empty($activities)): ?>
                     <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">No timeline activity found yet.</p>
                 <?php else: ?>
+                    <?php $clientNameLower = strtolower(trim((string)($project['client_name'] ?? ''))); ?>
                     <?php foreach ($activities as $activity): ?>
-                        <div style="position: relative; margin-bottom: 1.5rem;">
-                            <div style="position: absolute; left: -1.9rem; top: 0; width: 12px; height: 12px; background: var(--primary-color); border-radius: 50%; border: 3px solid white;"></div>
-                            <p style="font-size: 0.85rem; margin-bottom: 0.2rem;"><?php echo sanitize($activity['action']); ?></p>
+                        <?php
+                        $actText = strtolower((string)($activity['action'] ?? ''));
+                        // Client entry if the action text contains the client's name
+                        $isClientAct = $clientNameLower !== '' && str_contains($actText, $clientNameLower);
+                        $dotColor = $isClientAct ? '#f97316' : '#0d9488';
+                        $textColor = $isClientAct ? '#c2410c' : '#0f766e';
+                        $bgColor = $isClientAct ? '#fff7ed' : '#f0fdfa';
+                        $borderColor = $isClientAct ? '#fed7aa' : '#99f6e4';
+                        ?>
+                        <div style="position: relative; margin-bottom: 1.5rem; background:<?php echo $bgColor; ?>; border:1px solid <?php echo $borderColor; ?>; border-radius:8px; padding:0.55rem 0.65rem 0.45rem 0.65rem;">
+                            <div style="position: absolute; left: -1.9rem; top: 0.55rem; width: 12px; height: 12px; background: <?php echo $dotColor; ?>; border-radius: 50%; border: 3px solid white;"></div>
+                            <p style="font-size: 0.85rem; margin-bottom: 0.2rem; color:<?php echo $textColor; ?>; font-weight:600;"><?php echo sanitize($activity['action']); ?></p>
                             <p style="font-size: 0.7rem; color: var(--text-muted);"><?php echo date('M d, H:i', strtotime($activity['created_at'])); ?></p>
                         </div>
                     <?php endforeach; ?>

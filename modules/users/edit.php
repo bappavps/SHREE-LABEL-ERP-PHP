@@ -30,7 +30,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Invalid security token.';
     } else {
         $name     = trim($_POST['name']  ?? '');
-        $email    = trim($_POST['email'] ?? '');
+        $email    = trim(strtolower($_POST['email'] ?? ''));
+        if (preg_match('/@gmail\.com$/i', $email)) {
+          $email = preg_replace('/@gmail\.com$/i', '@shreelabel.com', $email);
+        }
         $role     = $_POST['role']       ?? 'operator';
         $groupId  = (int)($_POST['group_id'] ?? 0);
         $isActive = isset($_POST['is_active']) ? 1 : 0;
@@ -135,6 +138,7 @@ include __DIR__ . '/../../includes/header.php';
         <div class="form-group">
           <label class="form-label">Email <span class="req">*</span></label>
           <input type="email" name="email" class="form-control" required value="<?= e($user['email']) ?>">
+          <small class="text-muted">If you enter @gmail.com, it will be saved as @shreelabel.com automatically.</small>
         </div>
         <div class="form-group">
           <label class="form-label">Role</label>

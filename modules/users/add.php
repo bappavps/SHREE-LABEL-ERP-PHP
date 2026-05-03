@@ -22,7 +22,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Invalid security token.';
     } else {
         $name     = trim($_POST['name']     ?? '');
-        $email    = trim($_POST['email']    ?? '');
+        $email    = trim(strtolower($_POST['email'] ?? ''));
+        if (preg_match('/@gmail\.com$/i', $email)) {
+          $email = preg_replace('/@gmail\.com$/i', '@shreelabel.com', $email);
+        }
         $password = $_POST['password']      ?? '';
         $confirm  = $_POST['password_confirm'] ?? '';
         $role     = $_POST['role']          ?? 'operator';
@@ -99,6 +102,7 @@ include __DIR__ . '/../../includes/header.php';
         <div class="form-group">
           <label class="form-label">Email <span class="req">*</span></label>
           <input type="email" name="email" class="form-control" required autocomplete="off" value="<?= e($_POST['email'] ?? '') ?>">
+          <small class="text-muted">If you enter @gmail.com, it will be saved as @shreelabel.com automatically.</small>
         </div>
         <div class="form-group">
           <label class="form-label">Password <span class="req">*</span> <small class="text-muted">(min 8 chars)</small></label>

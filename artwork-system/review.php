@@ -359,6 +359,13 @@ $stmt = $db->prepare("SELECT * FROM artwork_comments WHERE file_id = ? AND paren
 $stmt->execute([$file['id']]);
 $comments = $stmt->fetchAll();
 
+foreach ($comments as &$commentItem) {
+    $replyStmt = $db->prepare("SELECT id, user_name, comment, created_at FROM artwork_comments WHERE parent_id = ? ORDER BY created_at ASC");
+    $replyStmt->execute([(int)$commentItem['id']]);
+    $commentItem['replies'] = $replyStmt->fetchAll();
+}
+unset($commentItem);
+
 // Full File Journey (for client/designer/admin visibility)
 $stmt = $db->prepare("SELECT id, filename, original_name, file_type, version, uploaded_at, is_final FROM artwork_files WHERE project_id = ? ORDER BY version ASC");
 $stmt->execute([$project['id']]);
@@ -375,11 +382,41 @@ $totalCorrections = (int) $stmt->fetchColumn();
 $firstUploadedAt = !empty($projectFiles) ? $projectFiles[0]['uploaded_at'] : null;
 $latestUploadedAt = !empty($projectFiles) ? $projectFiles[count($projectFiles) - 1]['uploaded_at'] : null;
 
-// Detect if viewer is a logged-in designer/admin (not a client)
+// Detect viewer mode. Query param takes precedence so same browser can open designer and client views together.
+$viewMode = isset($_GET['view']) ? strtolower(trim((string)$_GET['view'])) : '';
+if ($viewMode !== 'designer' && $viewMode !== 'client') {
+    $viewMode = '';
+}
+
 $authUser = getAuthUser();
-$isDesigner = $authUser !== null && in_array($authUser['role'], ['designer', 'admin'], true);
+$authIsDesigner = $authUser !== null && in_array($authUser['role'], ['designer', 'admin'], true);
+$isDesigner = $viewMode === 'designer' ? true : ($viewMode === 'client' ? false : $authIsDesigner);
+
 $projectStatus = $project['status'] ?? 'pending';
 $isApproved = ($projectStatus === 'approved');
+
+$viewerDisplayName = $isDesigner
+    ? (string)($authUser['name'] ?? 'Designer')
+    : (string)($project['client_name'] ?? 'Client');
+$viewerRoleLabel = $isDesigner ? 'Designer' : 'Client';
+$counterpartyDisplayName = $isDesigner
+    ? (string)($project['client_name'] ?? 'Client')
+    : 'Designer Team';
+$counterpartyRoleLabel = $isDesigner ? 'Client' : 'Designer';
+
+$presencePollMs = isset($_GET['presence_poll_ms']) ? (int)$_GET['presence_poll_ms'] : 10000;
+if ($presencePollMs < 3000) {
+    $presencePollMs = 3000;
+} elseif ($presencePollMs > 60000) {
+    $presencePollMs = 60000;
+}
+
+$commentPollMs = isset($_GET['chat_poll_ms']) ? (int)$_GET['chat_poll_ms'] : 5000;
+if ($commentPollMs < 2000) {
+    $commentPollMs = 2000;
+} elseif ($commentPollMs > 30000) {
+    $commentPollMs = 30000;
+}
 
 function annotationLabel(array $comment, int $index): string {
     $type = $comment['type'] ?? 'point';
@@ -396,6 +433,70 @@ function annotationLabel(array $comment, int $index): string {
         return 'Highlight #' . $index;
     }
     return 'Pin #' . $index;
+}
+
+function normalizeActivityEntry(string $action, string $clientName = ''): array {
+    $raw = trim(preg_replace('/\s+/', ' ', $action));
+    $text = $raw;
+    $class = '';
+    $clientNameNorm = strtolower(trim($clientName));
+    $isClientActor = static function (string $name) use ($clientNameNorm): bool {
+        return $clientNameNorm !== '' && strtolower(trim($name)) === $clientNameNorm;
+    };
+
+    if (preg_match('/^(Client|Designer)\s+replied\s+by\s+(.+?):\s*(.+)$/i', $raw, $m)) {
+        $role = ucfirst(strtolower((string)$m[1]));
+        $name = trim((string)$m[2]);
+        $msg = trim((string)$m[3]);
+        $text = ($name !== '' ? $name : $role) . ': ' . $msg;
+        $class = (strtolower($role) === 'client' || $isClientActor($name)) ? 'activity-client' : 'activity-designer';
+    } elseif (preg_match('/^(Client|Designer)\s+(.+?)\s+replied:\s*(.+)$/i', $raw, $m)) {
+        $role = ucfirst(strtolower((string)$m[1]));
+        $name = trim((string)$m[2]);
+        $msg = trim((string)$m[3]);
+        $text = ($name !== '' ? $name : $role) . ': ' . $msg;
+        $class = (strtolower($role) === 'client' || $isClientActor($name)) ? 'activity-client' : 'activity-designer';
+    } elseif (preg_match('/^(Client|Designer)\s+correction\s+added\s*\(([^)]+)\)\s*by\s+(.+?):\s*(.+)$/i', $raw, $m)) {
+        $role = ucfirst(strtolower((string)$m[1]));
+        $name = trim((string)$m[3]);
+        $msg = trim((string)$m[4]);
+        $text = ($name !== '' ? $name : $role) . ': ' . $msg;
+        $class = (strtolower($role) === 'client' || $isClientActor($name)) ? 'activity-client' : 'activity-designer';
+    } elseif (preg_match('/^(Client|Designer)\s+(.+?)\s+added\s+[^:]+correction:\s*(.+)$/i', $raw, $m)) {
+        $role = ucfirst(strtolower((string)$m[1]));
+        $name = trim((string)$m[2]);
+        $msg = trim((string)$m[3]);
+        $text = ($name !== '' ? $name : $role) . ': ' . $msg;
+        $class = (strtolower($role) === 'client' || $isClientActor($name)) ? 'activity-client' : 'activity-designer';
+    } elseif (stripos($raw, 'Artwork approved by client') !== false) {
+        $text = 'Client approved artwork. Review cycle completed.';
+        $class = 'activity-client';
+    } elseif (stripos($raw, 'Changes requested by client') !== false) {
+        $text = 'Client requested changes. Correction cycle reopened.';
+        $class = 'activity-client';
+    } elseif (stripos($raw, 'Correction deleted') === 0 || stripos($raw, 'Deleted') === 0) {
+        $class = 'activity-delete';
+    } elseif (stripos($raw, 'Client ') === 0) {
+        $class = 'activity-client';
+    } elseif (stripos($raw, 'Designer ') === 0 || stripos($raw, 'uploaded revision') !== false) {
+        $class = ($clientNameNorm !== '' && stripos(strtolower($raw), $clientNameNorm) !== false)
+            ? 'activity-client'
+            : 'activity-designer';
+    } elseif (preg_match('/^([^:]+):\s*(.+)$/', $raw, $m)) {
+        $actorName = trim((string)$m[1]);
+        $msg = trim((string)$m[2]);
+        $text = $actorName . ': ' . $msg;
+        if ($clientName !== '' && strcasecmp($actorName, $clientName) === 0) {
+            $class = 'activity-client';
+        } else {
+            $class = 'activity-designer';
+        }
+    }
+
+    return [
+        'text' => $text,
+        'class' => $class,
+    ];
 }
 ?>
 <!DOCTYPE html>
@@ -519,6 +620,45 @@ function annotationLabel(array $comment, int $index): string {
             color: var(--text-muted);
         }
 
+        .presence-list {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-left: 0.45rem;
+            flex-wrap: wrap;
+        }
+
+        .presence-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.32rem;
+            padding: 0.16rem 0.5rem;
+            border-radius: 999px;
+            border: 1px solid #dbe3ec;
+            background: #ffffff;
+            font-size: 0.73rem;
+            font-weight: 700;
+            color: #334155;
+            white-space: nowrap;
+        }
+
+        .presence-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            display: inline-block;
+        }
+
+        .presence-dot.online {
+            background: #16a34a;
+            box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2);
+        }
+
+        .presence-dot.offline {
+            background: #94a3b8;
+            box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.2);
+        }
+
         .btn-toggle-comments {
             display: flex;
             align-items: center;
@@ -582,9 +722,23 @@ function annotationLabel(array $comment, int $index): string {
             min-height: 0;
         }
 
+        .review-tool-strip {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.48rem 2.5rem;
+            background: #ffffff;
+            border-top: 1px solid #f1f5f9;
+            border-bottom: 1px solid #f1f5f9;
+            box-shadow: 0 2px 5px -3px rgba(15, 23, 42, 0.08);
+            z-index: 95;
+            position: relative;
+        }
+
         .toolbar {
             position: absolute;
-            left: 2rem;
+            right: 2rem;
+            left: auto;
             top: 50%;
             transform: translateY(-50%);
             background: linear-gradient(180deg, rgba(236, 253, 245, 0.96) 0%, rgba(207, 250, 254, 0.96) 100%);
@@ -665,37 +819,42 @@ function annotationLabel(array $comment, int $index): string {
         }
 
         .tool-status-pill {
-            position: absolute;
-            top: 1.5rem;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 999;
+            position: static;
+            transform: none;
+            z-index: auto;
+            display: inline-flex;
+            align-items: center;
             background: rgba(19, 34, 40, 0.82);
             color: #fff;
-            padding: 0.55rem 1rem;
+            padding: 0.42rem 0.85rem;
             border-radius: 999px;
-            font-size: 0.78rem;
+            font-size: 0.72rem;
             font-weight: 700;
             letter-spacing: 0.04em;
             text-transform: uppercase;
-            box-shadow: 0 10px 25px rgba(15, 23, 42, 0.18);
+            box-shadow: 0 6px 14px rgba(15, 23, 42, 0.16);
         }
 
         .tool-guide {
-            position: absolute;
-            top: 4.1rem;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 999;
+            position: static;
+            transform: none;
+            z-index: auto;
+            display: inline-flex;
+            align-items: center;
+            flex: 1;
+            min-width: 0;
             background: rgba(255, 255, 255, 0.82);
             color: var(--text-muted);
-            border: 1px solid rgba(255, 255, 255, 0.8);
+            border: 1px solid #dbe3ec;
             backdrop-filter: blur(12px);
-            padding: 0.55rem 0.9rem;
+            padding: 0.42rem 0.75rem;
             border-radius: 999px;
-            font-size: 0.78rem;
+            font-size: 0.74rem;
             font-weight: 600;
-            box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .tool-btn {
@@ -1111,13 +1270,13 @@ function annotationLabel(array $comment, int $index): string {
         }
 
         .history-activity-item.activity-client {
-            border-left-color: #3b82f6;
-            background: #eff6ff;
+            border-left-color: #f97316;
+            background: #fff7ed;
         }
 
         .history-activity-item.activity-designer {
-            border-left-color: #8b5cf6;
-            background: #f5f3ff;
+            border-left-color: #0d9488;
+            background: #f0fdfa;
         }
 
         .history-activity-item.activity-delete {
@@ -1133,12 +1292,12 @@ function annotationLabel(array $comment, int $index): string {
         }
 
         .history-activity-item.activity-client .history-activity-text {
-            color: #1d4ed8;
+            color: #c2410c;
             font-weight: 600;
         }
 
         .history-activity-item.activity-designer .history-activity-text {
-            color: #6d28d9;
+            color: #0f766e;
             font-weight: 600;
         }
 
@@ -1824,12 +1983,36 @@ function annotationLabel(array $comment, int $index): string {
                 align-items: stretch;
             }
 
+            .review-tool-strip {
+                padding: 0.5rem 0.85rem;
+                gap: 0.45rem;
+                flex-wrap: wrap;
+            }
+
+            .tool-status-pill {
+                font-size: 0.68rem;
+                padding: 0.38rem 0.7rem;
+            }
+
+            .tool-guide {
+                flex-basis: 100%;
+                font-size: 0.72rem;
+                white-space: normal;
+                border-radius: 12px;
+            }
+
             .reviewing-chip {
                 grid-column: 1 / -1;
                 text-align: center;
                 padding: 0.55rem 0.7rem;
                 border-radius: 12px;
                 font-size: 0.8rem;
+            }
+
+            .presence-list {
+                margin-left: 0;
+                margin-top: 0.35rem;
+                justify-content: center;
             }
 
             .btn-toggle-comments,
@@ -1845,11 +2028,6 @@ function annotationLabel(array $comment, int $index): string {
             .review-container {
                 flex-direction: column;
                 min-height: calc(100dvh - 190px);
-            }
-
-            .tool-status-pill,
-            .tool-guide {
-                display: none;
             }
 
             .toolbar {
@@ -2112,14 +2290,23 @@ function annotationLabel(array $comment, int $index): string {
                 <i class="fas fa-print"></i> Print
             </button>
             <div class="reviewing-chip">
-                Reviewing as <span style="color: var(--text-main);"><?php echo sanitize($project['client_name']); ?></span>
+                Reviewing as <span id="reviewing-name" style="color: var(--text-main);"><?php echo sanitize($viewerDisplayName); ?></span>
+                <span class="presence-list">
+                    <span class="presence-item" id="presence-counterparty-item" title="Other side status">
+                        <span class="presence-dot offline" id="presence-counterparty-dot"></span>
+                        <span id="presence-counterparty-text"><?php echo sanitize($counterpartyRoleLabel); ?> Offline</span>
+                    </span>
+                </span>
             </div>
         </div>
     </header>
 
-    <div class="review-container">
+    <div class="review-tool-strip">
         <div class="tool-status-pill">Active Tool: <span id="tool-status-label">Select</span></div>
         <div class="tool-guide" id="tool-guide-label">Select tool keeps the canvas neutral for browsing and closing floating boxes.</div>
+    </div>
+
+    <div class="review-container">
         <div class="toolbar" id="main-toolbar">
             <div class="toolbar-handle" id="toolbar-handle" title="Drag Toolbar">
                 <i class="fas fa-grip-lines"></i>
@@ -2225,18 +2412,10 @@ function annotationLabel(array $comment, int $index): string {
                     <?php else: ?>
                         <?php foreach ($projectActivities as $event): ?>
                             <?php
-                                $act = $event['action'];
-                                $actClass = '';
-                                if (stripos($act, 'Client ') === 0 || stripos($act, 'Artwork approved by client') !== false) {
-                                    $actClass = 'activity-client';
-                                } elseif (stripos($act, 'Designer ') === 0 || stripos($act, 'uploaded revision') !== false) {
-                                    $actClass = 'activity-designer';
-                                } elseif (stripos($act, 'Correction deleted') === 0 || stripos($act, 'Deleted') === 0) {
-                                    $actClass = 'activity-delete';
-                                }
+                                $actEntry = normalizeActivityEntry((string)($event['action'] ?? ''), (string)($project['client_name'] ?? ''));
                             ?>
-                            <div class="history-activity-item <?php echo $actClass; ?>">
-                                <p class="history-activity-text"><?php echo sanitize($event['action']); ?></p>
+                            <div class="history-activity-item <?php echo sanitize($actEntry['class']); ?>">
+                                <p class="history-activity-text"><?php echo sanitize($actEntry['text']); ?></p>
                                 <p class="history-activity-time"><?php echo date('M d, Y H:i', strtotime($event['created_at'])); ?></p>
                             </div>
                         <?php endforeach; ?>
@@ -2396,6 +2575,7 @@ function annotationLabel(array $comment, int $index): string {
             <div id="cvp-text" style="font-size:0.88rem; color:#334155; line-height:1.5; margin-bottom:0.5rem; white-space:pre-wrap;"></div>
             <div id="cvp-attachment" style="margin-bottom:0.5rem;"></div>
             <div id="cvp-time" style="font-size:0.75rem; color:#94a3b8; margin-bottom:0.6rem;"></div>
+            <div id="cvp-thread" style="display:none; margin-bottom:0.6rem; padding:0.55rem; border-radius:10px; background:#f8fafc; border:1px solid #e2e8f0; max-height:180px; overflow:auto;"></div>
             <div style="display:flex; gap:0.5rem; padding-top:0.6rem; border-top:1px solid #f1f5f9; align-items:center;">
                 <button type="button" id="cvp-reply-toggle" class="btn-reply-toggle" style="font-size:0.8rem; padding:0.25rem 0.7rem; border-radius:8px; border:1px solid #e2e8f0; background:#f8fafc; cursor:pointer; font-family:inherit;">Reply</button>
                 <button type="button" id="cvp-delete" class="comment-delete-btn" style="font-size:0.8rem; margin-left:auto;">Delete</button>
@@ -2430,6 +2610,19 @@ function annotationLabel(array $comment, int $index): string {
         window.fileId = '<?php echo $file['id']; ?>';
         window.latestFileId = '<?php echo $file['id']; ?>';
         window.clientName = '<?php echo sanitize($project['client_name']); ?>';
+        window.reviewActorName = <?php echo json_encode($viewerDisplayName); ?>;
+        window.reviewPresence = {
+            token: <?php echo json_encode($token); ?>,
+            viewMode: <?php echo json_encode($isDesigner ? 'designer' : 'client'); ?>,
+            viewerRoleLabel: <?php echo json_encode($viewerRoleLabel); ?>,
+            viewerName: <?php echo json_encode($viewerDisplayName); ?>,
+            counterpartyRoleLabel: <?php echo json_encode($counterpartyRoleLabel); ?>,
+            counterpartyName: <?php echo json_encode($counterpartyDisplayName); ?>
+        };
+        window.reviewRealtime = {
+            presencePollMs: <?php echo (int)$presencePollMs; ?>,
+            commentPollMs: <?php echo (int)$commentPollMs; ?>
+        };
         window.filePath = <?php echo $isCurrentPdf
             ? json_encode('preview.php?id=' . (int) $file['id'])
             : json_encode('uploads/projects/' . rawurlencode((string) $file['filename'])); ?>;
@@ -2779,6 +2972,79 @@ function annotationLabel(array $comment, int $index): string {
             document.body.classList.remove('print-mode');
             document.documentElement.style.removeProperty('--print-scale');
         });
+
+        (function setupPresenceHeartbeat() {
+            if (!window.reviewPresence || !window.reviewPresence.token) {
+                return;
+            }
+
+            const nameEl = document.getElementById('reviewing-name');
+            const counterpartyTextEl = document.getElementById('presence-counterparty-text');
+            const counterpartyDotEl = document.getElementById('presence-counterparty-dot');
+
+            if (!nameEl || !counterpartyTextEl || !counterpartyDotEl) {
+                return;
+            }
+
+            function setDotState(dotEl, isOnline) {
+                dotEl.classList.toggle('online', !!isOnline);
+                dotEl.classList.toggle('offline', !isOnline);
+            }
+
+            function renderPresence(payload) {
+                if (!payload || payload.success !== true) {
+                    return;
+                }
+
+                const viewer = payload.viewer || {};
+                const counterparty = payload.counterparty || {};
+
+                const viewerName = viewer.name || window.reviewPresence.viewerName || 'Viewer';
+                const counterpartyName = counterparty.name || window.reviewPresence.counterpartyName || 'Counterparty';
+                const counterpartyRole = counterparty.roleLabel || window.reviewPresence.counterpartyRoleLabel || 'Counterparty';
+
+                const counterpartyOnline = !!counterparty.online;
+
+                nameEl.textContent = viewerName;
+                counterpartyTextEl.textContent = counterpartyRole + ' ' + (counterpartyOnline ? 'Online' : 'Offline');
+
+                setDotState(counterpartyDotEl, counterpartyOnline);
+
+                if (counterpartyTextEl.parentElement) {
+                    counterpartyTextEl.parentElement.title = counterpartyName + ' is ' + (counterpartyOnline ? 'online' : 'offline');
+                }
+            }
+
+            async function sendHeartbeat() {
+                try {
+                    const body = new URLSearchParams();
+                    body.set('token', window.reviewPresence.token);
+                    body.set('view_mode', window.reviewPresence.viewMode || '');
+
+                    const response = await fetch('./api/presence-heartbeat.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                        },
+                        credentials: 'same-origin',
+                        body: body.toString()
+                    });
+
+                    if (!response.ok) {
+                        return;
+                    }
+
+                    const data = await response.json();
+                    renderPresence(data);
+                } catch (error) {
+                    // Keep review page usable even when heartbeat API is temporarily unavailable.
+                }
+            }
+
+            const presenceIntervalMs = Math.max(3000, Number((window.reviewRealtime && window.reviewRealtime.presencePollMs) || 10000));
+            sendHeartbeat();
+            setInterval(sendHeartbeat, presenceIntervalMs);
+        })();
 
         // Client portal deterrents: allow print but discourage direct downloads/saving.
         document.addEventListener('contextmenu', function (event) {

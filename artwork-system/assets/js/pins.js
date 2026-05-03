@@ -269,13 +269,14 @@ document.addEventListener('DOMContentLoaded', function () {
     function saveViewState() {
         if (!panzoom) return;
         const state = { scale: panzoom.getScale(), pan: panzoom.getPan() };
-        if (toolbar) {
+        if (toolbar && toolbar.dataset.positionMode === 'custom') {
             const tLeft  = toolbar.style.left;
             const tTop   = toolbar.style.top;
             const tTrans = toolbar.style.transform;
             if (tLeft)  state.toolbarLeft  = tLeft;
             if (tTop)   state.toolbarTop   = tTop;
             if (tTrans !== undefined) state.toolbarTransform = tTrans;
+            state.toolbarCustom = true;
         }
         try { localStorage.setItem(viewStateStorageKey, JSON.stringify(state)); } catch(e) {}
     }
@@ -287,10 +288,12 @@ document.addEventListener('DOMContentLoaded', function () {
             if (state) {
                 panzoom.zoom(state.scale, { animate: false });
                 panzoom.pan(state.pan.x, state.pan.y, { animate: false });
-                if (toolbar && state.toolbarLeft) {
+                if (toolbar && state.toolbarCustom === true && state.toolbarLeft) {
                     toolbar.style.left      = state.toolbarLeft;
+                    toolbar.style.right     = 'auto';
                     toolbar.style.top       = state.toolbarTop || '';
                     toolbar.style.transform = state.toolbarTransform !== undefined ? state.toolbarTransform : '';
+                    toolbar.dataset.positionMode = 'custom';
                 }
                 requestAnimationFrame(function () {
                     resizeDrawingCanvas();
@@ -558,9 +561,11 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             const toolbarRect = toolbar.getBoundingClientRect();
             const parentRect = (toolbar.offsetParent || viewer).getBoundingClientRect();
+            toolbar.style.right = 'auto';
             toolbar.style.left = (toolbarRect.left - parentRect.left) + 'px';
             toolbar.style.top = (toolbarRect.top - parentRect.top) + 'px';
             toolbar.style.transform = 'none';
+            toolbar.dataset.positionMode = 'custom';
 
             toolbarDragPointerId = e.pointerId;
             toolbarDragOffsetX = e.clientX - toolbarRect.left;
@@ -1481,6 +1486,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const text   = document.getElementById('cvp-text');
         const time   = document.getElementById('cvp-time');
         const attach = document.getElementById('cvp-attachment');
+        const thread = document.getElementById('cvp-thread');
 
         if (lbl)    lbl.textContent    = (c.type || 'point').charAt(0).toUpperCase() + (c.type || 'point').slice(1) + ' #' + (idx + 1);
         if (author) author.textContent = c.user_name || '';
@@ -1499,6 +1505,47 @@ document.addEventListener('DOMContentLoaded', function () {
                 } else {
                     attach.innerHTML = '<a href="uploads/references/' + c.attachment + '" target="_blank" style="font-size:0.8rem;color:#1d4ed8;"><i class="fas fa-paperclip"></i> View Attachment</a>';
                 }
+            }
+        }
+
+        if (thread) {
+            thread.innerHTML = '';
+            const replies = Array.isArray(c.replies) ? c.replies : [];
+            if (replies.length) {
+                thread.style.display = 'block';
+
+                const heading = document.createElement('div');
+                heading.style.cssText = 'font-size:0.76rem;font-weight:800;color:#64748b;margin-bottom:0.45rem;';
+                heading.textContent = 'Conversation (' + replies.length + ' replies)';
+                thread.appendChild(heading);
+
+                replies.forEach(function (reply) {
+                    const row = document.createElement('div');
+                    row.style.cssText = 'padding:0.45rem 0.5rem;border:1px solid #e2e8f0;background:#ffffff;border-radius:8px;margin-bottom:0.35rem;';
+
+                    const rowHead = document.createElement('div');
+                    rowHead.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:0.5rem;margin-bottom:0.18rem;';
+
+                    const authorEl = document.createElement('span');
+                    authorEl.style.cssText = 'font-size:0.78rem;font-weight:700;color:#1f2937;';
+                    authorEl.textContent = String(reply.user_name || 'User');
+
+                    const timeEl = document.createElement('span');
+                    timeEl.style.cssText = 'font-size:0.72rem;color:#94a3b8;white-space:nowrap;';
+                    timeEl.textContent = reply.created_at ? new Date(reply.created_at).toLocaleString() : '';
+
+                    const bodyEl = document.createElement('div');
+                    bodyEl.style.cssText = 'font-size:0.8rem;color:#475569;line-height:1.45;white-space:pre-wrap;';
+                    bodyEl.textContent = String(reply.comment || '');
+
+                    rowHead.appendChild(authorEl);
+                    rowHead.appendChild(timeEl);
+                    row.appendChild(rowHead);
+                    row.appendChild(bodyEl);
+                    thread.appendChild(row);
+                });
+            } else {
+                thread.style.display = 'none';
             }
         }
 
@@ -1550,7 +1597,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 fd.append('file_id', window.fileId);
                 fd.append('comment', message);
                 fd.append('parent_id', c.id);
-                fd.append('user_name', window.clientName || 'Client');
+                fd.append('user_name', window.reviewActorName || window.clientName || 'Client');
                 fetch('api/add-comment.php', { method: 'POST', body: fd })
                     .then(function (res) { return res.json(); })
                     .then(function (data) {
@@ -1711,6 +1758,44 @@ document.addEventListener('DOMContentLoaded', function () {
             });
     }
 
+    function shouldRunLiveCommentSync() {
+        if (document.hidden) {
+            return false;
+        }
+
+        const active = document.activeElement;
+        if (!active) {
+            return true;
+        }
+
+        const tag = (active.tagName || '').toLowerCase();
+        const isTyping = active.isContentEditable || tag === 'input' || tag === 'textarea';
+        if (!isTyping) {
+            return true;
+        }
+
+        if (active.closest('#new-comment-box') || active.closest('.reply-input-box') || active.closest('#cvp-reply-box')) {
+            return false;
+        }
+
+        return true;
+    }
+
+    function runLiveCommentSync() {
+        if (!shouldRunLiveCommentSync()) {
+            return;
+        }
+        refreshCommentsWithoutReload();
+    }
+
+    const commentIntervalMs = Math.max(2000, Number((window.reviewRealtime && window.reviewRealtime.commentPollMs) || 5000));
+    window.setInterval(runLiveCommentSync, commentIntervalMs);
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) {
+            runLiveCommentSync();
+        }
+    });
+
     commentTextarea.addEventListener('input', function () {
         syncDraftCalloutText();
     });
@@ -1743,7 +1828,7 @@ document.addEventListener('DOMContentLoaded', function () {
         fd.append('width', activeAnnotation.w != null ? activeAnnotation.w : '');
         fd.append('height', activeAnnotation.h != null ? activeAnnotation.h : '');
         fd.append('drawing_data', activeAnnotation.data != null ? activeAnnotation.data : '');
-        fd.append('user_name', window.clientName || 'Client');
+        fd.append('user_name', window.reviewActorName || window.clientName || 'Client');
 
         if (refInput && refInput.files && refInput.files[0]) {
             fd.append('attachment', refInput.files[0]);
@@ -2189,7 +2274,7 @@ function saveReply(parentId) {
     fd.append('file_id', window.fileId);
     fd.append('comment', message);
     fd.append('parent_id', parentId);
-    fd.append('user_name', window.clientName || 'Client');
+    fd.append('user_name', window.reviewActorName || window.clientName || 'Client');
 
     fetch('api/add-comment.php', {
         method: 'POST',

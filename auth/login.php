@@ -26,7 +26,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   } elseif (!verifyCSRF($_POST['csrf_token'] ?? '')) {
         $error = 'Invalid request. Please refresh and try again.';
     } else {
-        $email    = trim($_POST['email']    ?? '');
+        $email    = trim(strtolower($_POST['email'] ?? ''));
+        if (preg_match('/@gmail\.com$/i', $email)) {
+          $email = preg_replace('/@gmail\.com$/i', '@shreelabel.com', $email);
+        }
         $password = trim($_POST['password'] ?? '');
 
         if ($email === '' || $password === '') {

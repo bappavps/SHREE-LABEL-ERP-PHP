@@ -57,7 +57,6 @@ function prettyCommentType(string $type): string {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     appSessionStart();
     $authUser = getAuthUser();
-    $actorRole = $authUser ? 'Designer' : 'Client';
 
     $fileId = (int)$_POST['file_id'];
     $comment = sanitize($_POST['comment']);
@@ -70,6 +69,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $parentId = isset($_POST['parent_id']) && $_POST['parent_id'] !== '' ? (int)$_POST['parent_id'] : null;
     $userName = sanitize($_POST['user_name']);
     $attachment = null;
+
+    if ($authUser && !empty($authUser['name'])) {
+        $userName = sanitize((string)$authUser['name']);
+    }
+    if ($userName === '') {
+        $userName = $authUser ? 'Designer' : 'Client';
+    }
 
     if (empty($comment)) jsonResponse('error', 'Comment cannot be empty');
 
@@ -141,11 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $projectId = $stmt->fetchColumn();
         
         // Log Activity
-        if ($parentId) {
-            $actionMsg = "$actorRole replied by $userName: " . shortActivityText($comment);
-        } else {
-            $actionMsg = "$actorRole correction added (" . prettyCommentType($type) . ") by $userName: " . shortActivityText($comment);
-        }
+        $actionMsg = $userName . ': ' . shortActivityText($comment);
         $stmt = $db->prepare("INSERT INTO artwork_activity_log (project_id, action) VALUES (?, ?)");
         $stmt->execute([$projectId, $actionMsg]);
         

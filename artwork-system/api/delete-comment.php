@@ -15,6 +15,9 @@ if ($commentId <= 0 || $token === '') {
 }
 
 $db = Db::getInstance();
+appSessionStart();
+$authUser = getAuthUser();
+$actorRole = $authUser ? 'Designer' : 'Client';
 
 try {
     $db->beginTransaction();
@@ -44,7 +47,7 @@ try {
         $deletedText = substr($deletedText, 0, 87) . '...';
     }
     $log = $db->prepare('INSERT INTO artwork_activity_log (project_id, action) VALUES (?, ?)');
-    $log->execute([(int) $comment['project_id'], 'Correction deleted: ' . $deletedText]);
+    $log->execute([(int) $comment['project_id'], $actorRole . ' deleted correction: ' . $deletedText]);
 
     $db->commit();
     jsonResponse('success', 'Comment deleted successfully.');

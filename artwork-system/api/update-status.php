@@ -27,8 +27,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Log Activity
         $action = $status === 'approved'
-            ? "Artwork approved by client. Review cycle completed."
-            : "Changes requested by client. Correction cycle reopened.";
+            ? 'Client approved artwork. Review cycle completed.'
+            : 'Client requested changes. Correction cycle reopened.';
         $stmt = $db->prepare("INSERT INTO artwork_activity_log (project_id, action) VALUES (?, ?)");
         $stmt->execute([$project['id'], $action]);
         
