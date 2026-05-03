@@ -747,6 +747,30 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
             display: inline-block;
         }
 
+        .btn-toggle-history {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.45rem 1rem;
+            background: #ecfeff;
+            color: #0f766e;
+            border: 1px solid #99f6e4;
+            border-radius: 20px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, box-shadow 0.2s;
+        }
+        .btn-toggle-history:hover {
+            background: #ccfbf1;
+            box-shadow: 0 2px 8px rgba(20, 184, 166, 0.2);
+        }
+        .btn-toggle-history.active {
+            background: #0f766e;
+            color: #fff;
+            border-color: #0f766e;
+        }
+
         .btn-print-design {
             border: 1px solid #cbd5e1;
             background: #ffffff;
@@ -1089,6 +1113,18 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
             display: flex;
             flex-direction: column;
             min-height: 0;
+            transition: width 0.28s ease, min-width 0.28s ease, margin 0.28s ease, opacity 0.28s ease, transform 0.28s ease, border-color 0.28s ease;
+        }
+
+        .history-sidebar.panel-hidden {
+            width: 0 !important;
+            min-width: 0 !important;
+            border-right-color: transparent;
+            margin-right: 0;
+            opacity: 0;
+            transform: translateX(-1rem);
+            pointer-events: none;
+            overflow: hidden;
         }
         
         .comment-sidebar { 
@@ -2087,6 +2123,7 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
             }
 
             .btn-toggle-comments,
+            .btn-toggle-history,
             .btn-print-design,
             .btn-approve,
             .btn-changes {
@@ -2190,6 +2227,15 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
                 margin-bottom: calc(4.6rem + env(safe-area-inset-bottom));
                 overflow-y: auto;
                 box-shadow: 0 10px 24px -18px rgba(15, 23, 42, 0.42);
+            }
+
+            .history-sidebar.panel-hidden {
+                max-height: 0;
+                margin-top: 0;
+                margin-bottom: 0;
+                border-top-width: 0;
+                opacity: 0;
+                transform: translateY(0.8rem);
             }
 
             .history-mobile-tabs {
@@ -2405,6 +2451,9 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
             </div>
         </div>
         <div class="review-header-actions">
+            <button type="button" id="toggle-history-btn" class="btn-toggle-history active" title="Toggle Project History Panel">
+                <i class="fas fa-clock-rotate-left"></i> History
+            </button>
             <button type="button" id="toggle-comments-btn" class="btn-toggle-comments active" title="Toggle Comments Panel">
                 <i class="fas fa-comments"></i> Comments
                 <span class="comment-count" id="comments-count-badge"><?php echo count($comments); ?></span>

@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const historyTabsWrap = document.getElementById('history-mobile-tabs');
     const historyTabProject = document.getElementById('history-tab-project');
     const historyTabActivity = document.getElementById('history-tab-activity');
+    const toggleHistoryBtn = document.getElementById('toggle-history-btn');
     const projectHistoryPanel = document.getElementById('project-history-panel');
     const historyActivityPanel = document.getElementById('history-activity-panel');
     const rulerTop = viewer.querySelector('.ruler-top');
@@ -413,6 +414,21 @@ document.addEventListener('DOMContentLoaded', function () {
         window.setTimeout(function () {
             recoverArtworkVisibility();
         }, Math.max(0, Number(delayMs || 0)));
+    }
+
+    function resetToDefaultView() {
+        fitArtworkToViewer();
+
+        // Mobile browsers may update visual viewport after tap/toolbar transitions.
+        // Re-apply fit after a short delay so reset lands on the same default framing.
+        if (isMobileViewport()) {
+            window.setTimeout(function () {
+                fitArtworkToViewer();
+            }, 180);
+            window.setTimeout(function () {
+                recoverArtworkVisibility();
+            }, 340);
+        }
     }
 
     function reloadWithViewState() {
@@ -858,6 +874,39 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    function setHistoryPanelVisibility(show) {
+        if (!historySidebar || !toggleHistoryBtn) {
+            return;
+        }
+
+        const isMobile = window.innerWidth <= 860;
+        historySidebar.classList.toggle('panel-hidden', !show);
+        toggleHistoryBtn.classList.toggle('active', show);
+
+        // Keep transform state explicit across viewport switches.
+        if (isMobile) {
+            historySidebar.style.transform = show ? 'translateY(0)' : 'translateY(0.8rem)';
+        } else {
+            historySidebar.style.transform = show ? 'translateX(0)' : 'translateX(-1rem)';
+        }
+        historySidebar.style.opacity = show ? '1' : '0';
+        historySidebar.style.pointerEvents = show ? 'auto' : 'none';
+    }
+
+    if (toggleHistoryBtn && historySidebar) {
+        setHistoryPanelVisibility(!historySidebar.classList.contains('panel-hidden'));
+
+        toggleHistoryBtn.addEventListener('click', function () {
+            const shouldShow = historySidebar.classList.contains('panel-hidden');
+            setHistoryPanelVisibility(shouldShow);
+        });
+
+        window.addEventListener('resize', function () {
+            const currentlyVisible = !historySidebar.classList.contains('panel-hidden');
+            setHistoryPanelVisibility(currentlyVisible);
+        });
+    }
+
     function setHistoryMobileSection(section) {
         if (!projectHistoryPanel || !historyActivityPanel || !historyTabProject || !historyTabActivity) {
             return;
@@ -915,8 +964,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (zoomOut && panzoom) zoomOut.addEventListener('click', function () { panzoom.zoomOut(); });
     if (zoomReset && panzoom) {
         zoomReset.addEventListener('click', function () {
-            panzoom.reset();
-            saveViewState();
+            resetToDefaultView();
         });
     }
 
@@ -2044,8 +2092,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (lowerKey === 'r' && panzoom && typeof panzoom.reset === 'function') {
-            panzoom.reset();
-            saveViewState();
+            resetToDefaultView();
             event.preventDefault();
         }
     }
