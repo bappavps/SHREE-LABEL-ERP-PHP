@@ -573,7 +573,9 @@ const projectShareMeta = {
     createdAt: <?php echo json_encode((string) ($project['created_at'] ?? '')); ?>,
     reviewLink: <?php echo json_encode((string) $reviewLink); ?>,
     portalLink: <?php echo json_encode((string) $portalReviewLink); ?>,
-    appName: <?php echo json_encode($_erpCompanyName); ?>
+    appName: <?php echo json_encode($_erpCompanyName); ?>,
+    appVersion: <?php echo json_encode((string) (defined('APP_VERSION') ? APP_VERSION : '1.0.0')); ?>,
+    logoUrl: <?php echo json_encode(defined('ERP_BASE_URL') ? ERP_BASE_URL . '/pwa_icon.php?size=192' : ''); ?>
 };
 
 function formatDateTime(value) {
@@ -610,7 +612,7 @@ function buildEmailDraft(linkValue) {
         '',
         'Dear Valued Client,',
         '',
-        `Greetings from ${projectShareMeta.appName || 'Artwork Approval Hub'}.`,
+        `Greetings from Design & Prepress Team, ${projectShareMeta.appName || 'Artwork Approval Hub'}.`,
         '',
         `We hope you are doing well. This is to formally notify you that the artwork package for "${jobName}" is now ready for your review and approval.`,
         'For your convenience, we have shared the complete project brief and approval access below.',
@@ -629,7 +631,11 @@ function buildEmailDraft(linkValue) {
         'Regards,',
         'Design & Prepress Team',
         'Artwork Approval Hub',
-        projectShareMeta.appName || ''
+        projectShareMeta.appName || '',
+        '',
+        `Version : ${projectShareMeta.appVersion || '1.0.0'}`,
+        `© ${new Date().getFullYear()} ${projectShareMeta.appName || 'Artwork Approval Hub'} • ERP Master System v${projectShareMeta.appVersion || '1.0.0'}`,
+        '@ Developed by Mriganka Bhusan Debnath'
     ].join('\n');
 }
 
@@ -641,13 +647,16 @@ function buildEmailHtmlDraft(linkValue) {
         return `
 <div style="font-family:Segoe UI,Arial,sans-serif;background:#f3f7ff;padding:24px;color:#0f172a;line-height:1.6;">
     <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #dbeafe;border-radius:16px;overflow:hidden;box-shadow:0 24px 48px -28px rgba(15,23,42,0.4);">
-        <div style="background:linear-gradient(135deg,#0f766e 0%,#0ea5e9 100%);padding:18px 22px;color:#ffffff;">
-            <div style="font-size:18px;font-weight:700;">Artwork Approval Notification</div>
-            <div style="font-size:13px;opacity:0.92;">Formal review request from Design &amp; Prepress Team</div>
+        <div style="background:linear-gradient(135deg,#0f766e 0%,#0ea5e9 100%);padding:18px 22px;color:#ffffff;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <div>
+                <div style="font-size:18px;font-weight:700;">Artwork Approval Notification</div>
+                <div style="font-size:13px;opacity:0.92;">Formal review request from Design &amp; Prepress Team</div>
+            </div>
+            ${projectShareMeta.logoUrl ? `<img src="${escapeHtml(projectShareMeta.logoUrl)}" alt="Logo" style="width:48px;height:48px;border-radius:50%;border:2px solid rgba(255,255,255,0.55);object-fit:contain;background:rgba(255,255,255,0.12);flex-shrink:0;">` : ''}
         </div>
         <div style="padding:22px;">
             <p style="margin:0 0 12px;">Dear Valued Client,</p>
-            <p style="margin:0 0 12px;">Greetings from <strong>${escapeHtml(projectShareMeta.appName || 'Artwork Approval Hub')}</strong>.</p>
+            <p style="margin:0 0 12px;">Greetings from <strong>Design &amp; Prepress Team, ${escapeHtml(projectShareMeta.appName || 'Artwork Approval Hub')}</strong>.</p>
             <p style="margin:0 0 16px;">We hope you are doing well. This is to formally notify you that the artwork package for <strong>${escapeHtml(jobName)}</strong> is now ready for your review and approval.</p>
 
             <div style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin:0 0 16px;">
@@ -684,6 +693,9 @@ function buildEmailHtmlDraft(linkValue) {
             <p style="margin:0;font-size:13px;color:#334155;">If you need any clarification, please reply to this email and our team will assist you immediately.</p>
 
             <p style="margin:18px 0 0;">Regards,<br><strong>Design &amp; Prepress Team</strong><br>Artwork Approval Hub<br>${escapeHtml(projectShareMeta.appName || '')}</p>
+        </div>
+        <div style="border-top:1px solid #e2e8f0;background:#f8fafc;padding:10px 16px;text-align:center;color:#475569;font-size:11px;line-height:1.45;">
+            <span>Version : ${escapeHtml(projectShareMeta.appVersion || '1.0.0')} &nbsp; &copy; ${new Date().getFullYear()} ${escapeHtml(projectShareMeta.appName || 'Artwork Approval Hub')} &bull; ERP Master System v${escapeHtml(projectShareMeta.appVersion || '1.0.0')}<br>@ Developed by Mriganka Bhusan Debnath</span>
         </div>
     </div>
 </div>`.trim();

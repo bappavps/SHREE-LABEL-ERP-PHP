@@ -495,10 +495,14 @@ document.addEventListener('DOMContentLoaded', function () {
             interactionLayer.style.touchAction = scrollableTool ? 'pan-y pinch-zoom' : 'none';
             interactionLayer.style.pointerEvents = scrollableTool ? 'none' : 'auto';
             viewer.style.touchAction = scrollableTool ? 'pan-y pinch-zoom' : 'none';
+            // Panzoom sets touch-action:none on the wrapper element itself; override it
+            // in select mode so native page scroll is not blocked.
+            wrapper.style.touchAction = scrollableTool ? 'pan-y pinch-zoom' : 'none';
         } else {
             interactionLayer.style.touchAction = 'none';
             interactionLayer.style.pointerEvents = 'auto';
             viewer.style.touchAction = 'none';
+            wrapper.style.touchAction = 'none';
         }
 
         // If the artwork is fully out of viewport, recover it when pan is activated.
@@ -885,7 +889,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Keep transform state explicit across viewport switches.
         if (isMobile) {
-            historySidebar.style.transform = show ? 'translateY(0)' : 'translateY(0.8rem)';
+            historySidebar.style.transform = show
+                ? 'translateY(0)'
+                : 'translateY(calc(100% + env(safe-area-inset-bottom)))';
         } else {
             historySidebar.style.transform = show ? 'translateX(0)' : 'translateX(-1rem)';
         }
@@ -894,7 +900,8 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     if (toggleHistoryBtn && historySidebar) {
-        setHistoryPanelVisibility(!historySidebar.classList.contains('panel-hidden'));
+        const initialHistoryVisible = !isMobileViewport() && !historySidebar.classList.contains('panel-hidden');
+        setHistoryPanelVisibility(initialHistoryVisible);
 
         toggleHistoryBtn.addEventListener('click', function () {
             const shouldShow = historySidebar.classList.contains('panel-hidden');

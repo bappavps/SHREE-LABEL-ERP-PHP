@@ -2214,28 +2214,29 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
 
             .history-sidebar {
                 display: flex;
-                position: relative;
-                order: 2;
+                position: fixed;
+                top: auto;
+                bottom: 0;
+                right: 0;
+                left: 0;
                 width: 100% !important;
                 min-width: 0;
-                max-width: none;
-                max-height: min(44dvh, 360px);
+                max-width: 100%;
+                max-height: min(68dvh, calc(100dvh - 110px));
                 border-right: none;
                 border-top: 1px solid #bfdbfe;
-                border-radius: 16px;
-                margin-top: 0.7rem;
-                margin-bottom: calc(4.6rem + env(safe-area-inset-bottom));
+                border-radius: 18px 18px 0 0;
+                margin-top: 0;
+                margin-bottom: 0;
                 overflow-y: auto;
-                box-shadow: 0 10px 24px -18px rgba(15, 23, 42, 0.42);
+                box-shadow: 0 -12px 30px rgba(15, 23, 42, 0.2);
+                padding-bottom: env(safe-area-inset-bottom);
+                transform: translateY(0);
+                z-index: 1350;
             }
 
             .history-sidebar.panel-hidden {
-                max-height: 0;
-                margin-top: 0;
-                margin-bottom: 0;
-                border-top-width: 0;
-                opacity: 0;
-                transform: translateY(0.8rem);
+                transform: translateY(calc(100% + env(safe-area-inset-bottom)));
             }
 
             .history-mobile-tabs {
