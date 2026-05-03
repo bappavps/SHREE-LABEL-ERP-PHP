@@ -3058,6 +3058,9 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
         }
 
         function renderVersionComments(comments, isLatest) {
+            window.currentVersionComments = Array.isArray(comments) ? comments : [];
+            window.currentIsLatest = !!isLatest;
+
             // 1. Update markup/pins canvas via pins.js hook
             if (typeof window.renderCommentsForVersion === 'function') {
                 window.renderCommentsForVersion(comments);

@@ -2352,6 +2352,7 @@ function rbacPageCatalog() {
         '/modules/sales_order/index.php' => 'Sales Orders',
 
         '/modules/artwork/index.php' => 'Artwork Gallery',
+        '/modules/artwork/final-projects.php' => 'Artwork - Final Artwork',
         '/modules/planning/label/index.php' => 'Planning - Label Printing',
         '/modules/planning/slitting/index.php' => 'Planning - Jumbo Slitting',
         '/modules/planning/printing/index.php' => 'Planning - Printing',

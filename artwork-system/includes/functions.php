@@ -181,6 +181,83 @@ function validateUploadedFile(array $file, array $allowedExtensions): array {
     return ['valid' => true, 'ext' => $ext];
 }
 
+function parseIniSizeToBytes(string $value): int {
+    $raw = trim($value);
+    if ($raw === '' || $raw === '-1') {
+        return -1;
+    }
+
+    $unit = strtolower(substr($raw, -1));
+    $num = (float)$raw;
+
+    switch ($unit) {
+        case 'g':
+            $num *= 1024;
+            // no break
+        case 'm':
+            $num *= 1024;
+            // no break
+        case 'k':
+            $num *= 1024;
+            break;
+    }
+
+    return (int)round($num);
+}
+
+function getEffectiveFinalUploadLimitBytes(): int {
+    $appLimit = (int)(defined('MAX_FINAL_UPLOAD_BYTES') ? MAX_FINAL_UPLOAD_BYTES : MAX_UPLOAD_BYTES);
+    $phpUpload = parseIniSizeToBytes((string)ini_get('upload_max_filesize'));
+    $phpPost = parseIniSizeToBytes((string)ini_get('post_max_size'));
+
+    $limits = [$appLimit];
+    if ($phpUpload > 0) {
+        $limits[] = $phpUpload;
+    }
+    if ($phpPost > 0) {
+        $limits[] = $phpPost;
+    }
+
+    return (int)min($limits);
+}
+
+function validateFinalPdfUpload(array $file): array {
+    if (empty($file['name']) || !isset($file['tmp_name'])) {
+        return ['valid' => false, 'message' => 'No file uploaded.'];
+    }
+    if (!is_uploaded_file($file['tmp_name'])) {
+        return ['valid' => false, 'message' => 'Invalid upload source.'];
+    }
+
+    $size = (int)($file['size'] ?? 0);
+    if ($size <= 0) {
+        return ['valid' => false, 'message' => 'Uploaded file is empty.'];
+    }
+
+    $effectiveLimit = getEffectiveFinalUploadLimitBytes();
+    if ($effectiveLimit > 0 && $size > $effectiveLimit) {
+        return ['valid' => false, 'message' => 'File exceeds allowed upload size for this server profile.'];
+    }
+
+    $ext = normalizeExtension((string)$file['name']);
+    if (!in_array($ext, ALLOWED_FINAL_EXTENSIONS, true)) {
+        return ['valid' => false, 'message' => 'Only PDF files are allowed.'];
+    }
+
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $mime = (string)$finfo->file($file['tmp_name']);
+    if ($mime !== 'application/pdf' && $mime !== 'application/x-pdf') {
+        return ['valid' => false, 'message' => 'Invalid PDF MIME type.'];
+    }
+
+    return [
+        'valid' => true,
+        'ext' => $ext,
+        'mime' => $mime,
+        'size' => $size,
+    ];
+}
+
 function buildUploadName(string $token, int $version, string $ext): string {
     return sprintf('%s_v%s_%s.%s', $token, $version, date('YmdHis'), $ext);
 }

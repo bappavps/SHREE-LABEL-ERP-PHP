@@ -58,8 +58,10 @@ define('UPLOAD_DIR', UPLOAD_PROJECT_DIR . '/');
 
 // Limits and allowed file types
 define('MAX_UPLOAD_BYTES', 25 * 1024 * 1024);
+define('MAX_FINAL_UPLOAD_BYTES', 1000 * 1024 * 1024);
 define('ALLOWED_ARTWORK_EXTENSIONS', ['pdf', 'jpg', 'jpeg', 'png', 'ai', 'cdr']);
 define('ALLOWED_REFERENCE_EXTENSIONS', ['pdf', 'jpg', 'jpeg', 'png', 'webp']);
+define('ALLOWED_FINAL_EXTENSIONS', ['pdf']);
 
 // Debug mode (set to false on production)
 define('APP_DEBUG', true);

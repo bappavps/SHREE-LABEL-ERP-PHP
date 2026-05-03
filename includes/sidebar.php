@@ -76,6 +76,7 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
       </a>
       <div class="nav-sub">
         <?= navSubItem('/modules/artwork/index.php',  'Artwork Gallery', $currentFile, [], '', 'palette2') ?>
+        <?= navSubItem('/modules/artwork/final-projects.php', 'Final Artwork', $currentFile, [], '', 'folder-check') ?>
         <div class="nav-sub-nest">
           <a href="#" class="nav-sub-parent-toggle" aria-expanded="false">
             <span>Job Planning</span>

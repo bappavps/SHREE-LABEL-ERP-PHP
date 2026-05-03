@@ -493,7 +493,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (isMobileViewport()) {
             const scrollableTool = tool === 'select';
             interactionLayer.style.touchAction = scrollableTool ? 'pan-y pinch-zoom' : 'none';
-            interactionLayer.style.pointerEvents = scrollableTool ? 'none' : 'auto';
+                interactionLayer.style.pointerEvents = 'auto';
             viewer.style.touchAction = scrollableTool ? 'pan-y pinch-zoom' : 'none';
             // Panzoom sets touch-action:none on the wrapper element itself; override it
             // in select mode so native page scroll is not blocked.
@@ -1431,6 +1431,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (currentTool !== 'pan') {
             return;
         }
+        if (e.target.closest('.pin') || e.target.closest('.comment-area')) {
+            return;
+        }
         if (e.target.closest('.toolbar') || e.target.closest('.comment-sidebar') || e.target.closest('#new-comment-box') || e.target.closest('#comment-view-popup')) {
             return;
         }
@@ -1463,6 +1466,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function handlePanTouchStart(e) {
         if (currentTool !== 'pan') {
+            return;
+        }
+        if (e.target.closest('.pin') || e.target.closest('.comment-area')) {
             return;
         }
         if (e.target.closest('.toolbar') || e.target.closest('.comment-sidebar') || e.target.closest('#new-comment-box') || e.target.closest('#comment-view-popup')) {
@@ -1612,9 +1618,12 @@ document.addEventListener('DOMContentLoaded', function () {
     function openCommentViewPopup(id, anchorEl) {
         const popup   = document.getElementById('comment-view-popup');
         if (!popup) return;
-        const comments = window.initialComments || [];
+        const comments = Array.isArray(window.currentVersionComments)
+            ? window.currentVersionComments
+            : (window.initialComments || []);
         const c = comments.find(function (x) { return String(x.id) === String(id); });
         if (!c) return;
+        const readOnlyMode = interactionLayer && interactionLayer.dataset.readonly === '1';
 
         // Close composer if open
         resetCommentComposer();
@@ -1691,22 +1700,28 @@ document.addEventListener('DOMContentLoaded', function () {
         // Wire Delete button
         const deleteBtn = document.getElementById('cvp-delete');
         if (deleteBtn) {
-            deleteBtn.onclick = function (e) {
-                e.stopPropagation();
-                confirmAction('Delete this comment?').then(function (ok) {
-                    if (!ok) return;
-                    const fd = new FormData();
-                    fd.append('comment_id', c.id);
-                    fd.append('token', window.projectToken);
-                    fetch('api/delete-comment.php', { method: 'POST', body: fd })
-                        .then(function (res) { return res.json(); })
-                        .then(function (data) {
-                            if (data.status !== 'success') { notify(data.message || 'Unable to delete comment.'); return; }
-                            reloadWithViewState();
-                        })
-                        .catch(function () { notify('Failed to delete comment.'); });
-                });
-            };
+            if (readOnlyMode) {
+                deleteBtn.style.display = 'none';
+                deleteBtn.onclick = null;
+            } else {
+                deleteBtn.style.display = '';
+                deleteBtn.onclick = function (e) {
+                    e.stopPropagation();
+                    confirmAction('Delete this comment?').then(function (ok) {
+                        if (!ok) return;
+                        const fd = new FormData();
+                        fd.append('comment_id', c.id);
+                        fd.append('token', window.projectToken);
+                        fetch('api/delete-comment.php', { method: 'POST', body: fd })
+                            .then(function (res) { return res.json(); })
+                            .then(function (data) {
+                                if (data.status !== 'success') { notify(data.message || 'Unable to delete comment.'); return; }
+                                reloadWithViewState();
+                            })
+                            .catch(function () { notify('Failed to delete comment.'); });
+                    });
+                };
+            }
         }
 
         // Wire Reply toggle
@@ -1717,34 +1732,58 @@ document.addEventListener('DOMContentLoaded', function () {
             // Reset reply box state
             replyBox.style.display = 'none';
             if (replyTextarea) replyTextarea.value = '';
-            replyToggle.onclick = function (e) {
-                e.stopPropagation();
-                const open = replyBox.style.display === 'block';
-                replyBox.style.display = open ? 'none' : 'block';
-                if (!open && replyTextarea) replyTextarea.focus();
-            };
+            if (readOnlyMode) {
+                replyToggle.style.display = 'none';
+                replyToggle.onclick = null;
+            } else {
+                replyToggle.style.display = '';
+                replyToggle.onclick = function (e) {
+                    e.stopPropagation();
+                    const open = replyBox.style.display === 'block';
+                    replyBox.style.display = open ? 'none' : 'block';
+                    if (!open && replyTextarea) replyTextarea.focus();
+                };
+            }
         }
 
         // Wire Reply post
         const replyPostBtn = document.getElementById('cvp-reply-post');
         if (replyPostBtn && replyTextarea) {
-            replyPostBtn.onclick = function (e) {
-                e.stopPropagation();
-                const message = replyTextarea.value.trim();
-                if (!message) return;
-                const fd = new FormData();
-                fd.append('file_id', window.fileId);
-                fd.append('comment', message);
-                fd.append('parent_id', c.id);
-                fd.append('user_name', window.reviewActorName || window.clientName || 'Client');
-                fetch('api/add-comment.php', { method: 'POST', body: fd })
-                    .then(function (res) { return res.json(); })
-                    .then(function (data) {
-                        if (data.status !== 'success') { notify(data.message || 'Unable to send reply.'); return; }
-                        reloadWithViewState();
-                    })
-                    .catch(function () { notify('Failed to send reply.'); });
-            };
+            if (readOnlyMode) {
+                replyPostBtn.disabled = true;
+                replyPostBtn.style.pointerEvents = 'none';
+                if (replyTextarea) {
+                    replyTextarea.disabled = true;
+                    replyTextarea.placeholder = 'View-only mode for older versions';
+                }
+                if (replyBox) {
+                    replyBox.style.display = 'none';
+                }
+                replyPostBtn.onclick = null;
+            } else {
+                replyPostBtn.disabled = false;
+                replyPostBtn.style.pointerEvents = '';
+                if (replyTextarea) {
+                    replyTextarea.disabled = false;
+                }
+                replyPostBtn.onclick = function (e) {
+                    e.stopPropagation();
+                    const message = replyTextarea.value.trim();
+                    if (!message) return;
+                    const fd = new FormData();
+                    fd.append('file_id', window.fileId);
+                    fd.append('comment', message);
+                    fd.append('parent_id', c.id);
+                    fd.append('user_name', window.reviewActorName || window.clientName || 'Client');
+                    fetch('api/add-comment.php', { method: 'POST', body: fd })
+                        .then(function (res) { return res.json(); })
+                        .then(function (data) {
+                            if (data.status !== 'success') { notify(data.message || 'Unable to send reply.'); return; }
+                            reloadWithViewState();
+                        })
+                        .catch(function () { notify('Failed to send reply.'); });
+                };
+            }
         }
 
         popup.style.display = 'block';
@@ -1878,9 +1917,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 const comments = (resp.data && Array.isArray(resp.data.comments)) ? resp.data.comments : [];
                 window.initialComments = comments;
+                window.currentVersionComments = comments;
 
                 if (typeof window.renderVersionComments === 'function') {
-                    window.renderVersionComments(comments, true);
+                    window.renderVersionComments(comments, window.currentIsLatest !== false);
                 } else if (typeof window.renderCommentsForVersion === 'function') {
                     window.renderCommentsForVersion(comments);
                 }
@@ -2209,6 +2249,7 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     window.renderCommentsForVersion = function (comments) {
+        window.currentVersionComments = Array.isArray(comments) ? comments : [];
         document.querySelectorAll('#pins-container .pin:not(.temp-pin), #pins-container .comment-area').forEach(function (el) {
             el.remove();
         });
