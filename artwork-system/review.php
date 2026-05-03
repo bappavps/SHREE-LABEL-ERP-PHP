@@ -58,9 +58,10 @@ if (!$openHub) {
             display: grid;
             place-items: center;
             padding: 1.2rem;
+            overflow-x: hidden;
         }
         .intro-shell {
-            width: min(980px, 100%);
+            width: 100%;
             max-width: 940px;
             border-radius: 24px;
             overflow: hidden;
@@ -72,7 +73,7 @@ if (!$openHub) {
             grid-template-columns: 1.05fr 1fr;
         }
         .intro-shell-wrap {
-            width: min(980px, 100%);
+            width: 100%;
             max-width: 940px;
         }
         .intro-visual {
@@ -121,9 +122,9 @@ if (!$openHub) {
             color: #000000;
             font-family: 'Segoe UI', Arial, sans-serif;
             text-align: center;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            word-break: break-word;
             text-shadow: none;
             font-weight: 700;
             letter-spacing: 0.01em;
@@ -255,9 +256,59 @@ if (!$openHub) {
             box-shadow: 0 12px 30px -16px rgba(20, 184, 166, 0.75);
         }
         @media (max-width: 900px) {
-            .intro-shell { grid-template-columns: 1fr; }
-            .intro-visual { min-height: 260px; }
+            body {
+                padding: 0.8rem;
+                place-items: start center;
+            }
+            .intro-shell-wrap {
+                width: 100%;
+                max-width: 100%;
+            }
+            .intro-shell {
+                grid-template-columns: 1fr;
+                border-radius: 18px;
+            }
+            .intro-visual {
+                min-height: 240px;
+                padding: 1.1rem;
+            }
+            .intro-right {
+                padding: 1.1rem;
+            }
             .detail-grid { grid-template-columns: 1fr; }
+            .section-title {
+                font-size: 1.2rem;
+            }
+            .open-btn {
+                min-height: 48px;
+                font-size: 0.88rem;
+            }
+            .intro-footer-note {
+                margin-top: 0.6rem;
+                font-size: 0.76rem;
+                line-height: 1.35;
+            }
+        }
+        @media (max-width: 480px) {
+            body {
+                padding: 0.55rem;
+            }
+            .intro-shell {
+                border-radius: 14px;
+            }
+            .intro-visual,
+            .intro-right {
+                padding: 0.9rem;
+            }
+            .intro-visual h1 {
+                font-size: 1.08rem;
+            }
+            .section-sub {
+                font-size: 0.82rem;
+            }
+            .detail-card {
+                padding: 0.62rem 0.65rem;
+            }
         }
     </style>
 </head>
