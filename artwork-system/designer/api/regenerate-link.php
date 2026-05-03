@@ -26,5 +26,5 @@ $db->prepare('INSERT INTO artwork_activity_log (project_id, action) VALUES (?, ?
 
 jsonResponse('success', 'Review link regenerated.', [
     'token' => $newToken,
-    'review_link' => ARTWORK_BASE_URL . '/review.php?token=' . $newToken,
+    'review_link' => ARTWORK_BASE_URL . '/review.php?token=' . $newToken . '&view=client',
 ]);

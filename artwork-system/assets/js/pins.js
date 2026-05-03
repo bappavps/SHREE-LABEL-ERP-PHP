@@ -25,6 +25,11 @@ document.addEventListener('DOMContentLoaded', function () {
     const colorPreview = document.getElementById('tool-color-preview');
     const toolbar = document.getElementById('main-toolbar');
     const toolbarHandle = document.getElementById('toolbar-handle');
+    const historyTabsWrap = document.getElementById('history-mobile-tabs');
+    const historyTabProject = document.getElementById('history-tab-project');
+    const historyTabActivity = document.getElementById('history-tab-activity');
+    const projectHistoryPanel = document.getElementById('project-history-panel');
+    const historyActivityPanel = document.getElementById('history-activity-panel');
     const rulerTop = viewer.querySelector('.ruler-top');
     const rulerLeft = viewer.querySelector('.ruler-left');
     const rulerGuidesLayer = document.getElementById('ruler-guides-layer');
@@ -80,6 +85,10 @@ document.addEventListener('DOMContentLoaded', function () {
     let touchPanActive = false;
     let activeTouchId = null;
     let lastTouchClient = null;
+    const isMobileViewport = function () {
+        return window.innerWidth <= 860;
+    };
+    const isClientView = window.reviewPresence && window.reviewPresence.viewMode === 'client';
     const markupRecords = [];
     const viewStateStorageKey = 'review-view-state-' + (window.projectToken || 'default');
     const viewRestoreOnceKey = viewStateStorageKey + '-restore-once';
@@ -337,8 +346,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
 
-        const rulerOffset = 24;
-        const safePad = 8;
+        const rulerOffset = isMobileViewport() ? 0 : 24;
+        const safePad = isMobileViewport() ? 6 : 8;
 
         panzoom.reset();
 
@@ -368,6 +377,42 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
             });
         });
+    }
+
+    function recoverArtworkVisibility() {
+        if (!panzoom || !viewer || !wrapper) {
+            return;
+        }
+
+        const mediaEl = wrapper.querySelector('#artwork-img, #pdf-canvas');
+        if (!mediaEl) {
+            fitArtworkToViewer();
+            return;
+        }
+
+        const viewerRect = viewer.getBoundingClientRect();
+        const mediaRect = mediaEl.getBoundingClientRect();
+        const hasPixels = mediaRect.width > 2 && mediaRect.height > 2;
+        const intersectsViewer = hasPixels
+            && mediaRect.right > (viewerRect.left + 8)
+            && mediaRect.left < (viewerRect.right - 8)
+            && mediaRect.bottom > (viewerRect.top + 8)
+            && mediaRect.top < (viewerRect.bottom - 8);
+
+        if (!intersectsViewer) {
+            fitArtworkToViewer();
+            return;
+        }
+
+        resizeDrawingCanvas();
+        redrawStoredMarkup();
+        updatePinScales();
+    }
+
+    function queueArtworkRecovery(delayMs) {
+        window.setTimeout(function () {
+            recoverArtworkVisibility();
+        }, Math.max(0, Number(delayMs || 0)));
     }
 
     function reloadWithViewState() {
@@ -427,6 +472,18 @@ document.addEventListener('DOMContentLoaded', function () {
         const toolGuides = { select: 'Select tool keeps the canvas neutral for browsing and closing floating boxes.', point: 'Click on the artwork to place a pin and add a comment.', area: 'Click and drag to select an area and add a comment.', arrow: 'Click and drag to draw an arrow pointing to a specific area.', pen: 'Draw freehand on the artwork to mark areas.', highlighter: 'Draw freehand highlights over the artwork.', pan: 'Click and drag to pan the artwork. Use mouse wheel to zoom.' };
         if (toolStatus) toolStatus.textContent = toolNames[tool] || tool;
         if (toolGuide) toolGuide.textContent = toolGuides[tool] || '';
+
+        // On mobile, keep page scroll natural in Select tool and lock gestures for drawing/pan tools.
+        if (isMobileViewport()) {
+            const scrollableTool = tool === 'select';
+            interactionLayer.style.touchAction = scrollableTool ? 'pan-y pinch-zoom' : 'none';
+            interactionLayer.style.pointerEvents = scrollableTool ? 'none' : 'auto';
+            viewer.style.touchAction = scrollableTool ? 'pan-y pinch-zoom' : 'none';
+        } else {
+            interactionLayer.style.touchAction = 'none';
+            interactionLayer.style.pointerEvents = 'auto';
+            viewer.style.touchAction = 'none';
+        }
 
         // If the artwork is fully out of viewport, recover it when pan is activated.
         if (tool === 'pan' && viewer && wrapper && panzoom) {
@@ -801,7 +858,34 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    setActiveTool('select');
+    function setHistoryMobileSection(section) {
+        if (!projectHistoryPanel || !historyActivityPanel || !historyTabProject || !historyTabActivity) {
+            return;
+        }
+        const showProject = section !== 'activity';
+        projectHistoryPanel.classList.toggle('is-hidden', !showProject);
+        historyActivityPanel.classList.toggle('is-hidden', showProject);
+        historyTabProject.classList.toggle('active', showProject);
+        historyTabActivity.classList.toggle('active', !showProject);
+        if (historySidebar) {
+            historySidebar.scrollTop = 0;
+        }
+    }
+
+    if (historyTabsWrap && historyTabProject && historyTabActivity) {
+        historyTabProject.addEventListener('click', function () {
+            setHistoryMobileSection('project');
+        });
+        historyTabActivity.addEventListener('click', function () {
+            setHistoryMobileSection('activity');
+        });
+        if (isMobileViewport()) {
+            setHistoryMobileSection('project');
+        }
+    }
+
+    const initialTool = (isClientView && isMobileViewport()) ? 'pan' : 'select';
+    setActiveTool(initialTool);
 
     if (colorInput) {
         colorInput.addEventListener('input', function () {
@@ -1793,7 +1877,19 @@ document.addEventListener('DOMContentLoaded', function () {
     document.addEventListener('visibilitychange', function () {
         if (!document.hidden) {
             runLiveCommentSync();
+            queueArtworkRecovery(60);
+            queueArtworkRecovery(280);
         }
+    });
+
+    window.addEventListener('pageshow', function () {
+        queueArtworkRecovery(80);
+        queueArtworkRecovery(320);
+    });
+
+    window.addEventListener('orientationchange', function () {
+        queueArtworkRecovery(120);
+        queueArtworkRecovery(420);
     });
 
     commentTextarea.addEventListener('input', function () {
@@ -2211,6 +2307,12 @@ document.addEventListener('DOMContentLoaded', function () {
         } else {
             fitArtworkToViewer();
         }
+
+        if (isMobileViewport()) {
+            window.setTimeout(function () {
+                window.scrollTo(0, 0);
+            }, 40);
+        }
     }
 
     // For PDFs, artwork:ready fires after page.render() completes; apply fit then.
@@ -2231,6 +2333,20 @@ document.addEventListener('DOMContentLoaded', function () {
             window.clearTimeout(resizeRedrawTimer);
         }
         resizeRedrawTimer = window.setTimeout(function () {
+            if (historyTabsWrap && isMobileViewport()) {
+                const showingActivity = historyTabActivity && historyTabActivity.classList.contains('active');
+                setHistoryMobileSection(showingActivity ? 'activity' : 'project');
+            } else if (historyTabsWrap && !isMobileViewport()) {
+                if (projectHistoryPanel) projectHistoryPanel.classList.remove('is-hidden');
+                if (historyActivityPanel) historyActivityPanel.classList.remove('is-hidden');
+                if (historyTabProject) historyTabProject.classList.add('active');
+                if (historyTabActivity) historyTabActivity.classList.remove('active');
+            }
+
+            if (isMobileViewport()) {
+                recoverArtworkVisibility();
+                return;
+            }
             resizeDrawingCanvas();
             redrawStoredMarkup();
         }, 80);

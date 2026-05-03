@@ -451,6 +451,53 @@ $isAdmin = (($designer['role'] ?? '') === 'admin');
     background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
     color: #ffffff;
 }
+
+.upload-progress-wrap {
+    padding: 1rem;
+}
+
+.upload-progress-file {
+    margin: 0 0 0.55rem;
+    font-size: 0.82rem;
+    color: #334155;
+    font-weight: 600;
+    word-break: break-all;
+}
+
+.upload-progress-bar-track {
+    width: 100%;
+    height: 10px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    overflow: hidden;
+    border: 1px solid #cbd5e1;
+}
+
+.upload-progress-bar {
+    width: 0%;
+    height: 100%;
+    background: linear-gradient(90deg, #0f766e 0%, #14b8a6 100%);
+    transition: width 0.18s ease;
+}
+
+.upload-progress-meta {
+    margin-top: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    font-size: 0.78rem;
+    color: #475569;
+}
+
+.upload-progress-percent {
+    font-weight: 800;
+    color: #0f766e;
+}
+
+.upload-progress-status {
+    font-weight: 600;
+}
 </style>
 
 <!-- Client Portal iframe overlay -->
@@ -472,6 +519,22 @@ $isAdmin = (($designer['role'] ?? '') === 'admin');
         <div class="project-modal-actions">
             <button type="button" class="project-modal-btn" id="project-modal-cancel" style="display:none;">Cancel</button>
             <button type="button" class="project-modal-btn primary" id="project-modal-ok">OK</button>
+        </div>
+    </div>
+</div>
+
+<div class="project-modal-overlay" id="upload-progress-overlay" aria-hidden="true">
+    <div class="project-modal" role="dialog" aria-modal="true" aria-labelledby="upload-progress-title">
+        <div class="project-modal-head" id="upload-progress-title">Uploading Revision</div>
+        <div class="upload-progress-wrap">
+            <p class="upload-progress-file" id="upload-progress-file">Preparing file...</p>
+            <div class="upload-progress-bar-track">
+                <div class="upload-progress-bar" id="upload-progress-bar"></div>
+            </div>
+            <div class="upload-progress-meta">
+                <span class="upload-progress-status" id="upload-progress-status">Starting upload...</span>
+                <span class="upload-progress-percent" id="upload-progress-percent">0%</span>
+            </div>
         </div>
     </div>
 </div>
@@ -697,6 +760,55 @@ const projectModal = {
     cancel: document.getElementById('project-modal-cancel')
 };
 
+const uploadProgressUi = {
+    overlay: document.getElementById('upload-progress-overlay'),
+    file: document.getElementById('upload-progress-file'),
+    bar: document.getElementById('upload-progress-bar'),
+    percent: document.getElementById('upload-progress-percent'),
+    status: document.getElementById('upload-progress-status')
+};
+
+function formatFileSize(bytes) {
+    const size = Number(bytes || 0);
+    if (!Number.isFinite(size) || size <= 0) {
+        return '0 B';
+    }
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let value = size;
+    let idx = 0;
+    while (value >= 1024 && idx < units.length - 1) {
+        value /= 1024;
+        idx += 1;
+    }
+    return value.toFixed(value >= 100 || idx === 0 ? 0 : 1) + ' ' + units[idx];
+}
+
+function showUploadProgress(fileName, fileSize) {
+    if (!uploadProgressUi.overlay) return;
+    uploadProgressUi.file.textContent = fileName + ' (' + formatFileSize(fileSize) + ')';
+    uploadProgressUi.bar.style.width = '0%';
+    uploadProgressUi.percent.textContent = '0%';
+    uploadProgressUi.status.textContent = 'Starting upload...';
+    uploadProgressUi.overlay.classList.add('open');
+    uploadProgressUi.overlay.setAttribute('aria-hidden', 'false');
+}
+
+function updateUploadProgress(percent, statusText) {
+    if (!uploadProgressUi.overlay) return;
+    const safePercent = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+    uploadProgressUi.bar.style.width = safePercent + '%';
+    uploadProgressUi.percent.textContent = safePercent + '%';
+    if (statusText) {
+        uploadProgressUi.status.textContent = statusText;
+    }
+}
+
+function hideUploadProgress() {
+    if (!uploadProgressUi.overlay) return;
+    uploadProgressUi.overlay.classList.remove('open');
+    uploadProgressUi.overlay.setAttribute('aria-hidden', 'true');
+}
+
 function closeProjectModal() {
     projectModal.overlay.classList.remove('open');
     projectModal.overlay.setAttribute('aria-hidden', 'true');
@@ -831,20 +943,62 @@ async function markAsFinal(fileId) {
 function openRevisionModal() {
     let fileInput = document.createElement('input');
     fileInput.type = 'file';
+    fileInput.accept = '.pdf,.png,.jpg,.jpeg,.gif,.webp,.ai,.eps,.svg';
     fileInput.onchange = e => {
         let file = e.target.files[0];
+        if (!file) {
+            return;
+        }
         let formData = new FormData();
         formData.append('artwork', file);
         formData.append('project_id', <?php echo $projectId; ?>);
         formData.append('version', <?php echo $files[0]['version'] + 1; ?>);
-        
-        fetch('api/upload-revision.php', {
-            method: 'POST',
-            body: formData
-        }).then(res => res.json()).then(data => {
-            if(data.status === 'success') location.reload();
-            else notify(data.message || 'Upload failed');
-        });
+
+        showUploadProgress(file.name, file.size);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', 'api/upload-revision.php', true);
+
+        xhr.upload.onprogress = function (event) {
+            if (!event.lengthComputable) {
+                updateUploadProgress(0, 'Uploading...');
+                return;
+            }
+            const percent = (event.loaded / event.total) * 100;
+            updateUploadProgress(percent, 'Uploading...');
+        };
+
+        xhr.onload = function () {
+            updateUploadProgress(100, 'Processing file...');
+            let data = null;
+            try {
+                data = JSON.parse(xhr.responseText || '{}');
+            } catch (err) {
+                hideUploadProgress();
+                notify('Upload failed (invalid server response)');
+                return;
+            }
+
+            if (xhr.status >= 200 && xhr.status < 300 && data.status === 'success') {
+                updateUploadProgress(100, 'Upload complete. Refreshing...');
+                setTimeout(() => location.reload(), 250);
+            } else {
+                hideUploadProgress();
+                notify((data && data.message) ? data.message : 'Upload failed');
+            }
+        };
+
+        xhr.onerror = function () {
+            hideUploadProgress();
+            notify('Upload failed due to network/server error');
+        };
+
+        xhr.onabort = function () {
+            hideUploadProgress();
+            notify('Upload canceled');
+        };
+
+        xhr.send(formData);
     };
     fileInput.click();
 }

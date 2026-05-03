@@ -34,7 +34,9 @@ $isCurrentImage = in_array($currentFileType, ['jpg', 'jpeg', 'png', 'gif', 'webp
 
 $openHub = isset($_GET['open']) && $_GET['open'] === '1';
 if (!$openHub) {
-    $openHubUrl = ARTWORK_BASE_URL . '/review.php?token=' . rawurlencode($token) . '&open=1';
+    $requestedView = isset($_GET['view']) ? strtolower(trim((string)$_GET['view'])) : '';
+    $openHubView = ($requestedView === 'designer') ? 'designer' : 'client';
+    $openHubUrl = ARTWORK_BASE_URL . '/review.php?token=' . rawurlencode($token) . '&open=1&view=' . $openHubView;
     ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -108,8 +110,8 @@ if (!$openHub) {
             opacity: 0.92;
         }
         .intro-brand img {
-            width: 26px;
-            height: 26px;
+            width: 34px;
+            height: 34px;
             object-fit: contain;
             background: #fff;
             border-radius: 6px;
@@ -436,12 +438,12 @@ $latestUploadedAt = !empty($projectFiles) ? $projectFiles[count($projectFiles) -
 // Detect viewer mode. Query param takes precedence so same browser can open designer and client views together.
 $viewMode = isset($_GET['view']) ? strtolower(trim((string)$_GET['view'])) : '';
 if ($viewMode !== 'designer' && $viewMode !== 'client') {
-    $viewMode = '';
+    $viewMode = 'client';
 }
 
 $authUser = getAuthUser();
 $authIsDesigner = $authUser !== null && in_array($authUser['role'], ['designer', 'admin'], true);
-$isDesigner = $viewMode === 'designer' ? true : ($viewMode === 'client' ? false : $authIsDesigner);
+$isDesigner = ($viewMode === 'designer') && $authIsDesigner;
 
 $projectStatus = $project['status'] ?? 'pending';
 $isApproved = ($projectStatus === 'approved');
@@ -605,8 +607,8 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
             gap: 0.55rem;
         }
         .erp-brand-wrap img {
-            width: 28px;
-            height: 28px;
+            width: 36px;
+            height: 36px;
             object-fit: contain;
             background: #fff;
             border-radius: 6px;
@@ -614,7 +616,7 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
             border: 1px solid #e2e8f0;
         }
         .erp-brand-text {
-            font-size: 0.92rem;
+            font-size: 1.02rem;
             font-weight: 800;
             color: #0f172a;
         }
@@ -1168,6 +1170,15 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
             flex-shrink: 0;
         }
 
+        .history-mobile-tabs {
+            display: none;
+        }
+
+        .project-history-panel.is-hidden,
+        .history-activity-panel.is-hidden {
+            display: none;
+        }
+
         .history-title {
             margin: 0;
             font-size: 0.85rem;
@@ -1448,8 +1459,8 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
         
         .selection-rect {
             position: absolute;
-            border: 2px dotted var(--tool-area);
-            background: rgba(139, 92, 246, 0.13);
+            border: 1.5px dashed rgba(139, 92, 246, 0.72);
+            background: rgba(139, 92, 246, 0.06);
             pointer-events: none;
             z-index: 5;
             animation: none;
@@ -1457,8 +1468,8 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
 
         .comment-area {
             position: absolute;
-            border: 2px dotted var(--tool-area);
-            background: rgba(139, 92, 246, 0.08);
+            border: 1.5px dashed rgba(139, 92, 246, 0.72);
+            background: rgba(139, 92, 246, 0.05);
             z-index: 4;
             cursor: pointer;
             transition: all 0.2s;
@@ -1467,7 +1478,7 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
 
         .comment-area[data-type="area"] {
             border-color: var(--tool-area);
-            background: rgba(139, 92, 246, 0.08);
+            background: rgba(139, 92, 246, 0.05);
         }
 
         .pin[data-type="point"] {
@@ -2022,6 +2033,15 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
                 font-size: 0.95rem;
             }
 
+            .erp-brand-wrap img {
+                width: 32px;
+                height: 32px;
+            }
+
+            .erp-brand-text {
+                font-size: 0.95rem;
+            }
+
             .review-header-main p {
                 font-size: 0.74rem !important;
             }
@@ -2111,7 +2131,19 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
                 font-size: 1rem;
             }
 
-            .toolbar-handle,
+            .toolbar-handle {
+                display: inline-flex;
+                width: 34px;
+                height: 42px;
+                min-width: 34px;
+                margin: 0;
+                border-radius: 12px;
+                font-size: 0.72rem;
+                cursor: default;
+                pointer-events: none;
+                opacity: 0.9;
+            }
+
             .toolbar-divider {
                 display: none;
             }
@@ -2144,6 +2176,55 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
             }
 
             .history-sidebar {
+                display: flex;
+                position: relative;
+                order: 2;
+                width: 100% !important;
+                min-width: 0;
+                max-width: none;
+                max-height: min(44dvh, 360px);
+                border-right: none;
+                border-top: 1px solid #bfdbfe;
+                border-radius: 16px;
+                margin-top: 0.7rem;
+                margin-bottom: calc(4.6rem + env(safe-area-inset-bottom));
+                overflow-y: auto;
+                box-shadow: 0 10px 24px -18px rgba(15, 23, 42, 0.42);
+            }
+
+            .history-mobile-tabs {
+                display: flex;
+                gap: 0.45rem;
+                margin: 0.75rem 1rem 0;
+                position: sticky;
+                top: 0;
+                z-index: 3;
+                background: linear-gradient(180deg, #f8fbff 0%, #f3f6ff 100%);
+                padding: 0.45rem 0;
+            }
+
+            .history-mobile-tab {
+                flex: 1;
+                border: 1px solid #bfdbfe;
+                background: #ffffff;
+                color: #334155;
+                border-radius: 10px;
+                font-size: 0.74rem;
+                font-weight: 700;
+                padding: 0.52rem 0.55rem;
+                min-height: 40px;
+                cursor: pointer;
+                transition: all 0.15s ease;
+            }
+
+            .history-mobile-tab.active {
+                background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+                border-color: transparent;
+                color: #ffffff;
+                box-shadow: 0 10px 20px -14px rgba(15, 118, 110, 0.85);
+            }
+
+            .history-resizer {
                 display: none;
             }
 
@@ -2205,8 +2286,9 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
             }
 
             .artwork-viewer {
-                min-height: 52vh;
-                padding-bottom: 4.2rem;
+                order: 1;
+                min-height: 60vh;
+                padding-bottom: calc(1.2rem + env(safe-area-inset-bottom));
             }
 
             .ruler-top,
@@ -2318,7 +2400,7 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
             <div>
                 <h4 style="margin: 0; font-weight: 800; letter-spacing: -0.01em;"><?php echo sanitize($project['title']); ?></h4>
                 <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); font-weight: 500;">
-                    Version <?php echo $file['version']; ?> • <?php echo date('M d, Y', strtotime($file['uploaded_at'])); ?>
+                    Artwork Version <?php echo (int)$file['version']; ?> • <?php echo date('M d, Y', strtotime($file['uploaded_at'])); ?>
                 </p>
             </div>
         </div>
@@ -2403,8 +2485,13 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
         <aside class="history-sidebar" id="history-sidebar">
             <div class="history-resizer" id="history-resizer"></div>
 
+            <div class="history-mobile-tabs" id="history-mobile-tabs">
+                <button type="button" class="history-mobile-tab active" id="history-tab-project">Project History</button>
+                <button type="button" class="history-mobile-tab" id="history-tab-activity">Activity Log</button>
+            </div>
+
             <!-- Version History Panel -->
-            <div class="project-history-panel">
+            <div class="project-history-panel" id="project-history-panel">
                 <p class="history-title">Project History</p>
                 <div class="history-stats">
                     <div class="history-stat">
@@ -2455,7 +2542,7 @@ function normalizeActivityEntry(string $action, string $clientName = ''): array 
             </div>
 
             <!-- Activity Log Panel -->
-            <div class="history-activity-panel">
+            <div class="history-activity-panel" id="history-activity-panel">
                 <p class="history-activity-panel-title"><i class="fas fa-history" style="margin-right:0.35rem; color:#6366f1;"></i>Activity Log</p>
                 <div class="history-activity-list">
                     <?php if (empty($projectActivities)): ?>

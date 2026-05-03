@@ -7,4 +7,4 @@ if ($token === '') {
     redirect('../review.php');
 }
 
-redirect('../review.php?token=' . urlencode($token));
+redirect('../review.php?token=' . urlencode($token) . '&view=designer');
