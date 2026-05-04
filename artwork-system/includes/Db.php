@@ -112,7 +112,13 @@ class Db {
             project_id INT NULL,
             legacy_artwork_file_id INT NULL,
             client_name VARCHAR(150) NOT NULL,
+            job_name VARCHAR(160) DEFAULT NULL,
             plate_number VARCHAR(100) DEFAULT NULL,
+            date_received DATE DEFAULT NULL,
+            job_size VARCHAR(120) DEFAULT NULL,
+            paper_size VARCHAR(120) DEFAULT NULL,
+            paper_type VARCHAR(120) DEFAULT NULL,
+            make_by VARCHAR(120) DEFAULT NULL,
             die_number VARCHAR(100) DEFAULT NULL,
             color_job VARCHAR(100) DEFAULT NULL,
             job_date DATE DEFAULT NULL,
@@ -130,7 +136,13 @@ class Db {
             UNIQUE KEY uq_final_legacy_file (legacy_artwork_file_id),
             KEY idx_final_project (project_id),
             KEY idx_final_client (client_name),
+            KEY idx_final_job_name (job_name),
             KEY idx_final_plate (plate_number),
+            KEY idx_final_date_received (date_received),
+            KEY idx_final_job_size (job_size),
+            KEY idx_final_paper_size (paper_size),
+            KEY idx_final_paper_type (paper_type),
+            KEY idx_final_make_by (make_by),
             KEY idx_final_die (die_number),
             KEY idx_final_color (color_job),
             KEY idx_final_job_date (job_date),
@@ -142,6 +154,34 @@ class Db {
         }
         if (!$this->tableIndexExists('artwork_final_files', 'uq_final_legacy_file')) {
             $this->pdo->exec("ALTER TABLE artwork_final_files ADD UNIQUE KEY uq_final_legacy_file (legacy_artwork_file_id)");
+        }
+
+        $requiredColumns = [
+            'job_name' => "ALTER TABLE artwork_final_files ADD COLUMN job_name VARCHAR(160) DEFAULT NULL AFTER client_name",
+            'date_received' => "ALTER TABLE artwork_final_files ADD COLUMN date_received DATE DEFAULT NULL AFTER plate_number",
+            'job_size' => "ALTER TABLE artwork_final_files ADD COLUMN job_size VARCHAR(120) DEFAULT NULL AFTER date_received",
+            'paper_size' => "ALTER TABLE artwork_final_files ADD COLUMN paper_size VARCHAR(120) DEFAULT NULL AFTER job_size",
+            'paper_type' => "ALTER TABLE artwork_final_files ADD COLUMN paper_type VARCHAR(120) DEFAULT NULL AFTER paper_size",
+            'make_by' => "ALTER TABLE artwork_final_files ADD COLUMN make_by VARCHAR(120) DEFAULT NULL AFTER paper_type",
+        ];
+        foreach ($requiredColumns as $column => $sql) {
+            if (!$this->tableColumnExists('artwork_final_files', $column)) {
+                $this->pdo->exec($sql);
+            }
+        }
+
+        $requiredIndexes = [
+            'idx_final_job_name' => "ALTER TABLE artwork_final_files ADD KEY idx_final_job_name (job_name)",
+            'idx_final_date_received' => "ALTER TABLE artwork_final_files ADD KEY idx_final_date_received (date_received)",
+            'idx_final_job_size' => "ALTER TABLE artwork_final_files ADD KEY idx_final_job_size (job_size)",
+            'idx_final_paper_size' => "ALTER TABLE artwork_final_files ADD KEY idx_final_paper_size (paper_size)",
+            'idx_final_paper_type' => "ALTER TABLE artwork_final_files ADD KEY idx_final_paper_type (paper_type)",
+            'idx_final_make_by' => "ALTER TABLE artwork_final_files ADD KEY idx_final_make_by (make_by)",
+        ];
+        foreach ($requiredIndexes as $index => $sql) {
+            if (!$this->tableIndexExists('artwork_final_files', $index)) {
+                $this->pdo->exec($sql);
+            }
         }
     }
 

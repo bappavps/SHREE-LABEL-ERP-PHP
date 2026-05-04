@@ -21,10 +21,16 @@ if ($id <= 0) {
 }
 
 $clientName = sanitize((string)($_POST['client_name'] ?? ''));
+$jobName = sanitize((string)($_POST['job_name'] ?? ''));
 $plateNumber = sanitize((string)($_POST['plate_number'] ?? ''));
 $dieNumber = sanitize((string)($_POST['die_number'] ?? ''));
 $colorJob = sanitize((string)($_POST['color_job'] ?? ''));
 $jobDate = sanitize((string)($_POST['job_date'] ?? ''));
+$dateReceived = sanitize((string)($_POST['date_received'] ?? ''));
+$jobSize = sanitize((string)($_POST['job_size'] ?? ''));
+$paperSize = sanitize((string)($_POST['paper_size'] ?? ''));
+$paperType = sanitize((string)($_POST['paper_type'] ?? ''));
+$makeBy = sanitize((string)($_POST['make_by'] ?? ''));
 $notes = trim((string)($_POST['notes'] ?? ''));
 
 if ($clientName === '') {
@@ -34,22 +40,32 @@ if ($clientName === '') {
 $jobDateSql = null;
 if ($jobDate !== '') {
     $dt = DateTime::createFromFormat('Y-m-d', $jobDate);
-    if ($dt) {
-        $jobDateSql = $dt->format('Y-m-d');
-    }
+    if ($dt) { $jobDateSql = $dt->format('Y-m-d'); }
+}
+$dateReceivedSql = null;
+if ($dateReceived !== '') {
+    $dt2 = DateTime::createFromFormat('Y-m-d', $dateReceived);
+    if ($dt2) { $dateReceivedSql = $dt2->format('Y-m-d'); }
 }
 
 $db = Db::getInstance();
 
 $stmt = $db->prepare('UPDATE artwork_final_files
-    SET client_name = ?, plate_number = ?, die_number = ?, color_job = ?, job_date = ?, notes = ?
+    SET client_name = ?, job_name = ?, plate_number = ?, die_number = ?, color_job = ?,
+        job_date = ?, date_received = ?, job_size = ?, paper_size = ?, paper_type = ?, make_by = ?, notes = ?
     WHERE id = ? AND is_active = 1');
 $stmt->execute([
     $clientName,
+    $jobName !== '' ? $jobName : null,
     $plateNumber !== '' ? $plateNumber : null,
     $dieNumber !== '' ? $dieNumber : null,
     $colorJob !== '' ? $colorJob : null,
     $jobDateSql,
+    $dateReceivedSql,
+    $jobSize !== '' ? $jobSize : null,
+    $paperSize !== '' ? $paperSize : null,
+    $paperType !== '' ? $paperType : null,
+    $makeBy !== '' ? $makeBy : null,
     $notes !== '' ? $notes : null,
     $id,
 ]);
