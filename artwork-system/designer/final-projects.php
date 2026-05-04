@@ -609,11 +609,14 @@ $effectiveLimitMb = $effectiveLimitBytes > 0 ? round($effectiveLimitBytes / 1024
         var overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;inset:0;z-index:13000;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px;';
         var thumb = data.thumbnail_url
-            ? '<div style="margin-bottom:1rem;text-align:center;">'
-              + '<img src="' + data.thumbnail_url + '" alt="PDF Thumbnail" style="max-width:220px;max-height:220px;border-radius:12px;border:2px solid #86efac;box-shadow:0 8px 24px rgba(0,0,0,.18);object-fit:cover;">'
-              + '<div style="font-size:0.7rem;color:#64748b;margin-top:6px;">PDF Page 1 Preview</div>'
-              + '</div>'
-            : '';
+                        ? '<div data-thumb-wrap style="margin-bottom:1rem;text-align:center;">'
+                            + '<img id="finalThumbImg" src="' + data.thumbnail_url + '" alt="PDF Thumbnail" style="max-width:220px;max-height:220px;border-radius:12px;border:2px solid #86efac;box-shadow:0 8px 24px rgba(0,0,0,.18);object-fit:cover;">'
+                            + '<div style="font-size:0.7rem;color:#64748b;margin-top:6px;">PDF Page 1 Preview</div>'
+                            + '</div>'
+                        : '<div data-thumb-wrap style="margin-bottom:1rem;text-align:center;display:none;">'
+                            + '<img id="finalThumbImg" src="" alt="PDF Thumbnail" style="max-width:220px;max-height:220px;border-radius:12px;border:2px solid #86efac;box-shadow:0 8px 24px rgba(0,0,0,.18);object-fit:cover;display:none;">'
+                            + '<div style="font-size:0.7rem;color:#64748b;margin-top:6px;">PDF Page 1 Preview</div>'
+                            + '</div>';
         var plateInfo = data.plate_number ? '<div style="font-size:0.8rem;color:#475569;margin-top:4px;">Plate: <strong>' + data.plate_number + '</strong> — Plate Manager image updated</div>' : '';
         overlay.innerHTML =
             '<div style="width:min(440px,96vw);background:#fff;border-radius:16px;border:1px solid #e2e8f0;box-shadow:0 24px 56px rgba(2,6,23,.28);overflow:hidden;">'
@@ -664,6 +667,11 @@ $effectiveLimitMb = $effectiveLimitBytes > 0 ? round($effectiveLimitBytes / 1024
                         return;
                     }
                     showUploadSuccessModal(data.data || {});
+                                    // If server didn't generate a thumbnail, try client-side via PDF.js
+                                    var uploadedData = data.data || {};
+                                    if (!uploadedData.thumbnail_url && uploadedData.id) {
+                                        generateClientThumb(uploadedData.id, uploadedData.plate_number || '');
+                                    }
                 })
                 .catch(function (err) {
                     showUploadProgress(false);
@@ -770,6 +778,54 @@ $effectiveLimitMb = $effectiveLimitBytes > 0 ? round($effectiveLimitBytes / 1024
     };
     /* hook into showUploadProgress */
     var origShow = window.showUploadProgress;
+})();
+</script>
+
+<!-- PDF.js for client-side thumbnail generation -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+(function () {
+    if (typeof pdfjsLib === 'undefined') return;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    window.generateClientThumb = function (fileId, plateNumber) {
+        var pdfUrl = 'api/final-file.php?id=' + encodeURIComponent(fileId) + '&mode=preview';
+        pdfjsLib.getDocument({ url: pdfUrl, withCredentials: true }).promise.then(function (pdf) {
+            return pdf.getPage(1);
+        }).then(function (page) {
+            var viewport = page.getViewport({ scale: 1 });
+            // Scale to fit within 320px
+            var scale = Math.min(320 / viewport.width, 320 / viewport.height, 2);
+            var scaled = page.getViewport({ scale: scale });
+            var canvas = document.createElement('canvas');
+            canvas.width  = Math.round(scaled.width);
+            canvas.height = Math.round(scaled.height);
+            var ctx = canvas.getContext('2d');
+            return page.render({ canvasContext: ctx, viewport: scaled }).promise.then(function () {
+                return canvas.toDataURL('image/jpeg', 0.82);
+            });
+        }).then(function (dataUrl) {
+            // POST to save-thumb.php
+            var fd = new FormData();
+            fd.append('file_id', fileId);
+            fd.append('plate_number', plateNumber);
+            fd.append('image_data', dataUrl);
+            return fetch('api/save-thumb.php', { method: 'POST', body: fd });
+        }).then(function (res) {
+            return res.json();
+        }).then(function (resp) {
+            if (resp.status === 'success' && resp.thumbnail_url) {
+                // Update thumbnail in the open success modal if present
+                var existing = document.querySelector('#finalThumbImg');
+                if (existing) {
+                    existing.src = resp.thumbnail_url;
+                    existing.style.display = '';
+                    var wrap = existing.closest('[data-thumb-wrap]');
+                    if (wrap) wrap.style.display = '';
+                }
+            }
+        }).catch(function () { /* silent — thumbnail is optional */ });
+    };
 })();
 </script>
 

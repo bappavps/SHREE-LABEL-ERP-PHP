@@ -186,9 +186,10 @@ $pendingMigrationCount = count($pendingMigrationFiles);
 $pendingMigrationPreview = array_slice(array_map('basename', $pendingMigrationFiles), 0, 5);
 
 $pathChecks = [
-    'config' => check_writable(__DIR__ . '/config'),
-    'data' => check_writable(__DIR__ . '/data'),
-    'uploads' => check_writable(__DIR__ . '/uploads'),
+    'config'     => check_writable(__DIR__ . '/config'),
+    'data'       => check_writable(__DIR__ . '/data'),
+    'uploads'    => check_writable(__DIR__ . '/uploads'),
+    'plate_data' => check_writable(__DIR__ . '/uploads/library/plate-data'),
 ];
 
 $blockingCheckFail = false;

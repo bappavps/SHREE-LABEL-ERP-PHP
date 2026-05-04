@@ -64,7 +64,14 @@ define('ALLOWED_REFERENCE_EXTENSIONS', ['pdf', 'jpg', 'jpeg', 'png', 'webp']);
 define('ALLOWED_FINAL_EXTENSIONS', ['pdf']);
 
 // Debug mode (set to false on production)
-define('APP_DEBUG', true);
+// Debug mode — auto false on live server
+$_appDebug = (
+    strpos(strtolower((string)($_SERVER['HTTP_HOST'] ?? '')), 'localhost') !== false
+    || strpos((string)($_SERVER['HTTP_HOST'] ?? ''), '127.0.0.1') !== false
+    || ($_SERVER['SERVER_ADDR'] ?? '') === '127.0.0.1'
+    || ($_SERVER['SERVER_ADDR'] ?? '') === '::1'
+);
+define('APP_DEBUG', $_appDebug);
 if (APP_DEBUG) {
     error_reporting(E_ALL);
     ini_set('display_errors', '1');
