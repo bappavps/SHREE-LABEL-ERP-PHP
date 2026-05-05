@@ -404,15 +404,47 @@ function showFeedback(type){
 // ── Helpers ───────────────────────────────────────────────
 function $(id){ return document.getElementById(id); }
 
+function parseApiPayload(response){
+  return response.text().then(function(txt){
+    var body = String(txt || '');
+    var trimmed = body.trim();
+    var contentType = String(response.headers.get('content-type') || '').toLowerCase();
+
+    if (trimmed === '') {
+      throw new Error('Empty response from server');
+    }
+
+    // Happy path: JSON content type or JSON-looking payload.
+    if (contentType.indexOf('application/json') !== -1 || trimmed.charAt(0) === '{' || trimmed.charAt(0) === '[') {
+      try {
+        return JSON.parse(trimmed);
+      } catch (e) {
+        throw new Error('Invalid JSON response from server');
+      }
+    }
+
+    // Common production issue: session/auth redirect returns an HTML login page.
+    var lower = trimmed.toLowerCase();
+    if (lower.indexOf('<!doctype') === 0 || lower.indexOf('<html') === 0) {
+      throw new Error('Session expired or server returned HTML page. Please login again.');
+    }
+
+    throw new Error('Unexpected response format from server');
+  });
+}
+
 function postAPI(action, data, cb){
   var fd = new FormData();
   fd.append('action', action);
   fd.append('csrf_token', CSRF);
   for(var k in data) fd.append(k, data[k]);
   fetch(API, {method:'POST', body:fd, credentials:'same-origin'})
-    .then(function(r){ return r.json(); })
+    .then(function(r){ return parseApiPayload(r); })
     .then(cb)
-    .catch(function(e){ alert('Request failed: '+e.message); });
+    .catch(function(e){
+      var msg = 'Request failed: ' + e.message;
+      alert(msg);
+    });
 }
 
 function getAPI(action, params, cb){
@@ -420,9 +452,12 @@ function getAPI(action, params, cb){
   for(var k in params) url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
   url += '&_ts=' + Date.now();
   fetch(url, {credentials:'same-origin', cache:'no-store'})
-    .then(function(r){ return r.json(); })
+    .then(function(r){ return parseApiPayload(r); })
     .then(cb)
-    .catch(function(e){ alert('Request failed: '+e.message); });
+    .catch(function(e){
+      var msg = 'Request failed: ' + e.message;
+      alert(msg);
+    });
 }
 
 function applyImmediateScanResult(res){

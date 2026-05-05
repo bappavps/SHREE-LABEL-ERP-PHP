@@ -5,12 +5,46 @@
 // ============================================================
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';
-require_once __DIR__ . '/../../includes/auth_check.php';
+
+// API-safe auth check: return JSON errors instead of HTML redirects
+header('Content-Type: application/json; charset=utf-8');
+
+if (session_status() === PHP_SESSION_NONE) { session_start(); }
+
+if (!isset($_SESSION['user_id'])) {
+    http_response_code(401);
+    echo json_encode(['ok' => false, 'error' => 'Session expired. Please login again.', 'auth' => false]);
+    exit;
+}
+
+if (defined('TENANT_ACTIVE') && !TENANT_ACTIVE) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'This workspace is inactive. Please contact support.', 'auth' => false]);
+    exit;
+}
+
+$_currentTenantSlug = defined('TENANT_SLUG') ? (string)TENANT_SLUG : 'default';
+if (!empty($_SESSION['tenant_slug']) && (string)$_SESSION['tenant_slug'] !== $_currentTenantSlug) {
+    session_destroy();
+    http_response_code(401);
+    echo json_encode(['ok' => false, 'error' => 'Session tenant mismatch. Please login again.', 'auth' => false]);
+    exit;
+}
+if (empty($_SESSION['tenant_slug'])) {
+    $_SESSION['tenant_slug'] = $_currentTenantSlug;
+}
+
+if (function_exists('ensureRbacSchema')) { ensureRbacSchema(); }
+
+if (function_exists('canAccessPath') && !canAccessPath('/modules/audit/index.php')) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'Access denied. Please contact admin.', 'auth' => false]);
+    exit;
+}
+
 require_once __DIR__ . '/setup_tables.php';
 
 ensureAuditTables();
-
-header('Content-Type: application/json; charset=utf-8');
 
 $db     = getDB();
 $action = trim($_REQUEST['action'] ?? '');
