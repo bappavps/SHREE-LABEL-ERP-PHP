@@ -335,6 +335,27 @@
     return d.toISOString().slice(0, 10);
   }
 
+  function parseApiPayload(response) {
+    return response.text().then(function (raw) {
+      var text = String(raw || '');
+      var trimmed = text.trim();
+
+      if (!trimmed) {
+        throw new Error('Empty response from server');
+      }
+
+      try {
+        return JSON.parse(trimmed);
+      } catch (e) {
+        var lower = trimmed.toLowerCase();
+        if (lower.indexOf('<!doctype') === 0 || lower.indexOf('<html') === 0) {
+          throw new Error('Session expired or access denied (server returned HTML page). Please login again.');
+        }
+        throw new Error('Invalid JSON response from server');
+      }
+    });
+  }
+
   function api(action, params, method) {
     var m = method || 'GET';
     if (m === 'GET') {
@@ -344,7 +365,7 @@
       for (var i = 0; i < keys.length; i += 1) {
         q.set(keys[i], String(params[keys[i]] == null ? '' : params[keys[i]]));
       }
-      return fetch(state.apiUrl + '?' + q.toString(), { credentials: 'same-origin' }).then(function (r) { return r.json(); });
+      return fetch(state.apiUrl + '?' + q.toString(), { credentials: 'same-origin' }).then(function (r) { return parseApiPayload(r); });
     }
 
     var body = new FormData();
@@ -364,7 +385,7 @@
       method: 'POST',
       body: body,
       credentials: 'same-origin'
-    }).then(function (r) { return r.json(); });
+    }).then(function (r) { return parseApiPayload(r); });
   }
 
   function parsePrefill() {

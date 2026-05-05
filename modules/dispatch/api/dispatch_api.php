@@ -13,7 +13,8 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-require_once __DIR__ . '/../../../includes/auth_check.php';
+// Do not include auth_check.php here; it redirects with HTML on auth/RBAC failures.
+// This API must always respond with JSON so the frontend can handle errors safely.
 
 $db = getDB();
 
