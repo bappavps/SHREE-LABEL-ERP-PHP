@@ -2589,6 +2589,11 @@ function canAccessPath($path) {
         return canAccessPath('/modules/inventory/slitting/index.php');
     }
 
+    // Audit API follows the same permission as Audit Hub.
+    if ($path === '/modules/audit/api.php') {
+        return canAccessPath('/modules/audit/index.php');
+    }
+
     // Multi Job Slitting page follows the same permission as slitting index.
     if ($path === '/modules/inventory/slitting/multi-job.php') {
         return canAccessPath('/modules/inventory/slitting/index.php');

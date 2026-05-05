@@ -134,7 +134,7 @@ try {
         if (!$sess) { echo json_encode(['ok' => false, 'error' => 'Session not found']); break; }
         if ($sess['status'] === 'Finalized') { echo json_encode(['ok' => false, 'error' => 'Session is finalized']); break; }
 
-        // Check if already scanned in this session
+        // Check if already scanned in this session (as entered/normalized)
         $stmt2 = $db->prepare("SELECT id FROM audit_scanned_rolls WHERE audit_id = ? AND roll_no = ?");
         $stmt2->bind_param('is', $sessionId, $rollNo);
         $stmt2->execute();
@@ -143,21 +143,45 @@ try {
             break;
         }
 
-        // Look up in paper_stock
+        // Look up in paper_stock (exact first)
         $stmt3 = $db->prepare("SELECT id, roll_no, paper_type, width_mm, length_mtr, status FROM paper_stock WHERE UPPER(TRIM(roll_no)) = ?");
         $stmt3->bind_param('s', $rollNo);
         $stmt3->execute();
         $erpRoll = $stmt3->get_result()->fetch_assoc();
+
+        // Fallback: numeric short scan like "0284" should match ERP roll suffix like "SLC/2026/0284"
+        if (!$erpRoll && preg_match('/^[A-Z0-9\-]{1,20}$/', $rollNo)) {
+            $likeSuffix = '%/' . $rollNo;
+            $stmt3b = $db->prepare("SELECT id, roll_no, paper_type, width_mm, length_mtr, status FROM paper_stock WHERE UPPER(TRIM(roll_no)) LIKE ? ORDER BY id DESC LIMIT 1");
+            if ($stmt3b) {
+                $stmt3b->bind_param('s', $likeSuffix);
+                $stmt3b->execute();
+                $erpRoll = $stmt3b->get_result()->fetch_assoc();
+            }
+        }
 
         $scanStatus = 'Unknown';
         $paperType  = '';
         $dimension  = '';
         if ($erpRoll) {
             $scanStatus = 'Matched';
+            // Store canonical ERP roll number in audit scan row/feed.
+            $rollNo     = trim((string)($erpRoll['roll_no'] ?? $rollNo));
             $paperType  = $erpRoll['paper_type'] ?? '';
             $w = $erpRoll['width_mm'] ? (int)$erpRoll['width_mm'] . 'mm' : '';
             $l = $erpRoll['length_mtr'] ? number_format((float)$erpRoll['length_mtr'], 0) . 'm' : '';
             $dimension = trim($w . ' × ' . $l, ' ×');
+
+            // Re-check duplicate against canonical ERP roll no.
+            $stmt2b = $db->prepare("SELECT id FROM audit_scanned_rolls WHERE audit_id = ? AND roll_no = ?");
+            if ($stmt2b) {
+                $stmt2b->bind_param('is', $sessionId, $rollNo);
+                $stmt2b->execute();
+                if ($stmt2b->get_result()->num_rows > 0) {
+                    echo json_encode(['ok' => false, 'error' => 'Already scanned', 'duplicate' => true, 'roll_no' => $rollNo]);
+                    break;
+                }
+            }
         }
 
         $now = date('Y-m-d H:i:s');

@@ -132,6 +132,7 @@ $finalFileStmt = $db->prepare("SELECT * FROM artwork_files WHERE project_id = ? 
 $finalFileStmt->execute([$projectId]);
 $finalFile = $finalFileStmt->fetch();
 $isAdmin = (($designer['role'] ?? '') === 'admin');
+$canFinalize = !empty($designer['id']);
 ?>
 
 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem;">
@@ -221,7 +222,7 @@ $isAdmin = (($designer['role'] ?? '') === 'admin');
                         </div>
                         <div style="display: flex; gap: 0.5rem;">
                             <a href="../uploads/projects/<?php echo $file['filename']; ?>" download class="btn-primary" style="background: #f1f5f9; color: var(--text-main); padding: 0.5rem;" title="Download"><i class="fas fa-download"></i></a>
-                            <?php if ($isAdmin): ?>
+                            <?php if ($canFinalize): ?>
                                 <button class="btn-primary" style="background: #14532d; color: #fff; padding: 0.5rem 0.9rem; font-size: 0.75rem;" onclick="markAsFinal(<?php echo (int) $file['id']; ?>)">
                                     <i class="fas fa-seal-check"></i> Final
                                 </button>

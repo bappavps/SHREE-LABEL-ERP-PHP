@@ -442,6 +442,7 @@ var cameraActive     = false;
 var scanCount        = 0;
 var lastScannedCode  = '';
 var scanCooldown     = false;
+var nextScanAtTs     = 0;
 
 // ── Audio ─────────────────────────────────────────────────
 var audioCtx = null;
@@ -591,6 +592,24 @@ function stSubmitScan(){
 
   var isFinalized = currentSession && currentSession.status === 'Finalized';
   if(isFinalized){ return; }
+
+  var now = Date.now();
+  if(now < nextScanAtTs){
+    var waitSec = Math.ceil((nextScanAtTs - now) / 1000);
+    var lastScanCooldown = $('st-last-scan');
+    var cooldownIcon = lastScanCooldown.querySelector('.st-last-icon i');
+    input.className = 'st-input warning';
+    lastScanCooldown.className = 'st-last-scan visible duplicate';
+    cooldownIcon.className = 'bi bi-hourglass-split';
+    cooldownIcon.style.color = '#d97706';
+    $('st-last-roll').textContent = val;
+    $('st-last-detail').textContent = 'Wait ' + waitSec + 's before next scan';
+    setTimeout(function(){ input.className = 'st-input'; }, 600);
+    return;
+  }
+
+  // Enforce 5-second gap between scans to avoid accidental rapid double scans.
+  nextScanAtTs = now + 5000;
 
   input.disabled = true;
   postAPI('scan_roll', {session_id:currentSessionId, roll_no:val}, function(res){

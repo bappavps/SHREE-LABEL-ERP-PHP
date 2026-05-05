@@ -11,9 +11,6 @@ $user = getAuthUser();
 if (!$user) {
     jsonResponse('error', 'Authentication required.');
 }
-if (($user['role'] ?? '') !== 'admin') {
-    jsonResponse('error', 'Only admin can mark final files.');
-}
 
 $projectId = isset($_POST['project_id']) ? (int) $_POST['project_id'] : 0;
 $fileId = isset($_POST['file_id']) ? (int) $_POST['file_id'] : 0;
@@ -59,8 +56,9 @@ try {
     $db->prepare('UPDATE artwork_files SET is_final = 1 WHERE id = ?')->execute([$fileId]);
     $db->prepare("UPDATE artwork_projects SET status = 'approved' WHERE id = ?")->execute([$projectId]);
 
+    $actorName = trim((string)($user['name'] ?? $user['full_name'] ?? $user['username'] ?? $user['email'] ?? 'User'));
     $log = $db->prepare('INSERT INTO artwork_activity_log (project_id, action) VALUES (?, ?)');
-    $log->execute([$projectId, 'Admin marked final approval file: v' . (int) $file['version'] . ' (' . $file['original_name'] . ').']);
+    $log->execute([$projectId, $actorName . ' marked final approval file: v' . (int) $file['version'] . ' (' . $file['original_name'] . ').']);
 
     $db->commit();
 

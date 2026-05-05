@@ -418,10 +418,30 @@ function postAPI(action, data, cb){
 function getAPI(action, params, cb){
   var url = API + '?action=' + action;
   for(var k in params) url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
-  fetch(url, {credentials:'same-origin'})
+  url += '&_ts=' + Date.now();
+  fetch(url, {credentials:'same-origin', cache:'no-store'})
     .then(function(r){ return r.json(); })
     .then(cb)
     .catch(function(e){ alert('Request failed: '+e.message); });
+}
+
+function applyImmediateScanResult(res){
+  if(!activeSession) return;
+
+  if(!Array.isArray(activeSession.scanned_rolls)){
+    activeSession.scanned_rolls = [];
+  }
+
+  activeSession.scanned_rolls.unshift({
+    id: res.scan_id || 0,
+    roll_no: res.roll_no || '',
+    paper_type: res.paper_type || '',
+    dimension: res.dimension || '',
+    scan_time: res.scan_time || '',
+    status: res.status || 'Unknown'
+  });
+
+  renderFeed(activeSession.scanned_rolls);
 }
 
 function fmtDate(d){
@@ -666,7 +686,9 @@ function submitScan(){
     }
 
     showFeedback(res.status === 'Matched' ? 'success' : 'error');
-    loadSessionDetail();
+    applyImmediateScanResult(res);
+    loadReconciliation();
+    setTimeout(function(){ loadSessionDetail(); }, 150);
   });
 }
 window.submitScan = submitScan;
