@@ -1927,7 +1927,7 @@ async function psPrint() {
   const canvasEl = document.getElementById('studio-canvas');
   if (!canvasEl || !currentTemplate) return;
 
-  const mode = await choosePrintMode();
+  const mode = (typeof choosePrintMode === 'function') ? await choosePrintMode() : 'color';
   if (!mode) return;
 
   const btn = document.getElementById('ps-print-btn');
