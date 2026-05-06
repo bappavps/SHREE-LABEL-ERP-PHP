@@ -9,6 +9,18 @@ $sidebarCompanyName = trim((string)($appSettings['company_name'] ?? ''));
 $sidebarCompanyName = function_exists('getErpDisplayName') ? getErpDisplayName($sidebarCompanyName) : APP_NAME;
 $sidebarLogoPath = (string)($appSettings['erp_logo_path'] ?? ($appSettings['logo_path'] ?? ''));
 
+// Dual-branding: sidebar always shows main ERP logo & name when on a tenant subdomain
+$_sidebarIsTenant = defined('TENANT_SLUG') && TENANT_SLUG !== 'default';
+if ($_sidebarIsTenant) {
+  $_sidebarMainFile = __DIR__ . '/../data/app_settings.json';
+  $_sidebarMainRaw  = @file_get_contents($_sidebarMainFile);
+  $_sidebarMain     = $_sidebarMainRaw ? (json_decode($_sidebarMainRaw, true) ?: []) : [];
+  $sidebarLogoPath  = (string)($_sidebarMain['erp_logo_path'] ?? ($_sidebarMain['logo_path'] ?? ''));
+  $sidebarCompanyName = defined('TENANT_ERP_DISPLAY_NAME') && TENANT_ERP_DISPLAY_NAME !== ''
+    ? TENANT_ERP_DISPLAY_NAME
+    : (trim((string)($_sidebarMain['company_name'] ?? '')) ?: APP_NAME);
+}
+
 function navItem($href, $icon, $label, $currentFile) {
     if (function_exists('canAccessPath') && !canAccessPath($href)) {
         return '';

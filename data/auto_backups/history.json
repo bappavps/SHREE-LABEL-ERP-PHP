@@ -52,5 +52,14 @@
         "storage_type": "Google Drive",
         "upload_status": "Success",
         "size": 96321
+    },
+    {
+        "date": "2026-05-06 18:51:47",
+        "file": "backup_2026-05-06_18-51-40.zip",
+        "location": "Google Drive",
+        "status": "Success",
+        "storage_type": "Google Drive",
+        "upload_status": "Success",
+        "size": 99124
     }
 ]

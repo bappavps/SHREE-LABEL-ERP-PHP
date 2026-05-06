@@ -7,7 +7,9 @@ require_once __DIR__ . '/../includes/functions.php';
 
 if (session_status() === PHP_SESSION_NONE) session_start();
 
-$tenantInactiveMessage = 'This company workspace is currently inactive. Please contact E-Flexo support.';
+$tenantInactiveMessage = defined('TENANT_EXPIRED') && TENANT_EXPIRED
+  ? 'Your subscription has expired. Please contact support to renew access.'
+  : 'This company workspace is suspended. Please contact support.';
 
 // Already logged in
 if (isset($_SESSION['user_id']) && (!defined('TENANT_ACTIVE') || TENANT_ACTIVE)) {
@@ -77,13 +79,32 @@ if ($error === '' && defined('TENANT_ACTIVE') && !TENANT_ACTIVE) {
 
 $csrf = generateCSRF();
 $settings = getAppSettings();
-$companyName = trim((string)($settings['company_name'] ?? '')) ?: APP_NAME;
-$erpDisplayName = function_exists('getErpDisplayName') ? getErpDisplayName($companyName) : APP_NAME;
-$footerErpName = function_exists('getErpDisplayName') ? getErpDisplayName($companyName) : APP_NAME;
-$logoPath = (string)($settings['logo_path'] ?? '');
-$erpLogoPath = (string)($settings['erp_logo_path'] ?? '');
-$uiLogoPath = $erpLogoPath !== '' ? $erpLogoPath : $logoPath;
-$companyLogoUrl = $uiLogoPath !== '' ? appUrl($uiLogoPath) : appUrl('assets/img/logo.svg');
+$isTenant = defined('TENANT_SLUG') && TENANT_SLUG !== 'default';
+
+// ERP system logo — always from main (default) settings file
+$_mainSettingsFile = __DIR__ . '/../data/app_settings.json';
+$_mainSettings = [];
+if (is_file($_mainSettingsFile)) {
+  $_raw = @file_get_contents($_mainSettingsFile);
+  if ($_raw) $_mainSettings = json_decode($_raw, true) ?: [];
+}
+$_erpSysLogo = trim((string)($_mainSettings['erp_logo_path'] ?? $_mainSettings['logo_path'] ?? ''));
+$erpSystemLogoUrl = $_erpSysLogo !== '' ? appUrl($_erpSysLogo) : appUrl('assets/img/logo.svg');
+
+// Tenant company branding — only when a real tenant is active
+$tenantCompanyName = '';
+$tenantCompanyLogoUrl = '';
+if ($isTenant) {
+  $_tLogo = trim((string)($settings['erp_logo_path'] ?? $settings['logo_path'] ?? ''));
+  $tenantCompanyLogoUrl = $_tLogo !== '' ? appUrl($_tLogo) : '';
+  $tenantCompanyName = trim((string)($settings['company_name'] ?? ''));
+  if ($tenantCompanyName === '' || $tenantCompanyName === APP_NAME) {
+    $tenantCompanyName = defined('TENANT_NAME') ? TENANT_NAME : '';
+  }
+}
+
+$erpDisplayName = function_exists('getErpDisplayName') ? getErpDisplayName('') : APP_NAME;
+$footerErpName = $erpDisplayName;
 $themeColor = (string)($settings['sidebar_button_color'] ?? '#22c55e');
 $loginBg = (string)($settings['login_background_image'] ?? '');
 if ($loginBg === '') {
@@ -200,8 +221,8 @@ if ($loginBg === '') {
   min-height: 60px;
 }
 .login-logo img {
-  max-width: 120px;
-  max-height: 80px;
+  max-width: 100px;
+  max-height: 64px;
   width: auto;
   height: auto;
   object-fit: contain;
@@ -209,6 +230,13 @@ if ($loginBg === '') {
 .login-logo i {
   font-size: 3.5rem;
   color: #22c55e;
+}
+.login-logo-sep {
+  width: 1px;
+  height: 44px;
+  background: #e2e8f0;
+  margin: 0 14px;
+  flex-shrink: 0;
 }
 .login-inline-footer {
   background: rgba(255,255,255,.92);
@@ -364,14 +392,26 @@ if ($loginBg === '') {
     <div class="login-wrap">
       <div class="login-card">
     <div class="login-logo">
-      <?php if ($uiLogoPath !== ''): ?>
-        <img src="<?= e(appUrl($uiLogoPath)) ?>" alt="Logo">
+      <?php if ($isTenant): ?>
+        <?php /* Tenant login: show client company logo only */ ?>
+        <?php if ($tenantCompanyLogoUrl !== ''): ?>
+          <img src="<?= e($tenantCompanyLogoUrl) ?>" alt="Company Logo">
+        <?php else: ?>
+          <i class="bi bi-layers"></i>
+        <?php endif; ?>
       <?php else: ?>
-        <i class="bi bi-layers"></i>
+        <?php /* Main ERP login: show ERP logo only */ ?>
+        <?php if ($_erpSysLogo !== ''): ?>
+          <img src="<?= e($erpSystemLogoUrl) ?>" alt="ERP Logo">
+        <?php else: ?>
+          <i class="bi bi-layers"></i>
+        <?php endif; ?>
       <?php endif; ?>
     </div>
     <h1 class="login-title"><?= e($erpDisplayName) ?></h1>
-    <p class="login-sub" style="margin-bottom:8px"><?= e($companyName) ?></p>
+    <?php if ($isTenant && $tenantCompanyName !== ''): ?>
+    <p class="login-sub" style="margin-bottom:8px"><?= e($tenantCompanyName) ?></p>
+    <?php endif; ?>
     <p class="login-sub">Sign in to your account</p>
 
     <?php if ($error): ?>

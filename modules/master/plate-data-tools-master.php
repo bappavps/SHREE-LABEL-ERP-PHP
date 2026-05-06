@@ -4,27 +4,42 @@ require_once __DIR__ . '/../../includes/functions.php';
 require_once __DIR__ . '/../../includes/auth_check.php';
 
 // == Paper-Roll Concept: DB backend =========================================
-$prcDb = getDB();
-$prcDb->query("CREATE TABLE IF NOT EXISTS paper_roll_concept (
-	id INT AUTO_INCREMENT PRIMARY KEY,
-	sl_no INT NOT NULL DEFAULT 0,
-	item_name VARCHAR(200) NOT NULL DEFAULT '',
-	item VARCHAR(50) NOT NULL DEFAULT 'All',
-	width_mm VARCHAR(50) NOT NULL DEFAULT '',
-	length_mtr VARCHAR(50) NOT NULL DEFAULT '',
-	paper_type VARCHAR(100) NOT NULL DEFAULT '',
-	gsm VARCHAR(50) NOT NULL DEFAULT '',
-	dia VARCHAR(50) NOT NULL DEFAULT '',
-	core VARCHAR(100) NOT NULL DEFAULT '',
-	size VARCHAR(100) NOT NULL DEFAULT '',
-	core_type VARCHAR(100) NOT NULL DEFAULT 'All',
-	created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-	updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-
+$requestedTab = trim((string)($_GET['tab'] ?? 'plate_management_master'));
+$prcNeedsBackend = $requestedTab === 'paper_roll_concept' || ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['prc_action']));
+$prcDb = null;
 $prcFlash = ['type' => '', 'msg' => ''];
+$prcRows = [];
+$prcNextSl = 1;
+$prcItemValues = [];
+$prcPaperTypeValues = [];
+$prcCoreTypeValues = [];
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['prc_action'])) {
+if ($prcNeedsBackend) {
+	try {
+		$prcDb = getDB();
+		$prcDb->query("CREATE TABLE IF NOT EXISTS paper_roll_concept (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			sl_no INT NOT NULL DEFAULT 0,
+			item_name VARCHAR(200) NOT NULL DEFAULT '',
+			item VARCHAR(50) NOT NULL DEFAULT 'All',
+			width_mm VARCHAR(50) NOT NULL DEFAULT '',
+			length_mtr VARCHAR(50) NOT NULL DEFAULT '',
+			paper_type VARCHAR(100) NOT NULL DEFAULT '',
+			gsm VARCHAR(50) NOT NULL DEFAULT '',
+			dia VARCHAR(50) NOT NULL DEFAULT '',
+			core VARCHAR(100) NOT NULL DEFAULT '',
+			size VARCHAR(100) NOT NULL DEFAULT '',
+			core_type VARCHAR(100) NOT NULL DEFAULT 'All',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+	} catch (Throwable $e) {
+		$prcFlash = ['type' => 'error', 'msg' => 'Paper-Roll master is temporarily unavailable in this workspace.'];
+		$prcNeedsBackend = false;
+	}
+}
+
+if ($prcNeedsBackend && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['prc_action'])) {
 	if (!verifyCSRF((string)($_POST['csrf_token'] ?? ''))) {
 		$prcFlash = ['type' => 'error', 'msg' => 'Invalid CSRF token.'];
 	} else {
@@ -124,39 +139,36 @@ if (isset($_GET['prc_flash'])) {
 	$prcFlash = ['type' => (string) $_GET['prc_flash'], 'msg' => (string) ($_GET['prc_msg'] ?? '')];
 }
 
-$prcRows   = [];
-$prcNextSl = 1;
-$prcRes = $prcDb->query('SELECT * FROM paper_roll_concept ORDER BY sl_no ASC, id ASC');
-if ($prcRes) {
-	while ($pr = $prcRes->fetch_assoc()) {
-		$prcRows[] = $pr;
+if ($prcNeedsBackend && $prcDb instanceof mysqli) {
+	$prcRes = $prcDb->query('SELECT * FROM paper_roll_concept ORDER BY sl_no ASC, id ASC');
+	if ($prcRes) {
+		while ($pr = $prcRes->fetch_assoc()) {
+			$prcRows[] = $pr;
+		}
 	}
-}
-$prcNextSl = $prcRows ? ((int) end($prcRows)['sl_no'] + 1) : 1;
+	$prcNextSl = $prcRows ? ((int) end($prcRows)['sl_no'] + 1) : 1;
 
-$prcItemValues = [];
-$prcPaperTypeValues = [];
-$prcCoreTypeValues = [];
-foreach ($prcRows as $prcOptRow) {
-	$optItem = trim((string)($prcOptRow['item'] ?? ''));
-	if ($optItem !== '') {
-		$prcItemValues[strtolower($optItem)] = $optItem;
+	foreach ($prcRows as $prcOptRow) {
+		$optItem = trim((string)($prcOptRow['item'] ?? ''));
+		if ($optItem !== '') {
+			$prcItemValues[strtolower($optItem)] = $optItem;
+		}
+		$optPaperType = trim((string)($prcOptRow['paper_type'] ?? ''));
+		if ($optPaperType !== '') {
+			$prcPaperTypeValues[strtolower($optPaperType)] = $optPaperType;
+		}
+		$optCoreType = trim((string)($prcOptRow['core_type'] ?? ''));
+		if ($optCoreType !== '') {
+			$prcCoreTypeValues[strtolower($optCoreType)] = $optCoreType;
+		}
 	}
-	$optPaperType = trim((string)($prcOptRow['paper_type'] ?? ''));
-	if ($optPaperType !== '') {
-		$prcPaperTypeValues[strtolower($optPaperType)] = $optPaperType;
-	}
-	$optCoreType = trim((string)($prcOptRow['core_type'] ?? ''));
-	if ($optCoreType !== '') {
-		$prcCoreTypeValues[strtolower($optCoreType)] = $optCoreType;
-	}
+	natcasesort($prcItemValues);
+	natcasesort($prcPaperTypeValues);
+	natcasesort($prcCoreTypeValues);
+	$prcItemValues = array_values($prcItemValues);
+	$prcPaperTypeValues = array_values($prcPaperTypeValues);
+	$prcCoreTypeValues = array_values($prcCoreTypeValues);
 }
-natcasesort($prcItemValues);
-natcasesort($prcPaperTypeValues);
-natcasesort($prcCoreTypeValues);
-$prcItemValues = array_values($prcItemValues);
-$prcPaperTypeValues = array_values($prcPaperTypeValues);
-$prcCoreTypeValues = array_values($prcCoreTypeValues);
 if (!$prcItemValues) {
 	$prcItemValues = ['All'];
 }
@@ -183,7 +195,6 @@ $tabKeys = array_map(function ($tab) {
 	return (string)$tab['key'];
 }, $tabItems);
 
-$requestedTab = trim((string)($_GET['tab'] ?? 'plate_management_master'));
 $activeTab = $requestedTab;
 if ($requestedTab === '__none__') {
 	$activeTab = '';
@@ -216,43 +227,57 @@ $barcodeDieTabs = [
 $activeModuleHtml = '';
 if (in_array($activeTab, $moduleTabKeys, true)) {
 	ob_start();
-
-	if ($activeTab === 'plate_management_master') {
-		$dieToolingEmbedded = true;
-		$dieToolingRedirectUrlOverride = $tabBasePath . '?tab=plate_management_master';
-		$dieToolingPageTitleOverride = 'Plate Management Master';
-		$dieToolingModuleLabelOverride = 'Plate Data';
-		require __DIR__ . '/../plate-data/index.php';
-	} elseif ($activeTab === 'flatbed_printing_die_master') {
-		$dieToolingEmbedded = true;
-		$dieToolingRedirectUrlOverride = $tabBasePath . '?tab=flatbed_printing_die_master';
-		$dieToolingPageTitleOverride = 'Flatbed Printing Die Master';
-		$dieToolingEntityLabelOverride = 'Flatbed Printing Die';
-		$dieToolingDieTypeScope = 'flatbed';
-		$dieToolingDieTypeScopeLabel = 'Flatbed';
-		require __DIR__ . '/../die-tooling/index.php';
-	} elseif ($activeTab === 'rotary_printing_die_master') {
-		$dieToolingEmbedded = true;
-		$dieToolingRedirectUrlOverride = $tabBasePath . '?tab=rotary_printing_die_master';
-		$dieToolingPageTitleOverride = 'Rotary Die Master';
-		$dieToolingEntityLabelOverride = 'Rotary Die';
-		$dieToolingDieTypeScope = 'rotary';
-		$dieToolingDieTypeScopeLabel = 'Rotary';
-		require __DIR__ . '/../die-tooling/index.php';
-	} elseif ($activeTab === 'barcode_die_master') {
-		$barcodeDieWorkspaceEmbedded = true;
-		$barcodeDieWorkspaceModeOverride = 'master';
-		$barcodeDieWorkspaceBasePathOverride = $tabBasePath . '?tab=barcode_die_master&mode=master';
-		require __DIR__ . '/../plate-tools/die-management/barcode/index.php';
-	} elseif ($activeTab === 'anilox_master') {
-		$aniloxDataEmbedded = true;
-		$dieToolingRedirectUrlOverride = $tabBasePath . '?tab=anilox_master';
-		$aniloxDataLabelOverride = 'Anilox Stock';
-		$aniloxDataPageTitleOverride = 'Anilox Master';
-		require __DIR__ . '/../anilox-data/index.php';
+	try {
+		if ($activeTab === 'plate_management_master') {
+			$dieToolingEmbedded = true;
+			$dieToolingRedirectUrlOverride = $tabBasePath . '?tab=plate_management_master';
+			$dieToolingPageTitleOverride = 'Plate Management Master';
+			$dieToolingModuleLabelOverride = 'Plate Data';
+			require __DIR__ . '/../plate-data/index.php';
+		} elseif ($activeTab === 'flatbed_printing_die_master') {
+			$dieToolingEmbedded = true;
+			$dieToolingRedirectUrlOverride = $tabBasePath . '?tab=flatbed_printing_die_master';
+			$dieToolingPageTitleOverride = 'Flatbed Printing Die Master';
+			$dieToolingEntityLabelOverride = 'Flatbed Printing Die';
+			$dieToolingDieTypeScope = 'flatbed';
+			$dieToolingDieTypeScopeLabel = 'Flatbed';
+			require __DIR__ . '/../die-tooling/index.php';
+		} elseif ($activeTab === 'rotary_printing_die_master') {
+			$dieToolingEmbedded = true;
+			$dieToolingRedirectUrlOverride = $tabBasePath . '?tab=rotary_printing_die_master';
+			$dieToolingPageTitleOverride = 'Rotary Die Master';
+			$dieToolingEntityLabelOverride = 'Rotary Die';
+			$dieToolingDieTypeScope = 'rotary';
+			$dieToolingDieTypeScopeLabel = 'Rotary';
+			require __DIR__ . '/../die-tooling/index.php';
+		} elseif ($activeTab === 'barcode_die_master') {
+			$barcodeDieWorkspaceEmbedded = true;
+			$barcodeDieWorkspaceModeOverride = 'master';
+			$barcodeDieWorkspaceBasePathOverride = $tabBasePath . '?tab=barcode_die_master&mode=master';
+			require __DIR__ . '/../plate-tools/die-management/barcode/index.php';
+		} elseif ($activeTab === 'anilox_master') {
+			$aniloxDataEmbedded = true;
+			$dieToolingRedirectUrlOverride = $tabBasePath . '?tab=anilox_master';
+			$aniloxDataLabelOverride = 'Anilox Stock';
+			$aniloxDataPageTitleOverride = 'Anilox Master';
+			require __DIR__ . '/../anilox-data/index.php';
+		}
+		$activeModuleHtml = ob_get_clean();
+	} catch (Throwable $e) {
+		ob_end_clean();
+		error_log('Plate data tools master error [' . $activeTab . ']: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+		$debugHtml = '';
+		if (function_exists('isAdmin') && isAdmin()) {
+			$debugMessage = trim((string)$e->getMessage());
+			$debugFile = basename((string)$e->getFile());
+			$debugLine = (int)$e->getLine();
+			$debugHtml = '<div style="margin-top:8px;font-weight:500;font-size:.9rem;line-height:1.5">'
+				. '<div><strong>Error:</strong> ' . e($debugMessage !== '' ? $debugMessage : 'Unknown error') . '</div>'
+				. '<div><strong>Source:</strong> ' . e($debugFile) . ':' . e((string)$debugLine) . '</div>'
+				. '</div>';
+		}
+		$activeModuleHtml = '<div style="padding:14px;border:1px solid #fecaca;border-radius:12px;background:#fef2f2;color:#991b1b;font-weight:600">This workspace section is temporarily unavailable.' . $debugHtml . '</div>';
 	}
-
-	$activeModuleHtml = ob_get_clean();
 }
 
 include __DIR__ . '/../../includes/header.php';

@@ -197,13 +197,28 @@ function erp_build_tenant_payload($slug, array $tenant, $env, array $baseProfile
         $profile['APP_NAME'] = $tenant['app_name'];
     }
 
+    // Check subscription expiry
+    $expiresAt = trim((string)($tenant['expires_at'] ?? ''));
+    $isExpired = false;
+    if ($expiresAt !== '') {
+        $expiryTs = strtotime($expiresAt);
+        if ($expiryTs !== false && $expiryTs < time()) {
+            $isExpired = true;
+        }
+    }
+    $isManuallyActive = !isset($tenant['active']) || (bool)$tenant['active'];
+    $isSuspended = !$isManuallyActive && !$isExpired;
+
     return [
-        'slug' => (string)$slug,
-        'label' => trim((string)($tenant['label'] ?? $slug)),
-        'active' => !isset($tenant['active']) || (bool)$tenant['active'],
-        'settings_file' => trim((string)($tenant['settings_file'] ?? '')),
+        'slug'             => (string)$slug,
+        'label'            => trim((string)($tenant['label'] ?? $slug)),
+        'active'           => $isManuallyActive && !$isExpired,
+        'suspended'        => $isSuspended,
+        'expired'          => $isExpired,
+        'expires_at'       => $expiresAt,
+        'settings_file'    => trim((string)($tenant['settings_file'] ?? '')),
         'erp_display_name' => trim((string)($tenant['erp_display_name'] ?? '')),
-        'profile' => $profile,
+        'profile'          => $profile,
     ];
 }
 
@@ -229,6 +244,11 @@ function erp_resolve_tenant(array $registry, $env, array $baseProfile) {
 
     foreach ($tenants as $slug => $tenant) {
         $tenant = (array)$tenant;
+        // Skip tenants that have explicit hosts — they must match by hostname only
+        $tenantHosts = isset($tenant['hosts']) && is_array($tenant['hosts']) ? $tenant['hosts'] : [];
+        if ($tenantHosts !== []) {
+            continue;
+        }
         $pathPrefixes = isset($tenant['path_prefixes']) && is_array($tenant['path_prefixes']) ? $tenant['path_prefixes'] : [];
         if (erp_path_matches_tenant($requestPath, $pathPrefixes)) {
             return erp_build_tenant_payload((string)$slug, $tenant, $env, $baseProfile);
@@ -302,6 +322,9 @@ define('APP_VERSION', $active['APP_VERSION']);
 define('TENANT_SLUG', (string)($resolvedTenant['slug'] ?? 'default'));
 define('TENANT_NAME', (string)($resolvedTenant['label'] ?? APP_NAME));
 define('TENANT_ACTIVE', (bool)($resolvedTenant['active'] ?? true));
+define('TENANT_SUSPENDED', (bool)($resolvedTenant['suspended'] ?? false));
+define('TENANT_EXPIRED', (bool)($resolvedTenant['expired'] ?? false));
+define('TENANT_EXPIRES_AT', (string)($resolvedTenant['expires_at'] ?? ''));
 define('TENANT_SETTINGS_FILE', (string)($resolvedTenant['settings_file'] ?? ''));
 define('TENANT_ERP_DISPLAY_NAME', (string)($resolvedTenant['erp_display_name'] ?? ''));
 

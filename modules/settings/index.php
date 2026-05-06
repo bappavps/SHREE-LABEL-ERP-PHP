@@ -932,7 +932,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $migrationFiles = collectProvisionMigrationFiles($projectRoot . '/pending_migrations');
-    $serverConn = @new mysqli($newDbHost, $newDbUser, $newDbPass, '', $newDbPort);
+
+    try {
+      $serverConn = new mysqli($newDbHost, $newDbUser, $newDbPass, '', $newDbPort);
+    } catch (mysqli_sql_exception $e) {
+      setFlash('error', 'Cannot connect to DB server: ' . $e->getMessage());
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
     if ($serverConn->connect_error) {
       setFlash('error', 'Cannot connect to DB server: ' . $serverConn->connect_error);
       redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
@@ -949,7 +955,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $serverConn->close();
 
-    $tenantDb = @new mysqli($newDbHost, $newDbUser, $newDbPass, $newDbName, $newDbPort);
+    try {
+      $tenantDb = new mysqli($newDbHost, $newDbUser, $newDbPass, $newDbName, $newDbPort);
+    } catch (mysqli_sql_exception $e) {
+      setFlash('error', 'Cannot connect to tenant database: ' . $e->getMessage());
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
     if ($tenantDb->connect_error) {
       setFlash('error', 'Cannot connect to tenant database: ' . $tenantDb->connect_error);
       redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
@@ -1054,10 +1065,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $tenantPrefixes = ['/' . $tenantSlugNew];
     }
 
+    $tenantExpiresAtRaw = trim((string)($_POST['tenant_expires_at'] ?? ''));
+    $tenantExpiresAt = '';
+    if ($tenantExpiresAtRaw !== '') {
+      $expTs = strtotime($tenantExpiresAtRaw);
+      if ($expTs !== false) $tenantExpiresAt = date('Y-m-d\T23:59:59', $expTs);
+    }
+
     $dynamicRegistry = loadDynamicTenantRegistry($tenantRegistryPath);
     $dynamicRegistry['tenants'][$tenantSlugNew] = [
-      'label' => $tenantLabelNew,
-      'active' => true,
+      'label'        => $tenantLabelNew,
+      'active'       => true,
+      'created_at'   => date('c'),
+      'expires_at'   => $tenantExpiresAt,
+      'company_name' => $tenantCompanyName,
+      'admin_email'  => $adminEmail,
       'hosts' => $tenantHosts,
       'path_prefixes' => $tenantPrefixes,
       'settings_file' => 'data/tenants/' . $tenantSlugNew . '/app_settings.json',
@@ -1080,7 +1102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       ],
     ];
     if (empty($dynamicRegistry['default_slug'])) {
-      $dynamicRegistry['default_slug'] = $tenantSlug;
+      $dynamicRegistry['default_slug'] = 'default'; // always main ERP, never a tenant slug
     }
 
     if (!saveDynamicTenantRegistry($tenantRegistryPath, $dynamicRegistry)) {
@@ -1089,6 +1111,181 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     setFlash('success', 'Tenant provisioned: ' . $tenantLabelNew . ' (' . $tenantSlugNew . '). Admin: ' . $adminEmail);
+    redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+  }
+
+  // ── Update Tenant Meta ──────────────────────────────────────────────
+  if ($action === 'update_tenant_meta') {
+    if (!isAdmin()) {
+      setFlash('error', 'Only administrators can update tenant settings.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    $editSlug = trim((string)($_POST['edit_slug'] ?? ''));
+    if ($editSlug === '') {
+      setFlash('error', 'Tenant slug is required.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    $reg = loadDynamicTenantRegistry($tenantRegistryPath);
+    if (!isset($reg['tenants'][$editSlug])) {
+      setFlash('error', 'Tenant not found.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    $t = &$reg['tenants'][$editSlug];
+    $newLabel = trim((string)($_POST['edit_label'] ?? ''));
+    if ($newLabel !== '') $t['label'] = $newLabel;
+    $newHostsList = parseCsvList(trim((string)($_POST['edit_hosts'] ?? '')));
+    $t['hosts'] = $newHostsList;
+    $newPfx = parseCsvList(trim((string)($_POST['edit_path_prefixes'] ?? '')));
+    if (!empty($newPfx)) $t['path_prefixes'] = $newPfx;
+    $t['erp_display_name'] = trim((string)($_POST['edit_erp_display_name'] ?? ''));
+    $t['active'] = (($_POST['edit_active'] ?? '1') === '1');
+    $rawExpiry = trim((string)($_POST['edit_expires_at'] ?? ''));
+    $t['expires_at'] = ($rawExpiry !== '' && strtotime($rawExpiry) !== false)
+      ? date('Y-m-d\T23:59:59', strtotime($rawExpiry))
+      : ($rawExpiry === '' ? '' : $t['expires_at'] ?? '');
+    unset($t);
+    if (!saveDynamicTenantRegistry($tenantRegistryPath, $reg)) {
+      setFlash('error', 'Registry save failed. Check data folder permissions.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    setFlash('success', 'Tenant "' . $editSlug . '" updated successfully.');
+    redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+  }
+
+  // ── Extend Tenant Subscription ──────────────────────────────────────
+  if ($action === 'extend_tenant') {
+    if (!isAdmin()) {
+      setFlash('error', 'Only administrators can extend tenant subscriptions.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    $extSlug = trim((string)($_POST['extend_slug'] ?? ''));
+    if ($extSlug === '') {
+      setFlash('error', 'Tenant slug is required.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    $reg = loadDynamicTenantRegistry($tenantRegistryPath);
+    if (!isset($reg['tenants'][$extSlug])) {
+      setFlash('error', 'Tenant not found.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    $t = &$reg['tenants'][$extSlug];
+    $extUntil = trim((string)($_POST['extend_until'] ?? ''));
+    $extDays  = (int)($_POST['extend_days'] ?? 0);
+    if ($extUntil !== '') {
+      $ts = strtotime($extUntil);
+      if ($ts === false) {
+        setFlash('error', 'Invalid date format.');
+        redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+      }
+      $t['expires_at'] = date('Y-m-d\T23:59:59', $ts);
+    } elseif ($extDays > 0) {
+      $curExpiry = trim((string)($t['expires_at'] ?? ''));
+      $baseTs = time();
+      if ($curExpiry !== '') {
+        $curTs = strtotime($curExpiry);
+        if ($curTs !== false && $curTs > time()) $baseTs = $curTs;
+      }
+      $t['expires_at'] = date('Y-m-d\T23:59:59', $baseTs + ($extDays * 86400));
+    }
+    $t['active'] = true; // re-activate if was suspended/expired
+    unset($t);
+    if (!saveDynamicTenantRegistry($tenantRegistryPath, $reg)) {
+      setFlash('error', 'Registry save failed.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    setFlash('success', 'Subscription extended for tenant "' . $extSlug . '".');
+    redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+  }
+
+  // ── Delete Tenant ───────────────────────────────────────────────────
+  if ($action === 'delete_tenant') {
+    if (!isAdmin()) {
+      setFlash('error', 'Only administrators can delete tenants.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    $delSlug = trim((string)($_POST['delete_slug'] ?? ''));
+    if ($delSlug === '') {
+      setFlash('error', 'Tenant slug is required.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    if ($delSlug === $tenantSlug) {
+      setFlash('error', 'Cannot delete the currently active tenant workspace.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    $reg = loadDynamicTenantRegistry($tenantRegistryPath);
+    if (!isset($reg['tenants'][$delSlug])) {
+      setFlash('error', 'Tenant not found.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    $delLabel = $reg['tenants'][$delSlug]['label'] ?? $delSlug;
+    unset($reg['tenants'][$delSlug]);
+    if (!saveDynamicTenantRegistry($tenantRegistryPath, $reg)) {
+      setFlash('error', 'Registry save failed.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    setFlash('success', 'Tenant "' . $delLabel . '" removed from registry. Database and files are preserved.');
+    redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+  }
+
+  // ── Change Tenant Admin Password ────────────────────────────────────
+  if ($action === 'change_tenant_admin_password') {
+    if (!isAdmin()) {
+      setFlash('error', 'Only administrators can change tenant credentials.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    $cpSlug  = trim((string)($_POST['cp_slug'] ?? ''));
+    $cpEmail = trim(strtolower((string)($_POST['cp_admin_email'] ?? '')));
+    $cpPass  = (string)($_POST['cp_new_password'] ?? '');
+    if ($cpSlug === '' || $cpEmail === '' || strlen($cpPass) < 6) {
+      setFlash('error', 'Slug, email, and new password (min 6 chars) are required.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    if (!filter_var($cpEmail, FILTER_VALIDATE_EMAIL)) {
+      setFlash('error', 'Invalid email address.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    $reg = loadDynamicTenantRegistry($tenantRegistryPath);
+    if (!isset($reg['tenants'][$cpSlug])) {
+      setFlash('error', 'Tenant not found.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    $tEntry = $reg['tenants'][$cpSlug];
+    $envKey = defined('ERP_ENV') ? ERP_ENV : (erp_is_local_request() ? 'local' : 'live');
+    $tDb = $tEntry['db'][$envKey] ?? $tEntry['db']['live'] ?? $tEntry['db']['local'] ?? [];
+    if (empty($tDb['DB_HOST']) || empty($tDb['DB_NAME']) || empty($tDb['DB_USER'])) {
+      setFlash('error', 'Tenant DB credentials incomplete in registry.');
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    try {
+      $tConn = new mysqli($tDb['DB_HOST'], $tDb['DB_USER'], $tDb['DB_PASS'] ?? '', $tDb['DB_NAME'], (int)($tDb['DB_PORT'] ?? 3306));
+    } catch (mysqli_sql_exception $e) {
+      setFlash('error', 'Cannot connect to tenant DB: ' . $e->getMessage());
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    if ($tConn->connect_error) {
+      setFlash('error', 'Cannot connect to tenant DB: ' . $tConn->connect_error);
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    $tConn->set_charset('utf8mb4');
+    $newHash = password_hash($cpPass, PASSWORD_BCRYPT);
+    $stmt = $tConn->prepare('UPDATE users SET password = ?, is_active = 1 WHERE email = ?');
+    if (!$stmt) {
+      $tConn->close();
+      setFlash('error', 'DB prepare failed: ' . $tConn->error);
+      redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
+    }
+    $stmt->bind_param('ss', $newHash, $cpEmail);
+    $stmt->execute();
+    $affected = $stmt->affected_rows;
+    $stmt->close();
+    $tConn->close();
+    $reg['tenants'][$cpSlug]['admin_email'] = $cpEmail;
+    saveDynamicTenantRegistry($tenantRegistryPath, $reg);
+    if ($affected === 0) {
+      setFlash('error', 'No user found with email "' . $cpEmail . '" in tenant "' . $cpSlug . '".');
+    } else {
+      setFlash('success', 'Password updated for "' . $cpEmail . '" in tenant "' . $cpSlug . '".');
+    }
     redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
   }
 
@@ -2433,13 +2630,7 @@ include __DIR__ . '/../../includes/header.php';
     <?php if ($activeTab === 'tenant'): ?>
       <style>
       .tenant-shell { display:grid; grid-template-columns:1.4fr .8fr; gap:16px; }
-      .tenant-hero {
-        border:1px solid #c7d2fe;
-        background:linear-gradient(135deg,#eef2ff 0%, #ecfeff 100%);
-        border-radius:14px;
-        padding:14px 16px;
-        margin-bottom:14px;
-      }
+      .tenant-hero { border:1px solid #c7d2fe; background:linear-gradient(135deg,#eef2ff 0%, #ecfeff 100%); border-radius:14px; padding:14px 16px; margin-bottom:14px; }
       .tenant-hero h3 { margin:0 0 4px; color:#1e1b4b; font-size:1rem; }
       .tenant-hero p { margin:0; color:#334155; font-size:.85rem; }
       .tenant-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
@@ -2448,7 +2639,7 @@ include __DIR__ . '/../../includes/header.php';
       .tenant-field { margin-bottom:10px; }
       .tenant-field:last-child { margin-bottom:0; }
       .tenant-field label { display:block; font-size:.76rem; font-weight:700; color:#334155; margin-bottom:4px; }
-      .tenant-field input { width:100%; }
+      .tenant-field input, .tenant-field textarea { width:100%; }
       .tenant-field small { color:#64748b; font-size:.72rem; display:block; margin-top:4px; }
       .tenant-check { border:1px solid #e2e8f0; background:#f8fafc; border-radius:10px; padding:10px 12px; font-size:.82rem; color:#334155; }
       .tenant-note { border:1px solid #bfdbfe; background:linear-gradient(180deg,#eff6ff 0%,#f8fbff 100%); border-radius:12px; padding:12px; margin-bottom:12px; }
@@ -2460,11 +2651,253 @@ include __DIR__ . '/../../includes/header.php';
       .tenant-meta-row { display:flex; gap:8px; justify-content:space-between; padding:6px 0; font-size:.8rem; border-bottom:1px dashed #e2e8f0; }
       .tenant-meta-row:last-child { border-bottom:none; }
       .tenant-actions { margin-top:12px; display:flex; justify-content:flex-start; }
+      /* Subscriber table */
+      .sub-stats { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+      .sub-stat { background:#fff; border:1.5px solid #e2e8f0; border-radius:12px; padding:10px 16px; min-width:100px; text-align:center; }
+      .sub-stat .sub-stat-num { font-size:1.6rem; font-weight:900; color:#0f172a; line-height:1; }
+      .sub-stat .sub-stat-lbl { font-size:.72rem; color:#64748b; margin-top:3px; }
+      .sub-stat.active-stat { border-color:#22c55e; }  .sub-stat.active-stat .sub-stat-num { color:#16a34a; }
+      .sub-stat.expired-stat { border-color:#ef4444; } .sub-stat.expired-stat .sub-stat-num { color:#dc2626; }
+      .sub-stat.soon-stat { border-color:#f97316; }    .sub-stat.soon-stat .sub-stat-num { color:#ea580c; }
+      .sub-stat.suspended-stat { border-color:#94a3b8; } .sub-stat.suspended-stat .sub-stat-num { color:#64748b; }
+      .sub-table-wrap { background:#fff; border:1.5px solid #e2e8f0; border-radius:14px; overflow:hidden; margin-bottom:18px; }
+      .sub-table { width:100%; border-collapse:collapse; font-size:.8rem; }
+      .sub-table th { background:#f1f5f9; padding:8px 10px; text-align:left; font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:#475569; border-bottom:1.5px solid #e2e8f0; }
+      .sub-table td { padding:8px 10px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
+      .sub-table tr:last-child td { border-bottom:none; }
+      .sub-table tr:hover td { background:#f8fafc; }
+      .sub-badge { display:inline-flex; align-items:center; gap:4px; border-radius:999px; padding:2px 9px; font-size:.69rem; font-weight:800; }
+      .sub-badge.active   { background:#dcfce7; color:#16a34a; }
+      .sub-badge.expired  { background:#fee2e2; color:#dc2626; }
+      .sub-badge.soon     { background:#ffedd5; color:#ea580c; }
+      .sub-badge.suspended{ background:#f1f5f9; color:#64748b; }
+      .sub-actions { display:flex; gap:5px; flex-wrap:wrap; }
+      .sub-empty { padding:24px; text-align:center; color:#94a3b8; font-size:.84rem; }
+      /* Accordion */
+      .prov-accordion { border:1.5px solid #e2e8f0; border-radius:14px; overflow:hidden; }
+      .prov-acc-head { display:flex; justify-content:space-between; align-items:center; padding:13px 16px; background:#f8fafc; cursor:pointer; user-select:none; }
+      .prov-acc-head h3 { margin:0; font-size:.97rem; font-weight:800; color:#0f172a; }
+      .prov-acc-head span { font-size:.8rem; color:#6366f1; font-weight:700; }
+      .prov-acc-body { display:none; padding:14px; border-top:1.5px solid #e2e8f0; }
+      .prov-acc-body.open { display:block; }
+      /* Modals */
+      .sub-modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:9999; align-items:center; justify-content:center; }
+      .sub-modal-overlay.active { display:flex; }
+      .sub-modal { background:#fff; border-radius:16px; padding:22px; width:min(520px,95vw); max-height:90vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,.25); }
+      .sub-modal h4 { margin:0 0 14px; font-size:1rem; font-weight:900; color:#0f172a; }
+      .sub-modal .form-group { margin-bottom:11px; }
+      .sub-modal label { display:block; font-size:.76rem; font-weight:700; color:#334155; margin-bottom:4px; }
+      .sub-modal input, .sub-modal select, .sub-modal textarea { width:100%; border:1.5px solid #e2e8f0; border-radius:8px; padding:8px 10px; font-size:.84rem; }
+      .sub-modal input:focus, .sub-modal select:focus { outline:none; border-color:#6366f1; }
+      .sub-modal .modal-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
+      .sub-modal .extend-presets { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:10px; }
+      .sub-modal .extend-presets button { border:1.5px solid #6366f1; background:#ede9fe; color:#4f46e5; border-radius:8px; padding:6px 12px; font-size:.78rem; font-weight:700; cursor:pointer; }
+      .sub-modal .extend-presets button:hover { background:#6366f1; color:#fff; }
       @media (max-width: 980px) {
         .tenant-shell { grid-template-columns:1fr; }
         .tenant-grid { grid-template-columns:1fr; }
+        .sub-table { font-size:.72rem; }
       }
       </style>
+
+      <?php
+        $subRegistry = loadDynamicTenantRegistry($tenantRegistryPath);
+        $subTenants = $subRegistry['tenants'] ?? [];
+        $subTotal = count($subTenants); $subActive = 0; $subExpired = 0; $subSoon = 0; $subSuspended = 0;
+        $now = time();
+        foreach ($subTenants as $_sl => $_t) {
+          $_exTs = (($_t['expires_at'] ?? '') !== '') ? strtotime($_t['expires_at']) : false;
+          $_isAct = !isset($_t['active']) || (bool)$_t['active'];
+          $_isExp = ($_exTs !== false && $_exTs < $now);
+          $_isSoon = (!$_isExp && $_exTs !== false && ($_exTs - $now) < 7 * 86400);
+          $_isSusp = !$_isAct && !$_isExp;
+          if ($_isExp) $subExpired++;
+          elseif ($_isSusp) $subSuspended++;
+          elseif ($_isSoon) $subSoon++;
+          else $subActive++;
+        }
+      ?>
+
+      <div class="sub-stats">
+        <div class="sub-stat"><div class="sub-stat-num"><?= $subTotal ?></div><div class="sub-stat-lbl">Total</div></div>
+        <div class="sub-stat active-stat"><div class="sub-stat-num"><?= $subActive ?></div><div class="sub-stat-lbl">Active</div></div>
+        <div class="sub-stat expired-stat"><div class="sub-stat-num"><?= $subExpired ?></div><div class="sub-stat-lbl">Expired</div></div>
+        <div class="sub-stat soon-stat"><div class="sub-stat-num"><?= $subSoon ?></div><div class="sub-stat-lbl">Expiring Soon</div></div>
+        <div class="sub-stat suspended-stat"><div class="sub-stat-num"><?= $subSuspended ?></div><div class="sub-stat-lbl">Suspended</div></div>
+      </div>
+
+      <div class="sub-table-wrap">
+        <table class="sub-table">
+          <thead>
+            <tr><th>Company / Slug</th><th>Hosts</th><th>Admin Email</th><th>Created</th><th>Expires</th><th>Days Left</th><th>Status</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+          <?php if (empty($subTenants)): ?>
+            <tr><td colspan="8" class="sub-empty"><i class="bi bi-buildings"></i><br>No tenants provisioned yet. Use the form below to create your first company workspace.</td></tr>
+          <?php else: ?>
+            <?php foreach ($subTenants as $_sl => $_t):
+              $_expiresAt = $_t['expires_at'] ?? '';
+              $_exTs = $_expiresAt !== '' ? strtotime($_expiresAt) : false;
+              $_isAct = !isset($_t['active']) || (bool)$_t['active'];
+              $_isExp = ($_exTs !== false && $_exTs < $now);
+              $_daysDiff = $_exTs !== false ? (int)ceil(($_exTs - $now) / 86400) : null;
+              $_isSoon = (!$_isExp && $_exTs !== false && ($_exTs - $now) < 7 * 86400);
+              $_isSusp = !$_isAct && !$_isExp;
+              if ($_isExp) { $_badge = 'expired'; $_badgeTxt = 'Expired'; }
+              elseif ($_isSusp) { $_badge = 'suspended'; $_badgeTxt = 'Suspended'; }
+              elseif ($_isSoon) { $_badge = 'soon'; $_badgeTxt = 'Expiring Soon'; }
+              else { $_badge = 'active'; $_badgeTxt = 'Active'; }
+              $_hostsStr = implode(', ', (array)($_t['hosts'] ?? []));
+              $_adminEmail = $_t['admin_email'] ?? '';
+              $_companyName = $_t['company_name'] ?? ($_t['label'] ?? $_sl);
+              $_createdAt = $_t['created_at'] ?? '';
+              $_createdFmt = $_createdAt !== '' ? date('d M Y', strtotime($_createdAt)) : '—';
+              $_expiresFmt = $_exTs !== false ? date('d M Y', $_exTs) : '&#8734; Never';
+              $_daysLbl = $_exTs !== false ? ($_isExp ? '<span style="color:#dc2626">'.abs($_daysDiff).' days ago</span>' : '<strong>'.$_daysDiff.'</strong> days') : '—';
+              $_editData = json_encode(['slug'=>$_sl,'label'=>$_t['label']??$_sl,'hosts'=>$_hostsStr,'path_prefixes'=>implode(', ',(array)($_t['path_prefixes']??[])),'erp_display_name'=>$_t['erp_display_name']??'','active'=>$_isAct?'1':'0','expires_at'=>$_expiresAt!==''?date('Y-m-d',strtotime($_expiresAt)):'']);
+              $_extData = json_encode(['slug'=>$_sl,'label'=>$_t['label']??$_sl,'expires_at'=>$_expiresAt!==''?date('Y-m-d',strtotime($_expiresAt)):'']);
+              $_passData = json_encode(['slug'=>$_sl,'label'=>$_t['label']??$_sl,'admin_email'=>$_adminEmail]);
+              $_delData  = json_encode(['slug'=>$_sl,'label'=>$_t['label']??$_sl]);
+            ?>
+            <tr>
+              <td><div style="font-weight:800;color:#0f172a"><?= e($_companyName) ?></div><div style="font-size:.7rem;color:#64748b;margin-top:2px"><code><?= e($_sl) ?></code></div></td>
+              <td style="font-size:.75rem;color:#334155"><?= e($_hostsStr ?: '—') ?></td>
+              <td style="font-size:.75rem"><?= e($_adminEmail ?: '—') ?></td>
+              <td style="font-size:.75rem;white-space:nowrap"><?= e($_createdFmt) ?></td>
+              <td style="font-size:.75rem;white-space:nowrap"><?= $_expiresFmt ?></td>
+              <td style="font-size:.75rem"><?= $_daysLbl ?></td>
+              <td><span class="sub-badge <?= $_badge ?>"><?= e($_badgeTxt) ?></span></td>
+              <td>
+                <div class="sub-actions">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="subOpenEdit(<?= htmlspecialchars($_editData, ENT_QUOTES) ?>)"><i class="bi bi-pencil"></i> Edit</button>
+                  <button type="button" class="btn btn-primary btn-sm" onclick="subOpenExtend(<?= htmlspecialchars($_extData, ENT_QUOTES) ?>)"><i class="bi bi-calendar-plus"></i> Extend</button>
+                  <button type="button" class="btn btn-light btn-sm" onclick="subOpenPass(<?= htmlspecialchars($_passData, ENT_QUOTES) ?>)"><i class="bi bi-key"></i> Password</button>
+                  <button type="button" class="btn btn-danger btn-sm" onclick="subOpenDelete(<?= htmlspecialchars($_delData, ENT_QUOTES) ?>)"><i class="bi bi-trash"></i></button>
+                </div>
+              </td>
+            </tr>
+            <?php endforeach; ?>
+          <?php endif; ?>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Modal: Edit Tenant -->
+      <div class="sub-modal-overlay" id="subModalEdit">
+        <div class="sub-modal">
+          <h4><i class="bi bi-pencil-square"></i> Edit Tenant</h4>
+          <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
+            <input type="hidden" name="action" value="update_tenant_meta">
+            <input type="hidden" name="edit_slug" id="editSlug">
+            <div class="form-group"><label>Slug (read-only)</label><input type="text" id="editSlugDisplay" readonly style="background:#f1f5f9;color:#64748b"></div>
+            <div class="form-group"><label>Tenant Label</label><input type="text" name="edit_label" id="editLabel" required></div>
+            <div class="form-group"><label>Hosts (comma separated)</label><input type="text" name="edit_hosts" id="editHosts" placeholder="e.g. abc.shreelabel.com"></div>
+            <div class="form-group"><label>Path Prefixes (comma separated)</label><input type="text" name="edit_path_prefixes" id="editPrefixes"></div>
+            <div class="form-group"><label>ERP Display Name</label><input type="text" name="edit_erp_display_name" id="editErpName"></div>
+            <div class="form-group"><label>Subscription Expires At</label><input type="date" name="edit_expires_at" id="editExpiresAt"><small style="color:#64748b;font-size:.72rem">Leave empty for no expiry.</small></div>
+            <div class="form-group"><label>Status</label>
+              <select name="edit_active" id="editActive">
+                <option value="1">Active (enabled)</option>
+                <option value="0">Suspended (disabled)</option>
+              </select>
+            </div>
+            <div class="modal-actions">
+              <button type="button" class="btn btn-secondary" onclick="subCloseModal('subModalEdit')">Cancel</button>
+              <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Save Changes</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Modal: Extend Subscription -->
+      <div class="sub-modal-overlay" id="subModalExtend">
+        <div class="sub-modal">
+          <h4><i class="bi bi-calendar-plus"></i> Extend Subscription &mdash; <span id="extendLabel" style="color:#6366f1"></span></h4>
+          <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
+            <input type="hidden" name="action" value="extend_tenant">
+            <input type="hidden" name="extend_slug" id="extendSlug">
+            <div class="form-group"><label>Quick Add (from current expiry or today)</label>
+              <div class="extend-presets">
+                <button type="button" onclick="subAddDays(30)">+1 Month</button>
+                <button type="button" onclick="subAddDays(90)">+3 Months</button>
+                <button type="button" onclick="subAddDays(180)">+6 Months</button>
+                <button type="button" onclick="subAddDays(365)">+1 Year</button>
+                <button type="button" onclick="subAddDays(730)">+2 Years</button>
+              </div>
+            </div>
+            <div class="form-group"><label>Or set exact expiry date</label><input type="date" name="extend_until" id="extendUntil"></div>
+            <input type="hidden" name="extend_days" id="extendDaysHidden" value="0">
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px;font-size:.8rem;color:#166534;margin-bottom:10px">
+              <i class="bi bi-info-circle"></i> Tenant will be <strong>re-activated</strong> automatically when subscription is extended.
+            </div>
+            <div class="modal-actions">
+              <button type="button" class="btn btn-secondary" onclick="subCloseModal('subModalExtend')">Cancel</button>
+              <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle"></i> Extend Now</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Modal: Change Password -->
+      <div class="sub-modal-overlay" id="subModalPass">
+        <div class="sub-modal">
+          <h4><i class="bi bi-key"></i> Change Admin Password &mdash; <span id="passLabel" style="color:#6366f1"></span></h4>
+          <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
+            <input type="hidden" name="action" value="change_tenant_admin_password">
+            <input type="hidden" name="cp_slug" id="passSlug">
+            <div class="form-group"><label>Admin Email (in tenant DB)</label><input type="email" name="cp_admin_email" id="passEmail" required></div>
+            <div class="form-group"><label>New Password (min 6 characters)</label><input type="password" name="cp_new_password" required minlength="6" placeholder="New password"></div>
+            <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px;font-size:.8rem;color:#854d0e;margin-bottom:10px">
+              <i class="bi bi-exclamation-triangle"></i> This updates the user's password directly in the <strong>tenant's database</strong>.
+            </div>
+            <div class="modal-actions">
+              <button type="button" class="btn btn-secondary" onclick="subCloseModal('subModalPass')">Cancel</button>
+              <button type="submit" class="btn btn-primary"><i class="bi bi-lock"></i> Update Password</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Modal: Delete Tenant -->
+      <div class="sub-modal-overlay" id="subModalDelete">
+        <div class="sub-modal">
+          <h4 style="color:#dc2626"><i class="bi bi-trash"></i> Remove Tenant</h4>
+          <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
+            <input type="hidden" name="action" value="delete_tenant">
+            <input type="hidden" name="delete_slug" id="deleteSlug">
+            <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:10px;padding:14px;margin-bottom:14px">
+              <p style="margin:0 0 6px;font-weight:800;color:#991b1b">You are about to remove: <span id="deleteLabel" style="color:#dc2626"></span></p>
+              <p style="margin:0;font-size:.82rem;color:#7f1d1d">This <strong>only removes the tenant from the registry</strong>. The database and uploaded files will <strong>NOT</strong> be deleted.</p>
+            </div>
+            <div class="modal-actions">
+              <button type="button" class="btn btn-secondary" onclick="subCloseModal('subModalDelete')">Cancel</button>
+              <button type="submit" class="btn btn-danger"><i class="bi bi-trash"></i> Yes, Remove Tenant</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <script>
+      function subOpenEdit(d){document.getElementById('editSlug').value=d.slug;document.getElementById('editSlugDisplay').value=d.slug;document.getElementById('editLabel').value=d.label;document.getElementById('editHosts').value=d.hosts;document.getElementById('editPrefixes').value=d.path_prefixes;document.getElementById('editErpName').value=d.erp_display_name;document.getElementById('editActive').value=d.active;document.getElementById('editExpiresAt').value=d.expires_at;document.getElementById('subModalEdit').classList.add('active');}
+      function subOpenExtend(d){document.getElementById('extendSlug').value=d.slug;document.getElementById('extendLabel').textContent=d.label;document.getElementById('extendUntil').value=d.expires_at;document.getElementById('extendDaysHidden').value='0';document.getElementById('subModalExtend').classList.add('active');}
+      function subOpenPass(d){document.getElementById('passSlug').value=d.slug;document.getElementById('passLabel').textContent=d.label;document.getElementById('passEmail').value=d.admin_email;document.getElementById('subModalPass').classList.add('active');}
+      function subOpenDelete(d){document.getElementById('deleteSlug').value=d.slug;document.getElementById('deleteLabel').textContent=d.label+' ('+d.slug+')';document.getElementById('subModalDelete').classList.add('active');}
+      function subCloseModal(id){document.getElementById(id).classList.remove('active');}
+      document.querySelectorAll('.sub-modal-overlay').forEach(function(el){el.addEventListener('click',function(e){if(e.target===el)el.classList.remove('active');});});
+      function subAddDays(days){var base=document.getElementById('extendUntil').value;var baseTs=base?new Date(base+'T00:00:00'):new Date();if(baseTs<new Date())baseTs=new Date();baseTs.setDate(baseTs.getDate()+days);var y=baseTs.getFullYear();var m=String(baseTs.getMonth()+1).padStart(2,'0');var day=String(baseTs.getDate()).padStart(2,'0');document.getElementById('extendUntil').value=y+'-'+m+'-'+day;document.getElementById('extendDaysHidden').value='0';}
+      </script>
+
+      <!-- Accordion: Provision New Tenant -->
+      <div class="prov-accordion">
+        <div class="prov-acc-head" onclick="this.nextElementSibling.classList.toggle('open');this.querySelector('span').textContent=this.nextElementSibling.classList.contains('open')?'▲ Collapse':'▼ Expand'">
+          <h3><i class="bi bi-plus-circle"></i> Provision New Company Workspace</h3>
+          <span>▼ Expand</span>
+        </div>
+        <div class="prov-acc-body">
 
       <div class="tenant-hero">
         <h3><i class="bi bi-diagram-3"></i> Provision New Company Workspace</h3>
@@ -2600,6 +3033,15 @@ include __DIR__ . '/../../includes/header.php';
                 <small>Country flag emoji for branding.</small>
               </div>
             </div>
+
+            <div class="tenant-group">
+              <h4><i class="bi bi-clock"></i> Subscription</h4>
+              <div class="tenant-field">
+                <label>Subscription Expires At</label>
+                <input type="date" name="tenant_expires_at">
+                <small>Leave empty for no expiry (lifetime). After this date, login will be blocked automatically.</small>
+              </div>
+            </div>
           </div>
 
           <div class="tenant-actions">
@@ -2615,6 +3057,7 @@ include __DIR__ . '/../../includes/header.php';
               <li>If host mapping is ready, enter Hosts; otherwise provide a path prefix like /ram.</li>
               <li>Provide database host, port, name, user, and password for this company.</li>
               <li>Set default admin name, email, and password for first login.</li>
+              <li>Optionally set a subscription expiry date.</li>
               <li>Click Provision Tenant to create DB schema, run migrations, and seed admin/settings.</li>
               <li>Open the configured tenant URL and complete company branding from profile settings.</li>
             </ol>
@@ -2649,6 +3092,9 @@ include __DIR__ . '/../../includes/header.php';
         });
       })();
       </script>
+
+        </div><!-- /.prov-acc-body -->
+      </div><!-- /.prov-accordion -->
     <?php endif; ?>
 
     <?php if ($activeTab === 'tally'): ?>

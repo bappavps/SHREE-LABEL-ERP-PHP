@@ -10,6 +10,23 @@ function e($str) {
     return htmlspecialchars((string)$str, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 }
 
+if (!function_exists('mb_strtolower')) {
+    function mb_strtolower($string, $encoding = null) {
+        return strtolower((string)$string);
+    }
+}
+
+if (!function_exists('mb_substr')) {
+    function mb_substr($string, $start, $length = null, $encoding = null) {
+        $string = (string)$string;
+        $start = (int)$start;
+        if ($length === null) {
+            return substr($string, $start);
+        }
+        return substr($string, $start, (int)$length);
+    }
+}
+
 require_once __DIR__ . '/status_module.php';
 
 /**
@@ -2581,6 +2598,16 @@ function canAccessPath($path) {
     // Public or always-allowed authenticated routes.
     if ($path === '/auth/logout.php') return true;
     if ($path === '/modules/dashboard/index.php') return true;
+
+    $tenantSlug = defined('TENANT_SLUG') ? trim((string)TENANT_SLUG) : 'default';
+    if ($tenantSlug !== 'default') {
+        $tenantRestrictedPaths = [
+            '/modules/settings/index.php',
+        ];
+        if (in_array($path, $tenantRestrictedPaths, true)) {
+            return false;
+        }
+    }
 
     if (isAdmin()) return true;
 

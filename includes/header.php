@@ -31,6 +31,19 @@ if ($animatedFlagUrl !== '' && filter_var($animatedFlagUrl, FILTER_VALIDATE_URL)
 $uiLogoPath = $erpLogoPath !== '' ? $erpLogoPath : $logoPath;
 $companyLogoUrl = $uiLogoPath !== '' ? appUrl($uiLogoPath) : appUrl('assets/img/logo.svg');
 $themeColor = (string)($appSettings['sidebar_button_color'] ?? '#22c55e');
+
+// Dual-branding: topbar shows client logo + client name when on a tenant subdomain
+$_headerIsTenant = defined('TENANT_SLUG') && TENANT_SLUG !== 'default';
+$topbarClientLogoUrl = '';
+$topbarClientName = '';
+if ($_headerIsTenant) {
+  $_tLogo = trim((string)($appSettings['erp_logo_path'] ?? $appSettings['logo_path'] ?? ''));
+  $topbarClientLogoUrl = $_tLogo !== '' ? appUrl($_tLogo) : '';
+  $topbarClientName = trim((string)($appSettings['company_name'] ?? ''));
+  if ($topbarClientName === '' || $topbarClientName === APP_NAME) {
+    $topbarClientName = defined('TENANT_NAME') ? TENANT_NAME : '';
+  }
+}
 $csrfToken = function_exists('generateCSRF') ? generateCSRF() : '';
 $currentPath = function_exists('rbacCurrentPath') ? rbacCurrentPath() : (string)($_SERVER['PHP_SELF'] ?? '');
 $currentUserId = (int)($_SESSION['user_id'] ?? 0);
@@ -257,12 +270,14 @@ $notificationDeptCsv = implode(',', $notificationDepartments);
         <i class="bi bi-list" style="font-size:1.2rem"></i>
       </button>
       <div class="topbar-brand">
-        <?php if ($logoPath !== ''): ?>
+        <?php if ($_headerIsTenant && $topbarClientLogoUrl !== ''): ?>
+          <img src="<?= e($topbarClientLogoUrl) ?>" alt="Client Logo" class="topbar-brand-logo">
+        <?php elseif ($logoPath !== ''): ?>
           <img src="<?= e(appUrl($logoPath)) ?>" alt="Logo" class="topbar-brand-logo">
         <?php else: ?>
           <i class="bi bi-layers"></i>
         <?php endif; ?>
-        <span><?= e($erpDisplayName) ?></span>
+        <span><?= e($_headerIsTenant && $topbarClientName !== '' ? $topbarClientName : $erpDisplayName) ?></span>
       </div>
       <div class="topbar-sep" aria-hidden="true"></div>
       <div class="topbar-company">

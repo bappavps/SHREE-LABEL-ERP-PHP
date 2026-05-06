@@ -36,9 +36,31 @@ function dieToolingGetImageUploadError() {
   return trim((string)$dieToolingImageUploadError);
 }
 
+function dieToolingTableExists(mysqli $db, string $tableName): bool {
+  $stmt = $db->prepare("SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1");
+  if (!$stmt) {
+    return false;
+  }
+  $schema = DB_NAME;
+  $stmt->bind_param('ss', $schema, $tableName);
+  $stmt->execute();
+  $exists = (bool)$stmt->get_result()->fetch_row();
+  $stmt->close();
+  return $exists;
+}
+
 function dieToolingGetPaperTypeOptions(mysqli $db) {
   $options = [];
-  $res = $db->query("SELECT DISTINCT TRIM(COALESCE(paper_type, '')) AS paper_type FROM paper_stock WHERE TRIM(COALESCE(paper_type, '')) <> '' ORDER BY paper_type ASC");
+  if (!dieToolingTableExists($db, 'paper_stock')) {
+    return $options;
+  }
+
+  try {
+    $res = $db->query("SELECT DISTINCT TRIM(COALESCE(paper_type, '')) AS paper_type FROM paper_stock WHERE TRIM(COALESCE(paper_type, '')) <> '' ORDER BY paper_type ASC");
+  } catch (Throwable $e) {
+    return $options;
+  }
+
   if ($res instanceof mysqli_result) {
     while ($row = $res->fetch_assoc()) {
       $value = trim((string)($row['paper_type'] ?? ''));
