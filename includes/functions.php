@@ -2599,16 +2599,6 @@ function canAccessPath($path) {
     if ($path === '/auth/logout.php') return true;
     if ($path === '/modules/dashboard/index.php') return true;
 
-    $tenantSlug = defined('TENANT_SLUG') ? trim((string)TENANT_SLUG) : 'default';
-    if ($tenantSlug !== 'default') {
-        $tenantRestrictedPaths = [
-            '/modules/settings/index.php',
-        ];
-        if (in_array($path, $tenantRestrictedPaths, true)) {
-            return false;
-        }
-    }
-
     if (isAdmin()) return true;
 
     // Slitting API should follow the same page permission as slitting index.

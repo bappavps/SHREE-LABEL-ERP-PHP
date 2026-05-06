@@ -773,7 +773,10 @@ $tenantSettingsDisplayPath = str_replace($projectRoot . '/', '', str_replace('\\
 
 $activeTab = $_GET['tab'] ?? 'company';
 // Add 'auto_backup' to allowedTabs
+$isTenantCtx = ($tenantSlug !== 'default');
 $allowedTabs = ['company', 'library', 'theme', 'status-workflow', 'tally', 'backup', 'auto_backup', 'update', 'tenant'];
+// Tenant users cannot access the Tenant Provision tab
+if ($isTenantCtx && in_array($activeTab, ['tenant', 'update'], true)) $activeTab = 'company';
 if (!in_array($activeTab, $allowedTabs, true)) $activeTab = 'company';
 
 $statusWorkflowSettings = sanitizeStatusWorkflowPayload($settings['status_workflow_matrix'] ?? statusWorkflowDefaults());
@@ -1990,10 +1993,14 @@ include __DIR__ . '/../../includes/header.php';
     <a class="settings-tab <?= $activeTab==='theme'?'active':'' ?>" href="?tab=theme">Color Theme</a>
     <a class="settings-tab <?= $activeTab==='status-workflow'?'active':'' ?>" href="?tab=status-workflow">Status Workflow</a>
     <a class="settings-tab <?= $activeTab==='tally'?'active':'' ?>" href="?tab=tally">Tally Integration</a>
+    <?php if (!$isTenantCtx): ?>
     <a class="settings-tab <?= $activeTab==='tenant'?'active':'' ?>" href="?tab=tenant">Tenant Provision</a>
+    <?php endif; ?>
     <a class="settings-tab <?= $activeTab==='backup'?'active':'' ?>" href="?tab=backup">Backup &amp; Restore</a>
     <a class="settings-tab <?= $activeTab==='auto_backup'?'active':'' ?>" href="?tab=auto_backup">Auto Backup</a>
+    <?php if (!$isTenantCtx): ?>
     <a class="settings-tab <?= $activeTab==='update'?'active':'' ?>" href="?tab=update">System Update</a>
+    <?php endif; ?>
   </div>
 
   <div class="settings-body">
