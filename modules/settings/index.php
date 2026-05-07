@@ -1292,6 +1292,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
   }
 
+  if ($action === 'rebuild_library') {
+    // Scan all uploads/uploads/library/ subdirectories and re-register any images
+    // not yet tracked in image_library. Also deduplicates existing entries by path.
+    if (!isset($settings['image_library']) || !is_array($settings['image_library'])) $settings['image_library'] = [];
+
+    // Deduplicate existing entries by path (keep first occurrence)
+    $seen = [];
+    $deduped = [];
+    foreach ($settings['image_library'] as $entry) {
+      $p = (string)($entry['path'] ?? '');
+      if ($p !== '' && !isset($seen[$p])) {
+        $seen[$p] = true;
+        $deduped[] = $entry;
+      }
+    }
+    $settings['image_library'] = $deduped;
+
+    // Scan disk for untracked images
+    $existingPaths = array_column($settings['image_library'], 'path');
+    $scanRoot = $projectRoot . '/uploads/uploads/library/';
+    $added = 0;
+    if (is_dir($scanRoot)) {
+      $allowedExts = ['jpg','jpeg','png','gif','webp'];
+      $slugDirs = glob($scanRoot . '*', GLOB_ONLYDIR) ?: [];
+      foreach ($slugDirs as $slugDir) {
+        $files = scandir($slugDir) ?: [];
+        foreach ($files as $f) {
+          if ($f === '.' || $f === '..') continue;
+          $ext = strtolower(pathinfo($f, PATHINFO_EXTENSION));
+          if (!in_array($ext, $allowedExts, true)) continue;
+          $relPath = 'uploads/uploads/library/' . basename($slugDir) . '/' . $f;
+          if (!in_array($relPath, $existingPaths, true)) {
+            $settings['image_library'][] = [
+              'path'        => $relPath,
+              'name'        => $f,
+              'uploaded_at' => date('Y-m-d H:i:s', (int)@filemtime($slugDir . '/' . $f) ?: time()),
+              'category'    => 'misc',
+            ];
+            $existingPaths[] = $relPath;
+            $added++;
+          }
+        }
+      }
+    }
+    if (saveAppSettings($settings)) {
+      $msg = $added > 0 ? $added . ' new image(s) added.' : 'No new images found.';
+      setFlash('success', 'Library rebuilt. Duplicates removed. ' . $msg);
+    } else {
+      setFlash('error', 'Could not save settings.');
+    }
+    redirect(BASE_URL . '/modules/settings/index.php?tab=library');
+  }
+
   if ($action === 'upload_library_image') {
     $category = $_POST['image_category'] ?? 'misc';
     if (!isset($libraryCategories[$category])) $category = 'misc';
@@ -1520,8 +1573,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (is_file($settingsFile)) {
       $zip->addFile($settingsFile, $tenantSettingsZipPath);
     }
-    addDirectoryToZip($zip, $projectRoot . '/' . $tenantAssetDirs['company'], $tenantAssetDirs['company']);
-    addDirectoryToZip($zip, $projectRoot . '/' . $tenantAssetDirs['library'], $tenantAssetDirs['library']);
+    // saveUploadedImage() prepends 'uploads/' to targetDir, so actual files are at uploads/uploads/...
+    // ZIP entries must match the stored paths in app_settings.json image_library
+    $_bakComSrc = $projectRoot . '/uploads/' . $tenantAssetDirs['company'];
+    $_bakLibSrc = $projectRoot . '/uploads/' . $tenantAssetDirs['library'];
+    addDirectoryToZip($zip, $_bakComSrc, 'uploads/' . $tenantAssetDirs['company']);
+    addDirectoryToZip($zip, $_bakLibSrc, 'uploads/' . $tenantAssetDirs['library']);
     $zip->close();
 
     $fileName = $tenantSlug . '_' . DB_NAME . '_full_backup_' . $stamp . '.zip';
@@ -1616,6 +1673,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       rtrim($tenantAssetDirs['library'], '/') . '/',
       'uploads/company/',
       'uploads/library/',
+      // saveUploadedImage prepends 'uploads/', so actual stored paths are uploads/uploads/...
+      'uploads/' . rtrim($tenantAssetDirs['company'], '/') . '/',
+      'uploads/' . rtrim($tenantAssetDirs['library'], '/') . '/',
+      'uploads/uploads/company/',
+      'uploads/uploads/library/',
     ];
     $allowedRestoreSingles = array_values(array_unique(array_filter([
       $tenantSettingsZipPath,
@@ -1626,6 +1688,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($entryName === '' || substr($entryName, -1) === '/') continue;
       restoreZipAsset($zip, $entryName, $projectRoot, $allowedRestorePrefixes, $allowedRestoreSingles);
     }
+
+    // Ensure the current tenant's settings file is populated from the backup.
+    // The backup may have been taken from a different tenant or from the default context,
+    // so the ZIP settings path may not match this tenant's path. Search all ZIP entries
+    // for any app_settings.json and use the first one found as fallback.
+    $tenantSettingsRestored = ($zip->locateName($tenantSettingsZipPath, ZipArchive::FL_NOCASE) !== false);
+    if (!$tenantSettingsRestored) {
+      $fallbackJson = false;
+      // Try known default path first
+      $fallbackJson = $zip->getFromName('data/app_settings.json');
+      // If not found, scan all entries for any app_settings.json
+      if ($fallbackJson === false) {
+        for ($j = 0; $j < $zip->numFiles; $j++) {
+          $jName = (string)$zip->getNameIndex($j);
+          if (basename($jName) === 'app_settings.json') {
+            $fallbackJson = $zip->getFromIndex($j);
+            if ($fallbackJson !== false) break;
+          }
+        }
+      }
+      if ($fallbackJson !== false && trim($fallbackJson) !== '') {
+        $targetDir = dirname($tenantSettingsPath);
+        if (!is_dir($targetDir)) @mkdir($targetDir, 0777, true);
+        @file_put_contents($tenantSettingsPath, $fallbackJson);
+      }
+    }
+
     $zip->close();
 
     setFlash('success', 'Full backup restored successfully (database + images/settings).');
@@ -2111,11 +2200,18 @@ include __DIR__ . '/../../includes/header.php';
       })();
       </script>
 
-      <div class="library-category-pills mb-16">
-        <a href="?tab=library&category=all" class="library-pill <?= $libraryFilter==='all'?'active':'' ?>">All</a>
-        <?php foreach ($libraryCategories as $k => $label): ?>
-          <a href="?tab=library&category=<?= e($k) ?>" class="library-pill <?= $libraryFilter===$k?'active':'' ?>"><?= e($label) ?></a>
-        <?php endforeach; ?>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        <div class="library-category-pills" style="margin-bottom:0">
+          <a href="?tab=library&category=all" class="library-pill <?= $libraryFilter==='all'?'active':'' ?>">All</a>
+          <?php foreach ($libraryCategories as $k => $label): ?>
+            <a href="?tab=library&category=<?= e($k) ?>" class="library-pill <?= $libraryFilter===$k?'active':'' ?>"><?= e($label) ?></a>
+          <?php endforeach; ?>
+        </div>
+        <form method="POST" style="margin:0">
+          <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
+          <input type="hidden" name="action" value="rebuild_library">
+          <button type="submit" class="btn btn-secondary btn-sm" title="Scan uploads folder and register any untracked images"><i class="bi bi-arrow-repeat"></i> Rebuild from Disk</button>
+        </form>
       </div>
 
       <div class="library-grid library-grid-modern">

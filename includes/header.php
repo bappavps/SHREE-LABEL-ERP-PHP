@@ -44,6 +44,20 @@ if ($_headerIsTenant) {
     $topbarClientName = defined('TENANT_NAME') ? TENANT_NAME : '';
   }
 }
+$tenantSubscriptionLabel = '';
+$tenantSubscriptionClass = 'ok';
+if ($_headerIsTenant && defined('TENANT_EXPIRES_AT')) {
+  $tenantExpiresRaw = trim((string)TENANT_EXPIRES_AT);
+  if ($tenantExpiresRaw !== '') {
+    $tenantExpiresTs = strtotime($tenantExpiresRaw);
+    if ($tenantExpiresTs !== false) {
+      $tenantSubscriptionLabel = date('d M Y', $tenantExpiresTs);
+      if ($tenantExpiresTs < strtotime('today')) {
+        $tenantSubscriptionClass = 'expired';
+      }
+    }
+  }
+}
 $csrfToken = function_exists('generateCSRF') ? generateCSRF() : '';
 $currentPath = function_exists('rbacCurrentPath') ? rbacCurrentPath() : (string)($_SERVER['PHP_SELF'] ?? '');
 $currentUserId = (int)($_SESSION['user_id'] ?? 0);
@@ -255,6 +269,29 @@ $notificationDeptCsv = implode(',', $notificationDepartments);
     top: 40px;
   }
 }
+.topbar-subscription {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: .68rem;
+  font-weight: 700;
+  border: 1px solid #bae6fd;
+  background: #f0f9ff;
+  color: #075985;
+  white-space: nowrap;
+}
+.topbar-subscription.expired {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+@media (max-width: 980px) {
+  .topbar-subscription {
+    display: none;
+  }
+}
 </style>
 </head>
 <body class="theme-<?= e($themeMode) ?>">
@@ -288,6 +325,12 @@ $notificationDeptCsv = implode(',', $notificationDepartments);
 
     <div class="topbar-right">
       <span id="topbarDateTime" class="topbar-datetime" aria-live="polite"></span>
+      <?php if ($tenantSubscriptionLabel !== ''): ?>
+      <span class="topbar-subscription <?= e($tenantSubscriptionClass) ?>" title="Subscription ending date">
+        <i class="bi bi-calendar-check"></i>
+        Subscription: <?= e($tenantSubscriptionLabel) ?>
+      </span>
+      <?php endif; ?>
       <span class="topbar-flag-wrap" aria-hidden="true">
         <?php if ($animatedFlagSrc !== ''): ?>
           <img src="<?= e($animatedFlagSrc) ?>" alt="Flag" class="topbar-flag-image">

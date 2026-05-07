@@ -91,6 +91,20 @@ if (is_file($_mainSettingsFile)) {
 $_erpSysLogo = trim((string)($_mainSettings['erp_logo_path'] ?? $_mainSettings['logo_path'] ?? ''));
 $erpSystemLogoUrl = $_erpSysLogo !== '' ? appUrl($_erpSysLogo) : appUrl('assets/img/logo.svg');
 
+$mainLoginBg = trim((string)($_mainSettings['login_background_image'] ?? ''));
+if ($mainLoginBg === '') {
+  $_mainLibrary = $_mainSettings['image_library'] ?? [];
+  if (is_array($_mainLibrary)) {
+    for ($i = count($_mainLibrary) - 1; $i >= 0; $i--) {
+      $img = $_mainLibrary[$i] ?? null;
+      if (is_array($img) && (($img['category'] ?? '') === 'background') && !empty($img['path'])) {
+        $mainLoginBg = (string)$img['path'];
+        break;
+      }
+    }
+  }
+}
+
 // Tenant company branding — only when a real tenant is active
 $tenantCompanyName = '';
 $tenantCompanyLogoUrl = '';
@@ -118,6 +132,10 @@ if ($loginBg === '') {
       }
     }
   }
+}
+if ($loginBg === '') {
+  // Tenant default: use main ERP login background until client chooses one.
+  $loginBg = $mainLoginBg;
 }
 ?>
 <!DOCTYPE html>
@@ -167,10 +185,10 @@ if ($loginBg === '') {
 .login-wrap {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  max-width: 420px;
-  padding: 20px;
+  max-width: 520px;
+  padding: 14px;
 }
 .login-card {
   position: relative;
@@ -178,7 +196,7 @@ if ($loginBg === '') {
   animation: loginCardIn .55s cubic-bezier(.16,.84,.3,1) both;
   background: #fff;
   border-radius: 16px;
-  padding: 32px 28px;
+  padding: 18px 20px;
   box-shadow: 0 20px 60px rgba(0,0,0,.18);
 }
 .login-card::before {
@@ -217,12 +235,12 @@ if ($loginBg === '') {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 16px;
-  min-height: 60px;
+  margin-bottom: 8px;
+  min-height: 44px;
 }
 .login-logo img {
-  max-width: 100px;
-  max-height: 64px;
+  max-width: 84px;
+  max-height: 54px;
   width: auto;
   height: auto;
   object-fit: contain;
@@ -281,14 +299,14 @@ if ($loginBg === '') {
   100% { transform: rotate(360deg); opacity: 0; }
 }
 .login-title {
-  font-size: 1.8rem;
+  font-size: 1.35rem;
   font-weight: 800;
   color: #0f172a;
-  margin: 0 0 12px 0;
+  margin: 0 0 6px 0;
   text-align: center;
 }
 .login-sub {
-  font-size: .95rem;
+  font-size: .88rem;
   color: #64748b;
   text-align: center;
   font-weight: 500;
@@ -297,25 +315,25 @@ if ($loginBg === '') {
 .login-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  margin-top: 24px;
-  margin-bottom: 14px;
+  gap: 10px;
+  margin-top: 12px;
+  margin-bottom: 6px;
 }
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
 }
 .form-group label {
-  font-size: .85rem;
+  font-size: .8rem;
   font-weight: 600;
   color: #0f172a;
 }
 .form-control {
-  padding: 10px 14px;
+  padding: 8px 11px;
   border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  font-size: .95rem;
+  border-radius: 8px;
+  font-size: .9rem;
   font-family: inherit;
   outline: none;
   transition: border-color .2s, box-shadow .2s;
@@ -325,9 +343,9 @@ if ($loginBg === '') {
   box-shadow: 0 0 0 3px rgba(96,165,250,.1);
 }
 .btn {
-  padding: 11px 16px;
-  border-radius: 10px;
-  font-size: .95rem;
+  padding: 9px 14px;
+  border-radius: 9px;
+  font-size: .88rem;
   font-weight: 600;
   border: none;
   cursor: pointer;
@@ -382,7 +400,20 @@ if ($loginBg === '') {
   margin-top: 16px;
 }
 .mt-20 {
-  margin-top: 20px;
+  margin-top: 2px;
+}
+@media (max-width: 520px) {
+  .login-wrap {
+    max-width: 420px;
+    padding: 14px;
+  }
+  .login-card {
+    padding: 20px 18px;
+  }
+  .login-form { margin-top: 14px; }
+  .mt-20 {
+    margin-top: 6px;
+  }
 }
 </style>
 </head>
@@ -446,9 +477,12 @@ if ($loginBg === '') {
       </div>
     </form>
 
-        <p class="text-center text-sm text-muted mt-16">
-          Default admin: <strong>admin@example.com</strong> / <strong>admin123</strong>
-        </p>
+    <?php if (!$isTenant): ?>
+    <p class="text-center text-sm text-muted mt-16">
+      Default admin: <strong>admin@example.com</strong> / <strong>admin123</strong>
+    </p>
+    <?php endif; ?>
+
       </div>
 
       <div class="login-inline-footer" role="contentinfo">

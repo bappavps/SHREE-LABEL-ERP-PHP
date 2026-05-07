@@ -285,6 +285,20 @@ $canUseQrScanner = function_exists('canAccessPath')
 $pageTitle = 'Dashboard';
 include __DIR__ . '/../../includes/header.php';
 $dashboardBrand = function_exists('getErpDisplayName') ? getErpDisplayName() : APP_NAME;
+$dashboardTenantExpiryLabel = '';
+$dashboardTenantExpiryClass = 'ok';
+if (defined('TENANT_SLUG') && TENANT_SLUG !== 'default' && defined('TENANT_EXPIRES_AT')) {
+  $dashboardTenantExpiryRaw = trim((string)TENANT_EXPIRES_AT);
+  if ($dashboardTenantExpiryRaw !== '') {
+    $dashboardTenantExpiryTs = strtotime($dashboardTenantExpiryRaw);
+    if ($dashboardTenantExpiryTs !== false) {
+      $dashboardTenantExpiryLabel = date('d M Y', $dashboardTenantExpiryTs);
+      if ($dashboardTenantExpiryTs < strtotime('today')) {
+        $dashboardTenantExpiryClass = 'expired';
+      }
+    }
+  }
+}
 ?>
 
 <!-- Breadcrumb -->
@@ -300,6 +314,12 @@ $dashboardBrand = function_exists('getErpDisplayName') ? getErpDisplayName() : A
     <h1>Good <?= date('H') < 12 ? 'Morning' : (date('H') < 17 ? 'Afternoon' : 'Evening') ?>,
         <?= e(explode(' ', $_SESSION['user_name'] ?? 'User')[0]) ?> 👋</h1>
     <p>Here's what's happening at <?= e($dashboardBrand) ?> today, <?= date('l, d M Y') ?></p>
+    <?php if ($dashboardTenantExpiryLabel !== ''): ?>
+      <div class="db-subscription-note <?= e($dashboardTenantExpiryClass) ?>">
+        <i class="bi bi-calendar-event"></i>
+        Subscription ending date: <strong><?= e($dashboardTenantExpiryLabel) ?></strong>
+      </div>
+    <?php endif; ?>
   </div>
 </div>
 
@@ -389,6 +409,8 @@ $dashboardBrand = function_exists('getErpDisplayName') ? getErpDisplayName() : A
 .two-col > .card:first-child{background:linear-gradient(160deg,#f8fafc 0%,#f0f9ff 100%);border-color:#cbd5e1}
 .two-col > div > .card.mb-20:first-child{background:linear-gradient(160deg,#faf5ff 0%,#eef2ff 100%);border-color:#ddd6fe}
 .two-col > div > .card.mb-20:last-child{background:linear-gradient(160deg,#f0fdf4 0%,#ecfccb 100%);border-color:#bef264}
+.db-subscription-note{margin-top:10px;display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:999px;background:#f0f9ff;border:1px solid #bae6fd;color:#0c4a6e;font-size:.72rem;font-weight:700}
+.db-subscription-note.expired{background:#fef2f2;border-color:#fecaca;color:#991b1b}
 @media (max-width:1100px){.db-grid2{grid-template-columns:1fr 1fr}.db-grid2 .db-block:last-child{grid-column:1/-1}}
 @media (max-width:1100px){.db-detail-grid{grid-template-columns:1fr 1fr}.db-detail-grid .db-detail-block:first-child{grid-column:1/-1}}
 @media (max-width:980px){
