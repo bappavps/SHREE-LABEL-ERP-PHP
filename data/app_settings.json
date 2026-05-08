@@ -108,7 +108,7 @@
             },
             "planning": {
                 "prefix": "PLN",
-                "counter": 1
+                "counter": 2
             },
             "planning_barcode": {
                 "prefix": "PLN-BAR",
@@ -136,7 +136,7 @@
             },
             "printing_job": {
                 "prefix": "FLX",
-                "counter": 0
+                "counter": 1
             },
             "die_cutting_job": {
                 "prefix": "DCT",
@@ -144,7 +144,7 @@
             },
             "label_slitting_job": {
                 "prefix": "LSL",
-                "counter": 0
+                "counter": 1
             },
             "barcode_job": {
                 "prefix": "BRC-BAR",
@@ -152,5 +152,8 @@
             }
         }
     },
-    "sidebar_collapse_delay_ms": 1000
+    "sidebar_collapse_delay_ms": 1000,
+    "tally_ip": "192.168.1.26",
+    "tally_port": 443,
+    "tally_scheme": "https"
 }

@@ -905,7 +905,7 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
 <script src="<?= BASE_URL ?>/assets/js/qrcode.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
-const CSRF = '<?= e($csrf) ?>';
+let CSRF = '<?= e($csrf) ?>';
 const API_BASE = '<?= BASE_URL ?>/modules/jobs/api.php';
 const BASE_URL = '<?= BASE_URL ?>';
 const IS_OPERATOR_VIEW = <?= $isOperatorView ? 'true' : 'false' ?>;
@@ -918,6 +918,40 @@ const ALL_JOBS = <?= json_encode($jobs, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const ANILOX_LPI_STOCK = <?= json_encode($aniloxStockMap, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const ANILOX_LPI_OPTIONS = <?= json_encode($aniloxLpiOptions, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 let activeStatusFilter = 'Pending';
+
+async function refreshCsrfToken() {
+  const url = API_BASE + (API_BASE.includes('?') ? '&' : '?') + 'action=refresh_csrf';
+  const res = await fetch(url, {
+    method: 'GET',
+    credentials: 'same-origin',
+    headers: { 'Accept': 'application/json' }
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) { data = null; }
+  const token = String(data?.csrf_token || '').trim();
+  if (!res.ok || !data?.ok || token === '') {
+    throw new Error((data && data.error) ? String(data.error) : 'Failed to refresh session token');
+  }
+  CSRF = token;
+  return token;
+}
+
+async function apiPostWithCsrfRetry(formData, allowRetry = true) {
+  const res = await fetch(API_BASE, { method: 'POST', body: formData });
+  let data = null;
+  try { data = await res.json(); } catch (e) { data = { ok: false, error: 'Invalid server response' }; }
+
+  const isCsrfError = !data?.ok && String(data?.error || '').toLowerCase().includes('invalid csrf token');
+  if (allowRetry && isCsrfError) {
+    await refreshCsrfToken();
+    if (formData instanceof FormData) {
+      formData.set('csrf_token', CSRF);
+    }
+    return apiPostWithCsrfRetry(formData, false);
+  }
+
+  return { res, data };
+}
 
 function getFieldVal(form, name) {
   const local = form ? form.querySelector('[name="' + name + '"]') : null;
@@ -1713,8 +1747,7 @@ async function submitFlexoOperatorRequest(jobId) {
   fd.append('job_id', String(jobId));
   fd.append('request_payload', JSON.stringify(payload));
   try {
-    const res = await fetch(API_BASE, { method: 'POST', body: fd });
-    const data = await res.json();
+    const { data } = await apiPostWithCsrfRetry(fd);
     if (!data.ok) {
       erpToast('Request failed: ' + (data.error || 'Unknown error'), 'error');
       if (submitBtn) {
@@ -1759,8 +1792,7 @@ async function reviewFlexoOperatorRequest(requestId, decision, jobId) {
   fd.append('review_note', note);
 
   try {
-    const res = await fetch(API_BASE, { method: 'POST', body: fd });
-    const data = await res.json();
+    const { data } = await apiPostWithCsrfRetry(fd);
     if (!data.ok) {
       erpToast('Review failed: ' + (data.error || 'Unknown error'), 'error');
       return;
@@ -1930,8 +1962,7 @@ async function openFlexoProductionUpdate(requestId, jobId) {
   fd.append('review_note', reviewNote);
 
   try {
-    const res = await fetch(API_BASE, { method: 'POST', body: fd });
-    const data = await res.json();
+    const { data } = await apiPostWithCsrfRetry(fd);
     if (!data.ok) {
       erpToast('Update failed: ' + (data.error || 'Unknown error'), 'error');
       return;
@@ -1986,8 +2017,7 @@ async function completeFlexoAdditionalSlitting(jobId, taskIndex) {
   fd.append('source_roll_no', cleanRoll);
   fd.append('completion_note', note);
   try {
-    const res = await fetch(API_BASE, { method: 'POST', body: fd });
-    const data = await res.json();
+    const { data } = await apiPostWithCsrfRetry(fd);
     if (!data.ok) {
       erpToast('Task completion failed: ' + (data.error || 'Unknown error'), 'error');
       return;
@@ -2294,8 +2324,7 @@ async function htBulkDelete() {
     fd.append('action', 'delete_job');
     fd.append('job_id', id);
     try {
-      const res = await fetch(API_BASE, { method: 'POST', body: fd });
-      const data = await res.json();
+      const { data } = await apiPostWithCsrfRetry(fd);
       if (data.ok) { ok++; }
       else {
         failed++;
@@ -2374,8 +2403,7 @@ async function updateFPStatus(id, newStatus) {
   fd.append('job_id', id);
   fd.append('status', newStatus);
   try {
-    const res = await fetch(API_BASE, { method: 'POST', body: fd });
-    const data = await res.json();
+    const { data } = await apiPostWithCsrfRetry(fd);
     if (data.ok) location.reload();
     else erpToast('Error: ' + (data.error || 'Unknown'), 'error');
   } catch (err) { erpToast('Network error: ' + err.message, 'error'); }
@@ -2396,8 +2424,7 @@ async function markPrintTimerEnded(jobId) {
   fd.append('action', 'end_timer_session');
   fd.append('job_id', jobId);
 
-  const res = await fetch(API_BASE, { method: 'POST', body: fd });
-  const data = await res.json();
+  const { data } = await apiPostWithCsrfRetry(fd);
   if (!data.ok) throw new Error(data.error || 'Unable to end timer');
 
   const job = ALL_JOBS.find(j => j.id == jobId);
@@ -2424,8 +2451,7 @@ async function pausePrintTimer(jobId) {
   fd.append('action', 'pause_timer_session');
   fd.append('job_id', jobId);
 
-  const res = await fetch(API_BASE, { method: 'POST', body: fd });
-  const data = await res.json();
+  const { data } = await apiPostWithCsrfRetry(fd);
   if (!data.ok) throw new Error(data.error || 'Unable to pause timer');
 
   const job = ALL_JOBS.find(j => j.id == jobId);
@@ -2451,8 +2477,7 @@ async function resetPrintTimer(jobId) {
   fd.append('action', 'reset_timer_session');
   fd.append('job_id', jobId);
 
-  const res = await fetch(API_BASE, { method: 'POST', body: fd });
-  const data = await res.json();
+  const { data } = await apiPostWithCsrfRetry(fd);
   if (!data.ok) throw new Error(data.error || 'Unable to reset timer');
 
   const job = ALL_JOBS.find(j => j.id == jobId);
@@ -2515,8 +2540,7 @@ async function finalizePrintTimer(jobId) {
       fd.append('job_id', jobId);
       fd.append('photo', file);
       try {
-        const res = await fetch(API_BASE, { method: 'POST', body: fd });
-        const data = await res.json();
+        const { data } = await apiPostWithCsrfRetry(fd);
         if (data.ok) {
           _uploadedPhotoUrl = data.photo_url || '';
           const j = ALL_JOBS.find(x => x.id == jobId);
@@ -2986,8 +3010,7 @@ async function startJobWithTimer(id) {
     fd.append('verified_rolls_mode', CAN_MANUAL_ROLL_ENTRY ? 'qr_manual' : 'qr_only');
   }
   try {
-    const res = await fetch(API_BASE, { method: 'POST', body: fd });
-    const data = await res.json();
+    const { data } = await apiPostWithCsrfRetry(fd);
     if (!data.ok) { erpToast('Error: ' + (data.error || 'Unknown'), 'error'); return; }
   } catch (err) { erpToast('Network error: ' + err.message, 'error'); return; }
 
@@ -3171,8 +3194,7 @@ async function submitAndComplete(id) {
   fd1.append('job_id', id);
   fd1.append('extra_data', JSON.stringify(extraData));
   try {
-    const r1 = await fetch(API_BASE, { method: 'POST', body: fd1 });
-    const d1 = await r1.json();
+    const { data: d1 } = await apiPostWithCsrfRetry(fd1);
     if (!d1.ok) { erpToast('Save error: ' + (d1.error||'Unknown'), 'error'); return; }
   } catch(e) { erpToast('Network error', 'error'); return; }
 
@@ -3226,8 +3248,7 @@ async function regenerateJobCard(id) {
   fd.append('changes_json', JSON.stringify(changes));
 
   try {
-    const res = await fetch(API_BASE, { method: 'POST', body: fd });
-    const data = await res.json();
+    const { data } = await apiPostWithCsrfRetry(fd);
     if (!data.ok) {
       erpToast('Regenerate failed: ' + (data.error || 'Unknown error'), 'error');
       return;
@@ -3258,8 +3279,7 @@ async function handlePrintingPhotoUpload(input, jobId) {
   fd.append('photo', file);
   input.disabled = true;
   try {
-    const res = await fetch(API_BASE, { method: 'POST', body: fd });
-    const data = await res.json();
+    const { data } = await apiPostWithCsrfRetry(fd);
     if (!data.ok) {
       erpToast('Image upload failed: ' + (data.error || 'Unknown'), 'error');
       return;
@@ -3773,8 +3793,7 @@ async function deleteJob(id) {
   fd.append('action', 'delete_job');
   fd.append('job_id', id);
   try {
-    const res = await fetch(API_BASE, { method: 'POST', body: fd });
-    const data = await res.json();
+    const { data } = await apiPostWithCsrfRetry(fd);
     if (data.ok) location.reload();
     else erpToast('Error: ' + (data.error || 'Unknown'), 'error');
   } catch (err) { erpToast('Network error: ' + err.message, 'error'); }

@@ -24,6 +24,11 @@ $db     = getDB();
 $action = trim($_REQUEST['action'] ?? '');
 $method = $_SERVER['REQUEST_METHOD'];
 
+if ($action === 'refresh_csrf') {
+    echo json_encode(['ok' => true, 'csrf_token' => generateCSRF()]);
+    exit;
+}
+
 // CSRF check for POST
 if ($method === 'POST') {
     $token = $_POST['csrf_token'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';

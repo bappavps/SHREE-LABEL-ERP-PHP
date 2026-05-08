@@ -55,6 +55,89 @@ function jumboDisplayJobName(array $job): string {
   return $dept !== '' ? $dept : '—';
 }
 
+function jumboPlanningNormalizedKey(string $key): string {
+  return strtolower((string)preg_replace('/[^a-z0-9]+/i', '', trim($key)));
+}
+
+function jumboPlanningExtraValue(array $extra, array $keys) {
+  if (empty($extra)) return null;
+
+  foreach ($keys as $key) {
+    if (array_key_exists($key, $extra)) {
+      return $extra[$key];
+    }
+  }
+
+  $normalized = [];
+  foreach ($extra as $key => $value) {
+    if (!is_string($key) || $key === '') continue;
+    $normalized[jumboPlanningNormalizedKey($key)] = $value;
+  }
+
+  foreach ($keys as $key) {
+    $probe = jumboPlanningNormalizedKey((string)$key);
+    if ($probe !== '' && array_key_exists($probe, $normalized)) {
+      return $normalized[$probe];
+    }
+  }
+
+  return null;
+}
+
+function jumboPlanningNumber($value, string $part = 'first'): ?float {
+  if ($value === null || $value === '') return null;
+  if (is_numeric($value)) return (float)$value;
+
+  $text = trim((string)$value);
+  if ($text === '') return null;
+  if (!preg_match_all('/\d+(?:\.\d+)?/', $text, $matches) || empty($matches[0])) {
+    return null;
+  }
+
+  $numbers = array_map('floatval', $matches[0]);
+  if ($part === 'last') {
+    return (float)$numbers[count($numbers) - 1];
+  }
+  return (float)$numbers[0];
+}
+
+function jumboPlanningWidthMm(array $row): ?float {
+  $extra = json_decode((string)($row['planning_extra_data'] ?? '{}'), true);
+  if (!is_array($extra) || empty($extra)) return null;
+
+  $direct = jumboPlanningExtraValue($extra, [
+    'width_mm', 'width', 'paper_width_mm', 'paper_width', 'planning_width_mm',
+    'planning_width', 'job_width_mm', 'job_width', 'size_mm'
+  ]);
+  $directNum = jumboPlanningNumber($direct);
+  if ($directNum !== null && $directNum > 0) return $directNum;
+
+  $sizeLike = jumboPlanningExtraValue($extra, [
+    'paper_size', 'label_size', 'size', 'job_size', 'cut_size', 'final_size'
+  ]);
+  $sizeNum = jumboPlanningNumber($sizeLike, 'first');
+  if ($sizeNum !== null && $sizeNum > 0) return $sizeNum;
+
+  return null;
+}
+
+function jumboPlanningLengthMtr(array $row): ?float {
+  $extra = json_decode((string)($row['planning_extra_data'] ?? '{}'), true);
+  if (!is_array($extra) || empty($extra)) return null;
+
+  $direct = jumboPlanningExtraValue($extra, [
+    'allocate_mtrs', 'allocate_mtr', 'allocatemtrs', 'allocatemtr',
+    'planning_mtrs', 'planning_mtr', 'order_mtrs', 'order_mtr', 'order_meter',
+    'order_meter_user', 'mtrs', 'meters', 'meter', 'length_mtr', 'length',
+    'paper_length_mtr', 'paper_length', 'required_mtrs', 'required_mtr',
+    'running_mtrs', 'job_mtrs'
+  ]);
+  $directNum = jumboPlanningNumber($direct);
+  if ($directNum !== null && $directNum > 0) return $directNum;
+
+  return null;
+}
+
 function jumboHydrateMissingStockRows(mysqli $db, array $extra): array {
   $stockRows = is_array($extra['stock_rolls'] ?? null) ? $extra['stock_rolls'] : [];
 
@@ -224,7 +307,7 @@ $db->query("CREATE TABLE IF NOT EXISTS job_change_requests (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
 $allJumboRows = [];
-$jobsSql = "\n  SELECT j.*,\n         ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,\n         ps.status AS roll_status, ps.lot_batch_no,\n         p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority,\n         COALESCE(req.pending_count, 0) AS pending_change_requests,\n         lreq.latest_request_id, lreq.latest_request_status, lreq.latest_request_review_note, lreq.latest_request_reviewed_at\n  FROM jobs j\n  LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no\n  LEFT JOIN planning p ON j.planning_id = p.id\n  LEFT JOIN (\n    SELECT job_id, COUNT(*) AS pending_count\n    FROM job_change_requests\n    WHERE request_type = 'jumbo_roll_update' AND status = 'Pending'\n    GROUP BY job_id\n  ) req ON req.job_id = j.id\n  LEFT JOIN (\n    SELECT t.job_id, t.id AS latest_request_id, t.status AS latest_request_status, t.review_note AS latest_request_review_note, t.reviewed_at AS latest_request_reviewed_at\n    FROM job_change_requests t\n    INNER JOIN (\n      SELECT job_id, MAX(id) AS max_id\n      FROM job_change_requests\n      WHERE request_type = 'jumbo_roll_update'\n      GROUP BY job_id\n    ) mx ON mx.job_id = t.job_id AND mx.max_id = t.id\n    WHERE t.request_type = 'jumbo_roll_update'\n  ) lreq ON lreq.job_id = j.id\n  WHERE j.job_type = 'Slitting'\n    AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')\n  ORDER BY j.created_at DESC, j.id DESC\n";
+$jobsSql = "\n  SELECT j.*,\n         ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,\n         ps.status AS roll_status, ps.lot_batch_no,\n         p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority, p.extra_data AS planning_extra_data,\n         COALESCE(req.pending_count, 0) AS pending_change_requests,\n         lreq.latest_request_id, lreq.latest_request_status, lreq.latest_request_review_note, lreq.latest_request_reviewed_at\n  FROM jobs j\n  LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no\n  LEFT JOIN planning p ON j.planning_id = p.id\n  LEFT JOIN (\n    SELECT job_id, COUNT(*) AS pending_count\n    FROM job_change_requests\n    WHERE request_type = 'jumbo_roll_update' AND status = 'Pending'\n    GROUP BY job_id\n  ) req ON req.job_id = j.id\n  LEFT JOIN (\n    SELECT t.job_id, t.id AS latest_request_id, t.status AS latest_request_status, t.review_note AS latest_request_review_note, t.reviewed_at AS latest_request_reviewed_at\n    FROM job_change_requests t\n    INNER JOIN (\n      SELECT job_id, MAX(id) AS max_id\n      FROM job_change_requests\n      WHERE request_type = 'jumbo_roll_update'\n      GROUP BY job_id\n    ) mx ON mx.job_id = t.job_id AND mx.max_id = t.id\n    WHERE t.request_type = 'jumbo_roll_update'\n  ) lreq ON lreq.job_id = j.id\n  WHERE j.job_type = 'Slitting'\n    AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')\n  ORDER BY j.created_at DESC, j.id DESC\n";
 $jobsStmt = $db->prepare($jobsSql);
 if ($jobsStmt) {
   $jobsStmt->execute();
@@ -315,6 +398,8 @@ foreach ($allJumboRows as $row) {
   $rowId = (int)($row['id'] ?? 0);
   $extra = $rowExtraOverrides[$rowId] ?? (json_decode((string)($row['extra_data'] ?? '{}'), true) ?: []);
   $row['display_job_name'] = jumboDisplayJobName($row);
+  $row['planning_width_mm'] = jumboPlanningWidthMm($row);
+  $row['planning_length_mtr'] = jumboPlanningLengthMtr($row);
   $row['extra_data_parsed'] = $extra;
   $row['live_roll_map'] = [];
 
@@ -1730,8 +1815,11 @@ function jumboExtractRollNoFromQr(rawValue) {
 
   try {
     const u = new URL(raw);
-    const qRoll = u.searchParams.get('roll_no') || u.searchParams.get('roll') || u.searchParams.get('rn') || '';
-    if (String(qRoll).trim()) return String(qRoll).trim();
+    const qRoll = u.searchParams.get('roll_no') || u.searchParams.get('roll') || u.searchParams.get('rn') || u.searchParams.get('qr') || '';
+    if (String(qRoll).trim()) {
+      const nested = String(qRoll).trim();
+      return nested === raw ? nested : jumboExtractRollNoFromQr(nested);
+    }
   } catch (e) {}
 
   const named = raw.match(/(?:roll\s*no|roll_no|roll)\s*[:=\-]\s*([A-Za-z0-9._\/-]+)/i);
@@ -3340,6 +3428,13 @@ function printBwTransform(html) {
   return result;
 }
 
+function jumboPrintNumber(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return String(value || '—');
+  if (Math.abs(num - Math.round(num)) < 0.001) return String(Math.round(num));
+  return String(num.toFixed(2)).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+}
+
 // ─── Print Job Card ─────────────────────────────────────────
 function renderJumboPrintCardHtml(job, qrDataUrl) {
   const extra = job.extra_data_parsed || {};
@@ -3355,6 +3450,8 @@ function renderJumboPrintCardHtml(job, qrDataUrl) {
   const printJobName = job.display_job_name || job.planning_job_name || '—';
   const p = extra.parent_details || {};
   const primaryPRN = String((p.roll_no) || extra.parent_roll || job.roll_no || '').trim();
+  const detailWidth = Number(job.planning_width_mm) > 0 ? Number(job.planning_width_mm) : job.width_mm;
+  const detailLength = Number(job.planning_length_mtr) > 0 ? Number(job.planning_length_mtr) : job.length_mtr;
 
   const qrHtml = qrDataUrl
     ? `<div style="text-align:center;margin-left:12px"><img src="${qrDataUrl}" style="width:90px;height:90px;display:block"><div style="font-size:.56rem;color:#64748b;margin-top:2px">Scan job card</div></div>`
@@ -3562,8 +3659,8 @@ function renderJumboPrintCardHtml(job, qrDataUrl) {
         <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#166534;background:#dcfce7;padding:5px 8px;border-radius:4px">Job Details</div>
         <table style="width:100%;border-collapse:collapse;font-size:.72rem;margin-bottom:10px">
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-size:.82rem;font-weight:900;color:#0f172a">${esc(printJobName)}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job No</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#166534">${esc(job.job_no || '—')}</td></tr>
-          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Roll No</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.roll_no || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Material</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.paper_type || '—')}</td></tr>
-          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Width</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.width_mm || '—') + ' mm')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Length</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.length_mtr || '—') + ' m')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Material</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.paper_type || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Priority</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(priRaw || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Width</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(jumboPrintNumber(detailWidth) + ' mm')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Length</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(jumboPrintNumber(detailLength) + ' m')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">GSM</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.gsm || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Weight</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.weight_kg || '—') + ' kg')}</td></tr>
         </table>
         ${parentTableHtml ? `<table style="width:100%">${parentTableHtml}</table>` : ''}
@@ -3667,12 +3764,18 @@ async function printLabelsForJob(id) {
   const extra = job.extra_data_parsed || {};
   const rollNos = [];
 
+  // Include the job's primary roll and all parent rolls referenced by child/stock rows
+  if (job.roll_no) rollNos.push(String(job.roll_no));
   if (extra.parent_roll) rollNos.push(String(extra.parent_roll));
   (Array.isArray(extra.child_rolls) ? extra.child_rolls : []).forEach(function(r) {
+    const prn = String((r && r.parent_roll_no) || '').trim();
+    if (prn) rollNos.push(prn);
     const rn = String((r && r.roll_no) || '').trim();
     if (rn) rollNos.push(rn);
   });
   (Array.isArray(extra.stock_rolls) ? extra.stock_rolls : []).forEach(function(r) {
+    const prn = String((r && r.parent_roll_no) || '').trim();
+    if (prn) rollNos.push(prn);
     const rn = String((r && r.roll_no) || '').trim();
     if (rn) rollNos.push(rn);
   });

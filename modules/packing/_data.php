@@ -1417,6 +1417,7 @@ function packing_fetch_history_rows(mysqli $db, array $filters = []): array {
     $from = trim((string)($filters['from'] ?? ''));
     $to = trim((string)($filters['to'] ?? ''));
     $deptFilter = trim((string)($filters['dept'] ?? '')); // Filter by department
+    $historyType = trim((string)($filters['history_type'] ?? 'manager')); // 'manager' or 'operator'
 
     // No SQL status filter â€” filter in PHP for reliability.
     $where = "(j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')";
@@ -1471,7 +1472,17 @@ function packing_fetch_history_rows(mysqli $db, array $filters = []): array {
         }
 
         $effectiveNorm = strtolower(trim(str_replace(['-', '_'], ' ', $effectiveStatus)));
-        $isPackingOutcome = in_array($effectiveNorm, ['packed', 'packing done', 'finished production', 'finished barcode', 'finished label', 'dispatched'], true);
+        
+        // Determine which statuses to show based on history type
+        if ($historyType === 'operator') {
+          // Operators see: Packed, Packing Done, and all finished outcomes
+          $isPackingOutcome = in_array($effectiveNorm, ['packed', 'packing done', 'finished production', 'finished barcode', 'finished label', 'dispatched'], true);
+        } else {
+          // Manager sees: Only FINAL outcomes (Finished Production, Finished Barcode, Dispatched)
+          // NOT intermediate states like "Packed" or "Packing Done"
+          $isPackingOutcome = in_array($effectiveNorm, ['finished production', 'finished barcode', 'finished label', 'dispatched'], true);
+        }
+        
         if (!$isPackingOutcome) {
             continue;
         }

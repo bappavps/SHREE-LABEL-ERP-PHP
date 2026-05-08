@@ -442,23 +442,37 @@ function planning_get_columns(mysqli $db, $department, array $defaultColumns) {
 }
 
 function planning_get_rows(mysqli $db, $department) {
-    $archivedStatusSql = "LOWER(TRIM(REPLACE(REPLACE(COALESCE(p.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finished label','finised barcode','packed','dispatched','complete','completed')";
-    $archivedJobsSql = "EXISTS (
-        SELECT 1 FROM jobs j
-        WHERE j.planning_id = p.id
-          AND (
-            LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finished label','packed','dispatched','complete','closed','finalized','completed','qc passed')
-            OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_flag\":1%'
-            OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_flag\":1%'
-            OR COALESCE(j.extra_data, '') LIKE '%\"finished_label_flag\":1%'
-            OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_flag\":1%'
-            OR COALESCE(j.extra_data, '') LIKE '%\"packing_packed_flag\":1%'
-            OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_at\":%'
-            OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_at\":%'
-            OR COALESCE(j.extra_data, '') LIKE '%\"finished_label_at\":%'
-            OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_at\":%'
-          )
-    )";
+    $departmentKey = strtolower(trim((string)$department));
+
+    // Label printing planning must stay visible until downstream packing flow marks Finished Production.
+    if ($departmentKey === 'label-printing') {
+      $archivedStatusSql = "LOWER(TRIM(REPLACE(REPLACE(COALESCE(p.status, ''), '-', ' '), '_', ' '))) IN ('finished production','finishedproduction')";
+      $archivedJobsSql = "EXISTS (
+          SELECT 1 FROM jobs j
+          WHERE j.planning_id = p.id
+            AND (
+              LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status, ''), '-', ' '), '_', ' '))) IN ('finished production','finishedproduction')
+              OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_flag\":1%'
+              OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_at\":%'
+            )
+      )";
+    } else {
+      $archivedStatusSql = "LOWER(TRIM(REPLACE(REPLACE(COALESCE(p.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finished label','finised barcode','packed','dispatched','complete','completed')";
+      $archivedJobsSql = "EXISTS (
+          SELECT 1 FROM jobs j
+          WHERE j.planning_id = p.id
+            AND (
+              LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finished label','packed','dispatched')
+              OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_flag\":1%'
+              OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_flag\":1%'
+              OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_flag\":1%'
+              OR COALESCE(j.extra_data, '') LIKE '%\"packing_packed_flag\":1%'
+              OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_at\":%'
+              OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_at\":%'
+              OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_at\":%'
+            )
+      )";
+    }
 
     $stmt = $db->prepare("SELECT p.*, so.order_no, so.client_name
         FROM planning p
@@ -616,7 +630,34 @@ function planning_status_badge($status) {
     }
   }
 
-  function planning_extract_row_values(array $row, array $columns, $rowIndex = 0) {
+  // Get the current job's department to determine actual stage status
+  function planning_get_current_stage_status(mysqli $db, int $planningId, array $extra = []): string {
+    // Query the latest job for this planning_id
+    $stmt = $db->prepare("SELECT department, status, extra_data FROM jobs WHERE planning_id = ? ORDER BY updated_at DESC LIMIT 1");
+    if (!$stmt) return '';
+    $stmt->bind_param('i', $planningId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $job = $result->fetch_assoc();
+    $stmt->close();
+    
+    if (!$job) return '';
+    
+    $jobExtra = json_decode($job['extra_data'] ?? '{}', true);
+    if (!is_array($jobExtra)) $jobExtra = [];
+    
+    // Check if job is marked as packed (ready for packing/packed)
+    $hasPackedFlag = (int)($jobExtra['packing_done_flag'] ?? 0) === 1
+        || (int)($jobExtra['packing_packed_flag'] ?? 0) === 1
+        || trim((string)($jobExtra['packing_done_at'] ?? '')) !== '';
+    if ($hasPackedFlag) {
+      return 'Packed';
+    }
+    
+    return '';
+  }
+
+  function planning_extract_row_values(array $row, array $columns, $rowIndex = 0, mysqli $db = null) {
     $extra = json_decode($row['extra_data'] ?? '{}', true);
     if (!is_array($extra)) $extra = [];
     $vals = [];
@@ -627,6 +668,15 @@ function planning_status_badge($status) {
         continue;
       }
       if ($k === 'printing_planning') {
+        // First check if job is in packing stage - if so, show packing status
+        if ($db !== null) {
+          $currentStageStatus = planning_get_current_stage_status($db, (int)($row['id'] ?? 0), $extra);
+          if ($currentStageStatus !== '') {
+            $vals[$k] = $currentStageStatus;
+            continue;
+          }
+        }
+        
         $default = erp_status_page_default('planning.label-printing');
         $liveStatus = planning_normalize_status((string)($row['status'] ?? ''));
         $extraStatus = planning_normalize_status((string)($extra['printing_planning'] ?? ''));
@@ -1207,23 +1257,36 @@ $boardUrl = appUrl('modules/planning/index.php?department=' . rawurlencode($depa
 $historyUrl = appUrl('modules/planning/history.php?department=' . rawurlencode($department));
 
 $historyTabCount = 0;
-$historyArchivedStatusSql = "LOWER(TRIM(REPLACE(REPLACE(COALESCE(p.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finished label','finised barcode','packed','dispatched','complete')";
-$historyArchivedJobsSql = "EXISTS (
-    SELECT 1 FROM jobs j
-    WHERE j.planning_id = p.id
-      AND (
-        LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finished label','packed','dispatched','complete','closed','finalized','completed','qc passed')
-        OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_flag\":1%'
-        OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_flag\":1%'
-        OR COALESCE(j.extra_data, '') LIKE '%\"finished_label_flag\":1%'
-        OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_flag\":1%'
-        OR COALESCE(j.extra_data, '') LIKE '%\"packing_packed_flag\":1%'
-        OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_at\":%'
-        OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_at\":%'
-        OR COALESCE(j.extra_data, '') LIKE '%\"finished_label_at\":%'
-        OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_at\":%'
-      )
-)";
+$departmentKey = strtolower(trim((string)$department));
+// For label-printing, history should only show rows with finished_production_flag set
+if ($departmentKey === 'label-printing') {
+  $historyArchivedStatusSql = "LOWER(TRIM(REPLACE(REPLACE(COALESCE(p.status, ''), '-', ' '), '_', ' '))) IN ('finished production','finishedproduction')";
+  $historyArchivedJobsSql = "EXISTS (
+      SELECT 1 FROM jobs j
+      WHERE j.planning_id = p.id
+        AND (
+          LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status, ''), '-', ' '), '_', ' '))) IN ('finished production','finishedproduction')
+          OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_flag\":1%'
+          OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_at\":%'
+        )
+  )";
+} else {
+  $historyArchivedStatusSql = "LOWER(TRIM(REPLACE(REPLACE(COALESCE(p.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finished label','finised barcode','packed','dispatched','complete')";
+  $historyArchivedJobsSql = "EXISTS (
+      SELECT 1 FROM jobs j
+      WHERE j.planning_id = p.id
+        AND (
+          LOWER(TRIM(REPLACE(REPLACE(COALESCE(j.status, ''), '-', ' '), '_', ' '))) IN ('finished','finished production','finished barcode','finished label','packed','dispatched')
+          OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_flag\":1%'
+          OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_flag\":1%'
+          OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_flag\":1%'
+          OR COALESCE(j.extra_data, '') LIKE '%\"packing_packed_flag\":1%'
+          OR COALESCE(j.extra_data, '') LIKE '%\"finished_production_at\":%'
+          OR COALESCE(j.extra_data, '') LIKE '%\"finished_barcode_at\":%'
+          OR COALESCE(j.extra_data, '') LIKE '%\"packing_done_at\":%'
+        )
+  )";
+}
 $historyCountSql = "SELECT COUNT(*) AS total
     FROM planning p
     WHERE p.department = ?
@@ -1315,7 +1378,7 @@ include __DIR__ . '/../../includes/header.php';
       <?php else: ?>
         <?php foreach ($rows as $idx => $r): ?>
           <?php
-            $rowVals = planning_extract_row_values($r, $columns, $idx);
+            $rowVals = planning_extract_row_values($r, $columns, $idx, $db);
             $rowStatusVal = $defaultStatus;
             foreach ($columns as $_sc) { if ($_sc['type'] === 'Status') { $rowStatusVal = (string)($rowVals[$_sc['key']] ?? $defaultStatus); break; } }
             $rowSCls = planning_status_pill_class($rowStatusVal);

@@ -1091,8 +1091,8 @@ $prefixModules = [
 ];
 
 $sampleSuppliers = [
-  ['name' => 'STP', 'gst_number' => '-', 'contact_person' => '-', 'address' => '-', 'notes' => '-', 'phone' => '-', 'email' => '-', 'city' => '-'],
-  ['name' => 'NITIN', 'gst_number' => '-', 'contact_person' => '-', 'address' => '-', 'notes' => '-', 'phone' => '-', 'email' => '-', 'city' => '-'],
+  ['id' => 0, 'name' => 'STP', 'gst_number' => '-', 'contact_person' => '-', 'address' => '-', 'notes' => '-', 'phone' => '-', 'email' => '-', 'city' => '-'],
+  ['id' => 0, 'name' => 'NITIN', 'gst_number' => '-', 'contact_person' => '-', 'address' => '-', 'notes' => '-', 'phone' => '-', 'email' => '-', 'city' => '-'],
 ];
 
 $sampleMachines = [
@@ -1106,8 +1106,8 @@ $sampleCylinders = [
 ];
 
 $sampleClients = [
-  ['name' => 'ABC Pharma', 'contact_person' => '-', 'phone' => '-', 'email' => '-', 'city' => '-', 'credit_period_days' => 30, 'credit_limit' => 100000],
-  ['name' => 'XYZ Packaging', 'contact_person' => '-', 'phone' => '-', 'email' => '-', 'city' => '-', 'credit_period_days' => 45, 'credit_limit' => 150000],
+  ['id' => 0, 'name' => 'ABC Pharma', 'contact_person' => '-', 'phone' => '-', 'email' => '-', 'city' => '-', 'credit_period_days' => 30, 'credit_limit' => 100000],
+  ['id' => 0, 'name' => 'XYZ Packaging', 'contact_person' => '-', 'phone' => '-', 'email' => '-', 'city' => '-', 'credit_period_days' => 45, 'credit_limit' => 150000],
 ];
 
 $sampleRawMaterials = [
@@ -1198,6 +1198,66 @@ if ($activeTab === 'clients' && $editClientId > 0) {
   <span>Master</span>
   <span class="breadcrumb-sep">&#8250;</span>
   <span>Master Control Panel</span>
+</div>
+
+<style>
+/* Mobile card layout for supplier / client tables */
+@media (max-width: 640px) {
+  .mobile-card-table thead { display:none; }
+  .mobile-card-table tbody tr {
+    display:block;
+    margin-bottom:10px;
+    border:1px solid #e2e8f0;
+    border-radius:10px;
+    padding:10px 12px;
+    background:#fff;
+    box-shadow:0 1px 3px rgba(0,0,0,.07);
+  }
+  .mobile-card-table tbody td {
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:5px 0;
+    border:none;
+    font-size:.83rem;
+    border-bottom:1px solid #f1f5f9;
+  }
+  .mobile-card-table tbody td:last-child { border-bottom:none; padding-top:8px; }
+  .mobile-card-table tbody td::before {
+    content: attr(data-label);
+    font-weight:600;
+    color:#64748b;
+    font-size:.75rem;
+    text-transform:uppercase;
+    letter-spacing:.03em;
+    min-width:90px;
+    flex-shrink:0;
+  }
+  .mobile-card-table tbody td[data-label=""]::before,
+  .mobile-card-table tbody td[data-label="Actions"]::before { display:none; }
+  .mobile-card-table tbody td[data-label="Actions"] { justify-content:flex-end; gap:6px; flex-wrap:wrap; }
+}
+/* Print – master record card */
+@media print {
+  body * { visibility:hidden !important; }
+  #masterPrintArea, #masterPrintArea * { visibility:visible !important; }
+  #masterPrintArea { position:absolute; left:0; top:0; width:100%; }
+  .no-print { display:none !important; }
+}
+</style>
+
+<!-- Master Record Print Modal -->
+<div id="masterPrintModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:2000;overflow-y:auto">
+  <div style="max-width:520px;margin:40px auto 24px;background:#fff;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.2);overflow:hidden">
+    <div class="no-print" style="padding:10px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between">
+      <strong style="font-size:.95rem" id="masterPrintModalTitle">Record Details</strong>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm btn-primary" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+        <button class="btn btn-sm btn-secondary" onclick="document.getElementById('masterPrintModal').style.display='none'">Close</button>
+      </div>
+    </div>
+    <div id="masterPrintArea" style="padding:24px 28px;font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#0f172a"></div>
+  </div>
 </div>
 
 <div class="page-header">
@@ -1327,6 +1387,7 @@ if ($activeTab === 'clients' && $editClientId > 0) {
             <button id="tallySupplierSyncBtn" class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="syncTallySuppliers(true)"><i class="bi bi-arrow-repeat"></i> Sync from Tally</button>
             <button class="btn btn-sm btn-primary" onclick="openSupplierModal()"><i class="bi bi-plus"></i> Add Supplier</button>
             <button class="btn btn-sm btn-success" onclick="openUploadModal('suppliers')"><i class="bi bi-upload"></i> Upload CSV</button>
+            <button id="msDeleteSelBtn" class="btn btn-sm btn-danger" style="display:none" onclick="msDeleteSelected()"><i class="bi bi-trash"></i> Delete Selected</button>
           </div>
         </div>
         <div id="tallySupplierMsg" style="display:none;padding:8px 16px;font-size:.82rem"></div>
@@ -1338,9 +1399,10 @@ if ($activeTab === 'clients' && $editClientId > 0) {
         </div>
 
           <div class="table-responsive">
-            <table class="table" id="tsManualTable">
+            <table class="table mobile-card-table" id="tsManualTable">
               <thead>
                 <tr>
+                  <th style="width:36px"><input type="checkbox" id="msSelectAll" onchange="msToggleAll(this)" title="Select all"></th>
                   <th>Name</th>
                   <th>GST Number</th>
                   <th>Contact Person</th>
@@ -1353,22 +1415,24 @@ if ($activeTab === 'clients' && $editClientId > 0) {
               <tbody>
                 <?php foreach ($suppliersData as $s): ?>
                   <tr>
-                    <td>
+                    <td data-label=""><input type="checkbox" class="ms-row-chk" data-id="<?= (int)($s['id'] ?? 0) ?>" onchange="msOnCheckChange()"<?= empty($s['id']) ? ' disabled style="opacity:.4"' : '' ?>></td>
+                    <td data-label="Name">
                       <?php if ($hasSuppliersData): ?>
                         <a href="<?= BASE_URL ?>/modules/master/supplier_view.php?id=<?= (int)$s['id'] ?>" style="text-decoration:none;color:inherit"><?= e($s['name']) ?></a>
                       <?php else: ?>
                         <?= e($s['name']) ?>
                       <?php endif; ?>
                     </td>
-                    <td><?= e($s['gst_number'] ?? '-') ?></td>
-                    <td><?= e($s['contact_person'] ?? '-') ?></td>
-                    <td><?= e($s['phone'] ?? '-') ?></td>
-                    <td><?= e($s['email'] ?? '-') ?></td>
-                    <td><?= e($s['city'] ?? '-') ?></td>
-                    <td>
+                    <td data-label="GST"><?= e($s['gst_number'] ?? '-') ?></td>
+                    <td data-label="Contact"><?= e($s['contact_person'] ?? '-') ?></td>
+                    <td data-label="Phone"><?= e($s['phone'] ?? '-') ?></td>
+                    <td data-label="Email"><?= e($s['email'] ?? '-') ?></td>
+                    <td data-label="City"><?= e($s['city'] ?? '-') ?></td>
+                    <td data-label="Actions">
                       <?php if ($hasSuppliersData): ?>
                         <button class="btn btn-xs btn-info" onclick="editSupplier(<?= $s['id'] ?>)"><i class="bi bi-pencil"></i> Edit</button>
                         <button class="btn btn-xs btn-danger" onclick="confirmDelete('supplier', <?= $s['id'] ?>)"><i class="bi bi-trash"></i> Delete</button>
+                        <button class="btn btn-xs" style="background:#0ea5e9;color:#fff" onclick="printSupplier(<?= $s['id'] ?>)"><i class="bi bi-printer"></i> Print</button>
                       <?php else: ?>
                         <button class="btn btn-xs btn-info" type="button" disabled title="Sample data - add real records to enable actions" style="opacity:.55;cursor:not-allowed"><i class="bi bi-pencil"></i> Edit</button>
                         <button class="btn btn-xs btn-danger" type="button" disabled title="Sample data - add real records to enable actions" style="opacity:.55;cursor:not-allowed"><i class="bi bi-trash"></i> Delete</button>
@@ -1393,6 +1457,7 @@ if ($activeTab === 'clients' && $editClientId > 0) {
                 <tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:20px">Click &ldquo;Sync from Tally&rdquo; to load Tally suppliers.</td></tr>
               </tbody>
             </table>
+            <div id="tsPager" style="display:none;padding:8px 12px;border-top:1px solid #e2e8f0;background:#f8fafc"></div>
           </div>
       </div>
 
@@ -1663,6 +1728,7 @@ if ($activeTab === 'clients' && $editClientId > 0) {
             <button id="tallyClientSyncBtn" class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="syncTallyClients(true)"><i class="bi bi-arrow-repeat"></i> Sync from Tally</button>
             <button class="btn btn-sm btn-primary" onclick="openClientModal()"><i class="bi bi-plus"></i> Add Client</button>
             <button class="btn btn-sm btn-success" onclick="openUploadModal('clients')"><i class="bi bi-upload"></i> Upload CSV</button>
+            <button id="mcDeleteSelBtn" class="btn btn-sm btn-danger" style="display:none" onclick="mcDeleteSelected()"><i class="bi bi-trash"></i> Delete Selected</button>
           </div>
         </div>
         <div id="tallyClientMsg" style="display:none;padding:8px 16px;font-size:.82rem"></div>
@@ -1674,9 +1740,10 @@ if ($activeTab === 'clients' && $editClientId > 0) {
         </div>
 
           <div class="table-responsive">
-            <table class="table" id="tcManualTable">
+            <table class="table mobile-card-table" id="tcManualTable">
               <thead>
                 <tr>
+                  <th style="width:36px"><input type="checkbox" id="mcSelectAll" onchange="mcToggleAll(this)" title="Select all"></th>
                   <th>Name</th>
                   <th>Contact Person</th>
                   <th>Phone</th>
@@ -1690,23 +1757,25 @@ if ($activeTab === 'clients' && $editClientId > 0) {
               <tbody>
                 <?php foreach ($clientsData as $cl): ?>
                   <tr>
-                    <td>
+                    <td data-label=""><input type="checkbox" class="mc-row-chk" data-id="<?= (int)($cl['id'] ?? 0) ?>" onchange="mcOnCheckChange()"<?= empty($cl['id']) ? ' disabled style="opacity:.4"' : '' ?>></td>
+                    <td data-label="Name">
                       <?php if ($hasClientsData): ?>
                         <a href="<?= BASE_URL ?>/modules/master/client_view.php?id=<?= (int)$cl['id'] ?>" style="text-decoration:none;color:inherit"><?= e($cl['name']) ?></a>
                       <?php else: ?>
                         <?= e($cl['name']) ?>
                       <?php endif; ?>
                     </td>
-                    <td><?= e($cl['contact_person'] ?? '-') ?></td>
-                    <td><?= e($cl['phone'] ?? '-') ?></td>
-                    <td><?= e($cl['email'] ?? '-') ?></td>
-                    <td><?= e((string)($cl['credit_period_days'] ?? 0)) ?> days</td>
-                    <td><?= e(number_format((float)($cl['credit_limit'] ?? 0), 2)) ?></td>
-                    <td><?= e($cl['city'] ?? '-') ?></td>
-                    <td>
+                    <td data-label="Contact"><?= e($cl['contact_person'] ?? '-') ?></td>
+                    <td data-label="Phone"><?= e($cl['phone'] ?? '-') ?></td>
+                    <td data-label="Email"><?= e($cl['email'] ?? '-') ?></td>
+                    <td data-label="Credit Period"><?= e((string)($cl['credit_period_days'] ?? 0)) ?> days</td>
+                    <td data-label="Credit Limit"><?= e(number_format((float)($cl['credit_limit'] ?? 0), 2)) ?></td>
+                    <td data-label="City"><?= e($cl['city'] ?? '-') ?></td>
+                    <td data-label="Actions">
                       <?php if ($hasClientsData): ?>
                         <button class="btn btn-xs btn-info" onclick="editClient(<?= $cl['id'] ?>)"><i class="bi bi-pencil"></i> Edit</button>
                         <button class="btn btn-xs btn-danger" onclick="confirmDelete('client', <?= $cl['id'] ?>)"><i class="bi bi-trash"></i> Delete</button>
+                        <button class="btn btn-xs" style="background:#0ea5e9;color:#fff" onclick="printClient(<?= $cl['id'] ?>)"><i class="bi bi-printer"></i> Print</button>
                       <?php else: ?>
                         <button class="btn btn-xs btn-info" type="button" disabled title="Sample data - add real records to enable actions" style="opacity:.55;cursor:not-allowed"><i class="bi bi-pencil"></i> Edit</button>
                         <button class="btn btn-xs btn-danger" type="button" disabled title="Sample data - add real records to enable actions" style="opacity:.55;cursor:not-allowed"><i class="bi bi-trash"></i> Delete</button>
@@ -1732,6 +1801,7 @@ if ($activeTab === 'clients' && $editClientId > 0) {
                 <tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:20px">Click &ldquo;Sync from Tally&rdquo; to load Tally clients.</td></tr>
               </tbody>
             </table>
+            <div id="tcPager" style="display:none;padding:8px 12px;border-top:1px solid #e2e8f0;background:#f8fafc"></div>
           </div>
       </div>
 
@@ -2264,13 +2334,79 @@ const tallyFetchClientsUrl    = '<?= e(BASE_URL) ?>/modules/tally/fetch_clients.
 const tallyFetchSuppliersUrl  = '<?= e(BASE_URL) ?>/modules/tally/fetch_clients.php';
 const tallyCheckConnectionUrl = '<?= e(BASE_URL) ?>/modules/tally/check_connection.php';
 const tallyImportClientsUrl   = '<?= e(BASE_URL) ?>/modules/tally/import_clients.php';
-const TC_MAX_ROWS = 100; // max Tally clients to display at once
-const TS_MAX_ROWS = 100; // max Tally suppliers to display at once
+const TC_MAX_ROWS = 100; // Tally clients per page
+const TS_MAX_ROWS = 100; // Tally suppliers per page
+
+// ── Print helpers ─────────────────────────────────────────────────────────────
+function _mEsc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function _mPrintRow(label, value) {
+  if (!value || value === '-' || value === '0' || value === '') return '';
+  return '<tr><td style="padding:5px 10px;font-weight:600;color:#64748b;font-size:.82rem;white-space:nowrap;width:130px">'
+    + _mEsc(label) + '</td>'
+    + '<td style="padding:5px 10px;color:#0f172a;font-size:.85rem">' + _mEsc(value) + '</td></tr>';
+}
+function _mOpenPrintModal(title, html) {
+  document.getElementById('masterPrintModalTitle').textContent = title;
+  document.getElementById('masterPrintArea').innerHTML = html;
+  document.getElementById('masterPrintModal').style.display = 'block';
+}
+
+function printClient(id) {
+  var c = null;
+  for (var i = 0; i < clientsData.length; i++) {
+    if (clientsData[i].id == id) { c = clientsData[i]; break; }
+  }
+  if (!c) { alert('Client data not found.'); return; }
+  var html = '<div style="margin-bottom:12px;border-bottom:2px solid #0ea5e9;padding-bottom:10px">'
+    + '<div style="font-size:1.1rem;font-weight:700;color:#0f172a">' + _mEsc(c.name || '') + '</div>'
+    + '<div style="font-size:.78rem;color:#64748b;margin-top:2px">Client Record</div>'
+    + '</div>'
+    + '<table style="width:100%;border-collapse:collapse">'
+    + _mPrintRow('Contact Person', c.contact_person)
+    + _mPrintRow('Phone', c.phone)
+    + _mPrintRow('Email', c.email)
+    + _mPrintRow('Address', c.address)
+    + _mPrintRow('City', c.city)
+    + _mPrintRow('State', c.state)
+    + _mPrintRow('GST Number', c.gst_number)
+    + _mPrintRow('Credit Period', c.credit_period_days ? c.credit_period_days + ' days' : '')
+    + _mPrintRow('Credit Limit', c.credit_limit ? '₹ ' + parseFloat(c.credit_limit).toLocaleString('en-IN', {minimumFractionDigits:2}) : '')
+    + '</table>'
+    + '<div style="margin-top:14px;font-size:.72rem;color:#94a3b8;text-align:right">Printed on ' + new Date().toLocaleString('en-IN') + '</div>';
+  _mOpenPrintModal('Client: ' + (c.name || ''), html);
+}
+
+function printSupplier(id) {
+  var s = null;
+  for (var i = 0; i < suppliersData.length; i++) {
+    if (suppliersData[i].id == id) { s = suppliersData[i]; break; }
+  }
+  if (!s) { alert('Supplier data not found.'); return; }
+  var html = '<div style="margin-bottom:12px;border-bottom:2px solid #0ea5e9;padding-bottom:10px">'
+    + '<div style="font-size:1.1rem;font-weight:700;color:#0f172a">' + _mEsc(s.name || '') + '</div>'
+    + '<div style="font-size:.78rem;color:#64748b;margin-top:2px">Supplier Record</div>'
+    + '</div>'
+    + '<table style="width:100%;border-collapse:collapse">'
+    + _mPrintRow('GST Number', s.gst_number)
+    + _mPrintRow('Contact Person', s.contact_person)
+    + _mPrintRow('Phone', s.phone)
+    + _mPrintRow('Email', s.email)
+    + _mPrintRow('Address', s.address)
+    + _mPrintRow('City', s.city)
+    + _mPrintRow('State', s.state)
+    + _mPrintRow('Notes', s.notes)
+    + '</table>'
+    + '<div style="margin-top:14px;font-size:.72rem;color:#94a3b8;text-align:right">Printed on ' + new Date().toLocaleString('en-IN') + '</div>';
+  _mOpenPrintModal('Supplier: ' + (s.name || ''), html);
+}
 
 // --- Tally Suppliers Integration (read-only) ---
 var _tsView = 'manual';
 var _tsRawRows = null;
 var _tsRows = [];
+var _tsPage = 1;
 
 function _tsEsc(str) {
   return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -2334,6 +2470,8 @@ function tsSetView(v) {
     tally.style.display = 'none';
     btnM.className = 'btn btn-sm btn-primary'; btnM.style.background = ''; btnM.style.color = '';
     btnT.style.background = '#f1f5f9'; btnT.style.color = '#334155'; btnT.className = 'btn btn-sm';
+    var pager = document.getElementById('tsPager');
+    if (pager) pager.style.display = 'none';
   }
 }
 
@@ -2371,18 +2509,35 @@ function tsBuildSupplierRows(rows) {
 
 function tsRenderRows(rows) {
   var tbody = document.getElementById('tsTallyTbody');
+  var pager = document.getElementById('tsPager');
   if (!tbody) return;
 
   if (!rows || rows.length === 0) {
     tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:20px">No suppliers found in Tally.</td></tr>';
+    if (pager) pager.style.display = 'none';
     return;
   }
 
-  var capped = false;
   var totalCount = rows.length;
-  if (totalCount > TS_MAX_ROWS) {
-    rows = rows.slice(0, TS_MAX_ROWS);
-    capped = true;
+  var totalPages = Math.max(1, Math.ceil(totalCount / TS_MAX_ROWS));
+  if (_tsPage > totalPages) _tsPage = totalPages;
+  if (_tsPage < 1) _tsPage = 1;
+
+  var startIdx = (_tsPage - 1) * TS_MAX_ROWS;
+  var endIdx = Math.min(startIdx + TS_MAX_ROWS, totalCount);
+  var pageRows = rows.slice(startIdx, endIdx);
+
+  if (pager) {
+    pager.style.display = '';
+    pager.innerHTML = ''
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'
+      + '  <div style="font-size:.82rem;color:#475569">Showing ' + (startIdx + 1) + '-' + endIdx + ' of ' + totalCount + ' suppliers</div>'
+      + '  <div style="display:flex;align-items:center;gap:8px">'
+      + '    <button type="button" class="btn btn-xs" onclick="tsGoPage(-1)" ' + (_tsPage <= 1 ? 'disabled style="opacity:.6;cursor:not-allowed"' : '') + '>Previous</button>'
+      + '    <span style="font-size:.82rem;color:#334155">Page ' + _tsPage + ' / ' + totalPages + '</span>'
+      + '    <button type="button" class="btn btn-xs" onclick="tsGoPage(1)" ' + (_tsPage >= totalPages ? 'disabled style="opacity:.6;cursor:not-allowed"' : '') + '>Next</button>'
+      + '  </div>'
+      + '</div>';
   }
 
   var existingByGst = {};
@@ -2396,8 +2551,8 @@ function tsRenderRows(rows) {
   }
 
   var html = '';
-  for (var j = 0; j < rows.length; j++) {
-    var r = rows[j];
+  for (var j = 0; j < pageRows.length; j++) {
+    var r = pageRows[j];
     var rGst = String(r.gst_number || '').trim().toUpperCase();
     var isDup = rGst ? !!existingByGst[rGst] : !!existingByNorm[tsNormalizeName(r.name)];
     var match = isDup
@@ -2413,13 +2568,12 @@ function tsRenderRows(rows) {
     html += '</tr>';
   }
 
-  if (capped) {
-    html += '<tr><td colspan="5" style="text-align:center;background:#fffbeb;color:#92400e;font-size:.8rem;padding:8px">'
-      + 'Showing first ' + TS_MAX_ROWS + ' of ' + totalCount + ' suppliers.'
-      + '</td></tr>';
-  }
-
   tbody.innerHTML = html;
+}
+
+function tsGoPage(delta) {
+  _tsPage += delta;
+  tsRenderRows(_tsRows);
 }
 
 function tsFilterRows() {
@@ -2433,6 +2587,7 @@ function tsFilterRows() {
         || String(r.gst_number || '').toLowerCase().indexOf(q) >= 0;
     });
   }
+  _tsPage = 1;
   tsRenderRows(_tsRows);
 }
 
@@ -2463,6 +2618,7 @@ function syncTallySuppliers(force) {
       var prepared = tsBuildSupplierRows(rawRows);
       _tsRawRows = prepared.rows;
       _tsRows = _tsRawRows.slice();
+      _tsPage = 1;
       tsRenderRows(_tsRows);
 
       if (!prepared.hasGroupData) {
@@ -2484,6 +2640,7 @@ function syncTallySuppliers(force) {
 // --- Tally Clients Integration ---
 var _tcView = 'manual';
 var _tcTallyRows = null;
+var _tcPage = 1;
 
 // Normalise a name for duplicate comparison:
 // strips punctuation/spaces/case so "ABC Pharma Pvt Ltd" ≈ "abc pharma pvt ltd"
@@ -2511,6 +2668,8 @@ function tcSetView(v) {
     btnM.className = 'btn btn-sm btn-primary'; btnM.style.background = ''; btnM.style.color = '';
     btnT.style.background = '#f1f5f9'; btnT.style.color = '#334155'; btnT.className = 'btn btn-sm';
     if (impBtn) impBtn.style.display = 'none';
+    var pager = document.getElementById('tcPager');
+    if (pager) pager.style.display = 'none';
   }
 }
 
@@ -2531,12 +2690,23 @@ function syncTallyClients(force) {
         return;
       }
       tcSetBadge(true);
-      var rows = data.data || [];
-      _tcTallyRows = rows;
-      tcRenderTallyRows(rows);
+      var rows = data.data || data.rows || [];
+      var prepared = tcBuildClientRows(rows);
+      _tcTallyRows = prepared.rows;
+      _tcPage = 1;
+      tcRenderTallyRows(_tcTallyRows);
+
+      if (!prepared.hasGroupData) {
+        tcShowMsg('Tally group field is not available in this fetch. Showing available ledgers as client candidates.', '#92400e');
+      } else {
+        var warn = document.getElementById('tallyClientMsg');
+        if (warn && warn.textContent.indexOf('group field is not available') !== -1) {
+          warn.style.display = 'none';
+        }
+      }
       // Hide any previous error message on success
       var msg = document.getElementById('tallyClientMsg');
-      if (msg) msg.style.display = 'none';
+      if (msg && msg.textContent.indexOf('group field is not available') === -1) msg.style.display = 'none';
     })
     .catch(function() {
       // Restore button on network error
@@ -2544,6 +2714,37 @@ function syncTallyClients(force) {
       tcSetBadge(false);
       tcShowMsg('Tally not connected or unreachable — manual client system is still active.', '#b91c1c');
     });
+}
+
+function tcBuildClientRows(rows) {
+  var hasGroupData = false;
+  for (var i = 0; i < rows.length; i++) {
+    var g = String(rows[i].group || rows[i].group_name || rows[i].parent || rows[i].under || rows[i].ledger_group || '').trim();
+    if (g !== '') { hasGroupData = true; break; }
+  }
+
+  var out = [];
+  var seen = {};
+  for (var j = 0; j < rows.length; j++) {
+    var r = rows[j] || {};
+    var grp = String(r.group || r.group_name || r.parent || r.under || r.ledger_group || '').trim().toLowerCase();
+    if (hasGroupData && grp !== 'sundry debtors') {
+      continue;
+    }
+
+    var gst = String(r.gst_number || '').trim().toUpperCase();
+    var key = gst ? ('g:' + gst) : ('n:' + tcNormalizeName(r.name));
+    if (seen[key]) continue;
+    seen[key] = true;
+
+    out.push({
+      name: String(r.name || '').trim(),
+      address: String(r.address || '').trim(),
+      gst_number: gst
+    });
+  }
+
+  return { rows: out, hasGroupData: hasGroupData };
 }
 
 function tcSetBadge(connected) {
@@ -2576,21 +2777,37 @@ function tcShowMsg(text, color) {
 function tcRenderTallyRows(rows) {
   var tbody  = document.getElementById('tcTallyTbody');
   var impBtn = document.getElementById('tcImportBtn');
+  var pager  = document.getElementById('tcPager');
   if (!tbody) return;
 
   if (!rows || rows.length === 0) {
     tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:20px">No clients found in Tally.</td></tr>';
     if (impBtn) impBtn.style.display = 'none';
+    if (pager) pager.style.display = 'none';
     return;
   }
   if (impBtn) impBtn.style.display = '';
 
-  // Limit large datasets
-  var capped = false;
   var totalCount = rows.length;
-  if (totalCount > TC_MAX_ROWS) {
-    rows = rows.slice(0, TC_MAX_ROWS);
-    capped = true;
+  var totalPages = Math.max(1, Math.ceil(totalCount / TC_MAX_ROWS));
+  if (_tcPage > totalPages) _tcPage = totalPages;
+  if (_tcPage < 1) _tcPage = 1;
+
+  var startIdx = (_tcPage - 1) * TC_MAX_ROWS;
+  var endIdx = Math.min(startIdx + TC_MAX_ROWS, totalCount);
+  var pageRows = rows.slice(startIdx, endIdx);
+
+  if (pager) {
+    pager.style.display = '';
+    pager.innerHTML = ''
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'
+      + '  <div style="font-size:.82rem;color:#475569">Showing ' + (startIdx + 1) + '-' + endIdx + ' of ' + totalCount + ' clients</div>'
+      + '  <div style="display:flex;align-items:center;gap:8px">'
+      + '    <button type="button" class="btn btn-xs" onclick="tcGoPage(-1)" ' + (_tcPage <= 1 ? 'disabled style="opacity:.6;cursor:not-allowed"' : '') + '>Previous</button>'
+      + '    <span style="font-size:.82rem;color:#334155">Page ' + _tcPage + ' / ' + totalPages + '</span>'
+      + '    <button type="button" class="btn btn-xs" onclick="tcGoPage(1)" ' + (_tcPage >= totalPages ? 'disabled style="opacity:.6;cursor:not-allowed"' : '') + '>Next</button>'
+      + '  </div>'
+      + '</div>';
   }
 
   // Build GST and normalised-name lookup from existing manual clients
@@ -2606,8 +2823,8 @@ function tcRenderTallyRows(rows) {
   }
 
   var html = '';
-  for (var j = 0; j < rows.length; j++) {
-    var r    = rows[j];
+  for (var j = 0; j < pageRows.length; j++) {
+    var r    = pageRows[j];
     var rGst = (r.gst_number || '').trim().toUpperCase();
     // Prefer GST match when both sides have GST, else fall back to normalised name
     var isDup = false;
@@ -2619,8 +2836,9 @@ function tcRenderTallyRows(rows) {
     var dupBadge = isDup
       ? ' <span style="padding:1px 6px;border-radius:999px;background:#fef9c3;color:#854d0e;font-size:.7rem;font-weight:700">Exists</span>'
       : '';
+    var absoluteIdx = startIdx + j;
     html += '<tr>';
-    html += '<td><input type="checkbox" class="tc-row-check" data-idx="' + j + '"' + (isDup ? ' title="Already exists in manual list"' : '') + '></td>';
+    html += '<td><input type="checkbox" class="tc-row-check" data-idx="' + absoluteIdx + '"' + (isDup ? ' title="Already exists in manual list"' : '') + '></td>';
     html += '<td>' + _tcEsc(r.name || '-') + dupBadge + '</td>';
     html += '<td>' + _tcEsc(r.address || '-') + '</td>';
     html += '<td>' + _tcEsc(rGst || '-') + '</td>';
@@ -2628,13 +2846,14 @@ function tcRenderTallyRows(rows) {
     html += '</tr>';
   }
 
-  if (capped) {
-    html += '<tr><td colspan="5" style="text-align:center;background:#fffbeb;color:#92400e;font-size:.8rem;padding:8px">'
-          + 'Showing first ' + TC_MAX_ROWS + ' of ' + totalCount + ' clients. Use filters in Tally to narrow results.'
-          + '</td></tr>';
-  }
-
   tbody.innerHTML = html;
+  var selAll = document.getElementById('tcSelectAll');
+  if (selAll) selAll.checked = false;
+}
+
+function tcGoPage(delta) {
+  _tcPage += delta;
+  tcRenderTallyRows(_tcTallyRows || []);
 }
 
 function tcToggleSelectAll(chk) {
@@ -3099,6 +3318,75 @@ window.addEventListener('load', function() {
   editClient(<?= (int)$editClient['id'] ?>);
 });
 <?php endif; ?>
+
+// ── Bulk delete helpers ───────────────────────────────────────────────────────
+var MASTER_BULK_DELETE_URL = '<?= e(BASE_URL) ?>/modules/master/bulk_delete.php';
+
+// Clients bulk select+delete
+function mcToggleAll(chk) {
+  var boxes = document.querySelectorAll('#tcManualTable .mc-row-chk');
+  for (var i = 0; i < boxes.length; i++) boxes[i].checked = chk.checked;
+  mcOnCheckChange();
+}
+function mcOnCheckChange() {
+  var checked = document.querySelectorAll('#tcManualTable .mc-row-chk:checked');
+  var btn = document.getElementById('mcDeleteSelBtn');
+  var all = document.getElementById('mcSelectAll');
+  if (btn) btn.style.display = checked.length > 0 ? '' : 'none';
+  var total = document.querySelectorAll('#tcManualTable .mc-row-chk').length;
+  if (all) {
+    all.indeterminate = checked.length > 0 && checked.length < total;
+    all.checked = total > 0 && checked.length === total;
+  }
+}
+function mcDeleteSelected() {
+  var checked = document.querySelectorAll('#tcManualTable .mc-row-chk:checked');
+  if (!checked.length) { alert('Select at least one client.'); return; }
+  if (!confirm('Delete ' + checked.length + ' selected client(s)? This cannot be undone.')) return;
+  var ids = [];
+  for (var i = 0; i < checked.length; i++) ids.push(parseInt(checked[i].getAttribute('data-id'), 10));
+  fetch(MASTER_BULK_DELETE_URL, {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'client', ids: ids })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d && d.ok) { location.reload(); }
+    else { alert('Error deleting clients.'); }
+  }).catch(function() { alert('Network error.'); });
+}
+
+// Suppliers bulk select+delete
+function msToggleAll(chk) {
+  var boxes = document.querySelectorAll('#tsManualTable .ms-row-chk');
+  for (var i = 0; i < boxes.length; i++) boxes[i].checked = chk.checked;
+  msOnCheckChange();
+}
+function msOnCheckChange() {
+  var checked = document.querySelectorAll('#tsManualTable .ms-row-chk:checked');
+  var btn = document.getElementById('msDeleteSelBtn');
+  var all = document.getElementById('msSelectAll');
+  if (btn) btn.style.display = checked.length > 0 ? '' : 'none';
+  var total = document.querySelectorAll('#tsManualTable .ms-row-chk').length;
+  if (all) {
+    all.indeterminate = checked.length > 0 && checked.length < total;
+    all.checked = total > 0 && checked.length === total;
+  }
+}
+function msDeleteSelected() {
+  var checked = document.querySelectorAll('#tsManualTable .ms-row-chk:checked');
+  if (!checked.length) { alert('Select at least one supplier.'); return; }
+  if (!confirm('Delete ' + checked.length + ' selected supplier(s)? This cannot be undone.')) return;
+  var ids = [];
+  for (var i = 0; i < checked.length; i++) ids.push(parseInt(checked[i].getAttribute('data-id'), 10));
+  fetch(MASTER_BULK_DELETE_URL, {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'supplier', ids: ids })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d && d.ok) { location.reload(); }
+    else { alert('Error deleting suppliers.'); }
+  }).catch(function() { alert('Network error.'); });
+}
 </script>
 
 <?php include __DIR__ . '/../../includes/footer.php'; ?>

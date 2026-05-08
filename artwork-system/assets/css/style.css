@@ -535,7 +535,7 @@ textarea:focus {
     box-shadow: var(--shadow-soft);
 }
 
-@media (max-width: 980px) {
+@media (max-width: 768px) {
     .sidebar {
         position: static;
         width: 100%;

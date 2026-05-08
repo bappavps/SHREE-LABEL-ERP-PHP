@@ -850,7 +850,7 @@ try {
             packing_api_respond(['ok' => false, 'message' => 'Invalid job id'], 400);
         }
 
-        $statusCheck = $db->prepare("SELECT status, extra_data, job_no FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $statusCheck = $db->prepare("SELECT status, extra_data, job_no, planning_id, job_type FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
         if (!$statusCheck) {
             packing_api_respond(['ok' => false, 'message' => 'Status check prepare failed'], 500);
         }
@@ -875,6 +875,40 @@ try {
             packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Finished Production']);
         }
         if (in_array($currentStatus, ['packed', 'packing done'], true)) {
+            // Ensure PCK job exists before responding
+            $planningIdCheck = (int)($statusRow['planning_id'] ?? 0);
+            $jobTypeCheck = trim((string)($statusRow['job_type'] ?? ''));
+            if ($planningIdCheck > 0) {
+                $checkPackingStmt = $db->prepare("SELECT id FROM jobs WHERE planning_id = ? AND department IN ('packing', 'packaging') LIMIT 1");
+                if ($checkPackingStmt) {
+                    $checkPackingStmt->bind_param('i', $planningIdCheck);
+                    $checkPackingStmt->execute();
+                    $checkPackingRes = $checkPackingStmt->get_result();
+                    $packingJobExists = ($checkPackingRes && $checkPackingRes->num_rows > 0);
+                    $checkPackingStmt->close();
+                    if (!$packingJobExists) {
+                        $packingJobNoStmt = $db->prepare("SELECT MAX(CAST(SUBSTRING_INDEX(job_no, '/', -1) AS UNSIGNED)) as max_num FROM jobs WHERE job_no LIKE 'PCK/%' LIMIT 1");
+                        $nextPackingNum = 1;
+                        if ($packingJobNoStmt) {
+                            $packingJobNoStmt->execute();
+                            $packingJobNoRes = $packingJobNoStmt->get_result();
+                            $packingJobNoRow = $packingJobNoRes ? $packingJobNoRes->fetch_assoc() : null;
+                            $packingJobNoStmt->close();
+                            if ($packingJobNoRow && !empty($packingJobNoRow['max_num'])) {
+                                $nextPackingNum = (int)$packingJobNoRow['max_num'] + 1;
+                            }
+                        }
+                        $packingJobNo = 'PCK/' . date('Y') . '/' . str_pad($nextPackingNum, 4, '0', STR_PAD_LEFT);
+                        $extraDataJson = json_encode(['source_job_id' => $jobId, 'packing_packed_flag' => 1, 'packing_done_flag' => 1, 'packing_done_at' => date('Y-m-d H:i:s')], JSON_UNESCAPED_UNICODE);
+                        $createPackingStmt = $db->prepare("INSERT INTO jobs (planning_id, job_no, department, job_type, status, extra_data, created_at, updated_at) VALUES (?, ?, 'packing', ?, 'Packed', ?, NOW(), NOW())");
+                        if ($createPackingStmt) {
+                            $createPackingStmt->bind_param('isss', $planningIdCheck, $packingJobNo, $jobTypeCheck, $extraDataJson);
+                            $createPackingStmt->execute();
+                            $createPackingStmt->close();
+                        }
+                    }
+                }
+            }
             packing_api_respond(['ok' => true, 'already_done' => true, 'status' => 'Packed']);
         }
 
@@ -940,6 +974,61 @@ try {
                     $extraUpd->bind_param('si', $extraJson, $jobId);
                     $extraUpd->execute();
                     $extraUpd->close();
+                }
+            }
+        }
+
+        // Create packing department job (PCK) if it doesn't exist
+        $jobDetailsStmt = $db->prepare("SELECT planning_id, job_type FROM jobs WHERE id = ? LIMIT 1");
+        if ($jobDetailsStmt) {
+            $jobDetailsStmt->bind_param('i', $jobId);
+            $jobDetailsStmt->execute();
+            $jobDetailsRes = $jobDetailsStmt->get_result();
+            $jobDetailsRow = $jobDetailsRes ? $jobDetailsRes->fetch_assoc() : null;
+            $jobDetailsStmt->close();
+
+            if ($jobDetailsRow) {
+                $planningId = (int)($jobDetailsRow['planning_id'] ?? 0);
+                $jobType = trim((string)($jobDetailsRow['job_type'] ?? ''));
+                
+                if ($planningId > 0) {
+                    // Check if a packing job already exists
+                    $checkPackingStmt = $db->prepare("SELECT id FROM jobs WHERE planning_id = ? AND department IN ('packing', 'packaging') LIMIT 1");
+                    if ($checkPackingStmt) {
+                        $checkPackingStmt->bind_param('i', $planningId);
+                        $checkPackingStmt->execute();
+                        $checkPackingRes = $checkPackingStmt->get_result();
+                        $packingJobExists = ($checkPackingRes && $checkPackingRes->num_rows > 0);
+                        $checkPackingStmt->close();
+
+                        // If no packing job exists, create one
+                        if (!$packingJobExists) {
+                            // Generate PCK job number
+                            $packingJobNoStmt = $db->prepare("SELECT MAX(CAST(SUBSTRING_INDEX(job_no, '/', -1) AS UNSIGNED)) as max_num FROM jobs WHERE job_no LIKE 'PCK/%' LIMIT 1");
+                            $nextPackingNum = 1;
+                            if ($packingJobNoStmt) {
+                                $packingJobNoStmt->execute();
+                                $packingJobNoRes = $packingJobNoStmt->get_result();
+                                $packingJobNoRow = $packingJobNoRes ? $packingJobNoRes->fetch_assoc() : null;
+                                $packingJobNoStmt->close();
+                                if ($packingJobNoRow && !empty($packingJobNoRow['max_num'])) {
+                                    $nextPackingNum = (int)$packingJobNoRow['max_num'] + 1;
+                                }
+                            }
+                            $packingJobNo = 'PCK/' . date('Y') . '/' . str_pad($nextPackingNum, 4, '0', STR_PAD_LEFT);
+
+                            // Create packing job
+                            $createPackingStmt = $db->prepare("
+                                INSERT INTO jobs (planning_id, job_no, department, job_type, status, extra_data, created_at, updated_at)
+                                VALUES (?, ?, 'packing', ?, 'Pending', JSON_OBJECT('source_job_id', ?), NOW(), NOW())
+                            ");
+                            if ($createPackingStmt) {
+                                $createPackingStmt->bind_param('issi', $planningId, $packingJobNo, $jobType, $jobId);
+                                $createPackingStmt->execute();
+                                $createPackingStmt->close();
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1177,8 +1266,8 @@ try {
             'extra_data' => $jobDetails['job_extra_data'] ?? [],
             'plan_extra_data' => $jobDetails['plan_extra_data'] ?? [],
         ]);
-        if (!in_array($tabKey, ['pos_roll', 'one_ply', 'two_ply'], true)) {
-            packing_api_respond(['ok' => false, 'message' => 'Finished Production is available only for POS Roll, 1 Ply and 2 Ply packing'], 409);
+        if (!in_array($tabKey, ['printing_label', 'pos_roll', 'one_ply', 'two_ply'], true)) {
+            packing_api_respond(['ok' => false, 'message' => 'Finished Production is available only for Label Printing, POS Roll, 1 Ply and 2 Ply packing'], 409);
         }
 
         $currentStatus = strtolower(trim(str_replace(['-', '_'], ' ', packing_effective_status_from_row([

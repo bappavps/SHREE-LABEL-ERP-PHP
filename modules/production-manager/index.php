@@ -10,6 +10,23 @@ function pm_text($value): string {
     return trim((string)($value ?? ''));
 }
 
+function pm_job_activity_score($status): int {
+  $norm = strtolower(trim(str_replace(['-', '_'], ' ', pm_text($status))));
+  if ($norm === 'running' || $norm === 'in progress' || $norm === 'inprogress') {
+    return 3;
+  }
+  if ($norm === 'finished production' || $norm === 'dispatched' || $norm === 'dispatch') {
+    return 4;
+  }
+  if ($norm === 'pending') {
+    return 2;
+  }
+  if ($norm === 'queued') {
+    return 1;
+  }
+  return 0;
+}
+
 function pm_department_label($dept, $fallbackType = ''): string {
     $dept = strtolower(trim((string)$dept));
     if ($dept === '') {
@@ -56,12 +73,240 @@ function pm_department_label($dept, $fallbackType = ''): string {
     return ucwords(str_replace(['_', '-'], ' ', $dept));
 }
 
+  function pm_planning_type_key($value): string {
+    return strtolower(trim(str_replace([' ', '_'], '-', (string)$value)));
+  }
+
+  function pm_route_from_plan_context($planningNo, $planningType, $planningDept, $currentRoute): string {
+    $planningNo = strtoupper(pm_text($planningNo));
+    $typeKey = pm_planning_type_key($planningType);
+    $deptKey = pm_planning_type_key($planningDept);
+    $route = pm_text($currentRoute);
+
+    if ($typeKey === '' || $typeKey === 'planning') {
+      if (strpos($planningNo, 'PLN-BAR/') === 0) {
+        $typeKey = 'barcode';
+      } elseif (strpos($planningNo, 'PLN-POS/') === 0) {
+        $typeKey = 'pos-roll';
+      } elseif (strpos($planningNo, 'PLN-PRL/') === 0) {
+        $typeKey = 'paperroll';
+      } elseif (strpos($planningNo, 'PLN-1PL/') === 0) {
+        $typeKey = 'one-ply';
+      } elseif (strpos($planningNo, 'PLN-2PL/') === 0) {
+        $typeKey = 'two-ply';
+      } elseif (strpos($planningNo, 'PLN/') === 0) {
+        $typeKey = 'label-printing';
+      }
+    }
+
+    if ($typeKey === '' || $typeKey === 'planning') {
+      if (strpos($deptKey, 'label') !== false) {
+        $typeKey = 'label-printing';
+      } elseif (strpos($deptKey, 'barcode') !== false) {
+        $typeKey = 'barcode';
+      } elseif (strpos($deptKey, 'pos') !== false) {
+        $typeKey = 'pos-roll';
+      } elseif (strpos($deptKey, 'paper') !== false) {
+        $typeKey = 'paperroll';
+      }
+    }
+
+    $routeMap = [
+      'label-printing' => 'Jumbo Slitting, Printing, Label Slitting, Packaging, Finished Production',
+      'label' => 'Jumbo Slitting, Printing, Label Slitting, Packaging, Finished Production',
+      'barcode' => 'Jumbo Slitting, Printing, Barcode, Packaging, Finished Production',
+      'barcoding' => 'Jumbo Slitting, Printing, Barcode, Packaging, Finished Production',
+      'pos-roll' => 'POS Roll, Packaging, Finished Production',
+      'posroll' => 'POS Roll, Packaging, Finished Production',
+      'paperroll' => 'Paper Roll, Packaging, Finished Production',
+      'paper-roll' => 'Paper Roll, Packaging, Finished Production',
+      'one-ply' => 'One Ply, Packaging, Finished Production',
+      'oneply' => 'One Ply, Packaging, Finished Production',
+      'two-ply' => 'Two Ply, Packaging, Finished Production',
+      'twoply' => 'Two Ply, Packaging, Finished Production',
+    ];
+
+    if (isset($routeMap[$typeKey])) {
+      return $routeMap[$typeKey];
+    }
+
+    if ($route !== '') {
+      return $route;
+    }
+
+    return pm_text($planningDept);
+  }
+
+  function pm_pln_first_actionable_stage_from_chain($chainSummary, mysqli $db = null, int $planningId = 0): string {
+    // First check if any job in this planning already reached a terminal downstream state.
+    if ($db !== null && $planningId > 0) {
+      $stmt = $db->prepare("SELECT status, extra_data FROM jobs WHERE planning_id = ? ORDER BY updated_at DESC, id DESC");
+      if ($stmt) {
+        $stmt->bind_param('i', $planningId);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        while ($jobRow = $result->fetch_assoc()) {
+          $extra = json_decode($jobRow['extra_data'] ?? '{}', true);
+          $statusNorm = strtolower(trim(str_replace(['-', '_'], ' ', (string)($jobRow['status'] ?? ''))));
+          if (is_array($extra)) {
+            $hasFinishedFlag = (int)($extra['finished_production_flag'] ?? 0) === 1
+              || trim((string)($extra['finished_production_at'] ?? '')) !== '';
+            if ($hasFinishedFlag || $statusNorm === 'finished production') {
+              $stmt->close();
+              return 'Finished Production';
+            }
+            $hasPackedFlag = (int)($extra['packing_done_flag'] ?? 0) === 1
+              || (int)($extra['packing_packed_flag'] ?? 0) === 1
+              || trim((string)($extra['packing_done_at'] ?? '')) !== '';
+            if ($hasPackedFlag) {
+              $stmt->close();
+              return 'Packaging';
+            }
+          }
+          if (in_array($statusNorm, ['dispatched', 'dispatch'], true)) {
+            $stmt->close();
+            return 'Dispatch';
+          }
+        }
+        $stmt->close();
+      }
+    }
+    
+    $chain = strtolower(pm_text($chainSummary));
+    if ($chain === '') {
+      return '';
+    }
+
+    $entries = array_filter(array_map('trim', explode('|', $chain)));
+    if (empty($entries)) {
+      return '';
+    }
+
+    $statusByDept = [];
+    foreach ($entries as $entry) {
+      $parts = explode(':', $entry, 2);
+      if (count($parts) !== 2) {
+        continue;
+      }
+      $dept = strtolower(trim($parts[0]));
+      $status = strtolower(trim($parts[1]));
+      if ($dept === '' || $status === '') {
+        continue;
+      }
+      $statusByDept[$dept] = $status;
+    }
+
+    $isActionable = static function ($status): bool {
+      return in_array($status, ['pending', 'queued', 'running', 'in progress', 'inprogress'], true);
+    };
+
+    $orderedDeptMap = [
+      'jumbo_slitting' => 'Jumbo Slitting',
+      'jumbo-slitting' => 'Jumbo Slitting',
+      'jumbo slitting' => 'Jumbo Slitting',
+      'jumbo' => 'Jumbo Slitting',
+      'flexo_printing' => 'Printing',
+      'flexo-printing' => 'Printing',
+      'printing' => 'Printing',
+      'label_slitting' => 'Label Slitting',
+      'label-slitting' => 'Label Slitting',
+      'label slitting' => 'Label Slitting',
+      'packing' => 'Packaging',
+      'packaging' => 'Packaging',
+      'dispatch' => 'Dispatch',
+    ];
+
+    foreach ($orderedDeptMap as $deptKey => $label) {
+      if (isset($statusByDept[$deptKey]) && $isActionable($statusByDept[$deptKey])) {
+        return $label;
+      }
+    }
+
+    return '';
+  }
+
+function pm_pick_stage_job_card(array $cards, $stageLabel): array {
+  $target = strtolower(pm_text($stageLabel));
+  if ($target === '' || empty($cards)) {
+    return [];
+  }
+
+  $best = null;
+  foreach ($cards as $card) {
+    $cardStage = strtolower(pm_text($card['stage'] ?? ''));
+    $score = (int)($card['activity_score'] ?? 0);
+    if ($cardStage !== $target || $score <= 0) {
+      continue;
+    }
+
+    if ($best === null) {
+      $best = $card;
+      continue;
+    }
+
+    $bestScore = (int)($best['activity_score'] ?? 0);
+    $cardId = (int)($card['job_id'] ?? 0);
+    $bestId = (int)($best['job_id'] ?? 0);
+
+    if ($score > $bestScore) {
+      $best = $card;
+      continue;
+    }
+
+    if ($score === $bestScore) {
+      if ($score === 3) {
+        // Running: prefer latest movement in same stage.
+        if ($cardId > $bestId) {
+          $best = $card;
+        }
+      } else {
+        // Pending/queued: prefer earliest actionable card in same stage.
+        if ($bestId === 0 || ($cardId > 0 && $cardId < $bestId)) {
+          $best = $card;
+        }
+      }
+    }
+  }
+
+  return is_array($best) ? $best : [];
+}
+
+function pm_is_pending_like_status($status): bool {
+  $norm = strtolower(trim(str_replace(['-', '_'], ' ', pm_text($status))));
+  return in_array($norm, ['pending', 'queued', 'preparing'], true);
+}
+
+function pm_is_started_status($status): bool {
+  $norm = strtolower(trim(str_replace(['-', '_'], ' ', pm_text($status))));
+  if ($norm === '') {
+    return false;
+  }
+  if (in_array($norm, ['pending', 'queued', 'preparing'], true)) {
+    return false;
+  }
+  return true;
+}
+
+function pm_stage_rank_for_label($stage): int {
+  $stage = strtolower(pm_text($stage));
+  if ($stage === 'jumbo slitting') return 1;
+  if ($stage === 'printing') return 2;
+  if ($stage === 'die-cutting' || $stage === 'barcode') return 3;
+  if ($stage === 'label slitting') return 4;
+  if ($stage === 'packaging') return 5;
+  if ($stage === 'finished production') return 6;
+  if ($stage === 'dispatch') return 6;
+  return 99;
+}
+
 function pm_bucket_status(array $row): string {
   $jobStatus = strtolower(pm_text(($row['effective_status'] ?? '') ?: ($row['latest_job_status'] ?: $row['active_job_status'])));
     $boardStatus = strtolower(pm_text($row['board_status']));
     $planningStatus = strtolower(pm_text($row['planning_status']));
 
-    if (in_array($jobStatus, ['ready to dispatch', 'ready to dispatched', 'ready to dispathce', 'packed', 'packing done', 'finished barcode', 'finished production'], true)) return 'Packed';
+    if ($jobStatus === 'finished production') return 'Finished Production';
+    if (in_array($jobStatus, ['dispatched', 'dispatch'], true)) return 'Dispatched';
+    if (in_array($jobStatus, ['ready to dispatch', 'ready to dispatched', 'ready to dispathce', 'packed', 'packing done', 'finished barcode'], true)) return 'Packed';
 
     $haystack = $jobStatus . ' ' . $boardStatus . ' ' . $planningStatus;
     if (strpos($haystack, 'running') !== false || strpos($haystack, 'in progress') !== false) return 'Running';
@@ -135,15 +380,15 @@ function pm_should_show_board_status(array $row): bool {
     $finishedBarcodeFlag = (int)($extra['finished_barcode_flag'] ?? 0) === 1
       || pm_text($extra['finished_barcode_at'] ?? '') !== '';
     $finishedFlag = (int)($extra['finished_production_flag'] ?? 0) === 1
-      || pm_text($extra['finished_production_at'] ?? '') !== ''
-      || (int)($extra['finished_label_flag'] ?? 0) === 1
+      || pm_text($extra['finished_production_at'] ?? '') !== '';
+    $finishedLabelFlag = (int)($extra['finished_label_flag'] ?? 0) === 1
       || pm_text($extra['finished_label_at'] ?? '') !== '';
     $packedFlag = (int)($extra['packing_done_flag'] ?? 0) === 1
       || (int)($extra['packing_packed_flag'] ?? 0) === 1
       || pm_text($extra['packing_done_at'] ?? '') !== '';
 
-    // Unify: treat finished barcode as finished production for all barcode/label jobs
-    if ($finishedFlag || $norm === 'finished production' || $norm === 'finished label' || $finishedBarcodeFlag || $norm === 'finished barcode') {
+    // Only truly final statuses → Finished Production
+    if ($finishedFlag || $norm === 'finished production') {
       return [
         'priority' => 5,
         'status' => 'Finished Production',
@@ -158,8 +403,16 @@ function pm_should_show_board_status(array $row): bool {
     if ($packedFlag || in_array($norm, ['packed', 'packing done'], true)) {
       return ['priority' => 2, 'status' => 'Packed'];
     }
+    // Barcode done — intermediate above Completed
+    if ($finishedBarcodeFlag || $norm === 'finished barcode') {
+      return ['priority' => 2, 'status' => 'Finished Barcode'];
+    }
     if (in_array($norm, ['completed', 'complete', 'closed', 'finalized', 'qc passed', 'qc failed'], true)) {
       return ['priority' => 1, 'status' => 'Completed'];
+    }
+    // Label slitted — intermediate step, packing still pending
+    if ($finishedLabelFlag || $norm === 'finished label') {
+      return ['priority' => 1, 'status' => 'Label Slitted'];
     }
     if (in_array($norm, ['running', 'in progress', 'inprogress'], true)) {
       return ['priority' => 0, 'status' => 'Running'];
@@ -195,6 +448,96 @@ function pm_should_show_board_status(array $row): bool {
     return false;
   }
 
+  function pm_has_non_packing_actionable_stage(array $row): bool {
+    $chain = strtolower(pm_text($row['chain_summary'] ?? ''));
+    if ($chain !== '') {
+      $items = array_filter(array_map('trim', explode('|', $chain)));
+      foreach ($items as $item) {
+        $parts = explode(':', $item, 2);
+        if (count($parts) !== 2) {
+          continue;
+        }
+        $dept = strtolower(trim((string)$parts[0]));
+        $status = strtolower(trim((string)$parts[1]));
+        if (!in_array($status, ['pending', 'queued', 'running', 'in progress', 'inprogress'], true)) {
+          continue;
+        }
+        if (
+          strpos($dept, 'pack') === false &&
+          strpos($dept, 'dispatch') === false
+        ) {
+          return true;
+        }
+      }
+    }
+
+    $statusBag = strtolower(pm_text(
+      ($row['active_job_status'] ?? '') . ' ' .
+      ($row['latest_job_status'] ?? '')
+    ));
+    $deptBag = strtolower(pm_text(
+      ($row['active_job_department'] ?? '') . ' ' .
+      ($row['active_job_type'] ?? '') . ' ' .
+      ($row['latest_job_department'] ?? '') . ' ' .
+      ($row['latest_job_type'] ?? '')
+    ));
+
+    $hasActionable =
+      strpos($statusBag, 'pending') !== false ||
+      strpos($statusBag, 'queued') !== false ||
+      strpos($statusBag, 'running') !== false ||
+      strpos($statusBag, 'in progress') !== false;
+
+    $isNonPackingDept =
+      strpos($deptBag, 'pack') === false &&
+      strpos($deptBag, 'dispatch') === false;
+
+    return $hasActionable && $isNonPackingDept;
+  }
+
+  function pm_label_slitting_completed(array $row): bool {
+    $chain = strtolower(pm_text($row['chain_summary'] ?? ''));
+    if ($chain !== '') {
+      $items = array_filter(array_map('trim', explode('|', $chain)));
+      foreach ($items as $item) {
+        $parts = explode(':', $item, 2);
+        if (count($parts) !== 2) {
+          continue;
+        }
+        $dept = strtolower(trim((string)$parts[0]));
+        $status = strtolower(trim((string)$parts[1]));
+        if (strpos($dept, 'label_slitting') !== false || strpos($dept, 'label-slitting') !== false || strpos($dept, 'label slitting') !== false) {
+          if (in_array($status, ['completed', 'complete', 'closed', 'finalized', 'qc passed', 'finished label'], true)) {
+            return true;
+          }
+        }
+      }
+    }
+
+    $statusBag = strtolower(pm_text(
+      ($row['latest_job_status'] ?? '') . ' ' .
+      ($row['active_job_status'] ?? '') . ' ' .
+      ($row['effective_status'] ?? '')
+    ));
+    $deptBag = strtolower(pm_text(
+      ($row['latest_job_department'] ?? '') . ' ' .
+      ($row['active_job_department'] ?? '') . ' ' .
+      ($row['latest_job_type'] ?? '') . ' ' .
+      ($row['active_job_type'] ?? '')
+    ));
+
+    return (
+      (strpos($deptBag, 'label') !== false && strpos($deptBag, 'slitting') !== false) &&
+      (
+        strpos($statusBag, 'completed') !== false ||
+        strpos($statusBag, 'closed') !== false ||
+        strpos($statusBag, 'finalized') !== false ||
+        strpos($statusBag, 'qc passed') !== false ||
+        strpos($statusBag, 'finished label') !== false
+      )
+    );
+  }
+
   function pm_should_apply_packing_fallback(array $row): bool {
     $current = strtolower(pm_text(($row['effective_status'] ?? '') ?: ($row['latest_job_status'] ?? '') ?: ($row['active_job_status'] ?? '')));
     if (
@@ -204,6 +547,12 @@ function pm_should_show_board_status(array $row): bool {
     ) {
       return false;
     }
+
+    // Do not jump to packing while non-packing stages still have actionable cards.
+    if (pm_has_non_packing_actionable_stage($row)) {
+      return false;
+    }
+
     return pm_is_upstream_finished_for_packing($row);
   }
 
@@ -304,6 +653,7 @@ $sql = "SELECT
     p.priority,
     p.status AS planning_status,
     p.department AS planning_department,
+    CASE WHEN JSON_VALID(p.extra_data) THEN JSON_UNQUOTE(JSON_EXTRACT(p.extra_data, '$.planning_type')) ELSE '' END AS planning_type,
     p.notes,
     p.updated_at AS planning_updated_at,
     CASE WHEN JSON_VALID(p.extra_data) THEN JSON_UNQUOTE(JSON_EXTRACT(p.extra_data, '$.printing_planning')) ELSE '' END AS board_status,
@@ -384,6 +734,8 @@ if ($stmt) {
 
 $effectiveStatusByPlanning = [];
 $packingStatusByPlanning = [];
+$currentJobByPlanning = [];
+$jobCardsByPlanning = [];
 if (!empty($rows)) {
   $planningIds = array_values(array_unique(array_map(static function ($row) {
     return (int)($row['id'] ?? 0);
@@ -395,7 +747,7 @@ if (!empty($rows)) {
   if (!empty($planningIds)) {
     $in = implode(',', array_fill(0, count($planningIds), '?'));
     $types2 = str_repeat('i', count($planningIds));
-    $jobSql = "SELECT planning_id, status, extra_data, updated_at, id
+    $jobSql = "SELECT planning_id, job_no, department, job_type, status, extra_data, updated_at, id
            FROM jobs
            WHERE (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
            AND planning_id IN ($in)
@@ -417,6 +769,17 @@ if (!empty($rows)) {
           $statusText = pm_text($evaluated['status'] ?? '');
           $updatedAt = pm_text($jobRow['updated_at'] ?? '');
           $jobId = (int)($jobRow['id'] ?? 0);
+          $activityScore = pm_job_activity_score($jobRow['status'] ?? '');
+
+          $jobCardsByPlanning[$pid][] = [
+            'job_id' => $jobId,
+            'job_no' => pm_text($jobRow['job_no'] ?? ''),
+            'department' => pm_text($jobRow['department'] ?? ''),
+            'job_type' => pm_text($jobRow['job_type'] ?? ''),
+            'status' => pm_text($jobRow['status'] ?? ''),
+            'activity_score' => $activityScore,
+            'stage' => pm_department_label($jobRow['department'] ?? '', $jobRow['job_type'] ?? ''),
+          ];
 
           if (!isset($effectiveStatusByPlanning[$pid])) {
             $effectiveStatusByPlanning[$pid] = [
@@ -447,6 +810,52 @@ if (!empty($rows)) {
               'updated_at' => $updatedAt,
               'job_id' => $jobId,
             ];
+          }
+
+          if ($activityScore > 0) {
+            if (!isset($currentJobByPlanning[$pid])) {
+              $currentJobByPlanning[$pid] = [
+                'score' => $activityScore,
+                'updated_at' => $updatedAt,
+                'job_id' => $jobId,
+                'job_no' => pm_text($jobRow['job_no'] ?? ''),
+                'department' => pm_text($jobRow['department'] ?? ''),
+                'job_type' => pm_text($jobRow['job_type'] ?? ''),
+                'status' => pm_text($jobRow['status'] ?? ''),
+              ];
+            } else {
+              $currentActive = $currentJobByPlanning[$pid];
+              $replaceActive = false;
+              if ($activityScore > (int)$currentActive['score']) {
+                $replaceActive = true;
+              } elseif ($activityScore === (int)$currentActive['score']) {
+                if ($activityScore === 3) {
+                  // For running jobs, show the latest active movement.
+                  if ($updatedAt !== '' && ($currentActive['updated_at'] === '' || strcmp($updatedAt, (string)$currentActive['updated_at']) >= 0)) {
+                    $replaceActive = true;
+                  } elseif ($updatedAt === (string)$currentActive['updated_at'] && $jobId >= (int)$currentActive['job_id']) {
+                    $replaceActive = true;
+                  }
+                } else {
+                  // For pending/queued chains, show the first actionable stage (earliest card).
+                  if ($jobId > 0 && ((int)$currentActive['job_id'] === 0 || $jobId < (int)$currentActive['job_id'])) {
+                    $replaceActive = true;
+                  }
+                }
+              }
+
+              if ($replaceActive) {
+                $currentJobByPlanning[$pid] = [
+                  'score' => $activityScore,
+                  'updated_at' => $updatedAt,
+                  'job_id' => $jobId,
+                  'job_no' => pm_text($jobRow['job_no'] ?? ''),
+                  'department' => pm_text($jobRow['department'] ?? ''),
+                  'job_type' => pm_text($jobRow['job_type'] ?? ''),
+                  'status' => pm_text($jobRow['status'] ?? ''),
+                ];
+              }
+            }
           }
         }
       }
@@ -501,6 +910,16 @@ if (!empty($rows)) {
 $filtered = [];
 foreach ($rows as $row) {
   $planningId = (int)($row['id'] ?? 0);
+
+  if ($planningId > 0 && isset($currentJobByPlanning[$planningId])) {
+    $currentJob = $currentJobByPlanning[$planningId];
+    $row['active_job_no'] = $currentJob['job_no'];
+    $row['active_job_department'] = $currentJob['department'];
+    $row['active_job_type'] = $currentJob['job_type'];
+    $row['active_job_status'] = $currentJob['status'];
+    $row['active_job_updated_at'] = $currentJob['updated_at'];
+  }
+
   if ($planningId > 0 && isset($effectiveStatusByPlanning[$planningId]['status'])) {
     $row['effective_status'] = pm_text($effectiveStatusByPlanning[$planningId]['status']);
   }
@@ -508,7 +927,7 @@ foreach ($rows as $row) {
   if (
     $planningId > 0 &&
     isset($packingStatusByPlanning[$planningId]) &&
-    pm_should_apply_packing_fallback($row)
+    (pm_label_slitting_completed($row) || pm_should_apply_packing_fallback($row))
   ) {
     $row['effective_status'] = $packingStatusByPlanning[$planningId];
     $row['latest_job_department'] = 'packing';
@@ -529,7 +948,184 @@ foreach ($rows as $row) {
     $row['latest_job_department'] = 'packing';
   }
 
-  $currentDept = pm_department_label($row['latest_job_department'] ?: $row['active_job_department'] ?: $row['planning_department'], $row['latest_job_type'] ?: $row['active_job_type']);
+  $totalJobs = (int)($row['total_jobs'] ?? 0);
+  $hasAnyJobCard =
+    $totalJobs > 0 ||
+    pm_text($row['active_job_no'] ?? '') !== '' ||
+    pm_text($row['latest_job_no'] ?? '') !== '';
+
+  $currentDept = pm_department_label(
+    $row['active_job_department'] ?: $row['latest_job_department'] ?: $row['planning_department'],
+    $row['active_job_type'] ?: $row['latest_job_type']
+  );
+
+  $planningNoUpper = strtoupper(pm_text($row['job_no'] ?? ''));
+  if (strpos($planningNoUpper, 'PLN/') === 0) {
+    $plnActionStage = pm_pln_first_actionable_stage_from_chain($row['chain_summary'] ?? '', $db, $planningId);
+    if ($plnActionStage !== '') {
+      $currentDept = $plnActionStage;
+    }
+  }
+
+  $effectiveStatusNorm = strtolower(trim(str_replace(['-', '_'], ' ', pm_text($row['effective_status'] ?? ''))));
+  if ($effectiveStatusNorm === 'finished production') {
+    $currentDept = 'Finished Production';
+  } elseif (in_array($effectiveStatusNorm, ['dispatched', 'dispatch'], true)) {
+    $currentDept = 'Dispatch';
+  }
+
+  if (!$hasAnyJobCard) {
+    $currentDept = 'Planning';
+    if (pm_text($row['effective_status'] ?? '') === '') {
+      $row['effective_status'] = pm_text($row['planning_status'] ?? '') !== '' ? pm_text($row['planning_status'] ?? '') : 'Planning';
+    }
+  }
+
+  if ($planningId > 0 && isset($jobCardsByPlanning[$planningId])) {
+    $stageCard = pm_pick_stage_job_card($jobCardsByPlanning[$planningId], $currentDept);
+    if (!empty($stageCard)) {
+      $row['active_job_no'] = pm_text($stageCard['job_no'] ?? '');
+      $row['active_job_department'] = pm_text($stageCard['department'] ?? '');
+      $row['active_job_type'] = pm_text($stageCard['job_type'] ?? '');
+      $row['active_job_status'] = pm_text($stageCard['status'] ?? '');
+
+      // Current actionable stage status should drive Production Status.
+      $stageStatusNorm = strtolower(trim(str_replace(['-', '_'], ' ', pm_text($stageCard['status'] ?? ''))));
+      if ($stageStatusNorm === 'running' || $stageStatusNorm === 'in progress' || $stageStatusNorm === 'inprogress') {
+        $row['effective_status'] = 'Running';
+      } elseif ($stageStatusNorm === 'finished production') {
+        $row['effective_status'] = 'Finished Production';
+      } elseif (in_array($stageStatusNorm, ['dispatched', 'dispatch'], true)) {
+        $row['effective_status'] = 'Dispatched';
+      } elseif (in_array($stageStatusNorm, ['packed', 'packing done', 'finished barcode'], true)) {
+        $row['effective_status'] = 'Packed';
+      } elseif (in_array($stageStatusNorm, ['pending', 'queued', 'preparing'], true)) {
+        $row['effective_status'] = 'Pending';
+      }
+    }
+
+    $cards = $jobCardsByPlanning[$planningId];
+    $currentJobNo = pm_text($row['active_job_no'] ?? '');
+    $latestJobNoRaw = pm_text($row['latest_job_no'] ?? '');
+
+    $hasStarted = false;
+    foreach ($cards as $card) {
+      if (pm_is_started_status($card['status'] ?? '')) {
+        $hasStarted = true;
+        break;
+      }
+    }
+
+    $displayJobNo = $currentJobNo !== '' ? $currentJobNo : ($latestJobNoRaw !== '' ? $latestJobNoRaw : pm_text($row['job_no'] ?? ''));
+    $displayLatestJobNo = $latestJobNoRaw;
+    $displayPrevActiveJobNo = '-';
+
+    if (!$hasStarted) {
+      // Fresh pending-only chain: no previous active card yet.
+      $displayPrevActiveJobNo = '-';
+    } else {
+      $currentRank = pm_stage_rank_for_label($currentDept);
+      $previousCard = null;
+      foreach ($cards as $card) {
+        $cardStatus = pm_text($card['status'] ?? '');
+        $cardRank = pm_stage_rank_for_label($card['stage'] ?? '');
+        if (!pm_is_started_status($cardStatus)) {
+          continue;
+        }
+        if ($cardRank >= $currentRank) {
+          continue;
+        }
+        // Pick the card with the HIGHEST stage rank (closest to current stage)
+        if ($previousCard === null) {
+          $previousCard = $card;
+        } else {
+          $prevRank = pm_stage_rank_for_label($previousCard['stage'] ?? '');
+          if ($cardRank > $prevRank) {
+            $previousCard = $card;
+          } elseif ($cardRank === $prevRank && (int)($card['job_id'] ?? 0) > (int)($previousCard['job_id'] ?? 0)) {
+            // If same rank, pick the higher job_id
+            $previousCard = $card;
+          }
+        }
+      }
+      if (is_array($previousCard) && pm_text($previousCard['job_no'] ?? '') !== '') {
+        $displayPrevActiveJobNo = pm_text($previousCard['job_no'] ?? '');
+        // DEBUG: Log this to help troubleshoot
+        error_log("DEBUG PM: displayPrevActiveJobNo set to {$displayPrevActiveJobNo} for planning {$planningId}");
+      }
+
+      // For PLN flow, show immediate downstream card by route order.
+      // Pass 1: actionable downstream (Pending/Queued/Running).
+      // Pass 2 fallback: any downstream card if actionable one is unavailable.
+      if (strpos($planningNoUpper, 'PLN/') === 0) {
+        $nextCard = null;
+        foreach ($cards as $card) {
+          $cardStatus = strtolower(pm_text($card['status'] ?? ''));
+          $cardRank = pm_stage_rank_for_label($card['stage'] ?? '');
+          if ($cardRank <= $currentRank) {
+            continue;
+          }
+          if (!pm_is_pending_like_status($cardStatus) && $cardStatus !== 'running' && $cardStatus !== 'in progress' && $cardStatus !== 'inprogress') {
+            continue;
+          }
+          if ($nextCard === null) {
+            $nextCard = $card;
+            continue;
+          }
+
+          $nextRank = pm_stage_rank_for_label($nextCard['stage'] ?? '');
+          $cardId = (int)($card['job_id'] ?? 0);
+          $nextId = (int)($nextCard['job_id'] ?? 0);
+          if ($cardRank < $nextRank || ($cardRank === $nextRank && $cardId > 0 && ($nextId === 0 || $cardId < $nextId))) {
+            $nextCard = $card;
+          }
+        }
+
+        if (!is_array($nextCard)) {
+          foreach ($cards as $card) {
+            $cardRank = pm_stage_rank_for_label($card['stage'] ?? '');
+            if ($cardRank <= $currentRank) {
+              continue;
+            }
+            if ($nextCard === null) {
+              $nextCard = $card;
+              continue;
+            }
+
+            $nextRank = pm_stage_rank_for_label($nextCard['stage'] ?? '');
+            $cardId = (int)($card['job_id'] ?? 0);
+            $nextId = (int)($nextCard['job_id'] ?? 0);
+            if ($cardRank < $nextRank || ($cardRank === $nextRank && $cardId > 0 && ($nextId === 0 || $cardId < $nextId))) {
+              $nextCard = $card;
+            }
+          }
+        }
+
+        if (is_array($nextCard) && pm_text($nextCard['job_no'] ?? '') !== '') {
+          $displayLatestJobNo = pm_text($nextCard['job_no'] ?? '');
+        }
+        // If no next card found, leave it empty (don't default to current job)
+      }
+    }
+
+    // Only set displayLatestJobNo if it wasn't already set by next card logic
+    if ($displayLatestJobNo === '') {
+      $displayLatestJobNo = '-';  // Default to empty display, not the current job
+    }
+
+    $row['display_job_no'] = $displayJobNo;
+    $row['display_previous_active_job_no'] = $displayPrevActiveJobNo;
+    
+      $row['display_latest_job_no'] = $displayLatestJobNo !== '' ? $displayLatestJobNo : '-';
+  }
+
+  $row['display_department_route'] = pm_route_from_plan_context(
+    $row['job_no'] ?? '',
+    $row['planning_type'] ?? '',
+    $row['planning_department'] ?? '',
+    $row['department_route'] ?? ''
+  );
+
     $bucket = pm_bucket_status($row);
 
     if ($statusFilter !== '') {
@@ -772,10 +1368,8 @@ body{background:#f1f5f9}
             <th>Priority</th>
             <th>Production Status</th>
             <th>Current Stage</th>
-            <th>Current Position</th>
             <th>Previous Active Card</th>
-            <th>Latest Job Card</th>
-            <th>Progress</th>
+            <th>Next Job Card</th>
             <th>Department Route</th>
             <th>Chain Snapshot</th>
             <th>Last Update</th>
@@ -800,13 +1394,16 @@ body{background:#f1f5f9}
               $activeJobNo = pm_text($row['active_job_no']);
               $latestJobNo = pm_text($row['latest_job_no']);
               $planNo = pm_text($row['job_no']);
-              $prevActiveJobNo = '-';
-              if ($activeJobNo !== '' && $latestJobNo !== '' && strcasecmp($activeJobNo, $latestJobNo) !== 0) {
-                  $prevActiveJobNo = $activeJobNo;
-              } elseif ($activeJobNo !== '' && $latestJobNo === '') {
-                  $prevActiveJobNo = $activeJobNo;
+              $viewJobNo = pm_text($row['display_job_no'] ?? '');
+              if ($viewJobNo === '') {
+                $viewJobNo = $activeJobNo !== '' ? $activeJobNo : ($latestJobNo !== '' ? $latestJobNo : $planNo);
               }
-              $viewJobNo = $latestJobNo !== '' ? $latestJobNo : ($activeJobNo !== '' ? $activeJobNo : $planNo);
+              $prevActiveJobNo = pm_text($row['display_previous_active_job_no'] ?? '-');
+              if ($prevActiveJobNo === '') $prevActiveJobNo = '-';
+              $latestJobNoDisplay = pm_text($row['display_latest_job_no'] ?? '');
+              if ($latestJobNoDisplay === '') {
+                $latestJobNoDisplay = $latestJobNo !== '' ? $latestJobNo : '-';
+              }
               $planningNo = $planNo !== '' ? $planNo : ('PLAN-' . (int)$row['id']);
               $serialNo = (int)$idx + 1;
 
@@ -819,7 +1416,7 @@ body{background:#f1f5f9}
               if ($curPos === '') $curPos = pm_text($row['board_status']);
               $curPos = pm_display_status($curPos);
 
-              $route = pm_text($row['department_route']);
+              $route = pm_text($row['display_department_route'] ?? '');
               if ($route === '') $route = pm_text($row['planning_department']);
 
               $lastAt = pm_text($row['latest_job_updated_at']);
@@ -838,14 +1435,8 @@ body{background:#f1f5f9}
                 <div class="pm-muted">Stage: <?= e(pm_text($row['current_department_label']) !== '' ? $row['current_department_label'] : '-') ?></div>
               </td>
               <td><strong><?= e($row['current_department_label']) ?></strong></td>
-              <td><?= e($curPos !== '' ? $curPos : '-') ?></td>
-              <td><?= e($prevActiveJobNo) ?></td>
-              <td><?= e($latestJobNo !== '' ? $latestJobNo : '-') ?></td>
-              <td>
-                <?php $totalJobs = (int)($row['total_jobs'] ?? 0); $doneJobs = (int)($row['completed_jobs'] ?? 0); ?>
-                <strong><?= $doneJobs ?>/<?= $totalJobs ?></strong>
-                <div class="pm-muted">Running: <?= (int)($row['running_jobs'] ?? 0) ?> | Pending: <?= (int)($row['pending_jobs'] ?? 0) ?></div>
-              </td>
+              <td><?= e(isset($row['_debug_prev_calc']) ? ($row['_debug_prev_calc'] . ' [cards:' . $row['_debug_cards'] . ']') : $prevActiveJobNo) ?></td>
+              <td><?= e($latestJobNoDisplay) ?></td>
               <td><?= e($route !== '' ? $route : '-') ?></td>
               <td class="pm-chain"><?= e(pm_text($row['chain_summary']) !== '' ? $row['chain_summary'] : '-') ?></td>
               <td><?= e($lastAt !== '' ? $lastAt : '-') ?></td>
@@ -864,6 +1455,17 @@ body{background:#f1f5f9}
         <?php endif; ?>
         </tbody>
       </table>
+      
+      <!-- DEBUG: Show full debug info for planning_id=1 -->
+      <?php foreach ($filtered as $row): ?>
+        <?php if ((int)$row['id'] === 1 && isset($row['_debug_prev_calc'])): ?>
+          <div style="margin:20px; padding:15px; background:#fee2e2; border: 1px solid #fecaca; border-radius:8px; font-family:monospace; font-size:12px; white-space:pre-wrap;">
+            <strong>DEBUG INFO:</strong>
+            <?= e($row['_debug_prev_calc']) ?>
+            Cards: <?= e($row['_debug_cards']) ?>
+          </div>
+        <?php endif; ?>
+      <?php endforeach; ?>
     </div>
   </section>
 </div>

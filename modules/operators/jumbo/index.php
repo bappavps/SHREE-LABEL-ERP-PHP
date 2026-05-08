@@ -20,6 +20,89 @@ $appFooterRight = '© ' . date('Y') . ' ' . $footerErpName . ' • ERP Master Sy
 $activeJobs = [];
 $historyJobs = [];
 
+function jumboPlanningNormalizedKey(string $key): string {
+  return strtolower((string)preg_replace('/[^a-z0-9]+/i', '', trim($key)));
+}
+
+function jumboPlanningExtraValue(array $extra, array $keys) {
+  if (empty($extra)) return null;
+
+  foreach ($keys as $key) {
+    if (array_key_exists($key, $extra)) {
+      return $extra[$key];
+    }
+  }
+
+  $normalized = [];
+  foreach ($extra as $key => $value) {
+    if (!is_string($key) || $key === '') continue;
+    $normalized[jumboPlanningNormalizedKey($key)] = $value;
+  }
+
+  foreach ($keys as $key) {
+    $probe = jumboPlanningNormalizedKey((string)$key);
+    if ($probe !== '' && array_key_exists($probe, $normalized)) {
+      return $normalized[$probe];
+    }
+  }
+
+  return null;
+}
+
+function jumboPlanningNumber($value, string $part = 'first'): ?float {
+  if ($value === null || $value === '') return null;
+  if (is_numeric($value)) return (float)$value;
+
+  $text = trim((string)$value);
+  if ($text === '') return null;
+  if (!preg_match_all('/\d+(?:\.\d+)?/', $text, $matches) || empty($matches[0])) {
+    return null;
+  }
+
+  $numbers = array_map('floatval', $matches[0]);
+  if ($part === 'last') {
+    return (float)$numbers[count($numbers) - 1];
+  }
+  return (float)$numbers[0];
+}
+
+function jumboPlanningWidthMm(array $row): ?float {
+  $extra = json_decode((string)($row['planning_extra_data'] ?? '{}'), true);
+  if (!is_array($extra) || empty($extra)) return null;
+
+  $direct = jumboPlanningExtraValue($extra, [
+    'width_mm', 'width', 'paper_width_mm', 'paper_width', 'planning_width_mm',
+    'planning_width', 'job_width_mm', 'job_width', 'size_mm'
+  ]);
+  $directNum = jumboPlanningNumber($direct);
+  if ($directNum !== null && $directNum > 0) return $directNum;
+
+  $sizeLike = jumboPlanningExtraValue($extra, [
+    'paper_size', 'label_size', 'size', 'job_size', 'cut_size', 'final_size'
+  ]);
+  $sizeNum = jumboPlanningNumber($sizeLike, 'first');
+  if ($sizeNum !== null && $sizeNum > 0) return $sizeNum;
+
+  return null;
+}
+
+function jumboPlanningLengthMtr(array $row): ?float {
+  $extra = json_decode((string)($row['planning_extra_data'] ?? '{}'), true);
+  if (!is_array($extra) || empty($extra)) return null;
+
+  $direct = jumboPlanningExtraValue($extra, [
+    'allocate_mtrs', 'allocate_mtr', 'allocatemtrs', 'allocatemtr',
+    'planning_mtrs', 'planning_mtr', 'order_mtrs', 'order_mtr', 'order_meter',
+    'order_meter_user', 'mtrs', 'meters', 'meter', 'length_mtr', 'length',
+    'paper_length_mtr', 'paper_length', 'required_mtrs', 'required_mtr',
+    'running_mtrs', 'job_mtrs'
+  ]);
+  $directNum = jumboPlanningNumber($direct);
+  if ($directNum !== null && $directNum > 0) return $directNum;
+
+  return null;
+}
+
 function jumboHydrateMissingStockRows(mysqli $db, array $extra): array {
   $stockRows = is_array($extra['stock_rolls'] ?? null) ? $extra['stock_rolls'] : [];
 
@@ -187,7 +270,7 @@ $db->query("CREATE TABLE IF NOT EXISTS job_change_requests (
   INDEX idx_jcr_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-$jobsStmt = $db->prepare("\n  SELECT j.*,\n         ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,\n         ps.status AS roll_status, ps.lot_batch_no,\n         p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority,\n         COALESCE(req.pending_count, 0) AS pending_change_requests,\n         lreq.latest_request_id, lreq.latest_request_status, lreq.latest_request_review_note, lreq.latest_request_reviewed_at\n  FROM jobs j\n  LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no\n  LEFT JOIN planning p ON j.planning_id = p.id\n  LEFT JOIN (\n    SELECT job_id, COUNT(*) AS pending_count\n    FROM job_change_requests\n    WHERE request_type = 'jumbo_roll_update' AND status = 'Pending'\n    GROUP BY job_id\n  ) req ON req.job_id = j.id\n  LEFT JOIN (\n    SELECT t.job_id, t.id AS latest_request_id, t.status AS latest_request_status, t.review_note AS latest_request_review_note, t.reviewed_at AS latest_request_reviewed_at\n    FROM job_change_requests t\n    INNER JOIN (\n      SELECT job_id, MAX(id) AS max_id\n      FROM job_change_requests\n      WHERE request_type = 'jumbo_roll_update'\n      GROUP BY job_id\n    ) mx ON mx.job_id = t.job_id AND mx.max_id = t.id\n    WHERE t.request_type = 'jumbo_roll_update'\n  ) lreq ON lreq.job_id = j.id\n  WHERE j.job_type = 'Slitting'\n    AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')\n  ORDER BY j.created_at DESC, j.id DESC\n");
+$jobsStmt = $db->prepare("\n  SELECT j.*,\n         ps.paper_type, ps.company, ps.width_mm, ps.length_mtr, ps.gsm, ps.weight_kg,\n         ps.status AS roll_status, ps.lot_batch_no,\n         p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority,\n         p.extra_data AS planning_extra_data,\n         COALESCE(req.pending_count, 0) AS pending_change_requests,\n         lreq.latest_request_id, lreq.latest_request_status, lreq.latest_request_review_note, lreq.latest_request_reviewed_at\n  FROM jobs j\n  LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no\n  LEFT JOIN planning p ON j.planning_id = p.id\n  LEFT JOIN (\n    SELECT job_id, COUNT(*) AS pending_count\n    FROM job_change_requests\n    WHERE request_type = 'jumbo_roll_update' AND status = 'Pending'\n    GROUP BY job_id\n  ) req ON req.job_id = j.id\n  LEFT JOIN (\n    SELECT t.job_id, t.id AS latest_request_id, t.status AS latest_request_status, t.review_note AS latest_request_review_note, t.reviewed_at AS latest_request_reviewed_at\n    FROM job_change_requests t\n    INNER JOIN (\n      SELECT job_id, MAX(id) AS max_id\n      FROM job_change_requests\n      WHERE request_type = 'jumbo_roll_update'\n      GROUP BY job_id\n    ) mx ON mx.job_id = t.job_id AND mx.max_id = t.id\n    WHERE t.request_type = 'jumbo_roll_update'\n  ) lreq ON lreq.job_id = j.id\n  WHERE j.job_type = 'Slitting'\n    AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')\n  ORDER BY j.created_at DESC, j.id DESC\n");
 $jobsStmt->execute();
 $allJumboRows = $jobsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
@@ -261,6 +344,8 @@ if (!empty($allRollNos)) {
 foreach ($allJumboRows as $row) {
   $rowId = (int)($row['id'] ?? 0);
   $extra = $rowExtraOverrides[$rowId] ?? (json_decode((string)($row['extra_data'] ?? '{}'), true) ?: []);
+  $row['planning_width_mm'] = jumboPlanningWidthMm($row);
+  $row['planning_length_mtr'] = jumboPlanningLengthMtr($row);
   $row['extra_data_parsed'] = $extra;
   $row['live_roll_map'] = [];
   // Build live_roll_map for this job
@@ -721,6 +806,7 @@ $historyCount = $finishedCount;
         <?php else: ?>
           <button class="jc-action-btn jc-btn-view" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-folder2-open"></i> Open</button>
         <?php endif; ?>
+        <button class="jc-action-btn jc-btn-print" onclick="printJobCard(<?= $job['id'] ?>)" title="Job Card Print"><i class="bi bi-printer"></i></button>
       </div>
     </div>
   </div>
@@ -753,6 +839,7 @@ $historyCount = $finishedCount;
       <div class="jc-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
       <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
         <button class="jc-action-btn jc-btn-view" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-folder2-open"></i> Open</button>
+        <button class="jc-action-btn jc-btn-print" onclick="printJobCard(<?= $job['id'] ?>)" title="Job Card Print"><i class="bi bi-printer"></i></button>
       </div>
     </div>
   </div>
@@ -3011,6 +3098,18 @@ function extractRollNoFromQr(scanned, callback) {
   const text = String(scanned || '').trim();
   if (!text) { callback(''); return; }
 
+  // Resolve direct/nested query payloads: roll_no, roll, rn, qr
+  try {
+    const parsed = new URL(text, window.location.origin);
+    const qRoll = parsed.searchParams.get('roll_no') || parsed.searchParams.get('roll') || parsed.searchParams.get('rn') || parsed.searchParams.get('qr') || '';
+    if (String(qRoll).trim()) {
+      const nested = String(qRoll).trim();
+      if (nested === text) { callback(nested); return; }
+      extractRollNoFromQr(nested, callback);
+      return;
+    }
+  } catch(e) {}
+
   // If it's a URL with ?id= parameter, look up roll_no via API
   if (text.includes('paper_stock/view.php') && text.includes('id=')) {
     try {
@@ -4057,6 +4156,8 @@ function renderJumboPrintCardHtml(job, qrDataUrl) {
   const completed = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
   const dur = Number(job.duration_minutes);
   const durText = Number.isFinite(dur) ? `${Math.floor(dur/60)}h ${dur%60}m` : '—';
+  const detailWidth = Number(job.planning_width_mm) > 0 ? Number(job.planning_width_mm) : Number(job.width_mm);
+  const detailLength = Number(job.planning_length_mtr) > 0 ? Number(job.planning_length_mtr) : Number(job.length_mtr);
   const parentMetaByRoll = {};
   (Array.isArray(split.parent_rows_meta) ? split.parent_rows_meta : []).forEach(function(meta) {
     const k = String(meta.roll_no || '').trim();
@@ -4213,7 +4314,7 @@ function renderJumboPrintCardHtml(job, qrDataUrl) {
         <table style="width:100%;border-collapse:collapse;font-size:.72rem;margin-bottom:10px">
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_job_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job No</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#166534">${esc(job.job_no || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Roll No</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.roll_no || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Material</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.paper_type || '—')}</td></tr>
-          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Width</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.width_mm || '—') + ' mm')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Length</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.length_mtr || '—') + ' m')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Width</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((Number.isFinite(detailWidth) && detailWidth > 0 ? detailWidth : '—') + ' mm')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Length</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((Number.isFinite(detailLength) && detailLength > 0 ? detailLength : '—') + ' m')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">GSM</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.gsm || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Weight</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.weight_kg || '—') + ' kg')}</td></tr>
         </table>
 

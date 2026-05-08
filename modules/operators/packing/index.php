@@ -53,7 +53,7 @@ $data      = packing_fetch_ready_rows($db, [
 $rowsByTab = $data['rows_by_tab'];
 $counts    = $data['counts'];
 
-$historyRows = packing_fetch_history_rows($db, ['search' => $search, 'from' => $from, 'to' => $to]);
+$historyRows = packing_fetch_history_rows($db, ['search' => $search, 'from' => $from, 'to' => $to, 'history_type' => 'operator']);
 $rowsByTab['history'] = $historyRows;
 $counts['history'] = count($historyRows);
 

@@ -27,5 +27,5 @@ $connected = tally_ping($ts['ip'], $ts['port'], 2);
 
 echo json_encode([
     'status'   => $connected ? 'connected' : 'disconnected',
-    'endpoint' => 'http://' . $ts['ip'] . ':' . $ts['port'],
+    'endpoint' => tally_base_url($ts['ip'], $ts['port'], (string)($ts['scheme'] ?? 'http')),
 ]);

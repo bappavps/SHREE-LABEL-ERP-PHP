@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mark Packed API Test</title>
+</head>
+<body>
+    <h1>Marking Job 3 as Packed...</h1>
+    <div id="result"></div>
+    <script>
+        fetch('api.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                action: 'mark_packed',
+                job_id: '3',
+                csrf_token: document.querySelector('input[name="csrf_token"]')?.value || ''
+            })
+        })
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('result').innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+        })
+        .catch(e => {
+            document.getElementById('result').innerHTML = '<pre>Error: ' + e.message + '</pre>';
+        });
+    </script>
+</body>
+</html>

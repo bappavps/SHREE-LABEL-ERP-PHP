@@ -223,6 +223,11 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddrSafe, $printDat
         $jobToken = 'JOB:' . $jobNo;
     }
     $rollToken = 'R' . strtoupper(base_convert((string)((int)$r['id']), 10, 36));
+    $rollShortNo    = '';
+    if ($rollNo !== '') {
+        $rollParts = preg_split('~/+~', $rollNo);
+        $rollShortNo = trim((string)end($rollParts));
+    }
     $lotBatch       = $r['lot_batch_no'] ?? '';
     $companySource  = $companyRollNo !== '' ? $companyRollNo : $paperCompany;
     $companyCodeRaw = strtoupper(preg_replace('/[^A-Za-z]/', '', (string)$companySource));
@@ -255,6 +260,7 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddrSafe, $printDat
         // ── Original PHP keys ──
         'id'              => (int)$r['id'],
         'roll_no'         => $rollNo,
+        'roll_short_no'   => $rollShortNo,
         'status'          => $r['status'] ?? '',
         'company'         => $paperCompany,
         'paper_type'      => $paperType,
@@ -299,9 +305,10 @@ $jsRolls = array_map(function($r) use ($companyName, $companyAddrSafe, $printDat
         'job_token'       => $jobToken,
         'roll_token'      => $rollToken,
         'scan_job_url'    => $jobNo !== '' ? (BASE_URL . '/modules/scan/job.php?jn=' . rawurlencode($jobNo)) : '',
-        // Prefer job-target payload so sticker and label barcodes resolve like job QR flow.
-        'barcode_value'   => $jobToken !== '' ? $jobToken : ($jobNo !== '' ? ('JOB:' . $jobNo) : $rollToken),
-        'scan_barcode_url'=> BASE_URL . '/modules/scan/index.php?qr=' . rawurlencode($jobToken !== '' ? $jobToken : ($jobNo !== '' ? ('JOB:' . $jobNo) : $rollToken)),
+        'scan_roll_url'   => $rollNo,
+        'scan_terminal_url' => BASE_URL . '/modules/scan/index.php?qr=' . rawurlencode($rollNo !== '' ? $rollNo : $rollToken),
+        'barcode_value'   => $rollNo !== '' ? $rollNo : ($jobToken !== '' ? $jobToken : ($jobNo !== '' ? ('JOB:' . $jobNo) : $rollToken)),
+        'scan_barcode_url'=> $rollNo !== '' ? $rollNo : ($jobToken !== '' ? $jobToken : ($jobNo !== '' ? ('JOB:' . $jobNo) : $rollToken)),
         // ── Firebase Print Studio aliases ──
         'paper_company'       => $paperCompany,
         'width'               => $templateWidthVal,
@@ -934,6 +941,7 @@ function renderBuiltinLabel(roll, tpl) {
             var bundleText = bundlePcs && String(bundlePcs).trim() !== '' ? String(bundlePcs) : '0';
             var materialText = String(roll.paper_type || 'THERMAL PAPER').toUpperCase();
             var barcodeValue = String(roll.barcode_value || roll.job_token || roll.view_url || (window.location.origin + '/modules/paper_stock/view.php?id=' + roll.id));
+            var rollText = String(roll.roll_short_no || roll.roll_no || '').trim();
             var barcodeId = 'pos-bc-' + String(roll.id || Math.floor(Math.random() * 100000));
 
             var posHtml = '';
@@ -942,6 +950,7 @@ function renderBuiltinLabel(roll, tpl) {
             posHtml += '<div class="pos-line">' + escHtml(materialText) + '</div>';
             posHtml += '<div class="pos-line">Size: ' + escHtml(sizeText) + '</div>';
             posHtml += '<div class="pos-line">Bundle: ' + escHtml(bundleText) + ' PCS</div>';
+            if (rollText) posHtml += '<div class="pos-line">Roll: ' + escHtml(rollText) + '</div>';
             posHtml += '<div class="pos-spacer"></div>';
             posHtml += '<div class="pos-batch">' + escHtml(batchDisplay) + '</div>';
             posHtml += '<div class="pos-barcode"><svg id="' + escHtml(barcodeId) + '"></svg></div>';
@@ -987,6 +996,7 @@ function renderBuiltinLabel(roll, tpl) {
             if (!labelRpc || labelRpc === '0') {
                 labelRpc = String(bundlePcs || roll.bundle_pcs || '0').trim();
             }
+            var labelRollText = String(roll.roll_short_no || roll.roll_no || '').trim();
             var labelCompanyName = String(roll.company_name || '').trim() || 'COMPANY';
             var labelCompanyAddress = String(roll.company_address || roll['job.companyAddress'] || '').trim() || '-';
             var barcodeValue = String(roll.barcode_value || roll.job_token || (batchTextBase && batchTextBase !== 'NA' ? batchTextBase : roll.roll_no || roll.id));
@@ -1001,6 +1011,7 @@ function renderBuiltinLabel(roll, tpl) {
             html150 += '<div class="pk150-divider"></div>';
             html150 += '<div class="pk150-product">' + escHtml(labelJobName || '-') + '</div>';
             html150 += '<div class="pk150-meta">Qty: ' + escHtml(labelRpc || '0') + ' Pcs | ' + escHtml(labelWidth) + ' mm</div>';
+            if (labelRollText) html150 += '<div class="pk150-meta">Roll No: ' + escHtml(labelRollText) + '</div>';
             if (Number(mixedEnabledParam || 0) === 1) {
                 html150 += '<div class="pk150-meta">Mixed Cartons: ' + escHtml(String(mixedCartonsParam || '0')) + ' | Mixed Extra: ' + escHtml(String(mixedExtraRollsParam || '0')) + '</div>';
             }
@@ -1032,7 +1043,7 @@ function renderBuiltinLabel(roll, tpl) {
             return card;
         }
 
-        var qrData = roll.view_url || (window.location.origin + '/modules/paper_stock/view.php?id=' + roll.id);
+        var qrData = roll.scan_barcode_url || roll.barcode_value || roll.view_url || (window.location.origin + '/modules/paper_stock/view.php?id=' + roll.id);
 
         var qrSvg = generateQR(qrData);
         var statusCls = getStatusClass(roll.status);

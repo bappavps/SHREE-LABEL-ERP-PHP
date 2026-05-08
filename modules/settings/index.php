@@ -1491,17 +1491,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   if ($action === 'save_tally_settings') {
     $ipRaw = trim((string)($_POST['tally_ip'] ?? ''));
+    $schemeRaw = trim((string)($_POST['tally_scheme'] ?? 'http'));
     $portRaw = (int)($_POST['tally_port'] ?? 9000);
 
+    // Allow pasting a full endpoint like https://host:443
+    if (stripos($ipRaw, '://') !== false) {
+      $parsed = @parse_url($ipRaw);
+      if (is_array($parsed) && !empty($parsed['host'])) {
+        $ipRaw = (string)$parsed['host'];
+        if (!empty($parsed['scheme'])) {
+          $schemeRaw = (string)$parsed['scheme'];
+        }
+        if (!empty($parsed['port'])) {
+          $portRaw = (int)$parsed['port'];
+        }
+      }
+    }
+
     $ip = tally_normalize_ip($ipRaw);
+    $scheme = tally_normalize_scheme($schemeRaw);
     $port = tally_normalize_port($portRaw);
 
     if ($ip === '') {
-      setFlash('error', 'Please enter a valid Tally IP address.');
+      setFlash('error', 'Please enter a valid Tally host/IP.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=tally');
     }
 
     $settings['tally_ip'] = $ip;
+    $settings['tally_scheme'] = $scheme;
     $settings['tally_port'] = $port;
 
     if (saveAppSettings($settings)) {
@@ -1514,21 +1531,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   if ($action === 'test_tally_connection') {
     $ipRaw = trim((string)($_POST['tally_ip'] ?? ''));
+    $schemeRaw = trim((string)($_POST['tally_scheme'] ?? 'http'));
     $portRaw = (int)($_POST['tally_port'] ?? 9000);
 
+    // Allow pasting a full endpoint like https://host:443
+    if (stripos($ipRaw, '://') !== false) {
+      $parsed = @parse_url($ipRaw);
+      if (is_array($parsed) && !empty($parsed['host'])) {
+        $ipRaw = (string)$parsed['host'];
+        if (!empty($parsed['scheme'])) {
+          $schemeRaw = (string)$parsed['scheme'];
+        }
+        if (!empty($parsed['port'])) {
+          $portRaw = (int)$parsed['port'];
+        }
+      }
+    }
+
     $ip = tally_normalize_ip($ipRaw);
+    $scheme = tally_normalize_scheme($schemeRaw);
     $port = tally_normalize_port($portRaw);
 
     if ($ip === '') {
-      setFlash('error', 'Please enter a valid Tally IP address before testing.');
+      setFlash('error', 'Please enter a valid Tally host/IP before testing.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=tally');
     }
 
     $reachable = tally_ping($ip, $port, 2);
+    $endpoint = tally_base_url($ip, $port, $scheme);
     if ($reachable) {
-      setFlash('success', 'Tally connection successful: http://' . $ip . ':' . $port);
+      setFlash('success', 'Tally connection successful: ' . $endpoint);
     } else {
-      setFlash('error', 'Tally Disconnected: unable to reach http://' . $ip . ':' . $port . '. Manual entry will continue.');
+      setFlash('error', 'Tally Disconnected: unable to reach ' . $endpoint . '. Manual entry will continue.');
     }
     redirect(BASE_URL . '/modules/settings/index.php?tab=tally');
   }
@@ -3248,7 +3282,8 @@ include __DIR__ . '/../../includes/header.php';
         font-size:.78rem;
         color:#334155;
       }
-      .tally-field input {
+      .tally-field input,
+      .tally-field select {
         width:100%;
       }
       .tally-status {
@@ -3380,10 +3415,12 @@ include __DIR__ . '/../../includes/header.php';
 
       <?php
         $tallyIpValue = (string)($settings['tally_ip'] ?? '');
+        $tallySchemeValue = tally_normalize_scheme((string)($settings['tally_scheme'] ?? 'http'));
         $tallyPortValue = (int)($settings['tally_port'] ?? 9000);
         if ($tallyPortValue <= 0 || $tallyPortValue > 65535) {
           $tallyPortValue = 9000;
         }
+        $tallyEndpointValue = $tallyIpValue !== '' ? tally_base_url($tallyIpValue, $tallyPortValue, $tallySchemeValue) : 'Not configured';
         $tallyConnected = $tallyIpValue !== '' ? tally_ping($tallyIpValue, $tallyPortValue, 1) : false;
       ?>
 
@@ -3398,12 +3435,19 @@ include __DIR__ . '/../../includes/header.php';
       <div class="tally-tab-grid">
         <div class="tally-tab-card">
           <h4>Connection Settings</h4>
-          <p>ERP will connect to Tally using: <strong>http://{IP}:{PORT}</strong></p>
+          <p>ERP will connect to Tally using: <strong>{SCHEME}://{HOST}:{PORT}</strong></p>
           <form method="POST" class="tally-stack">
             <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
             <div class="tally-field">
-              <label for="tally_ip">Tally IP Address</label>
-              <input id="tally_ip" type="text" name="tally_ip" placeholder="e.g. 192.168.1.10" value="<?= e($tallyIpValue) ?>" required>
+              <label for="tally_scheme">Protocol</label>
+              <select id="tally_scheme" name="tally_scheme">
+                <option value="http" <?= $tallySchemeValue === 'http' ? 'selected' : '' ?>>HTTP</option>
+                <option value="https" <?= $tallySchemeValue === 'https' ? 'selected' : '' ?>>HTTPS</option>
+              </select>
+            </div>
+            <div class="tally-field">
+              <label for="tally_ip">Tally Host / IP</label>
+              <input id="tally_ip" type="text" name="tally_ip" placeholder="e.g. 192.168.1.10 or tally.yourdomain.com" value="<?= e($tallyIpValue) ?>" required>
             </div>
             <div class="tally-field">
               <label for="tally_port">Port</label>
@@ -3419,13 +3463,100 @@ include __DIR__ . '/../../includes/header.php';
         <div class="tally-tab-card">
           <h4>Status</h4>
           <div class="tally-status">
-            <div><strong>Endpoint:</strong> <?= e($tallyIpValue !== '' ? ('http://' . $tallyIpValue . ':' . $tallyPortValue) : 'Not configured') ?></div>
+            <div><strong>Endpoint:</strong> <?= e($tallyEndpointValue) ?></div>
             <div style="margin-top:6px"><strong>Connection:</strong> <?= $tallyConnected ? '<span style="color:#166534">Connected</span>' : '<span style="color:#b91c1c">Tally Disconnected</span>' ?></div>
             <div style="margin-top:6px">If Tally is not reachable, ERP manual input continues safely.</div>
           </div>
 
           <div style="margin-top:12px;font-size:.82rem;color:#64748b">
             Backend endpoints available in <strong>modules/tally/</strong>: fetch_invoices, fetch_po, fetch_clients.
+          </div>
+        </div>
+
+        <div class="tally-tab-card full" style="background:#f0f9ff;border:1.5px solid #bae6fd">
+          <h4 style="color:#0369a1;margin-bottom:10px">&#9432; What to Enter in Each Field</h4>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:.875rem">
+
+            <div style="background:#fff;border:1px solid #bae6fd;border-radius:8px;padding:14px">
+              <div style="font-weight:700;color:#0369a1;margin-bottom:8px;font-size:.9rem">&#128421; Scenario 1 — Same Network (LAN / Localhost)</div>
+              <div style="color:#475569;margin-bottom:6px">Use when ERP and Tally are on the same computer or same local network (office LAN).</div>
+              <table style="width:100%;border-collapse:collapse;font-size:.84rem">
+                <tr style="background:#e0f2fe">
+                  <th style="padding:5px 8px;text-align:left;border-radius:4px 0 0 4px">Field</th>
+                  <th style="padding:5px 8px;text-align:left;border-radius:0 4px 4px 0">Value</th>
+                </tr>
+                <tr><td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><strong>Protocol</strong></td><td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><code>HTTP</code></td></tr>
+                <tr><td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><strong>Host / IP</strong></td><td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><code>localhost</code> or the LAN IP of the Tally PC (e.g. <code>192.168.1.X</code>)</td></tr>
+                <tr><td style="padding:5px 8px"><strong>Port</strong></td><td style="padding:5px 8px"><code>9000</code> (Tally default)</td></tr>
+              </table>
+              <div style="margin-top:8px;font-size:.8rem;color:#64748b">&#9888; ERP and Tally must be on the same machine or same local network for this to work.</div>
+            </div>
+
+            <div style="background:#fff;border:1px solid #bbf7d0;border-radius:8px;padding:14px">
+              <div style="font-weight:700;color:#15803d;margin-bottom:8px;font-size:.9rem">&#9729; Scenario 2 — Cloudflare Tunnel (Remote / Internet Access)</div>
+              <div style="color:#475569;margin-bottom:6px">Use when ERP is hosted online and needs to reach Tally on a remote PC via Cloudflare Tunnel.</div>
+              <table style="width:100%;border-collapse:collapse;font-size:.84rem">
+                <tr style="background:#dcfce7">
+                  <th style="padding:5px 8px;text-align:left;border-radius:4px 0 0 4px">Field</th>
+                  <th style="padding:5px 8px;text-align:left;border-radius:0 4px 4px 0">Value</th>
+                </tr>
+                <tr><td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><strong>Protocol</strong></td><td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><code>HTTPS</code></td></tr>
+                <tr><td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><strong>Host / IP</strong></td><td style="padding:5px 8px;border-bottom:1px solid #e2e8f0">Your Cloudflare Tunnel subdomain (e.g. <code>tally.yourdomain.com</code>)</td></tr>
+                <tr><td style="padding:5px 8px"><strong>Port</strong></td><td style="padding:5px 8px"><code>443</code> (HTTPS default)</td></tr>
+              </table>
+              <div style="margin-top:8px;font-size:.8rem;color:#64748b">&#9888; Cloudflare Tunnel must be running on the Tally PC and configured to forward to <code>localhost:9000</code> (HTTP, not HTTPS) on that machine.</div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="tally-tab-card full" style="background:#fafaf9;border:1.5px solid #d4d4d4">
+          <h4 style="color:#1c1917;margin-bottom:4px">&#9729; Cloudflare Tunnel Setup Guide</h4>
+          <p style="font-size:.84rem;color:#57534e;margin-bottom:14px">Follow these steps once per client PC. Tally itself needs no changes — only install and configure <strong>cloudflared</strong> on the same PC where Tally runs.</p>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:.85rem">
+
+            <!-- Left column: Cloudflare side -->
+            <div>
+              <div style="font-weight:700;color:#1c1917;margin-bottom:8px">&#9312; Cloudflare Dashboard (one-time per domain)</div>
+              <ol style="padding-left:18px;margin:0;line-height:1.9">
+                <li>Go to <strong>dash.cloudflare.com</strong> → your domain → <strong>Zero Trust</strong> → <strong>Networks → Tunnels</strong>.</li>
+                <li>Click <strong>Create a Tunnel</strong> → give it a name (e.g. <em>tally-client-1</em>) → Save.</li>
+                <li>Copy the tunnel token/install command shown on screen.</li>
+                <li>Under <strong>Public Hostnames</strong>, click <strong>Add a public hostname</strong>:
+                  <table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:.82rem">
+                    <tr style="background:#e7e5e4"><th style="padding:4px 8px;text-align:left">Field</th><th style="padding:4px 8px;text-align:left">Value</th></tr>
+                    <tr><td style="padding:4px 8px;border-bottom:1px solid #e2e8f0">Subdomain</td><td style="padding:4px 8px;border-bottom:1px solid #e2e8f0"><em>any unique name</em> (e.g. <code>tally-client1</code>)</td></tr>
+                    <tr><td style="padding:4px 8px;border-bottom:1px solid #e2e8f0">Domain</td><td style="padding:4px 8px;border-bottom:1px solid #e2e8f0">your domain on Cloudflare</td></tr>
+                    <tr><td style="padding:4px 8px;border-bottom:1px solid #e2e8f0">Service → Type</td><td style="padding:4px 8px;border-bottom:1px solid #e2e8f0"><strong style="color:#b45309">HTTP</strong> &nbsp;⚠️ NOT HTTPS</td></tr>
+                    <tr><td style="padding:4px 8px">Service → URL</td><td style="padding:4px 8px"><code>localhost:9000</code></td></tr>
+                  </table>
+                </li>
+                <li>Save. Cloudflare will now route <code>https://yoursubdomain.yourdomain.com</code> → tunnel → <code>localhost:9000</code>.</li>
+              </ol>
+            </div>
+
+            <!-- Right column: Client PC side -->
+            <div>
+              <div style="font-weight:700;color:#1c1917;margin-bottom:8px">&#9313; Client PC (Tally machine) — one-time install</div>
+              <ol style="padding-left:18px;margin:0;line-height:1.9">
+                <li>Download <strong>cloudflared</strong> for Windows from:<br><code style="font-size:.8rem">developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads</code></li>
+                <li>Open <strong>Command Prompt as Administrator</strong>.</li>
+                <li>Run the install command copied from Cloudflare dashboard:<br><code style="font-size:.8rem">cloudflared service install &lt;YOUR_TOKEN&gt;</code></li>
+                <li>This installs cloudflared as a <strong>Windows Service</strong> — it auto-starts on every reboot.</li>
+                <li>Verify: open <strong>services.msc</strong>, find <em>Cloudflared</em> → Status should be <strong>Running</strong>.</li>
+              </ol>
+
+              <div style="margin-top:12px;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:10px;font-size:.82rem">
+                <strong>&#9888; Common Mistake:</strong> In Cloudflare dashboard, if you set Service Type to <strong>HTTPS</strong> instead of <strong>HTTP</strong>, the tunnel will fail — because Tally only speaks plain HTTP on localhost. Always use <strong>HTTP + localhost:9000</strong> as the origin service.
+              </div>
+
+              <div style="margin-top:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:10px;font-size:.82rem">
+                <strong>After tunnel is running — enter in ERP Tally Settings:</strong><br>
+                Protocol: <code>HTTPS</code> &nbsp;|&nbsp; Host: <code>yoursubdomain.yourdomain.com</code> &nbsp;|&nbsp; Port: <code>443</code>
+              </div>
+            </div>
+
           </div>
         </div>
 
@@ -3462,7 +3593,7 @@ include __DIR__ . '/../../includes/header.php';
               <ol class="tally-steps">
                 <li class="tally-step">
                   <span class="tally-step-badge">STEP 1</span>
-                  <p>Enter Tally IP Address (from Tally PC).</p>
+                  <p>Enter Tally host/IP (LAN IP or Cloudflare tunnel domain).</p>
                 </li>
                 <li class="tally-step">
                   <span class="tally-step-badge">STEP 2</span>
