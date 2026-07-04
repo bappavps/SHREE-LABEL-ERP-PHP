@@ -663,6 +663,10 @@
       return extraPick(['mtrs', 'meter']);
     }
     if (key === 'qty') {
+      // For printing_label, use actual DB quantity to avoid mixed-extra unit mismatch.
+      if (fg_state.activeTab === 'printing_label') {
+        return fmtQty(fg_num(row.quantity));
+      }
       return fmtQty(mixedAdjustedTotal().packed_net);
     }
     if (key === 'qty_per_roll') {
@@ -776,29 +780,31 @@
       return fmtQty(mixedAdjustedTotal().packed_net);
     }
     if (key === 'after_packing_qty') {
+      // For printing_label, use the after_packing_qty calculated from packing
+      // operator entries (stored in extra by the API). This reflects the actual
+      // packed quantity and does NOT change after dispatch deductions.
+      // Fall back to row.quantity only when packing context is unavailable.
       if (fg_state.activeTab === 'printing_label') {
-        var labelAfterPacking = extraPick(['after_packing_qty']);
-        if (labelAfterPacking !== '') {
-          return labelAfterPacking;
+        var packingQty = extraPick(['after_packing_qty']);
+        if (packingQty !== '') {
+          return fmtQty(fg_num(packingQty));
         }
+        return fmtQty(fg_num(row.quantity));
       }
       return fmtQty(mixedAdjustedTotal().packed_net);
     }
     if (key === 'current_total') {
+      // For printing_label use the raw DB quantity directly — the mixed-extra
+      // calculation mixes roll-count with piece-count and gives wrong numbers.
+      // For other tabs the mixed-adjusted value is correct.
       if (fg_state.activeTab === 'printing_label') {
-        var labelCurrentTotal = extraPick(['current_total']);
-        if (labelCurrentTotal !== '') {
-          return labelCurrentTotal;
-        }
+        return fmtQty(fg_num(row.quantity));
       }
       return fmtQty(mixedAdjustedTotal().available_net);
     }
     if (key === 'available_for_dispatch') {
       if (fg_state.activeTab === 'printing_label') {
-        var labelDispatchQty = extraPick(['available_for_dispatch']);
-        if (labelDispatchQty !== '') {
-          return labelDispatchQty;
-        }
+        return fmtQty(fg_num(row.quantity));
       }
       return fmtQty(mixedAdjustedTotal().available_net);
     }

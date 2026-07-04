@@ -792,11 +792,21 @@ function packing_build_display_id(int $jobId, string $planNo = ''): string {
     $planNo = trim($planNo);
 
     if ($planNo !== '') {
-        if (preg_match('/^(?:[^\/-]+)[\/-](\d{2,4})[\/-](\d+)$/', $planNo, $m)) {
-            return $prefix . '/' . $m[1] . '/' . $m[2];
+        // Extract department suffix from plan_no (e.g. PLN-POS/2026/0001 → "POS",
+        // PLN-1PL/2026/0001 → "1PL", PLN-BAR/2026/0001 → "BAR", PLN/2026/0001 → "")
+        $deptSuffix = '';
+        if (preg_match('/^[A-Za-z]+-([A-Za-z0-9]+)[\/-]/', $planNo, $dm)) {
+            $deptSuffix = strtoupper(trim($dm[1]));
         }
+        $deptTag = $deptSuffix !== '' ? '-' . $deptSuffix : '';
+
+        // Match plan_no like PLN/2026/0001 (simple prefix)
+        if (preg_match('/^(?:[^\/-]+)[\/-](\d{2,4})[\/-](\d+)$/', $planNo, $m)) {
+            return $prefix . $deptTag . '/' . $m[1] . '/' . $m[2];
+        }
+        // Match plan_no like PLN-POS/2026/0001 (prefix with department suffix)
         if (preg_match('/(\d{2,4})[\/-](\d+)$/', $planNo, $m)) {
-            return $prefix . '/' . $m[1] . '/' . $m[2];
+            return $prefix . $deptTag . '/' . $m[1] . '/' . $m[2];
         }
     }
 
@@ -1298,7 +1308,7 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
         }
 
         $planningIdForGate = (int)($row['planning_id'] ?? 0);
-        if ($planningIdForGate > 0) {
+        if ($planningIdForGate > 0 && !$hasOperatorSubmission) {
             $latestTabs = $latestByPlanningTab[$planningIdForGate] ?? [];
             if (!packing_is_release_ready($latestTabs)) {
                 continue;

@@ -100,7 +100,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 6
+                "counter": 2
             },
             "sales_order": {
                 "prefix": "SO",
@@ -132,7 +132,7 @@
             },
             "jumbo_job": {
                 "prefix": "SLT",
-                "counter": 3
+                "counter": 0
             },
             "printing_job": {
                 "prefix": "FLX",
@@ -140,7 +140,7 @@
             },
             "die_cutting_job": {
                 "prefix": "DCT",
-                "counter": 1
+                "counter": 0
             },
             "label_slitting_job": {
                 "prefix": "LSL",

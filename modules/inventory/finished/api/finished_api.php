@@ -257,6 +257,17 @@ function fg_ensure_table(mysqli $db): void {
         fg_json(500, ['ok' => false, 'error' => 'Unable to initialize finished goods table: ' . $db->error]);
     }
 
+    // Ensure dispatch tracking columns exist (also created by dispatch module,
+    // but we need them for the get_stock SELECT to succeed).
+    $checkDqt = $db->query("SHOW COLUMNS FROM finished_goods_stock LIKE 'dispatch_qty_total'");
+    if ($checkDqt && $checkDqt->num_rows === 0) {
+        $db->query("ALTER TABLE finished_goods_stock ADD COLUMN dispatch_qty_total DECIMAL(14,3) NOT NULL DEFAULT 0 AFTER quantity");
+    }
+    $checkCs = $db->query("SHOW COLUMNS FROM finished_goods_stock LIKE 'closing_stock'");
+    if ($checkCs && $checkCs->num_rows === 0) {
+        $db->query("ALTER TABLE finished_goods_stock ADD COLUMN closing_stock DECIMAL(14,3) NOT NULL DEFAULT 0 AFTER dispatch_qty_total");
+    }
+
     $dispatchSql = "CREATE TABLE IF NOT EXISTS finished_goods_dispatch_log (
         id INT UNSIGNED NOT NULL AUTO_INCREMENT,
         stock_id INT UNSIGNED NOT NULL,
@@ -487,6 +498,12 @@ function fg_fetch_printing_label_context(mysqli $db, array $jobNos): array {
             $netQty = max(0.0, $netQty - ($mixedExtraRolls * $pcsPerRoll));
         }
 
+        // after_packing_qty = total quantity produced from packing (packed_qty).
+        // This is the full amount that entered finished goods stock. It does NOT
+        // subtract loose_qty because loose items are still part of the stock.
+        // It stays constant even after dispatches (unlike current_total).
+        $afterPackingQty = max(0.0, $packedQty);
+
         $map[$jobNo] = [
             'paper_size' => trim((string)($planExtra['paper_size'] ?? '')),
             'width' => $labelDims['width'],
@@ -497,9 +514,10 @@ function fg_fetch_printing_label_context(mysqli $db, array $jobNos): array {
             'display_roll_count' => $displayRollCount > 0 ? rtrim(rtrim(number_format($displayRollCount, 3, '.', ''), '0'), '.') : '',
             'display_per_carton' => $displayPerCarton > 0 ? rtrim(rtrim(number_format($displayPerCarton, 3, '.', ''), '0'), '.') : '',
             'carton' => $cartonCount > 0 ? (string)$cartonCount : '',
-            'after_packing_qty' => rtrim(rtrim(number_format($netQty, 3, '.', ''), '0'), '.'),
-            'current_total' => rtrim(rtrim(number_format($netQty, 3, '.', ''), '0'), '.'),
-            'available_for_dispatch' => rtrim(rtrim(number_format($netQty, 3, '.', ''), '0'), '.'),
+            'after_packing_qty' => rtrim(rtrim(number_format($afterPackingQty, 3, '.', ''), '0'), '.'),
+            // NOTE: current_total and available_for_dispatch are intentionally NOT set here.
+            // The JS calculates these from the actual finished_goods_stock.quantity (via
+            // mixedAdjustedTotal) so that dispatch deductions are reflected correctly.
             'loose_qty' => $looseQty > 0 ? rtrim(rtrim(number_format($looseQty, 3, '.', ''), '0'), '.') : '0',
         ];
     }
