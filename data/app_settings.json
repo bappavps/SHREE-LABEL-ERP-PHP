@@ -100,7 +100,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 1
+                "counter": 6
             },
             "sales_order": {
                 "prefix": "SO",
@@ -108,7 +108,7 @@
             },
             "planning": {
                 "prefix": "PLN",
-                "counter": 2
+                "counter": 1
             },
             "planning_barcode": {
                 "prefix": "PLN-BAR",
@@ -132,7 +132,7 @@
             },
             "jumbo_job": {
                 "prefix": "SLT",
-                "counter": 0
+                "counter": 3
             },
             "printing_job": {
                 "prefix": "FLX",
@@ -140,7 +140,7 @@
             },
             "die_cutting_job": {
                 "prefix": "DCT",
-                "counter": 0
+                "counter": 1
             },
             "label_slitting_job": {
                 "prefix": "LSL",
@@ -148,7 +148,7 @@
             },
             "barcode_job": {
                 "prefix": "BRC-BAR",
-                "counter": 0
+                "counter": 1
             }
         }
     },

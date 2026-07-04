@@ -208,6 +208,12 @@ function pm_department_label($dept, $fallbackType = ''): string {
       'flexo_printing' => 'Printing',
       'flexo-printing' => 'Printing',
       'printing' => 'Printing',
+      'pos' => 'POS Roll',
+      'paperroll' => 'Paper Roll',
+      'oneply' => 'One Ply',
+      'one_ply' => 'One Ply',
+      'twoply' => 'Two Ply',
+      'two_ply' => 'Two Ply',
       'label_slitting' => 'Label Slitting',
       'label-slitting' => 'Label Slitting',
       'label slitting' => 'Label Slitting',
@@ -292,8 +298,9 @@ function pm_stage_rank_for_label($stage): int {
   if ($stage === 'jumbo slitting') return 1;
   if ($stage === 'printing') return 2;
   if ($stage === 'die-cutting' || $stage === 'barcode') return 3;
+  if ($stage === 'pos roll' || $stage === 'one ply' || $stage === 'two ply' || $stage === 'paperroll') return 3;
   if ($stage === 'label slitting') return 4;
-  if ($stage === 'packaging') return 5;
+  if ($stage === 'packaging' || $stage === 'packing') return 5;
   if ($stage === 'finished production') return 6;
   if ($stage === 'dispatch') return 6;
   return 99;
@@ -304,7 +311,7 @@ function pm_bucket_status(array $row): string {
     $boardStatus = strtolower(pm_text($row['board_status']));
     $planningStatus = strtolower(pm_text($row['planning_status']));
 
-    if ($jobStatus === 'finished production') return 'Finished Production';
+    if ($jobStatus === 'finished production' || $jobStatus === 'finished label') return 'Completed';
     if (in_array($jobStatus, ['dispatched', 'dispatch'], true)) return 'Dispatched';
     if (in_array($jobStatus, ['ready to dispatch', 'ready to dispatched', 'ready to dispathce', 'packed', 'packing done', 'finished barcode'], true)) return 'Packed';
 
@@ -924,6 +931,40 @@ foreach ($rows as $row) {
     $row['effective_status'] = pm_text($effectiveStatusByPlanning[$planningId]['status']);
   }
 
+  // Sync with Live Floor logic: if board_status (printing_planning) indicates progression,
+  // use it to determine effective status when raw job statuses are behind.
+  $boardStatusNorm = strtolower(pm_text($row['board_status'] ?? ''));
+  $effectiveNormCheck = strtolower(pm_text($row['effective_status'] ?? ''));
+  // If board says "Label Slitted" and packing job exists but is Pending, show as Packing
+  if ($boardStatusNorm === 'label slitted' && in_array($effectiveNormCheck, ['pending', 'completed', 'label slitted', ''], true)) {
+    // Check if packing job exists for this planning
+    if ($planningId > 0 && isset($jobCardsByPlanning[$planningId])) {
+      $hasPackingCard = false;
+      $packingCardStatus = '';
+      foreach ($jobCardsByPlanning[$planningId] as $card) {
+        $cardDept = strtolower(pm_text($card['department'] ?? ''));
+        if (strpos($cardDept, 'pack') !== false) {
+          $hasPackingCard = true;
+          $packingCardStatus = strtolower(pm_text($card['status'] ?? ''));
+          break;
+        }
+      }
+      if ($hasPackingCard) {
+        if (in_array($packingCardStatus, ['pending', 'queued', 'preparing', ''], true)) {
+          $row['effective_status'] = 'Packing';
+        } elseif ($packingCardStatus === 'running' || $packingCardStatus === 'in progress') {
+          $row['effective_status'] = 'Running';
+        }
+      }
+    }
+  }
+  // If board says "Finished Production" / "Finished Label" / "Finished Barcode", sync effective status
+  if (in_array($boardStatusNorm, ['finished production', 'finished label', 'finished barcode'], true)) {
+    if (!in_array($effectiveNormCheck, ['dispatched', 'dispatch', 'delivered'], true)) {
+      $row['effective_status'] = 'Finished Production';
+    }
+  }
+
   if (
     $planningId > 0 &&
     isset($packingStatusByPlanning[$planningId]) &&
@@ -960,10 +1001,26 @@ foreach ($rows as $row) {
   );
 
   $planningNoUpper = strtoupper(pm_text($row['job_no'] ?? ''));
-  if (strpos($planningNoUpper, 'PLN/') === 0) {
+  if (strpos($planningNoUpper, 'PLN') === 0) {
     $plnActionStage = pm_pln_first_actionable_stage_from_chain($row['chain_summary'] ?? '', $db, $planningId);
     if ($plnActionStage !== '') {
       $currentDept = $plnActionStage;
+    }
+  }
+
+  // Override currentDept based on planning prefix for paper-roll types
+  // so that PLN-1PL shows "One Ply", PLN-2PL shows "Two Ply", etc.
+  if (strpos($planningNoUpper, 'PLN-1PL/') === 0) {
+    if (in_array(strtolower($currentDept), ['paper roll', 'paperroll', 'pos roll', 'pos', 'not started', ''], true)) {
+      $currentDept = 'One Ply';
+    }
+  } elseif (strpos($planningNoUpper, 'PLN-2PL/') === 0) {
+    if (in_array(strtolower($currentDept), ['paper roll', 'paperroll', 'pos roll', 'pos', 'not started', ''], true)) {
+      $currentDept = 'Two Ply';
+    }
+  } elseif (strpos($planningNoUpper, 'PLN-POS/') === 0) {
+    if (in_array(strtolower($currentDept), ['paper roll', 'paperroll', 'not started', ''], true)) {
+      $currentDept = 'POS Roll';
     }
   }
 
@@ -989,8 +1046,13 @@ foreach ($rows as $row) {
       $row['active_job_type'] = pm_text($stageCard['job_type'] ?? '');
       $row['active_job_status'] = pm_text($stageCard['status'] ?? '');
 
-      // Current actionable stage status should drive Production Status.
+      // Current actionable stage status should drive Production Status,
+      // BUT do not downgrade if we already determined a higher-level status (e.g. Packing, Finished Production).
       $stageStatusNorm = strtolower(trim(str_replace(['-', '_'], ' ', pm_text($stageCard['status'] ?? ''))));
+      $currentEffectiveNorm = strtolower(pm_text($row['effective_status'] ?? ''));
+      $protectedStatuses = ['packing', 'packed', 'packing done', 'finished production', 'finished label', 'finished barcode', 'dispatched', 'delivered'];
+      $isProtected = in_array($currentEffectiveNorm, $protectedStatuses, true);
+      
       if ($stageStatusNorm === 'running' || $stageStatusNorm === 'in progress' || $stageStatusNorm === 'inprogress') {
         $row['effective_status'] = 'Running';
       } elseif ($stageStatusNorm === 'finished production') {
@@ -999,7 +1061,8 @@ foreach ($rows as $row) {
         $row['effective_status'] = 'Dispatched';
       } elseif (in_array($stageStatusNorm, ['packed', 'packing done', 'finished barcode'], true)) {
         $row['effective_status'] = 'Packed';
-      } elseif (in_array($stageStatusNorm, ['pending', 'queued', 'preparing'], true)) {
+      } elseif (in_array($stageStatusNorm, ['pending', 'queued', 'preparing'], true) && !$isProtected) {
+        // Only downgrade to Pending if effective_status wasn't already set to a higher-level status
         $row['effective_status'] = 'Pending';
       }
     }
@@ -1333,6 +1396,7 @@ body{background:#f1f5f9}
       <h1><i class="bi bi-kanban"></i> Production Summary Console</h1>
       <p>All production visibility in one view: planning, job cards, current stage, progress, and full journey snapshot.</p>
     </div>
+    <button class="pm-link" onclick="window.location.reload()" style="cursor:pointer;border:none;margin-right:8px" title="Refresh data">🔄 Refresh</button>
     <a class="pm-link" href="<?= BASE_URL ?>/modules/live/index.php">Live Floor View</a>
   </section>
 

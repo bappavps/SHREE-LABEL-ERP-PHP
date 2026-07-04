@@ -1256,6 +1256,26 @@ function jobs_is_pos_job(array $job): bool {
     return $jobType === 'finishing' && $department === 'pos';
 }
 
+function jobs_is_oneply_job(array $job): bool {
+    $department = strtolower(trim((string)($job['department'] ?? '')));
+    $jobType = strtolower(trim((string)($job['job_type'] ?? '')));
+    if (in_array($department, ['oneply', 'one_ply', 'one-ply', '1-ply', '1ply'], true)) return true;
+    if (in_array($jobType, ['oneply', 'one_ply', 'one-ply', '1-ply', '1ply'], true)) return true;
+    return false;
+}
+
+function jobs_is_twoply_job(array $job): bool {
+    $department = strtolower(trim((string)($job['department'] ?? '')));
+    $jobType = strtolower(trim((string)($job['job_type'] ?? '')));
+    if (in_array($department, ['twoply', 'two_ply', 'two-ply', '2-ply', '2ply'], true)) return true;
+    if (in_array($jobType, ['twoply', 'two_ply', 'two-ply', '2-ply', '2ply'], true)) return true;
+    return false;
+}
+
+function jobs_is_paperroll_family_job(array $job): bool {
+    return jobs_is_pos_job($job) || jobs_is_oneply_job($job) || jobs_is_twoply_job($job);
+}
+
 function jobs_stage_status_for_event(array $job, string $event): string {
     $evt = strtolower(trim($event));
 
@@ -1309,7 +1329,21 @@ function jobs_stage_status_for_event(array $job, string $event): string {
     if (jobs_is_pos_job($job)) {
         if ($evt === 'running') return 'Barcode';
         if ($evt === 'pause') return 'Barcode Pause';
-        if ($evt === 'end' || $evt === 'complete') return 'Barcoded';
+        if ($evt === 'end' || $evt === 'complete') return 'Packing';
+        return '';
+    }
+
+    if (jobs_is_oneply_job($job)) {
+        if ($evt === 'running') return 'One Ply';
+        if ($evt === 'pause') return 'One Ply Pause';
+        if ($evt === 'end' || $evt === 'complete') return 'Packing';
+        return '';
+    }
+
+    if (jobs_is_twoply_job($job)) {
+        if ($evt === 'running') return 'Two Ply';
+        if ($evt === 'pause') return 'Two Ply Pause';
+        if ($evt === 'end' || $evt === 'complete') return 'Packing';
         return '';
     }
 
@@ -2070,6 +2104,18 @@ try {
             $completeStage = jobs_stage_status_for_event($job, 'complete');
             if ($completeStage !== '') {
                 jobs_set_planning_status_and_stage_for_job($db, $job, $completeStage);
+            }
+
+            // POS/PaperRoll/OnePly/TwoPly completion: also mark sibling PRL job as Completed
+            if (jobs_is_paperroll_family_job($job)) {
+                $posPlanId = (int)($job['planning_id'] ?? 0);
+                if ($posPlanId > 0) {
+                    $prlUpd = $db->prepare("UPDATE jobs SET status = 'Completed', completed_at = COALESCE(completed_at, NOW()) WHERE planning_id = ? AND LOWER(COALESCE(department, '')) = 'paperroll' AND status IN ('Pending', 'Running', 'Queued') AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')");
+                    if ($prlUpd) {
+                        $prlUpd->bind_param('i', $posPlanId);
+                        $prlUpd->execute();
+                    }
+                }
             }
 
             // Printing completion should reflect in planning board as Printed.
@@ -4839,10 +4885,12 @@ try {
                     WHERE request_type = 'jumbo_roll_update' AND status = 'Pending'
                     GROUP BY job_id
                 ) req ON req.job_id = j.id
-                                WHERE (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')
+                WHERE (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')
                                     AND (
                                         j.job_type IN ('Slitting','Jumbo','Printing','Finishing')
                                         OR LOWER(COALESCE(j.department, '')) = 'jumbo_slitting'
+                                        OR LOWER(COALESCE(j.department, '')) IN ('packing', 'packaging')
+                                        OR j.job_no LIKE 'PCK/%'
                                     )
                 ORDER BY j.created_at DESC
                 LIMIT ?";

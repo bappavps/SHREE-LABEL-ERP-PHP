@@ -455,6 +455,251 @@ include __DIR__ . '/../../includes/header.php';
 .fl-search:focus{border-color:#60a5fa}
 .fl-cnt{display:inline-block;min-width:16px;height:16px;line-height:16px;text-align:center;border-radius:8px;background:rgba(0,0,0,.1);font-size:.6rem;padding:0 4px;margin-left:4px}
 .fl-filter-btn.active .fl-cnt{background:rgba(255,255,255,.3)}
+
+/* ═══════════════════════════════════════════════════════════
+   EXCEL-LIKE GRID TABLE VIEW
+   ═══════════════════════════════════════════════════════════ */
+.fl-grid-wrap{
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+  border-radius:12px;
+  box-shadow:0 4px 20px rgba(0,0,0,.08);
+  background:#fff;
+}
+.fl-grid-wrap::-webkit-scrollbar{height:6px}
+.fl-grid-wrap::-webkit-scrollbar-thumb{background:#94a3b8;border-radius:4px}
+
+.fl-grid{
+  width:100%;
+  border-collapse:collapse;
+  font-size:.78rem;
+  min-width:1000px;
+}
+
+/* Header */
+.fl-grid thead th{
+  position:sticky;top:0;z-index:10;
+  background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);
+  color:#fff;
+  padding:12px 14px;
+  font-size:.72rem;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.8px;
+  white-space:nowrap;
+  border:1px solid rgba(255,255,255,.1);
+  text-align:center;
+}
+.fl-grid thead th:first-child,
+.fl-grid thead th:nth-child(2),
+.fl-grid thead th:nth-child(3){text-align:left}
+
+/* Body cells */
+.fl-grid tbody td{
+  padding:10px 12px;
+  border:1px solid #e8ecf1;
+  vertical-align:middle;
+  text-align:center;
+  white-space:nowrap;
+  transition:background .15s;
+}
+.fl-grid tbody tr{
+  cursor:pointer;
+  transition:background .12s,box-shadow .12s;
+}
+.fl-grid tbody tr:nth-child(even){background:#f8fafc}
+.fl-grid tbody tr:nth-child(odd){background:#fff}
+.fl-grid tbody tr:hover{background:#eef2ff;box-shadow:inset 0 0 0 1px #818cf8}
+.fl-grid tbody tr:focus-visible{outline:3px solid #60a5fa;outline-offset:-2px}
+
+/* Job info cells (left side) */
+.fl-grid .g-jobid{
+  font-weight:800;
+  color:#1a1a2e;
+  font-size:.82rem;
+  text-align:left;
+  min-width:140px;
+}
+.fl-grid .g-jobname{
+  font-weight:600;
+  color:#475569;
+  text-align:left;
+  max-width:220px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.fl-grid .g-date{
+  font-size:.72rem;
+  color:#64748b;
+  text-align:left;
+  white-space:nowrap;
+}
+
+/* Stage cell states */
+.fl-grid .g-cell-done{
+  background:#dcfce7 !important;
+  color:#166534;
+  font-weight:800;
+  font-size:1.1rem;
+  white-space:normal;
+  line-height:1.3;
+}
+.fl-grid .g-done-dt{
+  display:block;
+  font-size:.58rem;
+  font-weight:600;
+  color:#15803d;
+  margin-top:2px;
+  letter-spacing:.2px;
+  white-space:nowrap;
+}
+.fl-grid .g-cell-now{
+  background:#fef3c7 !important;
+  position:relative;
+}
+.fl-grid .g-cell-now-inner{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  font-weight:700;
+  font-size:.7rem;
+  color:#92400e;
+  animation:flGridPulse 2s ease-in-out infinite;
+}
+@keyframes flGridPulse{
+  0%,100%{opacity:1}
+  50%{opacity:.55}
+}
+.fl-grid .g-cell-now .g-pulse-dot{
+  width:8px;height:8px;
+  background:#dc2626;
+  border-radius:50%;
+  display:inline-block;
+  animation:flBlink 1.2s ease-in-out infinite;
+  flex-shrink:0;
+}
+.fl-grid .g-cell-later{
+  color:#cbd5e1;
+  font-size:.75rem;
+}
+.fl-grid .g-cell-skip{
+  background:#f8fafc !important;
+  color:#94a3b8;
+}
+.fl-grid .g-skip-label{
+  display:inline-block;
+  font-size:.62rem;
+  font-weight:700;
+  color:#94a3b8;
+  background:#e2e8f0;
+  padding:2px 8px;
+  border-radius:8px;
+  letter-spacing:.3px;
+}
+
+/* Priority badges in table */
+.fl-grid .g-pri{
+  display:inline-block;
+  font-size:.55rem;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.5px;
+  padding:2px 7px;
+  border-radius:10px;
+  margin-left:5px;
+  vertical-align:middle;
+}
+.fl-grid .g-pri.urgent{background:#fde8e8;color:#dc2626}
+.fl-grid .g-pri.high{background:#fff3e0;color:#e65100}
+
+/* CR badge in table */
+.fl-grid .g-cr{
+  display:inline-flex;
+  align-items:center;
+  gap:2px;
+  background:#fef3c7;
+  color:#92400e;
+  border-radius:6px;
+  font-size:.55rem;
+  font-weight:800;
+  padding:1px 5px;
+  margin-left:4px;
+}
+
+/* Job image in table */
+.fl-grid .g-img-cell{
+  padding:4px 6px;
+  text-align:center;
+  width:44px;
+  min-width:44px;
+}
+.fl-grid .g-img{
+  width:38px;
+  height:38px;
+  border-radius:6px;
+  object-fit:contain;
+  border:1.5px solid #e2e8f0;
+  background:#f8fafc;
+  vertical-align:middle;
+}
+.fl-grid .g-img-ph{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:38px;
+  height:38px;
+  border-radius:6px;
+  background:linear-gradient(135deg,#f1f5f9,#e2e8f0);
+  font-size:1rem;
+  color:#94a3b8;
+  vertical-align:middle;
+}
+
+/* Dept badge in header */
+.fl-grid .g-dept-icon{font-size:.9rem;display:block;margin-bottom:2px}
+
+/* Responsive */
+@media(max-width:900px){
+  .fl-grid{font-size:.72rem;min-width:800px}
+  .fl-grid thead th{padding:8px 8px;font-size:.64rem}
+  .fl-grid tbody td{padding:7px 8px}
+}
+@media(max-width:640px){
+  .fl-grid{min-width:700px}
+  .fl-grid thead th{padding:6px 6px;font-size:.6rem;letter-spacing:.3px}
+  .fl-grid tbody td{padding:5px 6px;font-size:.68rem}
+  .fl-grid .g-jobid{font-size:.72rem;min-width:100px}
+  .fl-grid .g-jobname{max-width:140px}
+}
+/* ── Row type color bands ── */
+.fl-grid tbody tr.row-type-label{background:#dbe4ff !important}
+.fl-grid tbody tr.row-type-label:hover{background:#bac8ff !important}
+.fl-grid tbody tr.row-type-barcode{background:#fde68a !important}
+.fl-grid tbody tr.row-type-barcode:hover{background:#fcd34d !important}
+.fl-grid tbody tr.row-type-posroll{background:#bbf7d0 !important}
+.fl-grid tbody tr.row-type-posroll:hover{background:#86efac !important}
+.fl-grid tbody tr.row-type-oneply{background:#fbcfe8 !important}
+.fl-grid tbody tr.row-type-oneply:hover{background:#f9a8d4 !important}
+.fl-grid tbody tr.row-type-twoply{background:#ddd6fe !important}
+.fl-grid tbody tr.row-type-twoply:hover{background:#c4b5fd !important}
+/* Left color stripe per type */
+.fl-grid tbody tr.row-type-label td:first-child{border-left:5px solid #4338ca}
+.fl-grid tbody tr.row-type-barcode td:first-child{border-left:5px solid #d97706}
+.fl-grid tbody tr.row-type-posroll td:first-child{border-left:5px solid #059669}
+.fl-grid tbody tr.row-type-oneply td:first-child{border-left:5px solid #db2777}
+.fl-grid tbody tr.row-type-twoply td:first-child{border-left:5px solid #7c3aed}
+
+@media print{
+  .fl-grid-wrap{box-shadow:none}
+  .fl-grid thead th{background:#1a1a2e!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .fl-grid .g-cell-done{background:#dcfce7!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .fl-grid tbody tr.row-type-label{background:#f0f4ff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .fl-grid tbody tr.row-type-barcode{background:#fef9ee!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .fl-grid tbody tr.row-type-posroll{background:#eefbf4!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .fl-grid tbody tr.row-type-oneply{background:#fdf2f8!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .fl-grid tbody tr.row-type-twoply{background:#f5f0ff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
 </style>
 
 <!-- ═══ LIVE HEADER ═══ -->
@@ -490,6 +735,10 @@ include __DIR__ . '/../../includes/header.php';
   <div class="fl-filter-sep"></div>
   <button class="fl-filter-btn" data-filter="running">🔴 Running</button>
   <button class="fl-filter-btn" data-filter="urgent">⚡ Urgent/High</button>
+  <?php if (isAdmin()): ?>
+  <div class="fl-filter-sep"></div>
+  <button class="fl-filter-btn" id="flHideFinished" title="Admin: Hide/Show Finished Production jobs" style="border-color:#dc2626;color:#dc2626">🙈 Hide Finished</button>
+  <?php endif; ?>
   <input class="fl-search" type="text" id="flSearch" placeholder="Search job / name…" autocomplete="off">
 </div>
 
@@ -500,14 +749,11 @@ include __DIR__ . '/../../includes/header.php';
 
 <!-- ═══ LEGEND ═══ -->
 <div class="fl-legend">
-  <div class="fl-lg-item"><div class="fl-lg-dot d-done"></div> Completed Stage</div>
-  <div class="fl-lg-item"><div class="fl-lg-dot d-now"></div> Active Stage (Pulse)</div>
-  <div class="fl-lg-item"><div class="fl-lg-dot d-later"></div> Upcoming Stage</div>
-  <span style="margin:0 6px;color:#e2e8f0">|</span>
-  <div class="fl-lg-item"><span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:#f59e0b;margin-right:4px"></span>Slitting (JMB)</div>
-  <div class="fl-lg-item"><span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:#3b82f6;margin-right:4px"></span>Printing (FLX)</div>
-  <div class="fl-lg-item"><span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:#0f766e;margin-right:4px"></span>Die-Cutting (DCT)</div>
-  <div class="fl-lg-item"><span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:#c2410c;margin-right:4px"></span>Label-Slitting (LSL)</div>
+  <div class="fl-lg-item"><span style="display:inline-block;width:14px;height:11px;border-radius:2px;background:#dbe4ff;border:2px solid #4338ca;margin-right:4px"></span>Label</div>
+  <div class="fl-lg-item"><span style="display:inline-block;width:14px;height:11px;border-radius:2px;background:#fde68a;border:2px solid #d97706;margin-right:4px"></span>Barcode</div>
+  <div class="fl-lg-item"><span style="display:inline-block;width:14px;height:11px;border-radius:2px;background:#bbf7d0;border:2px solid #059669;margin-right:4px"></span>POS Roll</div>
+  <div class="fl-lg-item"><span style="display:inline-block;width:14px;height:11px;border-radius:2px;background:#fbcfe8;border:2px solid #db2777;margin-right:4px"></span>One Ply</div>
+  <div class="fl-lg-item"><span style="display:inline-block;width:14px;height:11px;border-radius:2px;background:#ddd6fe;border:2px solid #7c3aed;margin-right:4px"></span>Two Ply</div>
 </div>
 
 <script>
@@ -516,12 +762,14 @@ console.log('Live Floor v3 — Full Pipeline');
 const FL_API  = '<?= BASE_URL ?>/modules/jobs/api.php';
 const FL_CSRF = '<?= e($csrf) ?>';
 const FL_BASE = '<?= BASE_URL ?>';
+const FL_IS_ADMIN = <?= isAdmin() ? 'true' : 'false' ?>;
 const FL_STAGES = ['Planning','Jumbo Slitting','Flexo Printing','Diecutting / Barcode','Label Slitting','Packing','Dispatched'];
 
 /* ─── Global state ─── */
 let FL_ALL_JOBS      = [];
 let FL_ACTIVE_FILTER = 'all';
 let FL_SEARCH        = '';
+let FL_HIDE_FINISHED = false;
 
 /* ─── Live Clock ─── */
 function flTick(){
@@ -603,6 +851,16 @@ function getStageIdx(job){
 
 function fmtStageDate(dt){
   try{const d=new Date(dt);if(isNaN(d))return '—';return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});}catch(e){return '—';}
+}
+
+function fmtStageDateTime(dt){
+  try{
+    const d=new Date(dt);
+    if(isNaN(d))return '—';
+    const date=d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+    const time=d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
+    return date+' '+time;
+  }catch(e){return '—';}
 }
 
 function isDispatchDone(job){
@@ -1026,7 +1284,7 @@ function doneStatusForStage(key){
     print:'Printed',
     die:'Die Cut',
     barcode:'Barcoded',
-    pos:'PosRoll Done',
+    pos:'Completed',
     lsl:'Label Slitted',
     batch:'Batch Printed',
     pack:'Packed',
@@ -1052,7 +1310,7 @@ function getStageKeyForJob(job){
     jt === 'barcode' || jt.includes('rotary') || jt.includes('rotery') ||
     jobNo.startsWith('BRC/') || jobNo.startsWith('BAR/') || jobNo.startsWith('ROT/')
   ) return 'barcode';
-  if(dept === 'pos' || dept === 'paperroll' || jt === 'pos' || jt === 'paperroll' || jobNo.startsWith('POS/') || jobNo.startsWith('OPL/') || jobNo.startsWith('TPL/') || jobNo.startsWith('PRL/')) return 'pos';
+  if(dept === 'pos' || dept === 'paperroll' || dept === 'oneply' || dept === 'one_ply' || dept === 'twoply' || dept === 'two_ply' || jt === 'pos' || jt === 'paperroll' || jt === 'oneply' || jt === 'one_ply' || jt === 'twoply' || jt === 'two_ply' || jobNo.startsWith('POS/') || jobNo.startsWith('OPL/') || jobNo.startsWith('TPL/') || jobNo.startsWith('PRL/') || jobNo.startsWith('PRL-1PL/') || jobNo.startsWith('PRL-2PL/') || jobNo.startsWith('OPL-1PL/') || jobNo.startsWith('TPL-2PL/')) return 'pos';
   if(dept === 'packing' || jt === 'packing') return 'pack';
   if(dept.includes('dispatch')) return 'dispatch';
   if(dept.includes('label-slitting') || dept.includes('label slitting') || jobNo.startsWith('LSL/')) return 'lsl';
@@ -1115,9 +1373,10 @@ function inferPlannedStageKeys(base, stageMap, actualJobs){
     const keys = (selectedKeys.includes('planning') ? selectedKeys.slice() : ['planning'].concat(selectedKeys))
       .filter((key) => key !== 'batch' || batchEvidence);
 
-    // Packing fallback: if an actual packing job exists but pack/finished_production not in selected route → append
+    // Packing fallback: if an actual packing job exists OR Label Slitting is in the route, add pack stage
     const hasActualPackingJob = stageMap.has('pack');
-    if(hasActualPackingJob && !keys.includes('pack')) keys.push('pack');
+    const hasLslInRoute = keys.includes('lsl');
+    if((hasActualPackingJob || hasLslInRoute) && !keys.includes('pack')) keys.push('pack');
     if((hasActualPackingJob || keys.includes('pack')) && !keys.includes('finished_production')) keys.push('finished_production');
 
       // Dispatch only when evidence exists (never default-add it)
@@ -1218,8 +1477,11 @@ function buildLiveCard(rows){
     const jt = normStatus(job.job_type || '');
     const jobNo = String(job.job_no || '').toUpperCase();
     const isPosFamily = jobNo.startsWith('POS/') || jobNo.startsWith('OPL/') || jobNo.startsWith('TPL/') || jobNo.startsWith('PRL/')
-      || dept === 'pos' || dept === 'pos roll' || dept === 'paperroll' || dept === 'one ply' || dept === 'two ply'
-      || jt === 'pos' || jt === 'pos roll' || jt === 'paperroll' || jt === 'one ply' || jt === 'two ply';
+      || jobNo.startsWith('OPL-') || jobNo.startsWith('TPL-') || jobNo.startsWith('PRL-')
+      || dept === 'pos' || dept === 'pos roll' || dept === 'paperroll' || dept === 'oneply' || dept === 'one ply' || dept === 'one_ply'
+      || dept === 'twoply' || dept === 'two ply' || dept === 'two_ply'
+      || jt === 'pos' || jt === 'pos roll' || jt === 'paperroll' || jt === 'oneply' || jt === 'one ply' || jt === 'one_ply'
+      || jt === 'twoply' || jt === 'two ply' || jt === 'two_ply';
     if (!isPosFamily) return false;
 
     const completedAt = String(job.completed_at || '').trim();
@@ -1381,6 +1643,8 @@ function buildLiveCard(rows){
       for(let i=0;i<actualJobs.length;i++){
         const job = actualJobs[i];
         if(!isDoneStatus(job.status||'')){
+          // Skip pos-family jobs when pos output is already completed (e.g. oneply done but paperroll still Pending)
+          if (hasCompletedPosOutput && getStageKeyForJob(job) === 'pos') continue;
           activeJob = job;
           currentKey = getStageKeyForJob(job);
           break;
@@ -1416,7 +1680,13 @@ function buildLiveCard(rows){
   }
 
   if (hasFinishedProductionEvidence && pathKeys.includes('finished_production')) {
-    currentKey = 'finished_production';
+    // Finished Production is complete — advance to dispatch if available, 
+    // otherwise stay on finished_production (it will show as done)
+    if (pathKeys.includes('dispatch')) {
+      currentKey = 'dispatch';
+    } else {
+      currentKey = 'finished_production';
+    }
   }
 
   // If no dedicated packing job exists yet, but immediate upstream stage is done,
@@ -1427,7 +1697,9 @@ function buildLiveCard(rows){
     if (packIdx > 0) {
       const upstreamKey = pathKeys[packIdx - 1];
       const upstreamJob = stageMap.get(upstreamKey);
-      if (upstreamJob && isDoneStatus(upstreamJob.status || '')) {
+      const upstreamDone = (upstreamJob && isDoneStatus(upstreamJob.status || ''))
+        || (upstreamKey === 'pos' && hasCompletedPosOutput);
+      if (upstreamDone) {
         currentKey = 'pack';
       }
     }
@@ -1446,9 +1718,31 @@ function buildLiveCard(rows){
   const currentIndex = Math.max(0, pathKeys.indexOf(currentKey));
   const planningLabel = String(base.planning_status || base.status || 'Planning').trim() || 'Planning';
 
+  // Compute correct label for POS stage based on planning type (oneply/twoply/pos/paperroll)
+  const _posLabelPlanType = normalizePlanningType(planningExtra && planningExtra.planning_type || '');
+  const _posLabelJobNo = String(base.job_no || '').toUpperCase();
+  let _posStageLabel = 'POS Roll';
+  let _posStageBadge = 'PRL';
+  if(_posLabelPlanType === 'one_ply' || _posLabelPlanType === 'oneply' || _posLabelJobNo.startsWith('PLN-1PL/')) {
+    _posStageLabel = 'One Ply';
+    _posStageBadge = '1PL';
+  } else if(_posLabelPlanType === 'two_ply' || _posLabelPlanType === 'twoply' || _posLabelJobNo.startsWith('PLN-2PL/')) {
+    _posStageLabel = 'Two Ply';
+    _posStageBadge = '2PL';
+  } else if(_posLabelPlanType === 'pos_roll' || _posLabelPlanType === 'posroll' || _posLabelJobNo.startsWith('PLN-POS/')) {
+    _posStageLabel = 'POS Roll';
+    _posStageBadge = 'POS';
+  } else if(_posLabelPlanType === 'paperroll' || _posLabelPlanType === 'paper_roll' || _posLabelJobNo.startsWith('PLN-PRL/')) {
+    _posStageLabel = 'Paper Roll';
+    _posStageBadge = 'PRL';
+  }
+
     const stages = pathKeys.map((key, index)=>{
       let debugInfo = '';
       const meta = STAGE_META[key] || STAGE_META.planning;
+      // Override label/badge for POS stage based on planning type
+      const effectiveLabel = (key === 'pos') ? _posStageLabel : meta.label;
+      const effectiveBadge = (key === 'pos') ? _posStageBadge : meta.badge;
       let stageJob = stageMap.get(key) || null;
       let state = 'later';
       if(index < currentIndex) state = 'done';
@@ -1459,7 +1753,7 @@ function buildLiveCard(rows){
         state = 'done';
       }
 
-      let stageStatus = meta.label;
+      let stageStatus = effectiveLabel;
 
       // Finished Production turns green only after explicit finish evidence.
       if (key === 'finished_production') {
@@ -1478,7 +1772,7 @@ function buildLiveCard(rows){
         } else if(stageJob) {
           stageStatus = state === 'now' ? liveStatusLabel(stageJob.status) : 'Queued';
         } else {
-          stageStatus = state === 'later' ? 'Queued' : meta.label;
+          stageStatus = state === 'later' ? 'Queued' : effectiveLabel;
         }
       }
       // --- End POS Roll override ---
@@ -1487,7 +1781,11 @@ function buildLiveCard(rows){
       } else if(stageJob) {
         // --- Packing stage logic: Packing job status is the only authority ---
         if(key === 'pack') {
-          if (packingJob && stageJob && packingJob.id === stageJob.id) {
+          // If Finished Production is already done, Packing MUST be done too
+          if (hasFinishedProductionEvidence) {
+            state = 'done';
+            stageStatus = 'Packed';
+          } else if (packingJob && stageJob && packingJob.id === stageJob.id) {
             const s = normStatus(packingJob.status);
             if(s === 'packing') {
               state = 'now';
@@ -1530,18 +1828,75 @@ function buildLiveCard(rows){
       }
 
       let timeText = '—';
-      if(key === 'planning') timeText = fmtStageDate(base.planning_created_at || base.created_at || '');
-      else if(stageJob) timeText = fmtStageDate(stageJob.completed_at || stageJob.started_at || stageJob.created_at || '');
-      else if(key === 'dispatch') timeText = fmtStageDate(base.planning_dispatch_date || '');
+      let doneDateTime = '';
+      if(key === 'planning'){
+        timeText = fmtStageDate(base.planning_created_at || base.created_at || '');
+        if(state === 'done') doneDateTime = fmtStageDateTime(base.planning_created_at || base.created_at || '');
+      } else if(stageJob){
+        timeText = fmtStageDate(stageJob.completed_at || stageJob.started_at || stageJob.created_at || '');
+        if(state === 'done'){
+          // Try multiple date sources for the done datetime
+          const sjExtra = (stageJob.extra_data_parsed && typeof stageJob.extra_data_parsed === 'object') ? stageJob.extra_data_parsed : {};
+          const sjDateCandidates = [
+            sjExtra.finished_production_at,
+            sjExtra.finished_label_at,
+            sjExtra.packing_done_at,
+            sjExtra.packing_packed_at,
+            stageJob.completed_at,
+            stageJob.updated_at,
+            stageJob.started_at,
+            stageJob.created_at
+          ];
+          for(let c=0; c<sjDateCandidates.length; c++){
+            const v = String(sjDateCandidates[c] || '').trim();
+            if(v && v !== '0000-00-00 00:00:00' && v !== 'null' && v !== 'undefined'){
+              doneDateTime = fmtStageDateTime(v);
+              break;
+            }
+          }
+        }
+      } else if(key === 'finished_production' && state === 'done'){
+        // Get date from packing job or any finished evidence - multiple fallbacks
+        const fpJob = stageMap.get('pack') || stageMap.get('finished_production') || null;
+        const fpExtra = (fpJob && fpJob.extra_data_parsed && typeof fpJob.extra_data_parsed === 'object') ? fpJob.extra_data_parsed : {};
+        // Try all possible date sources
+        const fpDateCandidates = [
+          fpExtra.finished_production_at,
+          fpExtra.finished_label_at,
+          fpExtra.finished_barcode_at,
+          fpExtra.packing_done_at,
+          fpExtra.packing_packed_at,
+          fpJob && fpJob.completed_at,
+          fpJob && fpJob.updated_at,
+          fpJob && fpJob.started_at,
+          fpJob && fpJob.created_at
+        ];
+        let fpDate = '';
+        for(let c=0; c<fpDateCandidates.length; c++){
+          const v = String(fpDateCandidates[c] || '').trim();
+          if(v && v !== '0000-00-00 00:00:00' && v !== 'null' && v !== 'undefined'){
+            fpDate = v;
+            break;
+          }
+        }
+        if(fpDate){
+          timeText = fmtStageDate(fpDate);
+          doneDateTime = fmtStageDateTime(fpDate);
+        }
+      } else if(key === 'dispatch'){
+        timeText = fmtStageDate(base.planning_dispatch_date || '');
+        if(state === 'done') doneDateTime = fmtStageDateTime(base.planning_dispatch_date || '');
+      }
 
       return {
         key,
-        label: meta.label,
+        label: effectiveLabel,
         dept: meta.dept,
-        badge: meta.badge,
+        badge: effectiveBadge,
         state,
         statusText: stageStatus,
         timeText,
+        doneDateTime,
         job: stageJob,
         debugInfo
       };
@@ -1600,6 +1955,21 @@ function aggregateLiveCards(rows){
   return Array.from(grouped.values()).map(buildLiveCard);
 }
 
+/* ─── Job-type classifier for row coloring ─── */
+function getCardJobType(card){
+  if(!card) return 'label';
+  const src = card.displaySource || card;
+  const extra = parsePlanningExtra(src);
+  const pt = normalizePlanningType(extra && extra.planning_type || '');
+  const jobNo = String(card.job_no || src.job_no || '').toUpperCase();
+
+  if(pt === 'one_ply' || pt === 'oneply' || jobNo.startsWith('PLN-1PL/')) return 'oneply';
+  if(pt === 'two_ply' || pt === 'twoply' || jobNo.startsWith('PLN-2PL/')) return 'twoply';
+  if(pt === 'pos_roll' || pt === 'posroll' || jobNo.startsWith('PLN-POS/')) return 'posroll';
+  if(pt === 'barcode' || pt === 'barcoding' || jobNo.startsWith('PLN-BAR/')) return 'barcode';
+  return 'label';
+}
+
 function getCardDept(card){
   return String(card && card.currentDept || 'plan');
 }
@@ -1625,6 +1995,10 @@ function matchFilter(job){
   const dept=getCardDept(job);
   const s=normStatus(job.currentStatus||job.status||'');
   const pri=(job.planning_priority||'Normal').toLowerCase();
+
+  /* Admin "Hide Finished" toggle — hide jobs where Finished Production is complete */
+  if(FL_HIDE_FINISHED && job.isFinishedProductionComplete) return false;
+
   if(FL_ACTIVE_FILTER==='plan'   && dept!=='plan') return false;
   if(FL_ACTIVE_FILTER==='slit'   && dept!=='slit') return false;
   if(FL_ACTIVE_FILTER==='print'  && dept!=='print') return false;
@@ -1712,12 +2086,11 @@ async function flLoad(){
     });
 
     const allCards = aggregateLiveCards(jobs);
-    // Hide cards that have completed Finished Production from live floor view.
+    // Keep Finished Production cards visible (they are ready for dispatch).
+    // Only hide cards that are fully dispatched/delivered.
     FL_ALL_JOBS = allCards.filter((card) => {
-      // Hide if evidence or if currentStatus is 'Finished Production' (robust)
       const status = (card.currentStatus || '').toLowerCase().replace(/\s+/g, ' ').trim();
-      if (card.isFinishedProductionComplete) return false;
-      if (status === 'finished production') return false;
+      if (status === 'dispatched' || status === 'delivered') return false;
       return true;
     });
     renderStats(FL_ALL_JOBS);
@@ -1749,72 +2122,142 @@ function renderJobs(jobs){
     return(priOrd[a.planning_priority]||2)-(priOrd[b.planning_priority]||2);
   });
 
-  let html='';
-  jobs.forEach((job,i)=>{
-    const dept  = getCardDept(job);
-    const pri   = (job.planning_priority||'Normal').toLowerCase();
-    const ref   = getCardDisplayRef(job);
-    const cr    = Number(job.pending_change_requests||0);
-    const imgURL= String(job.planning_image_url||'').trim();
-    const dispDate = String(job.planning_dispatch_date||'').trim();
-    const route = resolveCardRoute(job);
-    const cardRoute = route && route.url ? String(route.url) : '';
-    const cardTitle = route && route.label ? String(route.label) : 'Open details';
-
-    const thumb = imgURL
-      ? `<img src="${esc(imgURL)}" class="fl-card-thumb" alt="Label" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
-        +`<div class="fl-card-thumb-ph" style="display:none">${DEPT_ICON[dept]||'📋'}</div>`
-      : `<div class="fl-card-thumb-ph">${DEPT_ICON[dept]||'📋'}</div>`;
-
-    let det=[];
-    if(job.roll_no)    det.push('Roll: '+esc(job.roll_no));
-    if(job.paper_type) det.push(esc(job.paper_type));
-    if(job.gsm)        det.push(esc(job.gsm)+'gsm');
-    if(job.width_mm)   det.push(esc(job.width_mm)+'mm');
-
-    let nodes='';
+  /* ── Collect ALL unique stage keys across all jobs to build uniform columns ── */
+  const allStageKeys = [];
+  const seenKeys = new Set();
+  jobs.forEach((job)=>{
     (job.stages||[]).forEach((stage)=>{
-      // Always use resolved stageStatus for POS
-      nodes+=`<div class="fl-node ${stage.state}"><div class="fl-circle"></div><div class="fl-stage-name">${esc(stage.label)}</div><div class="fl-stage-time">${esc(stage.statusText || stage.timeText || '—')}</div>${stage.debugInfo||''}</div>`;
+      if(!seenKeys.has(stage.key)){
+        seenKeys.add(stage.key);
+        allStageKeys.push(stage.key);
+      }
+    });
+  });
+  /* Ensure Packing and Dispatch columns are always visible */
+  if(!seenKeys.has('pack')){ seenKeys.add('pack'); allStageKeys.push('pack'); }
+  if(!seenKeys.has('dispatch')){ seenKeys.add('dispatch'); allStageKeys.push('dispatch'); }
+  /* Sort by master order so columns are consistent */
+  allStageKeys.sort((a,b)=>stageIndex(a)-stageIndex(b));
+
+  /* ── Department column icons ── */
+  const colIcon = {
+    planning:'📋', slit:'🔪', print:'🖨️', die:'✂️',
+    barcode:'🏷️', pos:'📄', lsl:'🏷️', batch:'🖨️',
+    pack:'📦', finished_production:'✅', dispatch:'🚚'
+  };
+
+  /* ── Collect unique labels per stage key to show correct column headers ── */
+  const stageKeyLabels = new Map();
+  const stageKeyActiveLabels = new Map();
+  jobs.forEach((job) => {
+    (job.stages || []).forEach((stage) => {
+      if (!stageKeyLabels.has(stage.key)) stageKeyLabels.set(stage.key, new Set());
+      stageKeyLabels.get(stage.key).add(stage.label);
+      // Track labels from active (non-done) stages — prioritize these for column header
+      if (stage.state === 'now') {
+        if (!stageKeyActiveLabels.has(stage.key)) stageKeyActiveLabels.set(stage.key, new Set());
+        stageKeyActiveLabels.get(stage.key).add(stage.label);
+      }
+    });
+  });
+
+  /* ── Build Table HTML ── */
+  let html = '<div class="fl-grid-wrap"><table class="fl-grid">';
+
+  /* Header row */
+  html += '<thead><tr>';
+  html += '<th>#</th>';
+  html += '<th>Job ID</th>';
+  html += '<th style="text-align:center;width:50px">🖼️</th>';
+  html += '<th>Job Name</th>';
+  html += '<th>Date</th>';
+  allStageKeys.forEach((key)=>{
+    const meta = STAGE_META[key] || {label:key, badge:key};
+    const icon = colIcon[key] || '📋';
+    // Use job-specific label if all jobs agree on the same label for this stage
+    const activeLabelsSet = stageKeyActiveLabels.get(key);
+    const labelsSet = stageKeyLabels.get(key);
+    const headerLabel = (activeLabelsSet && activeLabelsSet.size === 1)
+      ? Array.from(activeLabelsSet)[0]
+      : (labelsSet && labelsSet.size === 1)
+        ? Array.from(labelsSet)[0]
+        : meta.label;
+    html += `<th><span class="g-dept-icon">${icon}</span>${esc(headerLabel)}</th>`;
+  });
+  html += '</tr></thead>';
+
+  /* Body rows */
+  html += '<tbody>';
+  jobs.forEach((job,i)=>{
+    const ref   = getCardDisplayRef(job);
+    const pri   = (job.planning_priority||'Normal').toLowerCase();
+    const cr    = Number(job.pending_change_requests||0);
+    const route = resolveCardRoute(job);
+    const rowRoute = route && route.url ? String(route.url) : '';
+    const rowTitle = route && route.label ? String(route.label) : 'Open details';
+    const dateStr = fmtStageDate(job.planning_created_at || job.planning_dispatch_date || '');
+
+    /* Build a map of this job's stages for quick lookup */
+    const jobStageMap = new Map();
+    (job.stages||[]).forEach((stage)=>{ jobStageMap.set(stage.key, stage); });
+
+    const rowType = getCardJobType(job);
+    html += `<tr class="row-type-${rowType}" ${rowRoute ? `data-route="${esc(rowRoute)}" tabindex="0" role="link" title="${esc(rowTitle)}"` : ''}>`;
+    html += `<td style="color:#94a3b8;font-size:.7rem;font-weight:600;text-align:center">${i+1}</td>`;
+    html += `<td class="g-jobid">${esc(ref)}`;
+    if(pri==='urgent') html+=`<span class="g-pri urgent">URGENT</span>`;
+    else if(pri==='high') html+=`<span class="g-pri high">HIGH</span>`;
+    if(cr>0) html+=`<span class="g-cr">⚠${cr}</span>`;
+    html += `</td>`;
+
+    /* Image cell */
+    const imgUrl = String(job.planning_image_url || '').trim();
+    if(imgUrl){
+      html += `<td class="g-img-cell"><img class="g-img" src="${FL_BASE}/${esc(imgUrl)}" alt="img" loading="lazy" onerror="this.outerHTML='<span class=\\'g-img-ph\\'>📷</span>'"></td>`;
+    } else {
+      html += `<td class="g-img-cell"><span class="g-img-ph">📷</span></td>`;
+    }
+
+    html += `<td class="g-jobname" title="${esc(job.planning_job_name||job.job_no||'')}">${esc(job.planning_job_name||job.job_no||'Job Card')}</td>`;
+    html += `<td class="g-date">${esc(dateStr)}</td>`;
+
+    /* Stage cells */
+    allStageKeys.forEach((key)=>{
+      const stage = jobStageMap.get(key);
+      if(!stage){
+        /* This job doesn't have this stage in its pipeline — show skip */
+        html += `<td class="g-cell-skip"><span class="g-skip-label">N/A</span></td>`;
+      } else if(stage.state === 'done'){
+        const dtLabel = stage.doneDateTime && stage.doneDateTime !== '—' ? `<span class="g-done-dt">${esc(stage.doneDateTime)}</span>` : '';
+        html += `<td class="g-cell-done" title="${esc(stage.statusText || 'Done')}">✅${dtLabel}</td>`;
+      } else if(stage.state === 'now'){
+        html += `<td class="g-cell-now" title="${esc(stage.statusText || 'Active')}"><span class="g-cell-now-inner"><span class="g-pulse-dot"></span>${esc(stage.statusText || stage.label)}</span></td>`;
+      } else {
+        /* later / upcoming */
+        html += `<td class="g-cell-later" title="Upcoming">⬜</td>`;
+      }
     });
 
-    html+=`<div class="fl-card ${CARD_CLASS[dept]||''} ${cardRoute?'fl-card-link':''}" style="animation-delay:${Math.min(i,15)*.04}s" ${cardRoute?`data-route="${esc(cardRoute)}" tabindex="0" role="link" aria-label="${esc(cardTitle)}: ${esc(ref)}" title="${esc(cardTitle)}"`:''}>
-      <div class="fl-card-head">
-        ${thumb}
-        <div class="fl-card-info">
-          <div class="fl-card-row1">
-            <span class="fl-card-jobno" style="font-size:.9rem;font-weight:900;color:#1a1a2e">${esc(ref)}</span>
-            <span class="fl-status-badge" style="${stBadge(job.currentStatus)}" title="${esc(liveStatusTitle(job.currentStatus))}">${esc(liveStatusLabel(job.currentStatus))}</span>
-            <span class="fl-dept-badge ${DEPT_CLASS[dept]||''}">${esc(job.currentBadge || DEPT_LABEL[dept] || '—')}</span>
-            ${cr>0?`<span class="fl-cr-badge">⚠ ${cr} Change Req</span>`:''}
-            ${pri!=='normal'?`<span class="fl-card-pri ${pri}">${pri}</span>`:''}
-          </div>
-          <div class="fl-card-name">${esc(job.planning_job_name||job.job_no||'Job Card')}</div>
-          <div class="fl-card-det">
-            ${det.length?`<span>${det.join(' · ')}</span>`:''}
-            ${dispDate?`<span class="fl-dispatch-badge">📅 ${fmtStageDate(dispDate)}</span>`:''}
-          </div>
-        </div>
-      </div>
-      <div class="fl-timeline"><div class="fl-track">${nodes}</div></div>
-    </div>`;
+    html += '</tr>';
   });
+  html += '</tbody></table></div>';
+
   box.innerHTML=html;
 }
 
 document.getElementById('flJobs').addEventListener('click',function(event){
-  const card = event.target.closest('.fl-card[data-route]');
-  if(!card) return;
-  const route = String(card.dataset.route || '').trim();
+  const row = event.target.closest('tr[data-route]');
+  if(!row) return;
+  const route = String(row.dataset.route || '').trim();
   if(route) window.location.href = route;
 });
 
 document.getElementById('flJobs').addEventListener('keydown',function(event){
   if(event.key !== 'Enter' && event.key !== ' ') return;
-  const card = event.target.closest('.fl-card[data-route]');
-  if(!card) return;
+  const row = event.target.closest('tr[data-route]');
+  if(!row) return;
   event.preventDefault();
-  const route = String(card.dataset.route || '').trim();
+  const route = String(row.dataset.route || '').trim();
   if(route) window.location.href = route;
 });
 
@@ -1852,6 +2295,27 @@ document.getElementById('flSearch').addEventListener('input',function(){
   FL_SEARCH=this.value.trim();
   renderJobs(FL_ALL_JOBS.filter(matchFilter));
 });
+
+/* ─── Admin: Hide Finished toggle ─── */
+(function(){
+  const btn = document.getElementById('flHideFinished');
+  if(!btn) return;
+  btn.addEventListener('click',function(){
+    FL_HIDE_FINISHED = !FL_HIDE_FINISHED;
+    if(FL_HIDE_FINISHED){
+      btn.textContent = '👁️ Show Finished';
+      btn.style.background = '#dc2626';
+      btn.style.color = '#fff';
+      btn.style.borderColor = '#dc2626';
+    } else {
+      btn.textContent = '🙈 Hide Finished';
+      btn.style.background = '#fff';
+      btn.style.color = '#dc2626';
+      btn.style.borderColor = '#dc2626';
+    }
+    renderJobs(FL_ALL_JOBS.filter(matchFilter));
+  });
+})();
 
 /* ─── Init ─── */
 flLoad();

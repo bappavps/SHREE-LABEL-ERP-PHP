@@ -1779,7 +1779,8 @@ function erp_normalize_department_selection($value, ?array $choices = null, ?arr
         }
         $matched = false;
         foreach ($choiceMap as $key => $label) {
-            if ($key === $norm || strpos($key, $norm) !== false || strpos($norm, $key) !== false) {
+            // Use exact match only to avoid "printing" matching "batchprinting"
+            if ($key === $norm) {
                 $selected[$label] = true;
                 $matched = true;
                 break;

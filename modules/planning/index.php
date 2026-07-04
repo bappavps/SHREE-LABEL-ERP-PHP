@@ -1974,10 +1974,19 @@ include __DIR__ . '/../../includes/header.php';
       var norm = text.toLowerCase().replace(/[^a-z0-9]+/g, '');
       routeDepartmentChoices.forEach(function(choice){
         var choiceNorm = String(choice).toLowerCase().replace(/[^a-z0-9]+/g, '');
-        if (choiceNorm === norm || choiceNorm.indexOf(norm) !== -1 || norm.indexOf(choiceNorm) !== -1) {
+        // Use exact match only to avoid "Printing" matching "Batch Printing"
+        if (choiceNorm === norm) {
           wanted[choice] = true;
         }
       });
+      // If no exact match found, try case-insensitive text comparison
+      if (!Object.keys(wanted).some(function(k){ return k.toLowerCase().replace(/[^a-z0-9]+/g, '') === norm; })){
+        routeDepartmentChoices.forEach(function(choice){
+          if (choice.toLowerCase().trim() === text.toLowerCase().trim()) {
+            wanted[choice] = true;
+          }
+        });
+      }
     });
 
     var normalized = routeDepartmentChoices.filter(function(choice){
