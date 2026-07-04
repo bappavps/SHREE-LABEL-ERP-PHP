@@ -820,6 +820,54 @@ if ($action === 'prefill_stock') {
     $mixedTotals = ds_prefill_totals_from_rows($mixedRows);
     $row['mixed_extra_qty'] = $mixedTotals['mixed'];
 
+    // Try to resolve client_name from planning table via item_name match or packing_id link
+    $row['client_name'] = '';
+    $itemName = trim((string)($row['item_name'] ?? ''));
+    $itemCode = trim((string)($row['item_code'] ?? ''));
+    // 1) Try matching planning.job_name to item_name
+    if ($itemName !== '') {
+        $planStmt = $db->prepare("SELECT extra_data FROM planning WHERE job_name = ? AND deleted_at IS NULL ORDER BY id DESC LIMIT 1");
+        if ($planStmt) {
+            $planStmt->bind_param('s', $itemName);
+            $planStmt->execute();
+            $planRes = $planStmt->get_result()->fetch_assoc();
+            if ($planRes && !empty($planRes['extra_data'])) {
+                $planExtra = json_decode($planRes['extra_data'], true);
+                if (is_array($planExtra) && !empty($planExtra['client_name'])) {
+                    $row['client_name'] = trim((string)$planExtra['client_name']);
+                }
+            }
+            $planStmt->close();
+        }
+    }
+    // 2) Fallback: try extracting client from the stock row's own remarks extra data
+    if ($row['client_name'] === '' && !empty($row['remarks'])) {
+        $remarksData = json_decode($row['remarks'], true);
+        if (is_array($remarksData)) {
+            $extraBlock = $remarksData['extra'] ?? [];
+            if (is_array($extraBlock) && !empty($extraBlock['client_name'])) {
+                $row['client_name'] = trim((string)$extraBlock['client_name']);
+            }
+        }
+    }
+    // 3) Fallback: search planning by packing_id in extra_data
+    if ($row['client_name'] === '' && $itemCode !== '') {
+        $likeCode = '%' . $db->real_escape_string($itemCode) . '%';
+        $planStmt2 = $db->prepare("SELECT extra_data FROM planning WHERE extra_data LIKE ? AND deleted_at IS NULL ORDER BY id DESC LIMIT 1");
+        if ($planStmt2) {
+            $planStmt2->bind_param('s', $likeCode);
+            $planStmt2->execute();
+            $planRes2 = $planStmt2->get_result()->fetch_assoc();
+            if ($planRes2 && !empty($planRes2['extra_data'])) {
+                $planExtra2 = json_decode($planRes2['extra_data'], true);
+                if (is_array($planExtra2) && !empty($planExtra2['client_name'])) {
+                    $row['client_name'] = trim((string)$planExtra2['client_name']);
+                }
+            }
+            $planStmt2->close();
+        }
+    }
+
     ds_json(200, ['ok' => true, 'row' => $row]);
 }
 

@@ -936,6 +936,11 @@
     params.set('item_name', String(row.item_name || ''));
     params.set('unit', String(row.unit || 'PCS'));
     params.set('tab', String(fg_state.activeTab || ''));
+    params.set('from', 'finished_goods');
+    // Pass client_name if available in extra data
+    if (extra.client_name) {
+      params.set('client_name', String(extra.client_name));
+    }
     window.location.href = base + '?' + params.toString();
   }
 

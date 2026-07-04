@@ -2133,9 +2133,11 @@ function renderJobs(jobs){
       }
     });
   });
-  /* Ensure Packing and Dispatch columns are always visible */
+  /* Ensure Packing column is always visible */
   if(!seenKeys.has('pack')){ seenKeys.add('pack'); allStageKeys.push('pack'); }
-  if(!seenKeys.has('dispatch')){ seenKeys.add('dispatch'); allStageKeys.push('dispatch'); }
+  /* Remove dispatch column — not needed */
+  const dispIdx = allStageKeys.indexOf('dispatch');
+  if(dispIdx !== -1){ allStageKeys.splice(dispIdx, 1); seenKeys.delete('dispatch'); }
   /* Sort by master order so columns are consistent */
   allStageKeys.sort((a,b)=>stageIndex(a)-stageIndex(b));
 

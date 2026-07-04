@@ -392,6 +392,7 @@
     var p = new URLSearchParams(window.location.search);
     var itemId = parseInt(p.get('item_id') || '0', 10);
     state.prefillTab = String(p.get('tab') || '').trim().toLowerCase();
+    var fromFinished = p.get('from') === 'finished_goods';
 
     nodes.packingId.value = p.get('packing_id') || '';
     nodes.batchNo.value = p.get('batch') || '';
@@ -399,8 +400,16 @@
     nodes.itemName.value = p.get('item_name') || '';
     nodes.unit.value = p.get('unit') || 'PCS';
     nodes.availableQty.value = p.get('qty') || '';
+    if (p.get('client_name')) {
+      nodes.clientName.value = p.get('client_name');
+    }
     if (p.get('qty')) {
       nodes.dispatchQty.value = p.get('qty');
+    }
+
+    // Show pre-fill banner when coming from Finished Goods
+    if (fromFinished || itemId > 0) {
+      showPrefillBanner(p.get('item_name') || '', p.get('packing_id') || '');
     }
 
     if (itemId > 0) {
@@ -415,12 +424,20 @@
         nodes.size.value = res.row.size || nodes.size.value;
         nodes.unit.value = res.row.unit || nodes.unit.value;
         nodes.availableQty.value = String(res.row.available_qty || res.row.quantity || nodes.availableQty.value || '');
+        // Auto-fill client_name from API if available and not already set
+        if (res.row.client_name && !nodes.clientName.value.trim()) {
+          nodes.clientName.value = res.row.client_name;
+        }
         state.currentCategory = String(res.row.category || '').trim().toLowerCase();
         state.cartonRatio = parseFloat(res.row.carton_ratio || 0);
         state.availableCartons = num(res.row.available_cartons || 0);
         setMixedExtraContext(res.row.category || '', res.row.mixed_extra_qty || 0);
         loadBatches();
         syncUnitInputMode();
+        // Update banner with resolved data
+        if (fromFinished || itemId > 0) {
+          showPrefillBanner(res.row.item_name || p.get('item_name') || '', res.row.item_code || p.get('packing_id') || '');
+        }
       });
     } else if (String(nodes.packingId.value || '').trim() !== '') {
       prefillByPackingId(true);
@@ -430,6 +447,34 @@
 
     syncUnitInputMode();
     updateCartonFields();
+  }
+
+  function showPrefillBanner(itemName, packingId) {
+    // Remove any existing banner
+    var existing = document.getElementById('dsPrefillBanner');
+    if (existing) existing.remove();
+
+    var banner = document.createElement('div');
+    banner.id = 'dsPrefillBanner';
+    banner.style.cssText = 'background:linear-gradient(135deg,#dbeafe,#ede9fe);border:2px solid #818cf8;border-radius:12px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;animation:dsBannerSlide .4s ease-out;';
+    var infoText = '<div style="display:flex;align-items:center;gap:10px">'
+      + '<span style="font-size:1.5rem">📦➡️🚚</span>'
+      + '<div>'
+      + '<strong style="color:#4338ca;font-size:.88rem">Pre-filled from Finished Goods</strong>'
+      + '<div style="color:#6366f1;font-size:.76rem;margin-top:2px">'
+      + (itemName ? 'Item: <b>' + esc(itemName) + '</b>' : '')
+      + (packingId ? ' &nbsp;|&nbsp; Packing ID: <b>' + esc(packingId) + '</b>' : '')
+      + '</div></div></div>';
+    var backLink = '<a href="' + esc(String(root.getAttribute('data-api-url') || '').replace('/api/dispatch_api.php', '').replace('/dispatch/api', '/inventory/finished/index.php')) + '" '
+      + 'style="font-size:.75rem;font-weight:700;color:#4338ca;text-decoration:none;background:#fff;padding:6px 14px;border-radius:8px;border:1.5px solid #818cf8;white-space:nowrap;display:inline-flex;align-items:center;gap:4px">'
+      + '↩ Back to Finished Goods</a>';
+    banner.innerHTML = infoText + backLink;
+
+    // Insert before the form card
+    var formCard = root.querySelector('.ds-main-grid') || root.querySelector('.ds-card');
+    if (formCard) {
+      formCard.parentNode.insertBefore(banner, formCard);
+    }
   }
 
   function renderPackingIdSuggestions(rows) {
