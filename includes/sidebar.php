@@ -52,6 +52,80 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
      . '</a>';
 }
 ?>
+<style>
+/* Sidebar Search */
+.sidebar-search {
+  position: relative;
+  padding: 6px 10px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.sidebar-search-icon {
+  position: absolute;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #6b7280;
+  font-size: .82rem;
+  pointer-events: none;
+  z-index: 1;
+}
+.sidebar-search-input {
+  width: 100%;
+  padding: 7px 28px 7px 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(0,0,0,.25);
+  color: #e2e8f0;
+  font-size: .8rem;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  outline: none;
+  transition: border-color .14s, background .14s;
+}
+.sidebar-search-input::placeholder {
+  color: #6b7280;
+  font-size: .78rem;
+}
+.sidebar-search-input:focus {
+  border-color: rgba(34,197,94,.45);
+  background: rgba(0,0,0,.35);
+}
+.sidebar-search-clear {
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: .65rem;
+  display: none;
+  z-index: 1;
+  border-radius: 4px;
+}
+.sidebar-search-clear:hover {
+  color: #e2e8f0;
+  background: rgba(255,255,255,.08);
+}
+.sidebar-search-no-results {
+  padding: 14px 12px 10px;
+  text-align: center;
+  font-size: .75rem;
+  color: #6b7280;
+  display: none;
+  line-height: 1.4;
+}
+.sidebar-search-no-results small {
+  opacity: .7;
+  font-size: .68rem;
+}
+/* When sidebar is collapsed, hide search */
+.sidebar-collapsed .sidebar-search {
+  display: none;
+}
+</style>
+
 <nav class="sidebar">
   <div class="sidebar-brand">
     <div class="brand-icon">
@@ -65,6 +139,17 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
   </div>
 
   <div class="sidebar-nav">
+
+  <!-- Sidebar Search -->
+  <div class="sidebar-search">
+    <i class="bi bi-search sidebar-search-icon"></i>
+    <input type="text" id="sidebarSearch" class="sidebar-search-input" placeholder="Search menu..." autocomplete="off" aria-label="Search menu" spellcheck="false">
+    <button type="button" id="sidebarSearchClear" class="sidebar-search-clear" aria-label="Clear search"><i class="bi bi-x-lg"></i></button>
+    <div id="sidebarSearchNoResults" class="sidebar-search-no-results">
+      <div>No matching menu items</div>
+      <small>Try a different search term</small>
+    </div>
+  </div>
 
     <?= navItem('/modules/dashboard/index.php',    'grid',             'Dashboard',       $currentFile) ?>
 
@@ -360,5 +445,124 @@ function navSubItem($href, $label, $currentFile, $aliases = [], $extraClass = ''
       group.style.display = 'none';
     }
   });
+
+  // ── Sidebar Search ──────────────────────────────────────────
+  var searchInput = document.getElementById('sidebarSearch');
+  var clearBtn = document.getElementById('sidebarSearchClear');
+  var noResults = document.getElementById('sidebarSearchNoResults');
+  if (!searchInput || !clearBtn || !noResults) return;
+
+  var sidebarNav = sidebar.querySelector('.sidebar-nav');
+  if (!sidebarNav) return;
+
+  // Build a flat cache of all navigable sidebar items
+  var allItems = [];
+  sidebarNav.querySelectorAll('.nav-sub-item, .nav-item:not(.nav-group-toggle)').forEach(function(el){
+    var href = el.getAttribute('href');
+    if (href && href !== '#' && href !== '') {
+      // Include parent-group text for better matching
+      var groupEl = el.closest('.nav-group');
+      var groupLabel = '';
+      if (groupEl) {
+        var toggle = groupEl.querySelector('.nav-group-toggle .nav-item-main span:last-child');
+        if (toggle) groupLabel = (toggle.textContent || '').trim();
+      }
+      allItems.push({
+        el: el,
+        href: href,
+        label: (el.textContent || '').trim(),
+        text: (groupLabel + ' ' + (el.textContent || '')).toLowerCase()
+      });
+    }
+  });
+
+  function restoreVisibility() {
+    allItems.forEach(function(item){ item.el.style.removeProperty('display'); });
+    sidebarNav.querySelectorAll('.nav-group, .nav-sub-nest').forEach(function(g){ g.style.removeProperty('display'); });
+    sidebarNav.querySelectorAll('.nav-sub, .nav-sub-children').forEach(function(s){ s.style.removeProperty('display'); });
+    noResults.style.display = 'none';
+  }
+
+  function filterSidebar(query) {
+    query = query.trim().toLowerCase();
+    if (!query) { restoreVisibility(); return; }
+
+    // Force all sub-menus visible during search so results show
+    sidebarNav.querySelectorAll('.nav-sub, .nav-sub-children').forEach(function(el){ el.style.display = 'block'; });
+
+    // Show/hide each item based on text match
+    var matchCount = 0;
+    allItems.forEach(function(item){
+      if (item.text.indexOf(query) !== -1) {
+        item.el.style.removeProperty('display');
+        matchCount++;
+      } else {
+        item.el.style.display = 'none';
+      }
+    });
+
+    // Hide groups with no visible navigable items
+    sidebarNav.querySelectorAll('.nav-group').forEach(function(g){
+      var visible = g.querySelectorAll('.nav-sub-item:not([style*="display: none"]), .nav-item:not([style*="display: none"]):not(.nav-group-toggle)');
+      g.style.display = visible.length === 0 ? 'none' : '';
+    });
+
+    // Hide nested groups with no visible items
+    sidebarNav.querySelectorAll('.nav-sub-nest').forEach(function(n){
+      var visibleSubItems = n.querySelectorAll('.nav-sub-item:not([style*="display: none"])');
+      n.style.display = visibleSubItems.length === 0 ? 'none' : '';
+    });
+
+    // Show "no results" when appropriate
+    noResults.style.display = matchCount === 0 ? 'block' : 'none';
+  }
+
+  // ── Events ──────────────────────────────────────────────────
+  searchInput.addEventListener('input', function(){
+    var q = this.value;
+    filterSidebar(q);
+    clearBtn.style.display = q.trim() ? 'block' : 'none';
+  });
+
+  clearBtn.addEventListener('click', function(e){
+    e.stopPropagation();
+    searchInput.value = '';
+    filterSidebar('');
+    this.style.display = 'none';
+    searchInput.focus();
+  });
+
+  // Enter key → navigate to the most relevant visible result
+  searchInput.addEventListener('keydown', function(e){
+    if (e.key === 'Enter') {
+      var q = this.value.trim().toLowerCase();
+      if (!q) return;
+      var visible = allItems.filter(function(item){ return item.el.style.display !== 'none'; });
+      if (visible.length > 0) {
+        // Score: exact label match wins, then label starts with query, then label contains, etc.
+        visible.sort(function(a, b){
+          var aLabel = a.label.toLowerCase();
+          var bLabel = b.label.toLowerCase();
+          var aScore = aLabel === q ? 3 : (aLabel.indexOf(q) === 0 ? 2 : (aLabel.indexOf(q) !== -1 ? 1 : 0));
+          var bScore = bLabel === q ? 3 : (bLabel.indexOf(q) === 0 ? 2 : (bLabel.indexOf(q) !== -1 ? 1 : 0));
+          return bScore - aScore;
+        });
+        window.location.href = visible[0].href;
+      }
+    }
+  });
+
+  // Escape key → clear search
+  searchInput.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && this.value.trim()) {
+      this.value = '';
+      filterSidebar('');
+      clearBtn.style.display = 'none';
+      e.preventDefault();
+    }
+  });
+
+  // When search is active, clicking a filtered item navigates normally
+  // (they are <a> tags so default click behavior works — no extra handler needed)
 })();
 </script>
