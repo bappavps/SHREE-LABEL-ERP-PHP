@@ -400,6 +400,24 @@ foreach ($allJumboRows as $row) {
 // Notification count
 $notifCount = 0;
 
+// Build parent roll groups for linked jobs (compound runs)
+$parentGroups = [];
+foreach ($activeJobs as $j) {
+  $extra = $rowExtraOverrides[$j['id']] ?? (json_decode((string)($j['extra_data'] ?? '{}'), true) ?: []);
+  $parentRoll = trim((string)($extra['parent_roll'] ?? ($extra['parent_details']['roll_no'] ?? '')));
+  if ($parentRoll !== '') {
+    if (!isset($parentGroups[$parentRoll])) $parentGroups[$parentRoll] = [];
+    $parentGroups[$parentRoll][] = $j;
+  }
+}
+// Determine primary job id for each parent group (choose smallest id as primary)
+$parentGroupPrimary = [];
+foreach ($parentGroups as $pr => $rows) {
+  $min = null;
+  foreach ($rows as $r) { $rid = (int)($r['id'] ?? 0); if ($rid <= 0) continue; if ($min === null || $rid < $min) $min = $rid; }
+  if ($min !== null) $parentGroupPrimary[$pr] = $min;
+}
+
 // ════════════════════════════════════════════════════════════
 // DYNAMIC COUNT CALCULATIONS FOR TOP SUMMARY
 // ════════════════════════════════════════════════════════════
@@ -498,14 +516,24 @@ include __DIR__ . '/../../../includes/header.php';
 .jc-tab-btn.active{background:#0f172a;color:#fff;border-color:#0f172a}
 .jc-tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#e2e8f0;color:#334155;font-size:.62rem;margin-left:6px}
 .jc-tab-btn.active .jc-tab-count{background:rgba(255,255,255,.2);color:#fff}
-.jc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px}
-.jc-card{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:14px;overflow:hidden;transition:all .2s;cursor:pointer}
+.jc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;position:relative}
+.jc-link-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5;overflow:visible}
+.jc-link-overlay path{fill:none;stroke:#7c3aed;stroke-width:2.5;stroke-dasharray:7 5;animation:jc-link-dash 1s linear infinite}
+.jc-link-overlay .jc-link-badge circle{fill:#7c3aed}
+.jc-link-overlay .jc-link-badge text{fill:#fff;font-size:13px;font-weight:900;text-anchor:middle;dominant-baseline:central}
+@keyframes jc-link-dash{to{stroke-dashoffset:-24}}
+.jc-card{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:14px;overflow:hidden;transition:all .2s;cursor:pointer;position:relative}
 .jc-card:hover{box-shadow:0 8px 24px rgba(0,0,0,.07);transform:translateY(-2px)}
+.jc-card-linked{border-left:4px solid #7c3aed;box-shadow:0 0 0 2px rgba(124,58,237,.15),0 8px 20px rgba(124,58,237,.08)}
+.jc-card-linked .jc-card-head{background:linear-gradient(135deg,#f5f3ff,#fff)}
 .jc-card-request-alert{border-left:4px solid #ef4444;box-shadow:0 0 0 2px rgba(239,68,68,.22),0 8px 20px rgba(239,68,68,.16);animation:jc-request-card-pulse 1.25s ease-in-out infinite}
 .jc-card-request-alert .jc-card-head{background:linear-gradient(135deg,#fff1f2,#fff)}
 .jc-card-head{padding:14px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border,#e2e8f0);background:linear-gradient(135deg,#f8fafc,#fff)}
 .jc-card-head .jc-jobno{font-weight:900;font-size:.85rem;color:#0f172a;display:flex;align-items:center;gap:8px}
 .jc-card-head .jc-jobno i{color:var(--jc-brand);font-size:1rem}
+.jc-linked-banner{display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 14px;font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #e4d5ff;background:linear-gradient(90deg,#f5f3ff,#ede9fe,#f5f3ff);color:#6d28d9}
+.jc-linked-banner .jc-linked-arrow{font-size:1.1rem;color:#7c3aed}
+.jc-linked-banner .jc-linked-job{color:#5b21b6;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 .jc-card-body{padding:14px 18px}
 .jc-card-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:.78rem}
 .jc-card-row .jc-label{color:#94a3b8;font-weight:700;font-size:.65rem;text-transform:uppercase;letter-spacing:.03em}
@@ -763,10 +791,26 @@ $historyCount = $finishedCount;
     $hasRequestAlert = ($sts === 'Running' && $hasPendingRequest);
     $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : '—';
     $searchText = strtolower($job['job_no'] . ' ' . ($job['roll_no'] ?? '') . ' ' . ($job['company'] ?? '') . ' ' . ($job['planning_job_name'] ?? ''));
+    // ── Linked-job (compound run) detection ─ computed BEFORE the card markup
+    $parentRollForJob = trim((string)(($job['extra_data_parsed']['parent_roll'] ?? ($job['extra_data_parsed']['parent_details']['roll_no'] ?? ''))));
+    $isLinkedJob = $parentRollForJob !== '' && isset($parentGroups[$parentRollForJob]) && count($parentGroups[$parentRollForJob]) > 1;
+    $isPrimaryJob = !$isLinkedJob || (isset($parentGroupPrimary[$parentRollForJob]) && (int)$parentGroupPrimary[$parentRollForJob] === (int)$job['id']);
+    $linkedTarget = '';
+    $linkedTargetId = 0;
+    if ($isLinkedJob) {
+      $group = $parentGroups[$parentRollForJob] ?? [];
+      // if primary, point to first non-primary job; else point to primary
+      if ($isPrimaryJob) {
+        foreach ($group as $gjob) { if ((int)$gjob['id'] !== (int)$job['id']) { $linkedTarget = $gjob['job_no']; $linkedTargetId = (int)$gjob['id']; break; } }
+      } else {
+        $primaryId = $parentGroupPrimary[$parentRollForJob] ?? 0;
+        foreach ($group as $gjob) { if ((int)$gjob['id'] === (int)$primaryId) { $linkedTarget = $gjob['job_no']; $linkedTargetId = (int)$gjob['id']; break; } }
+      }
+    }
   ?>
-  <div class="jc-card<?= $hasRequestAlert ? ' jc-card-request-alert' : '' ?>" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" data-has-request="<?= $hasRequestAlert ? '1' : '0' ?>" onclick="openJobDetail(<?= $job['id'] ?>)">
-    <div class="jc-card-head">
-      <div class="jc-jobno"><i class="bi bi-box-seam"></i> <?= e($job['job_no']) ?></div>
+  <div class="jc-card<?= $hasRequestAlert ? ' jc-card-request-alert' : '' ?><?= $isLinkedJob ? ' jc-card-linked' : '' ?>" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" data-has-request="<?= $hasRequestAlert ? '1' : '0' ?>"<?php if ($isLinkedJob): ?> data-link-group="<?= e($parentRollForJob) ?>" data-link-role="<?= $isPrimaryJob ? 'primary' : 'child' ?>" data-link-target="<?= $linkedTargetId ?>"<?php endif; ?> onclick="openJobDetail(<?= $job['id'] ?>)">
+      <div class="jc-card-head">
+      <div class="jc-jobno"><i class="bi bi-box-seam"></i> <?= e($job['job_no']) ?><?php if ($isLinkedJob): ?> <i class="bi bi-link-45deg" style="color:#7c3aed;margin-left:6px" title="Mixed job — same paper"></i><?php if ($linkedTarget !== ''): ?> <span class="jc-linked-to" style="margin-left:8px;color:#7c3aed;font-weight:800"><?= $isPrimaryJob ? '&#8594; ' : '&#8592; ' ?><?= e($linkedTarget) ?></span><?php endif; ?><?php endif; ?></div>
       <div style="display:flex;gap:6px;align-items:center">
         <?php if ($hasPendingRequest): ?>
           <span class="jc-request-chip pending">Request Pending</span>
@@ -779,6 +823,14 @@ $historyCount = $finishedCount;
         <?php endif; ?>
       </div>
     </div>
+    <?php if ($isLinkedJob && $linkedTarget !== ''): ?>
+    <div class="jc-linked-banner">
+      <span><?= $isPrimaryJob ? 'Linked to' : 'Linked from' ?></span>
+      <span class="jc-linked-arrow"><?= $isPrimaryJob ? '&#8594;' : '&#8592;' ?></span>
+      <span class="jc-linked-job" onclick="event.stopPropagation();openJobDetail(<?= $linkedTargetId ?>)"><?= e($linkedTarget) ?></span>
+      <span style="font-weight:400;color:#8b5cf6">(same roll)</span>
+    </div>
+    <?php endif; ?>
     <div class="jc-card-body">
       <div class="jc-card-row"><span class="jc-label">JMB No</span><span class="jc-value" style="color:var(--jc-brand)"><?= e($job['job_no']) ?></span></div>
       <div class="jc-card-row"><span class="jc-label">Job Name</span><span class="jc-value"><?= e($job['planning_job_name'] ?? '—') ?></span></div>
@@ -794,7 +846,11 @@ $historyCount = $finishedCount;
       <div class="jc-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
       <div style="display:flex;gap:6px;align-items:center" onclick="event.stopPropagation()">
         <?php if ($sts === 'Pending'): ?>
-          <button class="jc-action-btn jc-btn-start" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-play-fill"></i> Start</button>
+          <?php if ($isLinkedJob && !$isPrimaryJob): ?>
+            <button class="jc-action-btn jc-btn-start" disabled title="Start the primary linked job first"><i class="bi bi-play-fill"></i> Start</button>
+          <?php else: ?>
+            <button class="jc-action-btn jc-btn-start" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-play-fill"></i> Start</button>
+          <?php endif; ?>
         <?php elseif ($sts === 'Running'): ?>
           <?php if ($timerState === 'paused'): ?>
             <button class="jc-action-btn jc-btn-start" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-play-circle"></i> Again Start</button>
@@ -1081,7 +1137,21 @@ const API_BASE = '<?= BASE_URL ?>/modules/jobs/api.php';
 const APP_FOOTER_LEFT = <?= json_encode($appFooterLeft, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const APP_FOOTER_RIGHT = <?= json_encode($appFooterRight, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
-const ALL_JOBS = <?= json_encode(array_values(array_merge($activeJobs, $historyJobs)), JSON_HEX_TAG|JSON_HEX_APOS) ?>;
+<?php
+  // Prepare ALL_JOBS with linked flags for client-side use
+  $allJobsArr = array_values(array_merge($activeJobs, $historyJobs));
+  foreach ($allJobsArr as &$aj) {
+    $extra = json_decode((string)($aj['extra_data'] ?? '{}'), true) ?: [];
+    $parentRollForJob = trim((string)($extra['parent_roll'] ?? ($extra['parent_details']['roll_no'] ?? $aj['roll_no'] ?? '')));
+    $isLinkedJob = $parentRollForJob !== '' && isset($parentGroups[$parentRollForJob]) && count($parentGroups[$parentRollForJob]) > 1;
+    $isPrimaryJob = false;
+    if ($isLinkedJob && isset($parentGroupPrimary[$parentRollForJob]) && (int)$parentGroupPrimary[$parentRollForJob] === (int)($aj['id'] ?? 0)) $isPrimaryJob = true;
+    $aj['is_linked'] = $isLinkedJob ? 1 : 0;
+    $aj['is_primary'] = $isPrimaryJob ? 1 : 0;
+  }
+  unset($aj);
+?>
+const ALL_JOBS = <?= json_encode($allJobsArr, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
 const IS_ADMIN = false;
 const CAN_MANUAL_ROLL_ENTRY = <?= $canManualRollEntry ? 'true' : 'false' ?>;
 let DM_ACTIVE_JOB_ID = 0;
@@ -3884,7 +3954,12 @@ async function openJobDetail(id, mode) {
   if (mode === 'complete' && sts === 'Running' && !timerActive && timerState !== 'paused') {
     fHtml += `<button class="jc-action-btn jc-btn-complete" onclick="submitAndClose(${job.id})"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
   } else if (sts === 'Pending') {
-    fHtml += `<button class="jc-action-btn jc-btn-start" onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-fill"></i> Start Job</button>`;
+    // Disable start in modal if this job is linked and not primary
+    if (job.is_linked && !job.is_primary) {
+      fHtml += `<button class="jc-action-btn jc-btn-start" disabled title="Start is disabled for linked job. Start the primary job first."><i class="bi bi-play-fill"></i> Start Job</button>`;
+    } else {
+      fHtml += `<button class="jc-action-btn jc-btn-start" onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-fill"></i> Start Job</button>`;
+    }
   } else if (sts === 'Running' && timerState === 'paused') {
     fHtml += `<button class="jc-action-btn jc-btn-start" onclick="startJobWithTimer(${job.id})"><i class="bi bi-play-circle"></i> Again Start</button>`;
   } else if (sts === 'Running' && timerActive) {
@@ -4436,12 +4511,130 @@ function generateQR(text) {
     }, 150);
   });
 }
+// ─── Draw connector arrows between linked job cards ─────────
+function drawLinkConnectors() {
+  const grid = document.getElementById('jcGrid');
+  if (!grid) return;
+
+  // Remove any previous overlay
+  const prev = grid.querySelector('.jc-link-overlay');
+  if (prev) prev.remove();
+
+  // Collect visible primary cards that point to a linked target
+  const primaries = Array.from(grid.querySelectorAll('.jc-card[data-link-role="primary"][data-link-target]'))
+    .filter(card => card.style.display !== 'none' && card.dataset.linkTarget && card.dataset.linkTarget !== '0');
+  if (!primaries.length) return;
+
+  const gridRect = grid.getBoundingClientRect();
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', 'jc-link-overlay');
+  svg.setAttribute('width', String(grid.scrollWidth));
+  svg.setAttribute('height', String(grid.scrollHeight));
+
+  let drawnAny = false;
+  primaries.forEach(card => {
+    const target = grid.querySelector('.jc-card[data-id="' + card.dataset.linkTarget + '"]');
+    if (!target || target.style.display === 'none') return;
+
+    const a = card.getBoundingClientRect();
+    const b = target.getBoundingClientRect();
+
+    // Anchor at the nearest horizontal edge midpoints (relative to grid)
+    const aRightX = a.right - gridRect.left;
+    const aLeftX = a.left - gridRect.left;
+    const bRightX = b.right - gridRect.left;
+    const bLeftX = b.left - gridRect.left;
+    const aMidY = a.top - gridRect.top + a.height / 2;
+    const bMidY = b.top - gridRect.top + b.height / 2;
+
+    // Decide which side of each card to connect from
+    let x1, y1, x2, y2;
+    if (b.left >= a.right) {            // target is to the right
+      x1 = aRightX; x2 = bLeftX;
+    } else if (b.right <= a.left) {     // target is to the left
+      x1 = aLeftX; x2 = bRightX;
+    } else {                            // stacked (same column) — connect bottom→top
+      x1 = a.left - gridRect.left + a.width / 2;
+      x2 = b.left - gridRect.left + b.width / 2;
+      y1 = a.bottom - gridRect.top;
+      y2 = b.top - gridRect.top;
+      const midY = (y1 + y2) / 2;
+      appendConnector(svg, NS, `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`, x2, y2, (y2 >= y1 ? 'down' : 'up'));
+      drawnAny = true;
+      return;
+    }
+    y1 = aMidY; y2 = bMidY;
+    const midX = (x1 + x2) / 2;
+    appendConnector(svg, NS, `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`, x2, y2, (x2 >= x1 ? 'right' : 'left'));
+    drawnAny = true;
+  });
+
+  if (drawnAny) grid.appendChild(svg);
+}
+
+function appendConnector(svg, NS, d, tipX, tipY, dir) {
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('d', d);
+  svg.appendChild(path);
+
+  // Arrow head
+  const size = 7;
+  let pts;
+  if (dir === 'right') pts = `${tipX},${tipY} ${tipX - size},${tipY - size} ${tipX - size},${tipY + size}`;
+  else if (dir === 'left') pts = `${tipX},${tipY} ${tipX + size},${tipY - size} ${tipX + size},${tipY + size}`;
+  else if (dir === 'down') pts = `${tipX},${tipY} ${tipX - size},${tipY - size} ${tipX + size},${tipY - size}`;
+  else pts = `${tipX},${tipY} ${tipX - size},${tipY + size} ${tipX + size},${tipY + size}`;
+  const head = document.createElementNS(NS, 'polygon');
+  head.setAttribute('points', pts);
+  head.setAttribute('fill', '#7c3aed');
+  head.setAttribute('stroke', 'none');
+  svg.appendChild(head);
+
+  // "Linked" badge at midpoint of the path
+  const badge = document.createElementNS(NS, 'g');
+  badge.setAttribute('class', 'jc-link-badge');
+  const bbox = path.getBBox ? path.getBBox() : null;
+  if (bbox) {
+    const cx = bbox.x + bbox.width / 2;
+    const cy = bbox.y + bbox.height / 2;
+    const circle = document.createElementNS(NS, 'circle');
+    circle.setAttribute('cx', String(cx));
+    circle.setAttribute('cy', String(cy));
+    circle.setAttribute('r', '11');
+    const txt = document.createElementNS(NS, 'text');
+    txt.setAttribute('x', String(cx));
+    txt.setAttribute('y', String(cy));
+    txt.textContent = '🔗';
+    badge.appendChild(circle);
+    badge.appendChild(txt);
+    svg.appendChild(badge);
+  }
+}
+
+// Redraw connectors whenever layout could change
+let _linkRedrawTimer = null;
+function scheduleLinkRedraw() {
+  if (_linkRedrawTimer) clearTimeout(_linkRedrawTimer);
+  _linkRedrawTimer = setTimeout(drawLinkConnectors, 80);
+}
+window.addEventListener('resize', scheduleLinkRedraw);
+
+// Redraw after any filter change (filterJobs toggles card visibility)
+const _origFilterJobs = filterJobs;
+filterJobs = function(status, btn) {
+  _origFilterJobs(status, btn);
+  scheduleLinkRedraw();
+};
+
 (function(){
   const autoId = new URLSearchParams(window.location.search).get('auto_job');
   if (autoId) setTimeout(function(){ try { openJobDetail(parseInt(autoId)); } catch(e){} }, 600);
   // Default to Pending filter
   const pendingBtn = Array.from(document.querySelectorAll('.jc-filter-btn')).find(b => b.textContent.trim() === 'Pending');
   if (pendingBtn) pendingBtn.click();
+  // Draw linked-card connector arrows after initial layout settles
+  setTimeout(drawLinkConnectors, 300);
 })();
 function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
 </script>

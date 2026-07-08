@@ -104,6 +104,25 @@ function ensureSlittingTables() {
     try { $db->query("ALTER TABLE `slitting_entries` ADD COLUMN `allocation_sequence` INT DEFAULT NULL AFTER `allocation_id`"); } catch (Exception $e) {}
     try { $db->query("ALTER TABLE `slitting_entries` ADD COLUMN `department_route` VARCHAR(255) DEFAULT NULL AFTER `allocation_sequence`"); } catch (Exception $e) {}
 
+    // --- run_groups: track compound/continuous runs by parent roll ---
+    $db->query("CREATE TABLE IF NOT EXISTS `run_groups` (
+        `id` INT AUTO_INCREMENT PRIMARY KEY,
+        `uuid` VARCHAR(64) NOT NULL UNIQUE,
+        `parent_roll_no` VARCHAR(50) NOT NULL,
+        `status` ENUM('Running','Stopped','Aborted') NOT NULL DEFAULT 'Running',
+        `machine` VARCHAR(100) DEFAULT NULL,
+        `created_by` INT DEFAULT NULL,
+        `started_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        `stopped_at` TIMESTAMP NULL DEFAULT NULL,
+        `notes` TEXT DEFAULT NULL,
+        `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX `idx_rg_parent` (`parent_roll_no`),
+        INDEX `idx_rg_status` (`status`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // --- allow linking jobs to a run_group (optional) ---
+    try { $db->query("ALTER TABLE `jobs` ADD COLUMN `run_group_id` VARCHAR(64) DEFAULT NULL AFTER `previous_job_id`"); } catch (Exception $e) {}
+
     // --- Job notifications table ---
     $db->query("CREATE TABLE IF NOT EXISTS `job_notifications` (
         `id`          INT AUTO_INCREMENT PRIMARY KEY,

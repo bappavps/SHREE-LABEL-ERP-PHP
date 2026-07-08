@@ -60,11 +60,12 @@ include __DIR__ . '/../../../includes/header.php';
 .mjs-unit-chip{display:inline-flex;align-items:center;height:32px;padding:0 10px;border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc;font-size:.7rem;font-weight:800;color:#475569}
 .mjs-route-cell{min-width:240px}
 .mjs-route-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
-.mjs-route-card{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:#fff;cursor:pointer;transition:all .15s}
+.mjs-job-route-grid{display:flex;gap:10px;flex-wrap:nowrap;align-items:center;margin-top:6px}
+.mjs-route-card{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:#fff;cursor:pointer;transition:all .12s}
 .mjs-route-card:hover{border-color:#86efac;background:#f0fdf4}
 .mjs-route-card.active{border-color:var(--brand);background:#f0fdf4;box-shadow:0 0 0 3px rgba(34,197,94,.12)}
-.mjs-route-card input{margin-top:2px;width:auto;height:auto}
-.mjs-route-card span{font-size:.74rem;font-weight:700;color:#334155;line-height:1.2}
+.mjs-route-card input{margin:0;width:auto;height:auto}
+.mjs-route-card span{font-size:.74rem;font-weight:700;color:#334155;line-height:1}
 .mjs-plan-cell{min-width:280px}
 .mjs-slit-box{margin-top:8px;padding:10px;border:1px solid #dcfce7;border-radius:10px;background:#f0fdf4;overflow-x:auto}
 .mjs-slit-head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;margin-bottom:8px}
@@ -171,9 +172,9 @@ include __DIR__ . '/../../../includes/header.php';
 .mjs-empty{padding:24px 16px;text-align:center;color:#64748b;font-size:.8rem}
 .mjs-pager{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .mjs-parent-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
-.mjs-parent-chip{border:1px solid var(--border);background:#fff;border-radius:999px;padding:6px 10px;font-size:.74rem;display:flex;align-items:center;gap:8px;cursor:pointer}
+.mjs-parent-chip{border:1px solid var(--border);background:#fff;border-radius:999px;padding:6px 8px;font-size:.74rem;display:flex;align-items:center;gap:8px;cursor:pointer}
 .mjs-parent-chip.active{border-color:var(--brand);background:#f0fdf4}
-.mjs-parent-chip .close{border:none;background:none;color:#991b1b;font-weight:800;cursor:pointer;line-height:1}
+.mjs-parent-chip .close{border:none;background:transparent;color:#991b1b;font-weight:800;cursor:pointer;line-height:1;font-size:.78rem;padding:0;margin-left:6px;display:inline-flex;align-items:center;justify-content:center;height:20px;width:20px;border-radius:6px}
 @media(max-width:1100px){.mjs-wrap{grid-template-columns:1fr}.mjs-alloc-scroll{max-height:none}}
 @media(max-width:900px){
   .mjs-alloc-item-fields{grid-template-columns:1fr}
@@ -182,6 +183,7 @@ include __DIR__ . '/../../../includes/header.php';
   .mjs-slit-row{grid-template-columns:1fr 1fr}
   .mjs-slit-row span{grid-column:1 / -1}
   .mjs-route-grid{grid-template-columns:1fr}
+  .mjs-job-route-grid{flex-wrap:wrap}
   .mjs-choice-grid{grid-template-columns:1fr}
   .mjs-actions-modern{display:grid;grid-template-columns:1fr}
   .mjs-actions-right{display:grid;grid-template-columns:1fr}
@@ -266,15 +268,7 @@ include __DIR__ . '/../../../includes/header.php';
         <div class="box"><div class="k">Remainder</div><div class="v" id="mjsRemainder">0 mm</div></div>
       </div>
 
-      <div style="margin-top:12px;padding:12px;border:1px solid #dbeafe;border-radius:12px;background:#fff">
-        <div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:#64748b;font-weight:900;margin-bottom:8px">Job Card Departments</div>
-        <div id="mjsDeptChooser" class="mjs-choice-grid"></div>
-        <div id="mjsDeptIssueHint" class="mjs-dept-summary is-empty" style="margin-top:10px">
-          <strong>Job Issue Department</strong>
-          <div>No department selected yet</div>
-          <span>Only selected departments will receive auto-issued job cards after execution.</span>
-        </div>
-      </div>
+      <!-- Global department chooser removed for multi-job page — per-job route selectors are used instead -->
 
       <div class="mjs-actions mjs-actions-modern">
         <div style="display:flex;align-items:center;gap:8px">
@@ -381,6 +375,7 @@ include __DIR__ . '/../../../includes/header.php';
   let rollConfigs = {};
   let departmentOptions = [];
   let selectedExecutionDepartments = [];
+  let jobRouteMap = {};
   let parentBrowseRows = [];
   let parentBrowsePage = 1;
   let parentBrowsePages = 1;
@@ -544,7 +539,11 @@ include __DIR__ . '/../../../includes/header.php';
           job_name: normalizedRow.job_name,
           job_size: normalizedRow.job_size,
           destination: 'JOB',
-          department_route: selectedDepartmentRoute(),
+          department_route: (function(pno){
+            const k = String(pno || '').trim();
+            if (k && Array.isArray(jobRouteMap[k]) && jobRouteMap[k].length) return jobRouteMap[k].join(', ');
+            return selectedDepartmentRoute();
+          })(normalizedRow.plan_no),
           slit_runs: [],
         };
       }
@@ -621,6 +620,12 @@ include __DIR__ . '/../../../includes/header.php';
     const picked = parseDepartmentList(selectedExecutionDepartments);
     if (picked.length) return picked.join(', ');
     return parseRoute('');
+  }
+
+  function getJobRoute(planNo) {
+    const key = String(planNo || '').trim();
+    if (key && Array.isArray(jobRouteMap[key]) && jobRouteMap[key].length) return jobRouteMap[key].join(', ');
+    return selectedDepartmentRoute();
   }
 
   function renderDepartmentIssueHint() {
@@ -904,14 +909,14 @@ include __DIR__ . '/../../../includes/header.php';
     return departmentOptions.map(dep => `<option value="${esc(dep)}" ${selected.includes(dep) ? 'selected' : ''}>${esc(dep)}</option>`).join('');
   }
 
-  function routeCardMarkup(idx, currentRoute) {
+  function routeCardMarkup(idx, currentRoute, planKey) {
     const selected = parseRoute(currentRoute).split(',').map(x => x.trim()).filter(Boolean);
     const choices = departmentOptions.length ? departmentOptions : ['Jumbo Slitting', 'Printing'];
-    return `<div class="mjs-route-grid" data-route-wrap="${idx}">
+    return `<div class="mjs-job-route-grid" data-job-route-wrap="${idx}" data-job-route-plan="${esc(planKey || '')}">
       ${choices.map(dep => {
         const checked = selected.includes(dep);
         return `<label class="mjs-route-card ${checked ? 'active' : ''}">
-          <input type="checkbox" data-route-idx="${idx}" data-route-value="${esc(dep)}" ${checked ? 'checked' : ''}>
+          <input type="checkbox" data-job-route-idx="${idx}" data-job-route-value="${esc(dep)}" ${checked ? 'checked' : ''}>
           <span>${esc(dep)}</span>
         </label>`;
       }).join('')}
@@ -1247,9 +1252,13 @@ include __DIR__ . '/../../../includes/header.php';
                 </tr>
               </thead>
               <tbody>
-                ${jobRows.map(r => `
+                ${jobRows.map((r, i) => `
                   <tr class="mjs-jobwise-row-job">
-                    <td><strong>${esc(r.plan_no)}</strong><br><span style="color:#64748b">${esc(r.job_name || '')}</span></td>
+                    <td>
+                      <strong>${esc(r.plan_no)}</strong><br>
+                      <span style="color:#64748b">${esc(r.job_name || '')}</span>
+                      <div style="margin-top:8px">${routeCardMarkup(i, getJobRoute(r.plan_no), r.plan_no)}</div>
+                    </td>
                     <td>${r.roll_list.map(x => `<span class="mjs-tag job">${esc(x)}</span>`).join('')}<br><span style="color:#64748b">${esc(r.roll_list.join(', '))}</span></td>
                     <td><span class="mjs-tag job">Auto Generated on Execute</span><br>${Object.keys(r.status_counts || {}).map(k => `<span class="mjs-tag status-job">${esc(k + ' x' + (r.status_counts[k] || 0))}</span>`).join('')}</td>
                     <td>${esc(r.slit_rows)} / ${esc(r.slit_qty)}</td>
@@ -1270,6 +1279,21 @@ include __DIR__ . '/../../../includes/header.php';
               </tbody>
             </table>
           </div>`;
+        // Attach per-job route chooser listeners and initialize jobRouteMap
+        try {
+          const routeWraps = el.jobWiseBody.querySelectorAll('[data-job-route-wrap]');
+          routeWraps.forEach(wrap => {
+            const plan = wrap.getAttribute('data-job-route-plan') || '';
+            const boxes = Array.from(wrap.querySelectorAll('input[data-job-route-idx]'));
+            if (!jobRouteMap[plan]) {
+              jobRouteMap[plan] = boxes.filter(b => b.checked).map(b => b.getAttribute('data-job-route-value'));
+            }
+            boxes.forEach(cb => cb.addEventListener('change', () => {
+              jobRouteMap[plan] = boxes.filter(b => b.checked).map(b => b.getAttribute('data-job-route-value'));
+              renderAllocations();
+            }));
+          });
+        } catch (e) {}
       }
     }
 

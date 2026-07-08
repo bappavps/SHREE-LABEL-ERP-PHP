@@ -165,6 +165,10 @@ if ($currentUserId > 0) {
   }
 }
 $notificationDepartments = array_values(array_unique($notificationDepartments));
+
+// Ensure core planning and operator channels are always subscribed
+// so users can see planning/barcode/label notifications from any page.
+$notificationDepartments = array_merge($notificationDepartments, ['planning', 'barcode', 'label_slitting']);
 $notificationDepartments[] = 'global';
 $notificationDepartments = array_values(array_unique($notificationDepartments));
 $notificationDeptCsv = implode(',', $notificationDepartments);
@@ -338,7 +342,7 @@ $notificationDeptCsv = implode(',', $notificationDepartments);
           <span class="topbar-flag"><?= e($flagEmoji) ?></span>
         <?php endif; ?>
       </span>
-      <button type="button" id="topbarNotificationBtn" class="topbar-icon-btn topbar-notification-btn" data-href="<?= BASE_URL ?>/modules/approval/index.php" data-notif-api="<?= BASE_URL ?>/modules/jobs/api.php" data-notif-departments="<?= e($notificationDeptCsv) ?>" aria-label="Notifications">
+      <button type="button" id="topbarNotificationBtn" class="topbar-icon-btn topbar-notification-btn" data-href="<?= BASE_URL ?>/modules/approval/index.php" data-notif-api="<?= BASE_URL ?>/modules/jobs/api.php" data-notif-departments="" aria-label="Notifications">
         <i class="bi bi-bell"></i><span id="topbarNotificationDot" class="topbar-notification-dot" style="display:none"></span>
       </button>
       <div id="topbarNotificationPanel" class="topbar-notification-panel" style="display:none">

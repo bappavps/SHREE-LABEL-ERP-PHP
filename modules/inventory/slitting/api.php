@@ -600,6 +600,46 @@ try {
         break;
 
     // ═════════════════════════════════════════════════════════
+    // START COMPOUND RUN — create a run_group for a parent roll
+    // ═════════════════════════════════════════════════════════
+    case 'start_compound_run':
+        if ($method !== 'POST') { echo json_encode(['ok' => false, 'error' => 'POST required']); break; }
+        $parentRollNo = trim((string)($_POST['parent_roll_no'] ?? ''));
+        $operatorName = trim((string)($_POST['operator_name'] ?? '')) ?: trim((string)($_SESSION['user_name'] ?? 'Operator'));
+        $machine = trim((string)($_POST['machine'] ?? ''));
+        if ($parentRollNo === '') { echo json_encode(['ok' => false, 'error' => 'Missing parent_roll_no']); break; }
+
+        // Prevent duplicate running groups on same parent
+        $chk = $db->prepare("SELECT COUNT(*) AS c FROM run_groups WHERE parent_roll_no = ? AND status = 'Running'");
+        $chk->bind_param('s', $parentRollNo);
+        $chk->execute();
+        $cnt = (int)($chk->get_result()->fetch_assoc()['c'] ?? 0);
+        if ($cnt > 0) { echo json_encode(['ok' => false, 'error' => 'Parent roll already in a running group']); break; }
+
+        $uuid = uniqid('rg_', true);
+        $ins = $db->prepare("INSERT INTO run_groups (uuid, parent_roll_no, status, machine, created_by, notes) VALUES (?, ?, 'Running', ?, ?, ?)");
+        $createdBy = (int)($_SESSION['user_id'] ?? 0);
+        $notes = trim((string)($_POST['notes'] ?? ''));
+        $ins->bind_param('ssiss', $uuid, $parentRollNo, $machine, $createdBy, $notes);
+        $ins->execute();
+        $rgId = (int)$db->insert_id;
+        echo json_encode(['ok' => true, 'run_group_id' => $rgId, 'uuid' => $uuid]);
+        break;
+
+    // ═════════════════════════════════════════════════════════
+    // FINISH COMPOUND RUN — stop the run_group
+    // ═════════════════════════════════════════════════════════
+    case 'finish_compound_run':
+        if ($method !== 'POST') { echo json_encode(['ok' => false, 'error' => 'POST required']); break; }
+        $runGroupId = (int)($_POST['run_group_id'] ?? 0);
+        if (!$runGroupId) { echo json_encode(['ok' => false, 'error' => 'Missing run_group_id']); break; }
+        $upd = $db->prepare("UPDATE run_groups SET status = 'Stopped', stopped_at = NOW() WHERE id = ?");
+        $upd->bind_param('i', $runGroupId);
+        $upd->execute();
+        echo json_encode(['ok' => true, 'run_group_id' => $runGroupId]);
+        break;
+
+    // ═════════════════════════════════════════════════════════
     // SEARCH ROLLS BY MATERIAL — for Auto Planner
     // ═════════════════════════════════════════════════════════
     case 'search_rolls_by_material':
@@ -2741,6 +2781,7 @@ try {
         $remainderAction = strtoupper(trim((string)($_POST['remainder_action'] ?? 'STOCK')));
         $operatorName = trim((string)($_POST['operator_name'] ?? ''));
         $machine = trim((string)($_POST['machine'] ?? ''));
+        $providedRunGroupId = trim((string)($_POST['run_group_id'] ?? ''));
 
         $parentPayloads = [];
         if ($isCombinedMode) {
@@ -3983,6 +4024,22 @@ try {
                 $parentId = (int)($parent['id'] ?? 0);
                 $logStmt->bind_param('sisi', $parentRollNo, $parentId, $logDesc, $userId);
                 $logStmt->execute();
+            }
+
+            // If a run_group_id was provided, attach it to created job records (best-effort)
+            if (!empty($providedRunGroupId) && is_array($createdJobCards) && count($createdJobCards)) {
+                foreach ($createdJobCards as $cjc) {
+                    $jobId = intval($cjc['id'] ?? 0);
+                    if ($jobId > 0) {
+                        try {
+                            $up = $db->prepare("UPDATE jobs SET run_group_id = ? WHERE id = ?");
+                            $up->bind_param('si', $providedRunGroupId, $jobId);
+                            $up->execute();
+                        } catch (Exception $e) {
+                            // ignore update errors — non-fatal
+                        }
+                    }
+                }
             }
 
             $db->commit();
