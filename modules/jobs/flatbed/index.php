@@ -3,7 +3,18 @@ require_once __DIR__ . '/../../../config/db.php';
 require_once __DIR__ . '/../../../includes/functions.php';
 require_once __DIR__ . '/../../../includes/auth_check.php';
 
+// Prevent the browser from serving a stale copy of the job board. The page
+// auto-refreshes via location.reload(); without these headers some browsers
+// re-serve a cached HTML snapshot, which can hide freshly-computed linked-job
+// UI (arrow banner + disabled secondary Start) until a hard refresh.
+if (!headers_sent()) {
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+}
+
 $isOperatorView = (string)($_GET['view'] ?? '') === 'operator';
+
 $canDeleteJobs = isAdmin() && !$isOperatorView;
 $dcPageTitleOperator = trim((string)($dcPageTitleOperator ?? '')) ?: 'Die-Cutting Operator';
 $dcPageTitleProduction = trim((string)($dcPageTitleProduction ?? '')) ?: 'Die-Cutting Job Cards';
@@ -106,7 +117,9 @@ $jobsSql = "
            p.job_name AS planning_job_name, p.status AS planning_status, p.priority AS planning_priority,
            p.extra_data AS planning_extra_data,
            prev.job_no AS prev_job_no, prev.status AS prev_job_status, prev.extra_data AS prev_extra_data,
-           grandprev.job_no AS jumbo_job_no, grandprev.extra_data AS grandprev_extra_data
+           prev.department AS prev_job_department,
+           grandprev.job_no AS jumbo_job_no, grandprev.extra_data AS grandprev_extra_data,
+           grandprev.department AS grandprev_department
     FROM jobs j
     LEFT JOIN paper_stock ps ON j.roll_no = ps.roll_no
     LEFT JOIN planning p ON j.planning_id = p.id
@@ -615,6 +628,54 @@ $historyJobs = array_values(array_filter($jobs, function ($j) use ($finishStates
 $activeCount = count($activeJobs);
 $historyCount = count($historyJobs);
 
+// ═════════════════════════════════════════════════════════════════
+// LINKED-JOB GROUPING (Multi-Slitting compound run)
+// ─────────────────────────────────────────────────────────────────
+// When multi-slitting allocates a SINGLE parent paper roll across
+// multiple plans, two (or more) downstream operator jobs (oneply /
+// twoply / pos / paperroll / barcode / flatbed) end up sharing the
+// same `assigned_parent_roll_no` in their extra_data. We group
+// these here so the operator card UI can visually link them (arrow
+// indicator + banner) and gate Start on the secondary job(s) until
+// the primary has been started. Auto-finish of the linked sibling
+// is handled server-side in the shared jobs API on complete.
+// (Mirrors the jumbo linked-job behavior — see operators/jumbo.)
+// ═════════════════════════════════════════════════════════════════
+$parentGroups = [];
+$parentGroupSeenIds = []; // parent_roll => [job_id => true] to avoid counting duplicate JOIN rows
+foreach ($activeJobs as $j) {
+    $ex = is_array($j['extra_data_parsed'] ?? null) ? $j['extra_data_parsed'] : [];
+    $pr = trim((string)(
+        $ex['assigned_parent_roll_no']
+        ?? ($ex['parent_roll']
+        ?? ($ex['parent_details']['roll_no'] ?? ''))
+    ));
+    if ($pr === '') continue;
+    $jid = (int)($j['id'] ?? 0);
+    if ($jid <= 0) continue;
+    // Deduplicate by job id: a job can appear multiple times if its roll_no
+    // matches more than one paper_stock row (LEFT JOIN fan-out). Counting the
+    // same job twice would falsely mark it "linked to itself" (link icon with
+    // no arrow) and leave the true sibling ungrouped (Start stays enabled).
+    if (!isset($parentGroupSeenIds[$pr])) $parentGroupSeenIds[$pr] = [];
+    if (isset($parentGroupSeenIds[$pr][$jid])) continue;
+    $parentGroupSeenIds[$pr][$jid] = true;
+    if (!isset($parentGroups[$pr])) $parentGroups[$pr] = [];
+    $parentGroups[$pr][] = $j;
+}
+
+// Primary = smallest job id in the group (deterministic across reloads).
+$parentGroupPrimary = [];
+foreach ($parentGroups as $pr => $rows) {
+    $min = null;
+    foreach ($rows as $r) {
+        $rid = (int)($r['id'] ?? 0);
+        if ($rid <= 0) continue;
+        if ($min === null || $rid < $min) $min = $rid;
+    }
+    if ($min !== null) $parentGroupPrimary[$pr] = $min;
+}
+
 // ── Stat counts (must follow UI-normalized status mapping) ─────────────────
 $totalCount = count($jobs);
 $queuedCount = count(array_filter($jobs, static function (array $j): bool {
@@ -685,6 +746,13 @@ include __DIR__ . '/../../../includes/header.php';
 .dc-card:hover{border-color:var(--dc-brand);box-shadow:0 4px 16px rgba(14,165,164,.1)}
 .dc-card.dc-queued{opacity:.78;border-left:4px solid #94a3b8}
 .dc-card.dc-selected{outline:2px solid var(--dc-brand);outline-offset:-2px;background:#f0fdfa}
+/* ── Linked-job (multi-slitting compound run) styling ── */
+.dc-card.dc-card-linked{border-left:4px solid #7c3aed;box-shadow:0 0 0 2px rgba(124,58,237,.15),0 8px 20px rgba(124,58,237,.08)}
+.dc-card.dc-card-linked .dc-card-head{background:linear-gradient(135deg,#f5f3ff,#fff)}
+.dc-linked-banner{display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 14px;font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #e4d5ff;background:linear-gradient(90deg,#f5f3ff,#ede9fe,#f5f3ff);color:#6d28d9}
+.dc-linked-banner .dc-linked-arrow{font-size:1.1rem;color:#7c3aed}
+.dc-linked-banner .dc-linked-job{color:#5b21b6;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.dc-linked-to{margin-left:8px;color:#7c3aed;font-weight:800}
 .dc-select-check{position:absolute;top:12px;right:12px;width:18px;height:18px;accent-color:var(--dc-brand);cursor:pointer;z-index:2}
 .dc-card-head{padding:12px 14px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .dc-jobno{font-size:.82rem;font-weight:900;color:#0f172a;display:flex;align-items:center;gap:6px}
@@ -710,8 +778,20 @@ include __DIR__ . '/../../../includes/header.php';
 /* ── Action Buttons ── */
 .dc-action-btn{padding:6px 12px;font-size:.68rem;font-weight:800;border:1px solid #e2e8f0;background:#fff;border-radius:8px;cursor:pointer;transition:all .12s;display:inline-flex;align-items:center;gap:5px}
 .dc-action-btn:hover{background:#f8fafc}
+.dc-action-btn:disabled{opacity:.45;cursor:not-allowed;pointer-events:none;filter:grayscale(.35);border-color:#e2e8f0;color:#94a3b8}
 .dc-btn-start{color:var(--dc-brand);border-color:var(--dc-brand)}
 .dc-btn-start:hover{background:var(--dc-brand-light)}
+.dc-btn-start:disabled{opacity:.4;cursor:not-allowed;color:#94a3b8;border-color:#e2e8f0}
+/* ── Linked-job connector overlay (SVG arrow between linked cards) ── */
+#dcGrid{position:relative}
+.dc-link-overlay{position:absolute;top:0;left:0;pointer-events:none;z-index:1;overflow:visible}
+.dc-link-overlay path{fill:none;stroke:#7c3aed;stroke-width:2.5;stroke-dasharray:7 5;opacity:.9;animation:dc-link-dash 1s linear infinite}
+.dc-link-overlay polygon{fill:#7c3aed;opacity:.9}
+.dc-link-overlay .dc-link-badge circle{fill:#7c3aed;opacity:.95}
+.dc-link-overlay .dc-link-badge text{fill:#fff;font-size:11px;text-anchor:middle;dominant-baseline:central}
+@keyframes dc-link-dash{to{stroke-dashoffset:-24}}
+
+
 .dc-btn-complete{color:#16a34a;border-color:#86efac}
 .dc-btn-complete:hover{background:#f0fdf4}
 .dc-btn-view{color:#475569;border-color:#e2e8f0}
@@ -962,13 +1042,53 @@ include __DIR__ . '/../../../includes/header.php';
     $startedAt = $job['started_at'] ? date('d M Y, H:i', strtotime($job['started_at'])) : '—';
     $completedAt = $job['completed_at'] ? date('d M Y, H:i', strtotime($job['completed_at'])) : '—';
     $searchText = strtolower($job['job_no'] . ' ' . ($job['display_job_name'] ?? '') . ' ' . ($job['planning_material'] ?? '') . ' ' . ($job['planning_die_size'] ?? ''));
+
+    // ── Linked-job (multi-slitting compound run) detection ─────────
+    $exForLink = is_array($job['extra_data_parsed'] ?? null) ? $job['extra_data_parsed'] : [];
+    $parentRollForJob = trim((string)(
+      $exForLink['assigned_parent_roll_no']
+      ?? ($exForLink['parent_roll']
+      ?? ($exForLink['parent_details']['roll_no'] ?? ''))
+    ));
+    $isLinkedJob = $parentRollForJob !== '' && isset($parentGroups[$parentRollForJob]) && count($parentGroups[$parentRollForJob]) > 1;
+    $isPrimaryJob = !$isLinkedJob || (isset($parentGroupPrimary[$parentRollForJob]) && (int)$parentGroupPrimary[$parentRollForJob] === (int)$job['id']);
+    $linkedTarget = '';
+    $linkedTargetId = 0;
+    $linkedPrimaryStatus = '';
+    if ($isLinkedJob) {
+      $group = $parentGroups[$parentRollForJob] ?? [];
+      if ($isPrimaryJob) {
+        foreach ($group as $gjob) { if ((int)$gjob['id'] !== (int)$job['id']) { $linkedTarget = (string)$gjob['job_no']; $linkedTargetId = (int)$gjob['id']; break; } }
+      } else {
+        $primaryId = $parentGroupPrimary[$parentRollForJob] ?? 0;
+        foreach ($group as $gjob) {
+          if ((int)$gjob['id'] === (int)$primaryId) {
+            $linkedTarget = (string)$gjob['job_no'];
+            $linkedTargetId = (int)$gjob['id'];
+            $linkedPrimaryStatus = (string)($gjob['status'] ?? '');
+            break;
+          }
+        }
+      }
+    }
+    // Secondary job Start is disabled until the primary linked job is at least Running
+    // (auto-complete on primary's Complete handles the finish side server-side).
+    $isSecondaryLockedByLink = $isLinkedJob && !$isPrimaryJob && !in_array($linkedPrimaryStatus, ['Running', 'Closed', 'Finalized', 'Completed', 'QC Passed'], true);
   ?>
-  <div class="dc-card <?= $isQueued ? 'dc-queued' : '' ?>" data-status="<?= e($sts) ?>" data-lockstate="<?= $isLocked ? 'locked' : 'unlocked' ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" onclick="openJobDetail(<?= $job['id'] ?>)">
+  <div class="dc-card <?= $isQueued ? 'dc-queued' : '' ?><?= $isLinkedJob ? ' dc-card-linked' : '' ?>" data-status="<?= e($sts) ?>" data-lockstate="<?= $isLocked ? 'locked' : 'unlocked' ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>"<?php if ($isLinkedJob): ?> data-link-group="<?= e($parentRollForJob) ?>" data-link-role="<?= $isPrimaryJob ? 'primary' : 'child' ?>" data-link-target="<?= $linkedTargetId ?>"<?php endif; ?> onclick="openJobDetail(<?= $job['id'] ?>)">
     <?php if ($dcEnableBulkSelection): ?>
     <input type="checkbox" class="dc-select-check" data-job-id="<?= $job['id'] ?>" onclick="event.stopPropagation();dcUpdateBulkBar()" title="Select for bulk print">
     <?php endif; ?>
     <div class="dc-card-head">
-      <div class="dc-jobno"><i class="bi bi-scissors"></i> <?= e($job['job_no']) ?></div>
+      <div class="dc-jobno">
+        <i class="bi bi-scissors"></i> <?= e($job['job_no']) ?>
+        <?php if ($isLinkedJob): ?>
+          <i class="bi bi-link-45deg" style="color:#7c3aed;margin-left:6px" title="Linked job — same paper roll"></i>
+          <?php if ($linkedTarget !== ''): ?>
+            <span class="dc-linked-to"><?= $isPrimaryJob ? '&#8594; ' : '&#8592; ' ?><?= e($linkedTarget) ?></span>
+          <?php endif; ?>
+        <?php endif; ?>
+      </div>
       <div style="display:flex;gap:6px;align-items:center">
         <span class="dc-badge dc-badge-<?= $stsClass ?>"><?= e($sts) ?></span>
         <?php if ($pri !== 'Normal'): ?>
@@ -976,6 +1096,14 @@ include __DIR__ . '/../../../includes/header.php';
         <?php endif; ?>
       </div>
     </div>
+    <?php if ($isLinkedJob && $linkedTarget !== ''): ?>
+    <div class="dc-linked-banner">
+      <span><?= $isPrimaryJob ? 'Linked to' : 'Linked from' ?></span>
+      <span class="dc-linked-arrow"><?= $isPrimaryJob ? '&#8594;' : '&#8592;' ?></span>
+      <span class="dc-linked-job" onclick="event.stopPropagation();openJobDetail(<?= $linkedTargetId ?>)"><?= e($linkedTarget) ?></span>
+      <span style="font-weight:400;color:#8b5cf6">(same paper roll)</span>
+    </div>
+    <?php endif; ?>
     <div class="dc-card-body">
       <div class="dc-card-row"><span class="dc-label">Job Name</span><span class="dc-value dc-job-name"><?= e($job['display_job_name']) ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Material</span><span class="dc-value"><?= e($job['planning_material'] ?: '—') ?></span></div>
@@ -1001,7 +1129,11 @@ include __DIR__ . '/../../../includes/header.php';
       <div class="dc-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
       <div style="display:flex;gap:6px;align-items:center" onclick="event.stopPropagation()">
         <?php if ($sts === 'Pending' && $isOperatorView && !$isLocked): ?>
-          <button class="dc-action-btn dc-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>)"><i class="bi bi-play-fill"></i> Start</button>
+          <?php if ($isSecondaryLockedByLink): ?>
+            <button class="dc-action-btn dc-btn-start" disabled title="Start the primary linked job (<?= e($linkedTarget) ?>) first"><i class="bi bi-play-fill"></i> Start</button>
+          <?php else: ?>
+            <button class="dc-action-btn dc-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>)"><i class="bi bi-play-fill"></i> Start</button>
+          <?php endif; ?>
         <?php elseif ($sts === 'Running' && $isOperatorView): ?>
           <?php if ($timerState === 'paused'): ?>
             <button class="dc-action-btn dc-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>);event.stopPropagation()"><i class="bi bi-play-circle"></i> Again Start</button>
@@ -2131,7 +2263,39 @@ function resumeRunningDCTimer(jobId) {
   showDCTimerOverlay(job);
 }
 
+// Returns the shared parent roll for a job (multi-slitting linked run), or '' if none.
+function dcJobParentRoll(job) {
+  const ex = (job && typeof job.extra_data_parsed === 'object' && job.extra_data_parsed) ? job.extra_data_parsed : {};
+  return String(ex.assigned_parent_roll_no || ex.parent_roll || (ex.parent_details && ex.parent_details.roll_no) || '').trim();
+}
+function dcStrEq(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
+
+// If `job` is a SECONDARY linked job (shares a paper roll with another job) whose
+// PRIMARY sibling has not been started yet, returns {locked:true, primaryJobNo}.
+// Mirrors the server-side link gating so Start is blocked from the modal too.
+function dcLinkedSecondaryLock(job) {
+  const parent = dcJobParentRoll(job);
+  if (!parent) return { locked: false };
+  const group = ALL_JOBS.filter(j => dcStrEq(dcJobParentRoll(j), parent));
+  if (group.length < 2) return { locked: false };
+  // Primary = lowest id in the group. A job is secondary if it isn't the primary.
+  let primary = group[0];
+  group.forEach(j => { if (Number(j.id) < Number(primary.id)) primary = j; });
+  if (Number(primary.id) === Number(job.id)) return { locked: false };
+  const pStatus = String(primary.status || '').trim();
+  const started = ['Running', 'Closed', 'Finalized', 'Completed', 'QC Passed'].indexOf(pStatus) !== -1;
+  return started ? { locked: false } : { locked: true, primaryJobNo: String(primary.job_no || '') };
+}
+
 async function startJobWithTimer(id) {
+  const jobForLink = ALL_JOBS.find(j => j.id == id) || null;
+  if (jobForLink) {
+    const lk = dcLinkedSecondaryLock(jobForLink);
+    if (lk.locked) {
+      alert('This job shares one paper roll with ' + (lk.primaryJobNo || 'its linked job') + '.\nStart the primary linked job (' + (lk.primaryJobNo || '') + ') first — both jobs run together and finish together.');
+      return;
+    }
+  }
   if (!(await dcConfirmAsync('Start this job?', { okLabel: 'Start' }))) return;
   const job = ALL_JOBS.find(j => j.id == id) || null;
   const jobStatus = String(job?.status || '').trim().toLowerCase();
@@ -2841,7 +3005,12 @@ async function openJobDetail(id, mode) {
     if (mode === 'complete' && sts === 'Running' && !timerActive) {
       fHtml += `<button class="dc-action-btn dc-btn-complete" onclick="submitAndClose(${job.id})" style="background:#16a34a;color:#fff;border-color:#16a34a"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
     } else if (sts === 'Pending') {
-      fHtml += `<button class="dc-action-btn dc-btn-start" onclick="startJobWithTimer(${job.id})" style="background:var(--dc-brand);color:#fff;border-color:var(--dc-brand)"><i class="bi bi-play-fill"></i> Start Job</button>`;
+      const _lk = dcLinkedSecondaryLock(job);
+      if (_lk.locked) {
+        fHtml += `<button class="dc-action-btn dc-btn-start" disabled title="Start the primary linked job (${esc(_lk.primaryJobNo || '')}) first — same paper roll" style="opacity:.5;cursor:not-allowed"><i class="bi bi-play-fill"></i> Start Job</button>`;
+      } else {
+        fHtml += `<button class="dc-action-btn dc-btn-start" onclick="startJobWithTimer(${job.id})" style="background:var(--dc-brand);color:#fff;border-color:var(--dc-brand)"><i class="bi bi-play-fill"></i> Start Job</button>`;
+      }
     } else if (sts === 'Running' && timerState === 'paused') {
       fHtml += `<button class="dc-action-btn dc-btn-start" onclick="startJobWithTimer(${job.id})" style="background:var(--dc-brand);color:#fff;border-color:var(--dc-brand)"><i class="bi bi-play-circle"></i> Again Start</button>`;
     } else if (sts === 'Running' && timerActive) {
@@ -3263,12 +3432,132 @@ function generateQR(text) {
   });
 }
 
+// ═══ LINKED-JOB CONNECTOR ARROWS (SVG between linked cards, mirrors jumbo) ═══
+function drawLinkConnectors() {
+  const grid = document.getElementById('dcGrid');
+  if (!grid) return;
+
+  // Remove any previous overlay
+  const prev = grid.querySelector('.dc-link-overlay');
+  if (prev) prev.remove();
+
+  // Collect visible primary cards that point to a linked target
+  const primaries = Array.from(grid.querySelectorAll('.dc-card[data-link-role="primary"][data-link-target]'))
+    .filter(card => card.style.display !== 'none' && card.dataset.linkTarget && card.dataset.linkTarget !== '0');
+  if (!primaries.length) return;
+
+  const gridRect = grid.getBoundingClientRect();
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', 'dc-link-overlay');
+  svg.setAttribute('width', String(grid.scrollWidth));
+  svg.setAttribute('height', String(grid.scrollHeight));
+
+  let drawnAny = false;
+  primaries.forEach(card => {
+    const target = grid.querySelector('.dc-card[data-id="' + card.dataset.linkTarget + '"]');
+    if (!target || target.style.display === 'none') return;
+
+    const a = card.getBoundingClientRect();
+    const b = target.getBoundingClientRect();
+
+    const aRightX = a.right - gridRect.left;
+    const aLeftX = a.left - gridRect.left;
+    const bRightX = b.right - gridRect.left;
+    const bLeftX = b.left - gridRect.left;
+    const aMidY = a.top - gridRect.top + a.height / 2;
+    const bMidY = b.top - gridRect.top + b.height / 2;
+
+    let x1, y1, x2, y2;
+    if (b.left >= a.right) {            // target to the right
+      x1 = aRightX; x2 = bLeftX;
+    } else if (b.right <= a.left) {     // target to the left
+      x1 = aLeftX; x2 = bRightX;
+    } else {                            // stacked — connect bottom→top
+      x1 = a.left - gridRect.left + a.width / 2;
+      x2 = b.left - gridRect.left + b.width / 2;
+      y1 = a.bottom - gridRect.top;
+      y2 = b.top - gridRect.top;
+      const midY = (y1 + y2) / 2;
+      dcAppendConnector(svg, NS, `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`, x2, y2, (y2 >= y1 ? 'down' : 'up'));
+      drawnAny = true;
+      return;
+    }
+    y1 = aMidY; y2 = bMidY;
+    const midX = (x1 + x2) / 2;
+    dcAppendConnector(svg, NS, `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`, x2, y2, (x2 >= x1 ? 'right' : 'left'));
+    drawnAny = true;
+  });
+
+  if (drawnAny) grid.appendChild(svg);
+}
+
+function dcAppendConnector(svg, NS, d, tipX, tipY, dir) {
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('d', d);
+  svg.appendChild(path);
+
+  const size = 7;
+  let pts;
+  if (dir === 'right') pts = `${tipX},${tipY} ${tipX - size},${tipY - size} ${tipX - size},${tipY + size}`;
+  else if (dir === 'left') pts = `${tipX},${tipY} ${tipX + size},${tipY - size} ${tipX + size},${tipY + size}`;
+  else if (dir === 'down') pts = `${tipX},${tipY} ${tipX - size},${tipY - size} ${tipX + size},${tipY - size}`;
+  else pts = `${tipX},${tipY} ${tipX - size},${tipY + size} ${tipX + size},${tipY + size}`;
+  const head = document.createElementNS(NS, 'polygon');
+  head.setAttribute('points', pts);
+  svg.appendChild(head);
+
+  const bbox = path.getBBox ? path.getBBox() : null;
+  if (bbox) {
+    const cx = bbox.x + bbox.width / 2;
+    const cy = bbox.y + bbox.height / 2;
+    const badge = document.createElementNS(NS, 'g');
+    badge.setAttribute('class', 'dc-link-badge');
+    const circle = document.createElementNS(NS, 'circle');
+    circle.setAttribute('cx', String(cx));
+    circle.setAttribute('cy', String(cy));
+    circle.setAttribute('r', '11');
+    const txt = document.createElementNS(NS, 'text');
+    txt.setAttribute('x', String(cx));
+    txt.setAttribute('y', String(cy));
+    txt.textContent = '🔗';
+    badge.appendChild(circle);
+    badge.appendChild(txt);
+    svg.appendChild(badge);
+  }
+}
+
+// Redraw connectors whenever layout could change
+let _dcLinkRedrawTimer = null;
+function scheduleDCLinkRedraw() {
+  if (_dcLinkRedrawTimer) clearTimeout(_dcLinkRedrawTimer);
+  _dcLinkRedrawTimer = setTimeout(drawLinkConnectors, 80);
+}
+window.addEventListener('resize', scheduleDCLinkRedraw);
+
+// Redraw after any filter change (filterJobs toggles card visibility)
+const _dcOrigFilterJobs = filterJobs;
+filterJobs = function(status, btn) {
+  _dcOrigFilterJobs(status, btn);
+  scheduleDCLinkRedraw();
+};
+
+// Redraw after tab switch (grid becomes visible again)
+const _dcOrigSwitchTab = switchDCTab;
+switchDCTab = function(tab) {
+  _dcOrigSwitchTab(tab);
+  if (tab === 'active') scheduleDCLinkRedraw();
+};
+
 // ═══ INIT ═══
 (function(){
   autoFocusJobFromQuery();
   const autoId = new URLSearchParams(window.location.search).get('auto_job');
   if (autoId) setTimeout(function(){ try { openJobDetail(parseInt(autoId)); } catch(e){} }, 600);
+  // Draw linked-card connector arrows after initial layout settles
+  setTimeout(drawLinkConnectors, 300);
 })();
+
 
 // Default filter on page load can be overridden by wrapper modules.
 (function(){
@@ -3334,23 +3623,17 @@ function dcBuildRequiredRolls(job) {
   const extra = (job && job.extra_data_parsed) ? job.extra_data_parsed : {};
   const parent = extra.parent_details || {};
   const hasPrevJob = (parseInt(job && job.previous_job_id || 0, 10)) > 0;
+  const jobDept = String(job?.department || '').trim().toLowerCase();
 
-  // Priority 1: extra.parent_rolls — set by jobs API on start (barcode/slitting flow)
-  const childRolls = Array.isArray(extra.parent_rolls) ? extra.parent_rolls.filter(function(r) { return String(r || '').trim() !== ''; }) : [];
+  // One-Ply special logic: direct vs. from slitting
+  if (jobDept === 'oneply') {
+    const prevDept = String(job?.prev_job_department || '').trim().toLowerCase();
+    const grandPrevDept = String(job?.grandprev_department || '').trim().toLowerCase();
+    const fromSlitting = prevDept === 'jumbo_slitting' || prevDept === 'slitting' || grandPrevDept === 'jumbo_slitting' || grandPrevDept === 'slitting';
 
-  if (childRolls.length > 0) {
-    // Job came via slitting (parent_rolls path) — scan those child rolls
-    childRolls.forEach(function(pr) {
-      addRoll(pr, {
-        paper_type: job?.paper_type || '',
-        width: job?.width_mm ?? '',
-        length: job?.length_mtr ?? ''
-      });
-    });
-  } else {
-    const assignedRows = dcCollectAssignedChildRolls(job);
-    if (assignedRows.length > 0) {
-      // Scan all collected assigned child rolls, including direct slitting-to-POS jobs.
+    if (fromSlitting) {
+      // From slitting: scan assigned child rolls
+      const assignedRows = dcCollectAssignedChildRolls(job);
       assignedRows.forEach(function(r) {
         if (!r || typeof r !== 'object') return;
         addRoll(r.roll_no || '', {
@@ -3360,7 +3643,43 @@ function dcBuildRequiredRolls(job) {
         });
       });
     } else {
-      // Job started directly (no upstream job) — scan the parent roll
+      // Direct job: scan parent roll(s)
+      const assignedRows = dcCollectAssignedChildRolls(job);
+      addRoll(job?.roll_no || extra.assigned_parent_roll_no || parent.roll_no || '', {
+        paper_type: job?.paper_type || parent.paper_type || '',
+        width: job?.width_mm ?? parent.width_mm ?? '',
+        length: job?.length_mtr ?? parent.length_mtr ?? ''
+      });
+      assignedRows.forEach(function(r) {
+        if (!r || typeof r !== 'object' || !r.parent_roll_no) return;
+        addRoll(r.parent_roll_no, {
+          paper_type: r.paper_type || job?.paper_type || '',
+          width: r.width_mm ?? job?.width_mm ?? '',
+          length: r.length_mtr ?? job?.length_mtr ?? ''
+        });
+      });
+    }
+    return out;
+  }
+
+  // Default logic for other departments
+  const childRolls = Array.isArray(extra.parent_rolls) ? extra.parent_rolls.filter(function(r) { return String(r || '').trim() !== ''; }) : [];
+  if (childRolls.length > 0) {
+    childRolls.forEach(function(pr) {
+      addRoll(pr, { paper_type: job?.paper_type || '', width: job?.width_mm ?? '', length: job?.length_mtr ?? '' });
+    });
+  } else {
+    const assignedRows = dcCollectAssignedChildRolls(job);
+    if (assignedRows.length > 0) {
+      assignedRows.forEach(function(r) {
+        if (!r || typeof r !== 'object') return;
+        addRoll(r.roll_no || '', {
+          paper_type: r.paper_type || job?.paper_type || '',
+          width: r.width_mm ?? job?.width_mm ?? '',
+          length: r.length_mtr ?? job?.length_mtr ?? ''
+        });
+      });
+    } else {
       addRoll(job?.roll_no || extra.assigned_parent_roll_no || parent.roll_no || '', {
         paper_type: job?.paper_type || parent.paper_type || '',
         width: job?.width_mm ?? parent.width_mm ?? '',

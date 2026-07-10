@@ -3384,7 +3384,15 @@ try {
                     if (stripos((string)$a['plan_no'], 'PLN-BAR/') !== 0) {
                         $allowBarcode = false;
                     }
-                    if (stripos((string)$a['plan_no'], 'PLN-PRL/') !== 0) {
+                    // Paper roll downstream card creation is reserved for PLN-PRL, PLN-POS, PLN-1PL, PLN-2PL plans
+                    $planNoUpperMulti = strtoupper(trim((string)$a['plan_no']));
+                    $isPaperRollPlanPrefixMulti = (
+                        strpos($planNoUpperMulti, 'PLN-PRL/') === 0
+                        || strpos($planNoUpperMulti, 'PLN-POS/') === 0
+                        || strpos($planNoUpperMulti, 'PLN-1PL/') === 0
+                        || strpos($planNoUpperMulti, 'PLN-2PL/') === 0
+                    );
+                    if (!$isPaperRollPlanPrefixMulti) {
                         $allowPaperRoll = false;
                     }
                     $hasPaperRollRoute = erp_department_selection_contains($departments, 'PaperRoll', $departmentChoices, []);
@@ -3396,7 +3404,16 @@ try {
                         (string)($a['department_route'] ?? ''),
                         (string)($parent['paper_type'] ?? '')
                     );
-                    if ($paperRollSubtype === '' && $allowPaperRoll && stripos((string)$a['plan_no'], 'PLN-PRL/') === 0) {
+                    if ($paperRollSubtype === '' && $isPaperRollPlanPrefixMulti) {
+                        if (strpos($planNoUpperMulti, 'PLN-POS/') === 0) {
+                            $paperRollSubtype = 'pos';
+                        } elseif (strpos($planNoUpperMulti, 'PLN-1PL/') === 0) {
+                            $paperRollSubtype = 'oneply';
+                        } elseif (strpos($planNoUpperMulti, 'PLN-2PL/') === 0) {
+                            $paperRollSubtype = 'twoply';
+                        }
+                    }
+                    if ($paperRollSubtype === '' && $allowPaperRoll && $isPaperRollPlanPrefixMulti) {
                         // Default unclassified PLN-PRL plans to POS when no subtype marker is present.
                         $paperRollSubtype = 'pos';
                     }
@@ -4042,6 +4059,57 @@ try {
                 }
             }
 
+            // ── Notifications for every job card created by the multi-plan slitting batch ──
+            // Requirement: paper slitting (manual OR multi) must fire a department notification.
+            // The single-plan `execute_batch` case already emits these; multi-plan did not.
+            $multiSlittingDeptMap = [
+                'Slitting'       => ['dept' => 'jumbo_slitting', 'label' => 'Jumbo slitting job created'],
+                'Printing'       => ['dept' => 'flexo_printing', 'label' => 'Printing job queued'],
+                'Finishing'      => ['dept' => 'flatbed',        'label' => 'Die-Cutting job queued'],
+                'Label Slitting' => ['dept' => 'label_slitting', 'label' => 'Label Slitting job queued'],
+                'Barcode'        => ['dept' => 'barcode',        'label' => 'Barcode job queued'],
+                'PaperRoll'      => ['dept' => 'paperroll',      'label' => 'PaperRoll job queued'],
+                'POS Roll'       => ['dept' => 'pos',            'label' => 'POS Roll job queued'],
+                'One Ply'        => ['dept' => 'oneply',         'label' => 'One Ply job queued'],
+                'Two Ply'        => ['dept' => 'twoply',         'label' => 'Two Ply job queued'],
+            ];
+            if (is_array($createdJobCards)) {
+                foreach ($createdJobCards as $mCard) {
+                    $mJobId   = (int)($mCard['id'] ?? 0);
+                    $mJobNo   = trim((string)($mCard['job_no'] ?? ''));
+                    $mType    = trim((string)($mCard['type'] ?? ''));
+                    $mPlanNo  = trim((string)($mCard['plan_no'] ?? ''));
+                    if ($mJobId <= 0 || $mJobNo === '' || !isset($multiSlittingDeptMap[$mType])) {
+                        continue;
+                    }
+                    $mDept = $multiSlittingDeptMap[$mType]['dept'];
+                    $mMsg  = 'New ' . $multiSlittingDeptMap[$mType]['label'] . ': ' . $mJobNo
+                        . ' | Batch: ' . $batchNo
+                        . ($mPlanNo !== '' ? ' | Plan: ' . $mPlanNo : '');
+                    $mType2 = 'info';
+                    $nInsMulti = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, ?)");
+                    if ($nInsMulti) {
+                        $nInsMulti->bind_param('isss', $mJobId, $mDept, $mMsg, $mType2);
+                        $nInsMulti->execute();
+                    }
+                }
+                // Inform the Planning section that the multi-plan slitting batch executed.
+                if (!empty($createdJobCards)) {
+                    $planNoticeParents = implode(', ', $parentRollNos);
+                    $planNoticeMsg = 'Multi-plan slitting batch ' . $batchNo . ' executed'
+                        . ($planNoticeParents !== '' ? ' | Parent: ' . $planNoticeParents : '')
+                        . ' | ' . count($createdJobCards) . ' job card(s) created';
+                    $planNoticeType = 'success';
+                    $planNoticeDept = 'planning';
+                    $planNoticeJobId = 0;
+                    $nInsPlan = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, ?)");
+                    if ($nInsPlan) {
+                        $nInsPlan->bind_param('isss', $planNoticeJobId, $planNoticeDept, $planNoticeMsg, $planNoticeType);
+                        $nInsPlan->execute();
+                    }
+                }
+            }
+
             $db->commit();
             echo json_encode([
                 'ok' => true,
@@ -4049,6 +4117,7 @@ try {
                 'batch_no' => $batchNo,
                 'parent_roll' => implode(', ', $parentRollNos),
                 'parent_rolls' => $parentRollNos,
+
                 'total_allocations' => array_reduce($normalizedPerParent, static function ($carry, $item) {
                     return $carry + count($item['allocations']);
                 }, 0),

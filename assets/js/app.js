@@ -983,6 +983,38 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
         var pollingMs = 5000;
         var seenUnreadIds = {};
         var firstUnreadFetch = true;
+        var notifAudioCtx = null;
+
+        // Lightweight self-contained notification chime (no external asset needed).
+        function playNotificationSound() {
+            try {
+                var AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                if (!notifAudioCtx) notifAudioCtx = new AudioCtx();
+                if (notifAudioCtx.state === 'suspended' && typeof notifAudioCtx.resume === 'function') {
+                    notifAudioCtx.resume();
+                }
+                var now = notifAudioCtx.currentTime;
+                // Two short ascending tones for a pleasant alert.
+                [[880, 0], [1174, 0.16]].forEach(function (pair) {
+                    var osc = notifAudioCtx.createOscillator();
+                    var gain = notifAudioCtx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = pair[0];
+                    var start = now + pair[1];
+                    gain.gain.setValueAtTime(0.0001, start);
+                    gain.gain.exponentialRampToValueAtTime(0.22, start + 0.03);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);
+                    osc.connect(gain);
+                    gain.connect(notifAudioCtx.destination);
+                    osc.start(start);
+                    osc.stop(start + 0.24);
+                });
+            } catch (e) {
+                // Ignore audio failures silently (autoplay policy, unsupported, etc.).
+            }
+        }
+
 
         function escHtml(v) {
             return String(v || '')
@@ -1121,6 +1153,13 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
                                 var dedupeId = String((n && n.id) || '').trim();
                                 window.erpDesktopNotifications.show(title, message, { dedupeId: dedupeId });
                             });
+                        }
+                        // Play an alert sound for any newly arrived notification in
+                        // the user's own section(s). Department scoping is already
+                        // applied server-side via the departments filter, so operators
+                        // only hear sounds for their own section's jobs.
+                        if (!firstUnreadFetch && newlySeen.length > 0) {
+                            playNotificationSound();
                         }
                         // Popup toasts are intentionally disabled for notifications.
                         // Users open details directly from the bell panel.

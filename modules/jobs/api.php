@@ -2367,6 +2367,118 @@ try {
             }
         }
 
+        // ─── Linked NON-Slitting operator jobs: auto-finish siblings sharing the SAME parent roll ───
+        // When multi-slitting allocates a SINGLE parent paper roll across multiple plans, two (or
+        // more) downstream operator jobs (OnePly, TwoPly, POS, PaperRoll, Barcode, Flatbed, etc.)
+        // end up sharing the same `assigned_parent_roll_no` in extra_data. When the operator
+        // completes ONE of them, we must also auto-finish the sibling(s) in the SAME department so
+        // they don't stay startable — mirroring the linked-job flow implemented for jumbo slitting.
+        if (in_array($newStatus, ['Closed', 'Finalized', 'Completed', 'QC Passed', 'QC Failed'], true)
+            && strtolower(trim((string)($job['job_type'] ?? ''))) !== 'slitting') {
+            $linkParentRoll2 = trim((string)(
+                $jobExtra['assigned_parent_roll_no']
+                ?? ($jobExtra['parent_roll']
+                ?? ($jobExtra['parent_details']['roll_no'] ?? ''))
+            ));
+            $srcDept = trim((string)($job['department'] ?? ''));
+            if ($linkParentRoll2 !== '' && $srcDept !== '') {
+                $sib2Stmt = $db->prepare("SELECT * FROM jobs WHERE id <> ? AND LOWER(COALESCE(department, '')) = LOWER(?) AND status IN ('Pending','Running','Queued','Hold') AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')");
+                if ($sib2Stmt) {
+                    $sib2Stmt->bind_param('is', $jobId, $srcDept);
+                    $sib2Stmt->execute();
+                    $sib2Res = $sib2Stmt->get_result();
+                    $linkedSiblings2 = [];
+                    while ($sib2Row = $sib2Res->fetch_assoc()) {
+                        $sib2Extra = json_decode((string)($sib2Row['extra_data'] ?? '{}'), true) ?: [];
+                        $sib2Parent = trim((string)(
+                            $sib2Extra['assigned_parent_roll_no']
+                            ?? ($sib2Extra['parent_roll']
+                            ?? ($sib2Extra['parent_details']['roll_no'] ?? ''))
+                        ));
+                        if ($sib2Parent !== '' && strcasecmp($sib2Parent, $linkParentRoll2) === 0) {
+                            $sib2Row['__linked_extra'] = $sib2Extra;
+                            $linkedSiblings2[] = $sib2Row;
+                        }
+                    }
+
+                    foreach ($linkedSiblings2 as $sib) {
+                        $sibId = (int)$sib['id'];
+                        $sibExtra = $sib['__linked_extra'];
+
+                        // Finalize sibling timer bookkeeping.
+                        $sibNow = jobs_timer_now();
+                        $sibAcc = jobs_timer_accumulated_seconds($sibExtra);
+                        if (!empty($sibExtra['timer_active']) && !empty($sibExtra['timer_last_resumed_at'])) {
+                            $sibAcc += jobs_timer_seconds_between((string)$sibExtra['timer_last_resumed_at'], $sibNow);
+                        }
+                        $sibExtra['timer_accumulated_seconds'] = max(0, $sibAcc);
+                        $sibExtra['timer_active'] = false;
+                        $sibExtra['timer_state'] = 'completed';
+                        $sibExtra['timer_last_resumed_at'] = '';
+                        $sibExtra['timer_paused_at'] = '';
+                        $sibExtra['timer_pause_started_at'] = '';
+                        $sibExtra['timer_ended_at'] = $sibNow;
+                        $sibExtra['auto_finished_via_linked_job'] = true;
+                        $sibExtra['auto_finished_from_job_no'] = (string)($job['job_no'] ?? '');
+                        $sibExtra['auto_finished_from_department'] = $srcDept;
+                        $sibExtra['auto_finished_at'] = date('c');
+                        $sibExtraJson = json_encode($sibExtra, JSON_UNESCAPED_UNICODE);
+                        $sibDuration = (int)floor($sibAcc / 60);
+                        $sibUpd = $db->prepare("UPDATE jobs SET status = ?, started_at = COALESCE(started_at, NOW()), completed_at = COALESCE(completed_at, NOW()), duration_minutes = ?, extra_data = ? WHERE id = ?");
+                        if ($sibUpd) {
+                            $sibUpd->bind_param('sisi', $newStatus, $sibDuration, $sibExtraJson, $sibId);
+                            $sibUpd->execute();
+                        }
+
+                        // Advance sibling's downstream queued jobs to Pending.
+                        $sibNext = $db->prepare("UPDATE jobs SET status = 'Pending' WHERE previous_job_id = ? AND status = 'Queued' AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')");
+                        if ($sibNext) {
+                            $sibNext->bind_param('i', $sibId);
+                            $sibNext->execute();
+                        }
+
+                        $sibNxtQ = $db->prepare("SELECT id, job_no, department FROM jobs WHERE previous_job_id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')");
+                        if ($sibNxtQ) {
+                            $sibNxtQ->bind_param('i', $sibId);
+                            $sibNxtQ->execute();
+                            $sibNxtRes = $sibNxtQ->get_result();
+                            while ($sibNxt = $sibNxtRes->fetch_assoc()) {
+                                $sibNMsg = $sib['job_no'] . ' closed — ' . $sibNxt['job_no'] . ' is now ready';
+                                $sibNIns = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, 'success')");
+                                if ($sibNIns) {
+                                    $sibNIns->bind_param('iss', $sibNxt['id'], $sibNxt['department'], $sibNMsg);
+                                    $sibNIns->execute();
+                                }
+                            }
+                        }
+
+                        // Reflect sibling completion on the planning board (moves to its next stage).
+                        $sibCompleteStage = jobs_stage_status_for_event($sib, 'complete');
+                        if ($sibCompleteStage !== '') {
+                            jobs_set_planning_status_and_stage_for_job($db, $sib, $sibCompleteStage);
+                        }
+
+                        // Notification for the sibling's own status change.
+                        $sibNotifMsg = $sib['job_no'] . ' auto-finished (linked to ' . (string)($job['job_no'] ?? '') . ' — same paper roll)';
+                        $sibNotifDept = $sib['department'] ?? null;
+                        $sibNIns2 = $db->prepare("INSERT INTO job_notifications (job_id, department, message, type) VALUES (?, ?, ?, 'info')");
+                        if ($sibNIns2) {
+                            $sibNIns2->bind_param('iss', $sibId, $sibNotifDept, $sibNotifMsg);
+                            $sibNIns2->execute();
+                        }
+
+                        // Advance-stage notification to the sibling's next department(s).
+                        $sibAdvanceTargets = jobsAdvanceNotificationTargets((string)($sib['department'] ?? ''), []);
+                        if (!empty($sibAdvanceTargets)) {
+                            $sibAdvanceMsg = $sib['job_no'] . ' completed in ' . jobs_department_label((string)($sib['department'] ?? '')) . ' — next stage updated';
+                            $sibRoutePath = jobs_notification_job_page_by_department((string)($sib['department'] ?? ''));
+                            createDepartmentNotifications($db, $sibAdvanceTargets, $sibId, $sibAdvanceMsg, 'success', $sibRoutePath);
+                        }
+                    }
+                }
+            }
+        }
+
         $db->commit();
 
 

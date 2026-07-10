@@ -62,6 +62,65 @@ $csrfToken = function_exists('generateCSRF') ? generateCSRF() : '';
 $currentPath = function_exists('rbacCurrentPath') ? rbacCurrentPath() : (string)($_SERVER['PHP_SELF'] ?? '');
 $currentUserId = (int)($_SESSION['user_id'] ?? 0);
 $notificationDepartments = [];
+
+// --- Role-based notification subscriptions (RBAC-driven) ---
+// Operators (logging in via the operator dashboard) should only see
+// notifications relevant to their own department. We detect an operator's
+// department(s) from the RBAC pages their user-group can access. Admins keep
+// full visibility via the path-based rules further below.
+$sessionRoleLc = strtolower(trim((string)($_SESSION['role'] ?? '')));
+$isPrivilegedRole = in_array($sessionRoleLc, [
+  'admin', 'system_admin', 'systemadmin', 'system admin', 'system-admin',
+  'super_admin', 'superadmin', 'super admin', 'super-admin',
+  'manager', 'production_manager', 'production manager', 'production-manager',
+], true) || (function_exists('isAdmin') && isAdmin());
+
+// Map each operator dashboard page -> its notification department channel.
+$operatorPageDeptMap = [
+  '/modules/operators/jumbo/index.php'          => 'jumbo_slitting',
+  '/modules/operators/printing/index.php'       => 'flexo_printing',
+  '/modules/operators/flatbed/index.php'        => 'flatbed',
+  '/modules/operators/rotery/index.php'         => 'rotery',
+  '/modules/operators/barcode/index.php'        => 'barcode',
+  '/modules/operators/label-slitting/index.php' => 'label_slitting',
+  '/modules/operators/pos/index.php'            => 'pos',
+  '/modules/operators/oneply/index.php'         => 'oneply',
+  '/modules/operators/twoply/index.php'         => 'twoply',
+  '/modules/operators/packing/index.php'        => 'packing',
+];
+
+$operatorAllowedDepartments = [];
+if (!$isPrivilegedRole && function_exists('canAccessPath')) {
+  foreach ($operatorPageDeptMap as $opPath => $deptKey) {
+    if (canAccessPath($opPath)) {
+      $operatorAllowedDepartments[] = $deptKey;
+    }
+  }
+  // Dispatch operator (dispatch has no /operators/ page, uses /modules/dispatch)
+  if (canAccessPath('/modules/dispatch/index.php')) {
+    $operatorAllowedDepartments[] = 'dispatch';
+  }
+}
+$operatorAllowedDepartments = array_values(array_unique($operatorAllowedDepartments));
+
+// A user is treated as a "restricted operator" when they are NOT privileged,
+// they can access at least one operator dashboard page, and they CANNOT access
+// the manager-style aggregate pages (Live Floor / Production Manager). Those
+// aggregate pages imply the user should see all departments.
+$hasAggregateView = function_exists('canAccessPath') && (
+  canAccessPath('/modules/live/index.php') ||
+  canAccessPath('/modules/production-manager/index.php')
+);
+$restrictToOperatorDepartments = !$isPrivilegedRole
+  && !empty($operatorAllowedDepartments)
+  && !$hasAggregateView;
+
+// Seed the department subscriptions with the operator's own channels so they
+// are always included regardless of the current page.
+foreach ($operatorAllowedDepartments as $deptKey) {
+  $notificationDepartments[] = $deptKey;
+}
+
 if (strpos($currentPath, '/modules/operators/jumbo/') === 0 || strpos($currentPath, '/modules/jobs/jumbo/') === 0) {
   $notificationDepartments[] = 'jumbo_slitting';
 }
@@ -168,8 +227,26 @@ $notificationDepartments = array_values(array_unique($notificationDepartments));
 
 // Ensure core planning and operator channels are always subscribed
 // so users can see planning/barcode/label notifications from any page.
-$notificationDepartments = array_merge($notificationDepartments, ['planning', 'barcode', 'label_slitting']);
-$notificationDepartments[] = 'global';
+if ($restrictToOperatorDepartments) {
+  // Operator (dashboard) users are locked to ONLY their own department
+  // channels. They still receive personal requisition/leave channels and
+  // the global broadcast channel, but never other departments'.
+  $operatorPersonalChannels = [];
+  foreach ($notificationDepartments as $dep) {
+    // keep requisition/leave user+admin channels that were added for this user
+    if (strpos((string)$dep, 'requisition') !== false || strpos((string)$dep, 'leave') !== false) {
+      $operatorPersonalChannels[] = $dep;
+    }
+  }
+  $notificationDepartments = array_merge(
+    $operatorAllowedDepartments,
+    $operatorPersonalChannels,
+    ['global']
+  );
+} else {
+  $notificationDepartments = array_merge($notificationDepartments, ['planning', 'barcode', 'label_slitting']);
+  $notificationDepartments[] = 'global';
+}
 $notificationDepartments = array_values(array_unique($notificationDepartments));
 $notificationDeptCsv = implode(',', $notificationDepartments);
 ?>
@@ -342,7 +419,7 @@ $notificationDeptCsv = implode(',', $notificationDepartments);
           <span class="topbar-flag"><?= e($flagEmoji) ?></span>
         <?php endif; ?>
       </span>
-      <button type="button" id="topbarNotificationBtn" class="topbar-icon-btn topbar-notification-btn" data-href="<?= BASE_URL ?>/modules/approval/index.php" data-notif-api="<?= BASE_URL ?>/modules/jobs/api.php" data-notif-departments="" aria-label="Notifications">
+      <button type="button" id="topbarNotificationBtn" class="topbar-icon-btn topbar-notification-btn" data-href="<?= BASE_URL ?>/modules/approval/index.php" data-notif-api="<?= BASE_URL ?>/modules/jobs/api.php" data-notif-departments="<?= e($notificationDeptCsv) ?>" aria-label="Notifications">
         <i class="bi bi-bell"></i><span id="topbarNotificationDot" class="topbar-notification-dot" style="display:none"></span>
       </button>
       <div id="topbarNotificationPanel" class="topbar-notification-panel" style="display:none">

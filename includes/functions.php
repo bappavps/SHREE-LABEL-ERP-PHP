@@ -2070,7 +2070,10 @@ function planningCreateNotifications(mysqli $db, $jobNo, $jobName, $planningDepa
         $message = $jobName . ' ' . $eventLabel . ' to ' . $planningSuffix;
     }
 
-    createDepartmentNotifications($db, planningNotificationTargets($planningDepartment), 0, $message, 'info', (string)($routeInfo['path'] ?? ''));
+    // Planning creation should notify the Planning section only. Downstream
+    // department routing (jumbo slitting -> printing, etc.) is handled when the
+    // actual job/process starts or finishes via jobsAdvanceNotificationTargets().
+    createDepartmentNotifications($db, ['planning'], 0, $message, 'info', (string)($routeInfo['path'] ?? ''));
 }
 
 /**
