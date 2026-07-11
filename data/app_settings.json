@@ -100,7 +100,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 2
+                "counter": 0
             },
             "sales_order": {
                 "prefix": "SO",
@@ -108,7 +108,7 @@
             },
             "planning": {
                 "prefix": "PLN",
-                "counter": 1
+                "counter": 0
             },
             "planning_barcode": {
                 "prefix": "PLN-BAR",

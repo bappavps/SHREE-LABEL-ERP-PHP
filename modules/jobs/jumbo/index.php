@@ -1170,6 +1170,75 @@ $historyCount = $finishedCount;
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/qrcode.min.js"></script>
 <script>
+function openRegenerateModal(jobId) {
+    document.getElementById('regenerateJobId').value = jobId;
+    // You might want to fetch job details here to pre-fill some fields
+    $('#regenerateJobModal').modal('show');
+}
+
+function addSlitChildRoll() {
+    const container = document.getElementById('slitChildRollsContainer');
+    const index = container.children.length;
+    const childRollHtml = `
+        <div class="row mb-2" id="child-roll-${index}">
+            <div class="col-md-5">
+                <input type="number" class="form-control" name="child_roll_width[]" placeholder="Width (mm)" required>
+            </div>
+            <div class="col-md-2">
+                 <button type="button" class="btn btn-sm btn-danger" onclick="removeSlitChildRoll(${index})">Remove</button>
+            </div>
+        </div>
+    `;
+    container.insertAdjacentHTML('beforeend', childRollHtml);
+}
+
+function removeSlitChildRoll(index) {
+    const element = document.getElementById(`child-roll-${index}`);
+    if (element) {
+        element.remove();
+    }
+}
+
+function submitRegeneration() {
+    const form = document.getElementById('regenerateJobForm');
+    if (!form.checkValidity()) {
+        form.classList.add('was-validated');
+        toastr.error('Please fill all required fields.');
+        return;
+    }
+
+    const formData = new FormData(form);
+    const childWidths = Array.from(formData.getAll('child_roll_width[]')).map(w => ({ width: w }));
+    
+    const payload = {
+        action: 'regenerate_job_card',
+        job_id: formData.get('job_id'),
+        reason: formData.get('reason'),
+        slit_parent_roll_no: formData.get('slit_parent_roll_no'),
+        slit_parent_width_mm: formData.get('slit_parent_width_mm'),
+        slit_parent_length_mtr: formData.get('slit_parent_length_mtr'),
+        slit_child_rolls_json: JSON.stringify(childWidths)
+    };
+
+    fetch(API_BASE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.ok) {
+            toastr.success('Job regenerated successfully!');
+            $('#regenerateJobModal').modal('hide');
+            location.reload();
+        } else {
+            toastr.error(`Regeneration failed: ${data.error}`);
+        }
+    })
+    .catch(error => {
+        toastr.error(`An error occurred: ${error.message}`);
+    });
+}
 const CSRF = '<?= e($csrf) ?>';
 const BASE_URL = '<?= BASE_URL ?>';
 const API_BASE = '<?= BASE_URL ?>/modules/jobs/api.php';
@@ -1850,6 +1919,20 @@ function jumboBuildRequiredParentRolls(job) {
     });
   }
 
+  // If regenerated, only check new rolls
+  if (extra.is_regenerated) {
+    const childRolls = Array.isArray(extra.child_rolls) ? extra.child_rolls : [];
+    childRolls.forEach(function(r) {
+      addRoll(r.parent_roll_no, {
+        paper_type: r.paper_type || '',
+        width: r.width ?? r.width_mm ?? '',
+        length: r.length ?? r.length_mtr ?? ''
+      });
+    });
+    return out;
+  }
+
+
   const p = extra.parent_details || {};
   addRoll(p.roll_no || extra.parent_roll || job?.roll_no || '', {
     paper_type: p.paper_type || job?.paper_type || '',
@@ -1860,14 +1943,22 @@ function jumboBuildRequiredParentRolls(job) {
   const parentRollsRaw = extra.parent_rolls;
   if (Array.isArray(parentRollsRaw)) {
     parentRollsRaw.forEach(function(pr) {
-      const prn = (pr && typeof pr === 'object')
-        ? (pr.roll_no || pr.parent_roll_no || '')
-        : pr;
-      addRoll(prn, { paper_type: job?.paper_type || '', width: job?.width_mm ?? '', length: job?.length_mtr ?? '' });
+      const prn = (pr && typeof pr === 'object') ?
+        (pr.roll_no || pr.parent_roll_no || '') :
+        pr;
+      addRoll(prn, {
+        paper_type: job?.paper_type || '',
+        width: job?.width_mm ?? '',
+        length: job?.length_mtr ?? ''
+      });
     });
   } else if (typeof parentRollsRaw === 'string' && parentRollsRaw.trim() !== '') {
     parentRollsRaw.split(',').forEach(function(pr) {
-      addRoll(pr, { paper_type: job?.paper_type || '', width: job?.width_mm ?? '', length: job?.length_mtr ?? '' });
+      addRoll(pr, {
+        paper_type: job?.paper_type || '',
+        width: job?.width_mm ?? '',
+        length: job?.length_mtr ?? ''
+      });
     });
   }
 
@@ -3327,52 +3418,172 @@ async function deleteJob(id) {
 
 // ─── Regenerate same job card (admin) ──────────────────────
 async function regenerateJobCard(id) {
-  if (!IS_ADMIN) { jumboNotify('Access denied. Only system admin can regenerate job cards.', 'bad'); return; }
   const job = ALL_JOBS.find(j => j.id == id);
-  if (!job) { jumboNotify('Job not found.', 'bad'); return; }
+  if (!job) {
+    jumboNotify('Job not found.', 'bad');
+    return;
+  }
 
+  // Step 1: Ask for reason
   const reason = await jumboPrompt('Reason for regeneration (required):', 'Roll correction / planning update', 'Regenerate Job Card');
   if (reason === null) return;
   const reasonText = String(reason || '').trim();
-  if (!reasonText) { jumboNotify('Reason is required.', 'warn'); return; }
+  if (!reasonText) {
+    jumboNotify('Reason is required.', 'warn');
+    return;
+  }
 
+  // Step 2: Show stock picker overlay for new parent roll
+  const formValues = await new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'jc-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)';
+    overlay.innerHTML = `
+    <div style="background:#fff;border-radius:16px;width:94%;max-width:620px;max-height:85vh;overflow:auto;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="font-size:.82rem;font-weight:900;text-transform:uppercase;color:#0f172a;margin-bottom:4px;letter-spacing:.04em">Regenerate: ${esc(job.job_no || ('#' + id))}</div>
+      <div style="font-size:.68rem;color:#64748b;margin-bottom:16px">${esc(reasonText)}</div>
+      <p style="font-size:.72rem;color:#475569;margin-bottom:12px">Select a parent roll from stock to slit for this job.</p>
+      <div style="margin-bottom:12px">
+        <input type="text" id="reg-stock-q" placeholder="Search stock rolls..." style="width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:.82rem">
+      </div>
+      <div id="reg-stock-list" style="max-height:220px;overflow-y:auto;margin-bottom:14px;font-size:.72rem"></div>
+      <div id="reg-child-section" style="display:none">
+        <div style="font-size:.68rem;font-weight:800;color:#0f172a;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Child Rolls (widths to slit)</div>
+        <div id="reg-child-rolls" style="display:grid;gap:8px;margin-bottom:10px"></div>
+        <button type="button" id="reg-add-child" style="padding:5px 12px;font-size:.66rem;font-weight:800;text-transform:uppercase;border:1px dashed #cbd5e1;background:#f8fafc;border-radius:8px;cursor:pointer">+ Add Child Roll</button>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
+        <button type="button" class="jc-reg-cancel" style="padding:8px 20px;font-size:.72rem;font-weight:800;text-transform:uppercase;border:1px solid #e2e8f0;background:#fff;border-radius:8px;cursor:pointer">Cancel</button>
+        <button type="button" class="jc-reg-submit" style="padding:8px 20px;font-size:.72rem;font-weight:800;text-transform:uppercase;border:none;background:#16a34a;color:#fff;border-radius:8px;cursor:pointer">Regenerate</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+
+    let selectedStock = null;
+    let childRollsData = [];
+
+    function renderStockList(filter) {
+      const listEl = document.getElementById('reg-stock-list');
+      fetch(API_BASE + '?action=stock_available&paper_type=' + encodeURIComponent(job.paper_type || ''))
+        .then(r => r.json())
+        .then(data => {
+          if (!data.success && !data.ok) { listEl.innerHTML = '<div style="color:#dc2626;font-size:.7rem">No stock available.</div>'; return; }
+          let rolls = data.rolls || data.stock || [];
+          rolls = rolls.filter(r => ['main','stock','available'].indexOf(String(r.status||'').toLowerCase()) !== -1);
+          if (filter) {
+            const q = filter.toLowerCase();
+            rolls = rolls.filter(r => (r.roll_no||'').toLowerCase().includes(q) || (r.paper_type||'').toLowerCase().includes(q) || String(r.width_mm).includes(q));
+          }
+          if (!rolls.length) { listEl.innerHTML = '<div style="color:#94a3b8;font-size:.7rem">No matching rolls.</div>'; return; }
+          listEl.innerHTML = rolls.map(r => `
+            <div class="reg-stock-item" data-roll="${esc(r.roll_no)}" data-width="${r.width_mm}" data-length="${r.length_mtr}" style="padding:7px 10px;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;transition:all .12s;margin-bottom:4px">
+              <div>
+                <div style="font-weight:800;color:#0f172a">${esc(r.roll_no)}</div>
+                <div style="font-size:.62rem;color:#64748b">${esc(r.paper_type || '')} | ${r.width_mm}mm x ${r.length_mtr}mtr</div>
+              </div>
+            </div>
+          `).join('');
+          listEl.querySelectorAll('.reg-stock-item').forEach(item => {
+            item.addEventListener('click', function() {
+              listEl.querySelectorAll('.reg-stock-item').forEach(i => { i.style.borderColor = '#e2e8f0'; i.style.background = '#fff'; });
+              this.style.borderColor = '#16a34a';
+              this.style.background = '#f0fdf4';
+              selectedStock = { roll_no: this.dataset.roll, width_mm: parseFloat(this.dataset.width), length_mtr: parseFloat(this.dataset.length) };
+              childRollsData = [];
+              document.getElementById('reg-child-section').style.display = 'block';
+              renderChildRolls();
+            });
+          });
+        }).catch(() => { listEl.innerHTML = '<div style="color:#dc2626;font-size:.7rem">Error loading stock.</div>'; });
+    }
+
+    function renderChildRolls() {
+      const container = document.getElementById('reg-child-rolls');
+      container.innerHTML = childRollsData.map((cr, i) => `
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="number" class="reg-child-w" data-idx="${i}" value="${cr.width}" min="1" placeholder="Width (mm)" style="width:80px;padding:7px 8px;border:1px solid #e2e8f0;border-radius:8px;font-size:.78rem">
+          <span style="font-size:.62rem;color:#94a3b8">mm</span>
+          <select class="reg-child-dest" data-idx="${i}" style="padding:7px 6px;border:1px solid #e2e8f0;border-radius:8px;font-size:.72rem;background:#fff">
+            <option value="JOB" ${cr.destination === 'JOB' ? 'selected' : ''}>Job Assign</option>
+            <option value="STOCK" ${cr.destination === 'STOCK' ? 'selected' : ''}>Stock</option>
+          </select>
+          <span style="font-size:.62rem;color:#94a3b8">${selectedStock ? 'of ' + selectedStock.width_mm + 'mm' : ''}</span>
+          <button type="button" class="reg-rm-child" data-idx="${i}" style="padding:4px 8px;font-size:.62rem;border:1px solid #fecaca;background:#fef2f2;color:#dc2626;border-radius:6px;cursor:pointer">X</button>
+        </div>
+      `).join('');
+      container.querySelectorAll('.reg-child-w').forEach(inp => {
+        inp.addEventListener('input', function() { childRollsData[parseInt(this.dataset.idx)].width = parseFloat(this.value) || 0; });
+      });
+      container.querySelectorAll('.reg-child-dest').forEach(sel => {
+        sel.addEventListener('change', function() { childRollsData[parseInt(this.dataset.idx)].destination = this.value; });
+      });
+      container.querySelectorAll('.reg-rm-child').forEach(btn => {
+        btn.addEventListener('click', function() { childRollsData.splice(parseInt(this.dataset.idx), 1); renderChildRolls(); });
+      });
+    }
+
+    document.getElementById('reg-add-child').addEventListener('click', function() {
+      const total = childRollsData.reduce((s, cr) => s + cr.width, 0);
+      if (selectedStock && total >= selectedStock.width_mm) { jumboNotify('Total child width already equals parent width.', 'warn'); return; }
+      childRollsData.push({ width: selectedStock ? Math.min(200, selectedStock.width_mm - total) : 200, destination: 'JOB' });
+      renderChildRolls();
+    });
+
+    document.getElementById('reg-stock-q').addEventListener('input', function() { renderStockList(this.value); });
+    renderStockList('');
+
+    overlay.querySelector('.jc-reg-cancel').addEventListener('click', () => { document.body.removeChild(overlay); resolve(null); });
+    overlay.querySelector('.jc-reg-submit').addEventListener('click', () => {
+      if (!selectedStock) { jumboNotify('Please select a stock roll.', 'warn'); return; }
+      if (!childRollsData.length || childRollsData.some(cr => !cr.width || cr.width <= 0)) { jumboNotify('Add valid child roll widths.', 'warn'); return; }
+      const totalChild = childRollsData.reduce((s, cr) => s + cr.width, 0);
+      if (totalChild > selectedStock.width_mm) { jumboNotify('Total child width (' + totalChild + 'mm) exceeds parent width (' + selectedStock.width_mm + 'mm).', 'warn'); return; }
+      document.body.removeChild(overlay);
+      resolve({ parentRoll: selectedStock.roll_no, parentWidth: selectedStock.width_mm, parentLength: selectedStock.length_mtr, childRolls: childRollsData.map(cr => ({ width_mm: cr.width, destination: cr.destination })) });
+    });
+  });
+
+  if (!formValues) return;
+
+  // Step 3: Optional notes
   const notesAppend = await jumboPrompt('Describe what changed (optional):', '', 'Regeneration Notes');
   if (notesAppend === null) return;
 
-  const currentRoll = String(job.roll_no || '').trim();
-  const newRollPrompt = await jumboPrompt('Parent Roll No change (optional). Keep blank to retain current roll:', currentRoll, 'Parent Roll Update');
-  if (newRollPrompt === null) return;
-  const newRoll = String(newRollPrompt || '').trim();
-
-  let changes = {};
-  const form = document.getElementById('dm-operator-form');
-  if (form) {
-    const payload = buildJumboExtraDataFromForm(form);
-    if (payload) changes = payload;
-  }
-
+  // Step 4: Submit
+  jumboNotify('Regenerating job card\u2026', 'info');
   const fd = new FormData();
   fd.append('csrf_token', CSRF);
   fd.append('action', 'regenerate_job_card');
   fd.append('job_id', String(id));
   fd.append('reason', reasonText);
   fd.append('notes_append', String(notesAppend || '').trim());
-  if (newRoll !== '' && newRoll !== currentRoll) {
-    fd.append('roll_no', newRoll);
+
+  const form = document.getElementById('dm-operator-form');
+  if (form) {
+    const payload = buildJumboExtraDataFromForm(form);
+    if (payload) fd.append('changes_json', JSON.stringify(payload));
   }
-  fd.append('changes_json', JSON.stringify(changes));
+
+  if (formValues && formValues.parentRoll) {
+    fd.append('roll_no', formValues.parentRoll);
+    fd.append('slit_parent_roll_no', formValues.parentRoll);
+    fd.append('slit_parent_width_mm', formValues.parentWidth);
+    fd.append('slit_parent_length_mtr', formValues.parentLength);
+    fd.append('slit_child_rolls_json', JSON.stringify(formValues.childRolls));
+  }
 
   try {
     const res = await fetch(API_BASE, { method: 'POST', body: fd });
     const data = await res.json();
     if (!data.ok) {
-      jumboNotify('Regenerate failed: ' + (data.error || 'Unknown error'), 'bad');
+      jumboNotify('Regeneration failed: ' + (data.error || 'Unknown error'), 'bad');
       return;
     }
     jumboNotify('Job card regenerated successfully. Same job number kept and status reset to Pending.', 'ok');
-    location.reload();
+    document.getElementById('jcDetailModal').classList.remove('active');
+    setTimeout(() => location.reload(), 600);
   } catch (err) {
-    jumboNotify('Network error: ' + err.message, 'bad');
+    jumboNotify('Network error during regeneration. Please try again.', 'bad');
   }
 }
 
@@ -3853,4 +4064,151 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s||''
 })();
 </script>
 
+<script>
+function openRegenerateModal(jobId) {
+    document.getElementById('regenerateJobId').value = jobId;
+    // Pre-fill parent roll details from job
+    var jobCard = document.querySelector('[data-job-id="' + jobId + '"]');
+    if (jobCard) {
+        var pw = jobCard.getAttribute('data-parent-width') || '';
+        var pl = jobCard.getAttribute('data-parent-length') || '';
+        var pr = jobCard.getAttribute('data-parent-roll') || '';
+        document.getElementById('slitParentRollNo').value = pr;
+        document.getElementById('slitParentWidth').value = pw;
+        document.getElementById('slitParentLength').value = pl;
+    }
+    document.getElementById('slitChildRollsContainer').innerHTML = '';
+    addSlitChildRoll();
+    $('#regenerateJobModal').modal('show');
+}
+
+function addSlitChildRoll() {
+    const container = document.getElementById('slitChildRollsContainer');
+    const index = container.children.length;
+    const html = '<div class="row mb-2 slit-child-row" data-index="' + index + '">'
+        + '<div class="col-md-4"><input type="text" class="form-control" name="child_roll_no[]" placeholder="Roll No" required></div>'
+        + '<div class="col-md-3"><input type="number" class="form-control" name="child_width_mm[]" placeholder="Width (mm)" required></div>'
+        + '<div class="col-md-3"><input type="number" class="form-control" name="child_length_mtr[]" placeholder="Length (mtr)" required></div>'
+        + '<div class="col-md-2"><button type="button" class="btn btn-sm btn-danger" onclick="this.closest(\'.slit-child-row\').remove()">X</button></div>'
+        + '</div>';
+    container.insertAdjacentHTML('beforeend', html);
+}
+
+function submitRegeneration() {
+    var form = document.getElementById('regenerateJobForm');
+    var jobId = document.getElementById('regenerateJobId').value;
+    var reason = document.getElementById('regenerationReason').value;
+    var rollNo = document.getElementById('slitParentRollNo').value;
+    var widthMm = document.getElementById('slitParentWidth').value;
+    var lengthMtr = document.getElementById('slitParentLength').value;
+
+    if (!reason || !rollNo || !widthMm || !lengthMtr) {
+        toastr.error('Please fill all parent roll fields and reason.');
+        return;
+    }
+
+    // Gather child rolls
+    var childRolls = [];
+    var rows = document.querySelectorAll('.slit-child-row');
+    for (var i = 0; i < rows.length; i++) {
+        var inputs = rows[i].querySelectorAll('input');
+        var cr = inputs[0].value;
+        var cw = inputs[1].value;
+        var cl = inputs[2].value;
+        if (cr && cw && cl) {
+            childRolls.push({ roll_no: cr, width_mm: cw, length_mtr: cl });
+        }
+    }
+
+    if (childRolls.length === 0) {
+        toastr.error('Please add at least one child roll.');
+        return;
+    }
+
+    var payload = {
+        action: 'regenerate_jumbo_job',
+        job_id: jobId,
+        reason: reason,
+        new_parent_roll_no: rollNo,
+        new_parent_width_mm: widthMm,
+        new_parent_length_mtr: lengthMtr,
+        new_child_rolls: childRolls
+    };
+
+    $.ajax({
+        url: 'api.php',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(payload),
+        success: function(res) {
+            if (res.success) {
+                toastr.success('Job regenerated successfully!');
+                $('#regenerateJobModal').modal('hide');
+                location.reload();
+            } else {
+                toastr.error(res.error || 'Regeneration failed.');
+            }
+        },
+        error: function() {
+            toastr.error('Server error during regeneration.');
+        }
+    });
+}
+</script>
+
+<!-- Modal for Job Regeneration -->
+<div class="modal fade" id="regenerateJobModal" tabindex="-1" role="dialog" aria-labelledby="regenerateJobModalLabel" aria-hidden="true" style="display:none">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="regenerateJobModalLabel">Regenerate Jumbo Job</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="regenerateJobForm">
+                    <input type="hidden" id="regenerateJobId" name="job_id">
+                    <div class="form-group">
+                        <label for="regenerationReason">Reason for Regeneration</label>
+                        <textarea class="form-control" id="regenerationReason" name="reason" rows="2" required></textarea>
+                    </div>
+                    <hr>
+                    <h5>New Parent Roll for Slitting</h5>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="slitParentRollNo">Parent Roll No</label>
+                                <input type="text" class="form-control" id="slitParentRollNo" name="slit_parent_roll_no" required>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                             <div class="form-group">
+                                <label for="slitParentWidth">Width (mm)</label>
+                                <input type="number" class="form-control" id="slitParentWidth" name="slit_parent_width_mm" required>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-group">
+                                <label for="slitParentLength">Length (mtr)</label>
+                                <input type="number" class="form-control" id="slitParentLength" name="slit_parent_length_mtr" required>
+                            </div>
+                        </div>
+                    </div>
+                     <hr>
+                    <h5>New Child Rolls</h5>
+                    <div id="slitChildRollsContainer">
+                        <!-- Child roll inputs will be added here -->
+                    </div>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="addSlitChildRoll()">Add Child Roll</button>
+                    
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="submitRegeneration()">Submit Regeneration</button>
+            </div>
+        </div>
+    </div>
+</div>
 <?php include __DIR__ . '/../../../includes/footer.php'; ?>

@@ -454,7 +454,97 @@ function generateUniqueStageJobNo(mysqli $db, string $planNo, string $moduleType
     return strtoupper($fallbackPrefix) . '/' . date('Y') . '/' . str_pad((string)max(1, $seed), 4, '0', STR_PAD_LEFT);
 }
 
-// ─── Route actions ──────────────────────────────────────────
+// ─── Helper: Generate child roll number from parent ───────
+function generateChildRollNo(string $parentRollNo, string $suffix): string {
+    return $parentRollNo . '-' . $suffix;
+}
+
+// ─── Helper: Perform slitting for job regeneration ─────────
+function perform_slitting_for_job_regenerate(mysqli $db, string $parentRollNo, float $parentWidth, float $parentLength, array $childRolls, int $jobId, string $jobSize = ''): array {
+    try {
+        $stmt = $db->prepare("SELECT * FROM paper_stock WHERE UPPER(TRIM(roll_no)) = ? LIMIT 1");
+        $chkParent = strtoupper(trim($parentRollNo));
+        $stmt->bind_param('s', $chkParent);
+        $stmt->execute();
+        $parent = $stmt->get_result()->fetch_assoc();
+        if (!$parent) {
+            return ['ok' => false, 'error' => 'Parent roll not found: ' . $parentRollNo];
+        }
+        $paperType = (string)($parent['paper_type'] ?? '');
+        $company = (string)($parent['company'] ?? '');
+        $gsm = (float)($parent['gsm'] ?? 0);
+        $weightKg = (float)($parent['weight_kg'] ?? 0);
+        $purchaseRate = (float)($parent['purchase_rate'] ?? 0);
+        $lotBatch = (string)($parent['lot_batch_no'] ?? '');
+        $userId = (int)($_SESSION['user_id'] ?? 0);
+
+        $childIndex = countDirectChildren($db, $parentRollNo, 'WIDTH');
+
+        $createdRolls = [];
+        $totalUsedWidth = 0;
+
+        foreach ($childRolls as $cr) {
+            $w = (float)($cr['width_mm'] ?? 0);
+            $l = (float)($cr['length_mtr'] ?? $parentLength);
+            $pt = (string)($cr['paper_type'] ?? $paperType);
+            $dest = strtoupper(trim((string)($cr['destination'] ?? 'JOB')));
+            if (!in_array($dest, ['JOB', 'STOCK'], true)) $dest = 'JOB';
+            if ($w <= 0) continue;
+
+            $totalUsedWidth += $w;
+            $suffix = getNextSuffix('WIDTH', $childIndex++);
+            $childRollNo = generateChildRollNo($parentRollNo, $suffix);
+            $sqm = ($w / 1000) * $l;
+
+            $status = ($dest === 'JOB') ? 'Job Assign' : 'Stock';
+            $jobNo = ($dest === 'JOB') ? (string)($cr['job_no'] ?? '') : '';
+            $jobName = ($dest === 'JOB') ? (string)($cr['job_name'] ?? '') : '';
+            $childJobSize = ($dest === 'JOB') ? $jobSize : '';
+
+            $ins = $db->prepare("INSERT INTO paper_stock (roll_no, paper_type, company, width_mm, length_mtr, gsm, weight_kg, purchase_rate, sqm, lot_batch_no, parent_roll_no, status, job_no, job_name, job_size, date_received, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?)");
+            $ins->bind_param('sssddddddssssssi', $childRollNo, $pt, $company, $w, $l, $gsm, $weightKg, $purchaseRate, $sqm, $lotBatch, $parentRollNo, $status, $jobNo, $jobName, $childJobSize, $userId);
+            $ins->execute();
+
+            $createdRolls[] = [
+                'roll_no' => $childRollNo,
+                'width_mm' => $w,
+                'length_mtr' => $l,
+                'paper_type' => $pt,
+                'destination' => $dest,
+                'status' => $status,
+            ];
+        }
+
+        $stockRolls = [];
+        $remainderWidth = $parentWidth - $totalUsedWidth;
+        if ($remainderWidth > 0.5) {
+            $remSuffix = getNextSuffix('WIDTH', $childIndex++);
+            $remRollNo = generateChildRollNo($parentRollNo, $remSuffix);
+            $remSqm = ($remainderWidth / 1000) * $parentLength;
+
+            $insRem = $db->prepare("INSERT INTO paper_stock (roll_no, paper_type, company, width_mm, length_mtr, gsm, weight_kg, purchase_rate, sqm, lot_batch_no, parent_roll_no, status, date_received, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Stock', CURDATE(), ?)");
+            $insRem->bind_param('sssddddddssi', $remRollNo, $paperType, $company, $remainderWidth, $parentLength, $gsm, $weightKg, $purchaseRate, $remSqm, $lotBatch, $parentRollNo, $userId);
+            $insRem->execute();
+
+            $stockRolls[] = [
+                'roll_no' => $remRollNo,
+                'width_mm' => $remainderWidth,
+                'length_mtr' => $parentLength,
+                'paper_type' => $paperType,
+                'destination' => 'STOCK',
+                'status' => 'Stock',
+            ];
+        }
+
+        return ['ok' => true, 'child_rolls' => $createdRolls, 'stock_rolls' => $stockRolls];
+    } catch (Exception $e) {
+        return ['ok' => false, 'error' => 'Slitting failed: ' . $e->getMessage()];
+    }
+}
+
+// ─── Route actions (only for direct API access) ─────────────────
+$isDirectApiRequest = (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === realpath(__FILE__));
+if ($isDirectApiRequest) {
 try {
     switch ($action) {
 
@@ -4264,4 +4354,5 @@ try {
 } catch (Throwable $th) {
     http_response_code(500);
     echo json_encode(['ok' => false, 'error' => 'Server error: ' . $th->getMessage()]);
+}
 }

@@ -3353,6 +3353,43 @@ try {
         ]);
         break;
 
+    // ─── Stock available for regeneration ──────────────────
+    case 'stock_available':
+        $paperType = trim((string)($_GET['paper_type'] ?? ''));
+        $q = trim((string)($_GET['q'] ?? ''));
+
+        $where = ["roll_no IS NOT NULL", "roll_no <> ''", "LOWER(COALESCE(status,'')) IN ('main','stock','available')"];
+        $params = [];
+        $types = '';
+
+        if ($paperType !== '') {
+            $where[] = "paper_type = ?";
+            $params[] = $paperType;
+            $types .= 's';
+        }
+        if ($q !== '') {
+            $where[] = "(roll_no LIKE ? OR paper_type LIKE ?)";
+            $likeQ = '%' . $q . '%';
+            $params[] = $likeQ;
+            $params[] = $likeQ;
+            $types .= 'ss';
+        }
+
+        $sql = "SELECT id, roll_no, paper_type, company, width_mm, length_mtr, gsm, status
+                FROM paper_stock
+                WHERE " . implode(' AND ', $where) . "
+                ORDER BY id DESC
+                LIMIT 200";
+        $stmt = $db->prepare($sql);
+        if ($types !== '') {
+            $stmt->bind_param($types, ...$params);
+        }
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+        echo json_encode(['success' => true, 'ok' => true, 'rolls' => $rows]);
+        break;
+
     // ─── Operator update: jumbo roll edits + wastage ───────
     case 'update_jumbo_rolls':
         if ($method !== 'POST') {
@@ -5334,11 +5371,15 @@ try {
         $notesAppend = trim((string)($_POST['notes_append'] ?? ''));
         $newRollNo = strtoupper(trim((string)($_POST['roll_no'] ?? '')));
         $changesJson = trim((string)($_POST['changes_json'] ?? '{}'));
+        $slitParentRollNo = strtoupper(trim((string)($_POST['slit_parent_roll_no'] ?? '')));
+        $slitParentWidthMm = (float)($_POST['slit_parent_width_mm'] ?? 0);
+        $slitParentLengthMtr = (float)($_POST['slit_parent_length_mtr'] ?? 0);
+        $slitChildRollsJson = trim((string)($_POST['slit_child_rolls_json'] ?? '[]'));
 
         if ($jobId <= 0) { echo json_encode(['ok' => false, 'error' => 'Missing job_id']); break; }
         if ($reason === '') { echo json_encode(['ok' => false, 'error' => 'Reason is required']); break; }
 
-        $jobStmt = $db->prepare("SELECT * FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+        $jobStmt = $db->prepare("SELECT j.*, p.job_name AS planning_job_name, p.extra_data AS planning_extra_data FROM jobs j LEFT JOIN planning p ON j.planning_id = p.id WHERE j.id = ? AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00') LIMIT 1");
         $jobStmt->bind_param('i', $jobId);
         $jobStmt->execute();
         $job = $jobStmt->get_result()->fetch_assoc();
@@ -5353,6 +5394,160 @@ try {
         $baseExtra = json_decode((string)($job['extra_data'] ?? '{}'), true);
         if (!is_array($baseExtra)) $baseExtra = [];
         $nextExtra = jobs_array_merge_deep($baseExtra, $patch);
+
+        $newlyCreatedRolls = [];
+
+        if ($slitParentRollNo !== '' && $slitParentWidthMm > 0 && $slitParentLengthMtr > 0) {
+            $slitChildRolls = json_decode($slitChildRollsJson, true);
+            if (!is_array($slitChildRolls) || empty($slitChildRolls)) {
+                echo json_encode(['ok' => false, 'error' => 'Invalid or empty child rolls data for slitting.']);
+                break;
+            }
+
+            $defaultJobNo = trim((string)($job['job_no'] ?? ''));
+            // job_name is NOT in jobs table; resolve from extra_data, planning join, or fallback
+            $planningExtra = json_decode((string)($job['planning_extra_data'] ?? '{}'), true);
+            if (!is_array($planningExtra)) $planningExtra = [];
+            $defaultJobName = trim((string)($baseExtra['job_name'] ?? ''));
+            if ($defaultJobName === '') {
+                $defaultJobName = trim((string)($job['planning_job_name'] ?? ''));
+            }
+            if ($defaultJobName === '') {
+                $defaultJobName = trim((string)($baseExtra['planning_job_name'] ?? ''));
+            }
+            if ($defaultJobName === '') {
+                $defaultJobName = $defaultJobNo;
+            }
+            // paper_type resolves from extra_data
+            $defaultPaperType = trim((string)($baseExtra['paper_type'] ?? ''));
+            // job_size from job extra_data or planning extra_data
+            $sizeKeys = ['job_size', 'paper_size', 'label_size', 'size', 'cut_size', 'final_size'];
+            $jobSize = '';
+            foreach ($sizeKeys as $sk) {
+                $v = trim((string)($baseExtra[$sk] ?? ''));
+                if ($v !== '') { $jobSize = $v; break; }
+            }
+            if ($jobSize === '') {
+                foreach ($sizeKeys as $sk) {
+                    $v = trim((string)($planningExtra[$sk] ?? ''));
+                    if ($v !== '') { $jobSize = $v; break; }
+                }
+            }
+
+            // Enrich child rolls with destination defaults
+            foreach ($slitChildRolls as &$scr) {
+                $dest = strtoupper(trim((string)($scr['destination'] ?? 'JOB')));
+                if (!in_array($dest, ['JOB', 'STOCK'], true)) $dest = 'JOB';
+                $scr['destination'] = $dest;
+                if ($dest === 'JOB') {
+                    $scr['job_no'] = trim((string)($scr['job_no'] ?? $defaultJobNo));
+                    $scr['job_name'] = trim((string)($scr['job_name'] ?? $defaultJobName));
+                    $scr['job_size'] = trim((string)($scr['job_size'] ?? $jobSize));
+                } else {
+                    $scr['job_no'] = '';
+                    $scr['job_name'] = '';
+                    $scr['job_size'] = '';
+                }
+                if (empty($scr['paper_type'])) {
+                    $scr['paper_type'] = $defaultPaperType;
+                }
+                if (empty($scr['length_mtr'])) {
+                    $scr['length_mtr'] = $slitParentLengthMtr;
+                }
+            }
+            unset($scr);
+
+            // Decide append vs replace mode based on job status
+            // Finished/completed jobs → APPEND new rolls to existing ones
+            // Pending/queued jobs → REPLACE old rolls with new ones
+            $isReplaceMode = in_array(strtolower(trim($job['status'] ?? '')), ['pending', 'queued']);
+            if ($isReplaceMode) {
+                $nextExtra['child_rolls'] = [];
+                $nextExtra['stock_rolls'] = [];
+                $nextExtra['parent_rolls'] = [];
+            } else {
+                if (!isset($nextExtra['child_rolls']) || !is_array($nextExtra['child_rolls'])) {
+                    $nextExtra['child_rolls'] = [];
+                }
+                if (!isset($nextExtra['stock_rolls']) || !is_array($nextExtra['stock_rolls'])) {
+                    $nextExtra['stock_rolls'] = [];
+                }
+                $existingParentRolls = [];
+                $rawPR = $nextExtra['parent_rolls'] ?? [];
+                if (is_string($rawPR)) {
+                    $rawPR = preg_split('/\s*,\s*/', trim($rawPR), -1, PREG_SPLIT_NO_EMPTY);
+                }
+                if (is_array($rawPR)) {
+                    foreach ($rawPR as $pr) {
+                        $prn = is_array($pr) ? trim((string)($pr['roll_no'] ?? ($pr['parent_roll_no'] ?? ''))) : trim((string)$pr);
+                        if ($prn !== '' && !in_array($prn, $existingParentRolls, true)) {
+                            $existingParentRolls[] = $prn;
+                        }
+                    }
+                }
+                $nextExtra['parent_rolls'] = $existingParentRolls;
+            }
+
+            require_once __DIR__ . '/../inventory/slitting/api.php';
+            $slitResult = perform_slitting_for_job_regenerate($db, $slitParentRollNo, $slitParentWidthMm, $slitParentLengthMtr, $slitChildRolls, $jobId, $jobSize);
+
+            if (!$slitResult['ok']) {
+                echo json_encode($slitResult);
+                break;
+            }
+            $newlyCreatedRolls = $slitResult['child_rolls'];
+            $slitStockRolls = $slitResult['stock_rolls'] ?? [];
+
+            if ($isReplaceMode) {
+                $nextExtra['child_rolls'] = [];
+                $nextExtra['stock_rolls'] = [];
+                $nextExtra['parent_rolls'] = [$slitParentRollNo];
+            } else {
+                if (!in_array($slitParentRollNo, $nextExtra['parent_rolls'])) {
+                    $nextExtra['parent_rolls'][] = $slitParentRollNo;
+                }
+            }
+            $nextExtra['is_regenerated'] = true;
+            $nextExtra['parent_roll'] = $slitParentRollNo;
+            $firstChildPt = !empty($newlyCreatedRolls) ? ($newlyCreatedRolls[0]['paper_type'] ?? '') : '';
+            $nextExtra['parent_details'] = [
+                'roll_no' => $slitParentRollNo,
+                'width_mm' => $slitParentWidthMm,
+                'length_mtr' => $slitParentLengthMtr,
+                'paper_type' => $firstChildPt,
+                'status' => 'Slitting',
+            ];
+
+            foreach ($newlyCreatedRolls as $newRoll) {
+                $nextExtra['child_rolls'][] = [
+                    'roll_no' => $newRoll['roll_no'],
+                    'parent_roll_no' => $slitParentRollNo,
+                    'width_mm' => $newRoll['width_mm'],
+                    'length_mtr' => $newRoll['length_mtr'],
+                    'paper_type' => $newRoll['paper_type'],
+                    'destination' => $newRoll['destination'],
+                    'status' => $newRoll['status'],
+                    'is_new' => true,
+                ];
+            }
+
+            foreach ($slitStockRolls as $sr) {
+                $nextExtra['stock_rolls'][] = [
+                    'roll_no' => $sr['roll_no'],
+                    'parent_roll_no' => $slitParentRollNo,
+                    'width_mm' => $sr['width_mm'],
+                    'length_mtr' => $sr['length_mtr'],
+                    'paper_type' => $sr['paper_type'],
+                    'destination' => 'STOCK',
+                    'status' => 'Stock',
+                ];
+            }
+
+            // Update roll_no to the new parent roll
+            if ($newRollNo === '') {
+                $newRollNo = $slitParentRollNo;
+            }
+        }
         $nextExtraJson = json_encode($nextExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         if ($newRollNo !== '') {
