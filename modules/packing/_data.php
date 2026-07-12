@@ -543,6 +543,7 @@ function packing_extract_production_metrics(mysqli $db, int $planningId, array $
     $prodRaw = packing_pick_value_loose($sources, [
         'production_quantity', 'production_qty', 'produced_quantity', 'produced_qty',
         'actual_qty', 'actual_quantity', 'output_qty', 'completed_qty',
+        'label_slitting_total_production',
         'total_qty_pcs', 'barcode_total_qty_pcs', 'die_cutting_total_qty_pcs',
         'production_total_qty', 'printed_qty', 'print_qty',
         'final_production_qty', 'up_in_production'

@@ -152,6 +152,7 @@
 
 .fg-stock-module .fg-card-total-items::before { background: #3b82f6; }
 .fg-stock-module .fg-card-total-qty::before { background: #7c3aed; }
+.fg-stock-module .fg-card-total-carton::before { background: #ea580c; }
 .fg-stock-module .fg-card-opening::before { background: #64748b; }
 .fg-stock-module .fg-card-inward::before { background: #16a34a; }
 .fg-stock-module .fg-card-dispatch::before { background: #dc2626; }

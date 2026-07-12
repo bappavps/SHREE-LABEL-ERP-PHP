@@ -305,6 +305,19 @@ foreach ($jobs as &$job) {
       ?? $prevExtra['dc_total_qty']
       ?? ''
     );
+    $prevWastageRaw = trim((string)(
+      $prevExtra['total_wastage_meters']
+      ?? $prevExtra['wastage_meters']
+      ?? ''
+    ));
+    if ($prevWastageRaw === '' && !empty($prevExtra['roll_wastage_rows']) && is_array($prevExtra['roll_wastage_rows'])) {
+      $rollSum = 0.0;
+      foreach ($prevExtra['roll_wastage_rows'] as $rw) {
+        $rollSum += (float)($rw['wastage_meters'] ?? 0);
+      }
+      if ($rollSum > 0) $prevWastageRaw = number_format($rollSum, 2, '.', '');
+    }
+    $job['prev_wastage_meters'] = $prevWastageRaw;
 
     $prevRollMap = [];
     $prevRollGroups = [
@@ -616,6 +629,8 @@ foreach ($jobs as &$job) {
     }
   }
   $job['paper_stock_child_rolls'] = $paperStockChildren;
+  unset($job['prev_extra_data_parsed']); // Don't send heavy blob to JS — use prev_wastage_meters instead
+  unset($job['grandprev_extra_data_parsed']); // Don't send heavy blob to JS
 }
 unset($job);
 
@@ -1436,8 +1451,8 @@ function dcCollectAssignedChildRolls(job) {
   let rows = [];
   rows = dcMergeRollRows(rows, extra.assigned_child_rolls, 'Job Assign');
   rows = dcMergeRollRows(rows, extra.child_rolls, 'Job Assign');
-  rows = dcMergeRollRows(rows, job && job.flatbed_source_rolls, 'Job Assign');
-  rows = dcMergeRollRows(rows, job && job.prev_assigned_child_rolls, 'Job Assign');
+  // NOTE: flatbed_source_rolls and prev_assigned_child_rolls intentionally omitted —
+  // they aggregate ALL upstream rolls across all downstream jobs, not just this job's assigned rolls.
   return rows.filter(function(row) {
     const status = String((row && row.status) || '').trim().toLowerCase();
     if (!status) return true;
@@ -2718,13 +2733,17 @@ async function openJobDetail(id, mode) {
   const allRollRows = (() => {
     const extra = (job && job.extra_data_parsed) ? job.extra_data_parsed : {};
     let rows = [];
-    rows = dcMergeRollRows(rows, job && job.paper_stock_child_rolls, 'Stock');
+    const jobRollNos = new Set();
+    ['assigned_child_rolls','child_rolls'].forEach(function(b){(extra[b]||[]).forEach(function(r){const rn=String((r&&(r.roll_no||r.roll||r.roll_number))||'').trim().toLowerCase();if(rn)jobRollNos.add(rn);});});
+    const psChildren = (job && job.paper_stock_child_rolls) || [];
+    const filteredPS = jobRollNos.size > 0 ? psChildren.filter(function(r){return jobRollNos.has(String(r&&r.roll_no||'').trim().toLowerCase());}) : psChildren;
+    rows = dcMergeRollRows(rows, filteredPS, 'Stock');
     rows = dcMergeRollRows(rows, extra.assigned_child_rolls, 'Job Assign');
     rows = dcMergeRollRows(rows, extra.child_rolls, 'Job Assign');
     rows = dcMergeRollRows(rows, extra.stock_rolls, 'Stock');
     rows = dcMergeRollRows(rows, extra.remaining_rolls, 'Remaining');
-    rows = dcMergeRollRows(rows, job && job.flatbed_source_rolls, 'Job Assign');
-    rows = dcMergeRollRows(rows, job && job.prev_assigned_child_rolls, 'Job Assign');
+    // NOTE: flatbed_source_rolls and prev_assigned_child_rolls intentionally omitted —
+    // they aggregate ALL upstream rolls across all downstream jobs, not just this job's assigned rolls.
     return rows;
   })();
 
@@ -2926,11 +2945,17 @@ async function openJobDetail(id, mode) {
     const voiceLanguage = extra.voice_language || '';
     const voiceOriginal = extra.voice_input_original || '';
     const voiceEnglish = extra.voice_input_english || '';
+    const planQty = Number(job.planning_order_qty || 0);
+    const producedPcs = Number(qtyPcs || 0);
+    const wastagePcsNum = Number(wastagePcs || 0);
+    const totalWastagePcs = planQty > 0 ? (planQty - producedPcs) : 0;
+    const wastagePct = planQty > 0 && totalWastagePcs > 0 ? ((totalWastagePcs / planQty) * 100).toFixed(1) + '%' : '';
 
     let opEntryHtml = `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-person-workspace"></i> Operator Entry</div><div class="dc-op-b dc-op-grid-2">
       <div class="dc-op-field"><label>Total Qty (Pcs)</label><div class="fv">${esc(qtyPcs || '—')}</div></div>
       <div class="dc-op-field"><label>Wastage (Pcs)</label><div class="fv">${esc(wastagePcs || '—')}</div></div>
       <div class="dc-op-field"><label>Wastage (Mtr)</label><div class="fv">${esc(wastageMtr || '—')}</div></div>
+      ${wastagePct ? `<div class="dc-op-field"><label>Wastage (%)</label><div class="fv" style="font-weight:900;color:#dc2626">${esc(wastagePct)}</div></div>` : ''}
       <div class="dc-op-field"><label>Notes</label><div class="fv">${esc(dcNotes || '—')}</div></div>
       <div class="dc-op-field"><label>Voice Language</label><div class="fv">${esc(voiceLanguage ? dcVoiceLanguageLabel(voiceLanguage) : '—')}</div></div>
     </div>`;
@@ -3305,6 +3330,8 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
           const hasProducedQty = rawProducedQty !== '';
           const planQty = Number(rawPlanQty || 0);
           const producedQty = Number(rawProducedQty || 0);
+          const prevWastage = String(job.prev_wastage_meters || '').trim();
+          const hasWastage = prevWastage !== '';
           if (!hasPlanQty && !hasProducedQty) return '';
           const canCompare = hasPlanQty && hasProducedQty;
           const diff = canCompare ? (producedQty - planQty) : 0;
@@ -3318,19 +3345,21 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
           return `<div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#4338ca;background:#eef2ff;padding:5px 8px;border-radius:4px;margin-top:8px">${esc(DC_COMPARE_SECTION_TITLE || 'Printing Production vs Plan')}</div>
           <table style="width:100%;border-collapse:collapse;font-size:.72rem;margin-bottom:10px">
             <tr>
-              <td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:16%">Planning Qty</td>
-              <td style="padding:5px 7px;border:1px solid #cbd5e1;width:17%;font-weight:700">${hasPlanQty ? planQty.toLocaleString() + ' Pcs' : '—'}</td>
-              <td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:16%">${esc(DC_PRODUCED_QTY_LABEL || 'Printing Produced')}</td>
-              <td style="padding:5px 7px;border:1px solid #cbd5e1;width:17%;font-weight:700;color:#3b82f6">${hasProducedQty ? producedQty.toLocaleString() + ' Pcs' : '—'}</td>
-              <td style="padding:5px 7px;border:1px solid #cbd5e1;background:${canCompare ? (isExtra?'#f0fdf4':(isShort?'#fef2f2':'#f8fafc')) : '#f8fafc'};font-weight:800;width:16%;color:${diffColor}">${diffLabel}</td>
-              <td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:900;color:${diffColor};width:18%">${canCompare ? (Math.abs(diff).toLocaleString() + ' Pcs' + (pctText ? ' (' + pctText + ')' : '')) : '—'}</td>
+              <td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:14%">Planning Qty</td>
+              <td style="padding:5px 7px;border:1px solid #cbd5e1;width:14%;font-weight:700">${hasPlanQty ? planQty.toLocaleString() + ' Pcs' : '—'}</td>
+              <td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:14%">${esc(DC_PRODUCED_QTY_LABEL || 'Printing Produced')}</td>
+              <td style="padding:5px 7px;border:1px solid #cbd5e1;width:14%;font-weight:700;color:#3b82f6">${hasProducedQty ? producedQty.toLocaleString() + ' Pcs' : '—'}</td>
+              ${hasWastage ? `<td style="padding:5px 7px;border:1px solid #cbd5e1;background:#fff7ed;font-weight:800;width:14%;color:#9a3412">Printing Wastage</td><td style="padding:5px 7px;border:1px solid #cbd5e1;width:14%;font-weight:700;color:#ea580c">${esc(prevWastage)} Mtr</td>` : ''}
+              <td style="padding:5px 7px;border:1px solid #cbd5e1;background:${canCompare ? (isExtra?'#f0fdf4':(isShort?'#fef2f2':'#f8fafc')) : '#f8fafc'};font-weight:800;width:12%;color:${diffColor}">${diffLabel}</td>
+              <td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:900;color:${diffColor};width:14%">${canCompare ? (Math.abs(diff).toLocaleString() + ' Pcs' + (pctText ? ' (' + pctText + ')' : '')) : '—'}</td>
             </tr>
           </table>`;
         })()}
         <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#0f766e;background:#ccfbf1;padding:5px 8px;border-radius:4px;margin-top:8px">Execution Summary</div>
         <table style="width:100%;border-collapse:collapse;font-size:.72rem">
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Total Qty (Pcs)</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.die_cutting_total_qty_pcs || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Wastage (Pcs)</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.die_cutting_wastage_pcs || '—')}</td></tr>
-          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Wastage (Mtr)</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.die_cutting_wastage_mtr || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Notes</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.die_cutting_notes_text || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Wastage (Mtr)</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.die_cutting_wastage_mtr || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Wastage (%)</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:900;color:#dc2626">${(() => { const pq = Number(job.planning_order_qty || 0); const tq = Number(extra.die_cutting_total_qty_pcs || 0); return pq > 0 && tq > 0 ? (((pq - tq) / pq) * 100).toFixed(1) + '%' : '—'; })()}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Notes</td><td style="padding:5px 7px;border:1px solid #cbd5e1" colspan="3">${esc(extra.die_cutting_notes_text || '—')}</td></tr>
         </table>
         ${photoHtml ? `<table style="width:100%">${photoHtml}</table>` : ''}
       </div>

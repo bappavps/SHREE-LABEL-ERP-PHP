@@ -332,7 +332,11 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $barcodeTotalRolls = (int)($barcodeMetricsResolved['total_rolls'] ?? 0);
         $rollsPerCartoon = (int)($barcodeMetricsResolved['rolls_per_carton'] ?? 0);
 
-        // Keep operator submitted physical quantity as finished stock quantity.
+        // Only full carton qty goes to finished goods; extras go to mixed items
+        $fullCartonQty = ($rollsPerCartoon > 0 && $cartonCount > 0 && $barcodePerRoll > 0)
+            ? $rollsPerCartoon * $cartonCount * $barcodePerRoll
+            : $quantity;
+        $quantity = $fullCartonQty;
         $totalValue = $quantity;
 
         $perCarton = $rollsPerCartoon > 0 ? $rollsPerCartoon : $perCarton;
@@ -343,7 +347,11 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $labelTotalRolls = (int)($barcodeMetricsResolved['total_rolls'] ?? 0);
         $rollsPerCartoon = (int)($barcodeMetricsResolved['rolls_per_carton'] ?? 0);
 
-        // For printing label, keep operator submitted physical quantity as finished stock quantity.
+        // Only full carton qty goes to finished goods; extras go to mixed items
+        $fullCartonQty = ($rollsPerCartoon > 0 && $cartonCount > 0 && $labelPerRoll > 0)
+            ? $rollsPerCartoon * $cartonCount * $labelPerRoll
+            : $quantity;
+        $quantity = $fullCartonQty;
         $totalValue = $quantity;
         $perCarton = $rollsPerCartoon > 0 ? $rollsPerCartoon : $perCarton;
     }
@@ -406,6 +414,10 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $remarksPayload['extra']['mixed_cartons'] = (int)($mixedPayload['mixed_cartons'] ?? 0);
         $remarksPayload['extra']['mixed_extra_rolls'] = (int)($mixedPayload['mixed_extra_rolls'] ?? 0);
         $remarksPayload['extra']['mixed_batch_labels'] = trim((string)($mixedPayload['batch_labels'] ?? ''));
+        $remarksPayload['extra']['packed_qty'] = round((float)($operatorEntry['packed_qty'] ?? 0), 3);
+        $extraRollsCount = max(0, $barcodeTotalRolls - ($rollsPerCartoon * $cartonCount));
+        $remarksPayload['extra']['extra_rolls'] = $extraRollsCount;
+        $remarksPayload['extra']['extra_pcs'] = $looseQtyCount;
     }
     if ($packingTabKey === 'printing_label') {
         $labelPerRoll = (int)($barcodeMetricsResolved['bpr'] ?? 0);
@@ -421,11 +433,7 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         }
 
         $displayRollCount = $labelTotalRolls > 0 ? $labelTotalRolls : (int)round((float)($operatorEntry['bundles_count'] ?? 0));
-        $netPackedQty = max(0, $totalValue - $looseQtyCount);
-        $mixedExtraRollsQty = (int)($mixedPayload['mixed_extra_rolls'] ?? 0);
-        if ($mixedExtraRollsQty > 0 && $labelPerRoll > 0) {
-            $netPackedQty = max(0, $netPackedQty - ($mixedExtraRollsQty * $labelPerRoll));
-        }
+        $netPackedQty = $totalValue; // Full carton qty already excludes extras
 
         $remarksPayload['extra']['job_name'] = trim((string)($jobDetails['plan_name'] ?? $itemName));
         $remarksPayload['extra']['order_date'] = trim((string)($jobDetails['order_date'] ?? ($planExtra['order_date'] ?? '')));
@@ -448,6 +456,10 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $remarksPayload['extra']['mixed_cartons'] = (int)($mixedPayload['mixed_cartons'] ?? 0);
         $remarksPayload['extra']['mixed_extra_rolls'] = (int)($mixedPayload['mixed_extra_rolls'] ?? 0);
         $remarksPayload['extra']['mixed_batch_labels'] = trim((string)($mixedPayload['batch_labels'] ?? ''));
+        $remarksPayload['extra']['packed_qty'] = round((float)($operatorEntry['packed_qty'] ?? 0), 3);
+        $extraRollsCount = max(0, $labelTotalRolls - ($rollsPerCartoon * $cartonCount));
+        $remarksPayload['extra']['extra_rolls'] = $extraRollsCount;
+        $remarksPayload['extra']['extra_pcs'] = $looseQtyCount;
     }
     $remarks = json_encode($remarksPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if ($remarks === false) {

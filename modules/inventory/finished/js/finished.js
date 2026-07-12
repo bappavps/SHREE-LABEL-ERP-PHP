@@ -61,6 +61,7 @@
     headerStrip: document.getElementById('fgHeaderStrip'),
     summaryItems: document.getElementById('fgSummaryItems'),
     summaryQty: document.getElementById('fgSummaryQty'),
+    summaryCarton: document.getElementById('fgSummaryCarton'),
     summaryOpening: document.getElementById('fgSummaryOpening'),
     summaryInward: document.getElementById('fgSummaryInward'),
     summaryDispatch: document.getElementById('fgSummaryDispatch'),
@@ -437,24 +438,22 @@
       return [
         { key: 'sl_no', label: 'SL.NO', numeric: true },
         { key: 'planning_id', label: 'Planning ID' },
-        { key: 'production_date', label: 'Production Date' },
         { key: 'status', label: 'Status' },
+        { key: 'production_date', label: 'Production Date' },
+        { key: 'batch_no', label: 'Batch No.' },
         { key: 'item_name', label: 'Item Name' },
-        { key: 'pcs_per_roll', label: 'PCS PER ROLL', numeric: true },
-        { key: 'total_roll', label: 'Total Roll', numeric: true },
-        { key: 'size', label: 'SIZE' },
-        { key: 'width', label: 'Width' },
-        { key: 'length', label: 'Length' },
+        { key: 'size', label: 'Size' },
         { key: 'ups', label: 'UPS' },
-        { key: 'paper_company', label: 'Paper COMPANY' },
         { key: 'label_gap', label: 'Label Gap' },
         { key: 'die_type', label: 'Die Type' },
-        { key: 'carton', label: 'CARTON', numeric: true },
-        { key: 'batch_no', label: 'BATCH NO.' },
-        { key: 'roll_per_cartoon', label: 'ROLL PER CARTOON', numeric: true },
+        { key: 'paper_company', label: 'Paper Company' },
+        { key: 'pcs_per_roll', label: 'PCS PER ROLL', numeric: true },
+        { key: 'total_roll', label: 'Total Roll', numeric: true },
+        { key: 'roll_per_cartoon', label: 'Roll Per Carton', numeric: true },
+        { key: 'carton', label: 'Carton', numeric: true },
         { key: 'after_packing_qty', label: 'After Packing Qty', numeric: true },
-        { key: 'current_total', label: 'Current Total', numeric: true },
-        { key: 'available_for_dispatch', label: 'Available for Dispatch', numeric: true }
+        { key: 'available_for_dispatch', label: 'Available for Dispatch', numeric: true },
+        { key: 'current_total', label: 'Current Total', numeric: true }
       ];
     }
 
@@ -683,7 +682,10 @@
     }
     if (key === 'total_roll') {
       if (fg_state.activeTab === 'barcode') {
-        var currentQty = fg_num(mixedAdjustedTotal().available_net);
+        // Use raw DB quantity directly — quantity already stores the
+        // full-carton-only value. mixedAdjustedTotal().available_net subtracts
+        // a spurious mixedExtra (total_roll % rpc), producing off-by-one errors.
+        var currentQty = fg_num(row.quantity);
         var currentPcsPerRoll = fg_num(extraPick(['pcs_per_roll', 'pieces_per_roll', 'pices_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
         if (currentQty > 0 && currentPcsPerRoll > 0) {
           return String(Math.floor(currentQty / currentPcsPerRoll));
@@ -725,8 +727,9 @@
       }
 
       // For barcode tab, calculate carton by current full rolls and roll-per-carton.
+      // Use raw DB quantity directly to avoid the mixedExtra off-by-one.
       if (fg_state.activeTab === 'barcode') {
-        var barcodeQty = fg_num(mixedAdjustedTotal().available_net);
+        var barcodeQty = fg_num(row.quantity);
         var barcodePcsPerRoll = fg_num(extraPick(['pcs_per_roll', 'pieces_per_roll', 'pices_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
         var barcodeRollPerCarton = fg_num(extraPick(['roll_per_cartoon', 'roll_per_carton']));
         if (barcodeQty > 0 && barcodePcsPerRoll > 0 && barcodeRollPerCarton > 0) {
@@ -780,11 +783,12 @@
       return fmtQty(mixedAdjustedTotal().packed_net);
     }
     if (key === 'after_packing_qty') {
-      // For printing_label, use the after_packing_qty calculated from packing
-      // operator entries (stored in extra by the API). This reflects the actual
-      // packed quantity and does NOT change after dispatch deductions.
-      // Fall back to row.quantity only when packing context is unavailable.
-      if (fg_state.activeTab === 'printing_label') {
+      // For printing_label and barcode, use the after_packing_qty calculated
+      // from packing operator entries (stored in extra by the API). This
+      // reflects the actual packed quantity and does NOT change after dispatch
+      // deductions. Fall back to row.quantity only when packing context is
+      // unavailable.
+      if (fg_state.activeTab === 'printing_label' || fg_state.activeTab === 'barcode') {
         var packingQty = extraPick(['after_packing_qty']);
         if (packingQty !== '') {
           return fmtQty(fg_num(packingQty));
@@ -794,16 +798,18 @@
       return fmtQty(mixedAdjustedTotal().packed_net);
     }
     if (key === 'current_total') {
-      // For printing_label use the raw DB quantity directly — the mixed-extra
-      // calculation mixes roll-count with piece-count and gives wrong numbers.
-      // For other tabs the mixed-adjusted value is correct.
-      if (fg_state.activeTab === 'printing_label') {
+      // For printing_label and barcode use the raw DB quantity directly — the
+      // mixed-extra calculation mixes roll-count with piece-count and gives
+      // wrong numbers. For barcode, quantity already stores the full-carton-only
+      // value set by the packing API, so mixedAdjustedTotal() should not
+      // subtract any mixed extra from it.
+      if (fg_state.activeTab === 'printing_label' || fg_state.activeTab === 'barcode') {
         return fmtQty(fg_num(row.quantity));
       }
       return fmtQty(mixedAdjustedTotal().available_net);
     }
     if (key === 'available_for_dispatch') {
-      if (fg_state.activeTab === 'printing_label') {
+      if (fg_state.activeTab === 'printing_label' || fg_state.activeTab === 'barcode') {
         return fmtQty(fg_num(row.quantity));
       }
       return fmtQty(mixedAdjustedTotal().available_net);
@@ -1182,11 +1188,15 @@
         fg_state.summary = res.summary || { total_items: 0, total_quantity: 0 };
         fg_nodes.summaryItems.textContent = String(fg_state.summary.total_items || 0);
         fg_nodes.summaryQty.textContent = fg_fmt(fg_state.summary.total_quantity || 0);
+        if (fg_nodes.summaryCarton) {
+          fg_nodes.summaryCarton.textContent = fg_fmt(fg_state.summary.total_carton || 0);
+        }
         fg_loadPeriodReport();
       })
       .catch(function (err) {
         fg_nodes.summaryItems.textContent = '0';
         fg_nodes.summaryQty.textContent = '0';
+        if (fg_nodes.summaryCarton) fg_nodes.summaryCarton.textContent = '0';
         if (fg_nodes.summaryOpening) fg_nodes.summaryOpening.textContent = '0';
         if (fg_nodes.summaryInward) fg_nodes.summaryInward.textContent = '0';
         if (fg_nodes.summaryDispatch) fg_nodes.summaryDispatch.textContent = '0';

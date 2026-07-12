@@ -76,8 +76,12 @@ include __DIR__ . '/../../../includes/header.php';
         <strong id="fgSummaryItems">0</strong>
       </div>
       <div class="fg-summary-card fg-card-total-qty">
-        <small><i class="bi bi-123"></i> Total Quantity</small>
+        <small><i class="bi bi-123"></i> Total Quantity (PCS)</small>
         <strong id="fgSummaryQty">0</strong>
+      </div>
+      <div class="fg-summary-card fg-card-total-carton">
+        <small><i class="bi bi-box"></i> Total Carton</small>
+        <strong id="fgSummaryCarton">0</strong>
       </div>
       <div class="fg-summary-card fg-card-opening">
         <small><i class="bi bi-archive"></i> Opening Stock</small>

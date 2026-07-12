@@ -94,6 +94,7 @@
       { key: 'total_qty', label: 'Total Qty' },
       { key: 'per_carton', label: 'Per Carton' },
       { key: 'extra_qty', label: 'Extra' },
+      { key: 'extra_detail', label: 'Extra Detail' },
       { key: 'unit_type', label: 'Unit' },
       { key: 'possible_cartons', label: 'Possible Cartons' },
       { key: 'date', label: 'Date' }
@@ -103,6 +104,16 @@
   function columnValue(row, key) {
     if (key === 'total_qty' || key === 'extra_qty') {
       return fmt(row[key] || 0);
+    }
+    if (key === 'extra_detail') {
+      var parts = [];
+      if (row.extra_rolls > 0 && row.pcs_per_roll > 0) {
+        parts.push(row.extra_rolls + ' Rolls (' + row.pcs_per_roll + ' pcs each)');
+      }
+      if (row.extra_pcs > 0) {
+        parts.push('+' + row.extra_pcs + ' loose');
+      }
+      return parts.length > 0 ? parts.join(' + ') : '-';
     }
     if (key === 'per_carton') {
       if (row[key] == null || row[key] === '') {

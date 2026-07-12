@@ -124,30 +124,12 @@ function fg_mixed_extra_qty(string $category, float $quantity, array $extra): fl
         return 0.0;
     }
 
+    // For barcode and printing_label, the quantity stored in finished_goods_stock
+    // is already the full-carton-only value (set by the packing API which computes
+    // rpc × cartonCount × bpr). Mixed extras (extra rolls + loose pcs) are handled
+    // separately. So no subtraction is needed here.
     if ($category === 'barcode' || $category === 'printing_label') {
-        $mixedEnabled = (int)($extra['mixed_enabled'] ?? 0) === 1;
-        $rpc = (int)floor(fg_decimal(fg_mixed_pick($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
-
-        if ($mixedEnabled) {
-            $looseQty = max(0.0, fg_decimal(fg_mixed_pick($extra, ['loose_qty'])));
-            if ($looseQty > 0) {
-                return $looseQty;
-            }
-            return max(0.0, fg_decimal($extra['mixed_extra_rolls'] ?? 0));
-        }
-
-        $totalRoll = fg_decimal(fg_mixed_pick($extra, ['total_roll', 'total_rolls']));
-        if ($totalRoll <= 0) {
-            $pcsPerRoll = fg_decimal(fg_mixed_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
-            if ($pcsPerRoll > 0 && $quantity > 0) {
-                $totalRoll = ceil($quantity / $pcsPerRoll);
-            }
-        }
-
-        if ($rpc > 0 && $totalRoll > 0) {
-            return max(0.0, (float)fmod($totalRoll, $rpc));
-        }
-        return max(0.0, $totalRoll);
+        return 0.0;
     }
 
     $mixedEnabled = (int)($extra['mixed_enabled'] ?? 0) === 1;
@@ -498,11 +480,12 @@ function fg_fetch_printing_label_context(mysqli $db, array $jobNos): array {
             $netQty = max(0.0, $netQty - ($mixedExtraRolls * $pcsPerRoll));
         }
 
-        // after_packing_qty = total quantity produced from packing (packed_qty).
-        // This is the full amount that entered finished goods stock. It does NOT
-        // subtract loose_qty because loose items are still part of the stock.
-        // It stays constant even after dispatches (unlike current_total).
-        $afterPackingQty = max(0.0, $packedQty);
+        // after_packing_qty = full carton qty only (rolls_per_carton * cartonCount * pcsPerRoll).
+        // Loose pieces and extra rolls go to mixed items, not finished goods.
+        $fullCartonQty = ($displayPerCarton > 0 && $cartonCount > 0 && $pcsPerRoll > 0)
+            ? $displayPerCarton * $cartonCount * $pcsPerRoll
+            : max(0.0, $packedQty);
+        $afterPackingQty = $fullCartonQty;
 
         $map[$jobNo] = [
             'paper_size' => trim((string)($planExtra['paper_size'] ?? '')),
@@ -951,12 +934,68 @@ if ($action === 'get_stock') {
         }
         $upsMap = fg_fetch_barcode_ups_map($db, $jobNos);
 
+        // Fetch roll config from packing_operator_entries to compute full carton qty
+        // after_packing_qty = rolls_per_carton × carton_count × pcs_per_roll (full carton only)
+        $barcodePackingMap = [];
+        $cleanJobNos = [];
+        foreach ($jobNos as $jn) {
+            $v = trim((string)$jn);
+            if ($v !== '') {
+                $cleanJobNos[$v] = true;
+            }
+        }
+        $cleanJobNos = array_keys($cleanJobNos);
+        if (!empty($cleanJobNos)) {
+            $ph = implode(',', array_fill(0, count($cleanJobNos), '?'));
+            $types = str_repeat('s', count($cleanJobNos));
+            $pStmt = $db->prepare("SELECT job_no, packed_qty, cartons_count, roll_payload_json FROM packing_operator_entries WHERE job_no IN ($ph) ORDER BY id DESC");
+            if ($pStmt) {
+                $pStmt->bind_param($types, ...$cleanJobNos);
+                $pStmt->execute();
+                $pRows = $pStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+                $pStmt->close();
+                foreach ($pRows as $pRow) {
+                    $jn = trim((string)($pRow['job_no'] ?? ''));
+                    if ($jn === '' || isset($barcodePackingMap[$jn])) {
+                        continue;
+                    }
+                    $rollPayload = fg_decode_assoc($pRow['roll_payload_json'] ?? '');
+                    $rollOverrides = is_array($rollPayload['roll_overrides'] ?? null) ? $rollPayload['roll_overrides'] : [];
+                    $pcsPerRoll = 0.0;
+                    $rollsPerCarton = 0.0;
+                    foreach ($rollOverrides as $override) {
+                        if (!is_array($override)) { continue; }
+                        if ($pcsPerRoll <= 0) { $pcsPerRoll = fg_decimal($override['bpr'] ?? 0); }
+                        if ($rollsPerCarton <= 0) { $rollsPerCarton = fg_decimal($override['rolls_per_carton'] ?? ($override['rpc'] ?? 0)); }
+                        if ($pcsPerRoll > 0 && $rollsPerCarton > 0) { break; }
+                    }
+                    $cartonCount = max(0, (int)floor(fg_decimal($pRow['cartons_count'] ?? 0)));
+                    $fullCartonQty = ($rollsPerCarton > 0 && $cartonCount > 0 && $pcsPerRoll > 0)
+                        ? $rollsPerCarton * $cartonCount * $pcsPerRoll
+                        : fg_decimal($pRow['packed_qty'] ?? 0);
+                    $barcodePackingMap[$jn] = $fullCartonQty;
+                }
+            }
+        }
+
         foreach ($rows as $idx => $row) {
             $rows[$idx]['quantity'] = fg_barcode_display_quantity($row);
             $jn = trim((string)($row['batch_no'] ?? ''));
             if ($jn !== '' && isset($upsMap[$jn])) {
                 $rows[$idx]['up_in_roll'] = (string)($upsMap[$jn]['up_in_roll'] ?? '');
                 $rows[$idx]['up_in_production'] = (string)($upsMap[$jn]['up_in_production'] ?? '');
+            }
+            // Merge after_packing_qty (full carton qty only) into remarks extra
+            if ($jn !== '' && isset($barcodePackingMap[$jn]) && $barcodePackingMap[$jn] > 0) {
+                $parsed = json_decode((string)($row['remarks'] ?? ''), true);
+                if (!is_array($parsed)) {
+                    $parsed = ['note' => '', 'extra' => []];
+                }
+                if (!isset($parsed['extra']) || !is_array($parsed['extra'])) {
+                    $parsed['extra'] = [];
+                }
+                $parsed['extra']['after_packing_qty'] = rtrim(rtrim(number_format($barcodePackingMap[$jn], 3, '.', ''), '0'), '.');
+                $rows[$idx]['remarks'] = json_encode($parsed, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             }
         }
     }
@@ -1149,16 +1188,31 @@ if ($action === 'get_summary' || $action === 'summary') {
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $totalItems = count($rows);
     $totalQuantity = 0.0;
+    $totalCarton = 0;
     $mixedExtra = 0.0;
 
     foreach ($rows as $row) {
         $qty = fg_decimal($row['quantity'] ?? 0);
         $totalQuantity += $qty;
         $rowCategory = trim((string)($row['category'] ?? ''));
+
+        // Sum carton count from extra data
+        $extra = fg_mixed_parse_extra($row['remarks'] ?? '');
+        $cartonVal = (int)floor(fg_decimal($extra['carton'] ?? 0));
+        if ($cartonVal <= 0) {
+            // Fallback: compute from quantity using per_carton ratio
+            $rpc = (int)floor(fg_decimal(fg_mixed_pick($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
+            $bpr = (int)floor(fg_decimal(fg_mixed_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll'])));
+            if ($rpc > 0 && $bpr > 0 && $qty > 0) {
+                $fullRolls = (int)floor($qty / $bpr);
+                $cartonVal = (int)floor($fullRolls / $rpc);
+            }
+        }
+        $totalCarton += $cartonVal;
+
         if ($category === 'printing_label' && $rowCategory === 'printing_roll') {
             $rowCategory = 'printing_label';
         }
-        $extra = fg_mixed_parse_extra($row['remarks'] ?? '');
         $mixedExtra += fg_mixed_extra_qty($rowCategory !== '' ? $rowCategory : $category, $qty, $extra);
     }
 
@@ -1169,6 +1223,7 @@ if ($action === 'get_summary' || $action === 'summary') {
         'summary' => [
             'total_items' => (int)$totalItems,
             'total_quantity' => round($effectiveQuantity, 3),
+            'total_carton' => (int)$totalCarton,
             'raw_total_quantity' => round($totalQuantity, 3),
             'mixed_extra_quantity' => round($mixedExtra, 3),
         ],

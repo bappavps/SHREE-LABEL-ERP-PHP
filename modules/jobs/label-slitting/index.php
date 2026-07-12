@@ -1778,12 +1778,16 @@ async function openJobDetail(id, mode) {
     const dcNotes = extra.label_slitting_notes_text || '';
     const voiceOriginal = extra.voice_input_original || '';
     const voiceEnglish = extra.voice_input_english || '';
+    const planQty = Number(job.planning_order_qty || 0);
+    const totalProd = Number(totalProduction || 0);
+    const totalWastagePct = planQty > 0 && totalProd > 0 ? (((planQty - totalProd) / planQty) * 100).toFixed(1) + '%' : '';
 
     let opEntryHtml = `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-person-workspace"></i> Operator Entry</div><div class="dc-op-b dc-op-grid-2">
       <div class="dc-op-field"><label>Quantiry in roll</label><div class="fv">${esc(qtyInRoll || '—')}</div></div>
       <div class="dc-op-field"><label>Total Roll</label><div class="fv">${esc(totalRoll || '—')}</div></div>
       <div class="dc-op-field"><label>Toral Production</label><div class="fv">${esc(totalProduction || '—')}</div></div>
       <div class="dc-op-field"><label>Wastage Percentage</label><div class="fv" style="color:#dc2626;font-weight:900">${esc(wastagePct ? (wastagePct + '%') : '—')}</div></div>
+      ${totalWastagePct ? `<div class="dc-op-field"><label>Total Wastage (%)</label><div class="fv" style="color:#dc2626;font-weight:900">${esc(totalWastagePct)}</div></div>` : ''}
       <div class="dc-op-field"><label>Notes</label><div class="fv">${esc(dcNotes || '—')}</div></div>
     </div>`;
 
@@ -2100,6 +2104,7 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
         <table style="width:100%;border-collapse:collapse;font-size:.72rem">
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Quantiry in roll</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.label_slitting_qty_in_roll || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Total Roll</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.label_slitting_total_roll || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Toral Production</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.label_slitting_total_production || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Wastage Percentage</td><td style="padding:5px 7px;border:1px solid #cbd5e1;color:#dc2626;font-weight:800">${esc(extra.label_slitting_wastage_percentage ? (extra.label_slitting_wastage_percentage + '%') : '—')}</td></tr>
+          ${(() => { const pq = Number(job.planning_order_qty || 0); const tp = Number(extra.label_slitting_total_production || 0); const totalWastagePct = pq > 0 && tp > 0 ? (((pq - tp) / pq) * 100).toFixed(1) + '%' : ''; return totalWastagePct ? `<tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#fef2f2;font-weight:800;color:#dc2626">Total Wastage (%)</td><td colspan="3" style="padding:5px 7px;border:1px solid #cbd5e1;color:#dc2626;font-weight:900">${esc(totalWastagePct)}</td></tr>` : ''; })()}
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Notes</td><td colspan="3" style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.label_slitting_notes_text || '—')}</td></tr>
         </table>
         ${photoHtml ? `<table style="width:100%">${photoHtml}</table>` : ''}

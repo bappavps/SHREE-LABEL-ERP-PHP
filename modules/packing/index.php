@@ -2518,7 +2518,11 @@ include __DIR__ . '/../../includes/header.php';
                         '<div style="border:1px solid #cbd5e1;border-radius:8px;padding:8px;background:#f8fafc">'
                         + '<b style="display:block;font-size:.73rem;color:#0f172a;margin-bottom:4px">' + escHtml(String(roll.rollNo || '-')) + '</b>'
                         + '<div style="font-size:.72rem;color:#334155">' + escHtml(String(totalRollsBarcode)) + ' rolls × ' + escHtml(String(bpr)) + ' bpr | Cartons: <b>' + String(cartonsBarcode) + '</b> | Extra rolls: <b>' + String(extraRolls) + '</b></div>'
-                        + '<div style="font-size:.72rem;color:#166534">Physical Output: <b>' + String(rollPhysical) + '</b></div>'
+                        + '<div style="font-size:.72rem;color:#166534">Physical Output: <b>' + String(rollPhysical) + ' PCS</b></div>'
+                        + '<div style="font-size:.72rem;margin-top:5px;padding-top:5px;border-top:1px dashed #e2e8f0;display:flex;gap:12px;flex-wrap:wrap;">'
+                        +   '<span style="color:#166534;font-weight:800">✅ FG: <b>' + String(cartonsBarcode * rollsPerCarton * bpr) + ' PCS</b> (' + String(cartonsBarcode) + ' carton' + (cartonsBarcode !== 1 ? 's' : '') + ')</span>'
+                        +   '<span style="color:#7c3aed;font-weight:800">📦 Mixed: <b>' + String(extraRolls * bpr + extraPieces) + ' PCS</b>' + (extraRolls > 0 ? ' (' + String(extraRolls) + ' roll' + (extraRolls !== 1 ? 's' : '') + (extraPieces > 0 ? ' + ' + String(extraPieces) + ' loose' : '') + ')' : (extraPieces > 0 ? ' (' + String(extraPieces) + ' loose pcs)' : '')) + '</span>'
+                        + '</div>'
                         + '</div>'
                       );
                       return;
@@ -2555,7 +2559,11 @@ include __DIR__ . '/../../includes/header.php';
                       '<div style="border:1px solid #cbd5e1;border-radius:8px;padding:8px;background:#f8fafc">'
                       + '<b style="display:block;font-size:.73rem;color:#0f172a;margin-bottom:4px">' + escHtml(String(roll.rollNo || '-')) + '</b>'
                       + '<div style="font-size:.72rem;color:#334155">Cartons: <b>' + String(rollCartons) + '</b> | Extra: <b>' + String(rollLoose) + '</b></div>'
-                      + '<div style="font-size:.72rem;color:#166534">Physical Output: <b>' + String(rollPhysical) + '</b></div>'
+                      + '<div style="font-size:.72rem;color:#166534">Physical Output: <b>' + String(rollPhysical) + ' PCS</b></div>'
+                      + '<div style="font-size:.72rem;margin-top:5px;padding-top:5px;border-top:1px dashed #e2e8f0;display:flex;gap:12px;flex-wrap:wrap;">'
+                      +   '<span style="color:#166534;font-weight:800">✅ FG: <b>' + String(rollCartons * rollRpc) + ' PCS</b> (' + String(rollCartons) + ' carton' + (rollCartons !== 1 ? 's' : '') + ')</span>'
+                      +   '<span style="color:#7c3aed;font-weight:800">📦 Mixed: <b>' + String(rollLoose) + ' PCS</b>' + (rollLoose > 0 ? ' (loose qty)' : '') + '</span>'
+                      + '</div>'
                       + '</div>'
                     );
                   });

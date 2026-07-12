@@ -79,7 +79,7 @@
         "global_job_counter": 0,
         "modules": {
             "roll": {
-                "prefix": "SLC",
+                "prefix": "SLCSS",
                 "counter": 0
             },
             "job": {
@@ -100,7 +100,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 0
+                "counter": 3
             },
             "sales_order": {
                 "prefix": "SO",
@@ -132,7 +132,7 @@
             },
             "jumbo_job": {
                 "prefix": "SLT",
-                "counter": 0
+                "counter": 1
             },
             "printing_job": {
                 "prefix": "FLX",
@@ -148,6 +148,10 @@
             },
             "barcode_job": {
                 "prefix": "BRC-BAR",
+                "counter": 3
+            },
+            "planning_paperroll": {
+                "prefix": "",
                 "counter": 0
             }
         }

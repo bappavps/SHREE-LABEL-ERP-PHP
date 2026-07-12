@@ -209,31 +209,29 @@ function mi_compute_extra(array $row, array $extra): array {
             }
         }
 
-        $extraQty = $looseQty;
+        $extraQty = 0;
         $possible = 0;
+        $pcsPerRoll = mi_num(mi_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
         if ($rpc > 0 && $totalRoll > 0) {
             $possible = (int)floor($totalRoll / $rpc);
-        }
-
-        if ($extraQty <= 0) {
-            // Fallback: if loose qty missing in old rows, convert remainder rolls to pcs.
-            $rollRemainder = 0;
-            if ($rpc > 0 && $totalRoll > 0) {
-                $rollRemainder = fmod($totalRoll, $rpc);
-            } else {
-                $rollRemainder = $totalRoll;
-            }
-            $pcsPerRoll = mi_num(mi_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
+            $rollRemainder = fmod($totalRoll, $rpc);
             if ($rollRemainder > 0 && $pcsPerRoll > 0) {
-                $extraQty = $rollRemainder * $pcsPerRoll;
+                $extraQty += $rollRemainder * $pcsPerRoll;
             }
+        } elseif ($totalRoll > 0 && $pcsPerRoll > 0) {
+            $extraQty += $totalRoll * $pcsPerRoll;
         }
+        $extraQty += $looseQty;
 
+        $extraRolls = ($rpc > 0 && $totalRoll > 0) ? (int)fmod($totalRoll, $rpc) : 0;
         return [
             'extra_qty' => max(0, $extraQty),
             'unit_type' => 'PCS',
             'per_carton' => '',
             'possible_cartons' => '',
+            'extra_rolls' => $extraRolls,
+            'extra_pcs' => (int)$looseQty,
+            'pcs_per_roll' => (int)$pcsPerRoll,
         ];
     }
 
@@ -346,6 +344,9 @@ function mi_fetch_rows(mysqli $db, string $category = ''): array {
             'width' => $width,
             'length' => $length,
             'remarks' => (string)($row['remarks'] ?? ''),
+            'extra_rolls' => (int)($calc['extra_rolls'] ?? 0),
+            'extra_pcs' => (int)($calc['extra_pcs'] ?? 0),
+            'pcs_per_roll' => (int)($calc['pcs_per_roll'] ?? 0),
         ];
     }
 

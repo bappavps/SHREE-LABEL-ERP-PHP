@@ -3591,6 +3591,7 @@ async function openPrintDetail(id, mode) {
         <div class="fp-op-field"><label>Time</label><input type="text" value="${esc(card.time_spent||'—')}" readonly></div>
         <div class="fp-op-field"><label>Prepared By</label><input type="text" value="${esc(card.prepared_by||'—')}" readonly></div>
       </div><div class="fp-op-b fp-op-grid-2"><div class="fp-op-field"><label>Filled By</label><input type="text" value="${esc(card.filled_by||'—')}" readonly></div><div class="fp-op-field"><label>Defects Found</label><input type="text" value="${esc(card.defects_text||'—')}" readonly></div></div>
+      ${(() => { const pq = Number(job.planning_order_qty || 0); const aq = Number(card.actual_qty || 0); const totalWastagePct = pq > 0 && aq > 0 ? (((pq - aq) / pq) * 100).toFixed(1) + '%' : ''; return totalWastagePct ? `<div class="fp-op-b fp-op-grid-2"><div class="fp-op-field"><label>Total Wastage (%)</label><div style="padding:8px 10px;border:1px solid #fecaca;border-radius:8px;font-size:.85rem;font-weight:900;color:#dc2626;background:#fef2f2">${esc(totalWastagePct)}</div></div></div>` : ''; })()}
       ${extra.operator_notes ? `<div class="fp-op-b"><div class="fp-op-field"><label>Operator Notes</label><div style="padding:8px 10px;border:1px solid #dbe5f0;border-radius:8px;font-size:.8rem;font-weight:600;background:#fcfdff;min-height:40px">${esc(extra.operator_notes)}</div></div></div>` : ''}
       </div>
     </div></div>`;
