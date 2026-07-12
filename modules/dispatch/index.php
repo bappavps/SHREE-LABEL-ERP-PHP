@@ -156,8 +156,9 @@ include __DIR__ . '/../../includes/header.php';
               <input id="dsDispatchQty" type="number" min="0" step="0.001" required style="background:#ffe8cc;color:#7a3e00;font-weight:600;border-color:#fd7e14;">
             </div>
             <div class="ds-field">
-              <label for="dsDispatchCarton">Dispatch Carton</label>
+              <label for="dsDispatchCarton">Dispatch Carton <span style="color:#dc2626;font-weight:700;">*</span></label>
               <input id="dsDispatchCarton" type="number" step="0.01" readonly style="background:#fff3cd;color:#856404;font-weight:600;border-color:#ffc107;" placeholder="—">
+              <small id="dsDispatchCartonHint" class="ds-muted">Enter number of cartons (not PCS). 1 carton = <span id="dsCartonToPcs">—</span> PCS</small>
             </div>
             <div class="ds-field" id="dsExtraDispatchQtyWrap" style="display:none;">
               <label for="dsExtraDispatchQty">Extra PCS (Mixed)</label>
@@ -171,15 +172,15 @@ include __DIR__ . '/../../includes/header.php';
             <div class="ds-field">
               <label for="dsUnit">Unit</label>
               <select id="dsUnit">
+                <option value="Carton">Carton</option>
                 <option value="PCS">Pcs</option>
                 <option value="Roll">Roll</option>
-                <option value="Carton">Carton</option>
               </select>
             </div>
 
             <div class="ds-field full ds-batch-section">
               <div class="ds-batch-head">
-                <label style="color: #7c3aed; font-weight: 600;">Batch-wise Dispatch</label>
+                <label style="color: #7c3aed; font-weight: 700;font-size:.92rem;"><i class="bi bi-layers"></i> Batch-wise Dispatch</label>
                 <button type="button" class="ds-btn" id="dsLoadBatchesBtn">
                   <i class="bi bi-arrow-repeat"></i> Load Batches
                 </button>
@@ -203,12 +204,12 @@ include __DIR__ . '/../../includes/header.php';
             </div>
 
             <div class="ds-field">
-              <label for="dsInvoiceNo">Invoice Number</label>
-              <input id="dsInvoiceNo" type="text" placeholder="Manual or from accounts ref">
+              <label for="dsInvoiceNo">Invoice Number <span style="color:#dc2626;font-weight:700;">*</span></label>
+              <input id="dsInvoiceNo" type="text" placeholder="Manual or from accounts ref" required>
             </div>
             <div class="ds-field">
-              <label for="dsInvoiceDate">Invoice Date</label>
-              <input id="dsInvoiceDate" type="date">
+              <label for="dsInvoiceDate">Invoice Date <span style="color:#dc2626;font-weight:700;">*</span></label>
+              <input id="dsInvoiceDate" type="date" required>
             </div>
 
             <div class="ds-field">

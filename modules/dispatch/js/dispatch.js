@@ -398,7 +398,7 @@
     nodes.batchNo.value = p.get('batch') || '';
     nodes.size.value = p.get('size') || '';
     nodes.itemName.value = p.get('item_name') || '';
-    nodes.unit.value = p.get('unit') || 'PCS';
+    nodes.unit.value = p.get('unit') || 'Carton';
     nodes.availableQty.value = p.get('qty') || '';
     if (p.get('client_name')) {
       nodes.clientName.value = p.get('client_name');
@@ -422,7 +422,13 @@
         nodes.packingId.value = res.row.item_code || nodes.packingId.value;
         nodes.batchNo.value = res.row.batch_no || nodes.batchNo.value;
         nodes.size.value = res.row.size || nodes.size.value;
-        nodes.unit.value = res.row.unit || nodes.unit.value;
+        // Carton-based categories (barcode/printing_label) default to Carton on prefill
+        var prefillCat = String(res.row.category || '').trim().toLowerCase();
+        if (prefillCat === 'barcode' || prefillCat === 'printing_label') {
+          nodes.unit.value = 'Carton';
+        } else {
+          nodes.unit.value = res.row.unit || nodes.unit.value;
+        }
         nodes.availableQty.value = String(res.row.available_qty || res.row.quantity || nodes.availableQty.value || '');
         // Auto-fill client_name from API if available and not already set
         if (res.row.client_name && !nodes.clientName.value.trim()) {
@@ -447,6 +453,7 @@
 
     syncUnitInputMode();
     updateCartonFields();
+    ds_prefillDispatchCarton();
   }
 
   function showPrefillBanner(itemName, packingId) {
@@ -499,6 +506,9 @@
 
   function updateCartonFields() {
     var ratio = state.cartonRatio || 0;
+    // Update conversion hint
+    var hintPcs = document.getElementById('dsCartonToPcs');
+    if (hintPcs) { hintPcs.textContent = ratio > 0 ? String(ratio) : '—'; }
     if (ratio <= 0) {
       if (nodes.availableCarton) { nodes.availableCarton.value = ''; }
       if (nodes.dispatchCarton) { nodes.dispatchCarton.value = ''; }
@@ -529,6 +539,20 @@
       nodes.dispatchCarton.value = dispCarton > 0 ? Number(dispCarton.toFixed(2)).toString() : '';
     }
     syncExtraCartonField();
+    ds_validateCartonLive();
+  }
+
+  // Pre-fill Dispatch Carton with the available carton count when an item loads,
+  // so the user sees the correct carton value (not an empty field they might fill with PCS).
+  function ds_prefillDispatchCarton() {
+    if (!nodes.dispatchCarton) { return; }
+    if (nodes.dispatchCarton.value && parseFloat(nodes.dispatchCarton.value) > 0) { return; }
+    var avail = num(state.availableCartons || 0);
+    if (avail > 0) {
+      nodes.dispatchCarton.value = String(avail);
+      // Recompute dispatch qty from the pre-filled carton count
+      syncDispatchQtyFromCarton();
+    }
   }
 
   function syncDispatchQtyFromCarton() {
@@ -539,6 +563,32 @@
       return;
     }
     nodes.dispatchQty.value = String(Number((carton * ratio).toFixed(3)));
+  }
+
+  function ds_validateCartonLive() {
+    if (!nodes.dispatchCarton) {
+      return;
+    }
+    if (String(nodes.unit.value || '').toUpperCase() !== 'CARTON') {
+      nodes.dispatchCarton.style.borderColor = '';
+      nodes.dispatchCarton.style.boxShadow = '';
+      return;
+    }
+    var availCartons = num(state.availableCartons || 0);
+    if (availCartons <= 0 && state.cartonRatio > 0) {
+      var availQtyForCarton = num(nodes.availableQty ? nodes.availableQty.value : 0);
+      if (availQtyForCarton > 0) {
+        availCartons = Math.floor(availQtyForCarton / state.cartonRatio);
+      }
+    }
+    var dispatchCartonVal = num(nodes.dispatchCarton.value || 0);
+    if (dispatchCartonVal > 0 && availCartons > 0 && dispatchCartonVal > availCartons) {
+      nodes.dispatchCarton.style.borderColor = '#dc2626';
+      nodes.dispatchCarton.style.boxShadow = '0 0 0 2px rgba(220,38,38,0.25)';
+    } else {
+      nodes.dispatchCarton.style.borderColor = '';
+      nodes.dispatchCarton.style.boxShadow = '';
+    }
   }
 
   function syncUnitInputMode() {
@@ -656,13 +706,20 @@
       nodes.itemName.value = row.item_name || nodes.itemName.value;
       nodes.batchNo.value = row.batch_no || nodes.batchNo.value;
       nodes.size.value = row.size || nodes.size.value;
-      nodes.unit.value = row.unit || nodes.unit.value;
+      // Carton-based categories (barcode/printing_label) default to Carton on prefill
+      var prefillCat = String(row.category || '').trim().toLowerCase();
+      if (prefillCat === 'barcode' || prefillCat === 'printing_label') {
+        nodes.unit.value = 'Carton';
+      } else {
+        nodes.unit.value = row.unit || nodes.unit.value;
+      }
       nodes.availableQty.value = String(row.available_qty || row.quantity || nodes.availableQty.value || '');
       state.currentCategory = String(row.category || '').trim().toLowerCase();
       state.cartonRatio = parseFloat(row.carton_ratio || 0);
       state.availableCartons = num(row.available_cartons || 0);
       setMixedExtraContext(row.category || '', row.mixed_extra_qty || 0);
       updateCartonFields();
+      ds_prefillDispatchCarton();
       syncUnitInputMode();
       loadBatches();
       return loadPackingIdSuggestions(packingId);
@@ -888,6 +945,29 @@
       }
     }
 
+    // When unit is Carton, validate carton count against available cartons (early, clear message)
+    var unitVal = String(payload.unit || 'PCS').toUpperCase();
+    if (unitVal === 'CARTON') {
+      var availCartons = num(state.availableCartons || 0);
+      if (availCartons <= 0 && state.cartonRatio > 0) {
+        var availQtyForCarton = num(nodes.availableQty ? nodes.availableQty.value : 0);
+        if (availQtyForCarton > 0) {
+          availCartons = Math.floor(availQtyForCarton / state.cartonRatio);
+        }
+      }
+      var dispatchCartonVal = num(nodes.dispatchCarton ? nodes.dispatchCarton.value : 0);
+      if (dispatchCartonVal > 0 && availCartons > 0 && dispatchCartonVal > availCartons) {
+        return 'Dispatch carton (' + dispatchCartonVal + ') cannot exceed available cartons (' + availCartons + ').';
+      }
+    }
+
+    if (!payload.invoice_no.trim()) {
+      return 'Invoice number is required.';
+    }
+    if (!payload.invoice_date) {
+      return 'Invoice date is required.';
+    }
+
     if (extraQty > 0 && !isPrintingLabelMixedEligible(state.mixedExtraCategory)) {
       return 'Extra mixed dispatch is allowed only for Printing Label jobs.';
     }
@@ -1050,7 +1130,7 @@
     nodes.kpiTotalCost.textContent = fmt(kpi.total_cost || 0, 2);
     nodes.kpiPendingTransit.textContent = String(kpi.pending_transit || 0);
     if (nodes.kpiDelivered) {
-      nodes.kpiDelivered.textContent = nodes.kpiDelivered.textContent || '0';
+      nodes.kpiDelivered.textContent = String(kpi.delivered || 0);
     }
   }
 
@@ -2757,6 +2837,7 @@
       nodes.dispatchCarton.addEventListener('input', function () {
         if (String(nodes.unit.value || '').toUpperCase() === 'CARTON') {
           syncDispatchQtyFromCarton();
+          ds_validateCartonLive();
         }
       });
     }

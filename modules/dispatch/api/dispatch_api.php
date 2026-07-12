@@ -440,6 +440,14 @@ function ds_mixed_extra_for_stock(array $row): float {
     }
     $category = strtolower(trim((string)($row['category'] ?? '')));
     $extra = ds_parse_remarks_extra($row['remarks'] ?? '');
+
+    // For barcode and printing_label, quantity already stores the full-carton-only
+    // value (set by packing API as rpc × cartonCount × bpr). Mixed extras are
+    // handled separately and should NOT be subtracted from quantity.
+    if ($category === 'barcode' || $category === 'printing_label') {
+        return 0.0;
+    }
+
     $mixedEnabled = (string)($extra['mixed_enabled'] ?? '0') === '1';
     $mixedExtra = 0.0;
 
@@ -1073,7 +1081,14 @@ if ($action === 'save_dispatch') {
             if ($ratio <= 0) {
                 ds_json(422, ['ok' => false, 'error' => 'Per carton not set for selected batch. Cannot dispatch by carton.']);
             }
-            $batchQty = ds_decimal($batchQtyInput * $ratio);
+            $availableCartons = ds_carton_count_for_stock($stockRow);
+            // dispatch_qty arrives in PCS (client auto-computes carton * ratio), so convert to cartons.
+            $cartons = $ratio > 0 ? ($batchQtyInput / $ratio) : 0;
+            $cartons = round($cartons, 2);
+            if ($pk <= 0 && $cartons > $availableCartons) {
+                ds_json(422, ['ok' => false, 'error' => 'Dispatch carton (' . $cartons . ') cannot exceed available cartons (' . $availableCartons . ').', 'batch_no' => (string)($bi['batch_no'] ?? '')]);
+            }
+            $batchQty = ds_decimal($cartons * $ratio);
         }
 
         $currentAvail = (float)($stockRow['quantity'] ?? 0);
@@ -1114,6 +1129,13 @@ if ($action === 'save_dispatch') {
 
     if ($driverPhone !== '' && !preg_match('/^[0-9+\-()\s]{6,20}$/', $driverPhone)) {
         ds_json(422, ['ok' => false, 'error' => 'Driver phone format is invalid.']);
+    }
+
+    if ($invoiceNo === '') {
+        ds_json(422, ['ok' => false, 'error' => 'Invoice number is required.']);
+    }
+    if ($invoiceDate === null || $invoiceDate === '') {
+        ds_json(422, ['ok' => false, 'error' => 'Invoice date is required.']);
     }
 
     if ($dispatchDate === null) {
@@ -1858,7 +1880,8 @@ if ($action === 'dashboard_stats') {
         "SELECT
             COUNT(*) AS total_dispatches,
             COALESCE(SUM(de.transport_cost),0) AS total_cost,
-            COALESCE(SUM(CASE WHEN de.delivery_status IN ('Pending','In Transit') THEN 1 ELSE 0 END),0) AS pending_transit
+            COALESCE(SUM(CASE WHEN de.delivery_status IN ('Pending','In Transit') THEN 1 ELSE 0 END),0) AS pending_transit,
+            COALESCE(SUM(CASE WHEN de.delivery_status = 'Delivered' THEN 1 ELSE 0 END),0) AS delivered
          FROM dispatch_entries de"
          . $whereSql
     );
@@ -2010,6 +2033,7 @@ if ($action === 'dashboard_stats') {
             'total_qty' => (float)($kpiQty['total_qty'] ?? 0),
             'total_cost' => (float)($kpiEntry['total_cost'] ?? 0),
             'pending_transit' => (int)($kpiEntry['pending_transit'] ?? 0),
+            'delivered' => (int)($kpiEntry['delivered'] ?? 0),
         ],
         'monthly_qty' => $monthlyRows,
         'client_qty' => $clientRows,
