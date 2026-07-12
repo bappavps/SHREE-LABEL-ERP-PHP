@@ -352,6 +352,9 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             if (appShell.classList.contains('sidebar-collapsed')) return;
             if (shouldPauseSidebarAutoCollapse()) return;
             if (isSidebarHovered) return;
+            // Never auto-collapse the sidebar while in fullscreen mode — the
+            // user explicitly opened it and we must keep the layout stable.
+            if (document.body.classList.contains('erp-css-fullscreen')) return;
 
             cancelDesktopAutoCollapse();
             var delayMs = parseInt(appShell.getAttribute('data-sidebar-collapse-delay-ms') || '1000', 10);
@@ -472,11 +475,16 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
         });
     }
 
-    // Topbar controls
+    // Topbar controls — Fullscreen (native API + persistent CSS fallback)
     var fullscreenBtn = document.getElementById('topbarFullscreenBtn');
+    var cssFsKey = 'erp_css_fullscreen_v1';
 
-    function isFullscreenActive() {
+    function isNativeFullscreenActive() {
         return !!(document.fullscreenElement || document.webkitFullscreenElement);
+    }
+
+    function isCssFullscreenActive() {
+        return document.body.classList.contains('erp-css-fullscreen');
     }
 
     function requestFullscreenSafe() {
@@ -486,7 +494,7 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
             root.webkitRequestFullscreen();
             return Promise.resolve();
         }
-        return Promise.reject(new Error('Fullscreen API not supported'));
+        return Promise.resolve();
     }
 
     function exitFullscreenSafe() {
@@ -498,10 +506,22 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
         return Promise.resolve();
     }
 
+    function applyCssFullscreen(flag) {
+        if (flag) {
+            document.body.classList.add('erp-css-fullscreen');
+        } else {
+            document.body.classList.remove('erp-css-fullscreen');
+        }
+        try {
+            sessionStorage.setItem(cssFsKey, flag ? '1' : '0');
+        } catch (e) {}
+        syncFullscreenButtonUi();
+    }
+
     function syncFullscreenButtonUi() {
         if (!fullscreenBtn) return;
         var icon = fullscreenBtn.querySelector('i');
-        var active = isFullscreenActive();
+        var active = isCssFullscreenActive() || isNativeFullscreenActive();
         fullscreenBtn.setAttribute('aria-label', active ? 'Exit Fullscreen' : 'Enter Fullscreen');
         fullscreenBtn.setAttribute('title', active ? 'Exit Fullscreen' : 'Enter Fullscreen');
         if (icon) {
@@ -511,457 +531,267 @@ window.erpCalcSQM = function(widthMm, lengthMtr) {
 
     if (fullscreenBtn) {
         fullscreenBtn.addEventListener('click', function () {
-            if (!isFullscreenActive()) {
-                requestFullscreenSafe().catch(function () {
-                    syncFullscreenButtonUi();
-                });
+            var turningOn = !isCssFullscreenActive();
+            applyCssFullscreen(turningOn);
+            // Also attempt native fullscreen (true fullscreen) when toggling on.
+            // Native fullscreen cannot persist across page navigations (browser
+            // security), so the CSS class above is the persistent fallback.
+            if (turningOn) {
+                requestFullscreenSafe().catch(function () {});
             } else {
                 exitFullscreenSafe().catch(function () {});
             }
         });
     }
 
-    document.addEventListener('fullscreenchange', function () {
-        syncFullscreenButtonUi();
-    });
-    document.addEventListener('webkitfullscreenchange', function () {
-        syncFullscreenButtonUi();
+    document.addEventListener('fullscreenchange', syncFullscreenButtonUi);
+    document.addEventListener('webkitfullscreenchange', syncFullscreenButtonUi);
+
+    // ── AJAX navigation for fullscreen mode ─────────────────────
+    // When the user is in fullscreen mode, clicking a sidebar link would
+    // normally trigger a full page navigation, which causes Chrome to exit
+    // native fullscreen (browser security restriction). To keep the browser
+    // chrome hidden across navigations, we intercept sidebar link clicks
+    // while fullscreen is active and load the target page's main content via
+    // fetch(), swapping only the .page-content area. This avoids a full
+    // page reload so native fullscreen stays engaged.
+    var ajaxNavKey = 'erp_fs_ajax_nav_v1';
+
+    function shouldUseAjaxNav() {
+        return isCssFullscreenActive();
+    }
+
+    function showAjaxLoader() {
+        var pc = document.querySelector('.page-content');
+        if (!pc) return;
+        var loader = document.createElement('div');
+        loader.id = 'erpAjaxNavLoader';
+        loader.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.6);z-index:5000;';
+        loader.innerHTML = '<div style="width:42px;height:42px;border:4px solid #e5e7eb;border-top-color:#22c55e;border-radius:50%;animation:erpFsSpin .7s linear infinite"></div>' +
+            '<style>@keyframes erpFsSpin{to{transform:rotate(360deg)}}</style>';
+        // Make page-content a positioning context if it isn't already
+        if (getComputedStyle(pc).position === 'static') {
+            pc.style.position = 'relative';
+        }
+        pc.appendChild(loader);
+    }
+
+    function hideAjaxLoader() {
+        var loader = document.getElementById('erpAjaxNavLoader');
+        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
+    }
+
+    function updatePageFromAjax(htmlText, url) {
+        var parser = new DOMParser();
+        var doc = parser.parseFromString(htmlText, 'text/html');
+
+        // Update page title
+        var newTitle = doc.querySelector('title');
+        if (newTitle) document.title = newTitle.textContent;
+
+        // Replace the main content area
+        var newContent = doc.querySelector('.page-content');
+        var oldContent = document.querySelector('.page-content');
+        if (newContent && oldContent) {
+            oldContent.innerHTML = newContent.innerHTML;
+        }
+
+        // Update breadcrumb if present
+        var newBreadcrumb = doc.querySelector('.breadcrumb');
+        var oldBreadcrumb = document.querySelector('.breadcrumb');
+        if (newBreadcrumb && oldBreadcrumb) {
+            oldBreadcrumb.innerHTML = newBreadcrumb.innerHTML;
+        } else if (newBreadcrumb && !oldBreadcrumb) {
+            // Insert breadcrumb before page-content if it didn't exist before
+            var pc = document.querySelector('.page-content');
+            if (pc && pc.parentNode) {
+                pc.parentNode.insertBefore(newBreadcrumb.cloneNode(true), pc);
+            }
+        } else if (!newBreadcrumb && oldBreadcrumb) {
+            oldBreadcrumb.remove();
+        }
+
+        // Update page header if present
+        var newPageHeader = doc.querySelector('.page-header');
+        var oldPageHeader = document.querySelector('.page-header');
+        if (newPageHeader && oldPageHeader) {
+            oldPageHeader.innerHTML = newPageHeader.innerHTML;
+        }
+
+        // Re-execute any inline scripts inside the new content
+        var scripts = oldContent ? oldContent.querySelectorAll('script') : [];
+        scripts.forEach(function (oldScript) {
+            var newScript = document.createElement('script');
+            if (oldScript.src) {
+                newScript.src = oldScript.src;
+            } else {
+                newScript.textContent = oldScript.textContent;
+            }
+            oldScript.parentNode.replaceChild(newScript, oldScript);
+        });
+
+        // Update the browser URL without triggering a full reload
+        try {
+            history.pushState({ erpAjaxNav: true, url: url }, '', url);
+        } catch (e) {}
+
+        // Update active state in sidebar
+        updateSidebarActiveState(url);
+
+        // Re-run alert-to-center-message conversion for any new alerts
+        document.querySelectorAll('.alert').forEach(function (el) {
+            if (el.dataset.erpProcessed) return;
+            el.dataset.erpProcessed = '1';
+            var msgNode = el.querySelector('span');
+            var message = (msgNode ? msgNode.textContent : el.textContent) || '';
+            message = String(message).trim();
+            if (message && window.erpCenterMessage) {
+                window.erpCenterMessage(message, { title: 'System Message', okLabel: 'OK', cancelLabel: 'Cancel' });
+            }
+            if (el.isConnected) el.remove();
+        });
+    }
+
+    function updateSidebarActiveState(url) {
+        // Remove active from all nav items
+        document.querySelectorAll('.sidebar .nav-item, .sidebar .nav-sub-item').forEach(function (el) {
+            el.classList.remove('active');
+        });
+        // Determine the path portion
+        var path = '';
+        try {
+            path = new URL(url, window.location.origin).pathname;
+        } catch (e) {
+            path = url;
+        }
+        // Add active to matching links
+        document.querySelectorAll('.sidebar a[href]').forEach(function (el) {
+            var href = el.getAttribute('href') || '';
+            if (href && path.indexOf(href) !== -1) {
+                el.classList.add('active');
+            }
+        });
+    }
+
+    function fetchPageAjax(url) {
+        showAjaxLoader();
+        fetch(url, { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (res) {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.text();
+            })
+            .then(function (html) {
+                updatePageFromAjax(html, url);
+            })
+            .catch(function (err) {
+                // Fallback to full navigation if AJAX fails
+                window.location.href = url;
+            })
+            .finally(function () {
+                hideAjaxLoader();
+            });
+    }
+
+    // Intercept sidebar link clicks when in fullscreen mode
+    document.addEventListener('click', function (e) {
+        if (!shouldUseAjaxNav()) return;
+        var link = e.target.closest('.sidebar a[href]');
+        if (!link) return;
+        var href = link.getAttribute('href') || '';
+        if (!href || href === '#' || href.charAt(0) === '#') return;
+        // Skip external links
+        if (href.indexOf('://') !== -1 && href.indexOf(window.location.origin) === -1) return;
+        // Skip links that open in new tabs
+        if (link.target === '_blank') return;
+        // Skip non-http links (mailto:, tel:, javascript:)
+        if (href.indexOf('mailto:') === 0 || href.indexOf('tel:') === 0 || href.indexOf('javascript:') === 0) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+        // Build absolute URL
+        var absUrl = link.href;
+        fetchPageAjax(absUrl);
+    }, true);
+
+    // Handle browser back/forward when using AJAX nav
+    window.addEventListener('popstate', function (e) {
+        if (!shouldUseAjaxNav()) return;
+        var st = e.state;
+        if (st && st.erpAjaxNav && st.url) {
+            fetchPageAjax(st.url);
+        } else {
+            // Full reload fallback for non-AJAX history entries
+            window.location.reload();
+        }
     });
 
-    syncFullscreenButtonUi();
+    // Restore CSS fullscreen state on every page load (persists across navigations)
+    // AND re-request native fullscreen so the browser chrome stays hidden.
+    // Native fullscreen always exits on page navigation (browser security),
+    // so we must re-request it on each new page load when the user's intent
+    // is to stay in fullscreen mode.
+    (function () {
+        var stored = '0';
+        try { stored = sessionStorage.getItem(cssFsKey) || '0'; } catch (e) {}
+        if (stored === '1') {
+            document.body.classList.add('erp-css-fullscreen');
+            // Re-request native fullscreen on the new page so Chrome's
+            // toolbar/tabs/address bar stay hidden after navigation.
+            // This must be triggered by a user-gesture chain OR run on page
+            // load. Browsers allow requestFullscreen() on page load if the
+            // user previously granted fullscreen on this origin.
+            function tryRestoreNativeFs() {
+                if (isNativeFullscreenActive()) return;
+                var root = document.documentElement;
+                var p = null;
+                if (root.requestFullscreen) {
+                    p = root.requestFullscreen();
+                } else if (root.webkitRequestFullscreen) {
+                    root.webkitRequestFullscreen();
+                    p = Promise.resolve();
+                }
+                if (p && typeof p.catch === 'function') {
+                    p.catch(function () {
+                        // If the browser blocks the auto-restore (no user
+                        // gesture), the CSS fullscreen class still keeps the
+                        // ERP layout in fullscreen-style. The next manual
+                        // click of the fullscreen button will re-engage
+                        // native fullscreen.
+                    });
+                }
+            }
+            // Small delay to let the page settle before requesting fullscreen.
+            setTimeout(tryRestoreNativeFs, 50);
+        }
+        syncFullscreenButtonUi();
+    })();
 
-    function redirectFromButton(btnId) {
+    function redirectFromButton(btnId, opts) {
+        opts = opts || {};
         var btn = document.getElementById(btnId);
         if (!btn) return;
         btn.addEventListener('click', function () {
             var href = btn.getAttribute('data-href');
-            if (href) window.location.href = href;
+            if (!href) return;
+            // When in fullscreen mode, use AJAX navigation for internal pages
+            // (e.g. profile) so native fullscreen stays engaged. The power
+            // (logout) button always does a full navigation since it ends the
+            // session.
+            if (opts.ajaxInFullscreen && shouldUseAjaxNav()) {
+                var absUrl;
+                try {
+                    absUrl = new URL(href, window.location.origin).href;
+                } catch (err) {
+                    absUrl = href;
+                }
+                fetchPageAjax(absUrl);
+                return;
+            }
+            window.location.href = href;
         });
     }
-    redirectFromButton('topbarProfileBtn');
-    redirectFromButton('topbarPowerBtn');
-
-    // PWA-style app minimize and floating restore widget (no page reload).
-    (function () {
-        var appShellNode = document.querySelector('.app-shell');
-        var minimizeBtn = document.getElementById('topbarMinimizeBtn');
-        if (!appShellNode || !minimizeBtn) return;
-
-        var minimizedStateKey = 'erp_pwa_minimized_v1';
-        var widgetPosStateKey = 'erp_pwa_widget_pos_v1';
-        var widgetJobStateKey = 'erp_pwa_widget_job_state_v1';
-        var miniHomeClockTimer = null;
-        var miniHomeScreen = document.createElement('div');
-        miniHomeScreen.id = 'erpMiniHomeScreen';
-        miniHomeScreen.className = 'erp-mini-home-screen';
-        miniHomeScreen.setAttribute('aria-hidden', 'true');
-        miniHomeScreen.innerHTML = [
-            '<div class="erp-mini-phone">',
-            '  <div class="erp-mini-status">',
-            '    <span class="erp-mini-time" id="erpMiniHomeTime">00:00</span>',
-            '    <span class="erp-mini-badge">Mobile Home</span>',
-            '  </div>',
-            '  <div class="erp-mini-app-grid" aria-hidden="true">',
-            '    <span class="erp-mini-app">ERP</span>',
-            '    <span class="erp-mini-app">Jobs</span>',
-            '    <span class="erp-mini-app">Stock</span>',
-            '    <span class="erp-mini-app">Users</span>',
-            '    <span class="erp-mini-app">Reports</span>',
-            '    <span class="erp-mini-app">Settings</span>',
-            '  </div>',
-            '</div>'
-        ].join('');
-        document.body.appendChild(miniHomeScreen);
-
-        var widget = document.createElement('button');
-        widget.type = 'button';
-        widget.id = 'erpFloatingWidget';
-        widget.className = 'erp-floating-widget';
-        widget.setAttribute('aria-label', 'Restore ERP');
-        widget.innerHTML = [
-            '<span class="erp-fw-core" aria-hidden="true"><span class="erp-fw-title">ERP</span><span class="erp-fw-live-dot"></span><span class="erp-fw-open">Live</span></span>',
-            '<span class="erp-fw-orbit-wrap" aria-hidden="true">',
-            '<svg class="erp-fw-orbit" viewBox="0 0 124 124" focusable="false">',
-            '<defs><path id="erpFwOrbitPath" d="M62,62 m-58,0 a58,58 0 1,1 116,0 a58,58 0 1,1 -116,0"></path></defs>',
-            '<text class="erp-fw-orbit-text"><textPath id="erpFwOrbitTextPath" href="#erpFwOrbitPath" startOffset="0%">JOB-0000 • JOB-0000 • JOB-0000 • </textPath></text>',
-            '</svg>',
-            '</span>',
-            '<span class="erp-fw-timer" id="erpFloatingTimer">00:00:00</span>'
-        ].join('');
-        document.body.appendChild(widget);
-
-        var miniHomeTimeNode = miniHomeScreen.querySelector('#erpMiniHomeTime');
-        var orbitTextPath = widget.querySelector('#erpFwOrbitTextPath');
-        var timerNode = widget.querySelector('#erpFloatingTimer');
-
-        var isMinimized = false;
-        var isPointerDown = false;
-        var isDragging = false;
-        var suppressClick = false;
-        var pointerId = null;
-        var dragOffsetX = 0;
-        var dragOffsetY = 0;
-        var dragThreshold = 6;
-        var viewportPad = 8;
-        var runningJobId = 'JOB-0000';
-        var runningJobStartTs = Date.now();
-        var isJobRunning = false;
-        var timerIntervalId = null;
-
-        function safeNumber(value, fallback) {
-            var n = parseFloat(value);
-            return isNaN(n) ? fallback : n;
-        }
-
-        function readWidgetPosition() {
-            try {
-                var raw = sessionStorage.getItem(widgetPosStateKey);
-                if (!raw) return null;
-                var parsed = JSON.parse(raw);
-                if (!parsed || typeof parsed !== 'object') return null;
-                return {
-                    left: safeNumber(parsed.left, 16),
-                    top: safeNumber(parsed.top, 120)
-                };
-            } catch (e) {
-                return null;
-            }
-        }
-
-        function saveWidgetPosition(left, top) {
-            try {
-                sessionStorage.setItem(widgetPosStateKey, JSON.stringify({ left: left, top: top }));
-            } catch (e) {}
-        }
-
-        function readJobState() {
-            try {
-                var raw = sessionStorage.getItem(widgetJobStateKey);
-                if (!raw) return null;
-                var parsed = JSON.parse(raw);
-                if (!parsed || typeof parsed !== 'object') return null;
-                return {
-                    jobId: typeof parsed.jobId === 'string' ? parsed.jobId : '',
-                    startTs: safeNumber(parsed.startTs, 0),
-                    isRunning: parsed.isRunning === true
-                };
-            } catch (e) {
-                return null;
-            }
-        }
-
-        function saveJobState(jobId, startTs, isRunning) {
-            try {
-                sessionStorage.setItem(widgetJobStateKey, JSON.stringify({
-                    jobId: jobId,
-                    startTs: startTs,
-                    isRunning: !!isRunning
-                }));
-            } catch (e) {}
-        }
-
-        function hasActiveJobId(jobId) {
-            var id = (jobId && String(jobId).trim()) || '';
-            return !!id && id !== 'JOB-0000';
-        }
-
-        function setRunningVisualState(flag) {
-            isJobRunning = !!flag;
-            widget.classList.toggle('has-running-job', isJobRunning);
-            if (!isJobRunning && timerNode) {
-                timerNode.textContent = '00:00:00';
-            }
-        }
-
-        function updateMiniHomeClock() {
-            if (!miniHomeTimeNode) return;
-            var now = new Date();
-            var hh = String(now.getHours()).padStart(2, '0');
-            var mm = String(now.getMinutes()).padStart(2, '0');
-            miniHomeTimeNode.textContent = hh + ':' + mm;
-        }
-
-        function formatElapsed(totalSeconds) {
-            var safe = Math.max(0, totalSeconds | 0);
-            var h = Math.floor(safe / 3600);
-            var m = Math.floor((safe % 3600) / 60);
-            var s = safe % 60;
-            return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
-        }
-
-        function setOrbitJobText(jobId) {
-            if (!orbitTextPath) return;
-            var label = (jobId && String(jobId).trim()) || 'JOB-0000';
-            orbitTextPath.textContent = label + ' • ' + label + ' • ' + label + ' • ';
-        }
-
-        function updateTimerUi() {
-            if (!timerNode) return;
-            if (!isJobRunning) return;
-            var elapsed = Math.floor((Date.now() - runningJobStartTs) / 1000);
-            var timeText = formatElapsed(elapsed);
-            timerNode.textContent = timeText;
-            widget.setAttribute('aria-label', 'Restore ERP. ' + runningJobId + ' running for ' + timeText);
-        }
-
-        function startTimerLoop() {
-            if (timerIntervalId) {
-                clearInterval(timerIntervalId);
-                timerIntervalId = null;
-            }
-            if (!isJobRunning) return;
-            updateTimerUi();
-            timerIntervalId = setInterval(updateTimerUi, 1000);
-        }
-
-        function normalizeStartTimestamp(input) {
-            if (typeof input === 'number' && isFinite(input) && input > 0) {
-                return Math.floor(input);
-            }
-            if (typeof input === 'string') {
-                var numeric = parseInt(input, 10);
-                if (!isNaN(numeric) && numeric > 0) {
-                    return numeric;
-                }
-                var parsedDate = Date.parse(input);
-                if (!isNaN(parsedDate) && parsedDate > 0) {
-                    return parsedDate;
-                }
-            }
-            return Date.now();
-        }
-
-        function setRunningJob(payload, skipPersist) {
-            var nextJobId = runningJobId;
-            var nextStartTs = runningJobStartTs;
-
-            if (typeof payload === 'string') {
-                nextJobId = payload;
-            } else if (payload && typeof payload === 'object') {
-                nextJobId = payload.jobId || payload.id || payload.job || nextJobId;
-                nextStartTs = normalizeStartTimestamp(
-                    payload.startTs || payload.startAt || payload.startedAt || payload.started_on || nextStartTs
-                );
-            }
-
-            nextJobId = (nextJobId && String(nextJobId).trim()) || 'JOB-0000';
-            if (!hasActiveJobId(nextJobId)) {
-                clearRunningJob(skipPersist);
-                return;
-            }
-            nextStartTs = normalizeStartTimestamp(nextStartTs);
-
-            runningJobId = nextJobId;
-            runningJobStartTs = nextStartTs;
-            setRunningVisualState(true);
-            setOrbitJobText(runningJobId);
-            updateTimerUi();
-            startTimerLoop();
-
-            if (!skipPersist) {
-                saveJobState(runningJobId, runningJobStartTs, true);
-            }
-        }
-
-        function clearRunningJob(skipPersist) {
-            runningJobId = 'JOB-0000';
-            runningJobStartTs = Date.now();
-            setRunningVisualState(false);
-            setOrbitJobText(runningJobId);
-            if (timerIntervalId) {
-                clearInterval(timerIntervalId);
-                timerIntervalId = null;
-            }
-            if (!skipPersist) {
-                saveJobState(runningJobId, runningJobStartTs, false);
-            }
-            widget.setAttribute('aria-label', 'Restore ERP');
-        }
-
-        function clampWidgetPosition(left, top) {
-            var maxLeft = Math.max(viewportPad, window.innerWidth - widget.offsetWidth - viewportPad);
-            var maxTop = Math.max(viewportPad, window.innerHeight - widget.offsetHeight - viewportPad);
-            return {
-                left: Math.min(maxLeft, Math.max(viewportPad, left)),
-                top: Math.min(maxTop, Math.max(viewportPad, top))
-            };
-        }
-
-        function placeWidget(left, top, persist) {
-            var pos = clampWidgetPosition(left, top);
-            widget.style.left = Math.round(pos.left) + 'px';
-            widget.style.top = Math.round(pos.top) + 'px';
-            if (persist) {
-                saveWidgetPosition(pos.left, pos.top);
-            }
-        }
-
-        function ensureWidgetPosition() {
-            var saved = readWidgetPosition();
-            if (saved) {
-                placeWidget(saved.left, saved.top, false);
-            } else {
-                var defaultLeft = Math.max(viewportPad, window.innerWidth - widget.offsetWidth - 14);
-                var defaultTop = Math.max(viewportPad, window.innerHeight - widget.offsetHeight - 130);
-                placeWidget(defaultLeft, defaultTop, true);
-            }
-        }
-
-        function setMinimizedState(flag) {
-            isMinimized = !!flag;
-            if (isMinimized) {
-                document.body.classList.add('erp-minimized');
-                widget.classList.add('is-visible');
-                miniHomeScreen.setAttribute('aria-hidden', 'false');
-                updateMiniHomeClock();
-                if (!miniHomeClockTimer) {
-                    miniHomeClockTimer = setInterval(updateMiniHomeClock, 30000);
-                }
-                widget.setAttribute('aria-hidden', 'false');
-                minimizeBtn.setAttribute('aria-pressed', 'true');
-            } else {
-                document.body.classList.remove('erp-minimized');
-                widget.classList.remove('is-visible');
-                miniHomeScreen.setAttribute('aria-hidden', 'true');
-                if (miniHomeClockTimer) {
-                    clearInterval(miniHomeClockTimer);
-                    miniHomeClockTimer = null;
-                }
-                widget.setAttribute('aria-hidden', 'true');
-                minimizeBtn.setAttribute('aria-pressed', 'false');
-            }
-            try {
-                sessionStorage.setItem(minimizedStateKey, isMinimized ? '1' : '0');
-            } catch (e) {}
-        }
-
-        function minimizeApp() {
-            ensureWidgetPosition();
-            setMinimizedState(true);
-        }
-
-        function triggerRestoreAnimation() {
-            if (!document.body) return;
-            document.body.classList.remove('erp-restore-animating');
-            void document.body.offsetWidth;
-            document.body.classList.add('erp-restore-animating');
-            window.setTimeout(function () {
-                document.body.classList.remove('erp-restore-animating');
-            }, 260);
-        }
-
-        function triggerRestoreHaptic() {
-            if (!window.navigator || typeof window.navigator.vibrate !== 'function') return;
-            try {
-                window.navigator.vibrate(14);
-            } catch (e) {}
-        }
-
-        function restoreApp() {
-            setMinimizedState(false);
-            triggerRestoreAnimation();
-            triggerRestoreHaptic();
-        }
-
-        minimizeBtn.addEventListener('click', function (e) {
-            e.preventDefault();
-            minimizeApp();
-        });
-
-        widget.addEventListener('pointerdown', function (e) {
-            if (!isMinimized) return;
-            pointerId = e.pointerId;
-            isPointerDown = true;
-            isDragging = false;
-            suppressClick = false;
-
-            var rect = widget.getBoundingClientRect();
-            dragOffsetX = e.clientX - rect.left;
-            dragOffsetY = e.clientY - rect.top;
-            if (widget.setPointerCapture) {
-                widget.setPointerCapture(pointerId);
-            }
-        });
-
-        widget.addEventListener('pointermove', function (e) {
-            if (!isPointerDown || e.pointerId !== pointerId || !isMinimized) return;
-
-            var nextLeft = e.clientX - dragOffsetX;
-            var nextTop = e.clientY - dragOffsetY;
-            var currentLeft = safeNumber(widget.style.left, nextLeft);
-            var currentTop = safeNumber(widget.style.top, nextTop);
-
-            if (!isDragging) {
-                var movedX = Math.abs(nextLeft - currentLeft);
-                var movedY = Math.abs(nextTop - currentTop);
-                if (movedX >= dragThreshold || movedY >= dragThreshold) {
-                    isDragging = true;
-                }
-            }
-
-            if (isDragging) {
-                placeWidget(nextLeft, nextTop, false);
-            }
-        });
-
-        function handlePointerEnd(e) {
-            if (!isPointerDown || e.pointerId !== pointerId) return;
-
-            if (widget.releasePointerCapture && widget.hasPointerCapture && widget.hasPointerCapture(pointerId)) {
-                widget.releasePointerCapture(pointerId);
-            }
-
-            isPointerDown = false;
-            pointerId = null;
-
-            if (isDragging) {
-                suppressClick = true;
-                placeWidget(safeNumber(widget.style.left, 0), safeNumber(widget.style.top, 0), true);
-            }
-
-            isDragging = false;
-        }
-
-        widget.addEventListener('pointerup', handlePointerEnd);
-        widget.addEventListener('pointercancel', handlePointerEnd);
-
-        widget.addEventListener('click', function (e) {
-            if (suppressClick) {
-                suppressClick = false;
-                e.preventDefault();
-                return;
-            }
-            restoreApp();
-        });
-
-        window.addEventListener('resize', function () {
-            if (!isMinimized) return;
-            placeWidget(safeNumber(widget.style.left, 0), safeNumber(widget.style.top, 0), true);
-        });
-
-        window.erpAppMinimize = minimizeApp;
-        window.erpAppRestore = restoreApp;
-        window.erpFloatingSetRunningJob = setRunningJob;
-        window.erpFloatingClearRunningJob = clearRunningJob;
-
-        var storedJobState = readJobState();
-        if (storedJobState && storedJobState.isRunning && hasActiveJobId(storedJobState.jobId)) {
-            setRunningJob({ jobId: storedJobState.jobId, startTs: storedJobState.startTs }, true);
-        } else {
-            var bodyNode = document.body;
-            if (bodyNode && hasActiveJobId(bodyNode.getAttribute('data-running-job-id') || bodyNode.getAttribute('data-job-id'))) {
-                setRunningJob({
-                    jobId: bodyNode.getAttribute('data-running-job-id') || bodyNode.getAttribute('data-job-id'),
-                    startTs: bodyNode.getAttribute('data-running-job-start') || bodyNode.getAttribute('data-job-start') || Date.now()
-                });
-            } else {
-                clearRunningJob();
-            }
-        }
-
-        ensureWidgetPosition();
-        setMinimizedState(sessionStorage.getItem(minimizedStateKey) === '1');
-    })();
+    redirectFromButton('topbarProfileBtn', { ajaxInFullscreen: true });
+    redirectFromButton('topbarPowerBtn', { ajaxInFullscreen: false });
 
     // Topbar notifications (department-wise)
     (function () {
