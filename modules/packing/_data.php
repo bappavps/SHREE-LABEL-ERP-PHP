@@ -622,6 +622,7 @@ function packing_extract_total_roll_value(array $jobExtra, array $planExtra, arr
                         $keysToTry[] = $k;
                     }
                 }
+                $keysToTry = array_values(array_unique($keysToTry));
 
                 $sumTotalRolls = 0;
                 $hasTotalRolls = false;
@@ -1017,6 +1018,48 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
         return null;
     }
 
+    // ── Fallback: if previous_job_id is NULL but planning_id exists,
+    // find the latest completed upstream job for this planning to get child rolls etc. ──
+    $prevJobId = (int)($row['previous_job_id'] ?? 0);
+    $planningId = (int)($row['planning_id'] ?? 0);
+    if ($prevJobId <= 0 && $planningId > 0 && (empty($row['prev_extra_data']) || trim((string)$row['prev_extra_data']) === '')) {
+        $fbStmt = $db->prepare("
+            SELECT id, extra_data, previous_job_id
+            FROM jobs
+            WHERE planning_id = ?
+              AND id != ?
+              AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
+              AND LOWER(TRIM(REPLACE(REPLACE(COALESCE(status,''),'-',' '),'_',' '))) IN ('completed','closed','finalized','qc passed','complete')
+            ORDER BY id DESC
+            LIMIT 1
+        ");
+        if ($fbStmt) {
+            $fbStmt->bind_param('ii', $planningId, $jobId);
+            $fbStmt->execute();
+            $fbRes = $fbStmt->get_result();
+            $fbRow = $fbRes ? $fbRes->fetch_assoc() : null;
+            $fbStmt->close();
+            if ($fbRow && !empty($fbRow['extra_data'])) {
+                $row['prev_extra_data'] = $fbRow['extra_data'];
+                // Also try to get grandparent
+                $gpId = (int)($fbRow['previous_job_id'] ?? 0);
+                if ($gpId > 0) {
+                    $gpStmt = $db->prepare("SELECT extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
+                    if ($gpStmt) {
+                        $gpStmt->bind_param('i', $gpId);
+                        $gpStmt->execute();
+                        $gpRes = $gpStmt->get_result();
+                        $gpRow = $gpRes ? $gpRes->fetch_assoc() : null;
+                        $gpStmt->close();
+                        if ($gpRow && !empty($gpRow['extra_data'])) {
+                            $row['grandprev_extra_data'] = $gpRow['extra_data'];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     $jobExtra = packing_decode_json($row['extra_data'] ?? null);
     $planExtra = packing_decode_json($row['plan_extra_data'] ?? null);
     $prevExtra = packing_decode_json($row['prev_extra_data'] ?? null);
@@ -1064,6 +1107,7 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
         'roll_no' => (string)($row['roll_no'] ?? ''),
         'job_type' => (string)($row['job_type'] ?? ''),
         'department' => (string)($row['department'] ?? ''),
+        'plan_department' => (string)($row['plan_department'] ?? ''),
         'packing_tab' => packing_row_to_tab([
             'job_no'           => (string)($row['job_no'] ?? ''),
             'department'       => (string)($row['department'] ?? ''),

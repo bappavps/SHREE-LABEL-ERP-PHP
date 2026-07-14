@@ -100,7 +100,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 3
+                "counter": 0
             },
             "sales_order": {
                 "prefix": "SO",
@@ -132,7 +132,7 @@
             },
             "jumbo_job": {
                 "prefix": "SLT",
-                "counter": 1
+                "counter": 0
             },
             "printing_job": {
                 "prefix": "FLX",
@@ -148,7 +148,7 @@
             },
             "barcode_job": {
                 "prefix": "BRC-BAR",
-                "counter": 3
+                "counter": 0
             },
             "planning_paperroll": {
                 "prefix": "",

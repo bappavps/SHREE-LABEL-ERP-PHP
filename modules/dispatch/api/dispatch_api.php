@@ -654,11 +654,17 @@ function ds_recalc_carton_in_remarks(float $newQty, string $remarks, string $cat
         $pcsPerRoll = $pick(['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']);
         $rollPerCarton = $pick(['roll_per_cartoon', 'roll_per_carton']);
 
+        // Preserve the explicit extra rolls / loose pcs recorded at packing time.
+        // A dispatch only removes full cartons, so the mixed-item pool must survive
+        // recalculation instead of being collapsed into total_roll / loose_qty.
+        $prevExtraRolls = (float)($extra['extra_rolls'] ?? 0);
+        $prevLooseQty = (float)($extra['loose_qty'] ?? 0);
+
         if ($pcsPerRoll > 0) {
             $fullRolls = floor($newQty / $pcsPerRoll);
-            $extra['total_roll'] = $fullRolls;
-            $extra['total_rolls'] = $fullRolls;
-            $extra['loose_qty'] = max(0, (float)fmod($newQty, $pcsPerRoll));
+            $totalRolls = $fullRolls + ($prevExtraRolls > 0 ? $prevExtraRolls : 0);
+            $extra['total_roll'] = $totalRolls;
+            $extra['total_rolls'] = $totalRolls;
             if ($rollPerCarton > 0) {
                 $extra['carton'] = floor($fullRolls / $rollPerCarton);
             }
@@ -671,9 +677,9 @@ function ds_recalc_carton_in_remarks(float $newQty, string $remarks, string $cat
         }
         if ($qtyPerCarton > 0) {
             $newCartonCount = floor($newQty / $qtyPerCarton);
-            $newLooseQty = (float)fmod($newQty, $qtyPerCarton);
             $extra['carton'] = $newCartonCount;
-            $extra['loose_qty'] = max(0, $newLooseQty);
+            // Keep the original loose pcs rather than recomputing from full-carton-only qty.
+            $extra['loose_qty'] = max(0, $prevLooseQty);
         }
     } else {
         // Non-barcode: recalc based on per_carton

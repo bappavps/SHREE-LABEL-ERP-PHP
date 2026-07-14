@@ -65,15 +65,20 @@ $finishStates = ['Closed', 'Finalized', 'Completed', 'QC Passed'];
 foreach ($jobs as &$job) {
     $job['extra_data_parsed'] = json_decode((string)($job['extra_data'] ?? '{}'), true) ?: [];
     $planningExtra = json_decode((string)($job['planning_extra_data'] ?? '{}'), true) ?: [];
-    $job['planning_die_size'] = (string)($planningExtra['size'] ?? ($planningExtra['die_size'] ?? ''));
+    // Die/size: check barcode planning key (barcode_size) first, then label keys
+    $job['planning_die_size'] = (string)($planningExtra['barcode_size'] ?? ($planningExtra['size'] ?? ($planningExtra['die_size'] ?? '')));
   $job['planning_label_finish_size'] = (string)($planningExtra['label_finish_size'] ?? ($planningExtra['finish_size'] ?? $job['planning_die_size']));
-  $job['planning_qty_per_roll'] = (string)($planningExtra['qty_per_roll'] ?? ($planningExtra['qty_per_reel'] ?? ''));
-  $job['planning_direction'] = (string)($planningExtra['direction'] ?? '');
-  $job['planning_core_size'] = (string)($planningExtra['core_size'] ?? '');
+  // Qty per roll: check barcode planning key (pcs_per_roll) first, then label keys
+  $job['planning_qty_per_roll'] = (string)($planningExtra['pcs_per_roll'] ?? ($planningExtra['pieces_per_roll'] ?? ($planningExtra['qty_per_roll'] ?? ($planningExtra['qty_per_reel'] ?? ''))));
+  $job['planning_direction'] = (string)($planningExtra['direction'] ?? ($planningExtra['roll_direction'] ?? ''));
+  $job['planning_core'] = (string)($planningExtra['core'] ?? ($planningExtra['core_size'] ?? ($planningExtra['core_mm'] ?? ($planningExtra['core_dia'] ?? ($planningExtra['core_inch'] ?? '')))));
+  $job['planning_core_size'] = (string)($planningExtra['core_size'] ?? ($planningExtra['core_mm'] ?? ($planningExtra['core_dia'] ?? ($planningExtra['core_inch'] ?? ($job['planning_core'] ?? '')))));
   $job['planning_repeat_gap'] = (string)($planningExtra['repeat_gap'] ?? ($planningExtra['repeat'] ?? ''));
     $job['planning_repeat'] = (string)($planningExtra['repeat'] ?? '');
-    $job['planning_order_qty'] = (string)($planningExtra['qty_pcs'] ?? '');
-    $job['planning_material'] = (string)($planningExtra['material'] ?? ($job['paper_type'] ?? ''));
+    // Order qty: check barcode planning keys first, then label key
+    $job['planning_order_qty'] = (string)($planningExtra['order_quantity_user'] ?? ($planningExtra['order_quantity'] ?? ($planningExtra['qty_pcs'] ?? '')));
+    // Material: check barcode planning key (material_type) first
+    $job['planning_material'] = (string)($planningExtra['material_type'] ?? ($planningExtra['material'] ?? ($job['paper_type'] ?? '')));
     $imagePath = trim((string)($planningExtra['image_path'] ?? ($planningExtra['planning_image_path'] ?? '')));
     if ($imagePath !== '' && !preg_match('/^https?:\/\//i', $imagePath)) {
         $imagePath = BASE_URL . '/' . ltrim($imagePath, '/');
@@ -96,11 +101,62 @@ foreach ($jobs as &$job) {
       $job['status'] = $normalizedStatus;
     }
 
-    // ── Parse previous job extra_data (printing production qty) ──
+    // ── Parse previous job extra_data (printing/barcode production qty) ──
     $prevExtra         = json_decode((string)($job['prev_extra_data']           ?? '{}'), true) ?: [];
     $grandPrevExtra    = json_decode((string)($job['grandprev_extra_data']      ?? '{}'), true) ?: [];
     $greatGrandPrevExtra = json_decode((string)($job['greatgrandprev_extra_data'] ?? '{}'), true) ?: [];
-    $job['prev_actual_qty'] = (string)($prevExtra['actual_qty'] ?? ($prevExtra['die_cutting_total_qty_pcs'] ?? ''));
+
+    // Fallback: if the job chain is broken (previous_job_id is null), try to find
+    // the most recent completed upstream job with the same planning_id.
+    // This handles the common case where barcode/printing/die-cutting and label
+    // slitting jobs are pre-created from planning without previous_job_id linkage.
+    $hasChain = !empty($prevExtra) || !empty($grandPrevExtra) || !empty($greatGrandPrevExtra);
+    $hasPrevId = (int)($job['previous_job_id'] ?? 0) > 0;
+    if (!$hasChain && !$hasPrevId && !empty($job['planning_id'])) {
+        $upstreamStmt = $db->prepare(
+            "SELECT extra_data, department, job_no, status FROM jobs
+             WHERE planning_id = ? AND id != ? AND status IN ('Closed','Finalized','Completed','QC Passed')
+             AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
+             ORDER BY id DESC LIMIT 1"
+        );
+        if ($upstreamStmt) {
+            $planId = (int)$job['planning_id'];
+            $jobId = (int)$job['id'];
+            $upstreamStmt->bind_param('ii', $planId, $jobId);
+            $upstreamStmt->execute();
+            $upstreamRow = $upstreamStmt->get_result()->fetch_assoc();
+            if ($upstreamRow) {
+                $upstreamExtra = json_decode((string)($upstreamRow['extra_data'] ?? '{}'), true) ?: [];
+                if (!empty($upstreamExtra)) {
+                    $prevExtra = $upstreamExtra;
+                    // Also grab deeper ancestor by chaining from the found job
+                    $ancestorStmt = $db->prepare(
+                        "SELECT extra_data FROM jobs WHERE id = (SELECT previous_job_id FROM jobs WHERE id = ?)
+                         AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1"
+                    );
+                    if ($ancestorStmt) {
+                        $ancestorStmt->bind_param('i', $upstreamRow['id']);
+                        $ancestorStmt->execute();
+                        $ancestorRow = $ancestorStmt->get_result()->fetch_assoc();
+                        if ($ancestorRow) {
+                            $grandPrevExtra = json_decode((string)($ancestorRow['extra_data'] ?? '{}'), true) ?: [];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    $job['prev_actual_qty'] = (string)(
+        $prevExtra['actual_qty']
+        ?? $prevExtra['production_total_qty']
+        ?? $prevExtra['printed_qty']
+        ?? $prevExtra['print_qty']
+        ?? $prevExtra['total_qty_pcs']
+        ?? $prevExtra['die_cutting_total_qty_pcs']
+        ?? $prevExtra['dc_total_qty']
+        ?? ''
+    );
 
     // ── Build upstream assigned roll list (Job Assign only, all 3 ancestor levels) ──
     $lsRollMap = [];
@@ -109,13 +165,15 @@ foreach ($jobs as &$job) {
       foreach (['assigned_child_rolls', 'child_rolls'] as $bucket) {
         $bRows = $upstreamExtra[$bucket] ?? null;
         if (!is_array($bRows)) continue;
+        $isAssignedBucket = ($bucket === 'assigned_child_rolls');
         foreach ($bRows as $row) {
           if (is_array($row)) {
             $rn = trim((string)($row['roll_no'] ?? $row['roll'] ?? $row['roll_number'] ?? ''));
             $rowSt = strtolower(trim((string)($row['status'] ?? '')));
             if ($rn === '') continue;
-            // Accept only Job Assign (or empty status treated as Job Assign); skip Stock/Slitting/etc
-            if ($rowSt !== '' && $rowSt !== 'job assign') continue;
+            // For assigned_child_rolls: show all explicitly-assigned rolls regardless of individual status.
+            // For child_rolls (generic): only show Job Assign status rolls.
+            if (!$isAssignedBucket && $rowSt !== '' && $rowSt !== 'job assign') continue;
             $k = strtolower($rn);
             if (!isset($lsRollMap[$k])) {
               $lsRollMap[$k] = [
@@ -593,7 +651,7 @@ include __DIR__ . '/../../../includes/header.php';
       <div style="display:flex;gap:6px;align-items:center">
         <span class="dc-badge dc-badge-<?= $stsClass ?>"><?= e($sts) ?></span>
         <?php if ($pri !== 'Normal'): ?>
-          <span class="dc-badge dc-badge-<?= $priClass ?>"><?= e($pri) ?></span>
+        <span class="dc-badge dc-badge-<?= $priClass ?>"><?= e($pri) ?></span>
         <?php endif; ?>
       </div>
     </div>
@@ -603,7 +661,6 @@ include __DIR__ . '/../../../includes/header.php';
       <div class="dc-card-row"><span class="dc-label">Label Finish Size</span><span class="dc-value" style="color:var(--dc-brand)"><?= e($job['planning_label_finish_size'] ?: ($job['planning_die_size'] ?: '—')) ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Quantity per roll</span><span class="dc-value"><?= e($job['planning_qty_per_roll'] ?: '—') ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Order quantiry</span><span class="dc-value"><?= e($job['planning_order_qty'] ?: '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Total Length (Mtr)</span><span class="dc-value"><?= e($job['length_mtr'] ?? '—') ?></span></div>
       <div class="dc-card-row"><span class="dc-label">Started</span><span class="dc-value"><?= e($startedAt) ?></span></div>
       <?php if ($sts === 'Running' && $resumedTs && $timerState !== 'paused'): ?>
       <div class="dc-card-row"><span class="dc-label">Elapsed</span><span class="dc-timer" data-base-seconds="<?= $baseSeconds ?>" data-resumed-at="<?= $resumedTs ?>" style="color:var(--dc-brand);font-weight:700;font-family:Consolas,monospace">00:00:00</span></div>
@@ -653,7 +710,7 @@ include __DIR__ . '/../../../includes/header.php';
       <div style="display:flex;gap:6px;align-items:center">
         <span class="dc-badge dc-badge-<?= $stsClass ?>"><?= e($sts) ?></span>
         <?php if ($pri !== 'Normal'): ?>
-          <span class="dc-badge dc-badge-<?= $priClass ?>"><?= e($pri) ?></span>
+        <span class="dc-badge dc-badge-<?= $priClass ?>"><?= e($pri) ?></span>
         <?php endif; ?>
       </div>
     </div>
@@ -668,8 +725,11 @@ include __DIR__ . '/../../../includes/header.php';
     <div class="dc-card-foot">
       <div class="dc-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
       <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
-        <button class="dc-action-btn dc-btn-view" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-folder2-open"></i> Open</button>
-        <button class="dc-action-btn dc-btn-view" onclick="printJobCard(<?= $job['id'] ?>)" title="Print"><i class="bi bi-printer"></i></button>
+        <button class="ht-act-btn" onclick="openJobDetail(<?= (int)$h['id'] ?>)" title="View"><i class="bi bi-eye"></i></button>
+        <button class="ht-act-btn ht-print" onclick="printJobCard(<?= (int)$h['id'] ?>)" title="Print"><i class="bi bi-printer"></i></button>
+        <?php if ($canDeleteJobs): ?>
+        <button class="ht-act-btn ht-delete" onclick="deleteJob(<?= (int)$h['id'] ?>)" title="Delete"><i class="bi bi-trash"></i></button>
+        <?php endif; ?>
       </div>
     </div>
   </div>
@@ -1721,7 +1781,7 @@ async function openJobDetail(id, mode) {
     <div class="dc-op-field"><label>Material</label><div class="fv">${esc(job.planning_material || job.paper_type || '—')}</div></div>
     <div class="dc-op-field"><label>Label Finish Size</label><div class="fv" style="color:var(--dc-brand);font-weight:900">${esc(job.planning_label_finish_size || job.planning_die_size || '—')}</div></div>
     <div class="dc-op-field"><label>Quantity per roll</label><div class="fv">${esc(job.planning_qty_per_roll || '—')}</div></div>
-    <div class="dc-op-field"><label>Direction</label><div class="fv">${esc(job.planning_direction || '—')}</div></div>
+    <div class="dc-op-field"><label>Direction</label><div class="fv">${esc(job.planning_direction || '')}</div></div>
     <div class="dc-op-field"><label>Core size</label><div class="fv">${esc(job.planning_core_size || '—')}</div></div>
     <div class="dc-op-field"><label>Repeate Gap</label><div class="fv">${esc(job.planning_repeat_gap || job.planning_repeat || '—')}</div></div>
     <div class="dc-op-field"><label>Order quantiry</label><div class="fv">${esc(job.planning_order_qty || '—')}</div></div>
@@ -1787,8 +1847,6 @@ async function openJobDetail(id, mode) {
       <div class="dc-op-field"><label>Total Roll</label><div class="fv">${esc(totalRoll || '—')}</div></div>
       <div class="dc-op-field"><label>Toral Production</label><div class="fv">${esc(totalProduction || '—')}</div></div>
       <div class="dc-op-field"><label>Wastage Percentage</label><div class="fv" style="color:#dc2626;font-weight:900">${esc(wastagePct ? (wastagePct + '%') : '—')}</div></div>
-      ${totalWastagePct ? `<div class="dc-op-field"><label>Total Wastage (%)</label><div class="fv" style="color:#dc2626;font-weight:900">${esc(totalWastagePct)}</div></div>` : ''}
-      <div class="dc-op-field"><label>Notes</label><div class="fv">${esc(dcNotes || '—')}</div></div>
     </div>`;
 
     if (voiceOriginal || voiceEnglish) {
@@ -2060,15 +2118,15 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
         <div><div style="color:#64748b;text-transform:uppercase;font-weight:800;font-size:.58rem">Duration</div><div style="font-weight:700">${esc(durText)}</div></div>
       </div>
       <div style="padding:10px 12px">
-        <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#c2410c;background:#fff7ed;padding:5px 8px;border-radius:4px">Order Details</div>
+        <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#c2410c;background:#fff7ed;padding:5px 8px;border-radius:4px;margin-top:8px">Order Details</div>
         <table style="width:100%;border-collapse:collapse;font-size:.72rem;margin-bottom:10px">
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job Name</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-size:.84rem;font-weight:900;color:#0f172a">${esc(job.planning_job_name || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Job No</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#c2410c">${esc(job.job_no || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Material</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_material || job.paper_type || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Label Finish Size</td><td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:700;color:#c2410c">${esc(job.planning_label_finish_size || job.planning_die_size || '—')}</td></tr>
-          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Quantity per roll</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_qty_per_roll || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Direction</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_direction || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Quantity per roll</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_qty_per_roll || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Direction</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_direction || '')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Core size</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_core_size || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Repeate Gap</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_repeat_gap || job.planning_repeat || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Order quantiry</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.planning_order_qty || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Production from Flatbed or Printing Production</td><td style="padding:5px 7px;border:1px solid #cbd5e1;color:#3b82f6;font-weight:700">${esc(job.prev_actual_qty || '—')}</td></tr>
-          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Roll No</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.roll_no || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Total Length</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.length_mtr || '—') + ' m')}</td></tr>
-          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Width</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.width_mm || '—') + ' mm')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">GSM</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.gsm || '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Roll No</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.roll_no || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Total Length</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.length_mtr ?? '—') + ' m')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Width</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc((job.width_mm ?? '—') + ' mm')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">GSM</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(job.gsm || '—')}</td></tr>
         </table>
         ${previewHtml ? `<table style="width:100%">${previewHtml}</table>` : ''}
         ${(() => {

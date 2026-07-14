@@ -1884,7 +1884,6 @@ include __DIR__ . '/../../includes/header.php';
       ? operatorRollPayload.roll_overrides
       : {};
     var rollHelperOverrides = {};
-    var ignoreSubmittedBarcodeTotalRolls = isBarcodeMode && operatorHasSubmitted && operatorSelectedRollKeys.length > 1;
 
     function toNum(v) {
       var n = Number(String(v || '').replace(/,/g, '').trim());
@@ -1897,7 +1896,6 @@ include __DIR__ . '/../../includes/header.php';
       var state = {};
       if (isBarcodeMode) {
         ['bpr', 'total_rolls', 'rolls_per_carton', 'extra_pcs', 'extra_pcs_manual'].forEach(function(field) {
-          if (ignoreSubmittedBarcodeTotalRolls && field === 'total_rolls') return;
           if (!Object.prototype.hasOwnProperty.call(src, field)) return;
           var raw = Math.floor(toNum(src[field]));
           if (!isNaN(raw)) {
@@ -2133,14 +2131,15 @@ include __DIR__ . '/../../includes/header.php';
                 var perRollOutput = document.getElementById('pkPerRollOutput');
                 var rollSelectNodes = Array.prototype.slice.call(document.querySelectorAll('.pk-roll-select'));
                 
-                // Display order and production quantities
+                // Display order and production quantities (use operator packed_qty when available)
+                var displayProdQty = operatorPhysicalQty > 0 ? operatorPhysicalQty : prodQty;
                 dashOrderQtySpan.textContent = orderQty > 0 ? orderQty : '-';
-                dashProdQtySpan.textContent = prodQty > 0 ? prodQty : '-';
-                if (dashProductionSpan) dashProductionSpan.textContent = prodQty > 0 ? prodQty : '-';
-                if (dashAvailableSpan) dashAvailableSpan.textContent = prodQty > 0 ? prodQty : '-';
+                dashProdQtySpan.textContent = displayProdQty > 0 ? displayProdQty : '-';
+                if (dashProductionSpan) dashProductionSpan.textContent = displayProdQty > 0 ? displayProdQty : '-';
+                if (dashAvailableSpan) dashAvailableSpan.textContent = displayProdQty > 0 ? displayProdQty : '-';
                 // Display actual percent
-                if (orderQty > 0 && prodQty > 0) {
-                  var deltaPct = ((prodQty - orderQty) / orderQty) * 100;
+                if (orderQty > 0 && displayProdQty > 0) {
+                  var deltaPct = ((displayProdQty - orderQty) / orderQty) * 100;
                   dashActualPercentSpan.textContent = (deltaPct > 0 ? '+' : '') + deltaPct.toFixed(1) + '%';
                 } else {
                   dashActualPercentSpan.textContent = '-';
@@ -2606,6 +2605,17 @@ include __DIR__ . '/../../includes/header.php';
                     }
                   }
 
+                  // When operator has submitted, use their actual values as source of truth
+                  if (operatorHasSubmitted && operatorEntry) {
+                    var subPacked = Math.max(0, Math.floor(toNum(operatorEntry.packed_qty)));
+                    var subBundles = Math.max(0, Math.floor(toNum(operatorEntry.bundles_count)));
+                    var subCartons = Math.max(0, Math.floor(toNum(operatorEntry.cartons_count)));
+                    var subLoose = Math.max(0, Math.floor(toNum(operatorEntry.loose_qty)));
+                    if (subPacked > 0) totalPhysicalNum = subPacked;
+                    if (subBundles > 0) totalBundlesNum = subBundles;
+                    if (subCartons > 0) totalCartonsNum = subCartons;
+                    if (subLoose > 0) totalLooseNum = subLoose;
+                  }
                   calcBundlesSpan.textContent = totalBundlesNum;
                   calcCartonsSpan.textContent = totalCartonsNum;
                   calcLooseSpan.textContent = totalLooseNum;

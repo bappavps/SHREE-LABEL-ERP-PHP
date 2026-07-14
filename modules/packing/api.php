@@ -1088,7 +1088,7 @@ try {
         $tabKey = packing_row_to_tab([
             'job_no' => (string)($jobDetails['job_no'] ?? ''),
             'department' => (string)($jobDetails['department'] ?? ''),
-            'plan_department' => (string)($jobDetails['plan_extra_data']['department'] ?? ''),
+            'plan_department' => (string)($jobDetails['plan_department'] ?? ''),
             'job_type' => (string)($jobDetails['job_type'] ?? ''),
             'extra_data' => $jobDetails['job_extra_data'] ?? [],
             'plan_extra_data' => $jobDetails['plan_extra_data'] ?? [],
@@ -1156,7 +1156,7 @@ try {
         $tabKey = packing_row_to_tab([
             'job_no' => (string)($jobDetails['job_no'] ?? ''),
             'department' => (string)($jobDetails['department'] ?? ''),
-            'plan_department' => (string)($jobDetails['plan_extra_data']['department'] ?? ''),
+            'plan_department' => (string)($jobDetails['plan_department'] ?? ''),
             'job_type' => (string)($jobDetails['job_type'] ?? ''),
             'extra_data' => $jobDetails['job_extra_data'] ?? [],
             'plan_extra_data' => $jobDetails['plan_extra_data'] ?? [],
@@ -1273,7 +1273,7 @@ try {
         $tabKey = packing_row_to_tab([
             'job_no' => (string)($jobDetails['job_no'] ?? ''),
             'department' => (string)($jobDetails['department'] ?? ''),
-            'plan_department' => (string)($jobDetails['plan_extra_data']['department'] ?? ''),
+            'plan_department' => (string)($jobDetails['plan_department'] ?? ''),
             'job_type' => (string)($jobDetails['job_type'] ?? ''),
             'extra_data' => $jobDetails['job_extra_data'] ?? [],
             'plan_extra_data' => $jobDetails['plan_extra_data'] ?? [],
@@ -1378,7 +1378,7 @@ try {
         $tabKey = packing_row_to_tab([
             'job_no' => (string)($jobDetails['job_no'] ?? ''),
             'department' => (string)($jobDetails['department'] ?? ''),
-            'plan_department' => (string)($jobDetails['plan_extra_data']['department'] ?? ''),
+            'plan_department' => (string)($jobDetails['plan_department'] ?? ''),
             'job_type' => (string)($jobDetails['job_type'] ?? ''),
             'extra_data' => $jobDetails['job_extra_data'] ?? [],
             'plan_extra_data' => $jobDetails['plan_extra_data'] ?? [],
@@ -1530,7 +1530,7 @@ try {
             $tabKey = packing_row_to_tab([
                 'job_no' => (string)($jobDetails['job_no'] ?? ''),
                 'department' => (string)($jobDetails['department'] ?? ''),
-                'plan_department' => (string)($jobDetails['plan_extra_data']['department'] ?? ''),
+                'plan_department' => (string)($jobDetails['plan_department'] ?? ''),
                 'job_type' => (string)($jobDetails['job_type'] ?? ''),
                 'extra_data' => $jobDetails['job_extra_data'] ?? [],
                 'plan_extra_data' => $jobDetails['plan_extra_data'] ?? [],

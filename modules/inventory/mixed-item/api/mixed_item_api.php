@@ -201,29 +201,47 @@ function mi_compute_extra(array $row, array $extra): array {
             ];
         }
 
-        $totalRoll = mi_num(mi_pick($extra, ['total_roll', 'total_rolls']));
-        if ($totalRoll <= 0) {
-            $pcsPerRoll = mi_num(mi_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
-            if ($pcsPerRoll > 0 && $quantity > 0) {
-                $totalRoll = ceil($quantity / $pcsPerRoll);
-            }
-        }
+        $pcsPerRoll = mi_num(mi_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
+        $explicitExtraRolls = mi_num(mi_pick($extra, ['extra_rolls', 'mixed_extra_rolls']));
 
         $extraQty = 0;
         $possible = 0;
-        $pcsPerRoll = mi_num(mi_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
-        if ($rpc > 0 && $totalRoll > 0) {
-            $possible = (int)floor($totalRoll / $rpc);
-            $rollRemainder = fmod($totalRoll, $rpc);
-            if ($rollRemainder > 0 && $pcsPerRoll > 0) {
-                $extraQty += $rollRemainder * $pcsPerRoll;
+        if ($explicitExtraRolls > 0) {
+            // Trust the explicit extra rolls recorded at packing time. A dispatch only
+            // removes full cartons and rewrites total_roll/carton/loose_qty from the
+            // full-carton-only quantity, so the explicit extra pool must stay the source
+            // of truth for the mixed item board (otherwise it shows blank after dispatch).
+            $extraQty = $explicitExtraRolls * ($pcsPerRoll > 0 ? $pcsPerRoll : 1);
+            if ($rpc > 0) {
+                $possible = (int)floor($explicitExtraRolls / $rpc);
             }
-        } elseif ($totalRoll > 0 && $pcsPerRoll > 0) {
-            $extraQty += $totalRoll * $pcsPerRoll;
+        } else {
+            $totalRoll = mi_num(mi_pick($extra, ['total_roll', 'total_rolls']));
+            if ($totalRoll <= 0) {
+                if ($pcsPerRoll > 0 && $quantity > 0) {
+                    $totalRoll = ceil($quantity / $pcsPerRoll);
+                }
+            }
+            if ($rpc > 0 && $totalRoll > 0) {
+                $possible = (int)floor($totalRoll / $rpc);
+                $rollRemainder = fmod($totalRoll, $rpc);
+                if ($rollRemainder > 0 && $pcsPerRoll > 0) {
+                    $extraQty += $rollRemainder * $pcsPerRoll;
+                }
+            } elseif ($totalRoll > 0 && $pcsPerRoll > 0) {
+                $extraQty += $totalRoll * $pcsPerRoll;
+            }
         }
         $extraQty += $looseQty;
 
-        $extraRolls = ($rpc > 0 && $totalRoll > 0) ? (int)fmod($totalRoll, $rpc) : 0;
+        $extraRolls = 0;
+        if ($rpc > 0) {
+            // In the explicit-extra branch $totalRoll is intentionally undefined (we trust
+            // extra_rolls directly), so fall back to the explicit extra roll count there.
+            $extraRolls = (isset($totalRoll) && $totalRoll > 0)
+                ? (int)fmod($totalRoll, $rpc)
+                : (int)$explicitExtraRolls;
+        }
         return [
             'extra_qty' => max(0, $extraQty),
             'unit_type' => 'PCS',
