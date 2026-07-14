@@ -512,6 +512,24 @@ include __DIR__ . '/../../includes/header.php';
 .fl-grid tbody tr:hover{background:#eef2ff;box-shadow:inset 0 0 0 1px #818cf8}
 .fl-grid tbody tr:focus-visible{outline:3px solid #60a5fa;outline-offset:-2px}
 
+/* ── Row type color bands (per job category) ── */
+.fl-grid tbody tr.row-type-label{background:#dbe4ff !important}
+.fl-grid tbody tr.row-type-label:hover{background:#bac8ff !important}
+.fl-grid tbody tr.row-type-barcode{background:#fde68a !important}
+.fl-grid tbody tr.row-type-barcode:hover{background:#fcd34d !important}
+.fl-grid tbody tr.row-type-posroll{background:#bbf7d0 !important}
+.fl-grid tbody tr.row-type-posroll:hover{background:#86efac !important}
+.fl-grid tbody tr.row-type-oneply{background:#fbcfe8 !important}
+.fl-grid tbody tr.row-type-oneply:hover{background:#f9a8d4 !important}
+.fl-grid tbody tr.row-type-twoply{background:#ddd6fe !important}
+.fl-grid tbody tr.row-type-twoply:hover{background:#c4b5fd !important}
+/* Left color stripe per type */
+.fl-grid tbody tr.row-type-label td:first-child{border-left:5px solid #4338ca}
+.fl-grid tbody tr.row-type-barcode td:first-child{border-left:5px solid #d97706}
+.fl-grid tbody tr.row-type-posroll td:first-child{border-left:5px solid #059669}
+.fl-grid tbody tr.row-type-oneply td:first-child{border-left:5px solid #db2777}
+.fl-grid tbody tr.row-type-twoply td:first-child{border-left:5px solid #7c3aed}
+
 /* Job info cells (left side) */
 .fl-grid .g-jobid{
   font-weight:800;
@@ -1365,6 +1383,16 @@ function inferPlannedStageKeys(base, stageMap, actualJobs){
   const planningStatus = progress.norm;
   const batchEvidence = hasBatchEvidence(stageMap, planningStatus, planningExtra);
 
+  // Barcode-only flow detection: a barcode job card exists but no flexo print job card.
+  // In this flow Flexo Printing is NOT part of the pipeline (it shows as N/A / skipped).
+  const hasPrintJob = actualJobs.some(function(j){ return getStageKeyForJob(j) === 'print'; });
+  const hasBarcodeJobCard = actualJobs.some(function(j){
+    const d = String(j.department||'').toLowerCase();
+    const jn = String(j.job_no||'').toUpperCase();
+    return d.indexOf('barcode') !== -1 || jn.indexOf('BRC/') === 0 || jn.indexOf('BAR/') === 0 || jn.indexOf('ROT/') === 0;
+  });
+  const isBarcodeFlow = hasBarcodeJobCard && !hasPrintJob;
+
   /* ── Route-based path: use department_route from planning extra data ── */
   const routeNames = extractDepartmentRoute(planningExtra);
   if(routeNames && routeNames.length > 0){
@@ -1372,6 +1400,13 @@ function inferPlannedStageKeys(base, stageMap, actualJobs){
     // Ensure planning is always first
     const keys = (selectedKeys.includes('planning') ? selectedKeys.slice() : ['planning'].concat(selectedKeys))
       .filter((key) => key !== 'batch' || batchEvidence);
+
+    // Barcode-type plans do not include Flexo Printing unless an actual print job exists.
+    // Drop the 'print' stage so it shows as N/A (skipped) like Die Cutting for barcode flows.
+    if(isBarcodeFlow){
+      const _printIdx = keys.indexOf('print');
+      if(_printIdx !== -1) keys.splice(_printIdx, 1);
+    }
 
     // Packing fallback: if an actual packing job exists OR Label Slitting is in the route, add pack stage
     const hasActualPackingJob = stageMap.has('pack');
@@ -1430,7 +1465,9 @@ function inferPlannedStageKeys(base, stageMap, actualJobs){
     // - planning status explicitly mentions printing, OR
     // - die/lsl stages exist (they require printing upstream)
     // NOTE: barcode alone does NOT imply flexo printing (barcode-only flow is valid).
-    if(!directFlexoBypass && (has('print') || planningStatus.includes('printing') || has('die') || has('lsl'))){
+    // For barcode flows (barcode job card present, no flexo job), Flexo Printing is
+    // NOT part of the pipeline — it shows as N/A / skipped like Die Cutting.
+    if(!directFlexoBypass && !isBarcodeFlow && (has('print') || planningStatus.includes('printing') || has('die') || has('lsl'))){
       add('print');
     }
 
@@ -1888,6 +1925,15 @@ function buildLiveCard(rows){
         if(state === 'done') doneDateTime = fmtStageDateTime(base.planning_dispatch_date || '');
       }
 
+      // A stage with no actual job card was never performed on the floor.
+      // Show it as grey / N/A instead of a false green "done" tick.
+      // Evidence-based stages (pack, finished_production, pos) and the planning
+      // row manage their own state, so they are excluded from this override.
+      if (!stageJob && key !== 'planning' && key !== 'pack' && key !== 'finished_production' && key !== 'pos') {
+        state = 'later';
+        stageStatus = 'N/A';
+      }
+
       return {
         key,
         label: effectiveLabel,
@@ -1962,11 +2008,16 @@ function getCardJobType(card){
   const extra = parsePlanningExtra(src);
   const pt = normalizePlanningType(extra && extra.planning_type || '');
   const jobNo = String(card.job_no || src.job_no || '').toUpperCase();
+  // card.job_no may be an active child job (e.g. packing), so also use the
+  // planning-level reference (PLN-BAR/..., PLN-POS/..., PLN-1PL/..., PLN-2PL/...)
+  // which is the authoritative category source for row coloring.
+  const planRef = String(getCardDisplayRef(card) || '').toUpperCase();
+  const planStatus = normStatus(card.planning_status || '');
 
-  if(pt === 'one_ply' || pt === 'oneply' || jobNo.startsWith('PLN-1PL/')) return 'oneply';
-  if(pt === 'two_ply' || pt === 'twoply' || jobNo.startsWith('PLN-2PL/')) return 'twoply';
-  if(pt === 'pos_roll' || pt === 'posroll' || jobNo.startsWith('PLN-POS/')) return 'posroll';
-  if(pt === 'barcode' || pt === 'barcoding' || jobNo.startsWith('PLN-BAR/')) return 'barcode';
+  if(pt === 'one_ply' || pt === 'oneply' || jobNo.startsWith('PLN-1PL/') || planRef.startsWith('PLN-1PL/')) return 'oneply';
+  if(pt === 'two_ply' || pt === 'twoply' || jobNo.startsWith('PLN-2PL/') || planRef.startsWith('PLN-2PL/')) return 'twoply';
+  if(pt === 'pos_roll' || pt === 'posroll' || jobNo.startsWith('PLN-POS/') || planRef.startsWith('PLN-POS/')) return 'posroll';
+  if(pt === 'barcode' || pt === 'barcoding' || jobNo.startsWith('PLN-BAR/') || planRef.startsWith('PLN-BAR/') || planStatus.includes('barcode')) return 'barcode';
   return 'label';
 }
 
