@@ -106,13 +106,14 @@ foreach ($jobs as &$job) {
     $grandPrevExtra    = json_decode((string)($job['grandprev_extra_data']      ?? '{}'), true) ?: [];
     $greatGrandPrevExtra = json_decode((string)($job['greatgrandprev_extra_data'] ?? '{}'), true) ?: [];
 
-    // Fallback: if the job chain is broken (previous_job_id is null), try to find
-    // the most recent completed upstream job with the same planning_id.
-    // This handles the common case where barcode/printing/die-cutting and label
-    // slitting jobs are pre-created from planning without previous_job_id linkage.
+    // Fallback: if the job chain is broken (previous_job_id is null) OR the direct
+    // ancestor chain didn't yield any roll data, try to find a completed upstream job
+    // with the same planning_id that actually has extra_data.
+    // This handles the case where Flexo was created with directFlexoBypass (no
+    // previous_job_id linking to Jumbo), so grandprev JOIN fails even though
+    // the Jumbo job's child_rolls contain the upstream rolls we need.
     $hasChain = !empty($prevExtra) || !empty($grandPrevExtra) || !empty($greatGrandPrevExtra);
-    $hasPrevId = (int)($job['previous_job_id'] ?? 0) > 0;
-    if (!$hasChain && !$hasPrevId && !empty($job['planning_id'])) {
+    if (!$hasChain && !empty($job['planning_id'])) {
         $upstreamStmt = $db->prepare(
             "SELECT extra_data, department, job_no, status FROM jobs
              WHERE planning_id = ? AND id != ? AND status IN ('Closed','Finalized','Completed','QC Passed')
@@ -172,8 +173,9 @@ foreach ($jobs as &$job) {
             $rowSt = strtolower(trim((string)($row['status'] ?? '')));
             if ($rn === '') continue;
             // For assigned_child_rolls: show all explicitly-assigned rolls regardless of individual status.
-            // For child_rolls (generic): only show Job Assign status rolls.
-            if (!$isAssignedBucket && $rowSt !== '' && $rowSt !== 'job assign') continue;
+            // For child_rolls (generic): include all upstream slit rolls — this is needed for
+            // label printing jobs where Jumbo Slitting creates child_rolls without 'Job Assign'
+            // status but they are still valid upstream rolls for downstream slitting.
             $k = strtolower($rn);
             if (!isset($lsRollMap[$k])) {
               $lsRollMap[$k] = [
@@ -897,6 +899,21 @@ function calcLabelSlittingWastage(form, prevProduction) {
     wastageInput.value = (((prev - cur) / prev) * 100).toFixed(2);
   } else {
     wastageInput.value = '';
+  }
+}
+
+function calcLabelSlittingTotalRoll(form) {
+  if (!form) return;
+  const qtyInRollInput = form.querySelector('[name=label_slitting_qty_in_roll]');
+  const totalProductionInput = form.querySelector('[name=label_slitting_total_production]');
+  const totalRollInput = form.querySelector('[name=label_slitting_total_roll]');
+  if (!qtyInRollInput || !totalProductionInput || !totalRollInput) return;
+  const qtyInRoll = Number(qtyInRollInput.value || 0);
+  const totalProduction = Number(totalProductionInput.value || 0);
+  if (qtyInRoll > 0 && totalProduction > 0) {
+    totalRollInput.value = Math.ceil(totalProduction / qtyInRoll);
+  } else {
+    totalRollInput.value = '';
   }
 }
 
@@ -1632,6 +1649,33 @@ async function submitAndClose(id) {
     return;
   }
 
+  // Include upstream rolls as assigned_child_rolls for packing per-roll tracking
+  // (mirrors how barcode jobs save rolls so packing shows per-roll details)
+  if (job.upstream_rolls && Array.isArray(job.upstream_rolls) && job.upstream_rolls.length > 0) {
+    var qtyPerRoll = Number(extraData.label_slitting_qty_in_roll || 0);
+    extraData.assigned_child_rolls = job.upstream_rolls.map(function(roll) {
+      var rollCopy = Object.assign({}, roll);
+      if (qtyPerRoll > 0) {
+        rollCopy.production_qty = qtyPerRoll;
+        rollCopy.available_qty = qtyPerRoll;
+      }
+      return rollCopy;
+    });
+  } else if (Number(extraData.label_slitting_total_roll || 0) > 0) {
+    // No upstream rolls found; generate virtual rolls from operator totals
+    var totalRolls = Math.max(1, Math.floor(Number(extraData.label_slitting_total_roll)));
+    var qtyPerRoll = Math.max(0, Math.floor(Number(extraData.label_slitting_qty_in_roll || 0)));
+    var parentRoll = job.roll_no || job.job_no || 'ROLL-1';
+    extraData.assigned_child_rolls = [];
+    for (var i = 1; i <= totalRolls; i++) {
+      extraData.assigned_child_rolls.push({
+        roll_no: parentRoll + '-' + i,
+        production_qty: qtyPerRoll,
+        available_qty: qtyPerRoll
+      });
+    }
+  }
+
   // Save extra data
   const fd1 = new FormData();
   fd1.append('csrf_token', CSRF); fd1.append('action', 'submit_extra_data'); fd1.append('job_id', id); fd1.append('extra_data', JSON.stringify(extraData));
@@ -1866,13 +1910,19 @@ async function openJobDetail(id, mode) {
     const prevProduction = Number(job.prev_actual_qty || 0);
     const curProduction = Number(extra.label_slitting_total_production || 0);
     const computedWastage = prevProduction > 0 && curProduction > 0 ? (((prevProduction - curProduction) / prevProduction) * 100).toFixed(2) : '';
+
+    // Auto-fill defaults from planning and previous department
+    const defaultQtyInRoll = extra.label_slitting_qty_in_roll || job.planning_qty_per_roll || '';
+    const defaultTotalProduction = extra.label_slitting_total_production || job.prev_actual_qty || '';
+    const defaultTotalRoll = extra.label_slitting_total_roll || (defaultQtyInRoll && defaultTotalProduction ? Math.ceil(Number(defaultTotalProduction) / Number(defaultQtyInRoll)) : '');
+
     html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-pencil-square"></i> Operator Data — Fill Before Completing</div>
     <form id="dm-operator-form" class="dc-op-b" style="display:grid;gap:10px">
       <div class="dc-op-grid-2">
-        <div class="dc-op-field"><label>Quantiry in roll</label><input type="number" min="0" step="1" name="label_slitting_qty_in_roll" value="${esc(extra.label_slitting_qty_in_roll || '')}"></div>
-        <div class="dc-op-field"><label>Total Roll</label><input type="number" min="0" step="1" name="label_slitting_total_roll" value="${esc(extra.label_slitting_total_roll || '')}"></div>
-        <div class="dc-op-field"><label>Toral Production</label><input type="number" min="0" step="1" name="label_slitting_total_production" value="${esc(extra.label_slitting_total_production || '')}" oninput="calcLabelSlittingWastage(this.form, ${prevProduction})"></div>
-        <div class="dc-op-field"><label>Wastage Percentage</label><input type="number" min="0" step="0.01" name="label_slitting_wastage_percentage" value="${esc(extra.label_slitting_wastage_percentage || computedWastage)}" readonly></div>
+        <div class="dc-op-field"><label>Quantiry in roll</label><input type="number" min="0" step="1" name="label_slitting_qty_in_roll" value="${esc(defaultQtyInRoll)}" oninput="calcLabelSlittingTotalRoll(this.form)"></div>
+        <div class="dc-op-field"><label>Total Roll</label><input type="number" min="0" step="1" name="label_slitting_total_roll" value="${esc(defaultTotalRoll)}" readonly style="background:#f8fafc"></div>
+        <div class="dc-op-field"><label>Toral Production</label><input type="number" min="0" step="1" name="label_slitting_total_production" value="${esc(defaultTotalProduction)}" oninput="calcLabelSlittingWastage(this.form, ${prevProduction});calcLabelSlittingTotalRoll(this.form)"></div>
+        <div class="dc-op-field"><label>Wastage Percentage</label><input type="number" min="0" step="0.01" name="label_slitting_wastage_percentage" value="${esc(extra.label_slitting_wastage_percentage || computedWastage)}" readonly style="background:#f8fafc"></div>
       </div>
       <div class="dc-op-field"><label>Notes</label><textarea name="label_slitting_notes_text">${esc(extra.label_slitting_notes_text || '')}</textarea></div>
     </form></div>`;

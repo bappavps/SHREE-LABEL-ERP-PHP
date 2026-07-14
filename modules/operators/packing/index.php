@@ -584,7 +584,9 @@ include __DIR__ . '/../../../includes/header.php';
     var jobExtra  = parseExtraData(job.job_extra_data);
     var prevExtra = parseExtraData(job.prev_job_extra_data);
     var grandPrevExtra = parseExtraData(job.grandprev_job_extra_data);
-    var sources   = [job, planExtra, jobExtra, prevExtra, grandPrevExtra];
+    var greatGrandPrevExtra = parseExtraData(job.greatgrandprev_job_extra_data);
+    var greatGreatGrandPrevExtra = parseExtraData(job.greatgreatgrandprev_job_extra_data);
+    var sources   = [job, planExtra, jobExtra, prevExtra, grandPrevExtra, greatGrandPrevExtra, greatGreatGrandPrevExtra];
     var tabKeyNorm = String(job.packing_tab || '').toLowerCase();
     var isBarcodeMode = tabKeyNorm === 'barcode'
       || tabKeyNorm === 'printing_label'
@@ -675,36 +677,57 @@ include __DIR__ . '/../../../includes/header.php';
         arr.forEach(push);
       }
 
-      if (Array.isArray(jobExtra.selected_rolls)) jobExtra.selected_rolls.forEach(push);
-      if (Array.isArray(planExtra.selected_rolls)) planExtra.selected_rolls.forEach(push);
-      if (Array.isArray(prevExtra.selected_rolls)) prevExtra.selected_rolls.forEach(push);
-      if (Array.isArray(grandPrevExtra.selected_rolls)) grandPrevExtra.selected_rolls.forEach(push);
-      pushFromArrayMaybe(jobExtra, 'parent_details');
-      pushFromArrayMaybe(planExtra, 'parent_details');
-      pushFromArrayMaybe(prevExtra, 'parent_details');
-      pushFromArrayMaybe(grandPrevExtra, 'parent_details');
-      pushFromArrayMaybe(jobExtra, 'roll_details');
-      pushFromArrayMaybe(planExtra, 'roll_details');
-      pushFromArrayMaybe(prevExtra, 'roll_details');
-      pushFromArrayMaybe(grandPrevExtra, 'roll_details');
-      pushFromArrayMaybe(jobExtra, 'assigned_child_rolls');
-      pushFromArrayMaybe(planExtra, 'assigned_child_rolls');
-      pushFromArrayMaybe(prevExtra, 'assigned_child_rolls');
-      pushFromArrayMaybe(grandPrevExtra, 'assigned_child_rolls');
-      pushFromArrayMaybe(jobExtra, 'child_rolls');
-      pushFromArrayMaybe(planExtra, 'child_rolls');
-      pushFromArrayMaybe(prevExtra, 'child_rolls');
-      pushFromArrayMaybe(grandPrevExtra, 'child_rolls');
-      pushFromArrayMaybe(jobExtra, 'split_rolls');
-      pushFromArrayMaybe(planExtra, 'split_rolls');
-      pushFromArrayMaybe(prevExtra, 'split_rolls');
-      pushFromArrayMaybe(grandPrevExtra, 'split_rolls');
-      pushFromArrayMaybe(jobExtra, 'rolls');
-      pushFromArrayMaybe(planExtra, 'rolls');
-      pushFromArrayMaybe(prevExtra, 'rolls');
-      pushFromArrayMaybe(grandPrevExtra, 'rolls');
+      function collectFromExtraOp(src) {
+        if (!src || typeof src !== 'object') return;
+        pushFromArrayMaybe(src, 'assigned_child_rolls');
+        pushFromArrayMaybe(src, 'selected_rolls');
+        pushFromArrayMaybe(src, 'child_rolls');
+        pushFromArrayMaybe(src, 'split_rolls');
+        pushFromArrayMaybe(src, 'parent_details');
+        pushFromArrayMaybe(src, 'roll_details');
+        pushFromArrayMaybe(src, 'rolls');
+      }
+
+      // PRIORITY 1: Current job's own roll data — if present, use ONLY that
+      collectFromExtraOp(jobExtra);
+      if (out.length > 0) { return out; }
+
+      // PRIORITY 2: Planning extra data
+      collectFromExtraOp(planExtra);
+      if (out.length > 0) { return out; }
+
+      // PRIORITY 3: Ancestor (prev = Flexo/Die-cutting)
+      collectFromExtraOp(prevExtra);
+      if (out.length > 0) { return out; }
+
+      // PRIORITY 4: Grandparent (Jumbo slitting)
+      collectFromExtraOp(grandPrevExtra);
+      if (out.length > 0) { return out; }
+
+      // PRIORITY 5: Great-grandparent (Flexo printing)
+      collectFromExtraOp(greatGrandPrevExtra);
+      if (out.length > 0) { return out; }
+
+      // PRIORITY 6: Great-great-grandparent (Jumbo slitting, 4 levels up)
+      collectFromExtraOp(greatGreatGrandPrevExtra);
+      if (out.length > 0) { return out; }
+
       if (!out.length) {
-        push({ roll_no: pickFirst(sources, ['roll_no']), production_qty: fallbackQty, available_qty: fallbackQty });
+        // Virtual rolls from aggregate label-slitting fields (old jobs before assigned_child_rolls was saved)
+        var labelQtyInRoll = Math.max(0, Math.floor(numFromAny(jobExtra.label_slitting_qty_in_roll || jobExtra.qty_in_roll || 0)));
+        var labelTotalRoll = Math.max(0, Math.floor(numFromAny(jobExtra.label_slitting_total_roll || 0)));
+        if (labelQtyInRoll > 0 && labelTotalRoll > 0) {
+          var labelParentRoll = String(pickFirst(sources, ['roll_no'])) || String(job.job_no || 'ROLL-1');
+          for (var ri = 1; ri <= labelTotalRoll; ri++) {
+            out.push({
+              rollNo: labelParentRoll + '-' + ri,
+              productionQty: labelQtyInRoll,
+              availableQty: labelQtyInRoll
+            });
+          }
+        } else {
+          push({ roll_no: pickFirst(sources, ['roll_no']), production_qty: fallbackQty, available_qty: fallbackQty });
+        }
       }
       return out;
     }

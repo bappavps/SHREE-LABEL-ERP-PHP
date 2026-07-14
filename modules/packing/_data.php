@@ -984,6 +984,8 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
             p.extra_data AS plan_extra_data,
             prev.extra_data AS prev_extra_data,
             grandprev.extra_data AS grandprev_extra_data,
+            greatgrandprev.extra_data AS greatgrandprev_extra_data,
+            greatgreatgrandprev.extra_data AS greatgreatgrandprev_extra_data,
             ps.id AS paper_stock_id,
             ps.company AS paper_company,
             ps.paper_type AS paper_type,
@@ -998,6 +1000,8 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
         LEFT JOIN planning p ON p.id = j.planning_id
         LEFT JOIN jobs prev ON prev.id = j.previous_job_id
         LEFT JOIN jobs grandprev ON grandprev.id = prev.previous_job_id
+        LEFT JOIN jobs greatgrandprev ON greatgrandprev.id = grandprev.previous_job_id
+        LEFT JOIN jobs greatgreatgrandprev ON greatgreatgrandprev.id = greatgrandprev.previous_job_id
         LEFT JOIN paper_stock ps ON ps.roll_no = j.roll_no
         LEFT JOIN sales_orders so ON so.id = COALESCE(j.sales_order_id, p.sales_order_id)
         WHERE j.id = ?
@@ -1018,11 +1022,15 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
         return null;
     }
 
-    // ── Fallback: if previous_job_id is NULL but planning_id exists,
-    // find the latest completed upstream job for this planning to get child rolls etc. ──
+    // ── Fallback: if ancestor chain yielded no roll data, find the latest completed
+    // upstream job for this planning to get child rolls etc. ──
     $prevJobId = (int)($row['previous_job_id'] ?? 0);
     $planningId = (int)($row['planning_id'] ?? 0);
-    if ($prevJobId <= 0 && $planningId > 0 && (empty($row['prev_extra_data']) || trim((string)$row['prev_extra_data']) === '')) {
+    $hasPrevRollData = !empty($row['prev_extra_data']) && trim((string)$row['prev_extra_data']) !== '';
+    $hasGrandPrevRollData = !empty($row['grandprev_extra_data']) && trim((string)$row['grandprev_extra_data']) !== '';
+    $hasGreatGrandPrevRollData = !empty($row['greatgrandprev_extra_data']) && trim((string)$row['greatgrandprev_extra_data']) !== '';
+    $hasGreatGreatGrandPrevRollData = !empty($row['greatgreatgrandprev_extra_data']) && trim((string)$row['greatgreatgrandprev_extra_data']) !== '';
+    if ($planningId > 0 && (!$hasPrevRollData || !$hasGrandPrevRollData || !$hasGreatGrandPrevRollData || !$hasGreatGreatGrandPrevRollData)) {
         $fbStmt = $db->prepare("
             SELECT id, extra_data, previous_job_id
             FROM jobs
@@ -1030,31 +1038,47 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
               AND id != ?
               AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
               AND LOWER(TRIM(REPLACE(REPLACE(COALESCE(status,''),'-',' '),'_',' '))) IN ('completed','closed','finalized','qc passed','complete')
-            ORDER BY id DESC
-            LIMIT 1
+            ORDER BY id ASC
+            LIMIT 50
         ");
         if ($fbStmt) {
             $fbStmt->bind_param('ii', $planningId, $jobId);
             $fbStmt->execute();
             $fbRes = $fbStmt->get_result();
-            $fbRow = $fbRes ? $fbRes->fetch_assoc() : null;
+            $fbRows = $fbRes ? $fbRes->fetch_all(MYSQLI_ASSOC) : [];
             $fbStmt->close();
-            if ($fbRow && !empty($fbRow['extra_data'])) {
-                $row['prev_extra_data'] = $fbRow['extra_data'];
-                // Also try to get grandparent
-                $gpId = (int)($fbRow['previous_job_id'] ?? 0);
-                if ($gpId > 0) {
-                    $gpStmt = $db->prepare("SELECT extra_data FROM jobs WHERE id = ? AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00') LIMIT 1");
-                    if ($gpStmt) {
-                        $gpStmt->bind_param('i', $gpId);
-                        $gpStmt->execute();
-                        $gpRes = $gpStmt->get_result();
-                        $gpRow = $gpRes ? $gpRes->fetch_assoc() : null;
-                        $gpStmt->close();
-                        if ($gpRow && !empty($gpRow['extra_data'])) {
-                            $row['grandprev_extra_data'] = $gpRow['extra_data'];
-                        }
+
+            // Collect all upstream extra_data, keeping the two most distant ancestors
+            // that have roll data (child_rolls/assigned_child_rolls/slit rolls).
+            $upstreamExtras = [];
+            foreach ($fbRows as $fbRow) {
+                if (!empty($fbRow['extra_data'])) {
+                    $extraData = packing_decode_json($fbRow['extra_data']);
+                    $hasRolls = !empty($extraData['child_rolls'])
+                        || !empty($extraData['assigned_child_rolls'])
+                        || !empty($extraData['selected_rolls']);
+                    if ($hasRolls) {
+                        $upstreamExtras[] = $extraData;
                     }
+                }
+            }
+
+            // Assign ancestors: $upstreamExtras is oldest-first (by id ASC).
+            // The last element is the closest ancestor (most recent upstream),
+            // the first element is the furthest (great-great-grandparent).
+            $upCount = count($upstreamExtras);
+            if ($upCount >= 1) {
+                if (!$hasPrevRollData) {
+                    $row['prev_extra_data'] = json_encode($upstreamExtras[$upCount - 1]);
+                }
+                if ($upCount >= 2 && !$hasGrandPrevRollData) {
+                    $row['grandprev_extra_data'] = json_encode($upstreamExtras[$upCount - 2]);
+                }
+                if ($upCount >= 3 && !$hasGreatGrandPrevRollData) {
+                    $row['greatgrandprev_extra_data'] = json_encode($upstreamExtras[$upCount - 3]);
+                }
+                if ($upCount >= 4 && !$hasGreatGreatGrandPrevRollData) {
+                    $row['greatgreatgrandprev_extra_data'] = json_encode($upstreamExtras[$upCount - 4]);
                 }
             }
         }
@@ -1064,6 +1088,8 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
     $planExtra = packing_decode_json($row['plan_extra_data'] ?? null);
     $prevExtra = packing_decode_json($row['prev_extra_data'] ?? null);
     $grandPrevExtra = packing_decode_json($row['grandprev_extra_data'] ?? null);
+    $greatGrandPrevExtra = packing_decode_json($row['greatgrandprev_extra_data'] ?? null);
+    $greatGreatGrandPrevExtra = packing_decode_json($row['greatgreatgrandprev_extra_data'] ?? null);
 
     $orderDate = trim((string)(
         $planExtra['order_date']
@@ -1143,6 +1169,8 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
         'plan_extra_data' => $planExtra,
         'prev_job_extra_data' => $prevExtra,
         'grandprev_job_extra_data' => $grandPrevExtra,
+        'greatgrandprev_job_extra_data' => $greatGrandPrevExtra,
+        'greatgreatgrandprev_job_extra_data' => $greatGreatGrandPrevExtra,
         'operator_entry' => $operatorEntry,
     ];
 }

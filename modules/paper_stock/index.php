@@ -23,7 +23,7 @@ try {
 }
 
 $allowedPerPage = [10, 20, 50, 100];
-$perPageRaw = strtolower(trim((string)($_GET['per_page'] ?? '20')));
+$perPageRaw = strtolower(trim((string)($_GET['per_page'] ?? 'all')));
 $isAllRows = ($perPageRaw === 'all');
 $perPage = in_array((int)$perPageRaw, $allowedPerPage) ? (int)$perPageRaw : 20;
 $page    = max(1, (int)($_GET['page'] ?? 1));

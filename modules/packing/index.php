@@ -1461,6 +1461,8 @@ include __DIR__ . '/../../includes/header.php';
     var planExtra = (job && job.plan_extra_data && typeof job.plan_extra_data === 'object') ? job.plan_extra_data : {};
     var prevExtra = (job && job.prev_job_extra_data && typeof job.prev_job_extra_data === 'object') ? job.prev_job_extra_data : {};
     var grandPrevExtra = (job && job.grandprev_job_extra_data && typeof job.grandprev_job_extra_data === 'object') ? job.grandprev_job_extra_data : {};
+    var greatGrandPrevExtra = (job && job.greatgrandprev_job_extra_data && typeof job.greatgrandprev_job_extra_data === 'object') ? job.greatgrandprev_job_extra_data : {};
+    var greatGreatGrandPrevExtra = (job && job.greatgreatgrandprev_job_extra_data && typeof job.greatgreatgrandprev_job_extra_data === 'object') ? job.greatgreatgrandprev_job_extra_data : {};
 
     function extractRollNo(src) {
       if (!src || typeof src !== 'object') return '';
@@ -1470,7 +1472,7 @@ include __DIR__ . '/../../includes/header.php';
     function collectAssignedRolls(src) {
       var out = [];
       if (!src || typeof src !== 'object') return out;
-      ['selected_rolls', 'split_rolls', 'child_rolls', 'rolls'].forEach(function(key) {
+      ['assigned_child_rolls', 'selected_rolls', 'split_rolls', 'child_rolls', 'rolls'].forEach(function(key) {
         var arr = src[key];
         if (!Array.isArray(arr)) return;
         arr.forEach(function(it) {
@@ -1493,15 +1495,17 @@ include __DIR__ . '/../../includes/header.php';
       });
     }
 
+    // PRIORITY: Use only the first source that has roll data (oldest logic merges all)
     var assignedRollSeen = {};
     var assignedRollList = [];
-    [jobExtra, planExtra, prevExtra, grandPrevExtra].forEach(function(src) {
-      collectAssignedRolls(src).forEach(function(rn) {
-        if (assignedRollSeen[rn]) return;
-        assignedRollSeen[rn] = true;
-        assignedRollList.push(rn);
-      });
-    });
+    var rollSources = [jobExtra, planExtra, prevExtra, grandPrevExtra, greatGrandPrevExtra, greatGreatGrandPrevExtra];
+    for (var rsi = 0; rsi < rollSources.length; rsi++) {
+      var srcRolls = collectAssignedRolls(rollSources[rsi]);
+      if (srcRolls.length > 0) {
+        assignedRollList = srcRolls;
+        break;
+      }
+    }
     assignedRollList = stripParentRolls(assignedRollList);
     assignedRollSeen = {};
     assignedRollList.forEach(function(rn) { assignedRollSeen[rn] = true; });
@@ -1522,6 +1526,8 @@ include __DIR__ . '/../../includes/header.php';
     addItem(jobExtra.parent_details || {});
     addItem(prevExtra.parent_details || {});
     addItem(grandPrevExtra.parent_details || {});
+    addItem(greatGrandPrevExtra.parent_details || {});
+    addItem(greatGreatGrandPrevExtra.parent_details || {});
     if (jobExtra.parent_roll && (!jobExtra.parent_details || typeof jobExtra.parent_details !== 'object')) {
       addItem({ parent_roll: jobExtra.parent_roll });
     }
@@ -1530,6 +1536,12 @@ include __DIR__ . '/../../includes/header.php';
     }
     if (grandPrevExtra.parent_roll && (!grandPrevExtra.parent_details || typeof grandPrevExtra.parent_details !== 'object')) {
       addItem({ parent_roll: grandPrevExtra.parent_roll });
+    }
+    if (greatGrandPrevExtra.parent_roll && (!greatGrandPrevExtra.parent_details || typeof greatGrandPrevExtra.parent_details !== 'object')) {
+      addItem({ parent_roll: greatGrandPrevExtra.parent_roll });
+    }
+    if (greatGreatGrandPrevExtra.parent_roll && (!greatGreatGrandPrevExtra.parent_details || typeof greatGreatGrandPrevExtra.parent_details !== 'object')) {
+      addItem({ parent_roll: greatGreatGrandPrevExtra.parent_roll });
     }
 
     if (Array.isArray(jobExtra.assigned_child_rolls)) {
@@ -1544,6 +1556,12 @@ include __DIR__ . '/../../includes/header.php';
     if (Array.isArray(grandPrevExtra.assigned_child_rolls)) {
       grandPrevExtra.assigned_child_rolls.forEach(addItem);
     }
+    if (Array.isArray(greatGrandPrevExtra.assigned_child_rolls)) {
+      greatGrandPrevExtra.assigned_child_rolls.forEach(addItem);
+    }
+    if (Array.isArray(greatGreatGrandPrevExtra.assigned_child_rolls)) {
+      greatGreatGrandPrevExtra.assigned_child_rolls.forEach(addItem);
+    }
     if (Array.isArray(jobExtra.selected_rolls)) {
       jobExtra.selected_rolls.forEach(addItem);
     }
@@ -1556,21 +1574,31 @@ include __DIR__ . '/../../includes/header.php';
     if (Array.isArray(grandPrevExtra.selected_rolls)) {
       grandPrevExtra.selected_rolls.forEach(addItem);
     }
+    if (Array.isArray(greatGrandPrevExtra.selected_rolls)) {
+      greatGrandPrevExtra.selected_rolls.forEach(addItem);
+    }
+    if (Array.isArray(greatGreatGrandPrevExtra.selected_rolls)) {
+      greatGreatGrandPrevExtra.selected_rolls.forEach(addItem);
+    }
     if (Array.isArray(jobExtra.split_rolls)) jobExtra.split_rolls.forEach(addItem);
     if (Array.isArray(planExtra.split_rolls)) planExtra.split_rolls.forEach(addItem);
     if (Array.isArray(prevExtra.split_rolls)) prevExtra.split_rolls.forEach(addItem);
     if (Array.isArray(grandPrevExtra.split_rolls)) grandPrevExtra.split_rolls.forEach(addItem);
+    if (Array.isArray(greatGrandPrevExtra.split_rolls)) greatGrandPrevExtra.split_rolls.forEach(addItem);
+    if (Array.isArray(greatGreatGrandPrevExtra.split_rolls)) greatGreatGrandPrevExtra.split_rolls.forEach(addItem);
     if (Array.isArray(jobExtra.child_rolls)) jobExtra.child_rolls.forEach(addItem);
     if (Array.isArray(planExtra.child_rolls)) planExtra.child_rolls.forEach(addItem);
     if (Array.isArray(prevExtra.child_rolls)) prevExtra.child_rolls.forEach(addItem);
     if (Array.isArray(grandPrevExtra.child_rolls)) grandPrevExtra.child_rolls.forEach(addItem);
+    if (Array.isArray(greatGrandPrevExtra.child_rolls)) greatGrandPrevExtra.child_rolls.forEach(addItem);
+    if (Array.isArray(greatGreatGrandPrevExtra.child_rolls)) greatGreatGrandPrevExtra.child_rolls.forEach(addItem);
 
     var fallback = {
-      roll_no: hasAssignedRolls ? '' : (job.roll_no || planExtra.roll_no || prevExtra.roll_no || grandPrevExtra.roll_no || ''),
-      paper_company: job.paper_company || planExtra.paper_company_name || planExtra.paper_company || planExtra.company_name || planExtra.material_company || '',
-      paper_type: job.paper_type || planExtra.paper_type || planExtra.paper_name || planExtra.material_name || planExtra.material_type || '',
-      width_mm: job.paper_width_mm || planExtra.paper_width_mm || planExtra.width_mm || planExtra.paper_width || planExtra.item_width || planExtra.width || '',
-      length_mtr: job.paper_length_mtr || planExtra.paper_length_mtr || planExtra.length_mtr || planExtra.paper_length || planExtra.order_meter_user || planExtra.order_meter || ''
+      roll_no: hasAssignedRolls ? '' : (job.roll_no || planExtra.roll_no || prevExtra.roll_no || grandPrevExtra.roll_no || greatGrandPrevExtra.roll_no || greatGreatGrandPrevExtra.roll_no || ''),
+      paper_company: job.paper_company || planExtra.paper_company_name || planExtra.paper_company || planExtra.company_name || planExtra.material_company || greatGrandPrevExtra.paper_company || greatGreatGrandPrevExtra.paper_company || '',
+      paper_type: job.paper_type || planExtra.paper_type || planExtra.paper_name || planExtra.material_name || planExtra.material_type || greatGrandPrevExtra.paper_type || greatGreatGrandPrevExtra.paper_type || '',
+      width_mm: job.paper_width_mm || planExtra.paper_width_mm || planExtra.width_mm || planExtra.paper_width || planExtra.item_width || planExtra.width || greatGrandPrevExtra.width_mm || greatGreatGrandPrevExtra.width_mm || '',
+      length_mtr: job.paper_length_mtr || planExtra.paper_length_mtr || planExtra.length_mtr || planExtra.paper_length || planExtra.order_meter_user || planExtra.order_meter || greatGrandPrevExtra.length_mtr || greatGreatGrandPrevExtra.length_mtr || ''
     };
     addItem(fallback);
 
@@ -1615,6 +1643,8 @@ include __DIR__ . '/../../includes/header.php';
     var planExtra = (job && job.plan_extra_data && typeof job.plan_extra_data === 'object') ? job.plan_extra_data : {};
     var prevExtra = (job && job.prev_job_extra_data && typeof job.prev_job_extra_data === 'object') ? job.prev_job_extra_data : {};
     var grandPrevExtra = (job && job.grandprev_job_extra_data && typeof job.grandprev_job_extra_data === 'object') ? job.grandprev_job_extra_data : {};
+    var greatGrandPrevExtra = (job && job.greatgrandprev_job_extra_data && typeof job.greatgrandprev_job_extra_data === 'object') ? job.greatgrandprev_job_extra_data : {};
+    var greatGreatGrandPrevExtra = (job && job.greatgreatgrandprev_job_extra_data && typeof job.greatgreatgrandprev_job_extra_data === 'object') ? job.greatgreatgrandprev_job_extra_data : {};
 
     function firstPresent(src, keys) {
       if (!src || typeof src !== 'object') return '';
@@ -1646,35 +1676,75 @@ include __DIR__ . '/../../includes/header.php';
       });
     }
 
-    if (Array.isArray(jobExtra.assigned_child_rolls)) jobExtra.assigned_child_rolls.forEach(pushLot);
-    if (Array.isArray(planExtra.assigned_child_rolls)) planExtra.assigned_child_rolls.forEach(pushLot);
-    if (Array.isArray(prevExtra.assigned_child_rolls)) prevExtra.assigned_child_rolls.forEach(pushLot);
-    if (Array.isArray(grandPrevExtra.assigned_child_rolls)) grandPrevExtra.assigned_child_rolls.forEach(pushLot);
-    if (Array.isArray(jobExtra.selected_rolls)) jobExtra.selected_rolls.forEach(pushLot);
-    if (Array.isArray(planExtra.selected_rolls)) planExtra.selected_rolls.forEach(pushLot);
-    if (Array.isArray(prevExtra.selected_rolls)) prevExtra.selected_rolls.forEach(pushLot);
-    if (Array.isArray(grandPrevExtra.selected_rolls)) grandPrevExtra.selected_rolls.forEach(pushLot);
-    if (Array.isArray(jobExtra.split_rolls)) jobExtra.split_rolls.forEach(pushLot);
-    if (Array.isArray(planExtra.split_rolls)) planExtra.split_rolls.forEach(pushLot);
-    if (Array.isArray(prevExtra.split_rolls)) prevExtra.split_rolls.forEach(pushLot);
-    if (Array.isArray(grandPrevExtra.split_rolls)) grandPrevExtra.split_rolls.forEach(pushLot);
-    if (Array.isArray(jobExtra.child_rolls)) jobExtra.child_rolls.forEach(pushLot);
-    if (Array.isArray(planExtra.child_rolls)) planExtra.child_rolls.forEach(pushLot);
-    if (Array.isArray(prevExtra.child_rolls)) prevExtra.child_rolls.forEach(pushLot);
-    if (Array.isArray(grandPrevExtra.child_rolls)) grandPrevExtra.child_rolls.forEach(pushLot);
+    function collectFromExtra(src) {
+      if (!src || typeof src !== 'object') return;
+      if (Array.isArray(src.assigned_child_rolls)) src.assigned_child_rolls.forEach(pushLot);
+      if (Array.isArray(src.selected_rolls)) src.selected_rolls.forEach(pushLot);
+      if (Array.isArray(src.child_rolls)) src.child_rolls.forEach(pushLot);
+      if (Array.isArray(src.split_rolls)) src.split_rolls.forEach(pushLot);
+    }
+
+    // PRIORITY 1: If the current job has its own roll data, use ONLY that
+    // (this prevents mixing in ancestor-level rolls that weren't assigned to this job)
+    collectFromExtra(jobExtra);
+    if (out.length > 0) {
+      // Filter: if job has assigned_child_rolls, strip parent rolls that duplicate them
+      return out;
+    }
+
+    // PRIORITY 2: Try planExtra (planning may have the roll config)
+    collectFromExtra(planExtra);
+    if (out.length > 0) return out;
+
+    // PRIORITY 3: Fall back to ancestor levels (prev=grant parent job e.g. Flexo/Die-Cut)
+    collectFromExtra(prevExtra);
+    if (out.length > 0) return out;
+
+    // PRIORITY 4: Grandparent (Jumbo slitting)
+    collectFromExtra(grandPrevExtra);
+    if (out.length > 0) return out;
+
+    // PRIORITY 5: Great-grandparent (Flexo printing)
+    collectFromExtra(greatGrandPrevExtra);
+    if (out.length > 0) return out;
+
+    // PRIORITY 6: Great-great-grandparent (Jumbo slitting, 4 levels up)
+    collectFromExtra(greatGreatGrandPrevExtra);
+    if (out.length > 0) return out;
 
     if (!out.length) {
-      // Always ensure at least one roll lot exists so the sticker/label buttons can be
-      // enabled. Use job_no as the roll label if no roll_no is available.
-      var fallbackRollNo = (job && job.roll_no ? String(job.roll_no) : '')
-        || (prevExtra && prevExtra.roll_no ? String(prevExtra.roll_no) : '')
-        || (grandPrevExtra && grandPrevExtra.roll_no ? String(grandPrevExtra.roll_no) : '')
-        || (job && job.job_no ? String(job.job_no) : 'ROLL-1');
-      out.push({
-        rollNo: fallbackRollNo,
-        productionQty: Math.max(0, safeNum(fallbackQty)),
-        availableQty: Math.max(0, safeNum(fallbackQty))
-      });
+      // Virtual rolls from aggregate label-slitting fields (old jobs before assigned_child_rolls was saved)
+      var labelQtyInRoll = Number(jobExtra.label_slitting_qty_in_roll || jobExtra.qty_in_roll || 0);
+      var labelTotalRoll = Number(jobExtra.label_slitting_total_roll || 0);
+      if (labelQtyInRoll > 0 && labelTotalRoll > 0) {
+        var labelParentRoll = (job && job.roll_no ? String(job.roll_no) : '')
+          || (prevExtra && prevExtra.roll_no ? String(prevExtra.roll_no) : '')
+          || (grandPrevExtra && grandPrevExtra.roll_no ? String(grandPrevExtra.roll_no) : '')
+          || (greatGrandPrevExtra && greatGrandPrevExtra.roll_no ? String(greatGrandPrevExtra.roll_no) : '')
+          || (greatGreatGrandPrevExtra && greatGreatGrandPrevExtra.roll_no ? String(greatGreatGrandPrevExtra.roll_no) : '')
+          || (job && job.job_no ? String(job.job_no) : 'ROLL-1');
+        for (var ri = 1; ri <= Math.max(1, Math.floor(labelTotalRoll)); ri++) {
+          out.push({
+            rollNo: labelParentRoll + '-' + ri,
+            productionQty: Math.max(0, Math.floor(labelQtyInRoll)),
+            availableQty: Math.max(0, Math.floor(labelQtyInRoll))
+          });
+        }
+      } else {
+        // Always ensure at least one roll lot exists so the sticker/label buttons can be
+        // enabled. Use job_no as the roll label if no roll_no is available.
+        var fallbackRollNo = (job && job.roll_no ? String(job.roll_no) : '')
+          || (prevExtra && prevExtra.roll_no ? String(prevExtra.roll_no) : '')
+          || (grandPrevExtra && grandPrevExtra.roll_no ? String(grandPrevExtra.roll_no) : '')
+          || (greatGrandPrevExtra && greatGrandPrevExtra.roll_no ? String(greatGrandPrevExtra.roll_no) : '')
+          || (greatGreatGrandPrevExtra && greatGreatGrandPrevExtra.roll_no ? String(greatGreatGrandPrevExtra.roll_no) : '')
+          || (job && job.job_no ? String(job.job_no) : 'ROLL-1');
+        out.push({
+          rollNo: fallbackRollNo,
+          productionQty: Math.max(0, safeNum(fallbackQty)),
+          availableQty: Math.max(0, safeNum(fallbackQty))
+        });
+      }
     }
 
     return out;
@@ -1957,7 +2027,9 @@ include __DIR__ . '/../../includes/header.php';
       || readBprFromSource(job.job_extra_data)
       || readBprFromSource(job.plan_extra_data)
       || readBprFromSource(job.prev_job_extra_data)
-      || readBprFromSource(job.grandprev_job_extra_data);
+      || readBprFromSource(job.grandprev_job_extra_data)
+      || readBprFromSource(job.greatgrandprev_job_extra_data)
+      || readBprFromSource(job.greatgreatgrandprev_job_extra_data);
     var barcodePerRollNum = bprFromSources > 0 ? bprFromSources : 250;
     var barcodePerRollText = String(bprFromSources > 0 ? bprFromSources : '-');
 
