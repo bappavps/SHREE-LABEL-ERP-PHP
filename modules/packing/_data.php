@@ -780,6 +780,98 @@ function packing_extract_barcode_per_roll(
     return '';
 }
 
+/**
+ * Build default per-roll packing distribution from the Label Slitting Operator's
+ * production entry. This is used ONLY as a display-time default when no packing
+ * entry has been saved yet. It never overwrites existing saved packing data.
+ *
+ * Rules:
+ *  - Source values: label_slitting_qty_in_roll (BPR), label_slitting_total_roll,
+ *    label_slitting_total_production (falls back to total_roll * bpr).
+ *  - Distribute Total Production evenly across all assigned child rolls.
+ *  - Only the last child roll receives the remaining balance so the sum stays exact.
+ *  - Each roll's total_rolls = floor(share / bpr).
+ */
+function packing_build_default_roll_distribution(array $jobDetails): array {
+    $jobExtra = packing_decode_json($jobDetails['job_extra_data'] ?? null);
+    $planExtra = packing_decode_json($jobDetails['plan_extra_data'] ?? null);
+    $prevExtra = packing_decode_json($jobDetails['prev_job_extra_data'] ?? null);
+    $grandPrevExtra = packing_decode_json($jobDetails['grandprev_job_extra_data'] ?? null);
+    $greatGrandPrevExtra = packing_decode_json($jobDetails['greatgrandprev_job_extra_data'] ?? null);
+    $greatGreatGrandPrevExtra = packing_decode_json($jobDetails['greatgreatgrandprev_job_extra_data'] ?? null);
+
+    $sources = [$jobExtra, $planExtra, $prevExtra, $grandPrevExtra, $greatGrandPrevExtra, $greatGreatGrandPrevExtra];
+
+    $bpr = packing_to_float_or_null(packing_pick_value_loose($sources, [
+        'label_slitting_qty_in_roll', 'qty_in_roll', 'quantity_in_roll',
+        'barcode_in_1_roll', 'barcode_per_roll', 'barcode_qty_per_roll', 'pcs_per_roll', 'pieces_per_roll',
+    ]));
+    $totalRoll = packing_to_float_or_null(packing_pick_value_loose($sources, [
+        'label_slitting_total_roll', 'total_roll', 'total_rolls', 'barcode_total_roll', 'barcode_total_rolls',
+    ]));
+    $totalProduction = packing_to_float_or_null(packing_pick_value_loose($sources, [
+        'label_slitting_total_production', 'total_production', 'production_quantity', 'production_qty',
+        'produced_quantity', 'produced_qty', 'actual_qty', 'actual_quantity', 'output_qty', 'completed_qty',
+        'total_qty_pcs', 'barcode_total_qty_pcs', 'die_cutting_total_qty_pcs',
+        'production_total_qty', 'printed_qty', 'print_qty', 'final_production_qty', 'up_in_production',
+    ]));
+
+    if ($totalProduction === null || $totalProduction <= 0) {
+        if ($totalRoll !== null && $totalRoll > 0 && $bpr !== null && $bpr > 0) {
+            $totalProduction = $totalRoll * $bpr;
+        }
+    }
+    if ($totalProduction === null || $totalProduction <= 0) {
+        return [];
+    }
+    if ($bpr === null || $bpr <= 0) {
+        $bpr = 1;
+    }
+
+    // Collect assigned child rolls (preserve first-seen order, dedupe by roll_no)
+    $childRolls = [];
+    $rollSources = [$jobExtra, $planExtra, $prevExtra, $grandPrevExtra, $greatGrandPrevExtra, $greatGreatGrandPrevExtra];
+    foreach ($rollSources as $src) {
+        if (!is_array($src)) {
+            continue;
+        }
+        foreach (['assigned_child_rolls', 'child_rolls', 'selected_rolls'] as $key) {
+            if (!empty($src[$key]) && is_array($src[$key])) {
+                foreach ($src[$key] as $roll) {
+                    if (is_array($roll) && trim((string)($roll['roll_no'] ?? '')) !== '') {
+                        $rn = trim((string)$roll['roll_no']);
+                        if (!isset($childRolls[$rn])) {
+                            $childRolls[$rn] = $roll;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (empty($childRolls)) {
+        return [];
+    }
+
+    $n = count($childRolls);
+    $base = (int)floor($totalProduction / $n);
+    $rem = (int)($totalProduction % $n);
+    $idx = 0;
+    $distribution = [];
+    foreach ($childRolls as $rn => $roll) {
+        $share = $base + ($idx < $rem ? 1 : 0);
+        $idx++;
+        $rollsForThis = (int)floor($share / $bpr);
+        $distribution[$rn] = [
+            'roll_no' => $rn,
+            'bpr' => (int)$bpr,
+            'total_rolls' => $rollsForThis,
+            'production' => $share,
+        ];
+    }
+
+    return $distribution;
+}
+
 function packing_display_prefix(): string {
     $prefixSettings = getPrefixSettings();
     $prefix = strtoupper(trim((string)($prefixSettings['modules']['packing']['prefix'] ?? 'PKG')));
@@ -1172,6 +1264,17 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
         'greatgrandprev_job_extra_data' => $greatGrandPrevExtra,
         'greatgreatgrandprev_job_extra_data' => $greatGreatGrandPrevExtra,
         'operator_entry' => $operatorEntry,
+        // Default per-roll packing distribution derived from the Label Slitting Operator's
+        // production entry. Consumed by the Packing Operator/Manager pages ONLY when no
+        // packing entry has been saved yet. Never overwrites existing saved packing data.
+        'default_roll_distribution' => packing_build_default_roll_distribution([
+            'job_extra_data' => $jobExtra,
+            'plan_extra_data' => $planExtra,
+            'prev_job_extra_data' => $prevExtra,
+            'grandprev_job_extra_data' => $grandPrevExtra,
+            'greatgrandprev_job_extra_data' => $greatGrandPrevExtra,
+            'greatgreatgrandprev_job_extra_data' => $greatGreatGrandPrevExtra,
+        ]),
     ];
 }
 

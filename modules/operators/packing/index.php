@@ -594,7 +594,7 @@ include __DIR__ . '/../../../includes/header.php';
     var isPaperRollTypeTab = tabKeyNorm === 'pos_roll' || tabKeyNorm === 'one_ply' || tabKeyNorm === 'two_ply';
 
     var orderQtyRaw = pickFirstLoose(sources, ['order_quantity','order_qty','quantity','qty_pcs']);
-    var prodQtyRaw  = pickFirstLoose(sources, ['production_quantity','production_qty','produced_quantity','actual_qty','output_qty','completed_qty']);
+    var prodQtyRaw  = pickFirstLoose(sources, ['production_quantity','production_qty','produced_quantity','actual_qty','output_qty','completed_qty','label_slitting_total_production']);
     var totalRollValueRaw = pickFirstLoose(sources, [
       'total_roll_value','total_roll','total_rolls','barcode_total_roll','barcode_total_rolls','label_slitting_total_roll'
     ]);
@@ -784,6 +784,32 @@ include __DIR__ . '/../../../includes/header.php';
         };
       }
     }
+
+    // ── Default production data from Label Slitting Operator ──
+    // Only applied when no packing entry has been saved yet. These become the
+    // default packing values; the operator/manager can still edit them manually.
+    // Existing saved packing records are never overwritten.
+    var opDefaultsInjected = false;
+    if (!opEntry && rollLots.length && job.default_roll_distribution && typeof job.default_roll_distribution === 'object') {
+      rollLots.forEach(function(roll, idx) {
+        var rollNo = String(roll.rollNo || ('roll-' + String(idx)));
+        var def = job.default_roll_distribution[rollNo];
+        if (!def || typeof def !== 'object') return;
+        var share = Math.max(0, Math.floor(parseFloat(def.production) || 0));
+        if (share > 0) {
+          roll.productionQty = share;
+          roll.availableQty = share;
+        }
+        var key = rollNo;
+        if (!rollLooseOverrides[key] || typeof rollLooseOverrides[key] !== 'object') {
+          rollLooseOverrides[key] = {};
+        }
+        if (def.bpr) rollLooseOverrides[key].bpr = Math.max(1, Math.floor(parseFloat(def.bpr) || 0));
+        if (def.total_rolls) rollLooseOverrides[key].total_rolls = Math.max(0, Math.floor(parseFloat(def.total_rolls) || 0));
+      });
+      opDefaultsInjected = true;
+    }
+
     var rollSelectionHtml = rollLots.length ? rollLots.map(function(roll, idx) {
       var rollKey = String(roll.rollNo || ('roll-' + String(idx)));
       var isChecked = !submittedSelectedRollKeys.length || submittedSelectedRollKeys.indexOf(rollKey) !== -1;
@@ -1327,6 +1353,9 @@ include __DIR__ . '/../../../includes/header.php';
       // If all selected rolls carry the same source qty, treat it as a shared lot
       // and split production across selected rolls (even when parent rolls differ).
       var sharedSplitMode = selectedRolls.length > 1 && qtyCount === 1;
+      // When default Label Slitting production values were injected (no saved entry),
+      // keep each roll's already-distributed production intact instead of re-splitting.
+      if (opDefaultsInjected) sharedSplitMode = false;
       var sharedReceivedQty = sharedSplitMode && splitMeta.length ? splitMeta[0].qty : 0;
 
       renderPerRollCards(selectedRolls.map(function(roll, idx) {

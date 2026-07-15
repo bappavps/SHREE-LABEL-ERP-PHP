@@ -1993,6 +1993,32 @@ include __DIR__ . '/../../includes/header.php';
     });
     var prodQtyBaseline = safeNum(job && job.production_quantity ? job.production_quantity : 0);
     var rollLots = normalizeRollLots(job, prodQtyBaseline);
+
+    // ── Default production data from Label Slitting Operator ──
+    // Only applied when no packing entry has been saved yet. These become the
+    // default packing values; the operator/manager can still edit them manually.
+    // Existing saved packing records are never overwritten.
+    var pkDefaultsInjected = false;
+    if (!operatorEntry && rollLots.length && job.default_roll_distribution && typeof job.default_roll_distribution === 'object') {
+      rollLots.forEach(function(roll, idx) {
+        var rollNo = String(roll.rollNo || ('roll-' + String(idx)));
+        var def = job.default_roll_distribution[rollNo];
+        if (!def || typeof def !== 'object') return;
+        var share = Math.max(0, Math.floor(parseFloat(def.production) || 0));
+        if (share > 0) {
+          roll.productionQty = share;
+          roll.availableQty = share;
+        }
+        var key = rollNo;
+        if (!rollHelperOverrides[key] || typeof rollHelperOverrides[key] !== 'object') {
+          rollHelperOverrides[key] = {};
+        }
+        if (def.bpr) rollHelperOverrides[key].bpr = Math.max(1, Math.floor(parseFloat(def.bpr) || 0));
+        if (def.total_rolls) rollHelperOverrides[key].total_rolls = Math.max(0, Math.floor(parseFloat(def.total_rolls) || 0));
+      });
+      pkDefaultsInjected = true;
+    }
+
     var rollSelectionHtml = rollLots.length ? rollLots.map(function(roll, idx) {
       var rollKey = String(roll.rollNo || ('roll-' + String(idx)));
       var isChecked = !operatorSelectedRollKeys.length || operatorSelectedRollKeys.indexOf(rollKey) !== -1;
@@ -2475,6 +2501,9 @@ include __DIR__ . '/../../includes/header.php';
                   // If all selected rolls carry the same source qty, treat it as a shared lot
                   // and split production across selected rolls (even when parent rolls differ).
                   var sharedSplitMode = selectedRolls.length > 1 && qtyCount === 1;
+                  // When default Label Slitting production values were injected (no saved entry),
+                  // keep each roll's already-distributed production intact instead of re-splitting.
+                  if (pkDefaultsInjected) sharedSplitMode = false;
                   var sharedReceivedQty = 0;
                   if (sharedSplitMode) {
                     var splitBaseQty = splitMeta.length ? splitMeta[0].qty : 0;
