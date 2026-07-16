@@ -2318,7 +2318,8 @@ function renderStats(jobs){
   const planC  = jobs.filter(j=>getCardDept(j)==='plan').length;
   const slitC  = jobs.filter(j=>getCardDept(j)==='slit').length;
   const printC = jobs.filter(j=>getCardDept(j)==='print').length;
-  const finC   = jobs.filter(j=>['die','lsl','pack'].includes(getCardDept(j))).length;
+  // Count only jobs that are actually finished/completed across all departments
+  const finC   = jobs.filter(j=>isDoneStatus(j.currentStatus)).length;
   document.getElementById('sTotal').textContent = jobs.length;
   document.getElementById('sPlan').textContent  = planC;
   document.getElementById('sSlit').textContent  = slitC;

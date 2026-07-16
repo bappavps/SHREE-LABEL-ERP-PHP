@@ -185,8 +185,21 @@ $dcToNumber = static function ($value): float {
 };
 foreach ($jobs as &$job) {
   $job['status'] = dcCanonicalStatus($job['status'] ?? '');
-    $job['extra_data_parsed'] = json_decode((string)($job['extra_data'] ?? '{}'), true) ?: [];
-    $planningExtra = json_decode((string)($job['planning_extra_data'] ?? '{}'), true) ?: [];
+  $job['extra_data_parsed'] = json_decode((string)($job['extra_data'] ?? '{}'), true) ?: [];
+  $planningExtra = json_decode((string)($job['planning_extra_data'] ?? '{}'), true) ?: [];
+
+  // Auto-update status to Completed if production is finished (prevents finished jobs from appearing in pending tab)
+  $currentStatus = (string)($job['status'] ?? '');
+  if (in_array($currentStatus, ['Pending', 'Running', 'Queued'], true)) {
+    $jobExtra = $job['extra_data_parsed'];
+    $producedQty = (float)($jobExtra['barcode_total_qty_pcs'] ?? $jobExtra['total_qty_pcs'] ?? $jobExtra['die_cutting_total_qty_pcs'] ?? $jobExtra['actual_qty'] ?? 0);
+    $plannedQty = (float)($planningExtra['order_quantity_user'] ?? $planningExtra['order_quantity'] ?? $planningExtra['qty_pcs'] ?? 0);
+
+    // If produced quantity is entered and >= planned quantity, mark as completed
+    if ($producedQty > 0 && $plannedQty > 0 && $producedQty >= $plannedQty) {
+      $job['status'] = 'Completed';
+    }
+  }
   if ((float)($job['gsm'] ?? 0) <= 0) {
     $parentDetails = is_array($planningExtra['parent_details'] ?? null) ? $planningExtra['parent_details'] : [];
     $parentGsm = (float)($parentDetails['gsm'] ?? 0);

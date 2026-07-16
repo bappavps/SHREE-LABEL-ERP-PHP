@@ -274,6 +274,9 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
     }
     $gsm = trim((string)($planExtra['gsm'] ?? ($jobDetails['paper_gsm'] ?? ($jobExtra['gsm'] ?? ''))));
     $quantity = round((float)($operatorEntry['packed_qty'] ?? 0), 3);
+    $looseQtyFromOperator = round((float)($operatorEntry['loose_qty'] ?? 0), 3);
+    // Finished Goods should only contain cartonized quantity (exclude loose items)
+    $quantity = max(0, $quantity - $looseQtyFromOperator);
     $dateValue = date('Y-m-d');
     $coreSize = trim((string)($planExtra['core_size'] ?? ($planExtra['core'] ?? '')));
     $coreType = trim((string)($planExtra['core_type'] ?? ''));
@@ -332,13 +335,10 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $barcodeTotalRolls = (int)($barcodeMetricsResolved['total_rolls'] ?? 0);
         $rollsPerCartoon = (int)($barcodeMetricsResolved['rolls_per_carton'] ?? 0);
 
-        // Only full carton qty goes to finished goods; extras go to mixed items
-        $fullCartonQty = ($rollsPerCartoon > 0 && $cartonCount > 0 && $barcodePerRoll > 0)
-            ? $rollsPerCartoon * $cartonCount * $barcodePerRoll
-            : $quantity;
-        $quantity = $fullCartonQty;
-        $totalValue = $quantity;
-
+        // Use physical production (packed_qty) as the finished goods quantity.
+        // The mixed carton pool and extra rolls are already accounted for inside
+        // packed_qty computed by the operator. Re-calculating from cartonCount
+        // would double-count mixedCartons because cartonCount includes them.
         $perCarton = $rollsPerCartoon > 0 ? $rollsPerCartoon : $perCarton;
     }
 
@@ -347,12 +347,9 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $labelTotalRolls = (int)($barcodeMetricsResolved['total_rolls'] ?? 0);
         $rollsPerCartoon = (int)($barcodeMetricsResolved['rolls_per_carton'] ?? 0);
 
-        // Only full carton qty goes to finished goods; extras go to mixed items
-        $fullCartonQty = ($rollsPerCartoon > 0 && $cartonCount > 0 && $labelPerRoll > 0)
-            ? $rollsPerCartoon * $cartonCount * $labelPerRoll
-            : $quantity;
-        $quantity = $fullCartonQty;
-        $totalValue = $quantity;
+        // Use physical production (packed_qty) as the finished goods quantity.
+        // Do NOT re-calculate from cartonCount – that would double-count the
+        // mixed carton pool which is already included in packed_qty.
         $perCarton = $rollsPerCartoon > 0 ? $rollsPerCartoon : $perCarton;
     }
 
@@ -376,7 +373,7 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
             'paper_company' => $paperCompany,
             'material_type' => $materialType,
             'barcode' => $barcode,
-            'per_carton' => $perCarton > 0 ? $perCarton : '',
+            'per_carton' => $displayPerCarton > 0 ? $displayPerCarton : ($perCarton > 0 ? $perCarton : ''),
             'carton' => $cartonCount > 0 ? $cartonCount : '',
             'loose_qty' => $looseQtyCount > 0 ? $looseQtyCount : 0,
             'total' => $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '',
@@ -402,7 +399,7 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $remarksPayload['extra']['planning_id'] = '';
         $remarksPayload['extra']['pcs_per_roll'] = $barcodePerRoll > 0 ? $barcodePerRoll : '';
         $remarksPayload['extra']['total_roll'] = $barcodeTotalRolls > 0 ? $barcodeTotalRolls : '';
-        $remarksPayload['extra']['roll_per_cartoon'] = $rollsPerCartoon > 0 ? $rollsPerCartoon : '';
+        $remarksPayload['extra']['roll_per_cartoon'] = $displayPerCarton > 0 ? $displayPerCarton : ($rollsPerCartoon > 0 ? $rollsPerCartoon : '');
         $remarksPayload['extra']['label_gap'] = $labelGap;
         $remarksPayload['extra']['die_type'] = $dieType;
         $remarksPayload['extra']['up_in_roll'] = $upInRoll;
@@ -418,6 +415,13 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $extraRollsCount = max(0, $barcodeTotalRolls - ($rollsPerCartoon * $cartonCount));
         $remarksPayload['extra']['extra_rolls'] = $extraRollsCount;
         $remarksPayload['extra']['extra_pcs'] = $looseQtyCount;
+        
+        // Also exclude mixed extra rolls from finished goods quantity (not in cartons)
+        if ($mixedEnabled && $mixedExtraRolls > 0 && $barcodePerRoll > 0) {
+            $mixedExtraPieces = $mixedExtraRolls * $barcodePerRoll;
+            $quantity = max(0, $quantity - $mixedExtraPieces);
+            $remarksPayload['extra']['mixed_extra_pieces'] = $mixedExtraPieces;
+        }
     }
     if ($packingTabKey === 'printing_label') {
         $labelPerRoll = (int)($barcodeMetricsResolved['bpr'] ?? 0);
@@ -441,10 +445,18 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $remarksPayload['extra']['mtrs'] = trim((string)($planExtra['allocate_mtrs'] ?? ($planExtra['mtrs'] ?? ($planExtra['meter'] ?? ($jobDetails['paper_length_mtr'] ?? '')))));
         $remarksPayload['extra']['qty'] = $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '';
         $remarksPayload['extra']['qty_per_roll'] = $labelPerRoll > 0 ? $labelPerRoll : '';
+        
+        // Also exclude mixed extra rolls from finished goods quantity (not in cartons)
+        $mixedExtraRollsLabel = (int)($mixedPayload['mixed_extra_rolls'] ?? 0);
+        if ($mixedEnabled && $mixedExtraRollsLabel > 0 && $labelPerRoll > 0) {
+            $mixedExtraPiecesLabel = $mixedExtraRollsLabel * $labelPerRoll;
+            $quantity = max(0, $quantity - $mixedExtraPiecesLabel);
+            $remarksPayload['extra']['mixed_extra_pieces'] = $mixedExtraPiecesLabel;
+        }
         $remarksPayload['extra']['direction'] = trim((string)($planExtra['roll_direction'] ?? ($planExtra['direction'] ?? ($jobExtra['direction'] ?? ''))));
         $remarksPayload['extra']['pcs_per_roll'] = $labelPerRoll > 0 ? $labelPerRoll : '';
         $remarksPayload['extra']['total_roll'] = $labelTotalRolls > 0 ? $labelTotalRolls : '';
-        $remarksPayload['extra']['roll_per_cartoon'] = $rollsPerCartoon > 0 ? $rollsPerCartoon : '';
+        $remarksPayload['extra']['roll_per_cartoon'] = $displayPerCarton > 0 ? $displayPerCarton : ($rollsPerCartoon > 0 ? $rollsPerCartoon : '');
         $remarksPayload['extra']['total_quantity'] = $totalValue > 0 ? rtrim(rtrim(number_format($totalValue, 3, '.', ''), '0'), '.') : '';
         $remarksPayload['extra']['available_for_dispatch'] = rtrim(rtrim(number_format($netPackedQty, 3, '.', ''), '0'), '.');
         $remarksPayload['extra']['after_packing_qty'] = rtrim(rtrim(number_format($netPackedQty, 3, '.', ''), '0'), '.');
@@ -773,6 +785,19 @@ try {
         if (!$details) {
             packing_api_respond(['ok' => false, 'message' => 'Job not found'], 404);
         }
+
+        // Fetch operator entry for this job
+        $jobNo = trim((string)($details['job_no'] ?? ''));
+        $jobCreatedAt = trim((string)($details['created_at'] ?? ''));
+        if ($jobNo !== '') {
+            $operatorEntry = packing_fetch_operator_entry($db, $jobNo, $jobId, $jobCreatedAt);
+            $details['operator_entry'] = $operatorEntry;
+            $details['operator_submitted'] = $operatorEntry ? (packing_operator_entry_is_submitted($operatorEntry) ? 1 : 0) : 0;
+        } else {
+            $details['operator_entry'] = null;
+            $details['operator_submitted'] = 0;
+        }
+
         packing_api_respond(['ok' => true, 'job' => $details]);
     }
 

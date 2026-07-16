@@ -396,7 +396,9 @@ function ds_carton_count_for_stock(array $stockRow): float {
     $category = strtolower(trim((string)($stockRow['category'] ?? '')));
     $qty = max(0.0, ds_decimal($stockRow['quantity'] ?? 0));
 
-    if ($category === 'printing_label') {
+    // For carton-based categories, prefer the STORED carton value from remarks
+    // (includes mixed cartons) over calculated value (which may exclude them).
+    if ($category === 'barcode' || $category === 'printing_label') {
         $explicitCarton = ds_decimal(ds_pick_extra($extra, ['carton', 'cartons', 'carton_count', 'cartons_count', 'display_carton', 'display_cartons']));
         if ($explicitCarton > 0) {
             return floor($explicitCarton);

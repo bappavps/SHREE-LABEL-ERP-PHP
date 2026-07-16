@@ -1090,12 +1090,12 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
             so.due_date AS so_due_date
         FROM jobs j
         LEFT JOIN planning p ON p.id = j.planning_id
+        LEFT JOIN sales_orders so ON so.id = COALESCE(j.sales_order_id, p.sales_order_id)
+        LEFT JOIN paper_stock ps ON ps.roll_no = j.roll_no
         LEFT JOIN jobs prev ON prev.id = j.previous_job_id
         LEFT JOIN jobs grandprev ON grandprev.id = prev.previous_job_id
         LEFT JOIN jobs greatgrandprev ON greatgrandprev.id = grandprev.previous_job_id
         LEFT JOIN jobs greatgreatgrandprev ON greatgreatgrandprev.id = greatgrandprev.previous_job_id
-        LEFT JOIN paper_stock ps ON ps.roll_no = j.roll_no
-        LEFT JOIN sales_orders so ON so.id = COALESCE(j.sales_order_id, p.sales_order_id)
         WHERE j.id = ?
           AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')
         LIMIT 1
@@ -1114,66 +1114,11 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
         return null;
     }
 
-    // ── Fallback: if ancestor chain yielded no roll data, find the latest completed
-    // upstream job for this planning to get child rolls etc. ──
-    $prevJobId = (int)($row['previous_job_id'] ?? 0);
-    $planningId = (int)($row['planning_id'] ?? 0);
-    $hasPrevRollData = !empty($row['prev_extra_data']) && trim((string)$row['prev_extra_data']) !== '';
-    $hasGrandPrevRollData = !empty($row['grandprev_extra_data']) && trim((string)$row['grandprev_extra_data']) !== '';
-    $hasGreatGrandPrevRollData = !empty($row['greatgrandprev_extra_data']) && trim((string)$row['greatgrandprev_extra_data']) !== '';
-    $hasGreatGreatGrandPrevRollData = !empty($row['greatgreatgrandprev_extra_data']) && trim((string)$row['greatgreatgrandprev_extra_data']) !== '';
-    if ($planningId > 0 && (!$hasPrevRollData || !$hasGrandPrevRollData || !$hasGreatGrandPrevRollData || !$hasGreatGreatGrandPrevRollData)) {
-        $fbStmt = $db->prepare("
-            SELECT id, extra_data, previous_job_id
-            FROM jobs
-            WHERE planning_id = ?
-              AND id != ?
-              AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
-              AND LOWER(TRIM(REPLACE(REPLACE(COALESCE(status,''),'-',' '),'_',' '))) IN ('completed','closed','finalized','qc passed','complete')
-            ORDER BY id ASC
-            LIMIT 50
-        ");
-        if ($fbStmt) {
-            $fbStmt->bind_param('ii', $planningId, $jobId);
-            $fbStmt->execute();
-            $fbRes = $fbStmt->get_result();
-            $fbRows = $fbRes ? $fbRes->fetch_all(MYSQLI_ASSOC) : [];
-            $fbStmt->close();
-
-            // Collect all upstream extra_data, keeping the two most distant ancestors
-            // that have roll data (child_rolls/assigned_child_rolls/slit rolls).
-            $upstreamExtras = [];
-            foreach ($fbRows as $fbRow) {
-                if (!empty($fbRow['extra_data'])) {
-                    $extraData = packing_decode_json($fbRow['extra_data']);
-                    $hasRolls = !empty($extraData['child_rolls'])
-                        || !empty($extraData['assigned_child_rolls'])
-                        || !empty($extraData['selected_rolls']);
-                    if ($hasRolls) {
-                        $upstreamExtras[] = $extraData;
-                    }
-                }
-            }
-
-            // Assign ancestors: $upstreamExtras is oldest-first (by id ASC).
-            // The last element is the closest ancestor (most recent upstream),
-            // the first element is the furthest (great-great-grandparent).
-            $upCount = count($upstreamExtras);
-            if ($upCount >= 1) {
-                if (!$hasPrevRollData) {
-                    $row['prev_extra_data'] = json_encode($upstreamExtras[$upCount - 1]);
-                }
-                if ($upCount >= 2 && !$hasGrandPrevRollData) {
-                    $row['grandprev_extra_data'] = json_encode($upstreamExtras[$upCount - 2]);
-                }
-                if ($upCount >= 3 && !$hasGreatGrandPrevRollData) {
-                    $row['greatgrandprev_extra_data'] = json_encode($upstreamExtras[$upCount - 3]);
-                }
-                if ($upCount >= 4 && !$hasGreatGreatGrandPrevRollData) {
-                    $row['greatgreatgrandprev_extra_data'] = json_encode($upstreamExtras[$upCount - 4]);
-                }
-            }
-        }
+    // Fetch operator entry for this job
+    $jobNo = trim((string)($row['job_no'] ?? ''));
+    $operatorEntry = null;
+    if ($jobNo !== '') {
+        $operatorEntry = packing_fetch_operator_entry($db, $jobNo, $jobId, (string)($row['created_at'] ?? ''));
     }
 
     $jobExtra = packing_decode_json($row['extra_data'] ?? null);
@@ -1194,12 +1139,6 @@ function packing_fetch_job_details(mysqli $db, int $jobId): ?array {
     $imageUrl = packing_extract_image_url($jobExtra, $planExtra);
 
     $planningId = (int)($row['planning_id'] ?? 0);
-    $operatorEntry = packing_fetch_operator_entry(
-        $db,
-        (string)($row['job_no'] ?? ''),
-        (int)($row['id'] ?? 0),
-        (string)($row['created_at'] ?? '')
-    );
     $metrics = packing_extract_production_metrics($db, $planningId, $jobExtra, $planExtra, $prevExtra, $grandPrevExtra);
     $itemDimensions = packing_extract_item_dimensions($row, $jobExtra, $planExtra, $prevExtra, $grandPrevExtra);
     $totalRollValue = packing_extract_total_roll_value($jobExtra, $planExtra, $prevExtra, $grandPrevExtra, $operatorEntry);
@@ -1542,11 +1481,14 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
         ));
         $dispatchDate = trim((string)($planExtra['dispatch_date'] ?? ($row['so_due_date'] ?? $eventTime)));
         $clientName = trim((string)($row['client_name'] ?? ($planExtra['client_name'] ?? ($jobExtra['client_name'] ?? ''))));
+        $effectiveStatus = packing_effective_status_from_row($row);
+        $imageUrl = packing_extract_image_url($jobExtra, $planExtra);
+
         $readyRows[] = [
             'id' => (int)$row['id'],
             'packing_display_id' => packing_build_display_id((int)$row['id'], (string)($row['plan_no'] ?? '')),
             'tab' => $tabKey,
-            'tab_label' => packing_tab_label($tabKey),
+            'tab_label' => $tabKey ? packing_tab_label($tabKey) : (trim((string)($row['department'] ?? '')) !== '' ? (string)$row['department'] : 'Unknown'),
             'plan_no' => (string)($row['plan_no'] ?? ''),
             'plan_name' => (string)($row['plan_name'] ?? ''),
             'plan_priority' => (string)($row['plan_priority'] ?? 'Normal'),
@@ -1559,10 +1501,10 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
             'order_quantity' => (string)($metrics['order_quantity'] ?? ''),
             'production_quantity' => (string)($metrics['production_quantity'] ?? ''),
             'barcode_in_1_roll' => $barcodePerRoll,
-            'last_department' => packing_department_display_for_tab($tabKey),
-            'status' => packing_effective_status_from_row($row),
+            'last_department' => $tabKey ? packing_department_display_for_tab($tabKey) : (trim((string)($row['department'] ?? '')) !== '' ? (string)$row['department'] : '-'),
+            'status' => $effectiveStatus,
             'notes' => (string)($row['notes'] ?? ''),
-            'image_url' => packing_extract_image_url($jobExtra, $planExtra),
+            'image_url' => $imageUrl,
             'total_roll_value' => $totalRollValue,
             'operator_packed_qty' => is_array($operatorEntry) ? (string)($operatorEntry['packed_qty'] ?? '') : '',
             'event_time' => $eventTime,

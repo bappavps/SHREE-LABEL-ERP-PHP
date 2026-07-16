@@ -793,7 +793,9 @@ const SLT = (() => {
             selectedMachineDepartments = fallback ? [fallback] : [];
           }
         } else {
-          selectedMachineDepartments = jobDepartments.slice();
+          // Operator must explicitly choose departments — do NOT auto-check from the job route,
+          // otherwise the "select a department" guard never fires and the batch runs silently.
+          selectedMachineDepartments = [];
         }
       } else if (!selectedJob) {
         selectedMachineDepartments = [];
@@ -2246,6 +2248,23 @@ const SLT = (() => {
       ? '<i class="bi bi-hourglass-split"></i> Updating…'
       : '<i class="bi bi-hourglass-split"></i> Executing…';
 
+    // ── Guard: a job must be selected (Job No field must not be blank) ──
+    const jobNoValue = selectedJob ? String(selectedJob.job_no || '').trim() : '';
+    if (!jobNoValue) {
+      showCenterAlert('Please select a job before executing the batch.', 'warning');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-play-circle"></i> ' + getExecuteButtonLabel();
+      return;
+    }
+
+    // ── Guard: at least one department must be selected before executing ──
+    if (!selectedMachineDepartments.length) {
+      showCenterAlert('Please select at least one department before executing the batch.', 'warning');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-play-circle"></i> ' + getExecuteButtonLabel();
+      return;
+    }
+
     const operator = (document.getElementById('execOperator').value || CURRENT_OPERATOR).trim();
     let machine  = String(document.getElementById('execMachine').value || '').trim();
 
@@ -2922,6 +2941,47 @@ const SLT = (() => {
     toast.textContent = msg;
     document.body.appendChild(toast);
     setTimeout(function() { toast.style.opacity = '0'; setTimeout(function() { toast.remove(); }, 300); }, 3000);
+  }
+
+  function showCenterAlert(msg, type) {
+    type = type || 'warn';
+    const colors = {success:'#16a34a', error:'#dc2626', warn:'#d97706', info:'#2563eb'};
+    const bg = colors[type] || colors.warn;
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10001;display:flex;align-items:center;justify-content:center;';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;color:#1f2937;border-top:5px solid '+bg+';padding:24px 32px;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.25);max-width:440px;text-align:center;';
+
+    const msgEl = document.createElement('div');
+    msgEl.style.cssText = 'font-size:1rem;font-weight:600;margin-bottom:20px;line-height:1.5;';
+    msgEl.textContent = msg;
+
+    const btnWrap = document.createElement('div');
+    btnWrap.style.cssText = 'display:flex;gap:12px;justify-content:center;';
+
+    const okBtn = document.createElement('button');
+    okBtn.textContent = 'OK';
+    okBtn.style.cssText = 'padding:10px 28px;background:'+bg+';color:#fff;border:none;border-radius:6px;font-size:0.95rem;font-weight:600;cursor:pointer;transition:opacity 0.2s;';
+    okBtn.onmouseover = function(){ this.style.opacity = '0.85'; };
+    okBtn.onmouseout = function(){ this.style.opacity = '1'; };
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'padding:10px 28px;background:#6b7280;color:#fff;border:none;border-radius:6px;font-size:0.95rem;font-weight:600;cursor:pointer;transition:opacity 0.2s;';
+    cancelBtn.onmouseover = function(){ this.style.opacity = '0.85'; };
+    cancelBtn.onmouseout = function(){ this.style.opacity = '1'; };
+
+    const close = function(){ overlay.style.opacity = '0'; overlay.style.transition = 'opacity .3s'; setTimeout(function(){ overlay.remove(); }, 300); };
+
+    okBtn.onclick = close;
+    cancelBtn.onclick = close;
+
+    btnWrap.appendChild(okBtn);
+    btnWrap.appendChild(cancelBtn);
+    box.appendChild(msgEl);
+    box.appendChild(btnWrap);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
   }
 
   function refreshAll() {

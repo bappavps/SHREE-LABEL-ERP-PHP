@@ -393,6 +393,15 @@
     var itemId = parseInt(p.get('item_id') || '0', 10);
     state.prefillTab = String(p.get('tab') || '').trim().toLowerCase();
     var fromFinished = p.get('from') === 'finished_goods';
+    
+    // Set category from tab parameter immediately (will be overridden by API if needed)
+    if (state.prefillTab) {
+      state.currentCategory = state.prefillTab;
+    }
+    // Mark if coming from Finished Goods (to prevent auto-filling dispatch carton)
+    if (fromFinished) {
+      state.fromFinishedGoods = true;
+    }
 
     nodes.packingId.value = p.get('packing_id') || '';
     nodes.batchNo.value = p.get('batch') || '';
@@ -400,12 +409,14 @@
     nodes.itemName.value = p.get('item_name') || '';
     nodes.unit.value = p.get('unit') || 'Carton';
     nodes.availableQty.value = p.get('qty') || '';
+    // Read carton count from URL parameter (passed from Finished Goods)
+    if (p.get('carton')) {
+      state.availableCartons = num(p.get('carton'));
+    }
     if (p.get('client_name')) {
       nodes.clientName.value = p.get('client_name');
     }
-    if (p.get('qty')) {
-      nodes.dispatchQty.value = p.get('qty');
-    }
+    // Don't auto-fill dispatchQty from URL qty parameter - user should enter manually
 
     // Show pre-fill banner when coming from Finished Goods
     if (fromFinished || itemId > 0) {
@@ -435,8 +446,14 @@
           nodes.clientName.value = res.row.client_name;
         }
         state.currentCategory = String(res.row.category || '').trim().toLowerCase();
-        state.cartonRatio = parseFloat(res.row.carton_ratio || 0);
-        state.availableCartons = num(res.row.available_cartons || 0);
+        // Preserve carton ratio from URL/initial if API doesn't provide it
+        if (!state.cartonRatio && res.row.carton_ratio) {
+          state.cartonRatio = parseFloat(res.row.carton_ratio);
+        }
+        // Prefer URL carton value (stored from Finished Goods) over API calculated value
+        if (!state.availableCartons && res.row.available_cartons) {
+          state.availableCartons = num(res.row.available_cartons);
+        }
         setMixedExtraContext(res.row.category || '', res.row.mixed_extra_qty || 0);
         loadBatches();
         syncUnitInputMode();
@@ -523,7 +540,9 @@
 
     // Keep barcode/printing_label carton display aligned with finished stock carton value.
     if ((category === 'barcode' || category === 'printing_label') && availableCartonsExact > 0) {
-      availCarton = availableCartonsExact;
+      // Use actual dispatch carton from field (not calculated from qty/ratio)
+      var actualDispCarton = num(nodes.dispatchCarton ? nodes.dispatchCarton.value : 0);
+      availCarton = Math.max(0, availableCartonsExact - actualDispCarton);
       // Dispatch = net available (may be less than raw if mixed extra exists) → full cartons.
       var mixedExtra = num(state.mixedExtraMaxQty || 0);
       var rawAvail = avail + (mixedExtra > 0 ? mixedExtra : 0);
@@ -533,26 +552,18 @@
     }
 
     if (nodes.availableCarton) {
-      nodes.availableCarton.value = availCarton > 0 ? Number(availCarton.toFixed(2)).toString() : '';
+      nodes.availableCarton.value = availCarton > 0 ? Number(availCarton.toFixed(2)).toString() : '0';
     }
-    if (nodes.dispatchCarton) {
-      nodes.dispatchCarton.value = dispCarton > 0 ? Number(dispCarton.toFixed(2)).toString() : '';
-    }
+    // NOTE: dispatchCarton is a USER INPUT — never auto-overwrite it here.
+    // It is only set by the user (or ds_prefillDispatchCarton / syncDispatchQtyFromCarton).
     syncExtraCartonField();
     ds_validateCartonLive();
   }
 
-  // Pre-fill Dispatch Carton with the available carton count when an item loads,
-  // so the user sees the correct carton value (not an empty field they might fill with PCS).
+  // Pre-fill Dispatch Carton disabled - user enters dispatch carton manually.
+  // Auto-filling caused Available Carton to show 0/empty instead of total available.
   function ds_prefillDispatchCarton() {
-    if (!nodes.dispatchCarton) { return; }
-    if (nodes.dispatchCarton.value && parseFloat(nodes.dispatchCarton.value) > 0) { return; }
-    var avail = num(state.availableCartons || 0);
-    if (avail > 0) {
-      nodes.dispatchCarton.value = String(avail);
-      // Recompute dispatch qty from the pre-filled carton count
-      syncDispatchQtyFromCarton();
-    }
+    return;
   }
 
   function syncDispatchQtyFromCarton() {
@@ -2837,6 +2848,7 @@
       nodes.dispatchCarton.addEventListener('input', function () {
         if (String(nodes.unit.value || '').toUpperCase() === 'CARTON') {
           syncDispatchQtyFromCarton();
+          updateCartonFields();
           ds_validateCartonLive();
         }
       });

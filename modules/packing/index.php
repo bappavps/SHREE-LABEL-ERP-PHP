@@ -2049,13 +2049,37 @@ include __DIR__ . '/../../includes/header.php';
       }
       return 0;
     }
-    var bprFromSources = readBprFromSource(job)
+    // Priority 1: Read bpr from operator entry (operator-submitted value has highest priority)
+    var bprFromOperator = 0;
+    if (operatorEntry && operatorEntry.roll_payload_json) {
+      try {
+        var opPayload = (typeof operatorEntry.roll_payload_json === 'string')
+          ? JSON.parse(operatorEntry.roll_payload_json)
+          : operatorEntry.roll_payload_json;
+        var rollOverrides = opPayload && opPayload.roll_overrides ? opPayload.roll_overrides : {};
+        for (var rollKey in rollOverrides) {
+          if (rollOverrides.hasOwnProperty(rollKey)) {
+            var override = rollOverrides[rollKey];
+            if (override && override.bpr && Number(override.bpr) > 0) {
+              bprFromOperator = Math.floor(Number(override.bpr));
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to parse operator bpr:', e);
+      }
+    }
+
+    // Priority 2+: Fall back to job/plan data if operator hasn't submitted bpr
+    var bprFromSources = bprFromOperator > 0 ? bprFromOperator
+      : (readBprFromSource(job)
       || readBprFromSource(job.job_extra_data)
       || readBprFromSource(job.plan_extra_data)
       || readBprFromSource(job.prev_job_extra_data)
       || readBprFromSource(job.grandprev_job_extra_data)
       || readBprFromSource(job.greatgrandprev_job_extra_data)
-      || readBprFromSource(job.greatgreatgrandprev_job_extra_data);
+      || readBprFromSource(job.greatgreatgrandprev_job_extra_data));
     var barcodePerRollNum = bprFromSources > 0 ? bprFromSources : 250;
     var barcodePerRollText = String(bprFromSources > 0 ? bprFromSources : '-');
 
@@ -2504,6 +2528,8 @@ include __DIR__ . '/../../includes/header.php';
                   // When default Label Slitting production values were injected (no saved entry),
                   // keep each roll's already-distributed production intact instead of re-splitting.
                   if (pkDefaultsInjected) sharedSplitMode = false;
+                  // When any operator entry exists, preserve operator's data without re-splitting
+                  if (operatorEntry) sharedSplitMode = false;
                   var sharedReceivedQty = 0;
                   if (sharedSplitMode) {
                     var splitBaseQty = splitMeta.length ? splitMeta[0].qty : 0;
@@ -2698,6 +2724,29 @@ include __DIR__ . '/../../includes/header.php';
                           looseUsed: mixedExtra,
                           shortage: 0
                         });
+                        // Add display card for Mixed Carton Pool in Finished Production section
+                        var mixedBpr = isBarcodeMode ? barcodePerRollNum : 1;
+                        var mixedPhysical = isBarcodeMode
+                          ? (mixedCartons * effectiveRpc * mixedBpr) + (mixedExtra * mixedBpr)
+                          : (mixedCartons * effectiveRpc) + mixedExtra;
+                        var mixedFgQty = isBarcodeMode
+                          ? mixedCartons * effectiveRpc * mixedBpr
+                          : mixedCartons * effectiveRpc;
+                        var mixedExtraQty = isBarcodeMode
+                          ? mixedExtra * mixedBpr
+                          : mixedExtra;
+                        resultCards.push(
+                          '<div style="border:1px solid #c4b5fd;border-radius:8px;padding:8px;background:linear-gradient(120deg,#faf5ff,#f3e8ff)">'
+                          + '<b style="display:block;font-size:.73rem;color:#7c3aed;margin-bottom:4px">🎯 ' + escHtml(mixLabel) + ' Pool (Finished Production)</b>'
+                          + '<div style="font-size:.72rem;color:#334155">Cartons: <b>' + String(mixedCartons) + '</b> × <b>' + String(effectiveRpc) + ' rolls/carton</b></div>'
+                          + '<div style="font-size:.72rem;color:#334155">Mixed Extra Rolls: <b>' + String(mixedExtra) + '</b></div>'
+                          + '<div style="font-size:.72rem;color:#166534">Physical Output: <b>' + String(mixedPhysical) + ' PCS</b></div>'
+                          + '<div style="font-size:.72rem;margin-top:5px;padding-top:5px;border-top:1px dashed #ddd6fe;display:flex;gap:12px;flex-wrap:wrap;">'
+                          +   '<span style="color:#166534;font-weight:800">✅ FG Cartons: <b>' + String(mixedFgQty) + ' PCS</b> (' + String(mixedCartons) + ' carton' + (mixedCartons !== 1 ? 's' : '') + ')</span>'
+                          +   '<span style="color:#7c3aed;font-weight:800">📦 Extra Rolls: <b>' + String(mixedExtraQty) + ' PCS</b>' + (mixedExtra > 0 ? ' (mixed items)' : '') + '</span>'
+                          + '</div>'
+                          + '</div>'
+                        );
                       }
                     } else {
                       if (isBarcodeMode) {

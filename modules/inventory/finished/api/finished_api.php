@@ -147,25 +147,10 @@ function fg_mixed_extra_qty(string $category, float $quantity, array $extra): fl
 function fg_barcode_display_quantity(array $row): float {
     $category = trim((string)($row['category'] ?? ''));
     $quantity = fg_decimal($row['quantity'] ?? 0);
-    if ($category !== 'barcode') {
-        return $quantity;
-    }
-
-    $extra = fg_mixed_parse_extra($row['remarks'] ?? '');
-    $looseQty = fg_decimal(fg_mixed_pick($extra, ['loose_qty']));
-    if ($looseQty <= 0) {
-        return $quantity;
-    }
-
-    $bpr = fg_decimal(fg_mixed_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll']));
-    $totalRoll = fg_decimal(fg_mixed_pick($extra, ['total_roll', 'total_rolls']));
-    $rollBased = ($bpr > 0 && $totalRoll > 0) ? ($bpr * $totalRoll) : 0.0;
-
-    // Backward compatibility: older rows stored only roll*bpr in quantity.
-    if ($rollBased > 0 && abs($quantity - $rollBased) < 0.001) {
-        return fg_decimal($rollBased + $looseQty);
-    }
-
+    
+    // For barcode category, return stored quantity as-is.
+    // The quantity field already has loose_qty and mixed_extra_rolls subtracted
+    // by packing_api_upsert_finished_goods, so we should not add them back.
     return $quantity;
 }
 
@@ -480,12 +465,13 @@ function fg_fetch_printing_label_context(mysqli $db, array $jobNos): array {
             $netQty = max(0.0, $netQty - ($mixedExtraRolls * $pcsPerRoll));
         }
 
-        // after_packing_qty = full carton qty only (rolls_per_carton * cartonCount * pcsPerRoll).
-        // Loose pieces and extra rolls go to mixed items, not finished goods.
-        $fullCartonQty = ($displayPerCarton > 0 && $cartonCount > 0 && $pcsPerRoll > 0)
-            ? $displayPerCarton * $cartonCount * $pcsPerRoll
-            : max(0.0, $packedQty);
-        $afterPackingQty = $fullCartonQty;
+        // after_packing_qty = physical production minus loose pieces.
+        // The old formula (displayPerCarton * cartonCount * pcsPerRoll) was wrong when
+        // mixed cartons were enabled because cartonCount includes mixed cartons but
+        // displayPerCarton is the ORIGINAL per carton (not the mixed one), causing
+        // over-counting. Use packedQty (physical production) which already accounts
+        // for individual cartons, mixed cartons, and all rolls correctly.
+        $afterPackingQty = max(0.0, $packedQty - ($looseQty * $pcsPerRoll));
 
         $map[$jobNo] = [
             'paper_size' => trim((string)($planExtra['paper_size'] ?? '')),
@@ -970,10 +956,11 @@ if ($action === 'get_stock') {
                         if ($pcsPerRoll > 0 && $rollsPerCarton > 0) { break; }
                     }
                     $cartonCount = max(0, (int)floor(fg_decimal($pRow['cartons_count'] ?? 0)));
-                    $fullCartonQty = ($rollsPerCarton > 0 && $cartonCount > 0 && $pcsPerRoll > 0)
-                        ? $rollsPerCarton * $cartonCount * $pcsPerRoll
-                        : fg_decimal($pRow['packed_qty'] ?? 0);
-                    $barcodePackingMap[$jn] = $fullCartonQty;
+                    // Use packed_qty (physical production) as the after_packing_qty.
+                    // The old formula (rollsPerCarton * cartonCount * pcsPerRoll) was wrong
+                    // because cartonCount includes mixed cartons but rollsPerCarton is the
+                    // ORIGINAL per carton (not the mixed one), causing over-counting.
+                    $barcodePackingMap[$jn] = fg_decimal($pRow['packed_qty'] ?? 0);
                 }
             }
         }

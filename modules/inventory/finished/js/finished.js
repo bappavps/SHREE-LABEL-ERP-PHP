@@ -726,9 +726,14 @@
         return fmtQty(row.quantity);
       }
 
-      // For barcode tab, calculate carton by current full rolls and roll-per-carton.
-      // Use raw DB quantity directly to avoid the mixedExtra off-by-one.
+      // For barcode tab, use stored carton count from remarks extra first.
+      // This preserves the actual carton breakdown (including mixed cartons).
+      // Fall back to calculation from quantity if extra is not available.
       if (fg_state.activeTab === 'barcode') {
+        var barcodeCarton = extraPick(['carton']);
+        if (barcodeCarton !== '') {
+          return barcodeCarton;
+        }
         var barcodeQty = fg_num(row.quantity);
         var barcodePcsPerRoll = fg_num(extraPick(['pcs_per_roll', 'pieces_per_roll', 'pices_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
         var barcodeRollPerCarton = fg_num(extraPick(['roll_per_cartoon', 'roll_per_carton']));
@@ -891,6 +896,22 @@
       }
     }
     if (key === 'after_packing_qty') {
+      // Show format: "36000 (34800 + 1200 loose/mixed)"
+      var extra = row._fgExtra || {};
+      var storedQty = fg_num(row.quantity || 0);
+      var afterPackingQty = fg_num(value || 0);
+      var looseQty = fg_num(extra.loose_qty || 0);
+      var mixedExtraRolls = fg_num(extra.mixed_extra_rolls || 0);
+      var bpr = fg_num(extra.pcs_per_roll || extra.barcode_in_1_roll || 0);
+      
+      // Calculate total excluded quantity
+      var excludedQty = looseQty + (mixedExtraRolls * bpr);
+      
+      if (excludedQty > 0 && storedQty > 0 && afterPackingQty > 0) {
+        var breakdownText = fg_escapeHtml(afterPackingQty) + ' (' + fg_escapeHtml(storedQty) + ' + ' + fg_escapeHtml(excludedQty) + ' loose/mixed)';
+        return '<span class="fg-qty-pill fg-qty-pill-packed">' + breakdownText + '</span>';
+      }
+      
       return '<span class="fg-qty-pill fg-qty-pill-packed">' + fg_escapeHtml(value) + '</span>';
     }
     if (key === 'current_total' || key === 'total_quantity') {
@@ -949,6 +970,20 @@
     params.set('unit', String(row.unit || 'PCS'));
     params.set('tab', String(fg_state.activeTab || ''));
     params.set('from', 'finished_goods');
+    // Pass carton count - try multiple sources to get STORED value (not calculated)
+    var cartonValue = extra.carton || extra.cartons || extra.carton_count;
+    // If not in extra, try parsing remarks directly to get stored value
+    if (!cartonValue && row.remarks) {
+      try {
+        var remarksObj = JSON.parse(row.remarks);
+        if (remarksObj.extra) {
+          cartonValue = remarksObj.extra.carton || remarksObj.extra.cartons;
+        }
+      } catch (e) {}
+    }
+    if (cartonValue) {
+      params.set('carton', String(cartonValue));
+    }
     // Pass client_name if available in extra data
     if (extra.client_name) {
       params.set('client_name', String(extra.client_name));
