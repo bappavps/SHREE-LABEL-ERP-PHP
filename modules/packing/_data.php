@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 function packing_completed_statuses(): array {
     return [
@@ -546,7 +546,7 @@ function packing_extract_production_metrics(mysqli $db, int $planningId, array $
         'label_slitting_total_production',
         'total_qty_pcs', 'barcode_total_qty_pcs', 'die_cutting_total_qty_pcs',
         'production_total_qty', 'printed_qty', 'print_qty',
-        'final_production_qty', 'up_in_production'
+        'final_production_qty'
     ]);
     $wastageRaw = packing_pick_value_loose($sources, [
         'wastage', 'wastage_qty', 'waste_qty', 'total_wastage',
@@ -809,17 +809,15 @@ function packing_build_default_roll_distribution(array $jobDetails): array {
     $totalRoll = packing_to_float_or_null(packing_pick_value_loose($sources, [
         'label_slitting_total_roll', 'total_roll', 'total_rolls', 'barcode_total_roll', 'barcode_total_rolls',
     ]));
-    $totalProduction = packing_to_float_or_null(packing_pick_value_loose($sources, [
-        'label_slitting_total_production', 'total_production', 'production_quantity', 'production_qty',
-        'produced_quantity', 'produced_qty', 'actual_qty', 'actual_quantity', 'output_qty', 'completed_qty',
-        'total_qty_pcs', 'barcode_total_qty_pcs', 'die_cutting_total_qty_pcs',
-        'production_total_qty', 'printed_qty', 'print_qty', 'final_production_qty', 'up_in_production',
-    ]));
-
-    if ($totalProduction === null || $totalProduction <= 0) {
-        if ($totalRoll !== null && $totalRoll > 0 && $bpr !== null && $bpr > 0) {
-            $totalProduction = $totalRoll * $bpr;
-        }
+    if ($totalRoll !== null && $totalRoll > 0 && $bpr !== null && $bpr > 0) {
+        $totalProduction = $totalRoll * $bpr;
+    } else {
+        $totalProduction = packing_to_float_or_null(packing_pick_value_loose($sources, [
+            'label_slitting_total_production', 'total_production', 'production_quantity', 'production_qty',
+            'produced_quantity', 'produced_qty', 'actual_qty', 'actual_quantity', 'output_qty', 'completed_qty',
+            'total_qty_pcs', 'barcode_total_qty_pcs', 'die_cutting_total_qty_pcs',
+            'production_total_qty', 'printed_qty', 'print_qty', 'final_production_qty',
+        ]));
     }
     if ($totalProduction === null || $totalProduction <= 0) {
         return [];

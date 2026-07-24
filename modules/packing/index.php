@@ -1999,7 +1999,7 @@ include __DIR__ . '/../../includes/header.php';
     // default packing values; the operator/manager can still edit them manually.
     // Existing saved packing records are never overwritten.
     var pkDefaultsInjected = false;
-    if (!operatorEntry && rollLots.length && job.default_roll_distribution && typeof job.default_roll_distribution === 'object') {
+    if (rollLots.length && job.default_roll_distribution && typeof job.default_roll_distribution === 'object') {
       rollLots.forEach(function(roll, idx) {
         var rollNo = String(roll.rollNo || ('roll-' + String(idx)));
         var def = job.default_roll_distribution[rollNo];
@@ -2009,12 +2009,14 @@ include __DIR__ . '/../../includes/header.php';
           roll.productionQty = share;
           roll.availableQty = share;
         }
-        var key = rollNo;
-        if (!rollHelperOverrides[key] || typeof rollHelperOverrides[key] !== 'object') {
-          rollHelperOverrides[key] = {};
+        if (!operatorEntry) {
+          var key = rollNo;
+          if (!rollHelperOverrides[key] || typeof rollHelperOverrides[key] !== 'object') {
+            rollHelperOverrides[key] = {};
+          }
+          if (def.bpr) rollHelperOverrides[key].bpr = Math.max(1, Math.floor(parseFloat(def.bpr) || 0));
+          if (def.total_rolls) rollHelperOverrides[key].total_rolls = Math.max(0, Math.floor(parseFloat(def.total_rolls) || 0));
         }
-        if (def.bpr) rollHelperOverrides[key].bpr = Math.max(1, Math.floor(parseFloat(def.bpr) || 0));
-        if (def.total_rolls) rollHelperOverrides[key].total_rolls = Math.max(0, Math.floor(parseFloat(def.total_rolls) || 0));
       });
       pkDefaultsInjected = true;
     }
@@ -2525,11 +2527,7 @@ include __DIR__ . '/../../includes/header.php';
                   // If all selected rolls carry the same source qty, treat it as a shared lot
                   // and split production across selected rolls (even when parent rolls differ).
                   var sharedSplitMode = selectedRolls.length > 1 && qtyCount === 1;
-                  // When default Label Slitting production values were injected (no saved entry),
-                  // keep each roll's already-distributed production intact instead of re-splitting.
-                  if (pkDefaultsInjected) sharedSplitMode = false;
-                  // When any operator entry exists, preserve operator's data without re-splitting
-                  if (operatorEntry) sharedSplitMode = false;
+                  if (pkDefaultsInjected || operatorEntry || (job && job.default_roll_distribution)) sharedSplitMode = false;
                   var sharedReceivedQty = 0;
                   if (sharedSplitMode) {
                     var splitBaseQty = splitMeta.length ? splitMeta[0].qty : 0;
@@ -2726,24 +2724,22 @@ include __DIR__ . '/../../includes/header.php';
                         });
                         // Add display card for Mixed Carton Pool in Finished Production section
                         var mixedBpr = isBarcodeMode ? barcodePerRollNum : 1;
-                        var mixedPhysical = isBarcodeMode
-                          ? (mixedCartons * effectiveRpc * mixedBpr) + (mixedExtra * mixedBpr)
-                          : (mixedCartons * effectiveRpc) + mixedExtra;
                         var mixedFgQty = isBarcodeMode
                           ? mixedCartons * effectiveRpc * mixedBpr
                           : mixedCartons * effectiveRpc;
                         var mixedExtraQty = isBarcodeMode
                           ? mixedExtra * mixedBpr
                           : mixedExtra;
+                        var mixedPhysical = mixedFgQty;
                         resultCards.push(
                           '<div style="border:1px solid #c4b5fd;border-radius:8px;padding:8px;background:linear-gradient(120deg,#faf5ff,#f3e8ff)">'
                           + '<b style="display:block;font-size:.73rem;color:#7c3aed;margin-bottom:4px">🎯 ' + escHtml(mixLabel) + ' Pool (Finished Production)</b>'
                           + '<div style="font-size:.72rem;color:#334155">Cartons: <b>' + String(mixedCartons) + '</b> × <b>' + String(effectiveRpc) + ' rolls/carton</b></div>'
                           + '<div style="font-size:.72rem;color:#334155">Mixed Extra Rolls: <b>' + String(mixedExtra) + '</b></div>'
-                          + '<div style="font-size:.72rem;color:#166534">Physical Output: <b>' + String(mixedPhysical) + ' PCS</b></div>'
+                          + '<div style="font-size:.72rem;color:#166534">Mixed FG Output: <b>' + String(mixedPhysical) + ' PCS</b></div>'
                           + '<div style="font-size:.72rem;margin-top:5px;padding-top:5px;border-top:1px dashed #ddd6fe;display:flex;gap:12px;flex-wrap:wrap;">'
                           +   '<span style="color:#166534;font-weight:800">✅ FG Cartons: <b>' + String(mixedFgQty) + ' PCS</b> (' + String(mixedCartons) + ' carton' + (mixedCartons !== 1 ? 's' : '') + ')</span>'
-                          +   '<span style="color:#7c3aed;font-weight:800">📦 Extra Rolls: <b>' + String(mixedExtraQty) + ' PCS</b>' + (mixedExtra > 0 ? ' (mixed items)' : '') + '</span>'
+                          +   '<span style="color:#7c3aed;font-weight:800">📦 Extra Rolls: <b>' + String(mixedExtraQty) + ' PCS</b>' + (mixedExtra > 0 ? ' (pool items)' : '') + '</span>'
                           + '</div>'
                           + '</div>'
                         );

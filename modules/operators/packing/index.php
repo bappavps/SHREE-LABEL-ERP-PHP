@@ -790,7 +790,7 @@ include __DIR__ . '/../../../includes/header.php';
     // default packing values; the operator/manager can still edit them manually.
     // Existing saved packing records are never overwritten.
     var opDefaultsInjected = false;
-    if (!opEntry && rollLots.length && job.default_roll_distribution && typeof job.default_roll_distribution === 'object') {
+    if (rollLots.length && job.default_roll_distribution && typeof job.default_roll_distribution === 'object') {
       rollLots.forEach(function(roll, idx) {
         var rollNo = String(roll.rollNo || ('roll-' + String(idx)));
         var def = job.default_roll_distribution[rollNo];
@@ -800,12 +800,14 @@ include __DIR__ . '/../../../includes/header.php';
           roll.productionQty = share;
           roll.availableQty = share;
         }
-        var key = rollNo;
-        if (!rollLooseOverrides[key] || typeof rollLooseOverrides[key] !== 'object') {
-          rollLooseOverrides[key] = {};
+        if (!opEntry) {
+          var key = rollNo;
+          if (!rollLooseOverrides[key] || typeof rollLooseOverrides[key] !== 'object') {
+            rollLooseOverrides[key] = {};
+          }
+          if (def.bpr) rollLooseOverrides[key].bpr = Math.max(1, Math.floor(parseFloat(def.bpr) || 0));
+          if (def.total_rolls) rollLooseOverrides[key].total_rolls = Math.max(0, Math.floor(parseFloat(def.total_rolls) || 0));
         }
-        if (def.bpr) rollLooseOverrides[key].bpr = Math.max(1, Math.floor(parseFloat(def.bpr) || 0));
-        if (def.total_rolls) rollLooseOverrides[key].total_rolls = Math.max(0, Math.floor(parseFloat(def.total_rolls) || 0));
       });
       opDefaultsInjected = true;
     }
@@ -1353,9 +1355,7 @@ include __DIR__ . '/../../../includes/header.php';
       // If all selected rolls carry the same source qty, treat it as a shared lot
       // and split production across selected rolls (even when parent rolls differ).
       var sharedSplitMode = selectedRolls.length > 1 && qtyCount === 1;
-      // When default Label Slitting production values were injected (no saved entry),
-      // keep each roll's already-distributed production intact instead of re-splitting.
-      if (opDefaultsInjected) sharedSplitMode = false;
+      if (opDefaultsInjected || opEntry || (job && job.default_roll_distribution)) sharedSplitMode = false;
       var sharedReceivedQty = sharedSplitMode && splitMeta.length ? splitMeta[0].qty : 0;
 
       renderPerRollCards(selectedRolls.map(function(roll, idx) {
@@ -2007,7 +2007,10 @@ include __DIR__ . '/../../../includes/header.php';
       });
       var submitSharedSplitMode = submitSplitMeta.length > 1
         && Object.keys(submitParentSet).length === 1
-        && Object.keys(submitQtySet).length === 1;
+        && Object.keys(submitQtySet).length === 1
+        && !opDefaultsInjected
+        && !opEntry
+        && !(job && job.default_roll_distribution);
       var submitSharedReceivedQty = submitSharedSplitMode && submitSplitMeta.length ? submitSplitMeta[0].qty : 0;
 
       selectedRollPayloadKeys.forEach(function(key, payloadIdx) {

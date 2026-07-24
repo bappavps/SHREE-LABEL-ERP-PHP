@@ -1,5 +1,5 @@
 # Detailed Data & Values Dump for Packing Pages
-**Dump Time**: 2026-07-24 20:20:09
+**Dump Time**: 2026-07-24 20:48:24
 **Target Pages**:
 - `http://localhost/calipot-erp/shree-label-php/modules/operators/packing/index.php`
 - `http://localhost/calipot-erp/shree-label-php/modules/packing/index.php`
@@ -36,15 +36,15 @@
         "dispatch_date": "2026-08-04",
         "order_quantity": "26247",
         "production_quantity": "26000",
-        "barcode_in_1_roll": "500 / OD 4.5 inc",
+        "barcode_in_1_roll": "300",
         "last_department": "Label Slitting",
         "status": "Completed",
         "notes": "Label slitting released from upstream | Plan: PLN/2026/0001 | Jumbo: JMB/2026/0001 | Flexo: FLX/2026/0001 | Die-Cut: DCT/2026/0001 | Label: LSL/2026/0001 | Job name: DCT/2026/0001 (Flatbed)",
         "image_url": "uploads/library/plate-data/plate_20260405_183215_1e3b626b.jpg",
-        "total_roll_value": "52",
-        "operator_packed_qty": "",
+        "total_roll_value": "6",
+        "operator_packed_qty": "26000.00",
         "event_time": "2026-07-24 23:38:56",
-        "operator_submitted": false
+        "operator_submitted": true
     }
 ]
 ```
@@ -212,15 +212,15 @@ _No operator station history entries found._
         "dispatch_date": "2026-08-04",
         "order_quantity": "26247",
         "production_quantity": "26000",
-        "barcode_in_1_roll": "500 / OD 4.5 inc",
+        "barcode_in_1_roll": "300",
         "last_department": "Label Slitting",
         "status": "Completed",
         "notes": "Label slitting released from upstream | Plan: PLN/2026/0001 | Jumbo: JMB/2026/0001 | Flexo: FLX/2026/0001 | Die-Cut: DCT/2026/0001 | Label: LSL/2026/0001 | Job name: DCT/2026/0001 (Flatbed)",
         "image_url": "uploads/library/plate-data/plate_20260405_183215_1e3b626b.jpg",
-        "total_roll_value": "52",
-        "operator_packed_qty": "",
+        "total_roll_value": "6",
+        "operator_packed_qty": "26000.00",
         "event_time": "2026-07-24 23:38:56",
-        "operator_submitted": false
+        "operator_submitted": true
     }
 ]
 ```
