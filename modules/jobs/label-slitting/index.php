@@ -72,24 +72,31 @@ foreach ($jobs as $j) {
 }
 $planIds = array_keys($planIds);
 
-$minUnfinishedJobByPlan = [];
+$unfinishedJobsByPlan = [];
 if (!empty($planIds)) {
     $ph = implode(',', array_fill(0, count($planIds), '?'));
     $types = str_repeat('i', count($planIds));
     $finishPlaceholders = "'" . implode("','", $finishStates) . "'";
-    $sqlUnfinished = "SELECT planning_id, MIN(id) AS min_unfinished_id 
+    $sqlUnfinished = "SELECT planning_id, id, LOWER(COALESCE(department, job_type, '')) AS dept 
                       FROM jobs 
                       WHERE planning_id IN ($ph) 
                         AND status NOT IN ($finishPlaceholders)
                         AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
-                      GROUP BY planning_id";
+                      ORDER BY id ASC";
     $stmtUnfinished = $db->prepare($sqlUnfinished);
     if ($stmtUnfinished) {
         $stmtUnfinished->bind_param($types, ...$planIds);
         $stmtUnfinished->execute();
         $resUnfinished = $stmtUnfinished->get_result();
         while ($uRow = $resUnfinished->fetch_assoc()) {
-            $minUnfinishedJobByPlan[(int)$uRow['planning_id']] = (int)$uRow['min_unfinished_id'];
+            $pid = (int)$uRow['planning_id'];
+            if (!isset($unfinishedJobsByPlan[$pid])) {
+                $unfinishedJobsByPlan[$pid] = [];
+            }
+            $unfinishedJobsByPlan[$pid][] = [
+                'id' => (int)$uRow['id'],
+                'dept' => trim((string)$uRow['dept'])
+            ];
         }
     }
 }
@@ -122,10 +129,27 @@ foreach ($jobs as &$job) {
     $directPrevReady = !$hasPrev || in_array($prevStatus, $finishStates, true);
 
     $planId = (int)($job['planning_id'] ?? 0);
+    $jobDept = strtolower(trim((string)($job['department'] ?? ($job['job_type'] ?? ''))));
+    $jobId = (int)($job['id'] ?? 0);
     $planChainReady = true;
-    if ($planId > 0 && isset($minUnfinishedJobByPlan[$planId])) {
-        if ($minUnfinishedJobByPlan[$planId] < (int)$job['id']) {
+
+    $paperRollDepts = ['paperroll', 'pos', 'oneply', 'twoply', 'paper_roll', 'pos_roll', 'one_ply', 'two_ply'];
+
+    if ($planId > 0 && !empty($unfinishedJobsByPlan[$planId])) {
+        foreach ($unfinishedJobsByPlan[$planId] as $uJob) {
+            $uId = $uJob['id'];
+            $uDept = $uJob['dept'];
+            if ($uId >= $jobId) {
+                continue;
+            }
+            if (in_array($jobDept, $paperRollDepts, true) && in_array($uDept, $paperRollDepts, true)) {
+                continue;
+            }
+            if ($uDept === $jobDept) {
+                continue;
+            }
             $planChainReady = false;
+            break;
         }
     }
 
