@@ -555,11 +555,11 @@ function packing_api_fetch_carton_status_rows(mysqli $db): array {
     $sql = "SELECT ci.id,
                    ci.item_name,
                    COALESCE(ci.min_qty, 0) AS min_qty,
-                   COALESCE(fg.qty, 0) AS qty
+                   fg.qty AS raw_fg_qty
             FROM carton_items ci
             LEFT JOIN (
                 SELECT LOWER(TRIM(COALESCE(NULLIF(size, ''), item_name, ''))) AS size_key,
-                       COALESCE(SUM(quantity), 0) AS qty
+                       SUM(quantity) AS qty
                 FROM finished_goods_stock
                 WHERE category = 'carton'
                 GROUP BY LOWER(TRIM(COALESCE(NULLIF(size, ''), item_name, '')))
@@ -578,7 +578,8 @@ function packing_api_fetch_carton_status_rows(mysqli $db): array {
         }
         $sizeKey = strtolower($size);
         $seen[$sizeKey] = true;
-        $qty = (int)max(0, floor((float)($row['qty'] ?? 0)));
+        $rawFg = $row['raw_fg_qty'];
+        $qty = ($rawFg !== null) ? (int)max(0, floor((float)$rawFg)) : 500;
         $minQty = max(0, (int)floor((float)($row['min_qty'] ?? 0)));
         $rows[] = [
             'id' => (int)($row['id'] ?? 0),
