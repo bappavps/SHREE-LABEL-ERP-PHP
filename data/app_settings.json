@@ -132,7 +132,7 @@
             },
             "jumbo_job": {
                 "prefix": "SLT",
-                "counter": 1
+                "counter": 4
             },
             "printing_job": {
                 "prefix": "FLX",
@@ -144,11 +144,11 @@
             },
             "label_slitting_job": {
                 "prefix": "LSL",
-                "counter": 3
+                "counter": 2
             },
             "barcode_job": {
                 "prefix": "BRC-BAR",
-                "counter": 5
+                "counter": 1
             },
             "planning_paperroll": {
                 "prefix": "",

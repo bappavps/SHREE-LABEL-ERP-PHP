@@ -1618,9 +1618,11 @@
     var cartonItemIdBySize = {};
     var actionIdBySize = {};
 
+    var hasRecordedQty = {};
     for (var f = 0; f < fixedOrder.length; f += 1) {
-      qtyBySize[fixedOrder[f]] = 0;
+      qtyBySize[fixedOrder[f]] = 500;
       minBySize[fixedOrder[f]] = 0;
+      hasRecordedQty[fixedOrder[f]] = false;
     }
 
     for (var i = 0; i < rows.length; i += 1) {
@@ -1630,8 +1632,9 @@
         sizeText = 'Other';
       }
       if (!Object.prototype.hasOwnProperty.call(qtyBySize, sizeText)) {
-        qtyBySize[sizeText] = 0;
+        qtyBySize[sizeText] = 500;
         minBySize[sizeText] = 0;
+        hasRecordedQty[sizeText] = false;
         order.push(sizeText);
       }
       var cartonItemId = parseInt(String(row.carton_item_id || '0'), 10) || 0;
@@ -1645,7 +1648,15 @@
         stockRowIdBySize[sizeText] = String(row.id);
         actionIdBySize[sizeText] = String(row.id);
       }
-      qtyBySize[sizeText] += fg_num(row.quantity);
+      var rQty = fg_num(row.quantity);
+      if (isRealStockRow || rQty > 0) {
+        if (!hasRecordedQty[sizeText]) {
+          qtyBySize[sizeText] = rQty;
+          hasRecordedQty[sizeText] = true;
+        } else {
+          qtyBySize[sizeText] += rQty;
+        }
+      }
       if (fg_num(row.min_qty) > 0) {
         minBySize[sizeText] = Math.max(minBySize[sizeText], fg_num(row.min_qty));
       }
@@ -1925,6 +1936,8 @@
         }
       } else if (f.source === 'meta') {
         val = 'Auto';
+      } else if (f.name === 'quantity' || f.name === 'qty') {
+        val = 500;
       }
 
       var cls = f.full ? 'fg-form-field full' : 'fg-form-field';

@@ -20,23 +20,27 @@ require_once __DIR__ . '/../../../../includes/auth_check.php';
 
 $db = getDB();
 
-function fg_json(int $status, array $payload): void {
+function fg_json(int $status, array $payload): void
+{
     http_response_code($status);
     echo json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-function fg_is_admin(): bool {
+function fg_is_admin(): bool
+{
     return isAdmin();
 }
 
-function fg_require_admin(): void {
+function fg_require_admin(): void
+{
     if (!fg_is_admin()) {
         fg_json(403, ['ok' => false, 'error' => 'Admin permission required.']);
     }
 }
 
-function fg_can_operate_finished_stock(): bool {
+function fg_can_operate_finished_stock(): bool
+{
     if (fg_is_admin()) {
         return true;
     }
@@ -51,29 +55,33 @@ function fg_can_operate_finished_stock(): bool {
     return false;
 }
 
-function fg_require_stock_operator(): void {
+function fg_require_stock_operator(): void
+{
     if (!fg_can_operate_finished_stock()) {
         fg_json(403, ['ok' => false, 'error' => 'Permission denied for finished stock operation.']);
     }
 }
 
-function fg_clean_text($value, int $max = 255): string {
-    $text = trim((string)$value);
+function fg_clean_text($value, int $max = 255): string
+{
+    $text = trim((string) $value);
     if ($max > 0 && strlen($text) > $max) {
         $text = substr($text, 0, $max);
     }
     return $text;
 }
 
-function fg_decimal($value): float {
+function fg_decimal($value): float
+{
     if ($value === null || $value === '') {
         return 0.0;
     }
-    return round((float)$value, 3);
+    return round((float) $value, 3);
 }
 
-function fg_parse_date($value): ?string {
-    $raw = trim((string)$value);
+function fg_parse_date($value): ?string
+{
+    $raw = trim((string) $value);
     if ($raw === '') {
         return null;
     }
@@ -93,8 +101,9 @@ function fg_parse_date($value): ?string {
     return date('Y-m-d', $ts);
 }
 
-function fg_mixed_parse_extra($remarks): array {
-    $raw = trim((string)$remarks);
+function fg_mixed_parse_extra($remarks): array
+{
+    $raw = trim((string) $remarks);
     if ($raw === '' || $raw[0] !== '{') {
         return [];
     }
@@ -106,12 +115,13 @@ function fg_mixed_parse_extra($remarks): array {
     return is_array($extra) ? $extra : [];
 }
 
-function fg_mixed_pick(array $extra, array $keys): string {
+function fg_mixed_pick(array $extra, array $keys): string
+{
     foreach ($keys as $k) {
         if (!array_key_exists($k, $extra)) {
             continue;
         }
-        $v = trim((string)$extra[$k]);
+        $v = trim((string) $extra[$k]);
         if ($v !== '') {
             return $v;
         }
@@ -119,7 +129,8 @@ function fg_mixed_pick(array $extra, array $keys): string {
     return '';
 }
 
-function fg_mixed_extra_qty(string $category, float $quantity, array $extra): float {
+function fg_mixed_extra_qty(string $category, float $quantity, array $extra): float
+{
     if (!in_array($category, ['pos_paper_roll', 'one_ply', 'two_ply', 'barcode', 'printing_label', 'printing_roll'], true)) {
         return 0.0;
     }
@@ -132,29 +143,31 @@ function fg_mixed_extra_qty(string $category, float $quantity, array $extra): fl
         return 0.0;
     }
 
-    $mixedEnabled = (int)($extra['mixed_enabled'] ?? 0) === 1;
+    $mixedEnabled = (int) ($extra['mixed_enabled'] ?? 0) === 1;
     if ($mixedEnabled) {
         return max(0.0, fg_decimal($extra['mixed_extra_rolls'] ?? 0));
     }
 
     $perCarton = fg_decimal(fg_mixed_pick($extra, ['per_carton']));
     if ($perCarton > 0 && $quantity > 0) {
-        return max(0.0, (float)fmod($quantity, $perCarton));
+        return max(0.0, (float) fmod($quantity, $perCarton));
     }
     return max(0.0, $quantity);
 }
 
-function fg_barcode_display_quantity(array $row): float {
-    $category = trim((string)($row['category'] ?? ''));
+function fg_barcode_display_quantity(array $row): float
+{
+    $category = trim((string) ($row['category'] ?? ''));
     $quantity = fg_decimal($row['quantity'] ?? 0);
-    
+
     // For barcode category, return stored quantity as-is.
     // The quantity field already has loose_qty and mixed_extra_rolls subtracted
     // by packing_api_upsert_finished_goods, so we should not add them back.
     return $quantity;
 }
 
-function fg_period_bounds(string $period): array {
+function fg_period_bounds(string $period): array
+{
     $today = new DateTime('today');
     $start = clone $today;
     $end = clone $today;
@@ -181,7 +194,8 @@ function fg_period_bounds(string $period): array {
     return [$start->format('Y-m-d'), $end->format('Y-m-d')];
 }
 
-function fg_get_payload(): array {
+function fg_get_payload(): array
+{
     $payload = $_POST;
     if (!empty($payload)) {
         return $payload;
@@ -196,7 +210,8 @@ function fg_get_payload(): array {
     return is_array($decoded) ? $decoded : [];
 }
 
-function fg_ensure_table(mysqli $db): void {
+function fg_ensure_table(mysqli $db): void
+{
     $sql = "CREATE TABLE IF NOT EXISTS finished_goods_stock (
         id INT UNSIGNED NOT NULL AUTO_INCREMENT,
         category VARCHAR(60) NOT NULL,
@@ -267,7 +282,8 @@ function fg_ensure_table(mysqli $db): void {
     }
 }
 
-function fg_fetch_carton_min_rows(mysqli $db): array {
+function fg_fetch_carton_min_rows(mysqli $db): array
+{
     $sql = "SELECT id, item_name, COALESCE(min_qty, 0) AS min_qty
             FROM carton_items
             ORDER BY item_name ASC";
@@ -277,23 +293,24 @@ function fg_fetch_carton_min_rows(mysqli $db): array {
     }
     $rows = [];
     while ($row = $res->fetch_assoc()) {
-        $size = trim((string)($row['item_name'] ?? ''));
+        $size = trim((string) ($row['item_name'] ?? ''));
         if ($size === '') {
             continue;
         }
         $rows[] = [
-            'id' => (int)($row['id'] ?? 0),
+            'id' => (int) ($row['id'] ?? 0),
             'size' => $size,
-            'min_qty' => max(0, (int)floor((float)($row['min_qty'] ?? 0))),
+            'min_qty' => max(0, (int) floor((float) ($row['min_qty'] ?? 0))),
         ];
     }
     return $rows;
 }
 
-function fg_fetch_barcode_ups_map(mysqli $db, array $jobNos): array {
+function fg_fetch_barcode_ups_map(mysqli $db, array $jobNos): array
+{
     $clean = [];
     foreach ($jobNos as $jn) {
-        $v = trim((string)$jn);
+        $v = trim((string) $jn);
         if ($v !== '') {
             $clean[$v] = true;
         }
@@ -321,16 +338,16 @@ function fg_fetch_barcode_ups_map(mysqli $db, array $jobNos): array {
 
     $map = [];
     foreach ($rows as $row) {
-        $jobNo = trim((string)($row['job_no'] ?? ''));
+        $jobNo = trim((string) ($row['job_no'] ?? ''));
         if ($jobNo === '' || isset($map[$jobNo])) {
             continue;
         }
         $jobExtra = fg_mixed_parse_extra($row['job_extra_data'] ?? '');
-        $planParsed = json_decode((string)($row['plan_extra_data'] ?? ''), true);
+        $planParsed = json_decode((string) ($row['plan_extra_data'] ?? ''), true);
         $planExtra = is_array($planParsed) ? $planParsed : [];
 
-        $upInRoll = trim((string)($planExtra['up_in_roll'] ?? ($jobExtra['up_in_roll'] ?? ($planExtra['ups_in_roll'] ?? ''))));
-        $upInProduction = trim((string)($planExtra['up_in_production'] ?? ($jobExtra['up_in_production'] ?? ($planExtra['up_in_die'] ?? ($planExtra['ups'] ?? '')))));
+        $upInRoll = trim((string) ($planExtra['up_in_roll'] ?? ($jobExtra['up_in_roll'] ?? ($planExtra['ups_in_roll'] ?? ''))));
+        $upInProduction = trim((string) ($planExtra['up_in_production'] ?? ($jobExtra['up_in_production'] ?? ($planExtra['up_in_die'] ?? ($planExtra['ups'] ?? '')))));
 
         $map[$jobNo] = [
             'up_in_roll' => $upInRoll,
@@ -341,25 +358,28 @@ function fg_fetch_barcode_ups_map(mysqli $db, array $jobNos): array {
     return $map;
 }
 
-function fg_decode_assoc($raw): array {
-    $decoded = json_decode((string)$raw, true);
+function fg_decode_assoc($raw): array
+{
+    $decoded = json_decode((string) $raw, true);
     return is_array($decoded) ? $decoded : [];
 }
 
-function fg_format_measure($value, string $suffix = ''): string {
-    $raw = trim((string)$value);
+function fg_format_measure($value, string $suffix = ''): string
+{
+    $raw = trim((string) $value);
     if ($raw === '') {
         return '';
     }
     if (preg_match('/-?[0-9]+(?:\.[0-9]+)?/', $raw, $m)) {
-        $num = rtrim(rtrim(number_format((float)$m[0], 3, '.', ''), '0'), '.');
+        $num = rtrim(rtrim(number_format((float) $m[0], 3, '.', ''), '0'), '.');
         return $suffix !== '' ? ($num . ' ' . $suffix) : $num;
     }
     return $raw;
 }
 
-function fg_first_numeric($value): float {
-    $raw = trim((string)$value);
+function fg_first_numeric($value): float
+{
+    $raw = trim((string) $value);
     if ($raw === '') {
         return 0.0;
     }
@@ -369,7 +389,8 @@ function fg_first_numeric($value): float {
     return 0.0;
 }
 
-function fg_parse_label_dimensions(string $text): array {
+function fg_parse_label_dimensions(string $text): array
+{
     $raw = trim($text);
     if ($raw === '') {
         return ['width' => '', 'length' => ''];
@@ -383,10 +404,11 @@ function fg_parse_label_dimensions(string $text): array {
     return ['width' => '', 'length' => ''];
 }
 
-function fg_fetch_printing_label_context(mysqli $db, array $jobNos): array {
+function fg_fetch_printing_label_context(mysqli $db, array $jobNos): array
+{
     $clean = [];
     foreach ($jobNos as $jobNo) {
-        $value = trim((string)$jobNo);
+        $value = trim((string) $jobNo);
         if ($value !== '') {
             $clean[$value] = true;
         }
@@ -415,7 +437,7 @@ function fg_fetch_printing_label_context(mysqli $db, array $jobNos): array {
 
     $map = [];
     foreach ($rows as $row) {
-        $jobNo = trim((string)($row['job_no'] ?? ''));
+        $jobNo = trim((string) ($row['job_no'] ?? ''));
         if ($jobNo === '' || isset($map[$jobNo])) {
             continue;
         }
@@ -425,7 +447,7 @@ function fg_fetch_printing_label_context(mysqli $db, array $jobNos): array {
         $rollOverrides = is_array($rollPayload['roll_overrides'] ?? null) ? $rollPayload['roll_overrides'] : [];
         $mixedPayload = is_array($rollPayload['mixed'] ?? null) ? $rollPayload['mixed'] : [];
 
-        $labelDims = fg_parse_label_dimensions((string)($planExtra['size'] ?? ($planExtra['label_size'] ?? '')));
+        $labelDims = fg_parse_label_dimensions((string) ($planExtra['size'] ?? ($planExtra['label_size'] ?? '')));
         $packedQty = fg_decimal($row['packed_qty'] ?? 0);
         $looseQty = fg_decimal($row['loose_qty'] ?? 0);
         $pcsPerRoll = 0.0;
@@ -447,7 +469,7 @@ function fg_fetch_printing_label_context(mysqli $db, array $jobNos): array {
         }
 
         if ($pcsPerRoll <= 0) {
-            $pcsPerRoll = fg_first_numeric((string)($planExtra['qty_per_roll'] ?? ''));
+            $pcsPerRoll = fg_first_numeric((string) ($planExtra['qty_per_roll'] ?? ''));
         }
 
         $displayRollCount = fg_decimal($rollPayload['total_rolls'] ?? 0);
@@ -458,7 +480,7 @@ function fg_fetch_printing_label_context(mysqli $db, array $jobNos): array {
             $displayRollCount = floor($packedQty / $pcsPerRoll);
         }
 
-        $cartonCount = max(0, (int)floor((float)($row['cartons_count'] ?? 0)));
+        $cartonCount = max(0, (int) floor((float) ($row['cartons_count'] ?? 0)));
         $mixedExtraRolls = fg_decimal($mixedPayload['mixed_extra_rolls'] ?? 0);
         $netQty = max(0.0, $packedQty - $looseQty);
         if ($mixedExtraRolls > 0 && $pcsPerRoll > 0) {
@@ -474,15 +496,15 @@ function fg_fetch_printing_label_context(mysqli $db, array $jobNos): array {
         $afterPackingQty = max(0.0, $packedQty - ($looseQty * $pcsPerRoll));
 
         $map[$jobNo] = [
-            'paper_size' => trim((string)($planExtra['paper_size'] ?? '')),
+            'paper_size' => trim((string) ($planExtra['paper_size'] ?? '')),
             'width' => $labelDims['width'],
             'length' => $labelDims['length'],
-            'mtrs' => fg_format_measure((string)($planExtra['allocate_mtrs'] ?? ($planExtra['mtrs'] ?? ($planExtra['meter'] ?? ''))), 'mtr'),
-            'direction' => trim((string)($planExtra['roll_direction'] ?? ($planExtra['direction'] ?? ''))),
+            'mtrs' => fg_format_measure((string) ($planExtra['allocate_mtrs'] ?? ($planExtra['mtrs'] ?? ($planExtra['meter'] ?? ''))), 'mtr'),
+            'direction' => trim((string) ($planExtra['roll_direction'] ?? ($planExtra['direction'] ?? ''))),
             'qty_per_roll_actual' => $pcsPerRoll > 0 ? rtrim(rtrim(number_format($pcsPerRoll, 3, '.', ''), '0'), '.') : '',
             'display_roll_count' => $displayRollCount > 0 ? rtrim(rtrim(number_format($displayRollCount, 3, '.', ''), '0'), '.') : '',
             'display_per_carton' => $displayPerCarton > 0 ? rtrim(rtrim(number_format($displayPerCarton, 3, '.', ''), '0'), '.') : '',
-            'carton' => $cartonCount > 0 ? (string)$cartonCount : '',
+            'carton' => $cartonCount > 0 ? (string) $cartonCount : '',
             'after_packing_qty' => rtrim(rtrim(number_format($afterPackingQty, 3, '.', ''), '0'), '.'),
             // NOTE: current_total and available_for_dispatch are intentionally NOT set here.
             // The JS calculates these from the actual finished_goods_stock.quantity (via
@@ -494,7 +516,8 @@ function fg_fetch_printing_label_context(mysqli $db, array $jobNos): array {
     return $map;
 }
 
-function fg_insert_row(mysqli $db, array $row, int $userId): bool {
+function fg_insert_row(mysqli $db, array $row, int $userId): bool
+{
     $category = fg_clean_text($row['category'] ?? '', 60);
     if ($category === '') {
         return false;
@@ -505,12 +528,13 @@ function fg_insert_row(mysqli $db, array $row, int $userId): bool {
     $itemCode = fg_clean_text($row['item_code'] ?? '', 120);
     $size = fg_clean_text($row['size'] ?? '', 120);
     $gsm = fg_clean_text($row['gsm'] ?? '', 60);
-    $quantity = fg_decimal($row['quantity'] ?? 0);
+    $rawQty = $row['quantity'] ?? null;
+    $quantity = ($rawQty === null || $rawQty === '') ? 500.0 : fg_decimal($rawQty);
     $unit = fg_clean_text($row['unit'] ?? '', 30);
     $location = fg_clean_text($row['location'] ?? '', 120);
     $batchNo = fg_clean_text($row['batch_no'] ?? '', 120);
     $dateValue = fg_parse_date($row['date'] ?? '');
-    $remarks = trim((string)($row['remarks'] ?? ''));
+    $remarks = trim((string) ($row['remarks'] ?? ''));
 
     $stmt = $db->prepare("INSERT INTO finished_goods_stock
         (category, sub_type, item_name, item_code, size, gsm, quantity, unit, location, batch_no, date, remarks, created_by)
@@ -539,8 +563,9 @@ function fg_insert_row(mysqli $db, array $row, int $userId): bool {
     return $stmt->execute();
 }
 
-function fg_resolve_row_id(mysqli $db, array $payload): int {
-    $id = (int)($payload['id'] ?? 0);
+function fg_resolve_row_id(mysqli $db, array $payload): int
+{
+    $id = (int) ($payload['id'] ?? 0);
     if ($id > 0) {
         return $id;
     }
@@ -602,10 +627,11 @@ function fg_resolve_row_id(mysqli $db, array $payload): int {
     }
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
-    return (int)($row['id'] ?? 0);
+    return (int) ($row['id'] ?? 0);
 }
 
-function fg_apply_deduction(mysqli $db, int $id, float $deductQty, bool $strictMode, int $userId, string $referenceNo = '', string $reason = ''): array {
+function fg_apply_deduction(mysqli $db, int $id, float $deductQty, bool $strictMode, int $userId, string $referenceNo = '', string $reason = ''): array
+{
     $stmt = $db->prepare('SELECT id, category, quantity FROM finished_goods_stock WHERE id = ? FOR UPDATE');
     if (!$stmt) {
         return ['ok' => false, 'error' => 'Unable to prepare quantity lock query.'];
@@ -617,8 +643,8 @@ function fg_apply_deduction(mysqli $db, int $id, float $deductQty, bool $strictM
         return ['ok' => false, 'error' => 'Stock row not found.'];
     }
 
-    $currentQty = (float)($row['quantity'] ?? 0);
-    $category = (string)($row['category'] ?? '');
+    $currentQty = (float) ($row['quantity'] ?? 0);
+    $category = (string) ($row['category'] ?? '');
     if ($deductQty <= 0) {
         return ['ok' => false, 'error' => 'Deduct quantity must be greater than zero.'];
     }
@@ -661,7 +687,7 @@ function fg_apply_deduction(mysqli $db, int $id, float $deductQty, bool $strictM
 fg_ensure_table($db);
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-$action = trim((string)($_REQUEST['action'] ?? ''));
+$action = trim((string) ($_REQUEST['action'] ?? ''));
 if ($action === '') {
     fg_json(400, ['ok' => false, 'error' => 'Missing action.']);
 }
@@ -673,7 +699,7 @@ if ($method === 'POST') {
     }
 }
 
-$userId = (int)($_SESSION['user_id'] ?? 0);
+$userId = (int) ($_SESSION['user_id'] ?? 0);
 
 if ($action === 'get_prc_suggestions') {
     $res = $db->query("SELECT id, item_name, item, width_mm, length_mtr, paper_type, gsm, dia, core, size, core_type FROM paper_roll_concept ORDER BY sl_no ASC, id ASC");
@@ -693,7 +719,7 @@ if ($action === 'get_tab_counts') {
         }
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
-        $counts[$cat] = (int)($row['cnt'] ?? 0);
+        $counts[$cat] = (int) ($row['cnt'] ?? 0);
     }
     fg_json(200, ['ok' => true, 'counts' => $counts]);
 }
@@ -729,7 +755,7 @@ if ($action === 'get_period_report') {
         $inwardStmt->bind_param('sss', $category, $fromDate, $toDate);
     }
     $inwardStmt->execute();
-    $inward = (float)(($inwardStmt->get_result()->fetch_assoc() ?: ['inward_qty' => 0])['inward_qty'] ?? 0);
+    $inward = (float) (($inwardStmt->get_result()->fetch_assoc() ?: ['inward_qty' => 0])['inward_qty'] ?? 0);
 
     // Dispatch during period from deduction logs
     if (count($reportCategories) === 2) {
@@ -746,7 +772,7 @@ if ($action === 'get_period_report') {
         $dispatchStmt->bind_param('sss', $category, $fromDate, $toDate);
     }
     $dispatchStmt->execute();
-    $dispatch = (float)(($dispatchStmt->get_result()->fetch_assoc() ?: ['dispatch_qty' => 0])['dispatch_qty'] ?? 0);
+    $dispatch = (float) (($dispatchStmt->get_result()->fetch_assoc() ?: ['dispatch_qty' => 0])['dispatch_qty'] ?? 0);
 
     // Closing stock (current)
     if (count($reportCategories) === 2) {
@@ -761,7 +787,7 @@ if ($action === 'get_period_report') {
         $closingStmt->bind_param('s', $category);
     }
     $closingStmt->execute();
-    $closing = (float)(($closingStmt->get_result()->fetch_assoc() ?: ['closing_qty' => 0])['closing_qty'] ?? 0);
+    $closing = (float) (($closingStmt->get_result()->fetch_assoc() ?: ['closing_qty' => 0])['closing_qty'] ?? 0);
 
     // Estimated opening stock for period
     $opening = $closing + $dispatch - $inward;
@@ -771,50 +797,50 @@ if ($action === 'get_period_report') {
         $monthlyInward = [];
         $monthlyDispatch = [];
 
-                if (count($reportCategories) === 2) {
-                        $mi = $db->prepare("SELECT DATE_FORMAT(DATE(COALESCE(date, created_at)),'%Y-%m') AS ym, COALESCE(SUM(quantity),0) AS qty
+        if (count($reportCategories) === 2) {
+            $mi = $db->prepare("SELECT DATE_FORMAT(DATE(COALESCE(date, created_at)),'%Y-%m') AS ym, COALESCE(SUM(quantity),0) AS qty
                                 FROM finished_goods_stock
                                 WHERE category IN (?, ?)
                                     AND DATE(COALESCE(date, created_at)) BETWEEN ? AND ?
                                 GROUP BY ym
                                 ORDER BY ym ASC");
-                        $mi->bind_param('ssss', $reportCategories[0], $reportCategories[1], $fromDate, $toDate);
-                } else {
-                        $mi = $db->prepare("SELECT DATE_FORMAT(DATE(COALESCE(date, created_at)),'%Y-%m') AS ym, COALESCE(SUM(quantity),0) AS qty
+            $mi->bind_param('ssss', $reportCategories[0], $reportCategories[1], $fromDate, $toDate);
+        } else {
+            $mi = $db->prepare("SELECT DATE_FORMAT(DATE(COALESCE(date, created_at)),'%Y-%m') AS ym, COALESCE(SUM(quantity),0) AS qty
                                 FROM finished_goods_stock
                                 WHERE category = ?
                                     AND DATE(COALESCE(date, created_at)) BETWEEN ? AND ?
                                 GROUP BY ym
                                 ORDER BY ym ASC");
-                        $mi->bind_param('sss', $category, $fromDate, $toDate);
-                }
+            $mi->bind_param('sss', $category, $fromDate, $toDate);
+        }
         $mi->execute();
         $miRes = $mi->get_result();
         while ($r = $miRes->fetch_assoc()) {
-            $monthlyInward[(string)$r['ym']] = (float)($r['qty'] ?? 0);
+            $monthlyInward[(string) $r['ym']] = (float) ($r['qty'] ?? 0);
         }
 
-                if (count($reportCategories) === 2) {
-                        $md = $db->prepare("SELECT DATE_FORMAT(DATE(created_at),'%Y-%m') AS ym, COALESCE(SUM(deducted_qty),0) AS qty
+        if (count($reportCategories) === 2) {
+            $md = $db->prepare("SELECT DATE_FORMAT(DATE(created_at),'%Y-%m') AS ym, COALESCE(SUM(deducted_qty),0) AS qty
                                 FROM finished_goods_dispatch_log
                                 WHERE category IN (?, ?)
                                     AND DATE(created_at) BETWEEN ? AND ?
                                 GROUP BY ym
                                 ORDER BY ym ASC");
-                        $md->bind_param('ssss', $reportCategories[0], $reportCategories[1], $fromDate, $toDate);
-                } else {
-                        $md = $db->prepare("SELECT DATE_FORMAT(DATE(created_at),'%Y-%m') AS ym, COALESCE(SUM(deducted_qty),0) AS qty
+            $md->bind_param('ssss', $reportCategories[0], $reportCategories[1], $fromDate, $toDate);
+        } else {
+            $md = $db->prepare("SELECT DATE_FORMAT(DATE(created_at),'%Y-%m') AS ym, COALESCE(SUM(deducted_qty),0) AS qty
                                 FROM finished_goods_dispatch_log
                                 WHERE category = ?
                                     AND DATE(created_at) BETWEEN ? AND ?
                                 GROUP BY ym
                                 ORDER BY ym ASC");
-                        $md->bind_param('sss', $category, $fromDate, $toDate);
-                }
+            $md->bind_param('sss', $category, $fromDate, $toDate);
+        }
         $md->execute();
         $mdRes = $md->get_result();
         while ($r2 = $mdRes->fetch_assoc()) {
-            $monthlyDispatch[(string)$r2['ym']] = (float)($r2['qty'] ?? 0);
+            $monthlyDispatch[(string) $r2['ym']] = (float) ($r2['qty'] ?? 0);
         }
 
         $cursor = new DateTime($fromDate);
@@ -826,8 +852,8 @@ if ($action === 'get_period_report') {
             $ym = $cursor->format('Y-m');
             $monthRows[] = [
                 'month' => $ym,
-                'inward' => (float)($monthlyInward[$ym] ?? 0),
-                'dispatch' => (float)($monthlyDispatch[$ym] ?? 0),
+                'inward' => (float) ($monthlyInward[$ym] ?? 0),
+                'dispatch' => (float) ($monthlyDispatch[$ym] ?? 0),
             ];
             $cursor->modify('+1 month');
         }
@@ -871,26 +897,26 @@ if ($action === 'get_stock') {
 
     if ($category === 'printing_label') {
         foreach ($rows as $idx => $row) {
-            if ((string)($row['category'] ?? '') === 'printing_roll') {
+            if ((string) ($row['category'] ?? '') === 'printing_roll') {
                 $rows[$idx]['category'] = 'printing_label';
             }
         }
 
         $jobNos = [];
         foreach ($rows as $row) {
-            $jobNo = trim((string)($row['batch_no'] ?? ''));
+            $jobNo = trim((string) ($row['batch_no'] ?? ''));
             if ($jobNo !== '') {
                 $jobNos[] = $jobNo;
             }
         }
         $labelContextMap = fg_fetch_printing_label_context($db, $jobNos);
         foreach ($rows as $idx => $row) {
-            $jobNo = trim((string)($row['batch_no'] ?? ''));
+            $jobNo = trim((string) ($row['batch_no'] ?? ''));
             if ($jobNo === '' || !isset($labelContextMap[$jobNo])) {
                 continue;
             }
             $context = $labelContextMap[$jobNo];
-            $parsed = json_decode((string)($row['remarks'] ?? ''), true);
+            $parsed = json_decode((string) ($row['remarks'] ?? ''), true);
             if (!is_array($parsed)) {
                 $parsed = ['note' => '', 'extra' => []];
             }
@@ -904,7 +930,7 @@ if ($action === 'get_stock') {
                 $parsed['extra'][$ctxKey] = $ctxValue;
             }
             if (!empty($context['paper_size'])) {
-                $rows[$idx]['size'] = (string)$context['paper_size'];
+                $rows[$idx]['size'] = (string) $context['paper_size'];
             }
             $rows[$idx]['remarks'] = json_encode($parsed, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         }
@@ -913,7 +939,7 @@ if ($action === 'get_stock') {
     if ($category === 'barcode') {
         $jobNos = [];
         foreach ($rows as $row) {
-            $jn = trim((string)($row['batch_no'] ?? ''));
+            $jn = trim((string) ($row['batch_no'] ?? ''));
             if ($jn !== '') {
                 $jobNos[] = $jn;
             }
@@ -925,7 +951,7 @@ if ($action === 'get_stock') {
         $barcodePackingMap = [];
         $cleanJobNos = [];
         foreach ($jobNos as $jn) {
-            $v = trim((string)$jn);
+            $v = trim((string) $jn);
             if ($v !== '') {
                 $cleanJobNos[$v] = true;
             }
@@ -941,7 +967,7 @@ if ($action === 'get_stock') {
                 $pRows = $pStmt->get_result()->fetch_all(MYSQLI_ASSOC);
                 $pStmt->close();
                 foreach ($pRows as $pRow) {
-                    $jn = trim((string)($pRow['job_no'] ?? ''));
+                    $jn = trim((string) ($pRow['job_no'] ?? ''));
                     if ($jn === '' || isset($barcodePackingMap[$jn])) {
                         continue;
                     }
@@ -950,12 +976,20 @@ if ($action === 'get_stock') {
                     $pcsPerRoll = 0.0;
                     $rollsPerCarton = 0.0;
                     foreach ($rollOverrides as $override) {
-                        if (!is_array($override)) { continue; }
-                        if ($pcsPerRoll <= 0) { $pcsPerRoll = fg_decimal($override['bpr'] ?? 0); }
-                        if ($rollsPerCarton <= 0) { $rollsPerCarton = fg_decimal($override['rolls_per_carton'] ?? ($override['rpc'] ?? 0)); }
-                        if ($pcsPerRoll > 0 && $rollsPerCarton > 0) { break; }
+                        if (!is_array($override)) {
+                            continue;
+                        }
+                        if ($pcsPerRoll <= 0) {
+                            $pcsPerRoll = fg_decimal($override['bpr'] ?? 0);
+                        }
+                        if ($rollsPerCarton <= 0) {
+                            $rollsPerCarton = fg_decimal($override['rolls_per_carton'] ?? ($override['rpc'] ?? 0));
+                        }
+                        if ($pcsPerRoll > 0 && $rollsPerCarton > 0) {
+                            break;
+                        }
                     }
-                    $cartonCount = max(0, (int)floor(fg_decimal($pRow['cartons_count'] ?? 0)));
+                    $cartonCount = max(0, (int) floor(fg_decimal($pRow['cartons_count'] ?? 0)));
                     // Use packed_qty (physical production) as the after_packing_qty.
                     // The old formula (rollsPerCarton * cartonCount * pcsPerRoll) was wrong
                     // because cartonCount includes mixed cartons but rollsPerCarton is the
@@ -967,14 +1001,14 @@ if ($action === 'get_stock') {
 
         foreach ($rows as $idx => $row) {
             $rows[$idx]['quantity'] = fg_barcode_display_quantity($row);
-            $jn = trim((string)($row['batch_no'] ?? ''));
+            $jn = trim((string) ($row['batch_no'] ?? ''));
             if ($jn !== '' && isset($upsMap[$jn])) {
-                $rows[$idx]['up_in_roll'] = (string)($upsMap[$jn]['up_in_roll'] ?? '');
-                $rows[$idx]['up_in_production'] = (string)($upsMap[$jn]['up_in_production'] ?? '');
+                $rows[$idx]['up_in_roll'] = (string) ($upsMap[$jn]['up_in_roll'] ?? '');
+                $rows[$idx]['up_in_production'] = (string) ($upsMap[$jn]['up_in_production'] ?? '');
             }
             // Merge after_packing_qty (full carton qty only) into remarks extra
             if ($jn !== '' && isset($barcodePackingMap[$jn]) && $barcodePackingMap[$jn] > 0) {
-                $parsed = json_decode((string)($row['remarks'] ?? ''), true);
+                $parsed = json_decode((string) ($row['remarks'] ?? ''), true);
                 if (!is_array($parsed)) {
                     $parsed = ['note' => '', 'extra' => []];
                 }
@@ -993,20 +1027,20 @@ if ($action === 'get_stock') {
         $idByKey = [];
         $labelByKey = [];
         foreach ($minRows as $mrow) {
-            $mSize = trim((string)($mrow['size'] ?? ''));
+            $mSize = trim((string) ($mrow['size'] ?? ''));
             if ($mSize === '') {
                 continue;
             }
             $mKey = strtolower(preg_replace('/\s+/', '', $mSize));
-            $minByKey[$mKey] = (int)($mrow['min_qty'] ?? 0);
-            $idByKey[$mKey] = (int)($mrow['id'] ?? 0);
+            $minByKey[$mKey] = (int) ($mrow['min_qty'] ?? 0);
+            $idByKey[$mKey] = (int) ($mrow['id'] ?? 0);
             $labelByKey[$mKey] = $mSize;
         }
 
         $qtyByKey = [];
         $presentKeys = [];
         foreach ($rows as $row) {
-            $sizeText = trim((string)($row['size'] ?? $row['item_name'] ?? ''));
+            $sizeText = trim((string) ($row['size'] ?? $row['item_name'] ?? ''));
             if ($sizeText === '') {
                 continue;
             }
@@ -1019,16 +1053,16 @@ if ($action === 'get_stock') {
 
         // Normalize each row's size to the canonical label so JS sees consistent strings.
         foreach ($rows as $idx => $row) {
-            $sizeText = trim((string)($row['size'] ?? $row['item_name'] ?? ''));
+            $sizeText = trim((string) ($row['size'] ?? $row['item_name'] ?? ''));
             $key = strtolower(preg_replace('/\s+/', '', $sizeText));
             if (isset($labelByKey[$key]) && $labelByKey[$key] !== $sizeText) {
                 $rows[$idx]['size'] = $labelByKey[$key];
                 $rows[$idx]['item_name'] = $labelByKey[$key];
                 $sizeText = $labelByKey[$key];
             }
-            $minQty = (int)($minByKey[$key] ?? 0);
-            $aggQty = (float)($qtyByKey[$key] ?? 0.0);
-            $rows[$idx]['carton_item_id'] = (int)($idByKey[$key] ?? 0);
+            $minQty = (int) ($minByKey[$key] ?? 0);
+            $aggQty = (float) ($qtyByKey[$key] ?? 0.0);
+            $rows[$idx]['carton_item_id'] = (int) ($idByKey[$key] ?? 0);
             $rows[$idx]['min_qty'] = $minQty;
             $rows[$idx]['stock_status'] = ($minQty > 0 && $aggQty < $minQty) ? 'Low Quantity' : 'In Stock';
         }
@@ -1037,17 +1071,17 @@ if ($action === 'get_stock') {
             if (isset($presentKeys[$key])) {
                 continue;
             }
-            $sizeLabel = (string)($labelByKey[$key] ?? $key);
+            $sizeLabel = (string) ($labelByKey[$key] ?? $key);
             $rows[] = [
-                'id' => (int)($idByKey[$key] ?? 0),
-                'carton_item_id' => (int)($idByKey[$key] ?? 0),
+                'id' => (int) ($idByKey[$key] ?? 0),
+                'carton_item_id' => (int) ($idByKey[$key] ?? 0),
                 'category' => 'carton',
                 'sub_type' => '',
                 'item_name' => $sizeLabel,
                 'item_code' => '',
                 'size' => $sizeLabel,
                 'gsm' => '',
-                'quantity' => 0,
+                'quantity' => 500,
                 'dispatch_qty_total' => 0,
                 'closing_stock' => 0,
                 'unit' => 'PCS',
@@ -1057,8 +1091,8 @@ if ($action === 'get_stock') {
                 'remarks' => '',
                 'created_by' => 0,
                 'created_at' => '',
-                'min_qty' => (int)$minQty,
-                'stock_status' => ((int)$minQty > 0) ? 'Low Quantity' : 'In Stock',
+                'min_qty' => (int) $minQty,
+                'stock_status' => ((int) $minQty > 0) ? 'Low Quantity' : 'In Stock',
             ];
         }
     }
@@ -1073,9 +1107,9 @@ if ($action === 'set_carton_min_qty') {
     }
 
     $payload = fg_get_payload();
-    $id = (int)($payload['id'] ?? 0);
+    $id = (int) ($payload['id'] ?? 0);
     $size = fg_clean_text($payload['size'] ?? '', 120);
-    $minQty = max(0, (int)($payload['min_qty'] ?? 0));
+    $minQty = max(0, (int) ($payload['min_qty'] ?? 0));
 
     if ($id <= 0 && $size === '') {
         fg_json(400, ['ok' => false, 'error' => 'Carton item id or size is required.']);
@@ -1103,7 +1137,7 @@ if ($action === 'set_carton_min_qty') {
                 $existsStmt->bind_param('i', $id);
                 $existsStmt->execute();
                 $existsRow = $existsStmt->get_result()->fetch_assoc();
-                $isSaved = (bool)$existsRow;
+                $isSaved = (bool) $existsRow;
                 $existsStmt->close();
             }
         }
@@ -1126,7 +1160,7 @@ if ($action === 'set_carton_min_qty') {
         $sel->close();
 
         if ($row) {
-            $foundId = (int)$row['id'];
+            $foundId = (int) $row['id'];
             $up = $db->prepare("UPDATE carton_items SET min_qty = ? WHERE id = ? LIMIT 1");
             if (!$up) {
                 fg_json(500, ['ok' => false, 'error' => 'Unable to prepare carton minimum update.']);
@@ -1181,18 +1215,18 @@ if ($action === 'get_summary' || $action === 'summary') {
     foreach ($rows as $row) {
         $qty = fg_decimal($row['quantity'] ?? 0);
         $totalQuantity += $qty;
-        $rowCategory = trim((string)($row['category'] ?? ''));
+        $rowCategory = trim((string) ($row['category'] ?? ''));
 
         // Sum carton count from extra data
         $extra = fg_mixed_parse_extra($row['remarks'] ?? '');
-        $cartonVal = (int)floor(fg_decimal($extra['carton'] ?? 0));
+        $cartonVal = (int) floor(fg_decimal($extra['carton'] ?? 0));
         if ($cartonVal <= 0) {
             // Fallback: compute from quantity using per_carton ratio
-            $rpc = (int)floor(fg_decimal(fg_mixed_pick($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
-            $bpr = (int)floor(fg_decimal(fg_mixed_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll'])));
+            $rpc = (int) floor(fg_decimal(fg_mixed_pick($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
+            $bpr = (int) floor(fg_decimal(fg_mixed_pick($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll'])));
             if ($rpc > 0 && $bpr > 0 && $qty > 0) {
-                $fullRolls = (int)floor($qty / $bpr);
-                $cartonVal = (int)floor($fullRolls / $rpc);
+                $fullRolls = (int) floor($qty / $bpr);
+                $cartonVal = (int) floor($fullRolls / $rpc);
             }
         }
         $totalCarton += $cartonVal;
@@ -1208,9 +1242,9 @@ if ($action === 'get_summary' || $action === 'summary') {
     fg_json(200, [
         'ok' => true,
         'summary' => [
-            'total_items' => (int)$totalItems,
+            'total_items' => (int) $totalItems,
             'total_quantity' => round($effectiveQuantity, 3),
-            'total_carton' => (int)$totalCarton,
+            'total_carton' => (int) $totalCarton,
             'raw_total_quantity' => round($totalQuantity, 3),
             'mixed_extra_quantity' => round($mixedExtra, 3),
         ],
@@ -1254,7 +1288,7 @@ if ($action === 'update_stock') {
     }
 
     $payload = fg_get_payload();
-    $id = (int)($payload['id'] ?? 0);
+    $id = (int) ($payload['id'] ?? 0);
     if ($id <= 0) {
         fg_json(400, ['ok' => false, 'error' => 'Invalid row id.']);
     }
@@ -1274,7 +1308,7 @@ if ($action === 'update_stock') {
     $location = fg_clean_text($payload['location'] ?? '', 120);
     $batchNo = fg_clean_text($payload['batch_no'] ?? '', 120);
     $dateValue = fg_parse_date($payload['date'] ?? '');
-    $remarks = trim((string)($payload['remarks'] ?? ''));
+    $remarks = trim((string) ($payload['remarks'] ?? ''));
 
     $targetId = $id;
 
@@ -1286,7 +1320,7 @@ if ($action === 'update_stock') {
         if ($checkStmt) {
             $checkStmt->bind_param('i', $targetId);
             $checkStmt->execute();
-            $isRealCartonRow = (bool)$checkStmt->get_result()->fetch_assoc();
+            $isRealCartonRow = (bool) $checkStmt->get_result()->fetch_assoc();
             $checkStmt->close();
         }
 
@@ -1306,7 +1340,7 @@ if ($action === 'update_stock') {
                     $resolved = $resolveStmt->get_result()->fetch_assoc();
                     $resolveStmt->close();
                     if ($resolved) {
-                        $targetId = (int)($resolved['id'] ?? 0);
+                        $targetId = (int) ($resolved['id'] ?? 0);
                     }
                 }
             }
@@ -1402,7 +1436,7 @@ if ($action === 'delete_stock') {
     }
 
     $payload = fg_get_payload();
-    $id = (int)($payload['id'] ?? 0);
+    $id = (int) ($payload['id'] ?? 0);
     if ($id <= 0) {
         fg_json(400, ['ok' => false, 'error' => 'Invalid row id.']);
     }
@@ -1438,7 +1472,7 @@ if ($action === 'delete_stock') {
             }
             $delStock->bind_param('s', $sizeKey);
             $delStock->execute();
-            $deletedStock = (int)$delStock->affected_rows;
+            $deletedStock = (int) $delStock->affected_rows;
             $delStock->close();
 
             // carton_stock has FK to carton_items (ON DELETE RESTRICT), so remove child rows first.
@@ -1458,7 +1492,7 @@ if ($action === 'delete_stock') {
             }
             $delMin->bind_param('s', $sizeKey);
             $delMin->execute();
-            $deletedCartonItem = (int)$delMin->affected_rows;
+            $deletedCartonItem = (int) $delMin->affected_rows;
             $delMin->close();
 
             if ($deletedStock < 1 && $deletedCartonItem < 1) {
@@ -1562,7 +1596,7 @@ if ($action === 'deduct_stock') {
     $payload = fg_get_payload();
     $id = fg_resolve_row_id($db, $payload);
     $deductQty = fg_decimal($payload['deduct_qty'] ?? 0);
-    $strictMode = (int)($payload['strict_mode'] ?? 1) === 1;
+    $strictMode = (int) ($payload['strict_mode'] ?? 1) === 1;
     $referenceNo = fg_clean_text($payload['reference_no'] ?? '', 120);
     $reason = fg_clean_text($payload['reason'] ?? '', 255);
 
@@ -1600,7 +1634,7 @@ if ($action === 'bulk_deduct_stock') {
         fg_json(400, ['ok' => false, 'error' => 'Bulk deduction rows are missing.']);
     }
 
-    $strictMode = (int)($payload['strict_mode'] ?? 1) === 1;
+    $strictMode = (int) ($payload['strict_mode'] ?? 1) === 1;
 
     $results = [];
     $db->begin_transaction();
@@ -1616,7 +1650,7 @@ if ($action === 'bulk_deduct_stock') {
 
         $id = fg_resolve_row_id($db, $row);
         $qty = fg_decimal($row['deduct_qty'] ?? 0);
-        $rowStrict = array_key_exists('strict_mode', $row) ? ((int)$row['strict_mode'] === 1) : $strictMode;
+        $rowStrict = array_key_exists('strict_mode', $row) ? ((int) $row['strict_mode'] === 1) : $strictMode;
         $referenceNo = fg_clean_text($row['reference_no'] ?? '', 120);
         $reason = fg_clean_text($row['reason'] ?? '', 255);
 

@@ -51,6 +51,38 @@ $jobs = $db->query("
     LIMIT 200
 ")->fetch_all(MYSQLI_ASSOC);
 
+$finishStates = ['Closed', 'Finalized', 'Completed', 'QC Passed'];
+$planIds = [];
+foreach ($jobs as $j) {
+    $pid = (int)($j['planning_id'] ?? 0);
+    if ($pid > 0) {
+        $planIds[$pid] = true;
+    }
+}
+$planIds = array_keys($planIds);
+
+$minUnfinishedJobByPlan = [];
+if (!empty($planIds)) {
+    $ph = implode(',', array_fill(0, count($planIds), '?'));
+    $types = str_repeat('i', count($planIds));
+    $finishPlaceholders = "'" . implode("','", $finishStates) . "'";
+    $sqlUnfinished = "SELECT planning_id, MIN(id) AS min_unfinished_id 
+                      FROM jobs 
+                      WHERE planning_id IN ($ph) 
+                        AND status NOT IN ($finishPlaceholders)
+                        AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
+                      GROUP BY planning_id";
+    $stmtUnfinished = $db->prepare($sqlUnfinished);
+    if ($stmtUnfinished) {
+        $stmtUnfinished->bind_param($types, ...$planIds);
+        $stmtUnfinished->execute();
+        $resUnfinished = $stmtUnfinished->get_result();
+        while ($uRow = $resUnfinished->fetch_assoc()) {
+            $minUnfinishedJobByPlan[(int)$uRow['planning_id']] = (int)$uRow['min_unfinished_id'];
+        }
+    }
+}
+
 // Parse extra_data for each job
 foreach ($jobs as &$j) {
     $j['extra_data_parsed'] = json_decode($j['extra_data'] ?? '{}', true) ?: [];
@@ -341,8 +373,10 @@ include __DIR__ . '/../../../includes/header.php';
 .fp-header h1 i{font-size:1.6rem;color:var(--fp-brand)}
 .fp-header-meta{font-size:.75rem;color:#64748b;font-weight:600}
 .fp-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
-.fp-stat{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:12px;padding:16px 18px;display:flex;align-items:center;gap:14px;transition:box-shadow .15s}
+.fp-stat{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:12px;padding:16px 18px;display:flex;align-items:center;gap:14px;transition:all .15s;position:relative}
 .fp-stat:hover{box-shadow:0 4px 16px rgba(0,0,0,.06)}
+.fp-stat.active{border-color:var(--fp-brand,#8b5cf6);box-shadow:0 4px 16px rgba(139,92,246,.25);background:linear-gradient(135deg,#faf5ff,#fff)}
+.fp-stat.active::after{content:'';position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--fp-brand,#8b5cf6);border-radius:0 0 12px 12px}
 .fp-stat-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.2rem}
 .fp-stat-val{font-size:1.5rem;font-weight:900;line-height:1}
 .fp-stat-label{font-size:.65rem;font-weight:700;text-transform:uppercase;color:#94a3b8;letter-spacing:.04em;margin-top:2px}
@@ -350,7 +384,7 @@ include __DIR__ . '/../../../includes/header.php';
 .fp-search{padding:8px 14px;border:1px solid var(--border,#e2e8f0);border-radius:10px;font-size:.82rem;min-width:240px;outline:none;transition:border .15s}
 .fp-search:focus{border-color:var(--fp-brand)}
 .fp-filter-btn{padding:6px 14px;font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border:1px solid var(--border,#e2e8f0);background:#fff;border-radius:20px;cursor:pointer;transition:all .15s;color:#64748b}
-.fp-filter-btn.active{background:var(--fp-brand);border-color:var(--fp-brand);color:#fff}
+.fp-filter-btn.active{background:var(--fp-brand,#8b5cf6) !important;border-color:var(--fp-brand,#8b5cf6) !important;color:#fff !important;font-weight:900;box-shadow:0 2px 8px rgba(139,92,246,.35)}
 .fp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px}
 .fp-card{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:14px;overflow:hidden;transition:all .2s;border-left:4px solid var(--fp-brand);cursor:pointer}
 .fp-card:hover{box-shadow:0 8px 24px rgba(0,0,0,.07);transform:translateY(-2px)}
@@ -557,27 +591,27 @@ $completedJobs = count(array_filter($jobs, fn($j) => in_array($j['status'], ['Co
 $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
 ?>
 <div class="fp-stats no-print">
-  <div class="fp-stat" style="cursor:pointer" onclick="clickStatFilter('all')">
+  <div class="fp-stat" data-filter="all" style="cursor:pointer" onclick="clickStatFilter('all')">
     <div class="fp-stat-icon" style="background:#faf5ff;color:var(--fp-brand)"><i class="bi bi-printer"></i></div>
     <div><div class="fp-stat-val"><?= $totalJobs ?></div><div class="fp-stat-label">Total Print Jobs</div></div>
   </div>
-  <div class="fp-stat" style="cursor:pointer" onclick="clickStatFilter('Queued')">
+  <div class="fp-stat" data-filter="Queued" style="cursor:pointer" onclick="clickStatFilter('Queued')">
     <div class="fp-stat-icon" style="background:#f1f5f9;color:#64748b"><i class="bi bi-lock"></i></div>
     <div><div class="fp-stat-val"><?= $queuedJobs ?></div><div class="fp-stat-label">Queued</div></div>
   </div>
-  <div class="fp-stat" style="cursor:pointer" onclick="clickStatFilter('Pending')">
+  <div class="fp-stat active" data-filter="Pending" style="cursor:pointer" onclick="clickStatFilter('Pending')">
     <div class="fp-stat-icon" style="background:#fef3c7;color:#f59e0b"><i class="bi bi-hourglass-split"></i></div>
     <div><div class="fp-stat-val"><?= $pendingJobs ?></div><div class="fp-stat-label">Pending</div></div>
   </div>
-  <div class="fp-stat" style="cursor:pointer" onclick="clickStatFilter('Running')">
+  <div class="fp-stat" data-filter="Running" style="cursor:pointer" onclick="clickStatFilter('Running')">
     <div class="fp-stat-icon" style="background:#dbeafe;color:#3b82f6"><i class="bi bi-play-circle"></i></div>
     <div><div class="fp-stat-val"><?= $runningJobs ?></div><div class="fp-stat-label">Running</div></div>
   </div>
-  <div class="fp-stat" style="cursor:pointer" onclick="clickStatFilter('Request')">
+  <div class="fp-stat" data-filter="Request" style="cursor:pointer" onclick="clickStatFilter('Request')">
     <div class="fp-stat-icon" style="background:#fee2e2;color:#dc2626"><i class="bi bi-bell-fill"></i></div>
     <div><div class="fp-stat-val"><?= $requestTabCount ?></div><div class="fp-stat-label">Request</div></div>
   </div>
-  <div class="fp-stat" style="cursor:pointer" onclick="clickStatFilter('Completed')">
+  <div class="fp-stat" data-filter="Completed" style="cursor:pointer" onclick="clickStatFilter('Completed')">
     <div class="fp-stat-icon" style="background:#dcfce7;color:#16a34a"><i class="bi bi-check-circle"></i></div>
     <div><div class="fp-stat-val"><?= $completedJobs ?></div><div class="fp-stat-label">Completed</div></div>
   </div>
@@ -626,6 +660,10 @@ $queuedJobs = count(array_filter($jobs, fn($j) => $j['status'] === 'Queued'));
     // Sequencing gate: can only start if previous slitting job is finished
     $prevDone = true;
     if ($job['previous_job_id'] && $job['prev_job_status'] && !in_array($job['prev_job_status'], ['Completed','QC Passed','Closed','Finalized'])) {
+        $prevDone = false;
+    }
+    $planId = (int)($job['planning_id'] ?? 0);
+    if ($planId > 0 && isset($minUnfinishedJobByPlan[$planId]) && $minUnfinishedJobByPlan[$planId] < (int)$job['id']) {
         $prevDone = false;
     }
     $isWaitingAdditionalSlitting = !empty($job['extra_data_parsed']['flexo_waiting_additional_slitting']);
@@ -2035,8 +2073,8 @@ function operatorTabMatch(card, status) {
   const hasRequest = String(card.dataset.hasRequest || '0') === '1';
   const isWaitingSlitting = String(card.dataset.waitingSlitting || '0') === '1';
 
-  if (status === 'Queued') return lockState === 'locked';
-  if (status === 'Pending') return lockState !== 'locked' && (cardStatus === 'Pending' || cardStatus === 'Queued');
+  if (status === 'Queued') return lockState === 'locked' || cardStatus === 'Queued';
+  if (status === 'Pending') return lockState !== 'locked' && cardStatus === 'Pending';
   if (status === 'WaitingSlitting') return cardStatus === 'Pending' && isWaitingSlitting;
   if (status === 'Request') return cardStatus === 'Running' && hasRequest;
   if (status === 'all') return true;
@@ -2055,8 +2093,13 @@ function applyFPFilters() {
 // ─── Filters ────────────────────────────────────────────────
 function filterFP(status, btn) {
   activeStatusFilter = status;
+  const targetBtn = btn || document.querySelector(`.fp-filter-btn[data-filter="${status}"]`);
   document.querySelectorAll('.fp-filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+  if (targetBtn) targetBtn.classList.add('active');
+
+  document.querySelectorAll('.fp-stat').forEach(s => s.classList.remove('active'));
+  const targetStat = document.querySelector(`.fp-stat[data-filter="${status}"]`);
+  if (targetStat) targetStat.classList.add('active');
 
   const btnActive = document.getElementById('fpTabBtnActive');
   const btnHistory = document.getElementById('fpTabBtnHistory');
@@ -2067,15 +2110,7 @@ function filterFP(status, btn) {
 }
 
 function clickStatFilter(status) {
-  activeStatusFilter = status;
-  document.querySelectorAll('.fp-filter-btn').forEach(b => {
-    const filterKey = String(b.dataset.filter || b.textContent || '').toLowerCase().replace(/\s+/g, '');
-    const target = (status === 'all' ? 'all' : String(status || '').toLowerCase().replace(/\s+/g, ''));
-    b.classList.toggle('active', filterKey === target);
-  });
-  // Ensure active tab is on Job Cards
-  switchFPTab('active');
-  applyFPFilters();
+  filterFP(status);
 }
 
 document.getElementById('fpSearch').addEventListener('input', function() {

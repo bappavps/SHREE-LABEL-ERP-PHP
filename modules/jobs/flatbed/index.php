@@ -35,7 +35,7 @@ $dcHeightLabel = trim((string)($dcHeightLabel ?? '')) ?: 'Height';
 $dcPaperWidthLabel = trim((string)($dcPaperWidthLabel ?? '')) ?: 'Width (mm)';
 $dcShowPaperCompanyInDetails = isset($dcShowPaperCompanyInDetails) ? (bool)$dcShowPaperCompanyInDetails : true;
 $dcShowParentChildRollTables = isset($dcShowParentChildRollTables) ? (bool)$dcShowParentChildRollTables : false;
-$dcAutoFallbackToAllOnEmptyDefault = isset($dcAutoFallbackToAllOnEmptyDefault) ? (bool)$dcAutoFallbackToAllOnEmptyDefault : true;
+$dcAutoFallbackToAllOnEmptyDefault = isset($dcAutoFallbackToAllOnEmptyDefault) ? (bool)$dcAutoFallbackToAllOnEmptyDefault : false;
 $dcEnableBulkSelection = isset($dcEnableBulkSelection) ? (bool)$dcEnableBulkSelection : true;
 $dcCanManualRollEntry = isset($dcCanManualRollEntry)
   ? (bool)$dcCanManualRollEntry
@@ -180,6 +180,38 @@ if (!empty($jobParentRollNos)) {
 
 // ── Process jobs ──────────────────────────────────────────
 $finishStates = ['Closed', 'Finalized', 'Completed', 'QC Passed'];
+
+$planIds = [];
+foreach ($jobs as $j) {
+    $pid = (int)($j['planning_id'] ?? 0);
+    if ($pid > 0) {
+        $planIds[$pid] = true;
+    }
+}
+$planIds = array_keys($planIds);
+
+$minUnfinishedJobByPlan = [];
+if (!empty($planIds)) {
+    $ph = implode(',', array_fill(0, count($planIds), '?'));
+    $types = str_repeat('i', count($planIds));
+    $finishPlaceholders = "'" . implode("','", $finishStates) . "'";
+    $sqlUnfinished = "SELECT planning_id, MIN(id) AS min_unfinished_id 
+                      FROM jobs 
+                      WHERE planning_id IN ($ph) 
+                        AND status NOT IN ($finishPlaceholders)
+                        AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
+                      GROUP BY planning_id";
+    $stmtUnfinished = $db->prepare($sqlUnfinished);
+    if ($stmtUnfinished) {
+        $stmtUnfinished->bind_param($types, ...$planIds);
+        $stmtUnfinished->execute();
+        $resUnfinished = $stmtUnfinished->get_result();
+        while ($uRow = $resUnfinished->fetch_assoc()) {
+            $minUnfinishedJobByPlan[(int)$uRow['planning_id']] = (int)$uRow['min_unfinished_id'];
+        }
+    }
+}
+
 $dcToNumber = static function ($value): float {
   return (float)str_replace(',', '', trim((string)$value));
 };
@@ -290,7 +322,17 @@ foreach ($jobs as &$job) {
     $job['display_job_name'] = dcDisplayJobName($job);
     $prevStatus = trim((string)($job['prev_job_status'] ?? ''));
     $hasPrev = (int)($job['previous_job_id'] ?? 0) > 0;
-    $job['upstream_ready'] = !$hasPrev || in_array($prevStatus, $finishStates, true);
+    $directPrevReady = !$hasPrev || in_array($prevStatus, $finishStates, true);
+
+    $planId = (int)($job['planning_id'] ?? 0);
+    $planChainReady = true;
+    if ($planId > 0 && isset($minUnfinishedJobByPlan[$planId])) {
+        if ($minUnfinishedJobByPlan[$planId] < (int)$job['id']) {
+            $planChainReady = false;
+        }
+    }
+
+    $job['upstream_ready'] = $directPrevReady && $planChainReady;
 
     // UI state rule:
     // - Locked cards must stay Queued.
@@ -1039,12 +1081,12 @@ include __DIR__ . '/../../../includes/header.php';
 
 <div class="dc-filters no-print">
   <input type="text" class="dc-search" id="dcSearch" placeholder="Search by job no, name, material&hellip;">
-  <button class="dc-filter-btn" onclick="filterJobs('all',this)">All</button>
-  <button class="dc-filter-btn" onclick="filterJobs('Queued',this)">Queued</button>
-  <button class="dc-filter-btn" onclick="filterJobs('Pending',this)">Pending</button>
-  <button class="dc-filter-btn" onclick="filterJobs('Running',this)">Running</button>
-  <button class="dc-filter-btn" onclick="filterJobs('Hold',this)">Hold</button>
-  <button class="dc-filter-btn" onclick="filterJobs('Finished',this)">Finished</button>
+  <button class="dc-filter-btn <?= $dcDefaultFilter === 'all' ? 'active' : '' ?>" onclick="filterJobs('all',this)">All</button>
+  <button class="dc-filter-btn <?= $dcDefaultFilter === 'Queued' ? 'active' : '' ?>" onclick="filterJobs('Queued',this)">Queued</button>
+  <button class="dc-filter-btn <?= strcasecmp($dcDefaultFilter, 'Pending') === 0 ? 'active' : '' ?>" onclick="filterJobs('Pending',this)">Pending</button>
+  <button class="dc-filter-btn <?= $dcDefaultFilter === 'Running' ? 'active' : '' ?>" onclick="filterJobs('Running',this)">Running</button>
+  <button class="dc-filter-btn <?= $dcDefaultFilter === 'Hold' ? 'active' : '' ?>" onclick="filterJobs('Hold',this)">Hold</button>
+  <button class="dc-filter-btn <?= $dcDefaultFilter === 'Finished' ? 'active' : '' ?>" onclick="filterJobs('Finished',this)">Finished</button>
 </div>
 
 <div class="dc-grid no-print" id="dcGrid">
@@ -1684,8 +1726,9 @@ function applyDCFilters() {
 
 function filterJobs(status, btn) {
   ACTIVE_DC_FILTER = normalizeFilterStatus(status);
+  const targetBtn = btn || findFilterButton(ACTIVE_DC_FILTER);
   document.querySelectorAll('.dc-filter-btn').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
+  if (targetBtn) targetBtn.classList.add('active');
   updateStatBoxes(ACTIVE_DC_FILTER);
   applyDCFilters();
 }

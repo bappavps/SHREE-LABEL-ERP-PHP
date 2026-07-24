@@ -62,6 +62,38 @@ $jobs = $jobsRes instanceof mysqli_result ? $jobsRes->fetch_all(MYSQLI_ASSOC) : 
 
 // ── Process jobs ──────────────────────────────────────────
 $finishStates = ['Closed', 'Finalized', 'Completed', 'QC Passed'];
+
+$planIds = [];
+foreach ($jobs as $j) {
+    $pid = (int)($j['planning_id'] ?? 0);
+    if ($pid > 0) {
+        $planIds[$pid] = true;
+    }
+}
+$planIds = array_keys($planIds);
+
+$minUnfinishedJobByPlan = [];
+if (!empty($planIds)) {
+    $ph = implode(',', array_fill(0, count($planIds), '?'));
+    $types = str_repeat('i', count($planIds));
+    $finishPlaceholders = "'" . implode("','", $finishStates) . "'";
+    $sqlUnfinished = "SELECT planning_id, MIN(id) AS min_unfinished_id 
+                      FROM jobs 
+                      WHERE planning_id IN ($ph) 
+                        AND status NOT IN ($finishPlaceholders)
+                        AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
+                      GROUP BY planning_id";
+    $stmtUnfinished = $db->prepare($sqlUnfinished);
+    if ($stmtUnfinished) {
+        $stmtUnfinished->bind_param($types, ...$planIds);
+        $stmtUnfinished->execute();
+        $resUnfinished = $stmtUnfinished->get_result();
+        while ($uRow = $resUnfinished->fetch_assoc()) {
+            $minUnfinishedJobByPlan[(int)$uRow['planning_id']] = (int)$uRow['min_unfinished_id'];
+        }
+    }
+}
+
 foreach ($jobs as &$job) {
     $job['extra_data_parsed'] = json_decode((string)($job['extra_data'] ?? '{}'), true) ?: [];
     $planningExtra = json_decode((string)($job['planning_extra_data'] ?? '{}'), true) ?: [];
@@ -87,7 +119,17 @@ foreach ($jobs as &$job) {
     $job['display_job_name'] = dcDisplayJobName($job);
     $prevStatus = trim((string)($job['prev_job_status'] ?? ''));
     $hasPrev = (int)($job['previous_job_id'] ?? 0) > 0;
-    $job['upstream_ready'] = !$hasPrev || in_array($prevStatus, $finishStates, true);
+    $directPrevReady = !$hasPrev || in_array($prevStatus, $finishStates, true);
+
+    $planId = (int)($job['planning_id'] ?? 0);
+    $planChainReady = true;
+    if ($planId > 0 && isset($minUnfinishedJobByPlan[$planId])) {
+        if ($minUnfinishedJobByPlan[$planId] < (int)$job['id']) {
+            $planChainReady = false;
+        }
+    }
+
+    $job['upstream_ready'] = $directPrevReady && $planChainReady;
 
     // UI state rule:
     // - Locked cards must stay Queued.
@@ -616,7 +658,7 @@ include __DIR__ . '/../../../includes/header.php';
   <input type="text" class="dc-search" id="dcSearch" placeholder="Search by job no, name, material&hellip;">
   <button class="dc-filter-btn" onclick="filterJobs('all',this)">All</button>
   <button class="dc-filter-btn" onclick="filterJobs('Queued',this)">Queued</button>
-  <button class="dc-filter-btn" onclick="filterJobs('Pending',this)">Pending</button>
+  <button class="dc-filter-btn active" onclick="filterJobs('Pending',this)">Pending</button>
   <button class="dc-filter-btn" onclick="filterJobs('Running',this)">Running</button>
   <button class="dc-filter-btn" onclick="filterJobs('Hold',this)">Hold</button>
   <button class="dc-filter-btn" onclick="filterJobs('Finished',this)">Finished</button>
@@ -727,10 +769,10 @@ include __DIR__ . '/../../../includes/header.php';
     <div class="dc-card-foot">
       <div class="dc-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
       <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
-        <button class="ht-act-btn" onclick="openJobDetail(<?= (int)$h['id'] ?>)" title="View"><i class="bi bi-eye"></i></button>
-        <button class="ht-act-btn ht-print" onclick="printJobCard(<?= (int)$h['id'] ?>)" title="Print"><i class="bi bi-printer"></i></button>
+        <button class="ht-act-btn" onclick="openJobDetail(<?= (int)$job['id'] ?>)" title="View"><i class="bi bi-eye"></i></button>
+        <button class="ht-act-btn ht-print" onclick="printJobCard(<?= (int)$job['id'] ?>)" title="Print"><i class="bi bi-printer"></i></button>
         <?php if ($canDeleteJobs): ?>
-        <button class="ht-act-btn ht-delete" onclick="deleteJob(<?= (int)$h['id'] ?>)" title="Delete"><i class="bi bi-trash"></i></button>
+        <button class="ht-act-btn ht-delete" onclick="deleteJob(<?= (int)$job['id'] ?>)" title="Delete"><i class="bi bi-trash"></i></button>
         <?php endif; ?>
       </div>
     </div>
@@ -963,8 +1005,9 @@ function applyDCFilters() {
 
 function filterJobs(status, btn) {
   ACTIVE_DC_FILTER = status;
+  const targetBtn = btn || Array.from(document.querySelectorAll('.dc-filter-btn')).find(b => b.textContent.trim() === status || (b.getAttribute('onclick') && b.getAttribute('onclick').includes("'" + status + "'")));
   document.querySelectorAll('.dc-filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+  if (targetBtn) targetBtn.classList.add('active');
   updateStatBoxes(status);
   applyDCFilters();
 }
