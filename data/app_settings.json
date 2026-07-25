@@ -100,7 +100,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 6
+                "counter": 7
             },
             "sales_order": {
                 "prefix": "SO",
@@ -144,7 +144,7 @@
             },
             "label_slitting_job": {
                 "prefix": "LSL",
-                "counter": 2
+                "counter": 3
             },
             "barcode_job": {
                 "prefix": "BRC-BAR",

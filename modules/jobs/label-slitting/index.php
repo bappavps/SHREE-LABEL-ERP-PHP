@@ -1715,10 +1715,7 @@ function buildDCExtraDataFromForm(form) {
     label_slitting_notes_text: form.querySelector('[name=label_slitting_notes_text]')?.value || '',
     label_slitting_photo_path: _lastPhotoPath,
     label_slitting_voice_note_path: _lastVoicePath,
-    label_slitting_submitted_at: new Date().toISOString(),
-    finished_production_flag: 1,
-    finished_label_flag: 1,
-    finished_production_at: new Date().toISOString()
+    label_slitting_submitted_at: new Date().toISOString()
   };
 }
 
