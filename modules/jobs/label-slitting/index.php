@@ -77,7 +77,7 @@ if (!empty($planIds)) {
     $ph = implode(',', array_fill(0, count($planIds), '?'));
     $types = str_repeat('i', count($planIds));
     $finishPlaceholders = "'" . implode("','", $finishStates) . "'";
-    $sqlUnfinished = "SELECT planning_id, id, LOWER(COALESCE(department, job_type, '')) AS dept 
+    $sqlUnfinished = "SELECT planning_id, id, LOWER(COALESCE(department, job_type, '')) AS dept, extra_data 
                       FROM jobs 
                       WHERE planning_id IN ($ph) 
                         AND status NOT IN ($finishPlaceholders)
@@ -89,6 +89,14 @@ if (!empty($planIds)) {
         $stmtUnfinished->execute();
         $resUnfinished = $stmtUnfinished->get_result();
         while ($uRow = $resUnfinished->fetch_assoc()) {
+            $uExtra = json_decode((string)($uRow['extra_data'] ?? '{}'), true) ?: [];
+            $uHasFinished = (int)($uExtra['finished_production_flag'] ?? 0) === 1
+                         || (int)($uExtra['finished_label_flag'] ?? 0) === 1
+                         || (int)($uExtra['finished_barcode_flag'] ?? 0) === 1
+                         || !empty($uExtra['label_slitting_submitted_at']);
+            if ($uHasFinished) {
+                continue;
+            }
             $pid = (int)$uRow['planning_id'];
             if (!isset($unfinishedJobsByPlan[$pid])) {
                 $unfinishedJobsByPlan[$pid] = [];
@@ -156,15 +164,26 @@ foreach ($jobs as &$job) {
     $job['upstream_ready'] = $directPrevReady && $planChainReady;
 
     // UI state rule:
+    // - Finished jobs (by status or extra_data completion flag) must stay Finished.
     // - Locked cards must stay Queued.
     // - Unlocked queued cards should move to Pending so operator can Start.
     $normalizedStatus = trim((string)($job['status'] ?? ''));
-    if (!$job['upstream_ready']) {
-      $job['status'] = 'Queued';
-    } elseif (strcasecmp($normalizedStatus, 'Queued') === 0) {
-      $job['status'] = 'Pending';
+    $extraParsed = $job['extra_data_parsed'] ?? [];
+    $hasFinishedFlag = (int)($extraParsed['finished_production_flag'] ?? 0) === 1
+                    || (int)($extraParsed['finished_label_flag'] ?? 0) === 1
+                    || (int)($extraParsed['finished_barcode_flag'] ?? 0) === 1
+                    || !empty($extraParsed['label_slitting_submitted_at']);
+
+    if (in_array($normalizedStatus, $finishStates, true)) {
+        $job['status'] = $normalizedStatus;
+    } elseif ($hasFinishedFlag) {
+        $job['status'] = 'Completed';
+    } elseif (!$job['upstream_ready']) {
+        $job['status'] = 'Queued';
+    } elseif (strcasecmp($normalizedStatus, 'Queued') === 0 || $normalizedStatus === '') {
+        $job['status'] = 'Pending';
     } else {
-      $job['status'] = $normalizedStatus;
+        $job['status'] = $normalizedStatus;
     }
 
     // ── Parse previous job extra_data (printing/barcode production qty) ──
@@ -392,7 +411,7 @@ $queuedCount  = safeCountQueryDC($db, $dcCountBase . " AND j.status = 'Queued'")
 $pendingCount = safeCountQueryDC($db, $dcCountBase . " AND j.status = 'Pending'");
 $runningCount = safeCountQueryDC($db, $dcCountBase . " AND j.status = 'Running'");
 $holdCount    = safeCountQueryDC($db, $dcCountBase . " AND j.status IN ('Hold','Hold for Payment','Hold for Approval')");
-$finishedCount = safeCountQueryDC($db, $dcCountBase . " AND j.status IN ('Closed','Finalized','Completed','QC Passed')");
+$finishedCount = $historyCount;
 
 $csrf = generateCSRF();
 include __DIR__ . '/../../../includes/header.php';
@@ -1686,15 +1705,20 @@ function toggleVoiceRecord(jobId) {
 // ═══ EXTRA DATA FORM ═══
 function buildDCExtraDataFromForm(form) {
   if (!form) return null;
+  const mtrVal = form.querySelector('[name=label_slitting_mtr_in_one_roll]')?.value;
   return {
     label_slitting_qty_in_roll: form.querySelector('[name=label_slitting_qty_in_roll]')?.value || '',
     label_slitting_total_roll: form.querySelector('[name=label_slitting_total_roll]')?.value || '',
     label_slitting_total_production: form.querySelector('[name=label_slitting_total_production]')?.value || '',
     label_slitting_wastage_percentage: form.querySelector('[name=label_slitting_wastage_percentage]')?.value || '',
+    label_slitting_mtr_in_one_roll: mtrVal !== undefined && mtrVal !== '' ? mtrVal : '0',
     label_slitting_notes_text: form.querySelector('[name=label_slitting_notes_text]')?.value || '',
     label_slitting_photo_path: _lastPhotoPath,
     label_slitting_voice_note_path: _lastVoicePath,
-    label_slitting_submitted_at: new Date().toISOString()
+    label_slitting_submitted_at: new Date().toISOString(),
+    finished_production_flag: 1,
+    finished_label_flag: 1,
+    finished_production_at: new Date().toISOString()
   };
 }
 
@@ -1946,6 +1970,7 @@ async function openJobDetail(id, mode) {
     const totalRoll = extra.label_slitting_total_roll || '';
     const totalProduction = extra.label_slitting_total_production || '';
     const wastagePct = extra.label_slitting_wastage_percentage || '';
+    const mtrInOneRoll = extra.label_slitting_mtr_in_one_roll !== undefined && extra.label_slitting_mtr_in_one_roll !== '' ? extra.label_slitting_mtr_in_one_roll : '0';
     const dcNotes = extra.label_slitting_notes_text || '';
     const voiceOriginal = extra.voice_input_original || '';
     const voiceEnglish = extra.voice_input_english || '';
@@ -1958,6 +1983,7 @@ async function openJobDetail(id, mode) {
       <div class="dc-op-field"><label>Total Roll</label><div class="fv">${esc(totalRoll || '—')}</div></div>
       <div class="dc-op-field"><label>Toral Production</label><div class="fv">${esc(totalProduction || '—')}</div></div>
       <div class="dc-op-field"><label>Wastage Percentage</label><div class="fv" style="color:#dc2626;font-weight:900">${esc(wastagePct ? (wastagePct + '%') : '—')}</div></div>
+      <div class="dc-op-field"><label>Mtr in One Roll</label><div class="fv" style="font-weight:800;color:var(--dc-brand)">${esc(mtrInOneRoll)}</div></div>
     </div>`;
 
     if (voiceOriginal || voiceEnglish) {
@@ -1982,6 +2008,7 @@ async function openJobDetail(id, mode) {
     const defaultQtyInRoll = extra.label_slitting_qty_in_roll || job.planning_qty_per_roll || '';
     const defaultTotalProduction = extra.label_slitting_total_production || job.prev_actual_qty || '';
     const defaultTotalRoll = extra.label_slitting_total_roll || (defaultQtyInRoll && defaultTotalProduction ? Math.ceil(Number(defaultTotalProduction) / Number(defaultQtyInRoll)) : '');
+    const defaultMtrInOneRoll = extra.label_slitting_mtr_in_one_roll !== undefined && extra.label_slitting_mtr_in_one_roll !== '' ? extra.label_slitting_mtr_in_one_roll : '0';
 
     html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-pencil-square"></i> Operator Data — Fill Before Completing</div>
     <form id="dm-operator-form" class="dc-op-b" style="display:grid;gap:10px">
@@ -1990,6 +2017,7 @@ async function openJobDetail(id, mode) {
         <div class="dc-op-field"><label>Total Roll</label><input type="number" min="0" step="1" name="label_slitting_total_roll" value="${esc(defaultTotalRoll)}" readonly style="background:#f8fafc"></div>
         <div class="dc-op-field"><label>Toral Production</label><input type="number" min="0" step="1" name="label_slitting_total_production" value="${esc(defaultTotalProduction)}" oninput="calcLabelSlittingWastage(this.form, ${prevProduction});calcLabelSlittingTotalRoll(this.form)"></div>
         <div class="dc-op-field"><label>Wastage Percentage</label><input type="number" min="0" step="0.01" name="label_slitting_wastage_percentage" value="${esc(extra.label_slitting_wastage_percentage || computedWastage)}" readonly style="background:#f8fafc"></div>
+        <div class="dc-op-field"><label>Mtr in One Roll</label><input type="number" min="0" step="0.01" name="label_slitting_mtr_in_one_roll" value="${esc(defaultMtrInOneRoll)}"></div>
       </div>
       <div class="dc-op-field"><label>Notes</label><textarea name="label_slitting_notes_text">${esc(extra.label_slitting_notes_text || '')}</textarea></div>
     </form></div>`;
@@ -2279,6 +2307,7 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
         <table style="width:100%;border-collapse:collapse;font-size:.72rem">
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Quantiry in roll</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.label_slitting_qty_in_roll || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Total Roll</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.label_slitting_total_roll || '—')}</td></tr>
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Toral Production</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.label_slitting_total_production || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Wastage Percentage</td><td style="padding:5px 7px;border:1px solid #cbd5e1;color:#dc2626;font-weight:800">${esc(extra.label_slitting_wastage_percentage ? (extra.label_slitting_wastage_percentage + '%') : '—')}</td></tr>
+          <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Mtr in One Roll</td><td colspan="3" style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:800">${esc(extra.label_slitting_mtr_in_one_roll !== undefined && extra.label_slitting_mtr_in_one_roll !== '' ? extra.label_slitting_mtr_in_one_roll : '0')}</td></tr>
           ${(() => { const pq = Number(job.planning_order_qty || 0); const tp = Number(extra.label_slitting_total_production || 0); const totalWastagePct = pq > 0 && tp > 0 ? (((pq - tp) / pq) * 100).toFixed(1) + '%' : ''; return totalWastagePct ? `<tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#fef2f2;font-weight:800;color:#dc2626">Total Wastage (%)</td><td colspan="3" style="padding:5px 7px;border:1px solid #cbd5e1;color:#dc2626;font-weight:900">${esc(totalWastagePct)}</td></tr>` : ''; })()}
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">Notes</td><td colspan="3" style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.label_slitting_notes_text || '—')}</td></tr>
         </table>

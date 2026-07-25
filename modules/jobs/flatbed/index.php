@@ -2518,7 +2518,8 @@ include __DIR__ . '/../../../includes/header.php';
             <?php endif; ?>
             <?php if ($isLocked): ?>
               <div class="dc-gate"><i class="bi bi-lock-fill"></i> Upstream job not done yet. Prev:
-                <?= e($job['prev_job_no'] ?: 'N/A') ?></div>
+                <?= e($job['prev_job_no'] ?: 'N/A') ?>
+              </div>
             <?php endif; ?>
           </div>
           <div class="dc-card-foot">
