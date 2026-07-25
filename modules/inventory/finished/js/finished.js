@@ -662,8 +662,8 @@
       return extraPick(['mtrs', 'meter']);
     }
     if (key === 'qty') {
-      // For printing_label, use actual DB quantity to avoid mixed-extra unit mismatch.
-      if (fg_state.activeTab === 'printing_label') {
+      // For printing_label, barcode, pos_paper_roll, one_ply, and two_ply, use actual DB quantity to avoid mixed-extra unit mismatch.
+      if (fg_state.activeTab === 'printing_label' || fg_state.activeTab === 'barcode' || fg_state.activeTab === 'pos_paper_roll' || fg_state.activeTab === 'one_ply' || fg_state.activeTab === 'two_ply') {
         return fmtQty(fg_num(row.quantity));
       }
       return fmtQty(mixedAdjustedTotal().packed_net);
@@ -803,18 +803,15 @@
       return fmtQty(mixedAdjustedTotal().packed_net);
     }
     if (key === 'current_total') {
-      // For printing_label and barcode use the raw DB quantity directly — the
-      // mixed-extra calculation mixes roll-count with piece-count and gives
-      // wrong numbers. For barcode, quantity already stores the full-carton-only
-      // value set by the packing API, so mixedAdjustedTotal() should not
-      // subtract any mixed extra from it.
-      if (fg_state.activeTab === 'printing_label' || fg_state.activeTab === 'barcode') {
+      // For paper roll, label, and barcode tabs use the raw DB quantity directly — the
+      // stored quantity represents actual available stock in Finished Goods.
+      if (fg_state.activeTab === 'printing_label' || fg_state.activeTab === 'barcode' || fg_state.activeTab === 'pos_paper_roll' || fg_state.activeTab === 'one_ply' || fg_state.activeTab === 'two_ply') {
         return fmtQty(fg_num(row.quantity));
       }
       return fmtQty(mixedAdjustedTotal().available_net);
     }
     if (key === 'available_for_dispatch') {
-      if (fg_state.activeTab === 'printing_label' || fg_state.activeTab === 'barcode') {
+      if (fg_state.activeTab === 'printing_label' || fg_state.activeTab === 'barcode' || fg_state.activeTab === 'pos_paper_roll' || fg_state.activeTab === 'one_ply' || fg_state.activeTab === 'two_ply') {
         return fmtQty(fg_num(row.quantity));
       }
       return fmtQty(mixedAdjustedTotal().available_net);
@@ -907,8 +904,10 @@
       // Calculate total excluded quantity
       var excludedQty = looseQty + (mixedExtraRolls * bpr);
       
-      if (excludedQty > 0 && storedQty > 0 && afterPackingQty > 0) {
-        var breakdownText = fg_escapeHtml(afterPackingQty) + ' (' + fg_escapeHtml(storedQty) + ' + ' + fg_escapeHtml(excludedQty) + ' loose/mixed)';
+      if (excludedQty > 0 && storedQty > 0) {
+        var physicalTotal = storedQty + excludedQty;
+        var displayQty = afterPackingQty >= physicalTotal ? afterPackingQty : physicalTotal;
+        var breakdownText = fg_escapeHtml(displayQty) + ' (' + fg_escapeHtml(storedQty) + ' + ' + fg_escapeHtml(excludedQty) + ' loose/mixed)';
         return '<span class="fg-qty-pill fg-qty-pill-packed">' + breakdownText + '</span>';
       }
       

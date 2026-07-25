@@ -487,13 +487,8 @@ function fg_fetch_printing_label_context(mysqli $db, array $jobNos): array
             $netQty = max(0.0, $netQty - ($mixedExtraRolls * $pcsPerRoll));
         }
 
-        // after_packing_qty = physical production minus loose pieces.
-        // The old formula (displayPerCarton * cartonCount * pcsPerRoll) was wrong when
-        // mixed cartons were enabled because cartonCount includes mixed cartons but
-        // displayPerCarton is the ORIGINAL per carton (not the mixed one), causing
-        // over-counting. Use packedQty (physical production) which already accounts
-        // for individual cartons, mixed cartons, and all rolls correctly.
-        $afterPackingQty = max(0.0, $packedQty - ($looseQty * $pcsPerRoll));
+        // after_packing_qty = physical production output from packing operator entry (packed_qty).
+        $afterPackingQty = $packedQty > 0 ? $packedQty : max(0.0, $packedQty - ($looseQty * $pcsPerRoll));
 
         $map[$jobNo] = [
             'paper_size' => trim((string) ($planExtra['paper_size'] ?? '')),

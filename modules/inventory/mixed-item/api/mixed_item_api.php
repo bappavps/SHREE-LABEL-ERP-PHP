@@ -343,6 +343,10 @@ function mi_fetch_rows(mysqli $db, string $category = ''): array {
         $perCarton = $calc['per_carton'] ?? '';
         $possible = $calc['possible_cartons'] ?? '';
 
+        $rawQty = mi_num($row['quantity'] ?? 0);
+        $afterPackingQty = mi_num(mi_pick($extra, ['after_packing_qty', 'packed_qty', 'total_production']));
+        $totalQty = $afterPackingQty > 0 ? $afterPackingQty : ($rawQty + $extraQty);
+
         $rows[] = [
             'id' => $cat . '-' . (int)$row['id'],
             'source_id' => (int)$row['id'],
@@ -354,7 +358,7 @@ function mi_fetch_rows(mysqli $db, string $category = ''): array {
             'gsm' => (string)($row['gsm'] ?? ''),
             'batch_no' => (string)($row['batch_no'] ?? ''),
             'date' => (string)($row['date'] ?? ''),
-            'total_qty' => mi_num($row['quantity'] ?? 0),
+            'total_qty' => $totalQty,
             'extra_qty' => $extraQty,
             'unit_type' => (string)($calc['unit_type'] ?? 'PCS'),
             'per_carton' => $perCarton,
