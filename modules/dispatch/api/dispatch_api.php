@@ -1531,7 +1531,10 @@ if ($action === 'get_ready_queue') {
         $dispatchedSoFar = ds_already_dispatched_qty($db, (int)$r['id']);
         $storedQty = (float)($r['available_qty'] ?? 0);
         $looseQty = (float)($extra['loose_qty'] ?? 0);
-        $totalPhysicalOutput = (float)($extra['after_packing_qty'] ?? ($storedQty + $looseQty));
+        $totalPhysicalOutput = (float)($extra['after_packing_qty'] ?? 0);
+        if ($totalPhysicalOutput <= 0) {
+            $totalPhysicalOutput = $storedQty + $dispatchedSoFar + $looseQty;
+        }
         $totalOrderQty = $totalPhysicalOutput;
 
         $dispatchedPercent = $totalOrderQty > 0 ? min(100, round(($dispatchedSoFar / $totalOrderQty) * 100, 1)) : 0;

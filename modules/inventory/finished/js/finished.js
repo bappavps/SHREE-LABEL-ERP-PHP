@@ -3197,9 +3197,23 @@
     }, true);
   }
 
+  function fg_parseUrlParams() {
+    try {
+      var params = new URLSearchParams(window.location.search);
+      var searchVal = params.get('q') || params.get('search') || params.get('packing_id') || params.get('item_code');
+      if (searchVal) {
+        fg_state.search = searchVal.trim();
+        if (fg_nodes.searchInput) {
+          fg_nodes.searchInput.value = searchVal.trim();
+        }
+      }
+    } catch (e) {}
+  }
+
   function fg_boot() {
     fg_initVisibleColumns();
     fg_setAccent();
+    fg_parseUrlParams();
     fg_renderTabs();
     fg_renderColumnMenu();
     fg_bindEvents();

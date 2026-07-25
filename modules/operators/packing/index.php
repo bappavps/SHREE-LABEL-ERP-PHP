@@ -67,6 +67,8 @@ $formatDate = static function(string $value): string {
 $displayPackingStatus = static function(string $status): string {
   $norm = strtolower(trim(str_replace(['-', '_'], ' ', $status)));
   if ($norm === 'finished production') return 'Finished Production';
+  if ($norm === 'finished barcode') return 'Finished Barcode';
+  if ($norm === 'finished label') return 'Finished Label';
   if ($norm === 'dispatched') return 'Dispatched';
   if (in_array($norm, ['packing done', 'packed'], true)) return 'Packed';
   return 'Packing';
@@ -74,7 +76,7 @@ $displayPackingStatus = static function(string $status): string {
 
 $displayPackingStatusClass = static function(string $status): string {
   $norm = strtolower(trim(str_replace(['-', '_'], ' ', $status)));
-  return in_array($norm, ['packing done', 'packed', 'finished production', 'dispatched'], true) ? 'ok' : 'muted';
+  return in_array($norm, ['packing done', 'packed', 'finished production', 'finished barcode', 'finished label', 'dispatched'], true) ? 'ok' : 'muted';
 };
 
 $tabThemes = [

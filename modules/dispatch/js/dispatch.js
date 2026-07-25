@@ -2893,8 +2893,9 @@
 
       var cartonsText = availCartons > 0 ? ' <small style="color:#64748b;font-weight:600">(' + fmt(availCartons) + ' Cartons)</small>' : '';
 
+      var fgLink = '../inventory/finished/index.php?q=' + encodeURIComponent(r.packing_id || '');
       html += '<tr>' +
-        '<td><strong style="color:#0f172a">' + esc(r.packing_id || '-') + '</strong></td>' +
+        '<td><a href="' + esc(fgLink) + '" target="_blank" style="color:#2563eb;font-weight:700;text-decoration:none" title="Click to view in Finished Goods Inventory">' + esc(r.packing_id || '-') + ' <i class="bi bi-box-arrow-up-right" style="font-size:11px"></i></a></td>' +
         '<td>' + esc(formatDisplayDate(r.stock_date || '')) + '</td>' +
         '<td>' + esc(r.client_name || 'General Client') + '</td>' +
         '<td>' + esc(r.item_name || '-') + (r.size ? ' <span style="color:#64748b">(' + esc(r.size) + ')</span>' : '') + '</td>' +

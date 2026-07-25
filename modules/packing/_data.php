@@ -1687,5 +1687,23 @@ function packing_fetch_history_rows(mysqli $db, array $filters = []): array {
         ];
     }
 
+    if (!empty($historyRows)) {
+        $jobIds = array_column($historyRows, 'id');
+        $jobIdsStr = implode(',', array_map('intval', array_filter($jobIds)));
+        $submittedJobIds = [];
+        if ($jobIdsStr !== '') {
+            $eRes = $db->query("SELECT DISTINCT job_id FROM packing_operator_entries WHERE job_id IN ({$jobIdsStr})");
+            if ($eRes) {
+                while ($eRow = $eRes->fetch_assoc()) {
+                    $submittedJobIds[(int)$eRow['job_id']] = true;
+                }
+            }
+        }
+        foreach ($historyRows as &$hRow) {
+            $hRow['operator_submitted'] = !empty($submittedJobIds[$hRow['id']]);
+        }
+        unset($hRow);
+    }
+
     return $historyRows;
 }
