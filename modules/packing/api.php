@@ -293,6 +293,40 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
     if ($barcode === '') {
         $barcode = packing_api_build_pos_barcode($childRolls);
     }
+
+    $sourceStockId = (int)($jobExtra['source_stock_id'] ?? 0);
+    if ($sourceStockId > 0) {
+        $sMetaRes = $db->query("SELECT item_name, size, gsm, remarks FROM finished_goods_stock WHERE id = {$sourceStockId}");
+        if ($sMetaRes && $sMetaRow = $sMetaRes->fetch_assoc()) {
+            if ($itemName === '' || $itemName === $jobNo) {
+                $itemName = trim((string)($sMetaRow['item_name'] ?? $itemName));
+            }
+            if ($size === '') {
+                $size = trim((string)($sMetaRow['size'] ?? ''));
+            }
+            if ($gsm === '') {
+                $gsm = trim((string)($sMetaRow['gsm'] ?? ''));
+            }
+            $sMetaParsed = json_decode($sMetaRow['remarks'] ?? '{}', true) ?: [];
+            $sMetaExtra = $sMetaParsed['extra'] ?? [];
+            if ($width === '') $width = trim((string)($sMetaExtra['width'] ?? ''));
+            if ($length === '') $length = trim((string)($sMetaExtra['length'] ?? ''));
+            if ($coreSize === '') $coreSize = trim((string)($sMetaExtra['core_size'] ?? ''));
+            if ($coreType === '') $coreType = trim((string)($sMetaExtra['core_type'] ?? ''));
+            if ($paperCompany === '') $paperCompany = trim((string)($sMetaExtra['paper_company'] ?? ''));
+            if ($materialType === '') $materialType = trim((string)($sMetaExtra['material_type'] ?? ''));
+            if ($barcode === '') $barcode = trim((string)($sMetaExtra['barcode'] ?? ''));
+        }
+    }
+    if ($itemName === '' || $itemName === $jobNo) {
+        $itemName = trim((string)($jobExtra['job_name'] ?? $itemName));
+    }
+    if ($size === '') {
+        $size = trim((string)($jobExtra['paper_size'] ?? ''));
+    }
+    if ($gsm === '') {
+        $gsm = trim((string)($jobExtra['gsm'] ?? ''));
+    }
     $perCarton = 0;
     $displayPerCarton = 0;
     if (!empty($rollOverrides)) {
@@ -513,6 +547,30 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
             packing_api_respond(['ok' => false, 'message' => $msg], 500);
         }
         $updateStmt->close();
+
+        // If this is a repacking job, deduct repacked loose quantity from the source stock item
+        $sourceStockId = (int)($jobExtra['source_stock_id'] ?? 0);
+        $repackLooseQty = (float)($jobExtra['loose_qty'] ?? $quantity);
+        if ($sourceStockId > 0 && $repackLooseQty > 0) {
+            $sRes = $db->query("SELECT remarks FROM finished_goods_stock WHERE id = {$sourceStockId}");
+            if ($sRes && $sRow = $sRes->fetch_assoc()) {
+                $sParsed = json_decode($sRow['remarks'] ?? '{}', true) ?: [];
+                $sExtra = $sParsed['extra'] ?? [];
+                $sLoose = (float)($sExtra['loose_qty'] ?? 0);
+                $newLoose = max(0, $sLoose - $repackLooseQty);
+                $sExtra['loose_qty'] = $newLoose;
+                $sExtra['mixed_extra_rolls'] = 0;
+                $sExtra['extra_rolls'] = 0;
+                $sExtra['extra_pcs'] = 0;
+                if ($newLoose <= 0) {
+                    $sExtra['mixed_enabled'] = 0;
+                }
+                $sParsed['extra'] = $sExtra;
+                $sRemarks = json_encode($sParsed, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                $db->query("UPDATE finished_goods_stock SET remarks = '" . $db->real_escape_string($sRemarks) . "' WHERE id = {$sourceStockId}");
+            }
+        }
+
         return;
     }
 

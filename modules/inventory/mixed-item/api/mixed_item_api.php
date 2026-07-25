@@ -306,8 +306,41 @@ function mi_fetch_rows(mysqli $db, string $category = ''): array {
     }
     $labelContextMap = mi_fetch_printing_label_context($db, array_keys($labelContextMap));
 
+    // Fetch stock IDs that are currently assigned/pending for repacking
+    $assignedStockIds = [];
+    $aRes = $db->query("SELECT items_json FROM mixed_item_assignments WHERE status = 'pending'");
+    if ($aRes) {
+        while ($aRow = $aRes->fetch_assoc()) {
+            $items = json_decode($aRow['items_json'] ?? '[]', true);
+            if (is_array($items)) {
+                foreach ($items as $item) {
+                    $sId = (int)($item['source_id'] ?? ($item['id'] ?? 0));
+                    if ($sId > 0) {
+                        $assignedStockIds[$sId] = true;
+                    }
+                }
+            }
+        }
+    }
+
+    $jRes = $db->query("SELECT extra_data FROM jobs WHERE (job_type = 'Repacking' OR extra_data LIKE '%\"is_repacking_job\":1%') AND (status IS NULL OR status = '' OR LOWER(status) NOT IN ('closed', 'completed', 'dispatched', 'finished')) AND extra_data NOT LIKE '%\"finished_production_flag\":1%' AND extra_data NOT LIKE '%\"finished_production_flag\":\"1\"%'");
+    if ($jRes) {
+        while ($jRow = $jRes->fetch_assoc()) {
+            $jExtra = json_decode($jRow['extra_data'] ?? '{}', true);
+            $sId = (int)($jExtra['source_stock_id'] ?? 0);
+            if ($sId > 0) {
+                $assignedStockIds[$sId] = true;
+            }
+        }
+    }
+
     $rows = [];
     foreach ($allRows as $row) {
+        $stockId = (int)$row['id'];
+        if (!empty($assignedStockIds[$stockId])) {
+            continue; // Skip items currently assigned to Packing for repacking
+        }
+
         $cat = (string)($row['category'] ?? '');
         if ($category !== '') {
             if ($category === 'printing_roll') {
@@ -346,6 +379,10 @@ function mi_fetch_rows(mysqli $db, string $category = ''): array {
         $rawQty = mi_num($row['quantity'] ?? 0);
         $afterPackingQty = mi_num(mi_pick($extra, ['after_packing_qty', 'packed_qty', 'total_production']));
         $totalQty = $afterPackingQty > 0 ? $afterPackingQty : ($rawQty + $extraQty);
+
+        if ($extraQty <= 0) {
+            continue;
+        }
 
         $rows[] = [
             'id' => $cat . '-' . (int)$row['id'],
@@ -527,6 +564,116 @@ if ($action === 'assign_mixed_items') {
         mi_json(500, ['ok' => false, 'error' => 'Unable to save assignment.']);
     }
 
+    if ($target === 'packing') {
+        $firstItem = $compact[0];
+        $cat = strtolower(trim((string)($firstItem['category'] ?? $sourceCategory)));
+        $dept = 'POS Roll';
+        if (strpos($cat, 'barcode') !== false) {
+            $dept = 'Barcode';
+        } elseif (strpos($cat, 'print') !== false || strpos($cat, 'label') !== false) {
+            $dept = 'Label Slitting';
+        } elseif (strpos($cat, 'one') !== false || strpos($cat, '1') !== false) {
+            $dept = 'One Ply';
+        } elseif (strpos($cat, 'two') !== false || strpos($cat, '2') !== false) {
+            $dept = 'Two Ply';
+        }
+
+        $assignedChildRolls = [];
+        $totalExtraQty = 0;
+        $jobNames = [];
+        $firstSize = '';
+
+        foreach ($compact as $idx => $cItem) {
+            $sourceStockId = (int)($cItem['source_id'] ?? 0);
+            $width = '';
+            $length = '';
+            $gsm = '';
+            $itemSize = '';
+            $mixedBatchLabels = '';
+            if ($sourceStockId > 0) {
+                $sRes = $db->query("SELECT size, gsm, remarks FROM finished_goods_stock WHERE id = {$sourceStockId}");
+                if ($sRes && $sRow = $sRes->fetch_assoc()) {
+                    $itemSize = (string)($sRow['size'] ?? '');
+                    if ($firstSize === '') $firstSize = $itemSize;
+                    $gsm = (string)($sRow['gsm'] ?? '');
+                    $sParsed = json_decode($sRow['remarks'] ?? '{}', true) ?: [];
+                    $sExtra = $sParsed['extra'] ?? [];
+                    $width = (string)($sExtra['width'] ?? '');
+                    $length = (string)($sExtra['length'] ?? '');
+                    $mixedBatchLabels = trim((string)($sExtra['mixed_batch_labels'] ?? ($sExtra['batch_no'] ?? '')));
+                }
+            }
+
+            // Parse actual roll labels from mixed_batch_labels
+            $rollLabels = [];
+            if ($mixedBatchLabels !== '') {
+                $parts = array_filter(array_map('trim', explode(',', $mixedBatchLabels)));
+                if (!empty($parts)) {
+                    $rollLabels = array_values($parts);
+                }
+            }
+            if (empty($rollLabels)) {
+                $fallbackRoll = (string)($cItem['batch_no'] ?? '');
+                $rollLabels = [$fallbackRoll !== '' ? $fallbackRoll : ($assignmentCode . '-' . ($idx + 1))];
+            }
+
+            $extraQty = (float)($cItem['extra_qty'] ?? 0);
+            $totalExtraQty += $extraQty;
+            $name = (string)($cItem['item_name'] ?? 'Repacking Job');
+            if (!in_array($name, $jobNames, true)) {
+                $jobNames[] = $name;
+            }
+
+            $eachRollQty = count($rollLabels) > 0 ? round($extraQty / count($rollLabels), 3) : $extraQty;
+
+            foreach ($rollLabels as $rLabel) {
+                $assignedChildRolls[] = [
+                    'roll_no' => $rLabel,
+                    'parent_roll_no' => $rLabel,
+                    'width_mm' => $width,
+                    'length_mtr' => $length,
+                    'width' => $width,
+                    'length' => $length,
+                    'gsm' => $gsm,
+                    'status' => 'Packing',
+                    'production_qty' => $eachRollQty,
+                    'available_qty' => $eachRollQty,
+                    'job_no' => $assignmentCode,
+                    'job_name' => $name,
+                ];
+            }
+        }
+
+        $consolidatedJobName = implode(', ', $jobNames);
+
+        $jobExtra = [
+            'client_name' => 'Mixed Item Pool',
+            'job_name' => $consolidatedJobName,
+            'plan_no' => $assignmentCode,
+            'batch_no' => $assignmentCode,
+            'loose_qty' => $totalExtraQty,
+            'order_quantity' => $totalExtraQty,
+            'production_quantity' => $totalExtraQty,
+            'item_width' => $assignedChildRolls[0]['width'] ?? '',
+            'item_length' => $assignedChildRolls[0]['length'] ?? '',
+            'paper_size' => $firstSize,
+            'gsm' => $assignedChildRolls[0]['gsm'] ?? '',
+            'source_stock_id' => (int)($compact[0]['source_id'] ?? 0),
+            'repacking_assignment_code' => $assignmentCode,
+            'is_repacking_job' => 1,
+            'assigned_child_rolls' => $assignedChildRolls,
+            'child_rolls' => $assignedChildRolls,
+            'selected_rolls' => $assignedChildRolls,
+        ];
+        $jobExtraJson = json_encode($jobExtra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $jStmt = $db->prepare("INSERT INTO jobs (job_no, job_type, department, status, notes, extra_data, created_at, updated_at) VALUES (?, 'Repacking', ?, 'Packing', 'Loose item repacking request from Mixed Item Board', ?, NOW(), NOW())");
+        if ($jStmt) {
+            $jStmt->bind_param('sss', $assignmentCode, $dept, $jobExtraJson);
+            $jStmt->execute();
+        }
+    }
+
     mi_json(200, [
         'ok' => true,
         'message' => 'Selected mixed items assigned successfully.',
@@ -537,6 +684,80 @@ if ($action === 'assign_mixed_items') {
             'item_count' => $itemCount,
         ],
     ]);
+}
+
+if ($action === 'repack_mixed_items') {
+    if ($method !== 'POST') {
+        mi_json(405, ['ok' => false, 'error' => 'Method not allowed.']);
+    }
+
+    $itemsRaw = $_POST['items'] ?? '[]';
+    $items = is_string($itemsRaw) ? json_decode($itemsRaw, true) : $itemsRaw;
+
+    if (!is_array($items) || empty($items)) {
+        mi_json(400, ['ok' => false, 'error' => 'No selected loose items found.']);
+    }
+
+    $db->begin_transaction();
+
+    try {
+        $repackedCount = 0;
+        foreach ($items as $item) {
+            $stockId = (int)($item['source_id'] ?? ($item['id'] ?? 0));
+            if ($stockId <= 0) continue;
+
+            $stmt = $db->prepare("SELECT id, category, item_name, item_code, batch_no, size, unit, quantity, remarks FROM finished_goods_stock WHERE id = ? FOR UPDATE");
+            if (!$stmt) continue;
+            $stmt->bind_param('i', $stockId);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            if (!$row) continue;
+
+            $parsed = json_decode($row['remarks'] ?? '{}', true) ?: [];
+            $extra = $parsed['extra'] ?? [];
+            $looseQty = (float)($extra['loose_qty'] ?? 0);
+            $perCarton = (float)($extra['per_carton'] ?? 50);
+
+            if ($looseQty <= 0) continue;
+
+            // Compute full cartons formed from loose rolls
+            $repackedCartons = $perCarton > 0 ? (int)floor($looseQty / $perCarton) : 0;
+            $repackedQty = $perCarton > 0 ? ($repackedCartons * $perCarton) : $looseQty;
+
+            if ($repackedQty > 0 || $looseQty > 0) {
+                // If looseQty >= perCarton, convert to full carton, else clear loose qty into finished stock
+                $transferQty = $repackedQty > 0 ? $repackedQty : $looseQty;
+                $newQuantity = (float)($row['quantity'] ?? 0) + $transferQty;
+                if ($repackedCartons > 0) {
+                    $extra['carton'] = (int)($extra['carton'] ?? 0) + $repackedCartons;
+                }
+                $newLoose = max(0, $looseQty - $transferQty);
+                $extra['loose_qty'] = $newLoose;
+                $extra['mixed_extra_rolls'] = 0;
+                $extra['extra_rolls'] = 0;
+                $extra['extra_pcs'] = 0;
+                if ($newLoose <= 0) {
+                    $extra['mixed_enabled'] = 0;
+                }
+                $parsed['extra'] = $extra;
+
+                $newRemarks = json_encode($parsed, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                $up = $db->prepare("UPDATE finished_goods_stock SET quantity = ?, closing_stock = ?, remarks = ? WHERE id = ?");
+                if ($up) {
+                    $up->bind_param('ddsi', $newQuantity, $newQuantity, $newRemarks, $stockId);
+                    $up->execute();
+                    $repackedCount++;
+                }
+            }
+        }
+
+        $db->commit();
+        mi_json(200, ['ok' => true, 'message' => "Successfully repacked {$repackedCount} item(s) into full cartons and transferred to Finished Goods Inventory."]);
+    } catch (Throwable $e) {
+        $db->rollback();
+        mi_json(500, ['ok' => false, 'error' => $e->getMessage()]);
+    }
 }
 
 mi_json(404, ['ok' => false, 'error' => 'Unknown action: ' . $action]);

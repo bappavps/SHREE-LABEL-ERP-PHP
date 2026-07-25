@@ -484,6 +484,23 @@
     }
 
     var target = String(nodes.assignTarget.value || 'packing');
+    if (target === 'finished_goods') {
+      api('repack_mixed_items', {
+        items: rows
+      }, 'POST').then(function (res) {
+        if (!res || !res.ok) {
+          throw new Error((res && res.error) || 'Unable to repack selected items.');
+        }
+        showMessage(res.message || 'Repacked and transferred to Finished Goods successfully.', 'success');
+        state.selectedIds = {};
+        syncSelectedCount();
+        loadRows();
+      }).catch(function (err) {
+        showMessage(err.message || 'Unable to repack selected items.', 'error');
+      });
+      return;
+    }
+
     api('assign_mixed_items', {
       target: target,
       source_category: state.activeTab,

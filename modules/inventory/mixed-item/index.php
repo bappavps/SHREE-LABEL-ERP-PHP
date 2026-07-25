@@ -34,6 +34,7 @@ include __DIR__ . '/../../../includes/header.php';
     <div class="mix-head-actions">
       <select id="mixAssignTarget">
         <option value="packing">Packing Operator</option>
+        <option value="finished_goods">Repack &amp; Move to Finished Goods</option>
         <option value="planning">Planning</option>
       </select>
       <button type="button" class="mix-btn mix-btn-green" id="mixAssignBtn">Send Selected</button>

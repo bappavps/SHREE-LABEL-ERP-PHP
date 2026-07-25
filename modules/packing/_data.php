@@ -1415,8 +1415,10 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
         // Keep queue clean: manager view only shows submitted/completed jobs.
         // show_all_active mode (operator page) also includes fresh "Packing" jobs
         // so operators can see new work and submit their entries for the first time.
+        $jobExtra = packing_decode_json($row['extra_data'] ?? null);
         $hasOperatorSubmission = !empty($row['operator_submitted']) || !empty($submittedByGroup[$groupKey]);
-        if (!$showAllActive && !$hasOperatorSubmission && !packing_is_completed_status((string)($row['status'] ?? ''))) {
+        $isRepackingJob = ((string)($row['job_type'] ?? '') === 'Repacking') || !empty($jobExtra['is_repacking_job']);
+        if (!$showAllActive && !$hasOperatorSubmission && !$isRepackingJob && !packing_is_completed_status((string)($row['status'] ?? ''))) {
             continue;
         }
 
@@ -1487,8 +1489,8 @@ function packing_fetch_ready_rows(mysqli $db, array $filters = []): array {
             'packing_display_id' => packing_build_display_id((int)$row['id'], (string)($row['plan_no'] ?? '')),
             'tab' => $tabKey,
             'tab_label' => $tabKey ? packing_tab_label($tabKey) : (trim((string)($row['department'] ?? '')) !== '' ? (string)$row['department'] : 'Unknown'),
-            'plan_no' => (string)($row['plan_no'] ?? ''),
-            'plan_name' => (string)($row['plan_name'] ?? ''),
+            'plan_no' => (string)(($row['plan_no'] ?? '') !== '' ? $row['plan_no'] : ($jobExtra['plan_no'] ?? $row['job_no'])),
+            'plan_name' => (string)(($row['plan_name'] ?? '') !== '' ? $row['plan_name'] : ($jobExtra['job_name'] ?? $row['job_no'])),
             'plan_priority' => (string)($row['plan_priority'] ?? 'Normal'),
             'job_type' => (string)($row['job_type'] ?? ''),
             'job_no' => (string)($row['job_no'] ?? ''),
