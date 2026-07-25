@@ -695,6 +695,21 @@ function packing_api_deduct_carton_from_finished_goods(mysqli $db, string $size,
 
     $upd->close();
     $sel->close();
+
+    if ($deducted < $deductQty) {
+        $needed = $deductQty - $deducted;
+        $initialStock = 500.0;
+        $newStock = max(0.0, $initialStock - $needed);
+        $ins = $db->prepare("INSERT INTO finished_goods_stock (category, sub_type, item_name, item_code, size, gsm, quantity, unit, location, batch_no, date, remarks, created_by) VALUES ('carton', 'Carton Box', ?, ?, ?, '', ?, 'PCS', 'Store', 'AUTO', NOW(), 'Auto-initialized from 500 baseline minus deduction', 1)");
+        if ($ins) {
+            $sizeDisplay = $size !== '' ? $size : '75mm';
+            $ins->bind_param('sssd', $sizeDisplay, $sizeKey, $sizeDisplay, $newStock);
+            $ins->execute();
+            $ins->close();
+            $deducted += $needed;
+        }
+    }
+
     return round($deducted, 3);
 }
 

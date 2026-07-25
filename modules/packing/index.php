@@ -326,6 +326,16 @@ include __DIR__ . '/../../includes/header.php';
 .pk-tab[data-theme="two_ply"],.pk-pane[data-theme="two_ply"]{--pk-accent:#7c3aed;--pk-soft:#ede9fe;--pk-border:#c4b5fd}
 .pk-tab[data-theme="barcode"],.pk-pane[data-theme="barcode"]{--pk-accent:#be123c;--pk-soft:#ffe4e6;--pk-border:#fda4af}
 .pk-tab[data-theme="history"],.pk-pane[data-theme="history"]{--pk-accent:#7c3aed;--pk-soft:#f3e8ff;--pk-border:#ddd6fe}
+.pk-table tr.plan-row-pos-roll td { background-color: #e6f4ea !important; }
+.pk-table tr.plan-row-pos-roll:hover td { background-color: #d1e7dd !important; }
+.pk-table tr.plan-row-one-ply td { background-color: #f5ebe0 !important; }
+.pk-table tr.plan-row-one-ply:hover td { background-color: #e9d8c8 !important; }
+.pk-table tr.plan-row-two-ply td { background-color: #f3e8ff !important; }
+.pk-table tr.plan-row-two-ply:hover td { background-color: #e9d5ff !important; }
+.pk-table tr.plan-row-printing-label td { background-color: #e0f2fe !important; }
+.pk-table tr.plan-row-printing-label:hover td { background-color: #bae6fd !important; }
+.pk-table tr.plan-row-barcode td { background-color: #ffe4e6 !important; }
+.pk-table tr.plan-row-barcode:hover td { background-color: #fecdd3 !important; }
 .page-header{margin-top:12px;background:linear-gradient(120deg,#0f172a 0%,#1d4ed8 48%,#0ea5e9 100%);border-radius:14px;padding:14px;border:1px solid #1e3a8a;box-shadow:0 14px 30px rgba(30,58,138,.24)}
 @media (max-width:980px){.pk-filters{grid-template-columns:1fr 1fr}.pk-head{align-items:stretch}}
 @media (max-width:680px){.pk-filters{grid-template-columns:1fr}.pk-table{min-width:860px}.page-header{padding:12px}.pk-modal-grid{grid-template-columns:1fr}.pk-jc-head{grid-template-columns:1fr}.pk-jc-qr{width:100%;max-width:180px;margin:0 auto}.pk-jc-top-grid{grid-template-columns:1fr}.pk-jc-detail-grid{grid-template-columns:1fr}}
@@ -463,6 +473,14 @@ include __DIR__ . '/../../includes/header.php';
         </div>
         <div class="pk-bar">
           <div class="count">Total: <?= count($tabRows) ?> completed jobs</div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:.7rem;font-weight:700;">
+            <span style="color:#64748b;">Legend:</span>
+            <span style="background:#e6f4ea;color:#166534;padding:2px 7px;border-radius:6px;border:1px solid #b7e4c7;">POS Roll</span>
+            <span style="background:#f5ebe0;color:#78350f;padding:2px 7px;border-radius:6px;border:1px solid #e6ccb2;">One Ply</span>
+            <span style="background:#f3e8ff;color:#6b21a8;padding:2px 7px;border-radius:6px;border:1px solid #d8b4fe;">Two Ply</span>
+            <span style="background:#e0f2fe;color:#075985;padding:2px 7px;border-radius:6px;border:1px solid #7dd3fc;">Printing Label</span>
+            <span style="background:#ffe4e6;color:#9f1239;padding:2px 7px;border-radius:6px;border:1px solid #fca5a5;">Barcode</span>
+          </div>
         </div>
       <?php else: ?>
         <div class="pk-bar">
@@ -532,8 +550,25 @@ include __DIR__ . '/../../includes/header.php';
                 <?php if ($tabKey === 'history'): ?>
                   <?php
                     $displayStatus = ($row['status'] === 'Finished Barcode') ? 'Finished Production' : ($row['status'] ?? '-');
+                    $rowTab = (string)($row['tab'] ?? '');
+                    if ($rowTab === '' || $rowTab === 'history_unknown') {
+                        $rowTab = (string)packing_row_to_tab($row);
+                    }
+                    $rowHaystack = strtolower($rowTab . ' ' . (string)($row['last_department'] ?? '') . ' ' . (string)($row['job_type'] ?? '') . ' ' . (string)($row['plan_no'] ?? '') . ' ' . (string)($row['plan_name'] ?? ''));
+                    $historyRowClass = '';
+                    if ($rowTab === 'pos_roll' || strpos($rowHaystack, 'pos_roll') !== false || strpos($rowHaystack, 'pos roll') !== false || strpos($rowHaystack, 'pos-prl') !== false || strpos($rowHaystack, 'pos/') !== false) {
+                        $historyRowClass = ' plan-row-pos-roll';
+                    } elseif ($rowTab === 'one_ply' || strpos($rowHaystack, 'one_ply') !== false || strpos($rowHaystack, 'one ply') !== false || strpos($rowHaystack, 'oneply') !== false || strpos($rowHaystack, '1ply') !== false) {
+                        $historyRowClass = ' plan-row-one-ply';
+                    } elseif ($rowTab === 'two_ply' || strpos($rowHaystack, 'two_ply') !== false || strpos($rowHaystack, 'two ply') !== false || strpos($rowHaystack, 'twoply') !== false || strpos($rowHaystack, '2ply') !== false) {
+                        $historyRowClass = ' plan-row-two-ply';
+                    } elseif ($rowTab === 'barcode' || strpos($rowHaystack, 'barcode') !== false || strpos($rowHaystack, 'rotary') !== false || strpos($rowHaystack, 'rotery') !== false) {
+                        $historyRowClass = ' plan-row-barcode';
+                    } elseif ($rowTab === 'printing_label' || strpos($rowHaystack, 'printing_label') !== false || strpos($rowHaystack, 'label') !== false || strpos($rowHaystack, 'slitting') !== false) {
+                        $historyRowClass = ' plan-row-printing-label';
+                    }
                   ?>
-                  <tr data-row-id="<?= (int)$row['id'] ?>">
+                  <tr data-row-id="<?= (int)$row['id'] ?>" class="<?= trim($historyRowClass) ?>">
                     <td><?= (int)$idx + 1 ?></td>
                     <td>
                       <a class="pk-id-btn pk-open-modal" href="#" data-job-id="<?= (int)$row['id'] ?>" style="text-decoration:none;display:inline-block">

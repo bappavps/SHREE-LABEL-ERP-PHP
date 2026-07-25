@@ -184,6 +184,16 @@ include __DIR__ . '/../../../includes/header.php';
 .op-tab[data-theme="two_ply"],.op-pane[data-theme="two_ply"]{--op-accent:#d97706;--op-soft:#fffbeb;--op-border:#fcd34d}
 .op-tab[data-theme="barcode"],.op-pane[data-theme="barcode"]{--op-accent:#dc2626;--op-soft:#fef2f2;--op-border:#fca5a5}
 .op-tab[data-theme="history"],.op-pane[data-theme="history"]{--op-accent:#6d28d9;--op-soft:#f3e8ff;--op-border:#ddd6fe}
+.op-table tr.plan-row-pos-roll td { background-color: #e6f4ea !important; }
+.op-table tr.plan-row-pos-roll:hover td { background-color: #d1e7dd !important; }
+.op-table tr.plan-row-one-ply td { background-color: #f5ebe0 !important; }
+.op-table tr.plan-row-one-ply:hover td { background-color: #e9d8c8 !important; }
+.op-table tr.plan-row-two-ply td { background-color: #f3e8ff !important; }
+.op-table tr.plan-row-two-ply:hover td { background-color: #e9d5ff !important; }
+.op-table tr.plan-row-printing-label td { background-color: #e0f2fe !important; }
+.op-table tr.plan-row-printing-label:hover td { background-color: #bae6fd !important; }
+.op-table tr.plan-row-barcode td { background-color: #ffe4e6 !important; }
+.op-table tr.plan-row-barcode:hover td { background-color: #fecdd3 !important; }
 .op-btn-admin-edit{background:#7c3aed;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-weight:800;font-size:.95em;cursor:pointer;transition:all .2s ease;display:inline-flex;align-items:center;gap:6px}
 .op-btn-admin-edit:hover{background:#6d28d9;transform:translateY(-1px)}
 .page-header{margin-top:12px;background:linear-gradient(120deg,#7c2d12 0%,#c2410c 48%,#ea580c 100%);border-radius:14px;padding:14px;border:1px solid #9a3412;box-shadow:0 14px 30px rgba(124,45,18,.24)}
@@ -273,6 +283,16 @@ include __DIR__ . '/../../../includes/header.php';
       <?php if ($isBarcodeTab): ?>
       <span class="count">Total Roll Value: <?= e(number_format($barcodeTotalRollValue, 2, '.', '')) ?></span>
       <?php endif; ?>
+      <?php if ($tabKey === 'history'): ?>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:.7rem;font-weight:700;">
+        <span style="color:#64748b;">Legend:</span>
+        <span style="background:#e6f4ea;color:#166534;padding:2px 7px;border-radius:6px;border:1px solid #b7e4c7;">POS Roll</span>
+        <span style="background:#f5ebe0;color:#78350f;padding:2px 7px;border-radius:6px;border:1px solid #e6ccb2;">One Ply</span>
+        <span style="background:#f3e8ff;color:#6b21a8;padding:2px 7px;border-radius:6px;border:1px solid #d8b4fe;">Two Ply</span>
+        <span style="background:#e0f2fe;color:#075985;padding:2px 7px;border-radius:6px;border:1px solid #7dd3fc;">Printing Label</span>
+        <span style="background:#ffe4e6;color:#9f1239;padding:2px 7px;border-radius:6px;border:1px solid #fca5a5;">Barcode</span>
+      </div>
+      <?php endif; ?>
     </div>
     <div class="op-table-wrap">
       <table class="op-table">
@@ -297,8 +317,27 @@ include __DIR__ . '/../../../includes/header.php';
           <?php else: ?>
           <?php foreach ($rows as $r):
             $isSubmitted = !empty($r['operator_submitted']);
+            $historyRowClass = '';
+            if ($tabKey === 'history') {
+                $rowTab = (string)($r['tab'] ?? '');
+                if ($rowTab === '' || $rowTab === 'history_unknown') {
+                    $rowTab = (string)packing_row_to_tab($r);
+                }
+                $rowHaystack = strtolower($rowTab . ' ' . (string)($r['last_department'] ?? '') . ' ' . (string)($r['job_type'] ?? '') . ' ' . (string)($r['plan_no'] ?? '') . ' ' . (string)($r['plan_name'] ?? ''));
+                if ($rowTab === 'pos_roll' || strpos($rowHaystack, 'pos_roll') !== false || strpos($rowHaystack, 'pos roll') !== false || strpos($rowHaystack, 'pos-prl') !== false || strpos($rowHaystack, 'pos/') !== false) {
+                    $historyRowClass = ' plan-row-pos-roll';
+                } elseif ($rowTab === 'one_ply' || strpos($rowHaystack, 'one_ply') !== false || strpos($rowHaystack, 'one ply') !== false || strpos($rowHaystack, 'oneply') !== false || strpos($rowHaystack, '1ply') !== false) {
+                    $historyRowClass = ' plan-row-one-ply';
+                } elseif ($rowTab === 'two_ply' || strpos($rowHaystack, 'two_ply') !== false || strpos($rowHaystack, 'two ply') !== false || strpos($rowHaystack, 'twoply') !== false || strpos($rowHaystack, '2ply') !== false) {
+                    $historyRowClass = ' plan-row-two-ply';
+                } elseif ($rowTab === 'barcode' || strpos($rowHaystack, 'barcode') !== false || strpos($rowHaystack, 'rotary') !== false || strpos($rowHaystack, 'rotery') !== false) {
+                    $historyRowClass = ' plan-row-barcode';
+                } elseif ($rowTab === 'printing_label' || strpos($rowHaystack, 'printing_label') !== false || strpos($rowHaystack, 'label') !== false || strpos($rowHaystack, 'slitting') !== false) {
+                    $historyRowClass = ' plan-row-printing-label';
+                }
+            }
           ?>
-          <tr data-row-id="<?= (int)($r['id'] ?? 0) ?>">
+          <tr data-row-id="<?= (int)($r['id'] ?? 0) ?>" class="<?= trim($historyRowClass) ?>">
             <td><button class="op-id-btn op-open-btn"
                         data-job-id="<?= (int)($r['id'] ?? 0) ?>"
                         style="--op-accent:<?= e($theme['accent']) ?>;--op-soft:<?= e($theme['soft']) ?>;--op-border:<?= e($theme['border']) ?>">

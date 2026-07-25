@@ -1617,6 +1617,9 @@ function packing_fetch_history_rows(mysqli $db, array $filters = []): array {
         if ($tabKey === null) {
             $tabKey = packing_department_to_tab((string)($row['plan_department'] ?? ''));
         }
+        if ($tabKey === null) {
+            $tabKey = packing_row_to_tab($row);
+        }
 
         $jobExtra = packing_decode_json($row['extra_data'] ?? null);
         $planExtra = packing_decode_json($row['plan_extra_data'] ?? null);

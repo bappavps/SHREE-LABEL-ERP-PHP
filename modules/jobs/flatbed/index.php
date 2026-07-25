@@ -8,50 +8,53 @@ require_once __DIR__ . '/../../../includes/auth_check.php';
 // re-serve a cached HTML snapshot, which can hide freshly-computed linked-job
 // UI (arrow banner + disabled secondary Start) until a hard refresh.
 if (!headers_sent()) {
-    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-    header('Pragma: no-cache');
-    header('Expires: 0');
+  header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+  header('Pragma: no-cache');
+  header('Expires: 0');
 }
 
-$isOperatorView = (string)($_GET['view'] ?? '') === 'operator';
+$isOperatorView = (string) ($_GET['view'] ?? '') === 'operator';
 
 $canDeleteJobs = isAdmin() && !$isOperatorView;
-$dcPageTitleOperator = trim((string)($dcPageTitleOperator ?? '')) ?: 'Die-Cutting Operator';
-$dcPageTitleProduction = trim((string)($dcPageTitleProduction ?? '')) ?: 'Die-Cutting Job Cards';
-$dcOperatorBreadcrumb = trim((string)($dcOperatorBreadcrumb ?? '')) ?: $dcPageTitleOperator;
-$dcProductionBreadcrumb = trim((string)($dcProductionBreadcrumb ?? '')) ?: 'Die-Cutting';
-$dcHeaderIcon = trim((string)($dcHeaderIcon ?? '')) ?: 'bi-scissors';
-$dcHeaderSubtitle = trim((string)($dcHeaderSubtitle ?? '')) ?: 'Auto-generated for die-cutting after flexo printing &middot; Sequential gating from Flexo Printing';
-$dcDocumentTitle = trim((string)($dcDocumentTitle ?? '')) ?: 'Die-Cutting Job Card';
-$dcBulkPrintTitle = trim((string)($dcBulkPrintTitle ?? '')) ?: $dcPageTitleProduction;
-$dcDetailsSectionLabel = trim((string)($dcDetailsSectionLabel ?? '')) ?: 'Die-Cutting Details';
-$dcDefaultFilter = trim((string)($dcDefaultFilter ?? '')) ?: 'Pending';
-$dcCompareSectionTitle = trim((string)($dcCompareSectionTitle ?? '')) ?: 'Printing Production vs Plan';
-$dcProducedQtyLabel = trim((string)($dcProducedQtyLabel ?? '')) ?: 'Printing Produced';
-$dcProducedQtySource = trim((string)($dcProducedQtySource ?? '')) ?: 'previous';
-$dcShowWeightHeightFields = isset($dcShowWeightHeightFields) ? (bool)$dcShowWeightHeightFields : false;
-$dcWeightLabel = trim((string)($dcWeightLabel ?? '')) ?: 'Weight';
-$dcHeightLabel = trim((string)($dcHeightLabel ?? '')) ?: 'Height';
-$dcPaperWidthLabel = trim((string)($dcPaperWidthLabel ?? '')) ?: 'Width (mm)';
-$dcShowPaperCompanyInDetails = isset($dcShowPaperCompanyInDetails) ? (bool)$dcShowPaperCompanyInDetails : true;
-$dcShowParentChildRollTables = isset($dcShowParentChildRollTables) ? (bool)$dcShowParentChildRollTables : false;
-$dcAutoFallbackToAllOnEmptyDefault = isset($dcAutoFallbackToAllOnEmptyDefault) ? (bool)$dcAutoFallbackToAllOnEmptyDefault : false;
-$dcEnableBulkSelection = isset($dcEnableBulkSelection) ? (bool)$dcEnableBulkSelection : true;
+$dcPageTitleOperator = trim((string) ($dcPageTitleOperator ?? '')) ?: 'Die-Cutting Operator';
+$dcPageTitleProduction = trim((string) ($dcPageTitleProduction ?? '')) ?: 'Die-Cutting Job Cards';
+$dcOperatorBreadcrumb = trim((string) ($dcOperatorBreadcrumb ?? '')) ?: $dcPageTitleOperator;
+$dcProductionBreadcrumb = trim((string) ($dcProductionBreadcrumb ?? '')) ?: 'Die-Cutting';
+$dcHeaderIcon = trim((string) ($dcHeaderIcon ?? '')) ?: 'bi-scissors';
+$dcHeaderSubtitle = trim((string) ($dcHeaderSubtitle ?? '')) ?: 'Auto-generated for die-cutting after flexo printing &middot; Sequential gating from Flexo Printing';
+$dcDocumentTitle = trim((string) ($dcDocumentTitle ?? '')) ?: 'Die-Cutting Job Card';
+$dcBulkPrintTitle = trim((string) ($dcBulkPrintTitle ?? '')) ?: $dcPageTitleProduction;
+$dcDetailsSectionLabel = trim((string) ($dcDetailsSectionLabel ?? '')) ?: 'Die-Cutting Details';
+$dcDefaultFilter = trim((string) ($dcDefaultFilter ?? '')) ?: 'Pending';
+$dcCompareSectionTitle = trim((string) ($dcCompareSectionTitle ?? '')) ?: 'Printing Production vs Plan';
+$dcProducedQtyLabel = trim((string) ($dcProducedQtyLabel ?? '')) ?: 'Printing Produced';
+$dcProducedQtySource = trim((string) ($dcProducedQtySource ?? '')) ?: 'previous';
+$dcShowWeightHeightFields = isset($dcShowWeightHeightFields) ? (bool) $dcShowWeightHeightFields : false;
+$dcWeightLabel = trim((string) ($dcWeightLabel ?? '')) ?: 'Weight';
+$dcHeightLabel = trim((string) ($dcHeightLabel ?? '')) ?: 'Height';
+$dcPaperWidthLabel = trim((string) ($dcPaperWidthLabel ?? '')) ?: 'Width (mm)';
+$dcShowPaperCompanyInDetails = isset($dcShowPaperCompanyInDetails) ? (bool) $dcShowPaperCompanyInDetails : true;
+$dcShowParentChildRollTables = isset($dcShowParentChildRollTables) ? (bool) $dcShowParentChildRollTables : false;
+$dcAutoFallbackToAllOnEmptyDefault = isset($dcAutoFallbackToAllOnEmptyDefault) ? (bool) $dcAutoFallbackToAllOnEmptyDefault : false;
+$dcEnableBulkSelection = isset($dcEnableBulkSelection) ? (bool) $dcEnableBulkSelection : true;
 $dcCanManualRollEntry = isset($dcCanManualRollEntry)
-  ? (bool)$dcCanManualRollEntry
+  ? (bool) $dcCanManualRollEntry
   : (
-      hasPageAction('/modules/jobs/flatbed/index.php', 'edit')
-      || hasPageAction('/modules/operators/flatbed/index.php', 'edit')
-      || hasRole('manager', 'system_admin', 'super_admin')
-      || isAdmin()
-    );
-$dcDefaultVoiceLanguage = trim((string)($dcDefaultVoiceLanguage ?? '')) ?: 'en-IN';
-$dcBrand = trim((string)($dcBrand ?? '')) ?: '#0ea5a4';
-$dcBrandLight = trim((string)($dcBrandLight ?? '')) ?: '#ccfbf1';
-$dcBrandDark = trim((string)($dcBrandDark ?? '')) ?: '#0f766e';
-if (!preg_match('/^#[0-9a-fA-F]{6}$/', $dcBrand)) $dcBrand = '#0ea5a4';
-if (!preg_match('/^#[0-9a-fA-F]{6}$/', $dcBrandLight)) $dcBrandLight = '#ccfbf1';
-if (!preg_match('/^#[0-9a-fA-F]{6}$/', $dcBrandDark)) $dcBrandDark = '#0f766e';
+    hasPageAction('/modules/jobs/flatbed/index.php', 'edit')
+    || hasPageAction('/modules/operators/flatbed/index.php', 'edit')
+    || hasRole('manager', 'system_admin', 'super_admin')
+    || isAdmin()
+  );
+$dcDefaultVoiceLanguage = trim((string) ($dcDefaultVoiceLanguage ?? '')) ?: 'en-IN';
+$dcBrand = trim((string) ($dcBrand ?? '')) ?: '#0ea5a4';
+$dcBrandLight = trim((string) ($dcBrandLight ?? '')) ?: '#ccfbf1';
+$dcBrandDark = trim((string) ($dcBrandDark ?? '')) ?: '#0f766e';
+if (!preg_match('/^#[0-9a-fA-F]{6}$/', $dcBrand))
+  $dcBrand = '#0ea5a4';
+if (!preg_match('/^#[0-9a-fA-F]{6}$/', $dcBrandLight))
+  $dcBrandLight = '#ccfbf1';
+if (!preg_match('/^#[0-9a-fA-F]{6}$/', $dcBrandDark))
+  $dcBrandDark = '#0f766e';
 $allowedDCVoiceLangs = ['en-IN', 'hi-IN', 'bn-IN', 'gu-IN', 'mr-IN'];
 if (!in_array($dcDefaultVoiceLanguage, $allowedDCVoiceLangs, true)) {
   $dcDefaultVoiceLanguage = 'en-IN';
@@ -64,26 +67,35 @@ $db = getDB();
 $appSettings = getAppSettings();
 $companyName = $appSettings['company_name'] ?? 'Shree Label Creation';
 $companyAddr = $appSettings['company_address'] ?? '';
-$companyGst  = $appSettings['company_gst'] ?? '';
-$logoPath    = $appSettings['logo_path'] ?? '';
-$logoUrl     = $logoPath ? (BASE_URL . '/' . $logoPath) : '';
+$companyGst = $appSettings['company_gst'] ?? '';
+$logoPath = $appSettings['logo_path'] ?? '';
+$logoUrl = $logoPath ? (BASE_URL . '/' . $logoPath) : '';
 $appFooterLeft = $appSettings['footer_left'] ?? '';
 $appFooterRight = $appSettings['footer_right'] ?? '';
 
 // ── Helpers ───────────────────────────────────────────────
-function safeCountQueryDC($db, $sql) {
-    try { $r = $db->query($sql); return $r ? (int)$r->fetch_row()[0] : 0; } catch (Exception $e) { return 0; }
+function safeCountQueryDC($db, $sql)
+{
+  try {
+    $r = $db->query($sql);
+    return $r ? (int) $r->fetch_row()[0] : 0;
+  } catch (Exception $e) {
+    return 0;
+  }
 }
 
-function dcDisplayJobName($j) {
-    $d = trim((string)($j['planning_job_name'] ?? ''));
-    if ($d !== '') return $d;
-    $jn = trim((string)($j['job_no'] ?? ''));
-    return $jn !== '' ? $jn : '—';
+function dcDisplayJobName($j)
+{
+  $d = trim((string) ($j['planning_job_name'] ?? ''));
+  if ($d !== '')
+    return $d;
+  $jn = trim((string) ($j['job_no'] ?? ''));
+  return $jn !== '' ? $jn : '—';
 }
 
-function dcCanonicalStatus($status) {
-  $raw = trim((string)$status);
+function dcCanonicalStatus($status)
+{
+  $raw = trim((string) $status);
   $lower = strtolower($raw);
   return match ($lower) {
     'queued' => 'Queued',
@@ -101,7 +113,7 @@ function dcCanonicalStatus($status) {
 }
 
 // ── Department filter clause (reusable) ──
-$dcWhereClause = trim((string)($dcWhereClauseOverride ?? ''));
+$dcWhereClause = trim((string) ($dcWhereClauseOverride ?? ''));
 if ($dcWhereClause === '') {
   $dcWhereClause = "(
     LOWER(COALESCE(j.department, '')) IN ('flatbed', 'die-cutting', 'die_cutting')
@@ -136,7 +148,7 @@ $jobs = $jobsRes instanceof mysqli_result ? $jobsRes->fetch_all(MYSQLI_ASSOC) : 
 // Fallback: for jobs created without previous_job_id (e.g. backfill), pull slitting extra_data by planning_id.
 $slittingExtraByPlanning = [];
 $jobPlanningIds = array_values(array_filter(array_unique(array_map(static function ($j) {
-  return (int)($j['planning_id'] ?? 0);
+  return (int) ($j['planning_id'] ?? 0);
 }, $jobs))));
 if (!empty($jobPlanningIds)) {
   $ph = implode(',', array_fill(0, count($jobPlanningIds), '?'));
@@ -147,17 +159,19 @@ if (!empty($jobPlanningIds)) {
     $slStmt->execute();
     $slRows = $slStmt->get_result()->fetch_all(MYSQLI_ASSOC);
     foreach ($slRows as $slr) {
-      $pid = (int)($slr['planning_id'] ?? 0);
-      if ($pid <= 0 || isset($slittingExtraByPlanning[$pid])) continue;
-      $parsed = json_decode((string)($slr['extra_data'] ?? '{}'), true) ?: [];
-      if (!is_array($parsed) || empty($parsed)) continue;
+      $pid = (int) ($slr['planning_id'] ?? 0);
+      if ($pid <= 0 || isset($slittingExtraByPlanning[$pid]))
+        continue;
+      $parsed = json_decode((string) ($slr['extra_data'] ?? '{}'), true) ?: [];
+      if (!is_array($parsed) || empty($parsed))
+        continue;
       $slittingExtraByPlanning[$pid] = $parsed;
     }
   }
 }
 
 $jobParentRollNos = array_values(array_filter(array_unique(array_map(static function ($j) {
-  return trim((string)($j['roll_no'] ?? ''));
+  return trim((string) ($j['roll_no'] ?? ''));
 }, $jobs))));
 
 $paperStockChildrenMap = []; // parent_roll_no => [child rows]
@@ -170,9 +184,11 @@ if (!empty($jobParentRollNos)) {
     $psChildStmt->execute();
     $psChildRows = $psChildStmt->get_result()->fetch_all(MYSQLI_ASSOC);
     foreach ($psChildRows as $row) {
-      $parentRoll = trim((string)($row['parent_roll_no'] ?? ''));
-      if ($parentRoll === '') continue;
-      if (!isset($paperStockChildrenMap[$parentRoll])) $paperStockChildrenMap[$parentRoll] = [];
+      $parentRoll = trim((string) ($row['parent_roll_no'] ?? ''));
+      if ($parentRoll === '')
+        continue;
+      if (!isset($paperStockChildrenMap[$parentRoll]))
+        $paperStockChildrenMap[$parentRoll] = [];
       $paperStockChildrenMap[$parentRoll][] = $row;
     }
   }
@@ -183,90 +199,92 @@ $finishStates = ['Closed', 'Finalized', 'Completed', 'QC Passed'];
 
 $planIds = [];
 foreach ($jobs as $j) {
-    $pid = (int)($j['planning_id'] ?? 0);
-    if ($pid > 0) {
-        $planIds[$pid] = true;
-    }
+  $pid = (int) ($j['planning_id'] ?? 0);
+  if ($pid > 0) {
+    $planIds[$pid] = true;
+  }
 }
 $planIds = array_keys($planIds);
 
 $unfinishedJobsByPlan = [];
 if (!empty($planIds)) {
-    $ph = implode(',', array_fill(0, count($planIds), '?'));
-    $types = str_repeat('i', count($planIds));
-    $finishPlaceholders = "'" . implode("','", $finishStates) . "'";
-    $sqlUnfinished = "SELECT planning_id, id, LOWER(COALESCE(department, job_type, '')) AS dept 
+  $ph = implode(',', array_fill(0, count($planIds), '?'));
+  $types = str_repeat('i', count($planIds));
+  $finishPlaceholders = "'" . implode("','", $finishStates) . "'";
+  $sqlUnfinished = "SELECT planning_id, id, LOWER(COALESCE(department, job_type, '')) AS dept 
                       FROM jobs 
                       WHERE planning_id IN ($ph) 
                         AND status NOT IN ($finishPlaceholders)
                         AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
                       ORDER BY id ASC";
-    $stmtUnfinished = $db->prepare($sqlUnfinished);
-    if ($stmtUnfinished) {
-        $stmtUnfinished->bind_param($types, ...$planIds);
-        $stmtUnfinished->execute();
-        $resUnfinished = $stmtUnfinished->get_result();
-        while ($uRow = $resUnfinished->fetch_assoc()) {
-            $pid = (int)$uRow['planning_id'];
-            if (!isset($unfinishedJobsByPlan[$pid])) {
-                $unfinishedJobsByPlan[$pid] = [];
-            }
-            $unfinishedJobsByPlan[$pid][] = [
-                'id' => (int)$uRow['id'],
-                'dept' => trim((string)$uRow['dept'])
-            ];
-        }
+  $stmtUnfinished = $db->prepare($sqlUnfinished);
+  if ($stmtUnfinished) {
+    $stmtUnfinished->bind_param($types, ...$planIds);
+    $stmtUnfinished->execute();
+    $resUnfinished = $stmtUnfinished->get_result();
+    while ($uRow = $resUnfinished->fetch_assoc()) {
+      $pid = (int) $uRow['planning_id'];
+      if (!isset($unfinishedJobsByPlan[$pid])) {
+        $unfinishedJobsByPlan[$pid] = [];
+      }
+      $unfinishedJobsByPlan[$pid][] = [
+        'id' => (int) $uRow['id'],
+        'dept' => trim((string) $uRow['dept'])
+      ];
     }
+  }
 }
 
 $dcToNumber = static function ($value): float {
-  return (float)str_replace(',', '', trim((string)$value));
+  return (float) str_replace(',', '', trim((string) $value));
 };
 foreach ($jobs as &$job) {
   $job['status'] = dcCanonicalStatus($job['status'] ?? '');
-  $job['extra_data_parsed'] = json_decode((string)($job['extra_data'] ?? '{}'), true) ?: [];
-  $planningExtra = json_decode((string)($job['planning_extra_data'] ?? '{}'), true) ?: [];
+  $job['extra_data_parsed'] = json_decode((string) ($job['extra_data'] ?? '{}'), true) ?: [];
+  $planningExtra = json_decode((string) ($job['planning_extra_data'] ?? '{}'), true) ?: [];
 
   // Auto-update status to Completed if production is finished (prevents finished jobs from appearing in pending tab)
-  $currentStatus = (string)($job['status'] ?? '');
+  $currentStatus = (string) ($job['status'] ?? '');
   if (in_array($currentStatus, ['Pending', 'Running', 'Queued'], true)) {
     $jobExtra = $job['extra_data_parsed'];
-    $producedQty = (float)($jobExtra['barcode_total_qty_pcs'] ?? $jobExtra['total_qty_pcs'] ?? $jobExtra['die_cutting_total_qty_pcs'] ?? $jobExtra['actual_qty'] ?? 0);
-    $plannedQty = (float)($planningExtra['order_quantity_user'] ?? $planningExtra['order_quantity'] ?? $planningExtra['qty_pcs'] ?? 0);
+    $producedQty = (float) ($jobExtra['barcode_total_qty_pcs'] ?? $jobExtra['total_qty_pcs'] ?? $jobExtra['die_cutting_total_qty_pcs'] ?? $jobExtra['actual_qty'] ?? 0);
+    $plannedQty = (float) ($planningExtra['order_quantity_user'] ?? $planningExtra['order_quantity'] ?? $planningExtra['qty_pcs'] ?? 0);
 
     // If produced quantity is entered and >= planned quantity, mark as completed
     if ($producedQty > 0 && $plannedQty > 0 && $producedQty >= $plannedQty) {
       $job['status'] = 'Completed';
     }
   }
-  if ((float)($job['gsm'] ?? 0) <= 0) {
+  if ((float) ($job['gsm'] ?? 0) <= 0) {
     $parentDetails = is_array($planningExtra['parent_details'] ?? null) ? $planningExtra['parent_details'] : [];
-    $parentGsm = (float)($parentDetails['gsm'] ?? 0);
+    $parentGsm = (float) ($parentDetails['gsm'] ?? 0);
     if ($parentGsm > 0) {
       $job['gsm'] = $parentGsm;
     }
   }
-  if ((float)($job['gsm'] ?? 0) <= 0 && !empty($planningExtra['child_rolls']) && is_array($planningExtra['child_rolls'])) {
+  if ((float) ($job['gsm'] ?? 0) <= 0 && !empty($planningExtra['child_rolls']) && is_array($planningExtra['child_rolls'])) {
     foreach ($planningExtra['child_rolls'] as $childRoll) {
-      $childGsm = (float)($childRoll['gsm'] ?? 0);
+      $childGsm = (float) ($childRoll['gsm'] ?? 0);
       if ($childGsm > 0) {
         $job['gsm'] = $childGsm;
         break;
       }
     }
   }
-  $job['planning_die_size'] = (string)($planningExtra['barcode_size'] ?? ($planningExtra['size'] ?? ($planningExtra['die_size'] ?? '')));
-  $sizeWidth = (string)($planningExtra['width_mm'] ?? ($planningExtra['barcode_width'] ?? ($planningExtra['width'] ?? '')));
-  $sizeHeight = (string)($planningExtra['height_mm'] ?? ($planningExtra['barcode_height'] ?? ($planningExtra['height'] ?? '')));
+  $job['planning_die_size'] = (string) ($planningExtra['barcode_size'] ?? ($planningExtra['size'] ?? ($planningExtra['die_size'] ?? '')));
+  $sizeWidth = (string) ($planningExtra['width_mm'] ?? ($planningExtra['barcode_width'] ?? ($planningExtra['width'] ?? '')));
+  $sizeHeight = (string) ($planningExtra['height_mm'] ?? ($planningExtra['barcode_height'] ?? ($planningExtra['height'] ?? '')));
   if ($sizeWidth === '' || $sizeHeight === '') {
-    $dieSize = (string)$job['planning_die_size'];
+    $dieSize = (string) $job['planning_die_size'];
     if ($dieSize !== '' && preg_match('/([0-9]+(?:\.[0-9]+)?)\s*mm?\s*[xX×]\s*([0-9]+(?:\.[0-9]+)?)/i', $dieSize, $m)) {
-      if ($sizeWidth === '') $sizeWidth = (string)$m[1];
-      if ($sizeHeight === '') $sizeHeight = (string)$m[2];
+      if ($sizeWidth === '')
+        $sizeWidth = (string) $m[1];
+      if ($sizeHeight === '')
+        $sizeHeight = (string) $m[2];
     }
   }
-  $sizeWidthNum = (float)str_replace(',', '', trim((string)$sizeWidth));
-  $sizeHeightNum = (float)str_replace(',', '', trim((string)$sizeHeight));
+  $sizeWidthNum = (float) str_replace(',', '', trim((string) $sizeWidth));
+  $sizeHeightNum = (float) str_replace(',', '', trim((string) $sizeHeight));
   if ($sizeWidthNum > 0 && $sizeHeightNum > 0 && $sizeWidthNum < $sizeHeightNum) {
     $tmp = $sizeWidth;
     $sizeWidth = $sizeHeight;
@@ -274,208 +292,211 @@ foreach ($jobs as &$job) {
   }
   $job['planning_size_width_mm'] = $sizeWidth;
   $job['planning_size_height_mm'] = $sizeHeight;
-  $job['planning_repeat'] = (string)($planningExtra['repeat'] ?? ($planningExtra['barcode_repeat'] ?? ($planningExtra['cylinder_repeat'] ?? ($planningExtra['pitch'] ?? ''))));
+  $job['planning_repeat'] = (string) ($planningExtra['repeat'] ?? ($planningExtra['barcode_repeat'] ?? ($planningExtra['cylinder_repeat'] ?? ($planningExtra['pitch'] ?? ''))));
   $jobExtra = is_array($job['extra_data_parsed'] ?? null) ? $job['extra_data_parsed'] : [];
   $planningUpsBucket = is_array($planningExtra['ups'] ?? null) ? $planningExtra['ups'] : [];
-  $planningUpsScalar = is_scalar($planningExtra['ups'] ?? null) ? (string)$planningExtra['ups'] : '';
-  $jobUpsScalar = is_scalar($jobExtra['ups'] ?? null) ? (string)$jobExtra['ups'] : '';
-  $job['planning_up_in_roll'] = (string)($planningExtra['up_in_roll']
+  $planningUpsScalar = is_scalar($planningExtra['ups'] ?? null) ? (string) $planningExtra['ups'] : '';
+  $jobUpsScalar = is_scalar($jobExtra['ups'] ?? null) ? (string) $jobExtra['ups'] : '';
+  $job['planning_up_in_roll'] = (string) ($planningExtra['up_in_roll']
     ?? ($planningExtra['ups_in_roll']
-    ?? ($planningExtra['up_roll']
-    ?? ($planningUpsBucket['in_roll']
-    ?? ($planningUpsBucket['roll']
-    ?? ($jobExtra['up_in_roll'] ?? ($jobExtra['ups_in_roll'] ?? ($jobExtra['up_roll'] ?? ''))))))));
-  $job['planning_up_in_production'] = (string)($planningExtra['up_in_production']
+      ?? ($planningExtra['up_roll']
+        ?? ($planningUpsBucket['in_roll']
+          ?? ($planningUpsBucket['roll']
+            ?? ($jobExtra['up_in_roll'] ?? ($jobExtra['ups_in_roll'] ?? ($jobExtra['up_roll'] ?? ''))))))));
+  $job['planning_up_in_production'] = (string) ($planningExtra['up_in_production']
     ?? ($planningExtra['ups_in_production']
-    ?? ($planningExtra['up_in_die']
-    ?? ($planningUpsScalar
-    ?? ($planningExtra['up']
-    ?? ($planningUpsBucket['in_production']
-    ?? ($planningUpsBucket['production']
-    ?? ($jobExtra['up_in_production']
-    ?? ($jobExtra['ups_in_production']
-    ?? ($jobExtra['up_in_die'] ?? ($jobUpsScalar !== '' ? $jobUpsScalar : ($jobExtra['up'] ?? ''))))))))))));
-  $job['planning_order_qty'] = (string)($planningExtra['order_quantity_user'] ?? ($planningExtra['order_quantity'] ?? ($planningExtra['qty_pcs'] ?? '')));
-  $job['planning_pcs_per_roll'] = (string)($planningExtra['pcs_per_roll'] ?? ($planningExtra['pieces_per_roll'] ?? ($planningExtra['pcs_roll'] ?? ($planningExtra['qty_per_roll'] ?? ''))));
-  $planningTotalRolls = (string)($planningExtra['total_rolls'] ?? ($planningExtra['total_roll_count'] ?? ($planningExtra['roll_count'] ?? ($planningExtra['rolls_required'] ?? ''))));
+      ?? ($planningExtra['up_in_die']
+        ?? ($planningUpsScalar
+          ?? ($planningExtra['up']
+            ?? ($planningUpsBucket['in_production']
+              ?? ($planningUpsBucket['production']
+                ?? ($jobExtra['up_in_production']
+                  ?? ($jobExtra['ups_in_production']
+                    ?? ($jobExtra['up_in_die'] ?? ($jobUpsScalar !== '' ? $jobUpsScalar : ($jobExtra['up'] ?? ''))))))))))));
+  $job['planning_order_qty'] = (string) ($planningExtra['order_quantity_user'] ?? ($planningExtra['order_quantity'] ?? ($planningExtra['qty_pcs'] ?? '')));
+  $job['planning_pcs_per_roll'] = (string) ($planningExtra['pcs_per_roll'] ?? ($planningExtra['pieces_per_roll'] ?? ($planningExtra['pcs_roll'] ?? ($planningExtra['qty_per_roll'] ?? ''))));
+  $planningTotalRolls = (string) ($planningExtra['total_rolls'] ?? ($planningExtra['total_roll_count'] ?? ($planningExtra['roll_count'] ?? ($planningExtra['rolls_required'] ?? ''))));
   if ($planningTotalRolls === '') {
     $orderQtyNum = $dcToNumber($job['planning_order_qty']);
     $pcsPerRollNum = $dcToNumber($job['planning_pcs_per_roll']);
     if ($pcsPerRollNum > 0 && $orderQtyNum > 0) {
-      $planningTotalRolls = (string)((int)ceil($orderQtyNum / $pcsPerRollNum));
+      $planningTotalRolls = (string) ((int) ceil($orderQtyNum / $pcsPerRollNum));
     } elseif ($orderQtyNum > 0) {
       $planningTotalRolls = '0';
     }
   }
   $job['planning_total_rolls'] = $planningTotalRolls;
-  $job['planning_material'] = (string)($planningExtra['material_type'] ?? ($planningExtra['material'] ?? ($job['paper_type'] ?? '')));
-  $job['planning_paper_type'] = (string)($planningExtra['paper_type'] ?? ($planningExtra['paper_name'] ?? ($job['paper_type'] ?? ($job['planning_material'] ?? ''))));
-  $job['planning_paper_size'] = (string)($planningExtra['paper_size'] ?? ($planningExtra['paper_dimensions'] ?? ($planningExtra['paper_dim'] ?? '')));
-  $job['planning_item_width'] = (string)($planningExtra['item_width'] ?? ($planningExtra['label_width'] ?? ($planningExtra['barcode_width'] ?? ($planningExtra['width_mm'] ?? ($planningExtra['width'] ?? '')))));
-  $job['planning_item_length'] = (string)($planningExtra['item_length'] ?? ($planningExtra['label_length'] ?? ($planningExtra['barcode_height'] ?? ($planningExtra['height_mm'] ?? ($planningExtra['height'] ?? '')))));
-  $job['planning_dia'] = (string)($planningExtra['dia'] ?? ($planningExtra['diameter'] ?? ($planningExtra['roll_dia'] ?? ($planningExtra['od'] ?? ''))));
+  $job['planning_material'] = (string) ($planningExtra['material_type'] ?? ($planningExtra['material'] ?? ($job['paper_type'] ?? '')));
+  $job['planning_paper_type'] = (string) ($planningExtra['paper_type'] ?? ($planningExtra['paper_name'] ?? ($job['paper_type'] ?? ($job['planning_material'] ?? ''))));
+  $job['planning_paper_size'] = (string) ($planningExtra['paper_size'] ?? ($planningExtra['paper_dimensions'] ?? ($planningExtra['paper_dim'] ?? '')));
+  $job['planning_item_width'] = (string) ($planningExtra['item_width'] ?? ($planningExtra['label_width'] ?? ($planningExtra['barcode_width'] ?? ($planningExtra['width_mm'] ?? ($planningExtra['width'] ?? '')))));
+  $job['planning_item_length'] = (string) ($planningExtra['item_length'] ?? ($planningExtra['label_length'] ?? ($planningExtra['barcode_height'] ?? ($planningExtra['height_mm'] ?? ($planningExtra['height'] ?? '')))));
+  $job['planning_dia'] = (string) ($planningExtra['dia'] ?? ($planningExtra['diameter'] ?? ($planningExtra['roll_dia'] ?? ($planningExtra['od'] ?? ''))));
   $job['planning_roll_dia'] = $job['planning_dia'];
-  $job['planning_core'] = (string)($planningExtra['core'] ?? ($planningExtra['core_size'] ?? ($planningExtra['core_mm'] ?? ($planningExtra['core_dia'] ?? ($planningExtra['core_inch'] ?? '')))));
-  $job['planning_core_size'] = (string)($planningExtra['core_size'] ?? ($planningExtra['core_mm'] ?? ($planningExtra['core_dia'] ?? ($planningExtra['core_inch'] ?? ($job['planning_core'] ?? '')))));
-  $job['planning_core_type'] = (string)($planningExtra['core_type'] ?? ($planningExtra['core_type_name'] ?? ($planningExtra['core_name'] ?? ($planningExtra['core'] ?? ''))));
-  $job['paper_company_name'] = (string)($planningExtra['paper_company_name'] ?? ($planningExtra['paper_company'] ?? ($planningExtra['company_name'] ?? ($job['company'] ?? ''))));
-  $job['planning_plate_no'] = (string)($planningExtra['plate_no'] ?? '');
-  $job['planning_client_name'] = (string)($planningExtra['client_name'] ?? ($planningExtra['customer_name'] ?? ($planningExtra['party_name'] ?? '')));
-    $imagePath = trim((string)($planningExtra['image_path'] ?? ($planningExtra['planning_image_path'] ?? '')));
-    if ($imagePath !== '' && !preg_match('/^https?:\/\//i', $imagePath)) {
-        $imagePath = BASE_URL . '/' . ltrim($imagePath, '/');
-    }
-    $job['planning_image_url'] = $imagePath;
-    $job['display_job_name'] = dcDisplayJobName($job);
-    $prevStatus = trim((string)($job['prev_job_status'] ?? ''));
-    $hasPrev = (int)($job['previous_job_id'] ?? 0) > 0;
-    $directPrevReady = !$hasPrev || in_array($prevStatus, $finishStates, true);
+  $job['planning_core'] = (string) ($planningExtra['core'] ?? ($planningExtra['core_size'] ?? ($planningExtra['core_mm'] ?? ($planningExtra['core_dia'] ?? ($planningExtra['core_inch'] ?? '')))));
+  $job['planning_core_size'] = (string) ($planningExtra['core_size'] ?? ($planningExtra['core_mm'] ?? ($planningExtra['core_dia'] ?? ($planningExtra['core_inch'] ?? ($job['planning_core'] ?? '')))));
+  $job['planning_core_type'] = (string) ($planningExtra['core_type'] ?? ($planningExtra['core_type_name'] ?? ($planningExtra['core_name'] ?? ($planningExtra['core'] ?? ''))));
+  $job['paper_company_name'] = (string) ($planningExtra['paper_company_name'] ?? ($planningExtra['paper_company'] ?? ($planningExtra['company_name'] ?? ($job['company'] ?? ''))));
+  $job['planning_plate_no'] = (string) ($planningExtra['plate_no'] ?? '');
+  $job['planning_client_name'] = (string) ($planningExtra['client_name'] ?? ($planningExtra['customer_name'] ?? ($planningExtra['party_name'] ?? '')));
+  $imagePath = trim((string) ($planningExtra['image_path'] ?? ($planningExtra['planning_image_path'] ?? '')));
+  if ($imagePath !== '' && !preg_match('/^https?:\/\//i', $imagePath)) {
+    $imagePath = BASE_URL . '/' . ltrim($imagePath, '/');
+  }
+  $job['planning_image_url'] = $imagePath;
+  $job['display_job_name'] = dcDisplayJobName($job);
+  $prevStatus = trim((string) ($job['prev_job_status'] ?? ''));
+  $hasPrev = (int) ($job['previous_job_id'] ?? 0) > 0;
+  $directPrevReady = !$hasPrev || in_array($prevStatus, $finishStates, true);
 
-    $planId = (int)($job['planning_id'] ?? 0);
-    $jobDept = strtolower(trim((string)($job['department'] ?? ($job['job_type'] ?? ''))));
-    $jobId = (int)($job['id'] ?? 0);
-    $planChainReady = true;
+  $planId = (int) ($job['planning_id'] ?? 0);
+  $jobDept = strtolower(trim((string) ($job['department'] ?? ($job['job_type'] ?? ''))));
+  $jobId = (int) ($job['id'] ?? 0);
+  $planChainReady = true;
 
-    $paperRollDepts = ['paperroll', 'pos', 'oneply', 'twoply', 'paper_roll', 'pos_roll', 'one_ply', 'two_ply'];
+  $paperRollDepts = ['paperroll', 'pos', 'oneply', 'twoply', 'paper_roll', 'pos_roll', 'one_ply', 'two_ply'];
 
-    if ($planId > 0 && !empty($unfinishedJobsByPlan[$planId])) {
-        foreach ($unfinishedJobsByPlan[$planId] as $uJob) {
-            $uId = $uJob['id'];
-            $uDept = $uJob['dept'];
-            if ($uId >= $jobId) {
-                continue;
-            }
-            if (in_array($jobDept, $paperRollDepts, true) && in_array($uDept, $paperRollDepts, true)) {
-                continue;
-            }
-            if ($uDept === $jobDept) {
-                continue;
-            }
-            $planChainReady = false;
-            break;
-        }
-    }
-
-    $job['upstream_ready'] = $directPrevReady && $planChainReady;
-
-    // UI state rule:
-    // - Locked cards must stay Queued.
-    // - Unlocked cards should move to Pending so operator can Start.
-    $normalizedStatus = dcCanonicalStatus($job['status'] ?? '');
-    if (!$job['upstream_ready']) {
-      $job['status'] = 'Queued';
-    } elseif ($normalizedStatus === 'Queued') {
-      $job['status'] = 'Pending';
-    } else {
-      $job['status'] = $normalizedStatus;
-    }
-
-    // ── Parse previous job extra_data (printing production qty) ──
-    $prevExtra = json_decode((string)($job['prev_extra_data'] ?? '{}'), true) ?: [];
-    $job['prev_extra_data_parsed'] = $prevExtra;
-    $job['grandprev_extra_data_parsed'] = json_decode((string)($job['grandprev_extra_data'] ?? '{}'), true) ?: [];
-    $job['prev_actual_qty'] = (string)(
-      $prevExtra['actual_qty']
-      ?? $prevExtra['production_total_qty']
-      ?? $prevExtra['printed_qty']
-      ?? $prevExtra['print_qty']
-      ?? $prevExtra['total_qty_pcs']
-      ?? $prevExtra['die_cutting_total_qty_pcs']
-      ?? $prevExtra['dc_total_qty']
-      ?? ''
-    );
-    $prevWastageRaw = trim((string)(
-      $prevExtra['total_wastage_meters']
-      ?? $prevExtra['wastage_meters']
-      ?? ''
-    ));
-    if ($prevWastageRaw === '' && !empty($prevExtra['roll_wastage_rows']) && is_array($prevExtra['roll_wastage_rows'])) {
-      $rollSum = 0.0;
-      foreach ($prevExtra['roll_wastage_rows'] as $rw) {
-        $rollSum += (float)($rw['wastage_meters'] ?? 0);
+  if ($planId > 0 && !empty($unfinishedJobsByPlan[$planId])) {
+    foreach ($unfinishedJobsByPlan[$planId] as $uJob) {
+      $uId = $uJob['id'];
+      $uDept = $uJob['dept'];
+      if ($uId >= $jobId) {
+        continue;
       }
-      if ($rollSum > 0) $prevWastageRaw = number_format($rollSum, 2, '.', '');
+      if (in_array($jobDept, $paperRollDepts, true) && in_array($uDept, $paperRollDepts, true)) {
+        continue;
+      }
+      if ($uDept === $jobDept) {
+        continue;
+      }
+      $planChainReady = false;
+      break;
     }
-    $job['prev_wastage_meters'] = $prevWastageRaw;
+  }
 
-    $prevRollMap = [];
-    $prevRollGroups = [
-      'assigned_child_rolls' => 'Job Assign',
-      'child_rolls' => 'Job Assign',
-      'stock_rolls' => 'Stock',
-      'remaining_rolls' => 'Remaining',
-    ];
-    foreach ($prevRollGroups as $groupKey => $defaultStatus) {
-      $rows = $prevExtra[$groupKey] ?? null;
-      if (!is_array($rows)) continue;
-      foreach ($rows as $row) {
-        $rollNo = '';
-        $entry = [];
-        if (is_array($row)) {
-          $rollNo = trim((string)($row['roll_no'] ?? $row['roll'] ?? $row['roll_number'] ?? ''));
-          $entry = [
-            'roll_no' => $rollNo,
-            'width_mm' => $row['width_mm'] ?? ($row['width'] ?? ''),
-            'length_mtr' => $row['length_mtr'] ?? ($row['length'] ?? ''),
-            'paper_type' => $row['paper_type'] ?? ($row['material'] ?? ''),
-            'company' => $row['company'] ?? ($row['company_name'] ?? ''),
-            'gsm' => $row['gsm'] ?? '',
-            'status' => $row['status'] ?? $defaultStatus,
-          ];
-        } else {
-          $rollNo = trim((string)$row);
-          $entry = [
-            'roll_no' => $rollNo,
-            'width_mm' => '',
-            'length_mtr' => '',
-            'paper_type' => '',
-            'company' => '',
-            'gsm' => '',
-            'status' => $defaultStatus,
-          ];
-        }
+  $job['upstream_ready'] = $directPrevReady && $planChainReady;
 
-        if ($rollNo === '') continue;
-        $k = strtolower($rollNo);
-        if (!isset($prevRollMap[$k])) {
-          $prevRollMap[$k] = $entry;
-          continue;
-        }
+  // UI state rule:
+  // - Locked cards must stay Queued.
+  // - Unlocked cards should move to Pending so operator can Start.
+  $normalizedStatus = dcCanonicalStatus($job['status'] ?? '');
+  if (!$job['upstream_ready']) {
+    $job['status'] = 'Queued';
+  } elseif ($normalizedStatus === 'Queued') {
+    $job['status'] = 'Pending';
+  } else {
+    $job['status'] = $normalizedStatus;
+  }
 
-        foreach (['width_mm', 'length_mtr', 'paper_type', 'company', 'gsm', 'status'] as $field) {
-          $oldVal = trim((string)($prevRollMap[$k][$field] ?? ''));
-          $newVal = trim((string)($entry[$field] ?? ''));
-          if ($oldVal === '' && $newVal !== '') {
-            $prevRollMap[$k][$field] = $entry[$field];
-          }
+  // ── Parse previous job extra_data (printing production qty) ──
+  $prevExtra = json_decode((string) ($job['prev_extra_data'] ?? '{}'), true) ?: [];
+  $job['prev_extra_data_parsed'] = $prevExtra;
+  $job['grandprev_extra_data_parsed'] = json_decode((string) ($job['grandprev_extra_data'] ?? '{}'), true) ?: [];
+  $job['prev_actual_qty'] = (string) (
+    $prevExtra['actual_qty']
+    ?? $prevExtra['production_total_qty']
+    ?? $prevExtra['printed_qty']
+    ?? $prevExtra['print_qty']
+    ?? $prevExtra['total_qty_pcs']
+    ?? $prevExtra['die_cutting_total_qty_pcs']
+    ?? $prevExtra['dc_total_qty']
+    ?? ''
+  );
+  $prevWastageRaw = trim((string) (
+    $prevExtra['total_wastage_meters']
+    ?? $prevExtra['wastage_meters']
+    ?? ''
+  ));
+  if ($prevWastageRaw === '' && !empty($prevExtra['roll_wastage_rows']) && is_array($prevExtra['roll_wastage_rows'])) {
+    $rollSum = 0.0;
+    foreach ($prevExtra['roll_wastage_rows'] as $rw) {
+      $rollSum += (float) ($rw['wastage_meters'] ?? 0);
+    }
+    if ($rollSum > 0)
+      $prevWastageRaw = number_format($rollSum, 2, '.', '');
+  }
+  $job['prev_wastage_meters'] = $prevWastageRaw;
+
+  $prevRollMap = [];
+  $prevRollGroups = [
+    'assigned_child_rolls' => 'Job Assign',
+    'child_rolls' => 'Job Assign',
+    'stock_rolls' => 'Stock',
+    'remaining_rolls' => 'Remaining',
+  ];
+  foreach ($prevRollGroups as $groupKey => $defaultStatus) {
+    $rows = $prevExtra[$groupKey] ?? null;
+    if (!is_array($rows))
+      continue;
+    foreach ($rows as $row) {
+      $rollNo = '';
+      $entry = [];
+      if (is_array($row)) {
+        $rollNo = trim((string) ($row['roll_no'] ?? $row['roll'] ?? $row['roll_number'] ?? ''));
+        $entry = [
+          'roll_no' => $rollNo,
+          'width_mm' => $row['width_mm'] ?? ($row['width'] ?? ''),
+          'length_mtr' => $row['length_mtr'] ?? ($row['length'] ?? ''),
+          'paper_type' => $row['paper_type'] ?? ($row['material'] ?? ''),
+          'company' => $row['company'] ?? ($row['company_name'] ?? ''),
+          'gsm' => $row['gsm'] ?? '',
+          'status' => $row['status'] ?? $defaultStatus,
+        ];
+      } else {
+        $rollNo = trim((string) $row);
+        $entry = [
+          'roll_no' => $rollNo,
+          'width_mm' => '',
+          'length_mtr' => '',
+          'paper_type' => '',
+          'company' => '',
+          'gsm' => '',
+          'status' => $defaultStatus,
+        ];
+      }
+
+      if ($rollNo === '')
+        continue;
+      $k = strtolower($rollNo);
+      if (!isset($prevRollMap[$k])) {
+        $prevRollMap[$k] = $entry;
+        continue;
+      }
+
+      foreach (['width_mm', 'length_mtr', 'paper_type', 'company', 'gsm', 'status'] as $field) {
+        $oldVal = trim((string) ($prevRollMap[$k][$field] ?? ''));
+        $newVal = trim((string) ($entry[$field] ?? ''));
+        if ($oldVal === '' && $newVal !== '') {
+          $prevRollMap[$k][$field] = $entry[$field];
         }
       }
     }
-    $job['prev_assigned_child_rolls'] = array_values($prevRollMap);
-    unset($job['prev_extra_data']); // Don't send raw blob to JS
-    unset($job['grandprev_extra_data']); // Don't send raw blob to JS
+  }
+  $job['prev_assigned_child_rolls'] = array_values($prevRollMap);
+  unset($job['prev_extra_data']); // Don't send raw blob to JS
+  unset($job['grandprev_extra_data']); // Don't send raw blob to JS
 
-    // ── Normalize notes_display ──
-    $rawNotes = trim((string)($job['notes'] ?? ''));
-    $job['notes_display'] = $rawNotes;
-    if ($rawNotes !== '' && stripos($rawNotes, 'Die-cutting queued from Flexo') === 0) {
-        $planRef = 'N/A';
-        if (preg_match('/\|\s*Plan:\s*([^|\n]+)/i', $rawNotes, $m)) {
-            $planRef = trim((string)($m[1] ?? '')) ?: 'N/A';
-        }
-        $jumboRef = trim((string)($job['jumbo_job_no'] ?? ''));
-        $flexoRef = trim((string)($job['prev_job_no'] ?? ''));
-        $dcRef = trim((string)($job['job_no'] ?? ''));
-        $displayName = trim((string)($job['display_job_name'] ?? ''));
-        $normalized = 'Die-cutting queued from Flexo | Plan: ' . $planRef
-            . ' | ' . ($jumboRef !== '' ? $jumboRef : 'N/A')
-            . ' | Flexo: ' . ($flexoRef !== '' ? $flexoRef : 'N/A')
-            . ' | Die-Cut: ' . ($dcRef !== '' ? $dcRef : 'N/A');
-        if ($displayName !== '') {
-            $normalized .= ' | Job name: ' . $displayName;
-        }
-        $job['notes_display'] = $normalized;
+  // ── Normalize notes_display ──
+  $rawNotes = trim((string) ($job['notes'] ?? ''));
+  $job['notes_display'] = $rawNotes;
+  if ($rawNotes !== '' && stripos($rawNotes, 'Die-cutting queued from Flexo') === 0) {
+    $planRef = 'N/A';
+    if (preg_match('/\|\s*Plan:\s*([^|\n]+)/i', $rawNotes, $m)) {
+      $planRef = trim((string) ($m[1] ?? '')) ?: 'N/A';
     }
+    $jumboRef = trim((string) ($job['jumbo_job_no'] ?? ''));
+    $flexoRef = trim((string) ($job['prev_job_no'] ?? ''));
+    $dcRef = trim((string) ($job['job_no'] ?? ''));
+    $displayName = trim((string) ($job['display_job_name'] ?? ''));
+    $normalized = 'Die-cutting queued from Flexo | Plan: ' . $planRef
+      . ' | ' . ($jumboRef !== '' ? $jumboRef : 'N/A')
+      . ' | Flexo: ' . ($flexoRef !== '' ? $flexoRef : 'N/A')
+      . ' | Die-Cut: ' . ($dcRef !== '' ? $dcRef : 'N/A');
+    if ($displayName !== '') {
+      $normalized .= ' | Job name: ' . $displayName;
+    }
+    $job['notes_display'] = $normalized;
+  }
 }
 unset($job);
 
@@ -484,9 +505,10 @@ $plateImageByPlateNo = [];
 $plateRes = @$db->query("SELECT plate, image_path FROM master_plate_data");
 if ($plateRes instanceof mysqli_result) {
   while ($row = $plateRes->fetch_assoc()) {
-    $plateNo = trim((string)($row['plate'] ?? ''));
-    $imgPath = trim((string)($row['image_path'] ?? ''));
-    if ($plateNo === '' || $imgPath === '') continue;
+    $plateNo = trim((string) ($row['plate'] ?? ''));
+    $imgPath = trim((string) ($row['image_path'] ?? ''));
+    if ($plateNo === '' || $imgPath === '')
+      continue;
     if (!preg_match('/^https?:\/\//i', $imgPath)) {
       $imgPath = BASE_URL . '/' . ltrim(str_replace('\\', '/', $imgPath), '/');
     }
@@ -498,17 +520,17 @@ if ($plateRes instanceof mysqli_result) {
 }
 
 foreach ($jobs as &$job) {
-  $plateNo = trim((string)($job['planning_plate_no'] ?? ''));
-  $plateImageUrl = ($plateNo !== '' && isset($plateImageByPlateNo[$plateNo])) ? (string)$plateImageByPlateNo[$plateNo] : '';
+  $plateNo = trim((string) ($job['planning_plate_no'] ?? ''));
+  $plateImageUrl = ($plateNo !== '' && isset($plateImageByPlateNo[$plateNo])) ? (string) $plateImageByPlateNo[$plateNo] : '';
   $job['plate_image_url'] = $plateImageUrl;
-  $job['job_preview_image_url'] = trim((string)($job['planning_image_url'] ?? '')) !== ''
-    ? (string)$job['planning_image_url']
+  $job['job_preview_image_url'] = trim((string) ($job['planning_image_url'] ?? '')) !== ''
+    ? (string) $job['planning_image_url']
     : $plateImageUrl;
 }
 unset($job);
 
 // ── Enrich flatbed jobs with full upstream flexo roll list ─────────────
-$prevJobIds = array_filter(array_unique(array_map(static fn($j) => (int)($j['previous_job_id'] ?? 0), $jobs)));
+$prevJobIds = array_filter(array_unique(array_map(static fn($j) => (int) ($j['previous_job_id'] ?? 0), $jobs)));
 $prevJobExtraMap = []; // prev_job_id => parsed extra_data
 if (!empty($prevJobIds)) {
   $ph = implode(',', array_fill(0, count($prevJobIds), '?'));
@@ -519,25 +541,26 @@ if (!empty($prevJobIds)) {
     $pStmt->execute();
     $pRows = $pStmt->get_result()->fetch_all(MYSQLI_ASSOC);
     foreach ($pRows as $pr) {
-      $prevJobExtraMap[(int)($pr['id'] ?? 0)] = json_decode((string)($pr['extra_data'] ?? '{}'), true) ?: [];
+      $prevJobExtraMap[(int) ($pr['id'] ?? 0)] = json_decode((string) ($pr['extra_data'] ?? '{}'), true) ?: [];
     }
   }
 }
 
 $flatbedRollNos = [];
 foreach ($jobs as &$job) {
-  $prevId = (int)($job['previous_job_id'] ?? 0);
+  $prevId = (int) ($job['previous_job_id'] ?? 0);
   $prevExtra = $prevJobExtraMap[$prevId] ?? [];
   if (!is_array($prevExtra) || empty($prevExtra)) {
     $prevExtra = is_array($job['prev_extra_data_parsed'] ?? null) ? $job['prev_extra_data_parsed'] : [];
   }
   $grandPrevExtra = is_array($job['grandprev_extra_data_parsed'] ?? null) ? $job['grandprev_extra_data_parsed'] : [];
-  $planningId = (int)($job['planning_id'] ?? 0);
+  $planningId = (int) ($job['planning_id'] ?? 0);
   $planningSlittingExtra = $slittingExtraByPlanning[$planningId] ?? [];
   $sourceRows = [];
 
   foreach ([$prevExtra, $grandPrevExtra, $planningSlittingExtra] as $upstreamExtra) {
-    if (!is_array($upstreamExtra) || empty($upstreamExtra)) continue;
+    if (!is_array($upstreamExtra) || empty($upstreamExtra))
+      continue;
     foreach (['assigned_child_rolls', 'child_rolls', 'stock_rolls', 'slitting_rolls', 'remaining_rolls'] as $bucket) {
       $rows = $upstreamExtra[$bucket] ?? null;
       if (is_array($rows)) {
@@ -548,14 +571,14 @@ foreach ($jobs as &$job) {
       $rows = $upstreamExtra[$bucket] ?? null;
       if (is_array($rows)) {
         foreach ($rows as $rnRaw) {
-          $rn = trim((string)$rnRaw);
+          $rn = trim((string) $rnRaw);
           if ($rn !== '') {
             $sourceRows[] = ['roll_no' => $rn];
           }
         }
       }
     }
-    $remainingOne = trim((string)($upstreamExtra['flexo_request_last_apply_summary']['remaining_stock_roll_no'] ?? ''));
+    $remainingOne = trim((string) ($upstreamExtra['flexo_request_last_apply_summary']['remaining_stock_roll_no'] ?? ''));
     if ($remainingOne !== '') {
       $sourceRows[] = ['roll_no' => $remainingOne, 'status' => 'Stock'];
     }
@@ -565,14 +588,15 @@ foreach ($jobs as &$job) {
   foreach ($sourceRows as $row) {
     $rollNo = '';
     if (is_array($row)) {
-      $rollNo = trim((string)($row['roll_no'] ?? $row['roll'] ?? $row['roll_number'] ?? ''));
+      $rollNo = trim((string) ($row['roll_no'] ?? $row['roll'] ?? $row['roll_number'] ?? ''));
     } else {
-      $rollNo = trim((string)$row);
+      $rollNo = trim((string) $row);
       $row = ['roll_no' => $rollNo];
     }
-    if ($rollNo === '') continue;
+    if ($rollNo === '')
+      continue;
     $k = strtolower($rollNo);
-    $parentRollNo = trim((string)($row['parent_roll_no'] ?? ''));
+    $parentRollNo = trim((string) ($row['parent_roll_no'] ?? ''));
     if (!isset($rollMap[$k])) {
       $rollMap[$k] = [
         'roll_no' => $rollNo,
@@ -590,13 +614,15 @@ foreach ($jobs as &$job) {
       ];
     } else {
       foreach (['parent_roll_no', 'width_mm', 'length_mtr', 'paper_type', 'company', 'gsm', 'weight_kg', 'sqm', 'wastage', 'remarks', 'status'] as $f) {
-        $old = trim((string)($rollMap[$k][$f] ?? ''));
-        $new = trim((string)($row[$f] ?? ''));
-        if ($old === '' && $new !== '') $rollMap[$k][$f] = $row[$f];
+        $old = trim((string) ($rollMap[$k][$f] ?? ''));
+        $new = trim((string) ($row[$f] ?? ''));
+        if ($old === '' && $new !== '')
+          $rollMap[$k][$f] = $row[$f];
       }
     }
     $flatbedRollNos[$rollNo] = true;
-    if ($parentRollNo !== '') $flatbedRollNos[$parentRollNo] = true;
+    if ($parentRollNo !== '')
+      $flatbedRollNos[$parentRollNo] = true;
   }
 
   // Also collect parent_roll_nos from this job's own extra_data (e.g. 2-ply/POS jobs created
@@ -607,9 +633,11 @@ foreach ($jobs as &$job) {
     $selfBucketRows = $selfExtraParsed[$_selfBucket] ?? null;
     if (is_array($selfBucketRows)) {
       foreach ($selfBucketRows as $_sr) {
-        if (!is_array($_sr)) continue;
-        $_prn = trim((string)($_sr['parent_roll_no'] ?? ''));
-        if ($_prn !== '') $flatbedRollNos[$_prn] = true;
+        if (!is_array($_sr))
+          continue;
+        $_prn = trim((string) ($_sr['parent_roll_no'] ?? ''));
+        if ($_prn !== '')
+          $flatbedRollNos[$_prn] = true;
       }
     }
   }
@@ -629,8 +657,9 @@ if (!empty($flatbedRollNos)) {
     $psStmt->execute();
     $psRows = $psStmt->get_result()->fetch_all(MYSQLI_ASSOC);
     foreach ($psRows as $ps) {
-      $rn = (string)($ps['roll_no'] ?? '');
-      if ($rn !== '') $flatbedRollStockMap[$rn] = $ps;
+      $rn = (string) ($ps['roll_no'] ?? '');
+      if ($rn !== '')
+        $flatbedRollStockMap[$rn] = $ps;
     }
   }
 }
@@ -639,35 +668,39 @@ foreach ($jobs as &$job) {
   $enriched = [];
   $rows = is_array($job['flatbed_source_rolls'] ?? null) ? $job['flatbed_source_rolls'] : [];
   foreach ($rows as $row) {
-    $rn = trim((string)($row['roll_no'] ?? ''));
-    if ($rn === '') continue;
+    $rn = trim((string) ($row['roll_no'] ?? ''));
+    if ($rn === '')
+      continue;
     $ps = $flatbedRollStockMap[$rn] ?? [];
     $enriched[] = [
       'roll_no' => $rn,
-      'parent_roll_no' => trim((string)($row['parent_roll_no'] ?? '')),
-      'width_mm' => (float)($ps['width_mm'] ?? ($row['width_mm'] ?? 0)),
-      'length_mtr' => (float)($ps['length_mtr'] ?? ($row['length_mtr'] ?? 0)),
-      'paper_type' => (string)($ps['paper_type'] ?? ($row['paper_type'] ?? '')),
-      'company' => (string)($ps['company'] ?? ($row['company'] ?? '')),
-      'gsm' => (float)($ps['gsm'] ?? ($row['gsm'] ?? 0)),
-      'weight_kg' => (float)($ps['weight_kg'] ?? ($row['weight_kg'] ?? 0)),
-      'sqm' => (float)($ps['sqm'] ?? ($row['sqm'] ?? 0)),
-      'wastage' => (float)($row['wastage'] ?? 0),
-      'remarks' => (string)($ps['remarks'] ?? ($row['remarks'] ?? '')),
-      'status' => (string)($ps['status'] ?? ($row['status'] ?? '')),
+      'parent_roll_no' => trim((string) ($row['parent_roll_no'] ?? '')),
+      'width_mm' => (float) ($ps['width_mm'] ?? ($row['width_mm'] ?? 0)),
+      'length_mtr' => (float) ($ps['length_mtr'] ?? ($row['length_mtr'] ?? 0)),
+      'paper_type' => (string) ($ps['paper_type'] ?? ($row['paper_type'] ?? '')),
+      'company' => (string) ($ps['company'] ?? ($row['company'] ?? '')),
+      'gsm' => (float) ($ps['gsm'] ?? ($row['gsm'] ?? 0)),
+      'weight_kg' => (float) ($ps['weight_kg'] ?? ($row['weight_kg'] ?? 0)),
+      'sqm' => (float) ($ps['sqm'] ?? ($row['sqm'] ?? 0)),
+      'wastage' => (float) ($row['wastage'] ?? 0),
+      'remarks' => (string) ($ps['remarks'] ?? ($row['remarks'] ?? '')),
+      'status' => (string) ($ps['status'] ?? ($row['status'] ?? '')),
     ];
   }
   $job['flatbed_source_rolls'] = $enriched;
 
   $parentRollCandidates = [];
-  $primaryParent = trim((string)($job['roll_no'] ?? ''));
-  if ($primaryParent !== '') $parentRollCandidates[$primaryParent] = true;
+  $primaryParent = trim((string) ($job['roll_no'] ?? ''));
+  if ($primaryParent !== '')
+    $parentRollCandidates[$primaryParent] = true;
   $extraParsed = is_array($job['extra_data_parsed'] ?? null) ? $job['extra_data_parsed'] : [];
-  $assignedParent = trim((string)($extraParsed['assigned_parent_roll_no'] ?? ($extraParsed['parent_roll'] ?? '')));
-  if ($assignedParent !== '') $parentRollCandidates[$assignedParent] = true;
+  $assignedParent = trim((string) ($extraParsed['assigned_parent_roll_no'] ?? ($extraParsed['parent_roll'] ?? '')));
+  if ($assignedParent !== '')
+    $parentRollCandidates[$assignedParent] = true;
   foreach ($enriched as $er) {
-    $pr = trim((string)($er['parent_roll_no'] ?? ''));
-    if ($pr !== '') $parentRollCandidates[$pr] = true;
+    $pr = trim((string) ($er['parent_roll_no'] ?? ''));
+    if ($pr !== '')
+      $parentRollCandidates[$pr] = true;
   }
   // Also pick up parent_roll_nos stored directly in this job's own extra_data
   // (covers jobs created from slitting that carry no previous_job_id).
@@ -675,35 +708,38 @@ foreach ($jobs as &$job) {
     $sBucketRows = $extraParsed[$_sBucket] ?? null;
     if (is_array($sBucketRows)) {
       foreach ($sBucketRows as $_ecr) {
-        if (!is_array($_ecr)) continue;
-        $pr = trim((string)($_ecr['parent_roll_no'] ?? ''));
-        if ($pr !== '') $parentRollCandidates[$pr] = true;
+        if (!is_array($_ecr))
+          continue;
+        $pr = trim((string) ($_ecr['parent_roll_no'] ?? ''));
+        if ($pr !== '')
+          $parentRollCandidates[$pr] = true;
       }
     }
   }
   $parentRollStockMap = [];
   foreach (array_keys($parentRollCandidates) as $pr) {
-    if ($pr === '') continue;
+    if ($pr === '')
+      continue;
     $parentRollStockMap[$pr] = $flatbedRollStockMap[$pr] ?? [];
   }
   $job['parent_roll_stock_map'] = $parentRollStockMap;
 
-  $parentRollNo = trim((string)($job['roll_no'] ?? ''));
+  $parentRollNo = trim((string) ($job['roll_no'] ?? ''));
   $paperStockChildren = [];
   if ($parentRollNo !== '' && !empty($paperStockChildrenMap[$parentRollNo])) {
     foreach ($paperStockChildrenMap[$parentRollNo] as $childRow) {
       $paperStockChildren[] = [
-        'roll_no' => (string)($childRow['roll_no'] ?? ''),
-        'parent_roll_no' => (string)($childRow['parent_roll_no'] ?? ''),
-        'width_mm' => (float)($childRow['width_mm'] ?? 0),
-        'length_mtr' => (float)($childRow['length_mtr'] ?? 0),
-        'paper_type' => (string)($childRow['paper_type'] ?? ''),
-        'company' => (string)($childRow['company'] ?? ''),
-        'gsm' => (float)($childRow['gsm'] ?? 0),
-        'weight_kg' => (float)($childRow['weight_kg'] ?? 0),
-        'sqm' => (float)($childRow['sqm'] ?? 0),
-        'remarks' => (string)($childRow['remarks'] ?? ''),
-        'status' => (string)($childRow['status'] ?? 'Stock'),
+        'roll_no' => (string) ($childRow['roll_no'] ?? ''),
+        'parent_roll_no' => (string) ($childRow['parent_roll_no'] ?? ''),
+        'width_mm' => (float) ($childRow['width_mm'] ?? 0),
+        'length_mtr' => (float) ($childRow['length_mtr'] ?? 0),
+        'paper_type' => (string) ($childRow['paper_type'] ?? ''),
+        'company' => (string) ($childRow['company'] ?? ''),
+        'gsm' => (float) ($childRow['gsm'] ?? 0),
+        'weight_kg' => (float) ($childRow['weight_kg'] ?? 0),
+        'sqm' => (float) ($childRow['sqm'] ?? 0),
+        'remarks' => (string) ($childRow['remarks'] ?? ''),
+        'status' => (string) ($childRow['status'] ?? 'Stock'),
       ];
     }
   }
@@ -714,10 +750,10 @@ foreach ($jobs as &$job) {
 unset($job);
 
 $activeJobs = array_values(array_filter($jobs, function ($j) use ($finishStates) {
-    return !in_array((string)($j['status'] ?? ''), $finishStates, true);
+  return !in_array((string) ($j['status'] ?? ''), $finishStates, true);
 }));
 $historyJobs = array_values(array_filter($jobs, function ($j) use ($finishStates) {
-    return in_array((string)($j['status'] ?? ''), $finishStates, true);
+  return in_array((string) ($j['status'] ?? ''), $finishStates, true);
 }));
 $activeCount = count($activeJobs);
 $historyCount = count($historyJobs);
@@ -738,54 +774,62 @@ $historyCount = count($historyJobs);
 $parentGroups = [];
 $parentGroupSeenIds = []; // parent_roll => [job_id => true] to avoid counting duplicate JOIN rows
 foreach ($activeJobs as $j) {
-    $ex = is_array($j['extra_data_parsed'] ?? null) ? $j['extra_data_parsed'] : [];
-    $pr = trim((string)(
-        $ex['assigned_parent_roll_no']
-        ?? ($ex['parent_roll']
-        ?? ($ex['parent_details']['roll_no'] ?? ''))
-    ));
-    if ($pr === '') continue;
-    $jid = (int)($j['id'] ?? 0);
-    if ($jid <= 0) continue;
-    // Deduplicate by job id: a job can appear multiple times if its roll_no
-    // matches more than one paper_stock row (LEFT JOIN fan-out). Counting the
-    // same job twice would falsely mark it "linked to itself" (link icon with
-    // no arrow) and leave the true sibling ungrouped (Start stays enabled).
-    if (!isset($parentGroupSeenIds[$pr])) $parentGroupSeenIds[$pr] = [];
-    if (isset($parentGroupSeenIds[$pr][$jid])) continue;
-    $parentGroupSeenIds[$pr][$jid] = true;
-    if (!isset($parentGroups[$pr])) $parentGroups[$pr] = [];
-    $parentGroups[$pr][] = $j;
+  $ex = is_array($j['extra_data_parsed'] ?? null) ? $j['extra_data_parsed'] : [];
+  $pr = trim((string) (
+    $ex['assigned_parent_roll_no']
+    ?? ($ex['parent_roll']
+      ?? ($ex['parent_details']['roll_no'] ?? ''))
+  ));
+  if ($pr === '')
+    continue;
+  $jid = (int) ($j['id'] ?? 0);
+  if ($jid <= 0)
+    continue;
+  // Deduplicate by job id: a job can appear multiple times if its roll_no
+  // matches more than one paper_stock row (LEFT JOIN fan-out). Counting the
+  // same job twice would falsely mark it "linked to itself" (link icon with
+  // no arrow) and leave the true sibling ungrouped (Start stays enabled).
+  if (!isset($parentGroupSeenIds[$pr]))
+    $parentGroupSeenIds[$pr] = [];
+  if (isset($parentGroupSeenIds[$pr][$jid]))
+    continue;
+  $parentGroupSeenIds[$pr][$jid] = true;
+  if (!isset($parentGroups[$pr]))
+    $parentGroups[$pr] = [];
+  $parentGroups[$pr][] = $j;
 }
 
 // Primary = smallest job id in the group (deterministic across reloads).
 $parentGroupPrimary = [];
 foreach ($parentGroups as $pr => $rows) {
-    $min = null;
-    foreach ($rows as $r) {
-        $rid = (int)($r['id'] ?? 0);
-        if ($rid <= 0) continue;
-        if ($min === null || $rid < $min) $min = $rid;
-    }
-    if ($min !== null) $parentGroupPrimary[$pr] = $min;
+  $min = null;
+  foreach ($rows as $r) {
+    $rid = (int) ($r['id'] ?? 0);
+    if ($rid <= 0)
+      continue;
+    if ($min === null || $rid < $min)
+      $min = $rid;
+  }
+  if ($min !== null)
+    $parentGroupPrimary[$pr] = $min;
 }
 
 // ── Stat counts (must follow UI-normalized status mapping) ─────────────────
 $totalCount = count($jobs);
 $queuedCount = count(array_filter($jobs, static function (array $j): bool {
-  return (string)($j['status'] ?? '') === 'Queued';
+  return (string) ($j['status'] ?? '') === 'Queued';
 }));
 $pendingCount = count(array_filter($jobs, static function (array $j): bool {
-  return (string)($j['status'] ?? '') === 'Pending';
+  return (string) ($j['status'] ?? '') === 'Pending';
 }));
 $runningCount = count(array_filter($jobs, static function (array $j): bool {
-  return (string)($j['status'] ?? '') === 'Running';
+  return (string) ($j['status'] ?? '') === 'Running';
 }));
 $holdCount = count(array_filter($jobs, static function (array $j): bool {
-  return in_array((string)($j['status'] ?? ''), ['Hold', 'Hold for Payment', 'Hold for Approval'], true);
+  return in_array((string) ($j['status'] ?? ''), ['Hold', 'Hold for Payment', 'Hold for Approval'], true);
 }));
 $finishedCount = count(array_filter($jobs, static function (array $j): bool {
-  return in_array((string)($j['status'] ?? ''), ['Closed', 'Finalized', 'Completed', 'QC Passed'], true);
+  return in_array((string) ($j['status'] ?? ''), ['Closed', 'Finalized', 'Completed', 'QC Passed'], true);
 }));
 
 $csrf = generateCSRF();
@@ -807,603 +851,1896 @@ include __DIR__ . '/../../../includes/header.php';
 </div>
 
 <style>
-:root { --dc-brand: <?= e($dcBrand) ?>; --dc-brand-light: <?= e($dcBrandLight) ?>; --dc-brand-dark: <?= e($dcBrandDark) ?>; --dc-blue: #3b82f6; }
+  :root {
+    --dc-brand:
+      <?= e($dcBrand) ?>
+    ;
+    --dc-brand-light:
+      <?= e($dcBrandLight) ?>
+    ;
+    --dc-brand-dark:
+      <?= e($dcBrandDark) ?>
+    ;
+    --dc-blue: #3b82f6;
+  }
 
-/* ── Stats Grid ── */
-.dc-stats{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px}
-.dc-stat{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:14px 16px;cursor:pointer;transition:all .18s;position:relative;overflow:hidden}
-.dc-stat:hover{border-color:var(--dc-brand);box-shadow:0 4px 12px rgba(14,165,164,.12)}
-.dc-stat.active{border-color:var(--dc-brand);box-shadow:0 4px 16px rgba(14,165,164,.18)}
-.dc-stat.active::after{content:'';position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--dc-brand);border-radius:0 0 14px 14px}
-.dc-stat-icon{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0}
-.dc-stat-val{font-size:1.32rem;font-weight:900;color:#0f172a;line-height:1}
-.dc-stat-label{font-size:.62rem;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:.06em;margin-top:2px}
+  /* ── Stats Grid ── */
+  .dc-stats {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 12px;
+    margin-bottom: 16px
+  }
 
-/* ── Tabs ── */
-.dc-tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid #e2e8f0;padding-bottom:0}
-.dc-tab-btn{padding:10px 20px;font-size:.8rem;font-weight:800;color:#64748b;background:none;border:none;border-bottom:3px solid transparent;margin-bottom:-2px;cursor:pointer;transition:all .15s;text-transform:uppercase;letter-spacing:.04em}
-.dc-tab-btn:hover{color:var(--dc-brand)}
-.dc-tab-btn.active{color:var(--dc-brand);border-bottom-color:var(--dc-brand)}
-.dc-tab-count{font-size:.62rem;font-weight:900;background:var(--dc-brand-light);color:var(--dc-brand-dark);padding:2px 7px;border-radius:10px;margin-left:6px}
+  .dc-stat {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: all .18s;
+    position: relative;
+    overflow: hidden
+  }
 
-/* ── Filters ── */
-.dc-filters{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
-.dc-search{padding:8px 14px;border:1px solid #e2e8f0;border-radius:10px;font-size:.82rem;min-width:220px;outline:none;transition:border .15s}
-.dc-search:focus{border-color:var(--dc-brand)}
-.dc-filter-btn{padding:6px 14px;font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border:1px solid #e2e8f0;background:#fff;border-radius:20px;cursor:pointer;transition:all .15s;color:#64748b}
-.dc-filter-btn:hover{border-color:var(--dc-brand);color:var(--dc-brand)}
-.dc-filter-btn.active{background:var(--dc-brand);color:#fff;border-color:var(--dc-brand)}
+  .dc-stat:hover {
+    border-color: var(--dc-brand);
+    box-shadow: 0 4px 12px rgba(14, 165, 164, .12)
+  }
 
-/* ── Card Grid ── */
-.dc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
-.dc-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;transition:all .15s;cursor:pointer;position:relative}
-.dc-card:hover{border-color:var(--dc-brand);box-shadow:0 4px 16px rgba(14,165,164,.1)}
-.dc-card.dc-queued{opacity:.78;border-left:4px solid #94a3b8}
-.dc-card.dc-selected{outline:2px solid var(--dc-brand);outline-offset:-2px;background:#f0fdfa}
-/* ── Linked-job (multi-slitting compound run) styling ── */
-.dc-card.dc-card-linked{border-left:4px solid #7c3aed;box-shadow:0 0 0 2px rgba(124,58,237,.15),0 8px 20px rgba(124,58,237,.08)}
-.dc-card.dc-card-linked .dc-card-head{background:linear-gradient(135deg,#f5f3ff,#fff)}
-.dc-linked-banner{display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 14px;font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #e4d5ff;background:linear-gradient(90deg,#f5f3ff,#ede9fe,#f5f3ff);color:#6d28d9}
-.dc-linked-banner .dc-linked-arrow{font-size:1.1rem;color:#7c3aed}
-.dc-linked-banner .dc-linked-job{color:#5b21b6;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
-.dc-linked-to{margin-left:8px;color:#7c3aed;font-weight:800}
-.dc-select-check{position:absolute;top:12px;right:12px;width:18px;height:18px;accent-color:var(--dc-brand);cursor:pointer;z-index:2}
-.dc-card-head{padding:12px 14px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:8px}
-.dc-jobno{font-size:.82rem;font-weight:900;color:#0f172a;display:flex;align-items:center;gap:6px}
-.dc-card-body{padding:12px 14px;display:grid;gap:6px}
-.dc-card-row{display:flex;justify-content:space-between;gap:8px;font-size:.78rem}
-.dc-label{font-size:.62rem;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:.04em}
-.dc-value{font-weight:700;color:#0f172a;text-align:right}
-.dc-job-name{font-size:1.08rem;line-height:1.25;font-weight:900;color:#0f172a}
-.dc-card-foot{padding:10px 14px;border-top:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center}
-.dc-time{font-size:.68rem;color:#94a3b8}
+  .dc-stat.active {
+    border-color: var(--dc-brand);
+    box-shadow: 0 4px 16px rgba(14, 165, 164, .18)
+  }
 
-/* ── Badges ── */
-.dc-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:.58rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
-.dc-badge-queued{background:#f1f5f9;color:#64748b}
-.dc-badge-pending{background:#fef3c7;color:#92400e}
-.dc-badge-running{background:#dbeafe;color:#1d4ed8}
-.dc-badge-completed{background:#dcfce7;color:#166534}
-.dc-badge-hold{background:#fecdd3;color:#991b1b}
-.dc-badge-urgent{background:#fee2e2;color:#991b1b}
-.dc-badge-high{background:#fff7ed;color:#9a3412}
-.dc-badge-normal{background:#f1f5f9;color:#475569}
+  .dc-stat.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--dc-brand);
+    border-radius: 0 0 14px 14px
+  }
 
-/* ── Action Buttons ── */
-.dc-action-btn{padding:6px 12px;font-size:.68rem;font-weight:800;border:1px solid #e2e8f0;background:#fff;border-radius:8px;cursor:pointer;transition:all .12s;display:inline-flex;align-items:center;gap:5px}
-.dc-action-btn:hover{background:#f8fafc}
-.dc-action-btn:disabled{opacity:.45;cursor:not-allowed;pointer-events:none;filter:grayscale(.35);border-color:#e2e8f0;color:#94a3b8}
-.dc-btn-start{color:var(--dc-brand);border-color:var(--dc-brand)}
-.dc-btn-start:hover{background:var(--dc-brand-light)}
-.dc-btn-start:disabled{opacity:.4;cursor:not-allowed;color:#94a3b8;border-color:#e2e8f0}
-/* ── Linked-job connector overlay (SVG arrow between linked cards) ── */
-#dcGrid{position:relative}
-.dc-link-overlay{position:absolute;top:0;left:0;pointer-events:none;z-index:1;overflow:visible}
-.dc-link-overlay path{fill:none;stroke:#7c3aed;stroke-width:2.5;stroke-dasharray:7 5;opacity:.9;animation:dc-link-dash 1s linear infinite}
-.dc-link-overlay polygon{fill:#7c3aed;opacity:.9}
-.dc-link-overlay .dc-link-badge circle{fill:#7c3aed;opacity:.95}
-.dc-link-overlay .dc-link-badge text{fill:#fff;font-size:11px;text-anchor:middle;dominant-baseline:central}
-@keyframes dc-link-dash{to{stroke-dashoffset:-24}}
+  .dc-stat-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    flex-shrink: 0
+  }
+
+  .dc-stat-val {
+    font-size: 1.32rem;
+    font-weight: 900;
+    color: #0f172a;
+    line-height: 1
+  }
+
+  .dc-stat-label {
+    font-size: .62rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #94a3b8;
+    letter-spacing: .06em;
+    margin-top: 2px
+  }
+
+  /* ── Tabs ── */
+  .dc-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    border-bottom: 2px solid #e2e8f0;
+    padding-bottom: 0
+  }
+
+  .dc-tab-btn {
+    padding: 10px 20px;
+    font-size: .8rem;
+    font-weight: 800;
+    color: #64748b;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    cursor: pointer;
+    transition: all .15s;
+    text-transform: uppercase;
+    letter-spacing: .04em
+  }
+
+  .dc-tab-btn:hover {
+    color: var(--dc-brand)
+  }
+
+  .dc-tab-btn.active {
+    color: var(--dc-brand);
+    border-bottom-color: var(--dc-brand)
+  }
+
+  .dc-tab-count {
+    font-size: .62rem;
+    font-weight: 900;
+    background: var(--dc-brand-light);
+    color: var(--dc-brand-dark);
+    padding: 2px 7px;
+    border-radius: 10px;
+    margin-left: 6px
+  }
+
+  /* ── Filters ── */
+  .dc-filters {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+    align-items: center
+  }
+
+  .dc-search {
+    padding: 8px 14px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    font-size: .82rem;
+    min-width: 220px;
+    outline: none;
+    transition: border .15s
+  }
+
+  .dc-search:focus {
+    border-color: var(--dc-brand)
+  }
+
+  .dc-filter-btn {
+    padding: 6px 14px;
+    font-size: .68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all .15s;
+    color: #64748b
+  }
+
+  .dc-filter-btn:hover {
+    border-color: var(--dc-brand);
+    color: var(--dc-brand)
+  }
+
+  .dc-filter-btn.active {
+    background: var(--dc-brand);
+    color: #fff;
+    border-color: var(--dc-brand)
+  }
+
+  /* ── Card Grid ── */
+  .dc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 14px
+  }
+
+  .dc-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    overflow: hidden;
+    transition: all .15s;
+    cursor: pointer;
+    position: relative
+  }
+
+  .dc-card:hover {
+    border-color: var(--dc-brand);
+    box-shadow: 0 4px 16px rgba(14, 165, 164, .1)
+  }
+
+  .dc-card.dc-queued {
+    opacity: .78;
+    border-left: 4px solid #94a3b8
+  }
+
+  .dc-card.dc-selected {
+    outline: 2px solid var(--dc-brand);
+    outline-offset: -2px;
+    background: #f0fdfa
+  }
+
+  /* ── Linked-job (multi-slitting compound run) styling ── */
+  .dc-card.dc-card-linked {
+    border-left: 4px solid #7c3aed;
+    box-shadow: 0 0 0 2px rgba(124, 58, 237, .15), 0 8px 20px rgba(124, 58, 237, .08)
+  }
+
+  .dc-card.dc-card-linked .dc-card-head {
+    background: linear-gradient(135deg, #f5f3ff, #fff)
+  }
+
+  .dc-linked-banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 6px 14px;
+    font-size: .68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    border-bottom: 1px solid #e4d5ff;
+    background: linear-gradient(90deg, #f5f3ff, #ede9fe, #f5f3ff);
+    color: #6d28d9
+  }
+
+  .dc-linked-banner .dc-linked-arrow {
+    font-size: 1.1rem;
+    color: #7c3aed
+  }
+
+  .dc-linked-banner .dc-linked-job {
+    color: #5b21b6;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer
+  }
+
+  .dc-linked-to {
+    margin-left: 8px;
+    color: #7c3aed;
+    font-weight: 800
+  }
+
+  .dc-select-check {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 18px;
+    height: 18px;
+    accent-color: var(--dc-brand);
+    cursor: pointer;
+    z-index: 2
+  }
+
+  .dc-card-head {
+    padding: 12px 14px;
+    border-bottom: 1px solid #f1f5f9;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px
+  }
+
+  .dc-jobno {
+    font-size: .82rem;
+    font-weight: 900;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    gap: 6px
+  }
+
+  .dc-card-body {
+    padding: 12px 14px;
+    display: grid;
+    gap: 6px
+  }
+
+  .dc-card-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: .78rem
+  }
+
+  .dc-label {
+    font-size: .62rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #94a3b8;
+    letter-spacing: .04em
+  }
+
+  .dc-value {
+    font-weight: 700;
+    color: #0f172a;
+    text-align: right
+  }
+
+  .dc-job-name {
+    font-size: 1.08rem;
+    line-height: 1.25;
+    font-weight: 900;
+    color: #0f172a
+  }
+
+  .dc-card-foot {
+    padding: 10px 14px;
+    border-top: 1px solid #f1f5f9;
+    display: flex;
+    justify-content: space-between;
+    align-items: center
+  }
+
+  .dc-time {
+    font-size: .68rem;
+    color: #94a3b8
+  }
+
+  /* ── Badges ── */
+  .dc-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: .58rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .04em
+  }
+
+  .dc-badge-queued {
+    background: #f1f5f9;
+    color: #64748b
+  }
+
+  .dc-badge-pending {
+    background: #fef3c7;
+    color: #92400e
+  }
+
+  .dc-badge-running {
+    background: #dbeafe;
+    color: #1d4ed8
+  }
+
+  .dc-badge-completed {
+    background: #dcfce7;
+    color: #166534
+  }
+
+  .dc-badge-hold {
+    background: #fecdd3;
+    color: #991b1b
+  }
+
+  .dc-badge-urgent {
+    background: #fee2e2;
+    color: #991b1b
+  }
+
+  .dc-badge-high {
+    background: #fff7ed;
+    color: #9a3412
+  }
+
+  .dc-badge-normal {
+    background: #f1f5f9;
+    color: #475569
+  }
+
+  /* ── Action Buttons ── */
+  .dc-action-btn {
+    padding: 6px 12px;
+    font-size: .68rem;
+    font-weight: 800;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all .12s;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px
+  }
+
+  .dc-action-btn:hover {
+    background: #f8fafc
+  }
+
+  .dc-action-btn:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+    pointer-events: none;
+    filter: grayscale(.35);
+    border-color: #e2e8f0;
+    color: #94a3b8
+  }
+
+  .dc-btn-start {
+    color: var(--dc-brand);
+    border-color: var(--dc-brand)
+  }
+
+  .dc-btn-start:hover {
+    background: var(--dc-brand-light)
+  }
+
+  .dc-btn-start:disabled {
+    opacity: .4;
+    cursor: not-allowed;
+    color: #94a3b8;
+    border-color: #e2e8f0
+  }
+
+  /* ── Linked-job connector overlay (SVG arrow between linked cards) ── */
+  #dcGrid {
+    position: relative
+  }
+
+  .dc-link-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 1;
+    overflow: visible
+  }
+
+  .dc-link-overlay path {
+    fill: none;
+    stroke: #7c3aed;
+    stroke-width: 2.5;
+    stroke-dasharray: 7 5;
+    opacity: .9;
+    animation: dc-link-dash 1s linear infinite
+  }
+
+  .dc-link-overlay polygon {
+    fill: #7c3aed;
+    opacity: .9
+  }
+
+  .dc-link-overlay .dc-link-badge circle {
+    fill: #7c3aed;
+    opacity: .95
+  }
+
+  .dc-link-overlay .dc-link-badge text {
+    fill: #fff;
+    font-size: 11px;
+    text-anchor: middle;
+    dominant-baseline: central
+  }
+
+  @keyframes dc-link-dash {
+    to {
+      stroke-dashoffset: -24
+    }
+  }
 
 
-.dc-btn-complete{color:#16a34a;border-color:#86efac}
-.dc-btn-complete:hover{background:#f0fdf4}
-.dc-btn-view{color:#475569;border-color:#e2e8f0}
-.dc-btn-view:hover{background:#f1f5f9}
-.dc-btn-print{color:#8b5cf6;border-color:#c4b5fd}
-.dc-btn-print:hover{background:#f5f3ff}
-.dc-btn-delete{color:#dc2626;border-color:#fecaca}
-.dc-btn-delete:hover{background:#fee2e2}
+  .dc-btn-complete {
+    color: #16a34a;
+    border-color: #86efac
+  }
 
-/* ── Gate (upstream lock) ── */
-.dc-gate{font-size:.68rem;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:7px;padding:5px 8px;margin:4px 14px 8px}
+  .dc-btn-complete:hover {
+    background: #f0fdf4
+  }
 
-/* ── Empty ── */
-.dc-empty{padding:48px 16px;text-align:center;color:#94a3b8;grid-column:1/-1}
-.dc-empty i{font-size:2.5rem;opacity:.3;display:block;margin-bottom:8px}
+  .dc-btn-view {
+    color: #475569;
+    border-color: #e2e8f0
+  }
 
-/* ── Bulk Bar ── */
-.dc-bulk-bar{display:none;background:linear-gradient(135deg,#0d9488,#0f766e);color:#fff;border-radius:14px;padding:14px 20px;margin-bottom:14px;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;box-shadow:0 4px 16px rgba(14,165,164,.25)}
+  .dc-btn-view:hover {
+    background: #f1f5f9
+  }
 
-/* ── Modal ── */
-.dc-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:2100;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto;opacity:0;pointer-events:none;transition:opacity .2s}
-.dc-modal-overlay.active{opacity:1;pointer-events:auto}
-.dc-modal{width:100%;max-width:900px;background:#fff;border-radius:16px;border:2px solid var(--dc-brand-light);box-shadow:0 20px 60px rgba(0,0,0,.18);overflow:hidden}
-.dc-modal-header{padding:14px 18px;border-bottom:2px solid var(--dc-brand-light);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);display:flex;justify-content:space-between;align-items:center}
-.dc-modal-header h2{margin:0;font-size:1rem;font-weight:900;color:#0f172a;display:flex;align-items:center;gap:8px}
-.dc-modal-body{padding:18px;display:grid;gap:14px}
-.dc-modal-footer{padding:14px 18px;border-top:2px solid var(--dc-brand-light);background:#f8fafc;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  .dc-btn-print {
+    color: #8b5cf6;
+    border-color: #c4b5fd
+  }
 
-/* ── Operator Sections ── */
-.dc-op-form{display:grid;gap:14px}
-.dc-op-section{border:1px solid #e2e8f0;border-radius:12px;overflow:hidden}
-.dc-op-h{padding:10px 14px;font-size:.72rem;font-weight:900;text-transform:uppercase;letter-spacing:.06em;color:var(--dc-brand-dark);background:var(--dc-brand-light);display:flex;align-items:center;gap:8px}
-.dc-op-b{padding:12px 14px}
-.dc-op-topstrip{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:10px}
-.dc-op-topitem{display:flex;flex-direction:column;gap:2px}
-.dc-op-topitem .k{font-size:.58rem;font-weight:800;text-transform:uppercase;color:#94a3b8}
-.dc-op-topitem .v{font-size:.82rem;font-weight:700;color:#0f172a}
-.dc-op-grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
-.dc-op-field label{display:block;font-size:.6rem;font-weight:800;text-transform:uppercase;color:#64748b;margin-bottom:4px;letter-spacing:.04em}
-.dc-op-field .fv{font-size:.82rem;font-weight:700;color:#0f172a;padding:6px 0}
-.dc-op-field input,.dc-op-field select,.dc-op-field textarea{width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:.82rem;outline:none;transition:border .15s}
-.dc-op-field input:focus,.dc-op-field select:focus,.dc-op-field textarea:focus{border-color:var(--dc-brand)}
-.dc-op-field textarea{min-height:80px;resize:vertical}
-.dc-voice-btn{padding:8px 12px;border:1px solid #99f6e4;background:#ecfeff;color:#0f766e;border-radius:8px;font-size:.74rem;font-weight:800;display:inline-flex;align-items:center;gap:6px;cursor:pointer}
-.dc-voice-btn:hover{background:#ccfbf1}
-.dc-voice-btn.active{background:#0ea5a4;color:#fff;border-color:#0ea5a4}
-.dc-op-field.dc-required-pulse{border:1px solid #f59e0b;background:#fffbeb;border-radius:10px;padding:8px;animation:dcReqPulse 1.2s ease-in-out infinite}
-.dc-op-field.dc-required-pulse label{color:#b45309}
-.dc-op-field.dc-required-pulse label::after{content:' Required';margin-left:6px;font-size:.56rem;color:#b45309;background:#fde68a;border-radius:999px;padding:1px 6px;font-weight:900;letter-spacing:.03em}
-.dc-op-field.dc-required-done{border:1px solid #22c55e;background:#f0fdf4;border-radius:10px;padding:8px;animation:none}
-.dc-op-field.dc-required-done label{color:#166534}
-.dc-op-field.dc-required-done label::after{content:'\2713';display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-left:6px;border-radius:999px;background:#16a34a;color:#fff;font-size:11px;font-weight:900;line-height:1}
-@keyframes dcReqPulse{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.28)}50%{box-shadow:0 0 0 6px rgba(245,158,11,.08)}}
+  .dc-btn-print:hover {
+    background: #f5f3ff
+  }
 
-/* ── Timer Overlay ── */
-.dc-timer-overlay{position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,var(--dc-timer-grad-start,#042f2e),var(--dc-timer-grad-mid,#0f766e) 56%,var(--dc-timer-grad-end,#14b8a6));display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;color:#fff;font-family:'Segoe UI',Arial,sans-serif;padding:24px 16px calc(24px + env(safe-area-inset-bottom));overflow:auto}
-.dc-timer-jobinfo{text-align:center;opacity:.9}
-.dc-timer-display{font-size:clamp(2.1rem,10vw,4.5rem);font-weight:900;letter-spacing:.12em;font-family:Consolas,'Courier New',monospace;text-shadow:0 4px 20px rgba(0,0,0,.3);text-align:center;line-height:1.1;word-break:break-word}
-.dc-timer-actions{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;width:100%;max-width:760px}
-.dc-timer-btn-cancel{padding:14px 32px;font-size:1rem;font-weight:800;border:2px solid rgba(255,255,255,.3);background:rgba(255,255,255,.08);color:#fff;border-radius:14px;cursor:pointer;transition:all .15s}
-.dc-timer-btn-cancel:hover{background:rgba(255,255,255,.15)}
-.dc-timer-btn-pause{padding:14px 32px;font-size:1rem;font-weight:800;border:none;background:#f59e0b;color:#fff;border-radius:14px;cursor:pointer;transition:all .15s;box-shadow:0 4px 16px rgba(245,158,11,.4)}
-.dc-timer-btn-pause:hover{background:#d97706}
-.dc-timer-btn-end{padding:14px 32px;font-size:1rem;font-weight:800;border:none;background:#ef4444;color:#fff;border-radius:14px;cursor:pointer;transition:all .15s;box-shadow:0 4px 16px rgba(239,68,68,.4)}
-.dc-timer-btn-end:hover{background:#dc2626}
+  .dc-btn-delete {
+    color: #dc2626;
+    border-color: #fecaca
+  }
 
-/* ── Upload Zone ── */
-.dc-upload-zone{border:2px dashed #cbd5e1;border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all .15s}
-.dc-upload-zone:hover{border-color:var(--dc-brand);background:#f0fdfa}
-.dc-upload-zone input[type=file]{display:none}
-.dc-upload-preview img{max-width:260px;max-height:160px;border-radius:8px;border:1px solid #e2e8f0;margin-top:8px}
+  .dc-btn-delete:hover {
+    background: #fee2e2
+  }
 
-/* ── Timer History ── */
-.dc-timer-history{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
-.dc-timer-history-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px}
-.dc-timer-history-card h4{margin:0 0 8px;font-size:.68rem;font-weight:900;text-transform:uppercase;color:#475569;letter-spacing:.05em}
-.dc-timer-history-list{display:grid;gap:4px}
-.dc-timer-history-row{display:flex;gap:10px;font-size:.72rem;padding:4px 0;border-bottom:1px solid #f1f5f9}
-.dc-timer-history-row .k{font-weight:800;color:#475569;min-width:56px}
-.dc-timer-history-row .v{color:#0f172a}
-.dc-timer-history-row.pause .v{color:#b45309}
-.dc-timer-history-empty{font-size:.72rem;color:#94a3b8;padding:6px 0}
+  /* ── Gate (upstream lock) ── */
+  .dc-gate {
+    font-size: .68rem;
+    color: #92400e;
+    background: #fef3c7;
+    border: 1px solid #fde68a;
+    border-radius: 7px;
+    padding: 5px 8px;
+    margin: 4px 14px 8px
+  }
 
-/* ── Preview Image ── */
-.dc-preview{max-width:280px;max-height:180px;border:1px solid #e2e8f0;border-radius:10px;object-fit:contain;background:#fff}
+  /* ── Empty ── */
+  .dc-empty {
+    padding: 48px 16px;
+    text-align: center;
+    color: #94a3b8;
+    grid-column: 1/-1
+  }
 
-/* ── Print ── */
-.dc-print-area{display:none}
-@media print{.no-print{display:none!important}.dc-print-area{display:block}}
+  .dc-empty i {
+    font-size: 2.5rem;
+    opacity: .3;
+    display: block;
+    margin-bottom: 8px
+  }
 
-/* ── Responsive ── */
-@media(max-width:900px){.dc-stats{grid-template-columns:repeat(3,1fr)}.dc-op-grid-2{grid-template-columns:1fr}.dc-timer-history{grid-template-columns:1fr}}
-@media(max-width:640px){.dc-stats{grid-template-columns:repeat(2,1fr)}.dc-grid{grid-template-columns:1fr}}
-@media(max-width:640px){.dc-timer-overlay{justify-content:flex-start;gap:16px;padding:max(16px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom))}.dc-timer-jobinfo{max-width:100%}.dc-timer-display{letter-spacing:.06em}.dc-timer-actions{flex-direction:column;gap:10px;max-width:420px}.dc-timer-btn-cancel,.dc-timer-btn-pause,.dc-timer-btn-end{width:100%;padding:12px 14px;font-size:.95rem}}
+  /* ── Bulk Bar ── */
+  .dc-bulk-bar {
+    display: none;
+    background: linear-gradient(135deg, #0d9488, #0f766e);
+    color: #fff;
+    border-radius: 14px;
+    padding: 14px 20px;
+    margin-bottom: 14px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    box-shadow: 0 4px 16px rgba(14, 165, 164, .25)
+  }
 
-/* ── History Table Styles ── */
-.ht-filter-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
-.ht-search{padding:8px 14px;border:1px solid #e2e8f0;border-radius:10px;font-size:.82rem;min-width:200px;outline:none;transition:border .15s}
-.ht-search:focus{border-color:var(--dc-brand)}
-.ht-date-input{padding:7px 12px;border:1px solid #e2e8f0;border-radius:10px;font-size:.76rem;outline:none}
-.ht-date-input:focus{border-color:var(--dc-brand)}
-.ht-period-btn{padding:5px 13px;font-size:.66rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border:1px solid #e2e8f0;background:#fff;border-radius:20px;cursor:pointer;transition:all .15s;color:#64748b}
-.ht-period-btn.active{background:#0f172a;color:#fff;border-color:#0f172a}
-.ht-label{font-size:.62rem;font-weight:800;text-transform:uppercase;color:#94a3b8;letter-spacing:.03em}
-.ht-bulk-bar{display:none;background:linear-gradient(135deg,#0d9488,#0f766e);color:#fff;border-radius:12px;padding:12px 20px;margin-bottom:12px;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;box-shadow:0 4px 16px rgba(14,165,164,.25)}
-.ht-bulk-bar.visible{display:flex}
-.ht-bulk-btn{padding:5px 13px;border-radius:8px;font-weight:700;font-size:.7rem;cursor:pointer;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.12);color:#fff}
-.ht-bulk-btn:hover{background:rgba(255,255,255,.22)}
-.ht-bulk-print{padding:7px 16px;background:#22c55e;color:#fff;border:none;border-radius:8px;font-weight:800;font-size:.74rem;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 8px rgba(34,197,94,.3)}
-.ht-bulk-print:hover{background:#16a34a}
-.ht-bulk-delete{padding:7px 16px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-weight:800;font-size:.74rem;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 8px rgba(220,38,38,.3)}
-.ht-bulk-delete:hover{background:#b91c1c}
-.ht-table-wrap{background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden}
-.ht-table{width:100%;border-collapse:collapse;font-size:.78rem}
-.ht-table thead{background:linear-gradient(135deg,#f8fafc,#f1f5f9);position:sticky;top:0;z-index:2}
-.ht-table th{padding:11px 13px;font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#64748b;text-align:left;border-bottom:2px solid #e2e8f0;white-space:nowrap;cursor:pointer;user-select:none}
-.ht-table th:hover{color:#0f172a}
-.ht-table th .ht-sort{margin-left:3px;font-size:.52rem;opacity:.4}
-.ht-table th.sorted .ht-sort{opacity:1;color:var(--dc-brand)}
-.ht-table td{padding:9px 13px;border-bottom:1px solid #f1f5f9;color:#1e293b;font-weight:600;vertical-align:middle}
-.ht-table tbody tr{transition:background .1s;cursor:pointer}
-.ht-table tbody tr:hover{background:#f0fdfa}
-.ht-table tbody tr.ht-selected{background:#f0fdfa;outline:2px solid var(--dc-brand);outline-offset:-2px}
-.ht-table .ht-cb-cell{width:34px;text-align:center}
-.ht-table .ht-cb-cell input{width:16px;height:16px;accent-color:var(--dc-brand);cursor:pointer}
-.ht-jobno{font-weight:900;color:#0f172a;font-size:.8rem}
-.ht-jobname{font-size:.88rem;font-weight:900;color:#0f172a}
-.ht-dim{color:#94a3b8;font-size:.72rem}
-.ht-badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:.56rem;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
-.ht-badge-completed{background:#dcfce7;color:#166534}
-.ht-badge-closed{background:#dcfce7;color:#166534}
-.ht-badge-finalized{background:#dbeafe;color:#1e40af}
-.ht-badge-default{background:#f1f5f9;color:#64748b}
-.ht-act-btn{padding:4px 9px;font-size:.58rem;font-weight:800;text-transform:uppercase;border:1px solid #e2e8f0;background:#fff;border-radius:6px;cursor:pointer;transition:all .12s;display:inline-flex;align-items:center;gap:3px;color:#475569}
-.ht-act-btn:hover{background:#f1f5f9}
-.ht-act-btn.ht-print{color:#8b5cf6;border-color:#c4b5fd}
-.ht-act-btn.ht-print:hover{background:#f5f3ff}
-.ht-act-btn.ht-delete{color:#dc2626;border-color:#fecaca}
-.ht-act-btn.ht-delete:hover{background:#fee2e2}
-.ht-pagination{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;flex-wrap:wrap;gap:10px}
-.ht-page-info{font-size:.7rem;color:#64748b;font-weight:600}
-.ht-page-btns{display:flex;gap:4px}
-.ht-page-btn{padding:5px 11px;border:1px solid #e2e8f0;background:#fff;border-radius:8px;font-size:.7rem;font-weight:700;cursor:pointer;color:#475569;transition:all .12s}
-.ht-page-btn:hover{background:#f1f5f9}
-.ht-page-btn.active{background:var(--dc-brand);color:#fff;border-color:var(--dc-brand)}
-.ht-page-btn:disabled{opacity:.4;cursor:not-allowed}
-.ht-per-page{padding:5px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:.7rem;outline:none}
-@media(max-width:768px){.ht-table-wrap{overflow-x:auto}}
+  /* ── Modal ── */
+  .dc-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, .55);
+    z-index: 2100;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 24px 16px;
+    overflow-y: auto;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s
+  }
+
+  .dc-modal-overlay.active {
+    opacity: 1;
+    pointer-events: auto
+  }
+
+  .dc-modal {
+    width: 100%;
+    max-width: 900px;
+    background: #fff;
+    border-radius: 16px;
+    border: 2px solid var(--dc-brand-light);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .18);
+    overflow: hidden
+  }
+
+  .dc-modal-header {
+    padding: 14px 18px;
+    border-bottom: 2px solid var(--dc-brand-light);
+    background: linear-gradient(135deg, #f0fdfa, #ccfbf1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center
+  }
+
+  .dc-modal-header h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 900;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    gap: 8px
+  }
+
+  .dc-modal-body {
+    padding: 18px;
+    display: grid;
+    gap: 14px
+  }
+
+  .dc-modal-footer {
+    padding: 14px 18px;
+    border-top: 2px solid var(--dc-brand-light);
+    background: #f8fafc;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap
+  }
+
+  /* ── Operator Sections ── */
+  .dc-op-form {
+    display: grid;
+    gap: 14px
+  }
+
+  .dc-op-section {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    overflow: hidden
+  }
+
+  .dc-op-h {
+    padding: 10px 14px;
+    font-size: .72rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--dc-brand-dark);
+    background: var(--dc-brand-light);
+    display: flex;
+    align-items: center;
+    gap: 8px
+  }
+
+  .dc-op-b {
+    padding: 12px 14px
+  }
+
+  .dc-op-topstrip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+    margin-bottom: 10px
+  }
+
+  .dc-op-topitem {
+    display: flex;
+    flex-direction: column;
+    gap: 2px
+  }
+
+  .dc-op-topitem .k {
+    font-size: .58rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #94a3b8
+  }
+
+  .dc-op-topitem .v {
+    font-size: .82rem;
+    font-weight: 700;
+    color: #0f172a
+  }
+
+  .dc-op-grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px
+  }
+
+  .dc-op-field label {
+    display: block;
+    font-size: .6rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 4px;
+    letter-spacing: .04em
+  }
+
+  .dc-op-field .fv {
+    font-size: .82rem;
+    font-weight: 700;
+    color: #0f172a;
+    padding: 6px 0
+  }
+
+  .dc-op-field input,
+  .dc-op-field select,
+  .dc-op-field textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: .82rem;
+    outline: none;
+    transition: border .15s
+  }
+
+  .dc-op-field input:focus,
+  .dc-op-field select:focus,
+  .dc-op-field textarea:focus {
+    border-color: var(--dc-brand)
+  }
+
+  .dc-op-field textarea {
+    min-height: 80px;
+    resize: vertical
+  }
+
+  .dc-voice-btn {
+    padding: 8px 12px;
+    border: 1px solid #99f6e4;
+    background: #ecfeff;
+    color: #0f766e;
+    border-radius: 8px;
+    font-size: .74rem;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer
+  }
+
+  .dc-voice-btn:hover {
+    background: #ccfbf1
+  }
+
+  .dc-voice-btn.active {
+    background: #0ea5a4;
+    color: #fff;
+    border-color: #0ea5a4
+  }
+
+  .dc-op-field.dc-required-pulse {
+    border: 1px solid #f59e0b;
+    background: #fffbeb;
+    border-radius: 10px;
+    padding: 8px;
+    animation: dcReqPulse 1.2s ease-in-out infinite
+  }
+
+  .dc-op-field.dc-required-pulse label {
+    color: #b45309
+  }
+
+  .dc-op-field.dc-required-pulse label::after {
+    content: ' Required';
+    margin-left: 6px;
+    font-size: .56rem;
+    color: #b45309;
+    background: #fde68a;
+    border-radius: 999px;
+    padding: 1px 6px;
+    font-weight: 900;
+    letter-spacing: .03em
+  }
+
+  .dc-op-field.dc-required-done {
+    border: 1px solid #22c55e;
+    background: #f0fdf4;
+    border-radius: 10px;
+    padding: 8px;
+    animation: none
+  }
+
+  .dc-op-field.dc-required-done label {
+    color: #166534
+  }
+
+  .dc-op-field.dc-required-done label::after {
+    content: '\2713';
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    margin-left: 6px;
+    border-radius: 999px;
+    background: #16a34a;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 1
+  }
+
+  @keyframes dcReqPulse {
+
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgba(245, 158, 11, .28)
+    }
+
+    50% {
+      box-shadow: 0 0 0 6px rgba(245, 158, 11, .08)
+    }
+  }
+
+  /* ── Timer Overlay ── */
+  .dc-timer-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: linear-gradient(135deg, var(--dc-timer-grad-start, #042f2e), var(--dc-timer-grad-mid, #0f766e) 56%, var(--dc-timer-grad-end, #14b8a6));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    color: #fff;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    padding: 24px 16px calc(24px + env(safe-area-inset-bottom));
+    overflow: auto
+  }
+
+  .dc-timer-jobinfo {
+    text-align: center;
+    opacity: .9
+  }
+
+  .dc-timer-display {
+    font-size: clamp(2.1rem, 10vw, 4.5rem);
+    font-weight: 900;
+    letter-spacing: .12em;
+    font-family: Consolas, 'Courier New', monospace;
+    text-shadow: 0 4px 20px rgba(0, 0, 0, .3);
+    text-align: center;
+    line-height: 1.1;
+    word-break: break-word
+  }
+
+  .dc-timer-actions {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+    max-width: 760px
+  }
+
+  .dc-timer-btn-cancel {
+    padding: 14px 32px;
+    font-size: 1rem;
+    font-weight: 800;
+    border: 2px solid rgba(255, 255, 255, .3);
+    background: rgba(255, 255, 255, .08);
+    color: #fff;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: all .15s
+  }
+
+  .dc-timer-btn-cancel:hover {
+    background: rgba(255, 255, 255, .15)
+  }
+
+  .dc-timer-btn-pause {
+    padding: 14px 32px;
+    font-size: 1rem;
+    font-weight: 800;
+    border: none;
+    background: #f59e0b;
+    color: #fff;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: all .15s;
+    box-shadow: 0 4px 16px rgba(245, 158, 11, .4)
+  }
+
+  .dc-timer-btn-pause:hover {
+    background: #d97706
+  }
+
+  .dc-timer-btn-end {
+    padding: 14px 32px;
+    font-size: 1rem;
+    font-weight: 800;
+    border: none;
+    background: #ef4444;
+    color: #fff;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: all .15s;
+    box-shadow: 0 4px 16px rgba(239, 68, 68, .4)
+  }
+
+  .dc-timer-btn-end:hover {
+    background: #dc2626
+  }
+
+  /* ── Upload Zone ── */
+  .dc-upload-zone {
+    border: 2px dashed #cbd5e1;
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .15s
+  }
+
+  .dc-upload-zone:hover {
+    border-color: var(--dc-brand);
+    background: #f0fdfa
+  }
+
+  .dc-upload-zone input[type=file] {
+    display: none
+  }
+
+  .dc-upload-preview img {
+    max-width: 260px;
+    max-height: 160px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    margin-top: 8px
+  }
+
+  /* ── Timer History ── */
+  .dc-timer-history {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 10px
+  }
+
+  .dc-timer-history-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px 12px
+  }
+
+  .dc-timer-history-card h4 {
+    margin: 0 0 8px;
+    font-size: .68rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    color: #475569;
+    letter-spacing: .05em
+  }
+
+  .dc-timer-history-list {
+    display: grid;
+    gap: 4px
+  }
+
+  .dc-timer-history-row {
+    display: flex;
+    gap: 10px;
+    font-size: .72rem;
+    padding: 4px 0;
+    border-bottom: 1px solid #f1f5f9
+  }
+
+  .dc-timer-history-row .k {
+    font-weight: 800;
+    color: #475569;
+    min-width: 56px
+  }
+
+  .dc-timer-history-row .v {
+    color: #0f172a
+  }
+
+  .dc-timer-history-row.pause .v {
+    color: #b45309
+  }
+
+  .dc-timer-history-empty {
+    font-size: .72rem;
+    color: #94a3b8;
+    padding: 6px 0
+  }
+
+  /* ── Preview Image ── */
+  .dc-preview {
+    max-width: 280px;
+    max-height: 180px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    object-fit: contain;
+    background: #fff
+  }
+
+  /* ── Print ── */
+  .dc-print-area {
+    display: none
+  }
+
+  @media print {
+    .no-print {
+      display: none !important
+    }
+
+    .dc-print-area {
+      display: block
+    }
+  }
+
+  /* ── Responsive ── */
+  @media(max-width:900px) {
+    .dc-stats {
+      grid-template-columns: repeat(3, 1fr)
+    }
+
+    .dc-op-grid-2 {
+      grid-template-columns: 1fr
+    }
+
+    .dc-timer-history {
+      grid-template-columns: 1fr
+    }
+  }
+
+  @media(max-width:640px) {
+    .dc-stats {
+      grid-template-columns: repeat(2, 1fr)
+    }
+
+    .dc-grid {
+      grid-template-columns: 1fr
+    }
+  }
+
+  @media(max-width:640px) {
+    .dc-timer-overlay {
+      justify-content: flex-start;
+      gap: 16px;
+      padding: max(16px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom))
+    }
+
+    .dc-timer-jobinfo {
+      max-width: 100%
+    }
+
+    .dc-timer-display {
+      letter-spacing: .06em
+    }
+
+    .dc-timer-actions {
+      flex-direction: column;
+      gap: 10px;
+      max-width: 420px
+    }
+
+    .dc-timer-btn-cancel,
+    .dc-timer-btn-pause,
+    .dc-timer-btn-end {
+      width: 100%;
+      padding: 12px 14px;
+      font-size: .95rem
+    }
+  }
+
+  /* ── History Table Styles ── */
+  .ht-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    flex-wrap: wrap
+  }
+
+  .ht-search {
+    padding: 8px 14px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    font-size: .82rem;
+    min-width: 200px;
+    outline: none;
+    transition: border .15s
+  }
+
+  .ht-search:focus {
+    border-color: var(--dc-brand)
+  }
+
+  .ht-date-input {
+    padding: 7px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    font-size: .76rem;
+    outline: none
+  }
+
+  .ht-date-input:focus {
+    border-color: var(--dc-brand)
+  }
+
+  .ht-period-btn {
+    padding: 5px 13px;
+    font-size: .66rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all .15s;
+    color: #64748b
+  }
+
+  .ht-period-btn.active {
+    background: #0f172a;
+    color: #fff;
+    border-color: #0f172a
+  }
+
+  .ht-label {
+    font-size: .62rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #94a3b8;
+    letter-spacing: .03em
+  }
+
+  .ht-bulk-bar {
+    display: none;
+    background: linear-gradient(135deg, #0d9488, #0f766e);
+    color: #fff;
+    border-radius: 12px;
+    padding: 12px 20px;
+    margin-bottom: 12px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    box-shadow: 0 4px 16px rgba(14, 165, 164, .25)
+  }
+
+  .ht-bulk-bar.visible {
+    display: flex
+  }
+
+  .ht-bulk-btn {
+    padding: 5px 13px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: .7rem;
+    cursor: pointer;
+    border: 1px solid rgba(255, 255, 255, .2);
+    background: rgba(255, 255, 255, .12);
+    color: #fff
+  }
+
+  .ht-bulk-btn:hover {
+    background: rgba(255, 255, 255, .22)
+  }
+
+  .ht-bulk-print {
+    padding: 7px 16px;
+    background: #22c55e;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-weight: 800;
+    font-size: .74rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    box-shadow: 0 2px 8px rgba(34, 197, 94, .3)
+  }
+
+  .ht-bulk-print:hover {
+    background: #16a34a
+  }
+
+  .ht-bulk-delete {
+    padding: 7px 16px;
+    background: #dc2626;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-weight: 800;
+    font-size: .74rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    box-shadow: 0 2px 8px rgba(220, 38, 38, .3)
+  }
+
+  .ht-bulk-delete:hover {
+    background: #b91c1c
+  }
+
+  .ht-table-wrap {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    overflow: hidden
+  }
+
+  .ht-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .78rem
+  }
+
+  .ht-table thead {
+    background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+    position: sticky;
+    top: 0;
+    z-index: 2
+  }
+
+  .ht-table th {
+    padding: 11px 13px;
+    font-size: .6rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #64748b;
+    text-align: left;
+    border-bottom: 2px solid #e2e8f0;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none
+  }
+
+  .ht-table th:hover {
+    color: #0f172a
+  }
+
+  .ht-table th .ht-sort {
+    margin-left: 3px;
+    font-size: .52rem;
+    opacity: .4
+  }
+
+  .ht-table th.sorted .ht-sort {
+    opacity: 1;
+    color: var(--dc-brand)
+  }
+
+  .ht-table td {
+    padding: 9px 13px;
+    border-bottom: 1px solid #f1f5f9;
+    color: #1e293b;
+    font-weight: 600;
+    vertical-align: middle
+  }
+
+  .ht-table tbody tr {
+    transition: background .1s;
+    cursor: pointer
+  }
+
+  .ht-table tbody tr:hover {
+    background: #f0fdfa
+  }
+
+  .ht-table tbody tr.ht-selected {
+    background: #f0fdfa;
+    outline: 2px solid var(--dc-brand);
+    outline-offset: -2px
+  }
+
+  .ht-table .ht-cb-cell {
+    width: 34px;
+    text-align: center
+  }
+
+  .ht-table .ht-cb-cell input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--dc-brand);
+    cursor: pointer
+  }
+
+  .ht-jobno {
+    font-weight: 900;
+    color: #0f172a;
+    font-size: .8rem
+  }
+
+  .ht-jobname {
+    font-size: .88rem;
+    font-weight: 900;
+    color: #0f172a
+  }
+
+  .ht-dim {
+    color: #94a3b8;
+    font-size: .72rem
+  }
+
+  .ht-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
+    border-radius: 20px;
+    font-size: .56rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .03em
+  }
+
+  .ht-badge-completed {
+    background: #dcfce7;
+    color: #166534
+  }
+
+  .ht-badge-closed {
+    background: #dcfce7;
+    color: #166534
+  }
+
+  .ht-badge-finalized {
+    background: #dbeafe;
+    color: #1e40af
+  }
+
+  .ht-badge-default {
+    background: #f1f5f9;
+    color: #64748b
+  }
+
+  .ht-act-btn {
+    padding: 4px 9px;
+    font-size: .58rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all .12s;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: #475569
+  }
+
+  .ht-act-btn:hover {
+    background: #f1f5f9
+  }
+
+  .ht-act-btn.ht-print {
+    color: #8b5cf6;
+    border-color: #c4b5fd
+  }
+
+  .ht-act-btn.ht-print:hover {
+    background: #f5f3ff
+  }
+
+  .ht-act-btn.ht-delete {
+    color: #dc2626;
+    border-color: #fecaca
+  }
+
+  .ht-act-btn.ht-delete:hover {
+    background: #fee2e2
+  }
+
+  .ht-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    flex-wrap: wrap;
+    gap: 10px
+  }
+
+  .ht-page-info {
+    font-size: .7rem;
+    color: #64748b;
+    font-weight: 600
+  }
+
+  .ht-page-btns {
+    display: flex;
+    gap: 4px
+  }
+
+  .ht-page-btn {
+    padding: 5px 11px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    border-radius: 8px;
+    font-size: .7rem;
+    font-weight: 700;
+    cursor: pointer;
+    color: #475569;
+    transition: all .12s
+  }
+
+  .ht-page-btn:hover {
+    background: #f1f5f9
+  }
+
+  .ht-page-btn.active {
+    background: var(--dc-brand);
+    color: #fff;
+    border-color: var(--dc-brand)
+  }
+
+  .ht-page-btn:disabled {
+    opacity: .4;
+    cursor: not-allowed
+  }
+
+  .ht-per-page {
+    padding: 5px 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: .7rem;
+    outline: none
+  }
+
+  @media(max-width:768px) {
+    .ht-table-wrap {
+      overflow-x: auto
+    }
+  }
 </style>
 
 <!-- ═══ HEADER ═══ -->
-<div class="dc-header no-print" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+<div class="dc-header no-print"
+  style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
   <div>
     <h1 style="margin:0;font-size:1.3rem;font-weight:900;color:#0f172a;display:flex;align-items:center;gap:8px">
-      <i class="bi <?= e($dcHeaderIcon) ?>"></i> <?= e($isOperatorView ? $dcPageTitleOperator : $dcPageTitleProduction) ?>
+      <i class="bi <?= e($dcHeaderIcon) ?>"></i>
+      <?= e($isOperatorView ? $dcPageTitleOperator : $dcPageTitleProduction) ?>
     </h1>
     <div style="font-size:.72rem;color:#94a3b8;margin-top:4px;font-weight:600">
       <?= $dcHeaderSubtitle ?>
     </div>
   </div>
   <div style="display:flex;gap:8px">
-    <button class="dc-action-btn dc-btn-view" onclick="location.reload()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+    <button class="dc-action-btn dc-btn-view" onclick="location.reload()"><i class="bi bi-arrow-clockwise"></i>
+      Refresh</button>
   </div>
 </div>
 
 <!-- ═══ BULK PRINT BAR ═══ -->
 <?php if ($dcEnableBulkSelection): ?>
-<div class="dc-bulk-bar no-print" id="dcBulkBar">
-  <div style="display:flex;align-items:center;gap:10px">
-    <i class="bi bi-check2-square" style="font-size:1.1rem"></i>
-    <span style="font-weight:800;font-size:.82rem"><span id="dcSelectedCount">0</span> Selected</span>
+  <div class="dc-bulk-bar no-print" id="dcBulkBar">
+    <div style="display:flex;align-items:center;gap:10px">
+      <i class="bi bi-check2-square" style="font-size:1.1rem"></i>
+      <span style="font-weight:800;font-size:.82rem"><span id="dcSelectedCount">0</span> Selected</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button
+        style="padding:5px 13px;border-radius:8px;font-weight:700;font-size:.7rem;cursor:pointer;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.12);color:#fff"
+        onclick="dcSelectAll()">Select All</button>
+      <button
+        style="padding:5px 13px;border-radius:8px;font-weight:700;font-size:.7rem;cursor:pointer;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.12);color:#fff"
+        onclick="dcDeselectAll()">Deselect All</button>
+      <button
+        style="padding:7px 16px;background:#22c55e;color:#fff;border:none;border-radius:8px;font-weight:800;font-size:.74rem;cursor:pointer;display:flex;align-items:center;gap:5px"
+        onclick="dcBulkPrint()"><i class="bi bi-printer-fill"></i> Print Selected</button>
+    </div>
   </div>
-  <div style="display:flex;gap:8px;align-items:center">
-    <button style="padding:5px 13px;border-radius:8px;font-weight:700;font-size:.7rem;cursor:pointer;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.12);color:#fff" onclick="dcSelectAll()">Select All</button>
-    <button style="padding:5px 13px;border-radius:8px;font-weight:700;font-size:.7rem;cursor:pointer;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.12);color:#fff" onclick="dcDeselectAll()">Deselect All</button>
-    <button style="padding:7px 16px;background:#22c55e;color:#fff;border:none;border-radius:8px;font-weight:800;font-size:.74rem;cursor:pointer;display:flex;align-items:center;gap:5px" onclick="dcBulkPrint()"><i class="bi bi-printer-fill"></i> Print Selected</button>
-  </div>
-</div>
 <?php endif; ?>
 
 <!-- ═══ STATS GRID ═══ -->
 <div class="dc-stats no-print">
   <div class="dc-stat" data-filter="all" onclick="filterFromStat('all')">
-    <div class="dc-stat-icon" style="background:var(--dc-brand-light);color:var(--dc-brand)"><i class="bi bi-stack"></i></div>
-    <div><div class="dc-stat-val"><?= $totalCount ?></div><div class="dc-stat-label">Total</div></div>
+    <div class="dc-stat-icon" style="background:var(--dc-brand-light);color:var(--dc-brand)"><i class="bi bi-stack"></i>
+    </div>
+    <div>
+      <div class="dc-stat-val"><?= $totalCount ?></div>
+      <div class="dc-stat-label">Total</div>
+    </div>
   </div>
   <div class="dc-stat" data-filter="Queued" onclick="filterFromStat('Queued')">
     <div class="dc-stat-icon" style="background:#f1f5f9;color:#64748b"><i class="bi bi-lock"></i></div>
-    <div><div class="dc-stat-val"><?= $queuedCount ?></div><div class="dc-stat-label">Queued</div></div>
+    <div>
+      <div class="dc-stat-val"><?= $queuedCount ?></div>
+      <div class="dc-stat-label">Queued</div>
+    </div>
   </div>
   <div class="dc-stat" data-filter="Pending" onclick="filterFromStat('Pending')">
     <div class="dc-stat-icon" style="background:#fef3c7;color:#d97706"><i class="bi bi-hourglass-split"></i></div>
-    <div><div class="dc-stat-val"><?= $pendingCount ?></div><div class="dc-stat-label">Pending</div></div>
+    <div>
+      <div class="dc-stat-val"><?= $pendingCount ?></div>
+      <div class="dc-stat-label">Pending</div>
+    </div>
   </div>
   <div class="dc-stat" data-filter="Running" onclick="filterFromStat('Running')">
     <div class="dc-stat-icon" style="background:#e0e7ff;color:#6366f1"><i class="bi bi-play-circle-fill"></i></div>
-    <div><div class="dc-stat-val"><?= $runningCount ?></div><div class="dc-stat-label">Running</div></div>
+    <div>
+      <div class="dc-stat-val"><?= $runningCount ?></div>
+      <div class="dc-stat-label">Running</div>
+    </div>
   </div>
   <div class="dc-stat" data-filter="Hold" onclick="filterFromStat('Hold')">
     <div class="dc-stat-icon" style="background:#fecdd3;color:#dc2626"><i class="bi bi-pause-circle-fill"></i></div>
-    <div><div class="dc-stat-val"><?= $holdCount ?></div><div class="dc-stat-label">Hold</div></div>
+    <div>
+      <div class="dc-stat-val"><?= $holdCount ?></div>
+      <div class="dc-stat-label">Hold</div>
+    </div>
   </div>
   <div class="dc-stat" data-filter="Finished" onclick="filterFromStat('Finished')">
     <div class="dc-stat-icon" style="background:#dcfce7;color:#16a34a"><i class="bi bi-check-circle"></i></div>
-    <div><div class="dc-stat-val"><?= $finishedCount ?></div><div class="dc-stat-label">Finished</div></div>
+    <div>
+      <div class="dc-stat-val"><?= $finishedCount ?></div>
+      <div class="dc-stat-label">Finished</div>
+    </div>
   </div>
 </div>
 
 <!-- ═══ TABS ═══ -->
 <div class="dc-tabs no-print">
-  <button id="dcTabBtnActive" class="dc-tab-btn active" type="button" onclick="switchDCTab('active')">Job Details <span class="dc-tab-count"><?= $activeCount ?></span></button>
-  <button id="dcTabBtnHistory" class="dc-tab-btn" type="button" onclick="switchDCTab('history')">History <span class="dc-tab-count"><?= $historyCount ?></span></button>
+  <button id="dcTabBtnActive" class="dc-tab-btn active" type="button" onclick="switchDCTab('active')">Job Details <span
+      class="dc-tab-count"><?= $activeCount ?></span></button>
+  <button id="dcTabBtnHistory" class="dc-tab-btn" type="button" onclick="switchDCTab('history')">History <span
+      class="dc-tab-count"><?= $historyCount ?></span></button>
 </div>
 
 <!-- ═══ ACTIVE PANEL ═══ -->
 <div id="dcPanelActive">
 
-<div class="dc-filters no-print">
-  <input type="text" class="dc-search" id="dcSearch" placeholder="Search by job no, name, material&hellip;">
-  <button class="dc-filter-btn <?= $dcDefaultFilter === 'all' ? 'active' : '' ?>" onclick="filterJobs('all',this)">All</button>
-  <button class="dc-filter-btn <?= $dcDefaultFilter === 'Queued' ? 'active' : '' ?>" onclick="filterJobs('Queued',this)">Queued</button>
-  <button class="dc-filter-btn <?= strcasecmp($dcDefaultFilter, 'Pending') === 0 ? 'active' : '' ?>" onclick="filterJobs('Pending',this)">Pending</button>
-  <button class="dc-filter-btn <?= $dcDefaultFilter === 'Running' ? 'active' : '' ?>" onclick="filterJobs('Running',this)">Running</button>
-  <button class="dc-filter-btn <?= $dcDefaultFilter === 'Hold' ? 'active' : '' ?>" onclick="filterJobs('Hold',this)">Hold</button>
-  <button class="dc-filter-btn <?= $dcDefaultFilter === 'Finished' ? 'active' : '' ?>" onclick="filterJobs('Finished',this)">Finished</button>
-</div>
-
-<div class="dc-grid no-print" id="dcGrid">
-<?php if (empty($activeJobs) && empty($historyJobs)): ?>
-  <div class="dc-empty">
-    <i class="bi bi-inbox"></i>
-    <p>No active die-cutting jobs.</p>
+  <div class="dc-filters no-print">
+    <input type="text" class="dc-search" id="dcSearch" placeholder="Search by job no, name, material&hellip;">
+    <button class="dc-filter-btn <?= $dcDefaultFilter === 'all' ? 'active' : '' ?>"
+      onclick="filterJobs('all',this)">All</button>
+    <button class="dc-filter-btn <?= $dcDefaultFilter === 'Queued' ? 'active' : '' ?>"
+      onclick="filterJobs('Queued',this)">Queued</button>
+    <button class="dc-filter-btn <?= strcasecmp($dcDefaultFilter, 'Pending') === 0 ? 'active' : '' ?>"
+      onclick="filterJobs('Pending',this)">Pending</button>
+    <button class="dc-filter-btn <?= $dcDefaultFilter === 'Running' ? 'active' : '' ?>"
+      onclick="filterJobs('Running',this)">Running</button>
+    <button class="dc-filter-btn <?= $dcDefaultFilter === 'Hold' ? 'active' : '' ?>"
+      onclick="filterJobs('Hold',this)">Hold</button>
+    <button class="dc-filter-btn <?= $dcDefaultFilter === 'Finished' ? 'active' : '' ?>"
+      onclick="filterJobs('Finished',this)">Finished</button>
   </div>
-<?php else: ?>
-  <?php foreach ($activeJobs as $idx => $job):
-    $sts = $job['status'];
-    $stsClass = match($sts) { 'Queued'=>'queued', 'Pending'=>'pending', 'Running'=>'running', 'Closed','Finalized','Completed'=>'completed', default=>'pending' };
-    $timerActive = !empty($job['extra_data_parsed']['timer_active']);
-    $timerState = strtolower(trim((string)($job['extra_data_parsed']['timer_state'] ?? '')));
-    $startedTs = $job['started_at'] ? strtotime($job['started_at']) * 1000 : 0;
-    $resumedTs = !empty($job['extra_data_parsed']['timer_last_resumed_at']) ? (strtotime($job['extra_data_parsed']['timer_last_resumed_at']) * 1000) : $startedTs;
-    $baseSeconds = (int)round((float)($job['extra_data_parsed']['timer_accumulated_seconds'] ?? 0));
-    $pri = $job['planning_priority'] ?? 'Normal';
-    $priClass = match(strtolower($pri)) { 'urgent'=>'urgent', 'high'=>'high', default=>'normal' };
-    $isLocked = !$job['upstream_ready'];
-    $isQueued = ($sts === 'Queued');
-    $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : '—';
-    $startedAt = $job['started_at'] ? date('d M Y, H:i', strtotime($job['started_at'])) : '—';
-    $completedAt = $job['completed_at'] ? date('d M Y, H:i', strtotime($job['completed_at'])) : '—';
-    $searchText = strtolower($job['job_no'] . ' ' . ($job['display_job_name'] ?? '') . ' ' . ($job['planning_material'] ?? '') . ' ' . ($job['planning_die_size'] ?? ''));
 
-    // ── Linked-job (multi-slitting compound run) detection ─────────
-    $exForLink = is_array($job['extra_data_parsed'] ?? null) ? $job['extra_data_parsed'] : [];
-    $parentRollForJob = trim((string)(
-      $exForLink['assigned_parent_roll_no']
-      ?? ($exForLink['parent_roll']
-      ?? ($exForLink['parent_details']['roll_no'] ?? ''))
-    ));
-    $isLinkedJob = $parentRollForJob !== '' && isset($parentGroups[$parentRollForJob]) && count($parentGroups[$parentRollForJob]) > 1;
-    $isPrimaryJob = !$isLinkedJob || (isset($parentGroupPrimary[$parentRollForJob]) && (int)$parentGroupPrimary[$parentRollForJob] === (int)$job['id']);
-    $linkedTarget = '';
-    $linkedTargetId = 0;
-    $linkedPrimaryStatus = '';
-    if ($isLinkedJob) {
-      $group = $parentGroups[$parentRollForJob] ?? [];
-      if ($isPrimaryJob) {
-        foreach ($group as $gjob) { if ((int)$gjob['id'] !== (int)$job['id']) { $linkedTarget = (string)$gjob['job_no']; $linkedTargetId = (int)$gjob['id']; break; } }
-      } else {
-        $primaryId = $parentGroupPrimary[$parentRollForJob] ?? 0;
-        foreach ($group as $gjob) {
-          if ((int)$gjob['id'] === (int)$primaryId) {
-            $linkedTarget = (string)$gjob['job_no'];
-            $linkedTargetId = (int)$gjob['id'];
-            $linkedPrimaryStatus = (string)($gjob['status'] ?? '');
-            break;
+  <div class="dc-grid no-print" id="dcGrid">
+    <?php if (empty($activeJobs) && empty($historyJobs)): ?>
+      <div class="dc-empty">
+        <i class="bi bi-inbox"></i>
+        <p>No active die-cutting jobs.</p>
+      </div>
+    <?php else: ?>
+      <?php foreach ($activeJobs as $idx => $job):
+        $sts = $job['status'];
+        $stsClass = match ($sts) { 'Queued' => 'queued', 'Pending' => 'pending', 'Running' => 'running', 'Closed', 'Finalized', 'Completed' => 'completed', default => 'pending'};
+        $timerActive = !empty($job['extra_data_parsed']['timer_active']);
+        $timerState = strtolower(trim((string) ($job['extra_data_parsed']['timer_state'] ?? '')));
+        $startedTs = $job['started_at'] ? strtotime($job['started_at']) * 1000 : 0;
+        $resumedTs = !empty($job['extra_data_parsed']['timer_last_resumed_at']) ? (strtotime($job['extra_data_parsed']['timer_last_resumed_at']) * 1000) : $startedTs;
+        $baseSeconds = (int) round((float) ($job['extra_data_parsed']['timer_accumulated_seconds'] ?? 0));
+        $pri = $job['planning_priority'] ?? 'Normal';
+        $priClass = match (strtolower($pri)) { 'urgent' => 'urgent', 'high' => 'high', default => 'normal'};
+        $isLocked = !$job['upstream_ready'];
+        $isQueued = ($sts === 'Queued');
+        $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : '—';
+        $startedAt = $job['started_at'] ? date('d M Y, H:i', strtotime($job['started_at'])) : '—';
+        $completedAt = $job['completed_at'] ? date('d M Y, H:i', strtotime($job['completed_at'])) : '—';
+        $searchText = strtolower($job['job_no'] . ' ' . ($job['display_job_name'] ?? '') . ' ' . ($job['planning_material'] ?? '') . ' ' . ($job['planning_die_size'] ?? ''));
+
+        // ── Linked-job (multi-slitting compound run) detection ─────────
+        $exForLink = is_array($job['extra_data_parsed'] ?? null) ? $job['extra_data_parsed'] : [];
+        $parentRollForJob = trim((string) (
+          $exForLink['assigned_parent_roll_no']
+          ?? ($exForLink['parent_roll']
+            ?? ($exForLink['parent_details']['roll_no'] ?? ''))
+        ));
+        $isLinkedJob = $parentRollForJob !== '' && isset($parentGroups[$parentRollForJob]) && count($parentGroups[$parentRollForJob]) > 1;
+        $isPrimaryJob = !$isLinkedJob || (isset($parentGroupPrimary[$parentRollForJob]) && (int) $parentGroupPrimary[$parentRollForJob] === (int) $job['id']);
+        $linkedTarget = '';
+        $linkedTargetId = 0;
+        $linkedPrimaryStatus = '';
+        if ($isLinkedJob) {
+          $group = $parentGroups[$parentRollForJob] ?? [];
+          if ($isPrimaryJob) {
+            foreach ($group as $gjob) {
+              if ((int) $gjob['id'] !== (int) $job['id']) {
+                $linkedTarget = (string) $gjob['job_no'];
+                $linkedTargetId = (int) $gjob['id'];
+                break;
+              }
+            }
+          } else {
+            $primaryId = $parentGroupPrimary[$parentRollForJob] ?? 0;
+            foreach ($group as $gjob) {
+              if ((int) $gjob['id'] === (int) $primaryId) {
+                $linkedTarget = (string) $gjob['job_no'];
+                $linkedTargetId = (int) $gjob['id'];
+                $linkedPrimaryStatus = (string) ($gjob['status'] ?? '');
+                break;
+              }
+            }
           }
         }
-      }
-    }
-    // Secondary job Start is disabled until the primary linked job is at least Running
-    // (auto-complete on primary's Complete handles the finish side server-side).
-    $isSecondaryLockedByLink = $isLinkedJob && !$isPrimaryJob && !in_array($linkedPrimaryStatus, ['Running', 'Closed', 'Finalized', 'Completed', 'QC Passed'], true);
-  ?>
-  <div class="dc-card <?= $isQueued ? 'dc-queued' : '' ?><?= $isLinkedJob ? ' dc-card-linked' : '' ?>" data-status="<?= e($sts) ?>" data-lockstate="<?= $isLocked ? 'locked' : 'unlocked' ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>"<?php if ($isLinkedJob): ?> data-link-group="<?= e($parentRollForJob) ?>" data-link-role="<?= $isPrimaryJob ? 'primary' : 'child' ?>" data-link-target="<?= $linkedTargetId ?>"<?php endif; ?> onclick="openJobDetail(<?= $job['id'] ?>)">
-    <?php if ($dcEnableBulkSelection): ?>
-    <input type="checkbox" class="dc-select-check" data-job-id="<?= $job['id'] ?>" onclick="event.stopPropagation();dcUpdateBulkBar()" title="Select for bulk print">
-    <?php endif; ?>
-    <div class="dc-card-head">
-      <div class="dc-jobno">
-        <i class="bi bi-scissors"></i> <?= e($job['job_no']) ?>
-        <?php if ($isLinkedJob): ?>
-          <i class="bi bi-link-45deg" style="color:#7c3aed;margin-left:6px" title="Linked job — same paper roll"></i>
-          <?php if ($linkedTarget !== ''): ?>
-            <span class="dc-linked-to"><?= $isPrimaryJob ? '&#8594; ' : '&#8592; ' ?><?= e($linkedTarget) ?></span>
+        // Secondary job Start is disabled until the primary linked job is at least Running
+        // (auto-complete on primary's Complete handles the finish side server-side).
+        $isSecondaryLockedByLink = $isLinkedJob && !$isPrimaryJob && !in_array($linkedPrimaryStatus, ['Running', 'Closed', 'Finalized', 'Completed', 'QC Passed'], true);
+        ?>
+        <div class="dc-card <?= $isQueued ? 'dc-queued' : '' ?><?= $isLinkedJob ? ' dc-card-linked' : '' ?>"
+          data-status="<?= e($sts) ?>" data-lockstate="<?= $isLocked ? 'locked' : 'unlocked' ?>"
+          data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" <?php if ($isLinkedJob): ?>
+            data-link-group="<?= e($parentRollForJob) ?>" data-link-role="<?= $isPrimaryJob ? 'primary' : 'child' ?>"
+            data-link-target="<?= $linkedTargetId ?>" <?php endif; ?> onclick="openJobDetail(<?= $job['id'] ?>)">
+          <?php if ($dcEnableBulkSelection): ?>
+            <input type="checkbox" class="dc-select-check" data-job-id="<?= $job['id'] ?>"
+              onclick="event.stopPropagation();dcUpdateBulkBar()" title="Select for bulk print">
           <?php endif; ?>
-        <?php endif; ?>
-      </div>
-      <div style="display:flex;gap:6px;align-items:center">
-        <span class="dc-badge dc-badge-<?= $stsClass ?>"><?= e($sts) ?></span>
-        <?php if ($pri !== 'Normal'): ?>
-          <span class="dc-badge dc-badge-<?= $priClass ?>"><?= e($pri) ?></span>
-        <?php endif; ?>
-      </div>
-    </div>
-    <?php if ($isLinkedJob && $linkedTarget !== ''): ?>
-    <div class="dc-linked-banner">
-      <span><?= $isPrimaryJob ? 'Linked to' : 'Linked from' ?></span>
-      <span class="dc-linked-arrow"><?= $isPrimaryJob ? '&#8594;' : '&#8592;' ?></span>
-      <span class="dc-linked-job" onclick="event.stopPropagation();openJobDetail(<?= $linkedTargetId ?>)"><?= e($linkedTarget) ?></span>
-      <span style="font-weight:400;color:#8b5cf6">(same paper roll)</span>
-    </div>
-    <?php endif; ?>
-    <div class="dc-card-body">
-      <div class="dc-card-row"><span class="dc-label">Job Name</span><span class="dc-value dc-job-name"><?= e($job['display_job_name']) ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Material</span><span class="dc-value"><?= e($job['planning_material'] ?: '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Paper Company</span><span class="dc-value"><?= e($job['paper_company_name'] ?: '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Die Size</span><span class="dc-value" style="color:var(--dc-brand)"><?= e($job['planning_die_size'] ?: '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Order Qty (Pcs)</span><span class="dc-value"><?= e($job['planning_order_qty'] ?: '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Pcs per Roll</span><span class="dc-value"><?= e($job['planning_pcs_per_roll'] ?: '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Total Rolls</span><span class="dc-value"><?= e($job['planning_total_rolls'] ?: '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Up in Roll</span><span class="dc-value"><?= e($job['planning_up_in_roll'] ?: '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Up in Production</span><span class="dc-value"><?= e($job['planning_up_in_production'] ?: '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Total Length (Mtr)</span><span class="dc-value"><?= e($job['length_mtr'] ?? '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Started</span><span class="dc-value"><?= e($startedAt) ?></span></div>
-      <?php if ($sts === 'Running' && $resumedTs && $timerState !== 'paused'): ?>
-      <div class="dc-card-row"><span class="dc-label">Elapsed</span><span class="dc-timer" data-base-seconds="<?= $baseSeconds ?>" data-resumed-at="<?= $resumedTs ?>" style="color:var(--dc-brand);font-weight:700;font-family:Consolas,monospace">00:00:00</span></div>
-      <?php elseif ($sts === 'Running' && $timerState === 'paused'): ?>
-      <div class="dc-card-row"><span class="dc-label">Timer</span><span class="dc-value" style="color:#f59e0b;font-weight:800"><i class="bi bi-pause-circle-fill"></i> Paused</span></div>
-      <?php endif; ?>
-      <?php if ($isLocked): ?>
-      <div class="dc-gate"><i class="bi bi-lock-fill"></i> Upstream job not done yet. Prev: <?= e($job['prev_job_no'] ?: 'N/A') ?></div>
-      <?php endif; ?>
-    </div>
-    <div class="dc-card-foot">
-      <div class="dc-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
-      <div style="display:flex;gap:6px;align-items:center" onclick="event.stopPropagation()">
-        <?php if ($sts === 'Pending' && $isOperatorView && !$isLocked): ?>
-          <?php if ($isSecondaryLockedByLink): ?>
-            <button class="dc-action-btn dc-btn-start" disabled title="Start the primary linked job (<?= e($linkedTarget) ?>) first"><i class="bi bi-play-fill"></i> Start</button>
-          <?php else: ?>
-            <button class="dc-action-btn dc-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>)"><i class="bi bi-play-fill"></i> Start</button>
+          <div class="dc-card-head">
+            <div class="dc-jobno">
+              <i class="bi bi-scissors"></i> <?= e($job['job_no']) ?>
+              <?php if ($isLinkedJob): ?>
+                <i class="bi bi-link-45deg" style="color:#7c3aed;margin-left:6px" title="Linked job — same paper roll"></i>
+                <?php if ($linkedTarget !== ''): ?>
+                  <span class="dc-linked-to"><?= $isPrimaryJob ? '&#8594; ' : '&#8592; ' ?><?= e($linkedTarget) ?></span>
+                <?php endif; ?>
+              <?php endif; ?>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <span class="dc-badge dc-badge-<?= $stsClass ?>"><?= e($sts) ?></span>
+              <?php if ($pri !== 'Normal'): ?>
+                <span class="dc-badge dc-badge-<?= $priClass ?>"><?= e($pri) ?></span>
+              <?php endif; ?>
+            </div>
+          </div>
+          <?php if ($isLinkedJob && $linkedTarget !== ''): ?>
+            <div class="dc-linked-banner">
+              <span><?= $isPrimaryJob ? 'Linked to' : 'Linked from' ?></span>
+              <span class="dc-linked-arrow"><?= $isPrimaryJob ? '&#8594;' : '&#8592;' ?></span>
+              <span class="dc-linked-job"
+                onclick="event.stopPropagation();openJobDetail(<?= $linkedTargetId ?>)"><?= e($linkedTarget) ?></span>
+              <span style="font-weight:400;color:#8b5cf6">(same paper roll)</span>
+            </div>
           <?php endif; ?>
-        <?php elseif ($sts === 'Running' && $isOperatorView): ?>
-          <?php if ($timerState === 'paused'): ?>
-            <button class="dc-action-btn dc-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>);event.stopPropagation()"><i class="bi bi-play-circle"></i> Again Start</button>
-          <?php elseif ($timerActive): ?>
-            <button class="dc-action-btn dc-btn-start" onclick="resumeRunningDCTimer(<?= $job['id'] ?>);event.stopPropagation()"><i class="bi bi-play-circle"></i> Open Timer</button>
-          <?php else: ?>
-            <button class="dc-action-btn dc-btn-complete" onclick="openJobDetail(<?= $job['id'] ?>,'complete');event.stopPropagation()"><i class="bi bi-check-lg"></i> Complete</button>
-          <?php endif; ?>
-        <?php elseif (!$isOperatorView): ?>
-          <button class="dc-action-btn dc-btn-view" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-folder2-open"></i> Open</button>
-        <?php endif; ?>
-        <button class="dc-action-btn dc-btn-view" onclick="printJobCard(<?= $job['id'] ?>)" title="Print"><i class="bi bi-printer"></i></button>
-      </div>
-    </div>
-  </div>
-  <?php endforeach; ?>
+          <div class="dc-card-body">
+            <div class="dc-card-row"><span class="dc-label">Job Name</span><span
+                class="dc-value dc-job-name"><?= e($job['display_job_name']) ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Material</span><span
+                class="dc-value"><?= e($job['planning_material'] ?: '—') ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Paper Company</span><span
+                class="dc-value"><?= e($job['paper_company_name'] ?: '—') ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Die Size</span><span class="dc-value"
+                style="color:var(--dc-brand)"><?= e($job['planning_die_size'] ?: '—') ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Order Qty (Pcs)</span><span
+                class="dc-value"><?= e($job['planning_order_qty'] ?: '—') ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Pcs per Roll</span><span
+                class="dc-value"><?= e($job['planning_pcs_per_roll'] ?: '—') ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Total Rolls</span><span
+                class="dc-value"><?= e($job['planning_total_rolls'] ?: '—') ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Up in Roll</span><span
+                class="dc-value"><?= e($job['planning_up_in_roll'] ?: '—') ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Up in Production</span><span
+                class="dc-value"><?= e($job['planning_up_in_production'] ?: '—') ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Total Length (Mtr)</span><span
+                class="dc-value"><?= e($job['length_mtr'] ?? '—') ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Started</span><span class="dc-value"><?= e($startedAt) ?></span>
+            </div>
+            <?php if ($sts === 'Running' && $resumedTs && $timerState !== 'paused'): ?>
+              <div class="dc-card-row"><span class="dc-label">Elapsed</span><span class="dc-timer"
+                  data-base-seconds="<?= $baseSeconds ?>" data-resumed-at="<?= $resumedTs ?>"
+                  style="color:var(--dc-brand);font-weight:700;font-family:Consolas,monospace">00:00:00</span></div>
+            <?php elseif ($sts === 'Running' && $timerState === 'paused'): ?>
+              <div class="dc-card-row"><span class="dc-label">Timer</span><span class="dc-value"
+                  style="color:#f59e0b;font-weight:800"><i class="bi bi-pause-circle-fill"></i> Paused</span></div>
+            <?php endif; ?>
+            <?php if ($isLocked): ?>
+              <div class="dc-gate"><i class="bi bi-lock-fill"></i> Upstream job not done yet. Prev:
+                <?= e($job['prev_job_no'] ?: 'N/A') ?></div>
+            <?php endif; ?>
+          </div>
+          <div class="dc-card-foot">
+            <div class="dc-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
+            <div style="display:flex;gap:6px;align-items:center" onclick="event.stopPropagation()">
+              <?php if ($sts === 'Pending' && $isOperatorView && !$isLocked): ?>
+                <?php if ($isSecondaryLockedByLink): ?>
+                  <button class="dc-action-btn dc-btn-start" disabled
+                    title="Start the primary linked job (<?= e($linkedTarget) ?>) first"><i class="bi bi-play-fill"></i>
+                    Start</button>
+                <?php else: ?>
+                  <button class="dc-action-btn dc-btn-start" onclick="startJobWithTimer(<?= $job['id'] ?>)"><i
+                      class="bi bi-play-fill"></i> Start</button>
+                <?php endif; ?>
+              <?php elseif ($sts === 'Running' && $isOperatorView): ?>
+                <?php if ($timerState === 'paused'): ?>
+                  <button class="dc-action-btn dc-btn-start"
+                    onclick="startJobWithTimer(<?= $job['id'] ?>);event.stopPropagation()"><i class="bi bi-play-circle"></i>
+                    Again Start</button>
+                <?php elseif ($timerActive): ?>
+                  <button class="dc-action-btn dc-btn-start"
+                    onclick="resumeRunningDCTimer(<?= $job['id'] ?>);event.stopPropagation()"><i class="bi bi-play-circle"></i>
+                    Open Timer</button>
+                <?php else: ?>
+                  <button class="dc-action-btn dc-btn-complete"
+                    onclick="openJobDetail(<?= $job['id'] ?>,'complete');event.stopPropagation()"><i class="bi bi-check-lg"></i>
+                    Complete</button>
+                <?php endif; ?>
+              <?php elseif (!$isOperatorView): ?>
+                <button class="dc-action-btn dc-btn-view" onclick="openJobDetail(<?= $job['id'] ?>)"><i
+                    class="bi bi-folder2-open"></i> Open</button>
+              <?php endif; ?>
+              <button class="dc-action-btn dc-btn-view" onclick="printJobCard(<?= $job['id'] ?>)" title="Print"><i
+                  class="bi bi-printer"></i></button>
+            </div>
+          </div>
+        </div>
+      <?php endforeach; ?>
 
-  <?php foreach ($historyJobs as $idx => $job):
-    $sts = $job['status'];
-    $stsClass = match($sts) { 'Pending'=>'pending', 'Closed','Finalized'=>'completed', default=>'pending' };
-    $pri = $job['planning_priority'] ?? 'Normal';
-    $priClass = match(strtolower($pri)) { 'urgent'=>'urgent', 'high'=>'high', default=>'normal' };
-    $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : '—';
-    $startedAt = $job['started_at'] ? date('d M Y, H:i', strtotime($job['started_at'])) : '—';
-    $completedAt = $job['completed_at'] ? date('d M Y, H:i', strtotime($job['completed_at'])) : '—';
-    $searchText = strtolower($job['job_no'] . ' ' . ($job['display_job_name'] ?? '') . ' ' . ($job['planning_material'] ?? '') . ' ' . ($job['planning_die_size'] ?? ''));
-  ?>
-  <div class="dc-card" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>" data-finished-only="1" style="display:none" onclick="openJobDetail(<?= $job['id'] ?>)">
-    <?php if ($dcEnableBulkSelection): ?>
-    <input type="checkbox" class="dc-select-check" data-job-id="<?= $job['id'] ?>" onclick="event.stopPropagation();dcUpdateBulkBar()" title="Select for bulk print">
+      <?php foreach ($historyJobs as $idx => $job):
+        $sts = $job['status'];
+        $stsClass = match ($sts) { 'Pending' => 'pending', 'Closed', 'Finalized' => 'completed', default => 'pending'};
+        $pri = $job['planning_priority'] ?? 'Normal';
+        $priClass = match (strtolower($pri)) { 'urgent' => 'urgent', 'high' => 'high', default => 'normal'};
+        $createdAt = $job['created_at'] ? date('d M Y, H:i', strtotime($job['created_at'])) : '—';
+        $startedAt = $job['started_at'] ? date('d M Y, H:i', strtotime($job['started_at'])) : '—';
+        $completedAt = $job['completed_at'] ? date('d M Y, H:i', strtotime($job['completed_at'])) : '—';
+        $searchText = strtolower($job['job_no'] . ' ' . ($job['display_job_name'] ?? '') . ' ' . ($job['planning_material'] ?? '') . ' ' . ($job['planning_die_size'] ?? ''));
+        ?>
+        <div class="dc-card" data-status="<?= e($sts) ?>" data-search="<?= e($searchText) ?>" data-id="<?= $job['id'] ?>"
+          data-finished-only="1" style="display:none" onclick="openJobDetail(<?= $job['id'] ?>)">
+          <?php if ($dcEnableBulkSelection): ?>
+            <input type="checkbox" class="dc-select-check" data-job-id="<?= $job['id'] ?>"
+              onclick="event.stopPropagation();dcUpdateBulkBar()" title="Select for bulk print">
+          <?php endif; ?>
+          <div class="dc-card-head">
+            <div class="dc-jobno"><i class="bi bi-scissors"></i> <?= e($job['job_no']) ?></div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <span class="dc-badge dc-badge-<?= $stsClass ?>"><?= e($sts) ?></span>
+              <?php if ($pri !== 'Normal'): ?>
+                <span class="dc-badge dc-badge-<?= $priClass ?>"><?= e($pri) ?></span>
+              <?php endif; ?>
+            </div>
+          </div>
+          <div class="dc-card-body">
+            <div class="dc-card-row"><span class="dc-label">Job Name</span><span
+                class="dc-value dc-job-name"><?= e($job['display_job_name']) ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Material</span><span
+                class="dc-value"><?= e($job['planning_material'] ?: '—') ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Paper Company</span><span
+                class="dc-value"><?= e($job['paper_company_name'] ?: '—') ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Die Size</span><span class="dc-value"
+                style="color:var(--dc-brand)"><?= e($job['planning_die_size'] ?: '—') ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Order Qty</span><span
+                class="dc-value"><?= e($job['planning_order_qty'] ?: '—') ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Pcs per Roll</span><span
+                class="dc-value"><?= e($job['planning_pcs_per_roll'] ?: '—') ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Total Rolls</span><span
+                class="dc-value"><?= e($job['planning_total_rolls'] ?: '—') ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Up in Roll</span><span
+                class="dc-value"><?= e($job['planning_up_in_roll'] ?: '—') ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Up in Production</span><span
+                class="dc-value"><?= e($job['planning_up_in_production'] ?: '—') ?></span></div>
+            <div class="dc-card-row"><span class="dc-label">Started</span><span class="dc-value"><?= e($startedAt) ?></span>
+            </div>
+            <div class="dc-card-row"><span class="dc-label">Completed</span><span
+                class="dc-value"><?= e($completedAt) ?></span></div>
+          </div>
+          <div class="dc-card-foot">
+            <div class="dc-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
+            <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
+              <?php if (!$isOperatorView): ?>
+                <button class="dc-action-btn dc-btn-view" onclick="openJobDetail(<?= $job['id'] ?>)"><i
+                    class="bi bi-folder2-open"></i> Open</button>
+              <?php endif; ?>
+              <button class="dc-action-btn dc-btn-view" onclick="printJobCard(<?= $job['id'] ?>)" title="Print"><i
+                  class="bi bi-printer"></i></button>
+            </div>
+          </div>
+        </div>
+      <?php endforeach; ?>
     <?php endif; ?>
-    <div class="dc-card-head">
-      <div class="dc-jobno"><i class="bi bi-scissors"></i> <?= e($job['job_no']) ?></div>
-      <div style="display:flex;gap:6px;align-items:center">
-        <span class="dc-badge dc-badge-<?= $stsClass ?>"><?= e($sts) ?></span>
-        <?php if ($pri !== 'Normal'): ?>
-          <span class="dc-badge dc-badge-<?= $priClass ?>"><?= e($pri) ?></span>
-        <?php endif; ?>
-      </div>
-    </div>
-    <div class="dc-card-body">
-      <div class="dc-card-row"><span class="dc-label">Job Name</span><span class="dc-value dc-job-name"><?= e($job['display_job_name']) ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Material</span><span class="dc-value"><?= e($job['planning_material'] ?: '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Paper Company</span><span class="dc-value"><?= e($job['paper_company_name'] ?: '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Die Size</span><span class="dc-value" style="color:var(--dc-brand)"><?= e($job['planning_die_size'] ?: '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Order Qty</span><span class="dc-value"><?= e($job['planning_order_qty'] ?: '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Pcs per Roll</span><span class="dc-value"><?= e($job['planning_pcs_per_roll'] ?: '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Total Rolls</span><span class="dc-value"><?= e($job['planning_total_rolls'] ?: '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Up in Roll</span><span class="dc-value"><?= e($job['planning_up_in_roll'] ?: '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Up in Production</span><span class="dc-value"><?= e($job['planning_up_in_production'] ?: '—') ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Started</span><span class="dc-value"><?= e($startedAt) ?></span></div>
-      <div class="dc-card-row"><span class="dc-label">Completed</span><span class="dc-value"><?= e($completedAt) ?></span></div>
-    </div>
-    <div class="dc-card-foot">
-      <div class="dc-time"><i class="bi bi-clock"></i> <?= $createdAt ?></div>
-      <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
-        <?php if (!$isOperatorView): ?>
-        <button class="dc-action-btn dc-btn-view" onclick="openJobDetail(<?= $job['id'] ?>)"><i class="bi bi-folder2-open"></i> Open</button>
-        <?php endif; ?>
-        <button class="dc-action-btn dc-btn-view" onclick="printJobCard(<?= $job['id'] ?>)" title="Print"><i class="bi bi-printer"></i></button>
-      </div>
-    </div>
   </div>
-  <?php endforeach; ?>
-<?php endif; ?>
-</div>
 </div>
 
 <!-- ═══ HISTORY PANEL ═══ -->
 <div id="dcPanelHistory" style="display:none">
 
-<!-- History Filter Bar -->
-<div class="ht-filter-bar no-print" style="margin-top:14px">
-  <input type="text" class="ht-search" id="htSearch" placeholder="Search job no, name, material&hellip;">
-  <span class="ht-label">Period:</span>
-  <button class="ht-period-btn active" onclick="htSetPeriod('all',this)">All</button>
-  <button class="ht-period-btn" onclick="htSetPeriod('today',this)">Today</button>
-  <button class="ht-period-btn" onclick="htSetPeriod('week',this)">Week</button>
-  <button class="ht-period-btn" onclick="htSetPeriod('month',this)">Month</button>
-  <button class="ht-period-btn" onclick="htSetPeriod('year',this)">Year</button>
-  <span class="ht-label" style="margin-left:4px">Custom:</span>
-  <input type="date" class="ht-date-input" id="htDateFrom" title="From date">
-  <span style="color:#94a3b8;font-size:.7rem">to</span>
-  <input type="date" class="ht-date-input" id="htDateTo" title="To date">
-  <button class="ht-period-btn" onclick="htApplyCustomDate()" style="background:var(--dc-brand);color:#fff;border-color:var(--dc-brand)"><i class="bi bi-funnel"></i> Apply</button>
-</div>
-
-<!-- History Bulk Bar -->
-<div class="ht-bulk-bar no-print" id="htBulkBar">
-  <div style="display:flex;align-items:center;gap:10px">
-    <i class="bi bi-check2-square" style="font-size:1.1rem"></i>
-    <span style="font-weight:800;font-size:.82rem"><span id="htSelectedCount">0</span> Selected</span>
+  <!-- History Filter Bar -->
+  <div class="ht-filter-bar no-print" style="margin-top:14px">
+    <input type="text" class="ht-search" id="htSearch" placeholder="Search job no, name, material&hellip;">
+    <span class="ht-label">Period:</span>
+    <button class="ht-period-btn active" onclick="htSetPeriod('all',this)">All</button>
+    <button class="ht-period-btn" onclick="htSetPeriod('today',this)">Today</button>
+    <button class="ht-period-btn" onclick="htSetPeriod('week',this)">Week</button>
+    <button class="ht-period-btn" onclick="htSetPeriod('month',this)">Month</button>
+    <button class="ht-period-btn" onclick="htSetPeriod('year',this)">Year</button>
+    <span class="ht-label" style="margin-left:4px">Custom:</span>
+    <input type="date" class="ht-date-input" id="htDateFrom" title="From date">
+    <span style="color:#94a3b8;font-size:.7rem">to</span>
+    <input type="date" class="ht-date-input" id="htDateTo" title="To date">
+    <button class="ht-period-btn" onclick="htApplyCustomDate()"
+      style="background:var(--dc-brand);color:#fff;border-color:var(--dc-brand)"><i class="bi bi-funnel"></i>
+      Apply</button>
   </div>
-  <div style="display:flex;gap:8px;align-items:center">
-    <button class="ht-bulk-btn" onclick="htSelectAllVisible()">Select All</button>
-    <button class="ht-bulk-btn" onclick="htDeselectAll()">Deselect All</button>
-    <button class="ht-bulk-print" onclick="htBulkPrint()"><i class="bi bi-printer-fill"></i> Print Selected</button>
-    <?php if ($canDeleteJobs): ?>
-    <button class="ht-bulk-delete" onclick="htBulkDelete()"><i class="bi bi-trash-fill"></i> Delete Selected</button>
-    <?php endif; ?>
-  </div>
-</div>
 
-<!-- History Table -->
-<div class="ht-table-wrap">
-  <table class="ht-table" id="htTable">
-    <thead>
-      <tr>
-        <th class="ht-cb-cell no-print"><input type="checkbox" id="htCheckAll" onchange="htToggleAll(this.checked)" title="Select all"></th>
-        <th onclick="htSortCol(0)">#<span class="ht-sort">▲▼</span></th>
-        <th onclick="htSortCol(1)">Job No<span class="ht-sort">▲▼</span></th>
-        <th onclick="htSortCol(2)">Job Name<span class="ht-sort">▲▼</span></th>
-        <th onclick="htSortCol(3)">Material<span class="ht-sort">▲▼</span></th>
-        <th onclick="htSortCol(4)">Paper Company<span class="ht-sort">▲▼</span></th>
-        <th onclick="htSortCol(5)">Die Size<span class="ht-sort">▲▼</span></th>
-        <th onclick="htSortCol(6)">Order Qty<span class="ht-sort">▲▼</span></th>
-        <th onclick="htSortCol(7)">Status<span class="ht-sort">▲▼</span></th>
-        <th onclick="htSortCol(8)">Started<span class="ht-sort">▲▼</span></th>
-        <th onclick="htSortCol(9)">Completed<span class="ht-sort">▲▼</span></th>
-        <th class="no-print">Actions</th>
-      </tr>
-    </thead>
-    <tbody id="htBody">
-    <?php if (empty($historyJobs)): ?>
-      <tr><td colspan="12" style="padding:40px;text-align:center;color:#94a3b8"><i class="bi bi-inbox" style="font-size:2rem;opacity:.3"></i><br>No finished die-cutting jobs found</td></tr>
-    <?php else: ?>
-      <?php foreach ($historyJobs as $idx => $h):
-        $hSts = $h['status'];
-        $hStsLower = strtolower(str_replace(' ', '', $hSts));
-        $hStsClass = match($hStsLower) { 'closed'=>'closed','finalized'=>'finalized','completed'=>'completed', default=>'default' };
-        $hStarted = $h['started_at'] ? date('d M Y, H:i', strtotime($h['started_at'])) : '—';
-        $hCompleted = $h['completed_at'] ? date('d M Y, H:i', strtotime($h['completed_at'])) : ($h['updated_at'] ? date('d M Y, H:i', strtotime($h['updated_at'])) : '—');
-        $hSearch = strtolower($h['job_no'] . ' ' . ($h['display_job_name'] ?? '') . ' ' . ($h['planning_material'] ?? '') . ' ' . ($h['paper_company_name'] ?? '') . ' ' . ($h['planning_die_size'] ?? ''));
-      ?>
-      <tr data-id="<?= (int)$h['id'] ?>"
-          data-completed="<?= e($h['completed_at'] ?? $h['updated_at'] ?? $h['created_at'] ?? '') ?>"
-          data-search="<?= e($hSearch) ?>"
-          onclick="openJobDetail(<?= (int)$h['id'] ?>)">
-        <td class="ht-cb-cell no-print">
-          <input type="checkbox" class="ht-row-cb" data-job-id="<?= (int)$h['id'] ?>" onclick="event.stopPropagation();htUpdateBulk()">
-        </td>
-        <td class="ht-dim"><?= $idx + 1 ?></td>
-        <td><span class="ht-jobno"><?= e($h['job_no']) ?></span></td>
-        <td><span class="ht-jobname"><?= e($h['display_job_name'] ?? '—') ?></span></td>
-        <td><?= e($h['planning_material'] ?? '—') ?></td>
-        <td><?= e($h['paper_company_name'] ?? '—') ?></td>
-        <td style="color:var(--dc-brand);font-weight:800"><?= e($h['planning_die_size'] ?? '—') ?></td>
-        <td><?= e($h['planning_order_qty'] ?? '—') ?></td>
-        <td><span class="ht-badge ht-badge-<?= $hStsClass ?>"><?= e($hSts) ?></span></td>
-        <td class="ht-dim"><?= $hStarted ?></td>
-        <td class="ht-dim"><?= $hCompleted ?></td>
-        <td class="no-print" onclick="event.stopPropagation()">
-          <button class="ht-act-btn" onclick="openJobDetail(<?= (int)$h['id'] ?>)" title="View"><i class="bi bi-eye"></i></button>
-          <button class="ht-act-btn ht-print" onclick="printJobCard(<?= (int)$h['id'] ?>)" title="Print"><i class="bi bi-printer"></i></button>
-          <?php if ($canDeleteJobs): ?>
-          <button class="ht-act-btn ht-delete" onclick="deleteJob(<?= (int)$h['id'] ?>)" title="Delete"><i class="bi bi-trash"></i></button>
-          <?php endif; ?>
-        </td>
-      </tr>
-      <?php endforeach; ?>
-    <?php endif; ?>
-    </tbody>
-  </table>
-  <div class="ht-pagination no-print" id="htPagination">
-    <div class="ht-page-info" id="htPageInfo">Showing 0-0 of 0</div>
+  <!-- History Bulk Bar -->
+  <div class="ht-bulk-bar no-print" id="htBulkBar">
     <div style="display:flex;align-items:center;gap:10px">
-      <select class="ht-per-page" id="htPerPage" onchange="htGoPage(1)">
-        <option value="25">25 / page</option>
-        <option value="50">50 / page</option>
-        <option value="100">100 / page</option>
-        <option value="all">Show All</option>
-      </select>
-      <div class="ht-page-btns" id="htPageBtns"></div>
+      <i class="bi bi-check2-square" style="font-size:1.1rem"></i>
+      <span style="font-weight:800;font-size:.82rem"><span id="htSelectedCount">0</span> Selected</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="ht-bulk-btn" onclick="htSelectAllVisible()">Select All</button>
+      <button class="ht-bulk-btn" onclick="htDeselectAll()">Deselect All</button>
+      <button class="ht-bulk-print" onclick="htBulkPrint()"><i class="bi bi-printer-fill"></i> Print Selected</button>
+      <?php if ($canDeleteJobs): ?>
+        <button class="ht-bulk-delete" onclick="htBulkDelete()"><i class="bi bi-trash-fill"></i> Delete Selected</button>
+      <?php endif; ?>
     </div>
   </div>
-</div>
+
+  <!-- History Table -->
+  <div class="ht-table-wrap">
+    <table class="ht-table" id="htTable">
+      <thead>
+        <tr>
+          <th class="ht-cb-cell no-print"><input type="checkbox" id="htCheckAll" onchange="htToggleAll(this.checked)"
+              title="Select all"></th>
+          <th onclick="htSortCol(0)">#<span class="ht-sort">▲▼</span></th>
+          <th onclick="htSortCol(1)">Job No<span class="ht-sort">▲▼</span></th>
+          <th onclick="htSortCol(2)">Job Name<span class="ht-sort">▲▼</span></th>
+          <th onclick="htSortCol(3)">Material<span class="ht-sort">▲▼</span></th>
+          <th onclick="htSortCol(4)">Paper Company<span class="ht-sort">▲▼</span></th>
+          <th onclick="htSortCol(5)">Die Size<span class="ht-sort">▲▼</span></th>
+          <th onclick="htSortCol(6)">Order Qty<span class="ht-sort">▲▼</span></th>
+          <th onclick="htSortCol(7)">Status<span class="ht-sort">▲▼</span></th>
+          <th onclick="htSortCol(8)">Started<span class="ht-sort">▲▼</span></th>
+          <th onclick="htSortCol(9)">Completed<span class="ht-sort">▲▼</span></th>
+          <th class="no-print">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="htBody">
+        <?php if (empty($historyJobs)): ?>
+          <tr>
+            <td colspan="12" style="padding:40px;text-align:center;color:#94a3b8"><i class="bi bi-inbox"
+                style="font-size:2rem;opacity:.3"></i><br>No finished die-cutting jobs found</td>
+          </tr>
+        <?php else: ?>
+          <?php foreach ($historyJobs as $idx => $h):
+            $hSts = $h['status'];
+            $hStsLower = strtolower(str_replace(' ', '', $hSts));
+            $hStsClass = match ($hStsLower) { 'closed' => 'closed', 'finalized' => 'finalized', 'completed' => 'completed', default => 'default'};
+            $hStarted = $h['started_at'] ? date('d M Y, H:i', strtotime($h['started_at'])) : '—';
+            $hCompleted = $h['completed_at'] ? date('d M Y, H:i', strtotime($h['completed_at'])) : ($h['updated_at'] ? date('d M Y, H:i', strtotime($h['updated_at'])) : '—');
+            $hSearch = strtolower($h['job_no'] . ' ' . ($h['display_job_name'] ?? '') . ' ' . ($h['planning_material'] ?? '') . ' ' . ($h['paper_company_name'] ?? '') . ' ' . ($h['planning_die_size'] ?? ''));
+            ?>
+            <tr data-id="<?= (int) $h['id'] ?>"
+              data-completed="<?= e($h['completed_at'] ?? $h['updated_at'] ?? $h['created_at'] ?? '') ?>"
+              data-search="<?= e($hSearch) ?>" onclick="openJobDetail(<?= (int) $h['id'] ?>)">
+              <td class="ht-cb-cell no-print">
+                <input type="checkbox" class="ht-row-cb" data-job-id="<?= (int) $h['id'] ?>"
+                  onclick="event.stopPropagation();htUpdateBulk()">
+              </td>
+              <td class="ht-dim"><?= $idx + 1 ?></td>
+              <td><span class="ht-jobno"><?= e($h['job_no']) ?></span></td>
+              <td><span class="ht-jobname"><?= e($h['display_job_name'] ?? '—') ?></span></td>
+              <td><?= e($h['planning_material'] ?? '—') ?></td>
+              <td><?= e($h['paper_company_name'] ?? '—') ?></td>
+              <td style="color:var(--dc-brand);font-weight:800"><?= e($h['planning_die_size'] ?? '—') ?></td>
+              <td><?= e($h['planning_order_qty'] ?? '—') ?></td>
+              <td><span class="ht-badge ht-badge-<?= $hStsClass ?>"><?= e($hSts) ?></span></td>
+              <td class="ht-dim"><?= $hStarted ?></td>
+              <td class="ht-dim"><?= $hCompleted ?></td>
+              <td class="no-print" onclick="event.stopPropagation()">
+                <button class="ht-act-btn" onclick="openJobDetail(<?= (int) $h['id'] ?>)" title="View"><i
+                    class="bi bi-eye"></i></button>
+                <button class="ht-act-btn ht-print" onclick="printJobCard(<?= (int) $h['id'] ?>)" title="Print"><i
+                    class="bi bi-printer"></i></button>
+                <?php if ($canDeleteJobs): ?>
+                  <button class="ht-act-btn ht-delete" onclick="deleteJob(<?= (int) $h['id'] ?>)" title="Delete"><i
+                      class="bi bi-trash"></i></button>
+                <?php endif; ?>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </tbody>
+    </table>
+    <div class="ht-pagination no-print" id="htPagination">
+      <div class="ht-page-info" id="htPageInfo">Showing 0-0 of 0</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <select class="ht-per-page" id="htPerPage" onchange="htGoPage(1)">
+          <option value="25">25 / page</option>
+          <option value="50">50 / page</option>
+          <option value="100">100 / page</option>
+          <option value="all">Show All</option>
+        </select>
+        <div class="ht-page-btns" id="htPageBtns"></div>
+      </div>
+    </div>
+  </div>
 
 </div>
 
@@ -1427,903 +2764,903 @@ include __DIR__ . '/../../../includes/header.php';
 
 <script src="<?= BASE_URL ?>/assets/js/qrcode.min.js"></script>
 <script>
-const CSRF = '<?= e($csrf) ?>';
-const BASE_URL = '<?= BASE_URL ?>';
-const API_BASE = '<?= BASE_URL ?>/modules/jobs/api.php';
-const APP_FOOTER_LEFT = <?= json_encode($appFooterLeft, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
-const APP_FOOTER_RIGHT = <?= json_encode($appFooterRight, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
-const COMPANY = <?= json_encode(['name'=>$companyName,'address'=>$companyAddr,'gst'=>$companyGst,'logo'=>$logoUrl], JSON_HEX_TAG|JSON_HEX_APOS) ?>;
-const ALL_JOBS = <?= json_encode(array_values(array_merge($activeJobs, $historyJobs)), JSON_HEX_TAG|JSON_HEX_APOS) ?>;
-const IS_OPERATOR_VIEW = <?= $isOperatorView ? 'true' : 'false' ?>;
-const IS_ADMIN = <?= $canDeleteJobs ? 'true' : 'false' ?>;
-const DC_AUTO_REFRESH_MS = 45000;
-const DC_DETAILS_SECTION_LABEL = <?= json_encode($dcDetailsSectionLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
-const DC_DEFAULT_FILTER_RAW = <?= json_encode($dcDefaultFilter, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
-const DC_COMPARE_SECTION_TITLE = <?= json_encode($dcCompareSectionTitle, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
-const DC_PRODUCED_QTY_LABEL = <?= json_encode($dcProducedQtyLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
-const DC_PRODUCED_QTY_SOURCE = <?= json_encode($dcProducedQtySource, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
-const DC_SHOW_WEIGHT_HEIGHT_FIELDS = <?= $dcShowWeightHeightFields ? 'true' : 'false' ?>;
-const DC_WEIGHT_LABEL = <?= json_encode($dcWeightLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
-const DC_HEIGHT_LABEL = <?= json_encode($dcHeightLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
-const DC_PAPER_WIDTH_LABEL = <?= json_encode($dcPaperWidthLabel, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
-const DC_SHOW_PAPER_COMPANY_IN_DETAILS = <?= $dcShowPaperCompanyInDetails ? 'true' : 'false' ?>;
-const DC_SHOW_PARENT_CHILD_TABLES = <?= $dcShowParentChildRollTables ? 'true' : 'false' ?>;
-const DC_AUTO_FALLBACK_TO_ALL_ON_EMPTY_DEFAULT = <?= $dcAutoFallbackToAllOnEmptyDefault ? 'true' : 'false' ?>;
-const DC_ENABLE_BULK_SELECTION = <?= $dcEnableBulkSelection ? 'true' : 'false' ?>;
-const DC_DEFAULT_VOICE_LANGUAGE = <?= json_encode($dcDefaultVoiceLanguage, JSON_HEX_TAG|JSON_HEX_APOS) ?>;
-const CAN_MANUAL_ROLL_ENTRY = <?= $dcCanManualRollEntry ? 'true' : 'false' ?>;
-const DC_REQUIRE_ROLL_SCAN = <?= !empty($dcRequireRollScan) ? 'true' : 'false' ?>;
+  const CSRF = '<?= e($csrf) ?>';
+  const BASE_URL = '<?= BASE_URL ?>';
+  const API_BASE = '<?= BASE_URL ?>/modules/jobs/api.php';
+  const APP_FOOTER_LEFT = <?= json_encode($appFooterLeft, JSON_HEX_TAG | JSON_HEX_APOS) ?>;
+  const APP_FOOTER_RIGHT = <?= json_encode($appFooterRight, JSON_HEX_TAG | JSON_HEX_APOS) ?>;
+  const COMPANY = <?= json_encode(['name' => $companyName, 'address' => $companyAddr, 'gst' => $companyGst, 'logo' => $logoUrl], JSON_HEX_TAG | JSON_HEX_APOS) ?>;
+  const ALL_JOBS = <?= json_encode(array_values(array_merge($activeJobs, $historyJobs)), JSON_HEX_TAG | JSON_HEX_APOS) ?>;
+  const IS_OPERATOR_VIEW = <?= $isOperatorView ? 'true' : 'false' ?>;
+  const IS_ADMIN = <?= $canDeleteJobs ? 'true' : 'false' ?>;
+  const DC_AUTO_REFRESH_MS = 45000;
+  const DC_DETAILS_SECTION_LABEL = <?= json_encode($dcDetailsSectionLabel, JSON_HEX_TAG | JSON_HEX_APOS) ?>;
+  const DC_DEFAULT_FILTER_RAW = <?= json_encode($dcDefaultFilter, JSON_HEX_TAG | JSON_HEX_APOS) ?>;
+  const DC_COMPARE_SECTION_TITLE = <?= json_encode($dcCompareSectionTitle, JSON_HEX_TAG | JSON_HEX_APOS) ?>;
+  const DC_PRODUCED_QTY_LABEL = <?= json_encode($dcProducedQtyLabel, JSON_HEX_TAG | JSON_HEX_APOS) ?>;
+  const DC_PRODUCED_QTY_SOURCE = <?= json_encode($dcProducedQtySource, JSON_HEX_TAG | JSON_HEX_APOS) ?>;
+  const DC_SHOW_WEIGHT_HEIGHT_FIELDS = <?= $dcShowWeightHeightFields ? 'true' : 'false' ?>;
+  const DC_WEIGHT_LABEL = <?= json_encode($dcWeightLabel, JSON_HEX_TAG | JSON_HEX_APOS) ?>;
+  const DC_HEIGHT_LABEL = <?= json_encode($dcHeightLabel, JSON_HEX_TAG | JSON_HEX_APOS) ?>;
+  const DC_PAPER_WIDTH_LABEL = <?= json_encode($dcPaperWidthLabel, JSON_HEX_TAG | JSON_HEX_APOS) ?>;
+  const DC_SHOW_PAPER_COMPANY_IN_DETAILS = <?= $dcShowPaperCompanyInDetails ? 'true' : 'false' ?>;
+  const DC_SHOW_PARENT_CHILD_TABLES = <?= $dcShowParentChildRollTables ? 'true' : 'false' ?>;
+  const DC_AUTO_FALLBACK_TO_ALL_ON_EMPTY_DEFAULT = <?= $dcAutoFallbackToAllOnEmptyDefault ? 'true' : 'false' ?>;
+  const DC_ENABLE_BULK_SELECTION = <?= $dcEnableBulkSelection ? 'true' : 'false' ?>;
+  const DC_DEFAULT_VOICE_LANGUAGE = <?= json_encode($dcDefaultVoiceLanguage, JSON_HEX_TAG | JSON_HEX_APOS) ?>;
+  const CAN_MANUAL_ROLL_ENTRY = <?= $dcCanManualRollEntry ? 'true' : 'false' ?>;
+  const DC_REQUIRE_ROLL_SCAN = <?= !empty($dcRequireRollScan) ? 'true' : 'false' ?>;
 
-// ── Voice recording state ──
-let _voiceRecorder = null;
-let _voiceChunks = [];
-let _lastPhotoPath = '';
-let _lastVoicePath = '';
-let _speechVoiceRec = null;
+  // ── Voice recording state ──
+  let _voiceRecorder = null;
+  let _voiceChunks = [];
+  let _lastPhotoPath = '';
+  let _lastVoicePath = '';
+  let _speechVoiceRec = null;
 
-function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
+  function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
-function resolveJobDisplayName(job) {
-  if (job && String(job.display_job_name || '').trim() !== '') return String(job.display_job_name).trim();
-  if (job && String(job.planning_job_name || '').trim() !== '') return String(job.planning_job_name).trim();
-  const jobNo = String(job?.job_no || '').trim();
-  return jobNo || '—';
-}
-
-function dcNormalizeRollEntry(entry, fallbackStatus) {
-  const fb = String(fallbackStatus || '').trim();
-  if (!entry) return null;
-  if (typeof entry === 'string' || typeof entry === 'number') {
-    const rollNo = String(entry || '').trim();
-    if (!rollNo) return null;
-    return { roll_no: rollNo, parent_roll_no: '', width_mm: '', length_mtr: '', paper_type: '', company: '', gsm: '', weight_kg: '', sqm: '', wastage: '', remarks: '', status: fb || '—' };
+  function resolveJobDisplayName(job) {
+    if (job && String(job.display_job_name || '').trim() !== '') return String(job.display_job_name).trim();
+    if (job && String(job.planning_job_name || '').trim() !== '') return String(job.planning_job_name).trim();
+    const jobNo = String(job?.job_no || '').trim();
+    return jobNo || '—';
   }
-  if (typeof entry !== 'object') return null;
-  const rollNo = String(entry.roll_no || entry.roll || entry.roll_number || '').trim();
-  if (!rollNo) return null;
-  return {
-    roll_no: rollNo,
-    parent_roll_no: entry.parent_roll_no ?? '',
-    width_mm: entry.width_mm ?? entry.width ?? '',
-    length_mtr: entry.length_mtr ?? entry.length ?? '',
-    paper_type: entry.paper_type ?? entry.material ?? '',
-    company: entry.company ?? entry.company_name ?? '',
-    gsm: entry.gsm ?? '',
-    weight_kg: entry.weight_kg ?? '',
-    sqm: entry.sqm ?? '',
-    wastage: entry.wastage ?? '',
-    remarks: entry.remarks ?? '',
-    status: entry.status || fb || '—'
-  };
-}
 
-function dcMergeRollRows(baseRows, incomingRows, fallbackStatus) {
-  const out = Array.isArray(baseRows) ? baseRows.slice() : [];
-  const index = {};
-  out.forEach(function(row, idx) {
-    const key = String(row && row.roll_no || '').trim().toLowerCase();
-    if (key) index[key] = idx;
-  });
+  function dcNormalizeRollEntry(entry, fallbackStatus) {
+    const fb = String(fallbackStatus || '').trim();
+    if (!entry) return null;
+    if (typeof entry === 'string' || typeof entry === 'number') {
+      const rollNo = String(entry || '').trim();
+      if (!rollNo) return null;
+      return { roll_no: rollNo, parent_roll_no: '', width_mm: '', length_mtr: '', paper_type: '', company: '', gsm: '', weight_kg: '', sqm: '', wastage: '', remarks: '', status: fb || '—' };
+    }
+    if (typeof entry !== 'object') return null;
+    const rollNo = String(entry.roll_no || entry.roll || entry.roll_number || '').trim();
+    if (!rollNo) return null;
+    return {
+      roll_no: rollNo,
+      parent_roll_no: entry.parent_roll_no ?? '',
+      width_mm: entry.width_mm ?? entry.width ?? '',
+      length_mtr: entry.length_mtr ?? entry.length ?? '',
+      paper_type: entry.paper_type ?? entry.material ?? '',
+      company: entry.company ?? entry.company_name ?? '',
+      gsm: entry.gsm ?? '',
+      weight_kg: entry.weight_kg ?? '',
+      sqm: entry.sqm ?? '',
+      wastage: entry.wastage ?? '',
+      remarks: entry.remarks ?? '',
+      status: entry.status || fb || '—'
+    };
+  }
 
-  (Array.isArray(incomingRows) ? incomingRows : []).forEach(function(raw) {
-    const normalized = dcNormalizeRollEntry(raw, fallbackStatus);
-    if (!normalized) return;
-    const key = normalized.roll_no.toLowerCase();
-    if (index[key] == null) {
-      index[key] = out.length;
-      out.push(normalized);
+  function dcMergeRollRows(baseRows, incomingRows, fallbackStatus) {
+    const out = Array.isArray(baseRows) ? baseRows.slice() : [];
+    const index = {};
+    out.forEach(function (row, idx) {
+      const key = String(row && row.roll_no || '').trim().toLowerCase();
+      if (key) index[key] = idx;
+    });
+
+    (Array.isArray(incomingRows) ? incomingRows : []).forEach(function (raw) {
+      const normalized = dcNormalizeRollEntry(raw, fallbackStatus);
+      if (!normalized) return;
+      const key = normalized.roll_no.toLowerCase();
+      if (index[key] == null) {
+        index[key] = out.length;
+        out.push(normalized);
+        return;
+      }
+      const target = out[index[key]];
+      ['parent_roll_no', 'width_mm', 'length_mtr', 'paper_type', 'company', 'gsm', 'weight_kg', 'sqm', 'wastage', 'remarks', 'status'].forEach(function (field) {
+        const oldVal = String(target[field] ?? '').trim();
+        const newVal = String(normalized[field] ?? '').trim();
+        if (!oldVal && newVal) target[field] = normalized[field];
+      });
+    });
+
+    return out;
+  }
+
+  function dcCollectAssignedChildRolls(job) {
+    const extra = (job && job.extra_data_parsed) ? job.extra_data_parsed : {};
+    let rows = [];
+    rows = dcMergeRollRows(rows, extra.assigned_child_rolls, 'Job Assign');
+    rows = dcMergeRollRows(rows, extra.child_rolls, 'Job Assign');
+    // NOTE: flatbed_source_rolls and prev_assigned_child_rolls intentionally omitted —
+    // they aggregate ALL upstream rolls across all downstream jobs, not just this job's assigned rolls.
+    return rows.filter(function (row) {
+      const status = String((row && row.status) || '').trim().toLowerCase();
+      if (!status) return true;
+      return !['stock', 'remaining', 'remainder', 'consumed'].includes(status);
+    });
+  }
+
+  function isDCSpeechSupported() {
+    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  }
+
+  function normalizeDCVoiceLanguage(lang) {
+    const allowed = ['en-IN', 'hi-IN', 'bn-IN', 'bn-BD', 'gu-IN', 'mr-IN'];
+    const raw = String(lang || '').trim();
+    const aliasMap = {
+      'bn': 'bn-BD',
+      'bengali': 'bn-BD',
+      'bangla': 'bn-BD',
+      'bn_bd': 'bn-BD',
+      'bn-in': 'bn-IN',
+      'bn-bd': 'bn-BD',
+    };
+    const alias = aliasMap[raw.toLowerCase()] || raw;
+    return allowed.includes(alias) ? alias : String(DC_DEFAULT_VOICE_LANGUAGE || 'en-IN');
+  }
+
+  function dcVoiceLanguageLabel(lang) {
+    const code = normalizeDCVoiceLanguage(lang);
+    const map = {
+      'en-IN': 'English (India)',
+      'hi-IN': 'Hindi',
+      'bn-IN': 'Bengali',
+      'bn-BD': 'Bangla (Bangladesh)',
+      'gu-IN': 'Gujarati',
+      'mr-IN': 'Marathi'
+    };
+    return map[code] || code;
+  }
+
+  function setDCVoiceFallbackMessage(btn, message) {
+    const fallbackId = String(btn?.getAttribute('data-voice-fallback-id') || '').trim();
+    if (!fallbackId) return;
+    const fallbackEl = document.getElementById(fallbackId);
+    if (fallbackEl) fallbackEl.textContent = String(message || '').trim();
+  }
+
+  function startVoiceToField(fieldName, btn, languageFieldName) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setDCVoiceFallbackMessage(btn, 'Voice input is not supported in this browser. Type notes manually.');
       return;
     }
-    const target = out[index[key]];
-    ['parent_roll_no', 'width_mm', 'length_mtr', 'paper_type', 'company', 'gsm', 'weight_kg', 'sqm', 'wastage', 'remarks', 'status'].forEach(function(field) {
-      const oldVal = String(target[field] ?? '').trim();
-      const newVal = String(normalized[field] ?? '').trim();
-      if (!oldVal && newVal) target[field] = normalized[field];
-    });
-  });
-
-  return out;
-}
-
-function dcCollectAssignedChildRolls(job) {
-  const extra = (job && job.extra_data_parsed) ? job.extra_data_parsed : {};
-  let rows = [];
-  rows = dcMergeRollRows(rows, extra.assigned_child_rolls, 'Job Assign');
-  rows = dcMergeRollRows(rows, extra.child_rolls, 'Job Assign');
-  // NOTE: flatbed_source_rolls and prev_assigned_child_rolls intentionally omitted —
-  // they aggregate ALL upstream rolls across all downstream jobs, not just this job's assigned rolls.
-  return rows.filter(function(row) {
-    const status = String((row && row.status) || '').trim().toLowerCase();
-    if (!status) return true;
-    return !['stock', 'remaining', 'remainder', 'consumed'].includes(status);
-  });
-}
-
-function isDCSpeechSupported() {
-  return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-}
-
-function normalizeDCVoiceLanguage(lang) {
-  const allowed = ['en-IN', 'hi-IN', 'bn-IN', 'bn-BD', 'gu-IN', 'mr-IN'];
-  const raw = String(lang || '').trim();
-  const aliasMap = {
-    'bn': 'bn-BD',
-    'bengali': 'bn-BD',
-    'bangla': 'bn-BD',
-    'bn_bd': 'bn-BD',
-    'bn-in': 'bn-IN',
-    'bn-bd': 'bn-BD',
-  };
-  const alias = aliasMap[raw.toLowerCase()] || raw;
-  return allowed.includes(alias) ? alias : String(DC_DEFAULT_VOICE_LANGUAGE || 'en-IN');
-}
-
-function dcVoiceLanguageLabel(lang) {
-  const code = normalizeDCVoiceLanguage(lang);
-  const map = {
-    'en-IN': 'English (India)',
-    'hi-IN': 'Hindi',
-    'bn-IN': 'Bengali',
-    'bn-BD': 'Bangla (Bangladesh)',
-    'gu-IN': 'Gujarati',
-    'mr-IN': 'Marathi'
-  };
-  return map[code] || code;
-}
-
-function setDCVoiceFallbackMessage(btn, message) {
-  const fallbackId = String(btn?.getAttribute('data-voice-fallback-id') || '').trim();
-  if (!fallbackId) return;
-  const fallbackEl = document.getElementById(fallbackId);
-  if (fallbackEl) fallbackEl.textContent = String(message || '').trim();
-}
-
-function startVoiceToField(fieldName, btn, languageFieldName) {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    setDCVoiceFallbackMessage(btn, 'Voice input is not supported in this browser. Type notes manually.');
-    return;
-  }
-  if (_speechVoiceRec) {
-    try { _speechVoiceRec.stop(); } catch (_) {}
-    _speechVoiceRec = null;
-  }
-
-  const input = document.querySelector('[name="' + fieldName + '"]');
-  if (!input) return;
-
-  const form = input.closest('form');
-  const langField = String(languageFieldName || '').trim();
-  let language = String(DC_DEFAULT_VOICE_LANGUAGE || 'en-IN');
-  if (langField && form) {
-    const langInput = form.querySelector('[name="' + langField + '"]');
-    language = String(langInput?.value || language);
-  }
-  language = normalizeDCVoiceLanguage(language);
-
-  const rec = new SpeechRecognition();
-  rec.lang = language;
-  rec.interimResults = true;
-  rec.continuous = false;
-  const initialValue = String(input.value || '').trim();
-  let finalText = '';
-  let fallbackRetried = false;
-
-  if (btn) {
-    btn.classList.add('active');
-    setDCVoiceFallbackMessage(btn, '');
-  }
-
-  rec.onresult = function(event) {
-    let interim = '';
-    for (let i = event.resultIndex; i < event.results.length; i += 1) {
-      const text = String(event.results[i][0]?.transcript || '');
-      if (event.results[i].isFinal) finalText += text + ' ';
-      else interim += text;
+    if (_speechVoiceRec) {
+      try { _speechVoiceRec.stop(); } catch (_) { }
+      _speechVoiceRec = null;
     }
-    const voiceText = (finalText + interim).trim();
-    input.value = (initialValue ? (initialValue + ' ') : '') + voiceText;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  };
 
-  rec.onerror = function(event) {
-    const errCode = String(event?.error || '').trim();
-    if (!fallbackRetried && (errCode === 'language-not-supported' || errCode === 'service-not-allowed')) {
-      const altLang = language === 'bn-IN' ? 'bn-BD' : (language === 'bn-BD' ? 'bn-IN' : '');
-      if (altLang) {
-        fallbackRetried = true;
-        try {
-          rec.lang = altLang;
-          setDCVoiceFallbackMessage(btn, 'Retrying Bengali voice in alternate locale...');
-          rec.start();
-          return;
-        } catch (_) {}
+    const input = document.querySelector('[name="' + fieldName + '"]');
+    if (!input) return;
+
+    const form = input.closest('form');
+    const langField = String(languageFieldName || '').trim();
+    let language = String(DC_DEFAULT_VOICE_LANGUAGE || 'en-IN');
+    if (langField && form) {
+      const langInput = form.querySelector('[name="' + langField + '"]');
+      language = String(langInput?.value || language);
+    }
+    language = normalizeDCVoiceLanguage(language);
+
+    const rec = new SpeechRecognition();
+    rec.lang = language;
+    rec.interimResults = true;
+    rec.continuous = false;
+    const initialValue = String(input.value || '').trim();
+    let finalText = '';
+    let fallbackRetried = false;
+
+    if (btn) {
+      btn.classList.add('active');
+      setDCVoiceFallbackMessage(btn, '');
+    }
+
+    rec.onresult = function (event) {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const text = String(event.results[i][0]?.transcript || '');
+        if (event.results[i].isFinal) finalText += text + ' ';
+        else interim += text;
+      }
+      const voiceText = (finalText + interim).trim();
+      input.value = (initialValue ? (initialValue + ' ') : '') + voiceText;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    rec.onerror = function (event) {
+      const errCode = String(event?.error || '').trim();
+      if (!fallbackRetried && (errCode === 'language-not-supported' || errCode === 'service-not-allowed')) {
+        const altLang = language === 'bn-IN' ? 'bn-BD' : (language === 'bn-BD' ? 'bn-IN' : '');
+        if (altLang) {
+          fallbackRetried = true;
+          try {
+            rec.lang = altLang;
+            setDCVoiceFallbackMessage(btn, 'Retrying Bengali voice in alternate locale...');
+            rec.start();
+            return;
+          } catch (_) { }
+        }
+      }
+      if (btn) btn.classList.remove('active');
+      const reason = String(event?.error || 'error').replace(/-/g, ' ');
+      setDCVoiceFallbackMessage(btn, 'Voice input failed (' + reason + '). You can type notes manually.');
+    };
+
+    rec.onend = function () {
+      if (btn) btn.classList.remove('active');
+      if (String(input.value || '').trim() !== initialValue) {
+        setDCVoiceFallbackMessage(btn, 'Voice text captured. You can edit before submit.');
+      }
+      _speechVoiceRec = null;
+    };
+
+    _speechVoiceRec = rec;
+    rec.start();
+  }
+
+  function normalizeDimensionValue(value) {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '';
+    const num = raw.match(/^([0-9]+(?:\.[0-9]+)?)/);
+    if (num) return num[1];
+    return raw.replace(/mm/ig, '').trim();
+  }
+
+  function getJobSizeDimensions(job) {
+    let weight = normalizeDimensionValue(job?.planning_size_width_mm ?? job?.planning_width_mm ?? '');
+    let height = normalizeDimensionValue(job?.planning_size_height_mm ?? job?.planning_height_mm ?? '');
+    if (!weight || !height) {
+      const dieSize = String(job?.planning_die_size || '').trim();
+      const m = dieSize.match(/([0-9]+(?:\.[0-9]+)?)\s*mm?\s*[xX×]\s*([0-9]+(?:\.[0-9]+)?)/i);
+      if (m) {
+        if (!weight) weight = m[1];
+        if (!height) height = m[2];
       }
     }
-    if (btn) btn.classList.remove('active');
-    const reason = String(event?.error || 'error').replace(/-/g, ' ');
-    setDCVoiceFallbackMessage(btn, 'Voice input failed (' + reason + '). You can type notes manually.');
-  };
-
-  rec.onend = function() {
-    if (btn) btn.classList.remove('active');
-    if (String(input.value || '').trim() !== initialValue) {
-      setDCVoiceFallbackMessage(btn, 'Voice text captured. You can edit before submit.');
+    const weightNum = Number(String(weight || '').replace(/,/g, ''));
+    const heightNum = Number(String(height || '').replace(/,/g, ''));
+    if (Number.isFinite(weightNum) && Number.isFinite(heightNum) && weightNum > 0 && heightNum > 0 && weightNum < heightNum) {
+      const tmp = weight;
+      weight = height;
+      height = tmp;
     }
-    _speechVoiceRec = null;
-  };
+    return { weight, height };
+  }
 
-  _speechVoiceRec = rec;
-  rec.start();
-}
+  // ═══ TAB SWITCHING ═══
+  function switchDCTab(tab) {
+    const panels = { active: document.getElementById('dcPanelActive'), history: document.getElementById('dcPanelHistory') };
+    const btns = { active: document.getElementById('dcTabBtnActive'), history: document.getElementById('dcTabBtnHistory') };
+    Object.keys(panels).forEach(function (k) {
+      if (panels[k]) panels[k].style.display = (k === tab) ? '' : 'none';
+      if (btns[k]) btns[k].classList.toggle('active', k === tab);
+    });
+    if (tab === 'history') htGoPage(1);
+  }
 
-function normalizeDimensionValue(value) {
-  const raw = String(value ?? '').trim();
-  if (!raw) return '';
-  const num = raw.match(/^([0-9]+(?:\.[0-9]+)?)/);
-  if (num) return num[1];
-  return raw.replace(/mm/ig, '').trim();
-}
+  // ═══ FILTERS ═══
+  let ACTIVE_DC_FILTER = (DC_DEFAULT_FILTER_RAW || 'Pending');
 
-function getJobSizeDimensions(job) {
-  let weight = normalizeDimensionValue(job?.planning_size_width_mm ?? job?.planning_width_mm ?? '');
-  let height = normalizeDimensionValue(job?.planning_size_height_mm ?? job?.planning_height_mm ?? '');
-  if (!weight || !height) {
-    const dieSize = String(job?.planning_die_size || '').trim();
-    const m = dieSize.match(/([0-9]+(?:\.[0-9]+)?)\s*mm?\s*[xX×]\s*([0-9]+(?:\.[0-9]+)?)/i);
-    if (m) {
-      if (!weight) weight = m[1];
-      if (!height) height = m[2];
+  function normalizeFilterStatus(status) {
+    const s = String(status || '').trim().toLowerCase();
+    if (!s) return 'Pending';
+    if (s === 'all') return 'all';
+    if (s === 'pending') return 'Pending';
+    if (s === 'queued') return 'Queued';
+    if (s === 'running') return 'Running';
+    if (s === 'hold') return 'Hold';
+    if (s === 'finished' || s === 'completed' || s === 'closed' || s === 'finalized' || s === 'qc passed') return 'Finished';
+    return status;
+  }
+
+  function findFilterButton(status) {
+    const normalized = normalizeFilterStatus(status);
+    return Array.from(document.querySelectorAll('.dc-filter-btn')).find(function (btn) {
+      return btn.textContent.trim().toLowerCase() === String(normalized).toLowerCase();
+    }) || null;
+  }
+
+  function getVisibleActiveCardCount() {
+    return Array.from(document.querySelectorAll('.dc-card:not([data-finished-only="1"])')).filter(function (card) {
+      return card.style.display !== 'none';
+    }).length;
+  }
+
+  function dcCardMatchesFilter(card, status) {
+    const cardStatus = (card.dataset.status || '').toLowerCase();
+    const finishedOnly = card.dataset.finishedOnly === '1';
+    const lockState = String(card.dataset.lockstate || '').toLowerCase();
+
+    if (status === 'all') return !finishedOnly;
+    if (status === 'Finished') return ['finished', 'completed', 'closed', 'finalized', 'qc passed'].includes(cardStatus);
+    if (finishedOnly) return false;
+    if (status === 'Hold') return cardStatus === 'hold' || cardStatus === 'hold for payment' || cardStatus === 'hold for approval';
+    if (status === 'Queued') return cardStatus === 'queued' || lockState === 'locked';
+    if (status === 'Pending') return cardStatus === 'pending';
+    return cardStatus === status.toLowerCase();
+  }
+
+  function applyDCFilters() {
+    const q = (document.getElementById('dcSearch')?.value || '').toLowerCase();
+    document.querySelectorAll('.dc-card').forEach(card => {
+      const searchOk = (card.dataset.search || '').includes(q);
+      const statusOk = dcCardMatchesFilter(card, ACTIVE_DC_FILTER);
+      card.style.display = searchOk && statusOk ? '' : 'none';
+    });
+  }
+
+  function filterJobs(status, btn) {
+    ACTIVE_DC_FILTER = normalizeFilterStatus(status);
+    const targetBtn = btn || findFilterButton(ACTIVE_DC_FILTER);
+    document.querySelectorAll('.dc-filter-btn').forEach(b => b.classList.remove('active'));
+    if (targetBtn) targetBtn.classList.add('active');
+    updateStatBoxes(ACTIVE_DC_FILTER);
+    applyDCFilters();
+  }
+
+  function findActiveCardByJobRef(jobId, jobNo) {
+    const activeCards = Array.from(document.querySelectorAll('.dc-card:not([data-finished-only="1"])'));
+    const idText = String(jobId || '').trim();
+    const jobNoText = String(jobNo || '').trim().toLowerCase();
+    return activeCards.find(function (card) {
+      const cardId = String(card.dataset.id || '').trim();
+      if (idText && cardId === idText) return true;
+      if (!jobNoText) return false;
+      const cardSearch = String(card.dataset.search || '').toLowerCase();
+      return cardSearch.includes(jobNoText);
+    }) || null;
+  }
+
+  function findHistoryRowByJobRef(jobId, jobNo) {
+    const rows = Array.from(document.querySelectorAll('#htBody tr[data-id]'));
+    const idText = String(jobId || '').trim();
+    const jobNoText = String(jobNo || '').trim().toLowerCase();
+    return rows.find(function (row) {
+      const rowId = String(row.dataset.id || '').trim();
+      if (idText && rowId === idText) return true;
+      if (!jobNoText) return false;
+      const rowSearch = String(row.dataset.search || '').toLowerCase();
+      return rowSearch.includes(jobNoText);
+    }) || null;
+  }
+
+  function autoFocusJobFromQuery() {
+    const params = new URLSearchParams(window.location.search);
+    const autoId = String(params.get('auto_job') || '').trim();
+    const autoJobNo = String(params.get('auto_job_no') || '').trim();
+    if (!autoId && !autoJobNo) return;
+
+    const activeCard = findActiveCardByJobRef(autoId, autoJobNo);
+    if (activeCard) {
+      switchDCTab('active');
+      const status = String(activeCard.dataset.status || '').trim();
+      const targetBtn = findFilterButton(status || 'all') || findFilterButton('all');
+      if (targetBtn) {
+        filterJobs(status || 'all', targetBtn);
+      }
+      const searchInput = document.getElementById('dcSearch');
+      if (searchInput && autoJobNo) {
+        searchInput.value = autoJobNo;
+        applyDCFilters();
+      }
+      return;
+    }
+
+    const historyRow = findHistoryRowByJobRef(autoId, autoJobNo);
+    if (historyRow) {
+      switchDCTab('history');
+      const historySearch = document.getElementById('htSearch');
+      if (historySearch && autoJobNo) {
+        historySearch.value = autoJobNo;
+      }
+      htGoPage(1);
     }
   }
-  const weightNum = Number(String(weight || '').replace(/,/g, ''));
-  const heightNum = Number(String(height || '').replace(/,/g, ''));
-  if (Number.isFinite(weightNum) && Number.isFinite(heightNum) && weightNum > 0 && heightNum > 0 && weightNum < heightNum) {
-    const tmp = weight;
-    weight = height;
-    height = tmp;
-  }
-  return { weight, height };
-}
 
-// ═══ TAB SWITCHING ═══
-function switchDCTab(tab) {
-  const panels = { active: document.getElementById('dcPanelActive'), history: document.getElementById('dcPanelHistory') };
-  const btns = { active: document.getElementById('dcTabBtnActive'), history: document.getElementById('dcTabBtnHistory') };
-  Object.keys(panels).forEach(function(k) {
-    if (panels[k]) panels[k].style.display = (k === tab) ? '' : 'none';
-    if (btns[k]) btns[k].classList.toggle('active', k === tab);
+  function filterFromStat(status) {
+    let targetBtn = null;
+    if (status === 'all') {
+      targetBtn = findFilterButton('all');
+    } else {
+      targetBtn = findFilterButton(status);
+    }
+    if (targetBtn) targetBtn.click();
+  }
+
+  function updateStatBoxes(status) {
+    document.querySelectorAll('.dc-stat').forEach(stat => stat.classList.remove('active'));
+    const statBox = document.querySelector(`.dc-stat[data-filter="${status}"]`);
+    if (statBox) statBox.classList.add('active');
+  }
+
+  document.getElementById('dcSearch').addEventListener('input', function () {
+    applyDCFilters();
   });
-  if (tab === 'history') htGoPage(1);
-}
 
-// ═══ FILTERS ═══
-let ACTIVE_DC_FILTER = (DC_DEFAULT_FILTER_RAW || 'Pending');
+  // ═══ HISTORY TABLE ═══
+  let HT_PERIOD = 'all';
+  let HT_PAGE = 1;
+  let HT_SORT = { col: -1, asc: true };
 
-function normalizeFilterStatus(status) {
-  const s = String(status || '').trim().toLowerCase();
-  if (!s) return 'Pending';
-  if (s === 'all') return 'all';
-  if (s === 'pending') return 'Pending';
-  if (s === 'queued') return 'Queued';
-  if (s === 'running') return 'Running';
-  if (s === 'hold') return 'Hold';
-  if (s === 'finished' || s === 'completed' || s === 'closed' || s === 'finalized' || s === 'qc passed') return 'Finished';
-  return status;
-}
-
-function findFilterButton(status) {
-  const normalized = normalizeFilterStatus(status);
-  return Array.from(document.querySelectorAll('.dc-filter-btn')).find(function(btn) {
-    return btn.textContent.trim().toLowerCase() === String(normalized).toLowerCase();
-  }) || null;
-}
-
-function getVisibleActiveCardCount() {
-  return Array.from(document.querySelectorAll('.dc-card:not([data-finished-only="1"])')).filter(function(card) {
-    return card.style.display !== 'none';
-  }).length;
-}
-
-function dcCardMatchesFilter(card, status) {
-  const cardStatus = (card.dataset.status || '').toLowerCase();
-  const finishedOnly = card.dataset.finishedOnly === '1';
-  const lockState = String(card.dataset.lockstate || '').toLowerCase();
-
-  if (status === 'all') return !finishedOnly;
-  if (status === 'Finished') return ['finished', 'completed', 'closed', 'finalized', 'qc passed'].includes(cardStatus);
-  if (finishedOnly) return false;
-  if (status === 'Hold') return cardStatus === 'hold' || cardStatus === 'hold for payment' || cardStatus === 'hold for approval';
-  if (status === 'Queued') return cardStatus === 'queued' || lockState === 'locked';
-  if (status === 'Pending') return cardStatus === 'pending';
-  return cardStatus === status.toLowerCase();
-}
-
-function applyDCFilters() {
-  const q = (document.getElementById('dcSearch')?.value || '').toLowerCase();
-  document.querySelectorAll('.dc-card').forEach(card => {
-    const searchOk = (card.dataset.search || '').includes(q);
-    const statusOk = dcCardMatchesFilter(card, ACTIVE_DC_FILTER);
-    card.style.display = searchOk && statusOk ? '' : 'none';
-  });
-}
-
-function filterJobs(status, btn) {
-  ACTIVE_DC_FILTER = normalizeFilterStatus(status);
-  const targetBtn = btn || findFilterButton(ACTIVE_DC_FILTER);
-  document.querySelectorAll('.dc-filter-btn').forEach(b => b.classList.remove('active'));
-  if (targetBtn) targetBtn.classList.add('active');
-  updateStatBoxes(ACTIVE_DC_FILTER);
-  applyDCFilters();
-}
-
-function findActiveCardByJobRef(jobId, jobNo) {
-  const activeCards = Array.from(document.querySelectorAll('.dc-card:not([data-finished-only="1"])'));
-  const idText = String(jobId || '').trim();
-  const jobNoText = String(jobNo || '').trim().toLowerCase();
-  return activeCards.find(function(card) {
-    const cardId = String(card.dataset.id || '').trim();
-    if (idText && cardId === idText) return true;
-    if (!jobNoText) return false;
-    const cardSearch = String(card.dataset.search || '').toLowerCase();
-    return cardSearch.includes(jobNoText);
-  }) || null;
-}
-
-function findHistoryRowByJobRef(jobId, jobNo) {
-  const rows = Array.from(document.querySelectorAll('#htBody tr[data-id]'));
-  const idText = String(jobId || '').trim();
-  const jobNoText = String(jobNo || '').trim().toLowerCase();
-  return rows.find(function(row) {
-    const rowId = String(row.dataset.id || '').trim();
-    if (idText && rowId === idText) return true;
-    if (!jobNoText) return false;
-    const rowSearch = String(row.dataset.search || '').toLowerCase();
-    return rowSearch.includes(jobNoText);
-  }) || null;
-}
-
-function autoFocusJobFromQuery() {
-  const params = new URLSearchParams(window.location.search);
-  const autoId = String(params.get('auto_job') || '').trim();
-  const autoJobNo = String(params.get('auto_job_no') || '').trim();
-  if (!autoId && !autoJobNo) return;
-
-  const activeCard = findActiveCardByJobRef(autoId, autoJobNo);
-  if (activeCard) {
-    switchDCTab('active');
-    const status = String(activeCard.dataset.status || '').trim();
-    const targetBtn = findFilterButton(status || 'all') || findFilterButton('all');
-    if (targetBtn) {
-      filterJobs(status || 'all', targetBtn);
-    }
-    const searchInput = document.getElementById('dcSearch');
-    if (searchInput && autoJobNo) {
-      searchInput.value = autoJobNo;
-      applyDCFilters();
-    }
-    return;
+  function htVisibleRows() {
+    const rows = Array.from(document.querySelectorAll('#htBody tr[data-id]'));
+    const q = (document.getElementById('htSearch')?.value || '').trim().toLowerCase();
+    const now = new Date();
+    return rows.filter(function (tr) {
+      if (q && !(tr.dataset.search || '').includes(q)) return false;
+      if (HT_PERIOD === 'all') return true;
+      const dRaw = tr.dataset.completed || '';
+      if (!dRaw) return false;
+      const d = new Date(dRaw);
+      if (isNaN(d.getTime())) return false;
+      if (HT_PERIOD === 'today') return d.toISOString().slice(0, 10) === now.toISOString().slice(0, 10);
+      if (HT_PERIOD === 'week') { const dow = now.getDay() || 7; const start = new Date(now); start.setDate(now.getDate() - dow + 1); start.setHours(0, 0, 0, 0); return d >= start; }
+      if (HT_PERIOD === 'month') return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+      if (HT_PERIOD === 'year') return d.getFullYear() === now.getFullYear();
+      if (HT_PERIOD === 'custom') {
+        const day = d.toISOString().slice(0, 10);
+        const from = document.getElementById('htDateFrom')?.value || '';
+        const to = document.getElementById('htDateTo')?.value || '';
+        if (from && day < from) return false;
+        if (to && day > to) return false;
+        return true;
+      }
+      return true;
+    });
   }
 
-  const historyRow = findHistoryRowByJobRef(autoId, autoJobNo);
-  if (historyRow) {
-    switchDCTab('history');
-    const historySearch = document.getElementById('htSearch');
-    if (historySearch && autoJobNo) {
-      historySearch.value = autoJobNo;
-    }
+  function htSetPeriod(period, btn) {
+    HT_PERIOD = period;
+    document.querySelectorAll('.ht-period-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    const df = document.getElementById('htDateFrom'); const dt = document.getElementById('htDateTo');
+    if (df) df.value = ''; if (dt) dt.value = '';
     htGoPage(1);
   }
-}
 
-function filterFromStat(status) {
-  let targetBtn = null;
-  if (status === 'all') {
-    targetBtn = findFilterButton('all');
-  } else {
-    targetBtn = findFilterButton(status);
+  function htApplyCustomDate() {
+    const from = document.getElementById('htDateFrom')?.value || '';
+    const to = document.getElementById('htDateTo')?.value || '';
+    if (!from && !to) return;
+    HT_PERIOD = 'custom';
+    document.querySelectorAll('.ht-period-btn').forEach(b => b.classList.remove('active'));
+    htGoPage(1);
   }
-  if (targetBtn) targetBtn.click();
-}
 
-function updateStatBoxes(status) {
-  document.querySelectorAll('.dc-stat').forEach(stat => stat.classList.remove('active'));
-  const statBox = document.querySelector(`.dc-stat[data-filter="${status}"]`);
-  if (statBox) statBox.classList.add('active');
-}
-
-document.getElementById('dcSearch').addEventListener('input', function() {
-  applyDCFilters();
-});
-
-// ═══ HISTORY TABLE ═══
-let HT_PERIOD = 'all';
-let HT_PAGE = 1;
-let HT_SORT = { col: -1, asc: true };
-
-function htVisibleRows() {
-  const rows = Array.from(document.querySelectorAll('#htBody tr[data-id]'));
-  const q = (document.getElementById('htSearch')?.value || '').trim().toLowerCase();
-  const now = new Date();
-  return rows.filter(function(tr) {
-    if (q && !(tr.dataset.search || '').includes(q)) return false;
-    if (HT_PERIOD === 'all') return true;
-    const dRaw = tr.dataset.completed || '';
-    if (!dRaw) return false;
-    const d = new Date(dRaw);
-    if (isNaN(d.getTime())) return false;
-    if (HT_PERIOD === 'today') return d.toISOString().slice(0, 10) === now.toISOString().slice(0, 10);
-    if (HT_PERIOD === 'week') { const dow = now.getDay() || 7; const start = new Date(now); start.setDate(now.getDate() - dow + 1); start.setHours(0,0,0,0); return d >= start; }
-    if (HT_PERIOD === 'month') return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-    if (HT_PERIOD === 'year') return d.getFullYear() === now.getFullYear();
-    if (HT_PERIOD === 'custom') {
-      const day = d.toISOString().slice(0, 10);
-      const from = document.getElementById('htDateFrom')?.value || '';
-      const to = document.getElementById('htDateTo')?.value || '';
-      if (from && day < from) return false;
-      if (to && day > to) return false;
-      return true;
-    }
-    return true;
-  });
-}
-
-function htSetPeriod(period, btn) {
-  HT_PERIOD = period;
-  document.querySelectorAll('.ht-period-btn').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  const df = document.getElementById('htDateFrom'); const dt = document.getElementById('htDateTo');
-  if (df) df.value = ''; if (dt) dt.value = '';
-  htGoPage(1);
-}
-
-function htApplyCustomDate() {
-  const from = document.getElementById('htDateFrom')?.value || '';
-  const to = document.getElementById('htDateTo')?.value || '';
-  if (!from && !to) return;
-  HT_PERIOD = 'custom';
-  document.querySelectorAll('.ht-period-btn').forEach(b => b.classList.remove('active'));
-  htGoPage(1);
-}
-
-function htGoPage(page) {
-  const visible = htVisibleRows();
-  const perSel = document.getElementById('htPerPage')?.value || '25';
-  const per = perSel === 'all' ? visible.length : parseInt(perSel, 10);
-  const perSafe = per > 0 ? per : Math.max(visible.length, 1);
-  const totalPages = Math.max(1, Math.ceil(visible.length / perSafe));
-  HT_PAGE = Math.max(1, Math.min(page, totalPages));
-  const start = (HT_PAGE - 1) * perSafe;
-  const end = start + perSafe;
-  document.querySelectorAll('#htBody tr[data-id]').forEach(tr => tr.style.display = 'none');
-  visible.forEach((tr, i) => tr.style.display = (i >= start && i < end) ? '' : 'none');
-  const shownEnd = Math.min(end, visible.length);
-  const info = document.getElementById('htPageInfo');
-  if (info) info.textContent = 'Showing ' + (visible.length ? (start + 1) : 0) + '–' + shownEnd + ' of ' + visible.length;
-  const btns = document.getElementById('htPageBtns');
-  if (btns) {
-    let html = '<button class="ht-page-btn" onclick="htGoPage(' + (HT_PAGE - 1) + ')" ' + (HT_PAGE <= 1 ? 'disabled' : '') + '>‹</button>';
-    for (let p = 1; p <= totalPages; p++) {
-      if (totalPages > 7 && p > 2 && p < totalPages - 1 && Math.abs(p - HT_PAGE) > 1) {
-        if (p === 3 || p === totalPages - 2) html += '<span style="padding:0 6px;color:#94a3b8">…</span>';
-        continue;
+  function htGoPage(page) {
+    const visible = htVisibleRows();
+    const perSel = document.getElementById('htPerPage')?.value || '25';
+    const per = perSel === 'all' ? visible.length : parseInt(perSel, 10);
+    const perSafe = per > 0 ? per : Math.max(visible.length, 1);
+    const totalPages = Math.max(1, Math.ceil(visible.length / perSafe));
+    HT_PAGE = Math.max(1, Math.min(page, totalPages));
+    const start = (HT_PAGE - 1) * perSafe;
+    const end = start + perSafe;
+    document.querySelectorAll('#htBody tr[data-id]').forEach(tr => tr.style.display = 'none');
+    visible.forEach((tr, i) => tr.style.display = (i >= start && i < end) ? '' : 'none');
+    const shownEnd = Math.min(end, visible.length);
+    const info = document.getElementById('htPageInfo');
+    if (info) info.textContent = 'Showing ' + (visible.length ? (start + 1) : 0) + '–' + shownEnd + ' of ' + visible.length;
+    const btns = document.getElementById('htPageBtns');
+    if (btns) {
+      let html = '<button class="ht-page-btn" onclick="htGoPage(' + (HT_PAGE - 1) + ')" ' + (HT_PAGE <= 1 ? 'disabled' : '') + '>‹</button>';
+      for (let p = 1; p <= totalPages; p++) {
+        if (totalPages > 7 && p > 2 && p < totalPages - 1 && Math.abs(p - HT_PAGE) > 1) {
+          if (p === 3 || p === totalPages - 2) html += '<span style="padding:0 6px;color:#94a3b8">…</span>';
+          continue;
+        }
+        html += '<button class="ht-page-btn ' + (p === HT_PAGE ? 'active' : '') + '" onclick="htGoPage(' + p + ')">' + p + '</button>';
       }
-      html += '<button class="ht-page-btn ' + (p === HT_PAGE ? 'active' : '') + '" onclick="htGoPage(' + p + ')">' + p + '</button>';
+      html += '<button class="ht-page-btn" onclick="htGoPage(' + (HT_PAGE + 1) + ')" ' + (HT_PAGE >= totalPages ? 'disabled' : '') + '>›</button>';
+      btns.innerHTML = html;
     }
-    html += '<button class="ht-page-btn" onclick="htGoPage(' + (HT_PAGE + 1) + ')" ' + (HT_PAGE >= totalPages ? 'disabled' : '') + '>›</button>';
-    btns.innerHTML = html;
+    htUpdateBulk();
   }
-  htUpdateBulk();
-}
 
-function htSortCol(colIdx) {
-  const tbody = document.getElementById('htBody');
-  if (!tbody) return;
-  const rows = Array.from(tbody.querySelectorAll('tr[data-id]'));
-  if (!rows.length) return;
-  const asc = HT_SORT.col === colIdx ? !HT_SORT.asc : true;
-  HT_SORT = { col: colIdx, asc: asc };
-  rows.sort(function(a, b) {
-    const aText = (a.children[colIdx + 1]?.textContent || '').trim();
-    const bText = (b.children[colIdx + 1]?.textContent || '').trim();
-    const aNum = parseFloat(aText); const bNum = parseFloat(bText);
-    if (!isNaN(aNum) && !isNaN(bNum)) return asc ? (aNum - bNum) : (bNum - aNum);
-    const aDate = Date.parse(aText); const bDate = Date.parse(bText);
-    if (!isNaN(aDate) && !isNaN(bDate)) return asc ? (aDate - bDate) : (bDate - aDate);
-    return asc ? aText.localeCompare(bText) : bText.localeCompare(aText);
-  });
-  rows.forEach(r => tbody.appendChild(r));
-  document.querySelectorAll('#htTable th').forEach((th, i) => {
-    th.classList.toggle('sorted', i === colIdx + 1);
-    const icon = th.querySelector('.ht-sort');
-    if (icon) icon.textContent = (i === colIdx + 1) ? (asc ? '▲' : '▼') : '▲▼';
-  });
-  htGoPage(1);
-}
+  function htSortCol(colIdx) {
+    const tbody = document.getElementById('htBody');
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr[data-id]'));
+    if (!rows.length) return;
+    const asc = HT_SORT.col === colIdx ? !HT_SORT.asc : true;
+    HT_SORT = { col: colIdx, asc: asc };
+    rows.sort(function (a, b) {
+      const aText = (a.children[colIdx + 1]?.textContent || '').trim();
+      const bText = (b.children[colIdx + 1]?.textContent || '').trim();
+      const aNum = parseFloat(aText); const bNum = parseFloat(bText);
+      if (!isNaN(aNum) && !isNaN(bNum)) return asc ? (aNum - bNum) : (bNum - aNum);
+      const aDate = Date.parse(aText); const bDate = Date.parse(bText);
+      if (!isNaN(aDate) && !isNaN(bDate)) return asc ? (aDate - bDate) : (bDate - aDate);
+      return asc ? aText.localeCompare(bText) : bText.localeCompare(aText);
+    });
+    rows.forEach(r => tbody.appendChild(r));
+    document.querySelectorAll('#htTable th').forEach((th, i) => {
+      th.classList.toggle('sorted', i === colIdx + 1);
+      const icon = th.querySelector('.ht-sort');
+      if (icon) icon.textContent = (i === colIdx + 1) ? (asc ? '▲' : '▼') : '▲▼';
+    });
+    htGoPage(1);
+  }
 
-function htUpdateBulk() {
-  const selected = document.querySelectorAll('.ht-row-cb:checked').length;
-  const bar = document.getElementById('htBulkBar');
-  const count = document.getElementById('htSelectedCount');
-  if (count) count.textContent = selected;
-  if (bar) bar.classList.toggle('visible', selected > 0);
-  document.querySelectorAll('.ht-row-cb').forEach(cb => {
-    const tr = cb.closest('tr'); if (tr) tr.classList.toggle('ht-selected', cb.checked);
-  });
-}
+  function htUpdateBulk() {
+    const selected = document.querySelectorAll('.ht-row-cb:checked').length;
+    const bar = document.getElementById('htBulkBar');
+    const count = document.getElementById('htSelectedCount');
+    if (count) count.textContent = selected;
+    if (bar) bar.classList.toggle('visible', selected > 0);
+    document.querySelectorAll('.ht-row-cb').forEach(cb => {
+      const tr = cb.closest('tr'); if (tr) tr.classList.toggle('ht-selected', cb.checked);
+    });
+  }
 
-function htToggleAll(checked) {
-  document.querySelectorAll('#htBody tr[data-id]').forEach(tr => {
-    if (tr.style.display === 'none') return;
-    const cb = tr.querySelector('.ht-row-cb'); if (cb) cb.checked = checked;
-  });
-  htUpdateBulk();
-}
+  function htToggleAll(checked) {
+    document.querySelectorAll('#htBody tr[data-id]').forEach(tr => {
+      if (tr.style.display === 'none') return;
+      const cb = tr.querySelector('.ht-row-cb'); if (cb) cb.checked = checked;
+    });
+    htUpdateBulk();
+  }
 
-function htSelectAllVisible() {
-  document.querySelectorAll('#htBody tr[data-id]').forEach(tr => {
-    if (tr.style.display === 'none') return;
-    const cb = tr.querySelector('.ht-row-cb'); if (cb) cb.checked = true;
-  });
-  const master = document.getElementById('htCheckAll'); if (master) master.checked = true;
-  htUpdateBulk();
-}
+  function htSelectAllVisible() {
+    document.querySelectorAll('#htBody tr[data-id]').forEach(tr => {
+      if (tr.style.display === 'none') return;
+      const cb = tr.querySelector('.ht-row-cb'); if (cb) cb.checked = true;
+    });
+    const master = document.getElementById('htCheckAll'); if (master) master.checked = true;
+    htUpdateBulk();
+  }
 
-function htDeselectAll() {
-  document.querySelectorAll('.ht-row-cb').forEach(cb => cb.checked = false);
-  const master = document.getElementById('htCheckAll'); if (master) master.checked = false;
-  htUpdateBulk();
-}
+  function htDeselectAll() {
+    document.querySelectorAll('.ht-row-cb').forEach(cb => cb.checked = false);
+    const master = document.getElementById('htCheckAll'); if (master) master.checked = false;
+    htUpdateBulk();
+  }
 
-function htBulkPrint() {
-  const ids = Array.from(document.querySelectorAll('.ht-row-cb:checked')).map(cb => cb.dataset.jobId);
-  if (!ids.length) { alert('No history job selected'); return; }
-  const jobs = ids.map(id => ALL_JOBS.find(j => j.id == id)).filter(Boolean);
-  if (!jobs.length) return;
-  (async function() {
-    const mode = await choosePrintMode();
-    if (!mode) return;
-    let pages = '';
-    for (let idx = 0; idx < jobs.length; idx++) {
-      const job = jobs[idx];
-      const qrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
-      const qrDataUrl = await generateQR(qrUrl);
-      const pb = idx < jobs.length - 1 ? 'page-break-after:always;' : '';
-      let cardHtml = renderDCPrintCardHtml(job, qrDataUrl);
-      if (mode === 'bw') cardHtml = printBwTransform(cardHtml);
-      pages += `<div style="${pb}">${cardHtml}</div>`;
+  function htBulkPrint() {
+    const ids = Array.from(document.querySelectorAll('.ht-row-cb:checked')).map(cb => cb.dataset.jobId);
+    if (!ids.length) { alert('No history job selected'); return; }
+    const jobs = ids.map(id => ALL_JOBS.find(j => j.id == id)).filter(Boolean);
+    if (!jobs.length) return;
+    (async function () {
+      const mode = await choosePrintMode();
+      if (!mode) return;
+      let pages = '';
+      for (let idx = 0; idx < jobs.length; idx++) {
+        const job = jobs[idx];
+        const qrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
+        const qrDataUrl = await generateQR(qrUrl);
+        const pb = idx < jobs.length - 1 ? 'page-break-after:always;' : '';
+        let cardHtml = renderDCPrintCardHtml(job, qrDataUrl);
+        if (mode === 'bw') cardHtml = printBwTransform(cardHtml);
+        pages += `<div style="${pb}">${cardHtml}</div>`;
+      }
+      const w = window.open('', '_blank', 'width=820,height=920');
+      w.document.write('<!DOCTYPE html><html><head><title>History Bulk Print - ' + jobs.length + ' <?= addslashes($dcBulkPrintTitle) ?></title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>' + pages + '</body></html>');
+      w.document.close(); w.focus(); setTimeout(() => w.print(), 400);
+    })();
+  }
+
+  function dcConfirmAsync(message, options) {
+    return new Promise(function (resolve) {
+      if (typeof window.showERPConfirm === 'function') {
+        var opts = options || {};
+        window.showERPConfirm(String(message || ''), function () { resolve(true); }, {
+          title: opts.title || 'Please Confirm',
+          okLabel: opts.okLabel || 'OK',
+          cancelLabel: opts.cancelLabel || 'Cancel',
+          onCancel: function () { resolve(false); }
+        });
+        return;
+      }
+      resolve(true);
+    });
+  }
+
+  async function htBulkDelete() {
+    if (!IS_ADMIN) { alert('Access denied. Only system admin can delete job cards.'); return; }
+    const ids = Array.from(document.querySelectorAll('.ht-row-cb:checked')).map(cb => cb.dataset.jobId);
+    if (!ids.length) { alert('No history jobs selected'); return; }
+    if (!(await dcConfirmAsync(`Delete ${ids.length} selected job card(s)?\n\nThis will reset linked paper stock, planning status, and downstream queued jobs for each.`, { okLabel: 'Delete' }))) return;
+    let ok = 0, failed = 0, errors = [];
+    for (const id of ids) {
+      const fd = new FormData(); fd.append('csrf_token', CSRF); fd.append('action', 'delete_job'); fd.append('job_id', id);
+      try {
+        const res = await fetch(API_BASE, { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.ok) { ok++; } else { failed++; const job = ALL_JOBS.find(j => j.id == id); errors.push(`${job ? job.job_no : 'ID ' + id}: ${data.error || 'Unknown error'}`); }
+      } catch (err) { failed++; errors.push('ID ' + id + ': ' + err.message); }
     }
-    const w = window.open('', '_blank', 'width=820,height=920');
-    w.document.write('<!DOCTYPE html><html><head><title>History Bulk Print - ' + jobs.length + ' <?= addslashes($dcBulkPrintTitle) ?></title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>' + pages + '</body></html>');
-    w.document.close(); w.focus(); setTimeout(() => w.print(), 400);
-  })();
-}
+    if (errors.length) alert(`Deleted: ${ok}, Failed: ${failed}\n\n${errors.join('\n')}`);
+    if (ok > 0) location.reload();
+  }
 
-function dcConfirmAsync(message, options) {
-  return new Promise(function(resolve){
-    if (typeof window.showERPConfirm === 'function') {
-      var opts = options || {};
-      window.showERPConfirm(String(message || ''), function(){ resolve(true); }, {
-        title: opts.title || 'Please Confirm',
-        okLabel: opts.okLabel || 'OK',
-        cancelLabel: opts.cancelLabel || 'Cancel',
-        onCancel: function(){ resolve(false); }
-      });
-      return;
-    }
-    resolve(true);
-  });
-}
+  document.getElementById('htSearch')?.addEventListener('input', function () { htGoPage(1); });
 
-async function htBulkDelete() {
-  if (!IS_ADMIN) { alert('Access denied. Only system admin can delete job cards.'); return; }
-  const ids = Array.from(document.querySelectorAll('.ht-row-cb:checked')).map(cb => cb.dataset.jobId);
-  if (!ids.length) { alert('No history jobs selected'); return; }
-  if (!(await dcConfirmAsync(`Delete ${ids.length} selected job card(s)?\n\nThis will reset linked paper stock, planning status, and downstream queued jobs for each.`, { okLabel:'Delete' }))) return;
-  let ok = 0, failed = 0, errors = [];
-  for (const id of ids) {
-    const fd = new FormData(); fd.append('csrf_token', CSRF); fd.append('action', 'delete_job'); fd.append('job_id', id);
+  // ═══ LIVE TIMERS ═══
+  function updateTimers() {
+    document.querySelectorAll('.dc-timer').forEach(el => {
+      const base = Math.max(0, parseInt(el.dataset.baseSeconds || '0', 10) || 0);
+      const resumedAt = parseInt(el.dataset.resumedAt || '0', 10) || 0;
+      const diff = resumedAt > 0 ? Math.floor(base + ((Date.now() - resumedAt) / 1000)) : base;
+      const h = String(Math.floor(diff / 3600)).padStart(2, '0');
+      const m = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
+      const s = String(diff % 60).padStart(2, '0');
+      el.textContent = h + ':' + m + ':' + s;
+    });
+  }
+  setInterval(updateTimers, 1000);
+  updateTimers();
+
+  function canAutoRefreshDC() {
+    return !document.getElementById('dcDetailModal')?.classList.contains('active');
+  }
+
+  setInterval(function () {
+    if (canAutoRefreshDC()) location.reload();
+  }, DC_AUTO_REFRESH_MS);
+
+  // ═══ STATUS UPDATE ═══
+  async function updateJobStatus(id, newStatus) {
+    if (!(await dcConfirmAsync('Set this job to ' + newStatus + '?'))) return;
+    const fd = new FormData();
+    fd.append('csrf_token', CSRF); fd.append('action', 'update_status'); fd.append('job_id', id); fd.append('status', newStatus);
     try {
       const res = await fetch(API_BASE, { method: 'POST', body: fd });
       const data = await res.json();
-      if (data.ok) { ok++; } else { failed++; const job = ALL_JOBS.find(j => j.id == id); errors.push(`${job ? job.job_no : 'ID ' + id}: ${data.error || 'Unknown error'}`); }
-    } catch (err) { failed++; errors.push('ID ' + id + ': ' + err.message); }
+      if (data.ok) location.reload(); else alert('Error: ' + (data.error || 'Unknown'));
+    } catch (err) { alert('Network error: ' + err.message); }
   }
-  if (errors.length) alert(`Deleted: ${ok}, Failed: ${failed}\n\n${errors.join('\n')}`);
-  if (ok > 0) location.reload();
-}
 
-document.getElementById('htSearch')?.addEventListener('input', function() { htGoPage(1); });
+  // ═══ TIMER HELPERS ═══
+  let _timerInterval = null;
+  let _timerStart = 0;
+  let _timerJobId = null;
 
-// ═══ LIVE TIMERS ═══
-function updateTimers() {
-  document.querySelectorAll('.dc-timer').forEach(el => {
-    const base = Math.max(0, parseInt(el.dataset.baseSeconds || '0', 10) || 0);
-    const resumedAt = parseInt(el.dataset.resumedAt || '0', 10) || 0;
-    const diff = resumedAt > 0 ? Math.floor(base + ((Date.now() - resumedAt) / 1000)) : base;
-    const h = String(Math.floor(diff/3600)).padStart(2,'0');
-    const m = String(Math.floor((diff%3600)/60)).padStart(2,'0');
-    const s = String(diff%60).padStart(2,'0');
-    el.textContent = h + ':' + m + ':' + s;
-  });
-}
-setInterval(updateTimers, 1000);
-updateTimers();
-
-function canAutoRefreshDC() {
-  return !document.getElementById('dcDetailModal')?.classList.contains('active');
-}
-
-setInterval(function() {
-  if (canAutoRefreshDC()) location.reload();
-}, DC_AUTO_REFRESH_MS);
-
-// ═══ STATUS UPDATE ═══
-async function updateJobStatus(id, newStatus) {
-  if (!(await dcConfirmAsync('Set this job to ' + newStatus + '?'))) return;
-  const fd = new FormData();
-  fd.append('csrf_token', CSRF); fd.append('action', 'update_status'); fd.append('job_id', id); fd.append('status', newStatus);
-  try {
-    const res = await fetch(API_BASE, { method: 'POST', body: fd });
-    const data = await res.json();
-    if (data.ok) location.reload(); else alert('Error: ' + (data.error || 'Unknown'));
-  } catch (err) { alert('Network error: ' + err.message); }
-}
-
-// ═══ TIMER HELPERS ═══
-let _timerInterval = null;
-let _timerStart = 0;
-let _timerJobId = null;
-
-function isDCTimerActive(job) {
-  return !!(job && job.extra_data_parsed && job.extra_data_parsed.timer_active);
-}
-
-function pushDCTimerEventLocal(extra, type, at) {
-  extra.timer_events = Array.isArray(extra.timer_events) ? extra.timer_events : [];
-  const last = extra.timer_events.length ? extra.timer_events[extra.timer_events.length - 1] : null;
-  if (!last || String(last.type || '') !== type || String(last.at || '') !== at) {
-    extra.timer_events.push({ type, at });
+  function isDCTimerActive(job) {
+    return !!(job && job.extra_data_parsed && job.extra_data_parsed.timer_active);
   }
-}
 
-function pushDCTimerSegmentLocal(extra, key, from, to) {
-  const fromTs = Date.parse(String(from || '').replace(' ', 'T'));
-  const toTs = Date.parse(String(to || '').replace(' ', 'T'));
-  if (!Number.isFinite(fromTs) || !Number.isFinite(toTs) || toTs <= fromTs) return;
-  extra[key] = Array.isArray(extra[key]) ? extra[key] : [];
-  extra[key].push({ from, to, seconds: Math.floor((toTs - fromTs) / 1000) });
-}
-
-function dcSecondsToHms(seconds) {
-  const sec = Math.max(0, Math.floor(Number(seconds) || 0));
-  return String(Math.floor(sec / 3600)).padStart(2,'0') + ':' + String(Math.floor((sec % 3600) / 60)).padStart(2,'0') + ':' + String(sec % 60).padStart(2,'0');
-}
-
-function dcFormatDuration(seconds) {
-  const sec = Math.max(0, Math.floor(Number(seconds) || 0));
-  const h = Math.floor(sec / 3600); const m = Math.floor((sec % 3600) / 60); const s = sec % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return s > 0 ? `${m}m ${s}s` : `${m}m`;
-  return `${s}s`;
-}
-
-function dcFormatDateTime(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return '—';
-  const parsed = new Date(raw.replace(' ', 'T'));
-  return Number.isFinite(parsed.getTime()) ? parsed.toLocaleString() : '—';
-}
-
-function dcTimerTotalSeconds(job) {
-  if (!job) return 0;
-  const extra = job.extra_data_parsed || {};
-  const base = Math.max(0, Number(extra.timer_accumulated_seconds || 0));
-  if (!extra.timer_active) return Math.floor(base);
-  const resumedRaw = extra.timer_last_resumed_at || extra.timer_started_at || job.started_at || '';
-  const resumedAt = resumedRaw ? Date.parse(String(resumedRaw).replace(' ', 'T')) : NaN;
-  if (!Number.isFinite(resumedAt) || resumedAt <= 0) return Math.floor(base);
-  return Math.floor(base + ((Date.now() - resumedAt) / 1000));
-}
-
-function dcDurationSeconds(job) {
-  if (!job) return 0;
-  const extra = job.extra_data_parsed || {};
-  const acc = Math.max(0, Math.floor(Number(extra.timer_accumulated_seconds || 0)));
-  if (acc > 0) return acc;
-  const mins = Number(job.duration_minutes || 0);
-  return Number.isFinite(mins) && mins > 0 ? Math.floor(mins * 60) : 0;
-}
-
-function dcPauseTotalSeconds(extra) {
-  const segments = Array.isArray(extra?.timer_pause_segments) ? extra.timer_pause_segments : [];
-  let total = segments.reduce((sum, row) => sum + Math.max(0, Number(row?.seconds || 0)), 0);
-  const pausedAt = String(extra?.timer_pause_started_at || extra?.timer_paused_at || '').trim();
-  const isPaused = String(extra?.timer_state || '').toLowerCase() === 'paused';
-  if (isPaused && pausedAt) {
-    const fromTs = Date.parse(pausedAt.replace(' ', 'T'));
-    if (Number.isFinite(fromTs) && fromTs > 0) total += Math.max(0, Math.floor((Date.now() - fromTs) / 1000));
+  function pushDCTimerEventLocal(extra, type, at) {
+    extra.timer_events = Array.isArray(extra.timer_events) ? extra.timer_events : [];
+    const last = extra.timer_events.length ? extra.timer_events[extra.timer_events.length - 1] : null;
+    if (!last || String(last.type || '') !== type || String(last.at || '') !== at) {
+      extra.timer_events.push({ type, at });
+    }
   }
-  return total;
-}
 
-function buildDCTimerHistoryHtml(job) {
-  const extra = job?.extra_data_parsed || {};
-  const events = Array.isArray(extra.timer_events) ? extra.timer_events.filter(row => row && row.at) : [];
-  const fallbackEvents = [];
-  if (!events.length) {
-    if (extra.timer_started_at || job?.started_at) fallbackEvents.push({ type: 'start', at: extra.timer_started_at || job.started_at });
-    if (extra.timer_paused_at) fallbackEvents.push({ type: 'pause', at: extra.timer_paused_at });
-    if (extra.timer_ended_at || job?.completed_at) fallbackEvents.push({ type: 'end', at: extra.timer_ended_at || job.completed_at });
+  function pushDCTimerSegmentLocal(extra, key, from, to) {
+    const fromTs = Date.parse(String(from || '').replace(' ', 'T'));
+    const toTs = Date.parse(String(to || '').replace(' ', 'T'));
+    if (!Number.isFinite(fromTs) || !Number.isFinite(toTs) || toTs <= fromTs) return;
+    extra[key] = Array.isArray(extra[key]) ? extra[key] : [];
+    extra[key].push({ from, to, seconds: Math.floor((toTs - fromTs) / 1000) });
   }
-  const eventRows = (events.length ? events : fallbackEvents).sort((a, b) => Date.parse(String(a.at).replace(' ', 'T')) - Date.parse(String(b.at).replace(' ', 'T')));
 
-  const segments = [];
-  (Array.isArray(extra.timer_work_segments) ? extra.timer_work_segments : []).forEach(row => {
-    if (row && row.from && row.to) segments.push({ kind: 'work', from: row.from, to: row.to, seconds: Number(row.seconds || 0) });
-  });
-  (Array.isArray(extra.timer_pause_segments) ? extra.timer_pause_segments : []).forEach(row => {
-    if (row && row.from && row.to) segments.push({ kind: 'pause', from: row.from, to: row.to, seconds: Number(row.seconds || 0) });
-  });
-  segments.sort((a, b) => Date.parse(String(a.from).replace(' ', 'T')) - Date.parse(String(b.from).replace(' ', 'T')));
+  function dcSecondsToHms(seconds) {
+    const sec = Math.max(0, Math.floor(Number(seconds) || 0));
+    return String(Math.floor(sec / 3600)).padStart(2, '0') + ':' + String(Math.floor((sec % 3600) / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0');
+  }
 
-  const timeOnly = (val) => {
-    const d = new Date(String(val || '').replace(' ', 'T'));
-    if (!Number.isFinite(d.getTime())) return '—';
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-  };
+  function dcFormatDuration(seconds) {
+    const sec = Math.max(0, Math.floor(Number(seconds) || 0));
+    const h = Math.floor(sec / 3600); const m = Math.floor((sec % 3600) / 60); const s = sec % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+    return `${s}s`;
+  }
 
-  const summaryBits = segments.map(row => `${timeOnly(row.from)}-${timeOnly(row.to)} ${row.kind === 'pause' ? 'paused' : 'worked'}`);
-  const pauseTotalSeconds = segments.filter(row => row.kind === 'pause').reduce((sum, row) => sum + Math.max(0, Number(row.seconds || 0)), 0);
-  const summaryText = summaryBits.length ? summaryBits.join(', ') : 'No time ranges yet';
+  function dcFormatDateTime(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '—';
+    const parsed = new Date(raw.replace(' ', 'T'));
+    return Number.isFinite(parsed.getTime()) ? parsed.toLocaleString() : '—';
+  }
 
-  const eventMap = { start: 'Start', resume: 'Again Start', pause: 'Pause', end: 'End' };
-  const eventsHtml = eventRows.length
-    ? eventRows.map(row => `<div class="dc-timer-history-row"><div class="k">${esc(eventMap[String(row.type || '').toLowerCase()] || 'Event')}</div><div class="v">${esc(dcFormatDateTime(row.at))}</div></div>`).join('')
-    : '<div class="dc-timer-history-empty">No timer event history yet.</div>';
-  const segmentsHtml = segments.length
-    ? segments.map(row => `<div class="dc-timer-history-row ${row.kind}"><div class="k">${row.kind === 'pause' ? 'Paused' : 'Worked'}</div><div class="v">${esc(dcFormatDateTime(row.from))} - ${esc(dcFormatDateTime(row.to))}<br><span style="color:#64748b;font-weight:800">${esc(dcFormatDuration(row.seconds))}</span></div></div>`).join('')
-    : '<div class="dc-timer-history-empty">No work/pause ranges recorded yet.</div>';
+  function dcTimerTotalSeconds(job) {
+    if (!job) return 0;
+    const extra = job.extra_data_parsed || {};
+    const base = Math.max(0, Number(extra.timer_accumulated_seconds || 0));
+    if (!extra.timer_active) return Math.floor(base);
+    const resumedRaw = extra.timer_last_resumed_at || extra.timer_started_at || job.started_at || '';
+    const resumedAt = resumedRaw ? Date.parse(String(resumedRaw).replace(' ', 'T')) : NaN;
+    if (!Number.isFinite(resumedAt) || resumedAt <= 0) return Math.floor(base);
+    return Math.floor(base + ((Date.now() - resumedAt) / 1000));
+  }
 
-  return `<div class="dc-timer-history">
+  function dcDurationSeconds(job) {
+    if (!job) return 0;
+    const extra = job.extra_data_parsed || {};
+    const acc = Math.max(0, Math.floor(Number(extra.timer_accumulated_seconds || 0)));
+    if (acc > 0) return acc;
+    const mins = Number(job.duration_minutes || 0);
+    return Number.isFinite(mins) && mins > 0 ? Math.floor(mins * 60) : 0;
+  }
+
+  function dcPauseTotalSeconds(extra) {
+    const segments = Array.isArray(extra?.timer_pause_segments) ? extra.timer_pause_segments : [];
+    let total = segments.reduce((sum, row) => sum + Math.max(0, Number(row?.seconds || 0)), 0);
+    const pausedAt = String(extra?.timer_pause_started_at || extra?.timer_paused_at || '').trim();
+    const isPaused = String(extra?.timer_state || '').toLowerCase() === 'paused';
+    if (isPaused && pausedAt) {
+      const fromTs = Date.parse(pausedAt.replace(' ', 'T'));
+      if (Number.isFinite(fromTs) && fromTs > 0) total += Math.max(0, Math.floor((Date.now() - fromTs) / 1000));
+    }
+    return total;
+  }
+
+  function buildDCTimerHistoryHtml(job) {
+    const extra = job?.extra_data_parsed || {};
+    const events = Array.isArray(extra.timer_events) ? extra.timer_events.filter(row => row && row.at) : [];
+    const fallbackEvents = [];
+    if (!events.length) {
+      if (extra.timer_started_at || job?.started_at) fallbackEvents.push({ type: 'start', at: extra.timer_started_at || job.started_at });
+      if (extra.timer_paused_at) fallbackEvents.push({ type: 'pause', at: extra.timer_paused_at });
+      if (extra.timer_ended_at || job?.completed_at) fallbackEvents.push({ type: 'end', at: extra.timer_ended_at || job.completed_at });
+    }
+    const eventRows = (events.length ? events : fallbackEvents).sort((a, b) => Date.parse(String(a.at).replace(' ', 'T')) - Date.parse(String(b.at).replace(' ', 'T')));
+
+    const segments = [];
+    (Array.isArray(extra.timer_work_segments) ? extra.timer_work_segments : []).forEach(row => {
+      if (row && row.from && row.to) segments.push({ kind: 'work', from: row.from, to: row.to, seconds: Number(row.seconds || 0) });
+    });
+    (Array.isArray(extra.timer_pause_segments) ? extra.timer_pause_segments : []).forEach(row => {
+      if (row && row.from && row.to) segments.push({ kind: 'pause', from: row.from, to: row.to, seconds: Number(row.seconds || 0) });
+    });
+    segments.sort((a, b) => Date.parse(String(a.from).replace(' ', 'T')) - Date.parse(String(b.from).replace(' ', 'T')));
+
+    const timeOnly = (val) => {
+      const d = new Date(String(val || '').replace(' ', 'T'));
+      if (!Number.isFinite(d.getTime())) return '—';
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    };
+
+    const summaryBits = segments.map(row => `${timeOnly(row.from)}-${timeOnly(row.to)} ${row.kind === 'pause' ? 'paused' : 'worked'}`);
+    const pauseTotalSeconds = segments.filter(row => row.kind === 'pause').reduce((sum, row) => sum + Math.max(0, Number(row.seconds || 0)), 0);
+    const summaryText = summaryBits.length ? summaryBits.join(', ') : 'No time ranges yet';
+
+    const eventMap = { start: 'Start', resume: 'Again Start', pause: 'Pause', end: 'End' };
+    const eventsHtml = eventRows.length
+      ? eventRows.map(row => `<div class="dc-timer-history-row"><div class="k">${esc(eventMap[String(row.type || '').toLowerCase()] || 'Event')}</div><div class="v">${esc(dcFormatDateTime(row.at))}</div></div>`).join('')
+      : '<div class="dc-timer-history-empty">No timer event history yet.</div>';
+    const segmentsHtml = segments.length
+      ? segments.map(row => `<div class="dc-timer-history-row ${row.kind}"><div class="k">${row.kind === 'pause' ? 'Paused' : 'Worked'}</div><div class="v">${esc(dcFormatDateTime(row.from))} - ${esc(dcFormatDateTime(row.to))}<br><span style="color:#64748b;font-weight:800">${esc(dcFormatDuration(row.seconds))}</span></div></div>`).join('')
+      : '<div class="dc-timer-history-empty">No work/pause ranges recorded yet.</div>';
+
+    return `<div class="dc-timer-history">
     <div class="dc-timer-history-card"><h4>Event Log</h4><div class="dc-timer-history-list">${eventsHtml}</div></div>
     <div class="dc-timer-history-card"><h4>Work / Pause Range</h4><div style="font-size:.82rem;font-weight:800;color:#0f172a;line-height:1.55;margin-bottom:8px">${esc(summaryText)}</div><div style="font-size:.78rem;font-weight:900;color:#b45309;margin-bottom:10px">Total Pause: ${esc(dcFormatDuration(pauseTotalSeconds))}</div><div class="dc-timer-history-list">${segmentsHtml}</div></div>
   </div>`;
-}
+  }
 
-// ═══ TIMER OPERATIONS ═══
-async function markDCTimerEnded(jobId) {
-  const fd = new FormData();
-  fd.append('csrf_token', CSRF); fd.append('action', 'end_timer_session'); fd.append('job_id', jobId);
-  const res = await fetch(API_BASE, { method: 'POST', body: fd });
-  const data = await res.json();
-  if (!data.ok) throw new Error(data.error || 'Unable to end timer');
-  const job = ALL_JOBS.find(j => j.id == jobId);
-  if (job) {
-    job.extra_data_parsed = job.extra_data_parsed || {};
-    const nowIso = data.timer_ended_at || new Date().toISOString();
-    if (job.extra_data_parsed.timer_last_resumed_at) {
-      pushDCTimerSegmentLocal(job.extra_data_parsed, 'timer_work_segments', job.extra_data_parsed.timer_last_resumed_at, nowIso);
+  // ═══ TIMER OPERATIONS ═══
+  async function markDCTimerEnded(jobId) {
+    const fd = new FormData();
+    fd.append('csrf_token', CSRF); fd.append('action', 'end_timer_session'); fd.append('job_id', jobId);
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Unable to end timer');
+    const job = ALL_JOBS.find(j => j.id == jobId);
+    if (job) {
+      job.extra_data_parsed = job.extra_data_parsed || {};
+      const nowIso = data.timer_ended_at || new Date().toISOString();
+      if (job.extra_data_parsed.timer_last_resumed_at) {
+        pushDCTimerSegmentLocal(job.extra_data_parsed, 'timer_work_segments', job.extra_data_parsed.timer_last_resumed_at, nowIso);
+      }
+      job.extra_data_parsed.timer_active = false;
+      job.extra_data_parsed.timer_state = data.timer_state || 'ended';
+      job.extra_data_parsed.timer_ended_at = nowIso;
+      job.extra_data_parsed.timer_last_resumed_at = '';
+      job.extra_data_parsed.timer_paused_at = '';
+      job.extra_data_parsed.timer_pause_started_at = '';
+      job.extra_data_parsed.timer_accumulated_seconds = Number(data.timer_accumulated_seconds || job.extra_data_parsed.timer_accumulated_seconds || 0);
+      pushDCTimerEventLocal(job.extra_data_parsed, 'end', nowIso);
     }
-    job.extra_data_parsed.timer_active = false;
-    job.extra_data_parsed.timer_state = data.timer_state || 'ended';
-    job.extra_data_parsed.timer_ended_at = nowIso;
-    job.extra_data_parsed.timer_last_resumed_at = '';
-    job.extra_data_parsed.timer_paused_at = '';
-    job.extra_data_parsed.timer_pause_started_at = '';
-    job.extra_data_parsed.timer_accumulated_seconds = Number(data.timer_accumulated_seconds || job.extra_data_parsed.timer_accumulated_seconds || 0);
-    pushDCTimerEventLocal(job.extra_data_parsed, 'end', nowIso);
   }
-}
 
-async function pauseDCTimer(jobId) {
-  const fd = new FormData();
-  fd.append('csrf_token', CSRF); fd.append('action', 'pause_timer_session'); fd.append('job_id', jobId);
-  const res = await fetch(API_BASE, { method: 'POST', body: fd });
-  const data = await res.json();
-  if (!data.ok) throw new Error(data.error || 'Unable to pause timer');
-  const job = ALL_JOBS.find(j => j.id == jobId);
-  if (job) {
-    job.extra_data_parsed = job.extra_data_parsed || {};
-    const nowIso = new Date().toISOString();
-    if (job.extra_data_parsed.timer_last_resumed_at) {
-      pushDCTimerSegmentLocal(job.extra_data_parsed, 'timer_work_segments', job.extra_data_parsed.timer_last_resumed_at, nowIso);
+  async function pauseDCTimer(jobId) {
+    const fd = new FormData();
+    fd.append('csrf_token', CSRF); fd.append('action', 'pause_timer_session'); fd.append('job_id', jobId);
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Unable to pause timer');
+    const job = ALL_JOBS.find(j => j.id == jobId);
+    if (job) {
+      job.extra_data_parsed = job.extra_data_parsed || {};
+      const nowIso = new Date().toISOString();
+      if (job.extra_data_parsed.timer_last_resumed_at) {
+        pushDCTimerSegmentLocal(job.extra_data_parsed, 'timer_work_segments', job.extra_data_parsed.timer_last_resumed_at, nowIso);
+      }
+      job.extra_data_parsed.timer_active = false;
+      job.extra_data_parsed.timer_state = data.timer_state || 'paused';
+      job.extra_data_parsed.timer_paused_at = data.timer_paused_at || '';
+      job.extra_data_parsed.timer_pause_started_at = data.timer_paused_at || nowIso;
+      job.extra_data_parsed.timer_last_resumed_at = '';
+      job.extra_data_parsed.timer_accumulated_seconds = Number(data.timer_accumulated_seconds || 0);
+      pushDCTimerEventLocal(job.extra_data_parsed, 'pause', job.extra_data_parsed.timer_paused_at || nowIso);
     }
-    job.extra_data_parsed.timer_active = false;
-    job.extra_data_parsed.timer_state = data.timer_state || 'paused';
-    job.extra_data_parsed.timer_paused_at = data.timer_paused_at || '';
-    job.extra_data_parsed.timer_pause_started_at = data.timer_paused_at || nowIso;
-    job.extra_data_parsed.timer_last_resumed_at = '';
-    job.extra_data_parsed.timer_accumulated_seconds = Number(data.timer_accumulated_seconds || 0);
-    pushDCTimerEventLocal(job.extra_data_parsed, 'pause', job.extra_data_parsed.timer_paused_at || nowIso);
   }
-}
 
-async function resetDCTimer(jobId) {
-  const fd = new FormData();
-  fd.append('csrf_token', CSRF); fd.append('action', 'reset_timer_session'); fd.append('job_id', jobId);
-  const res = await fetch(API_BASE, { method: 'POST', body: fd });
-  const data = await res.json();
-  if (!data.ok) throw new Error(data.error || 'Unable to reset timer');
-  const job = ALL_JOBS.find(j => j.id == jobId);
-  if (job) {
-    job.status = 'Pending';
-    job.started_at = null;
-    job.completed_at = null;
-    job.duration_minutes = null;
-    job.extra_data_parsed = job.extra_data_parsed || {};
-    job.extra_data_parsed.timer_active = false;
-    job.extra_data_parsed.timer_state = 'pending';
-    job.extra_data_parsed.timer_started_at = '';
-    job.extra_data_parsed.timer_last_resumed_at = '';
-    job.extra_data_parsed.timer_paused_at = '';
-    job.extra_data_parsed.timer_pause_started_at = '';
-    job.extra_data_parsed.timer_ended_at = '';
-    job.extra_data_parsed.timer_accumulated_seconds = 0;
-    job.extra_data_parsed.timer_events = [];
-    job.extra_data_parsed.timer_work_segments = [];
-    job.extra_data_parsed.timer_pause_segments = [];
+  async function resetDCTimer(jobId) {
+    const fd = new FormData();
+    fd.append('csrf_token', CSRF); fd.append('action', 'reset_timer_session'); fd.append('job_id', jobId);
+    const res = await fetch(API_BASE, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Unable to reset timer');
+    const job = ALL_JOBS.find(j => j.id == jobId);
+    if (job) {
+      job.status = 'Pending';
+      job.started_at = null;
+      job.completed_at = null;
+      job.duration_minutes = null;
+      job.extra_data_parsed = job.extra_data_parsed || {};
+      job.extra_data_parsed.timer_active = false;
+      job.extra_data_parsed.timer_state = 'pending';
+      job.extra_data_parsed.timer_started_at = '';
+      job.extra_data_parsed.timer_last_resumed_at = '';
+      job.extra_data_parsed.timer_paused_at = '';
+      job.extra_data_parsed.timer_pause_started_at = '';
+      job.extra_data_parsed.timer_ended_at = '';
+      job.extra_data_parsed.timer_accumulated_seconds = 0;
+      job.extra_data_parsed.timer_events = [];
+      job.extra_data_parsed.timer_work_segments = [];
+      job.extra_data_parsed.timer_pause_segments = [];
+    }
   }
-}
 
-async function endRunningDCTimer(jobId) {
-  try { await markDCTimerEnded(jobId); } catch (err) { alert('Timer end failed: ' + err.message); return; }
-  const ov = document.getElementById('dcTimerOverlay');
-  if (ov) ov.remove();
-  openJobDetail(jobId, 'complete');
-}
+  async function endRunningDCTimer(jobId) {
+    try { await markDCTimerEnded(jobId); } catch (err) { alert('Timer end failed: ' + err.message); return; }
+    const ov = document.getElementById('dcTimerOverlay');
+    if (ov) ov.remove();
+    openJobDetail(jobId, 'complete');
+  }
 
-function dcTimerStartMs(job) {
-  if (!job) return Date.now();
-  const startedRaw = (job.extra_data_parsed && job.extra_data_parsed.timer_started_at) || job.started_at || '';
-  const parsed = startedRaw ? Date.parse(String(startedRaw).replace(' ', 'T')) : NaN;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : Date.now();
-}
+  function dcTimerStartMs(job) {
+    if (!job) return Date.now();
+    const startedRaw = (job.extra_data_parsed && job.extra_data_parsed.timer_started_at) || job.started_at || '';
+    const parsed = startedRaw ? Date.parse(String(startedRaw).replace(' ', 'T')) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : Date.now();
+  }
 
-function dcNormalizeHexColor(value, fallback) {
-  const raw = String(value || '').trim();
-  return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : fallback;
-}
+  function dcNormalizeHexColor(value, fallback) {
+    const raw = String(value || '').trim();
+    return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : fallback;
+  }
 
-function dcShiftHexColor(hexColor, shift) {
-  const hex = dcNormalizeHexColor(hexColor, '#0ea5a4').slice(1);
-  const amount = Number(shift || 0);
-  const clamp = (n) => Math.max(0, Math.min(255, n));
-  const r = clamp(parseInt(hex.slice(0, 2), 16) + amount);
-  const g = clamp(parseInt(hex.slice(2, 4), 16) + amount);
-  const b = clamp(parseInt(hex.slice(4, 6), 16) + amount);
-  return '#' + [r, g, b].map(function(v) { return v.toString(16).padStart(2, '0'); }).join('');
-}
+  function dcShiftHexColor(hexColor, shift) {
+    const hex = dcNormalizeHexColor(hexColor, '#0ea5a4').slice(1);
+    const amount = Number(shift || 0);
+    const clamp = (n) => Math.max(0, Math.min(255, n));
+    const r = clamp(parseInt(hex.slice(0, 2), 16) + amount);
+    const g = clamp(parseInt(hex.slice(2, 4), 16) + amount);
+    const b = clamp(parseInt(hex.slice(4, 6), 16) + amount);
+    return '#' + [r, g, b].map(function (v) { return v.toString(16).padStart(2, '0'); }).join('');
+  }
 
-function resolveDCTimerOverlayPalette() {
-  const rootStyle = getComputedStyle(document.documentElement);
-  const baseBrand = dcNormalizeHexColor(rootStyle.getPropertyValue('--dc-brand').trim(), '#0ea5a4');
-  return {
-    start: dcShiftHexColor(baseBrand, -70),
-    mid: dcShiftHexColor(baseBrand, -25),
-    end: dcShiftHexColor(baseBrand, 20)
-  };
-}
+  function resolveDCTimerOverlayPalette() {
+    const rootStyle = getComputedStyle(document.documentElement);
+    const baseBrand = dcNormalizeHexColor(rootStyle.getPropertyValue('--dc-brand').trim(), '#0ea5a4');
+    return {
+      start: dcShiftHexColor(baseBrand, -70),
+      mid: dcShiftHexColor(baseBrand, -25),
+      end: dcShiftHexColor(baseBrand, 20)
+    };
+  }
 
-function showDCTimerOverlay(job) {
-  if (!job) return;
-  const existing = document.getElementById('dcTimerOverlay');
-  if (existing) existing.remove();
+  function showDCTimerOverlay(job) {
+    if (!job) return;
+    const existing = document.getElementById('dcTimerOverlay');
+    if (existing) existing.remove();
 
-  _timerJobId = Number(job.id || 0);
-  _timerStart = dcTimerStartMs(job);
+    _timerJobId = Number(job.id || 0);
+    _timerStart = dcTimerStartMs(job);
 
-  const jobLabel = resolveJobDisplayName(job) || ('Job #' + _timerJobId);
-  const jobNo = job.job_no || '';
+    const jobLabel = resolveJobDisplayName(job) || ('Job #' + _timerJobId);
+    const jobNo = job.job_no || '';
 
-  const overlay = document.createElement('div');
-  overlay.className = 'dc-timer-overlay';
-  overlay.id = 'dcTimerOverlay';
-  const palette = resolveDCTimerOverlayPalette();
-  overlay.style.setProperty('--dc-timer-grad-start', palette.start);
-  overlay.style.setProperty('--dc-timer-grad-mid', palette.mid);
-  overlay.style.setProperty('--dc-timer-grad-end', palette.end);
-  overlay.innerHTML = `
+    const overlay = document.createElement('div');
+    overlay.className = 'dc-timer-overlay';
+    overlay.id = 'dcTimerOverlay';
+    const palette = resolveDCTimerOverlayPalette();
+    overlay.style.setProperty('--dc-timer-grad-start', palette.start);
+    overlay.style.setProperty('--dc-timer-grad-mid', palette.mid);
+    overlay.style.setProperty('--dc-timer-grad-end', palette.end);
+    overlay.innerHTML = `
     <div class="dc-timer-jobinfo">
       <div style="font-size:1.3rem;font-weight:900;letter-spacing:.03em">${esc(jobNo)}</div>
       <div style="margin-top:4px">${esc(jobLabel)}</div>
@@ -2335,381 +3672,381 @@ function showDCTimerOverlay(job) {
       <button class="dc-timer-btn-end" onclick="endTimer()"><i class="bi bi-stop-fill"></i> End</button>
     </div>
   `;
-  document.body.appendChild(overlay);
+    document.body.appendChild(overlay);
 
-  if (_timerInterval) clearInterval(_timerInterval);
-  _timerInterval = setInterval(() => {
-    const diff = Math.max(0, dcTimerTotalSeconds(job));
-    const el = document.getElementById('dcTimerCounter');
-    if (el) el.textContent = dcSecondsToHms(diff);
-  }, 1000);
-}
-
-function resumeRunningDCTimer(jobId) {
-  const job = ALL_JOBS.find(j => j.id == jobId);
-  if (!job || String(job.status || '') !== 'Running') {
-    alert('Timer is not active for this job.');
-    return;
+    if (_timerInterval) clearInterval(_timerInterval);
+    _timerInterval = setInterval(() => {
+      const diff = Math.max(0, dcTimerTotalSeconds(job));
+      const el = document.getElementById('dcTimerCounter');
+      if (el) el.textContent = dcSecondsToHms(diff);
+    }, 1000);
   }
-  if (!isDCTimerActive(job)) {
-    alert('Timer is paused. Click Again Start.');
-    return;
-  }
-  showDCTimerOverlay(job);
-}
 
-// Returns the shared parent roll for a job (multi-slitting linked run), or '' if none.
-function dcJobParentRoll(job) {
-  const ex = (job && typeof job.extra_data_parsed === 'object' && job.extra_data_parsed) ? job.extra_data_parsed : {};
-  return String(ex.assigned_parent_roll_no || ex.parent_roll || (ex.parent_details && ex.parent_details.roll_no) || '').trim();
-}
-function dcStrEq(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
-
-// If `job` is a SECONDARY linked job (shares a paper roll with another job) whose
-// PRIMARY sibling has not been started yet, returns {locked:true, primaryJobNo}.
-// Mirrors the server-side link gating so Start is blocked from the modal too.
-function dcLinkedSecondaryLock(job) {
-  const parent = dcJobParentRoll(job);
-  if (!parent) return { locked: false };
-  const group = ALL_JOBS.filter(j => dcStrEq(dcJobParentRoll(j), parent));
-  if (group.length < 2) return { locked: false };
-  // Primary = lowest id in the group. A job is secondary if it isn't the primary.
-  let primary = group[0];
-  group.forEach(j => { if (Number(j.id) < Number(primary.id)) primary = j; });
-  if (Number(primary.id) === Number(job.id)) return { locked: false };
-  const pStatus = String(primary.status || '').trim();
-  const started = ['Running', 'Closed', 'Finalized', 'Completed', 'QC Passed'].indexOf(pStatus) !== -1;
-  return started ? { locked: false } : { locked: true, primaryJobNo: String(primary.job_no || '') };
-}
-
-async function startJobWithTimer(id) {
-  const jobForLink = ALL_JOBS.find(j => j.id == id) || null;
-  if (jobForLink) {
-    const lk = dcLinkedSecondaryLock(jobForLink);
-    if (lk.locked) {
-      alert('This job shares one paper roll with ' + (lk.primaryJobNo || 'its linked job') + '.\nStart the primary linked job (' + (lk.primaryJobNo || '') + ') first — both jobs run together and finish together.');
+  function resumeRunningDCTimer(jobId) {
+    const job = ALL_JOBS.find(j => j.id == jobId);
+    if (!job || String(job.status || '') !== 'Running') {
+      alert('Timer is not active for this job.');
       return;
     }
-  }
-  if (!(await dcConfirmAsync('Start this job?', { okLabel: 'Start' }))) return;
-  const job = ALL_JOBS.find(j => j.id == id) || null;
-  const jobStatus = String(job?.status || '').trim().toLowerCase();
-  const timerState = String(job?.extra_data_parsed?.timer_state || '').trim().toLowerCase();
-  const isResumeFromPause = jobStatus === 'running' && timerState === 'paused';
-
-  let verifiedRolls = [];
-  if (DC_REQUIRE_ROLL_SCAN && IS_OPERATOR_VIEW && !isResumeFromPause) {
-    const verification = await dcOpenRollVerification(job || { id: id, job_no: id, roll_no: '' });
-    if (!verification.ok) {
-      alert(verification.error || 'Assigned roll verification is required before start.');
+    if (!isDCTimerActive(job)) {
+      alert('Timer is paused. Click Again Start.');
       return;
     }
-    verifiedRolls = Array.isArray(verification.verified_rolls)
-      ? verification.verified_rolls.map(function(v) { return String(v || '').trim(); }).filter(Boolean)
-      : [];
-    if (!verifiedRolls.length) {
-      alert('Roll verification did not capture any required roll. Please verify again.');
+    showDCTimerOverlay(job);
+  }
+
+  // Returns the shared parent roll for a job (multi-slitting linked run), or '' if none.
+  function dcJobParentRoll(job) {
+    const ex = (job && typeof job.extra_data_parsed === 'object' && job.extra_data_parsed) ? job.extra_data_parsed : {};
+    return String(ex.assigned_parent_roll_no || ex.parent_roll || (ex.parent_details && ex.parent_details.roll_no) || '').trim();
+  }
+  function dcStrEq(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
+
+  // If `job` is a SECONDARY linked job (shares a paper roll with another job) whose
+  // PRIMARY sibling has not been started yet, returns {locked:true, primaryJobNo}.
+  // Mirrors the server-side link gating so Start is blocked from the modal too.
+  function dcLinkedSecondaryLock(job) {
+    const parent = dcJobParentRoll(job);
+    if (!parent) return { locked: false };
+    const group = ALL_JOBS.filter(j => dcStrEq(dcJobParentRoll(j), parent));
+    if (group.length < 2) return { locked: false };
+    // Primary = lowest id in the group. A job is secondary if it isn't the primary.
+    let primary = group[0];
+    group.forEach(j => { if (Number(j.id) < Number(primary.id)) primary = j; });
+    if (Number(primary.id) === Number(job.id)) return { locked: false };
+    const pStatus = String(primary.status || '').trim();
+    const started = ['Running', 'Closed', 'Finalized', 'Completed', 'QC Passed'].indexOf(pStatus) !== -1;
+    return started ? { locked: false } : { locked: true, primaryJobNo: String(primary.job_no || '') };
+  }
+
+  async function startJobWithTimer(id) {
+    const jobForLink = ALL_JOBS.find(j => j.id == id) || null;
+    if (jobForLink) {
+      const lk = dcLinkedSecondaryLock(jobForLink);
+      if (lk.locked) {
+        alert('This job shares one paper roll with ' + (lk.primaryJobNo || 'its linked job') + '.\nStart the primary linked job (' + (lk.primaryJobNo || '') + ') first — both jobs run together and finish together.');
+        return;
+      }
+    }
+    if (!(await dcConfirmAsync('Start this job?', { okLabel: 'Start' }))) return;
+    const job = ALL_JOBS.find(j => j.id == id) || null;
+    const jobStatus = String(job?.status || '').trim().toLowerCase();
+    const timerState = String(job?.extra_data_parsed?.timer_state || '').trim().toLowerCase();
+    const isResumeFromPause = jobStatus === 'running' && timerState === 'paused';
+
+    let verifiedRolls = [];
+    if (DC_REQUIRE_ROLL_SCAN && IS_OPERATOR_VIEW && !isResumeFromPause) {
+      const verification = await dcOpenRollVerification(job || { id: id, job_no: id, roll_no: '' });
+      if (!verification.ok) {
+        alert(verification.error || 'Assigned roll verification is required before start.');
+        return;
+      }
+      verifiedRolls = Array.isArray(verification.verified_rolls)
+        ? verification.verified_rolls.map(function (v) { return String(v || '').trim(); }).filter(Boolean)
+        : [];
+      if (!verifiedRolls.length) {
+        alert('Roll verification did not capture any required roll. Please verify again.');
+        return;
+      }
+    }
+
+    const fd = new FormData();
+    fd.append('csrf_token', CSRF); fd.append('action', 'update_status'); fd.append('job_id', id); fd.append('status', 'Running');
+    if (verifiedRolls.length) {
+      fd.append('verified_rolls_json', JSON.stringify(verifiedRolls));
+      fd.append('verified_rolls_csv', verifiedRolls.join(','));
+      fd.append('verified_rolls_count', String(verifiedRolls.length));
+      verifiedRolls.forEach(function (rollNo) {
+        fd.append('verified_rolls[]', rollNo);
+      });
+      fd.append('verified_rolls_mode', CAN_MANUAL_ROLL_ENTRY ? 'qr_manual' : 'qr_only');
+    }
+    try {
+      const res = await fetch(API_BASE, { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!data.ok) { alert('Error: ' + (data.error || 'Unknown')); return; }
+    } catch (err) { alert('Network error: ' + err.message); return; }
+
+    document.getElementById('dcDetailModal').classList.remove('active');
+    _timerJobId = id;
+    _timerStart = Date.now();
+    const activeJob = ALL_JOBS.find(j => j.id == id) || {};
+    const nowIso = new Date().toISOString();
+    activeJob.status = 'Running';
+    if (!activeJob.started_at) activeJob.started_at = nowIso;
+    activeJob.extra_data_parsed = activeJob.extra_data_parsed || {};
+    if (!activeJob.extra_data_parsed.timer_started_at) {
+      activeJob.extra_data_parsed.timer_started_at = nowIso;
+      pushDCTimerEventLocal(activeJob.extra_data_parsed, 'start', nowIso);
+    } else if (String(activeJob.extra_data_parsed.timer_state || '').toLowerCase() === 'paused') {
+      const pausedAt = activeJob.extra_data_parsed.timer_pause_started_at || activeJob.extra_data_parsed.timer_paused_at || '';
+      if (pausedAt) {
+        pushDCTimerSegmentLocal(activeJob.extra_data_parsed, 'timer_pause_segments', pausedAt, nowIso);
+      }
+      pushDCTimerEventLocal(activeJob.extra_data_parsed, 'resume', nowIso);
+    }
+    activeJob.extra_data_parsed.timer_active = true;
+    activeJob.extra_data_parsed.timer_state = 'running';
+    activeJob.extra_data_parsed.timer_last_resumed_at = nowIso;
+    activeJob.extra_data_parsed.timer_paused_at = '';
+    activeJob.extra_data_parsed.timer_pause_started_at = '';
+    activeJob.extra_data_parsed.timer_ended_at = '';
+    showDCTimerOverlay(activeJob);
+  }
+
+  async function cancelTimer() {
+    if (!_timerJobId) return;
+    if (!(await dcConfirmAsync('Cancel will reset this job timer and return it to Pending. Continue?', { okLabel: 'Continue' }))) return;
+    try {
+      await resetDCTimer(_timerJobId);
+    } catch (err) {
+      alert('Timer reset failed: ' + err.message);
       return;
+    }
+    if (_timerInterval) clearInterval(_timerInterval);
+    _timerInterval = null;
+    const ov = document.getElementById('dcTimerOverlay');
+    if (ov) ov.remove();
+    _timerJobId = null;
+    location.reload();
+  }
+
+  async function pauseTimer() {
+    const jobId = _timerJobId;
+    if (!jobId) return;
+    try {
+      await pauseDCTimer(jobId);
+    } catch (err) {
+      alert('Timer pause failed: ' + err.message);
+      return;
+    }
+    if (_timerInterval) clearInterval(_timerInterval);
+    _timerInterval = null;
+    const ov = document.getElementById('dcTimerOverlay');
+    if (ov) ov.remove();
+    _timerJobId = null;
+    location.reload();
+  }
+
+  function endTimer() {
+    if (_timerInterval) clearInterval(_timerInterval);
+    _timerInterval = null;
+    const jobId = _timerJobId;
+    _timerJobId = null;
+    endRunningDCTimer(jobId);
+  }
+
+  // ═══ PHOTO UPLOAD ═══
+  async function uploadDCPhoto(jobId) {
+    const input = document.getElementById('dc-photo-input-' + jobId);
+    if (!input || !input.files || !input.files[0]) return;
+    const file = input.files[0];
+    const statusEl = document.getElementById('dc-photo-status-' + jobId);
+    const previewEl = document.getElementById('dc-photo-preview-' + jobId);
+    if (statusEl) statusEl.innerHTML = '<i class="bi bi-hourglass-split"></i> Uploading...';
+    const fd = new FormData();
+    fd.append('csrf_token', CSRF); fd.append('action', 'upload_die_cutting_photo'); fd.append('job_id', jobId); fd.append('photo', file);
+    try {
+      const res = await fetch(API_BASE, { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data.ok) {
+        if (statusEl) statusEl.innerHTML = '<i class="bi bi-check-circle" style="color:#16a34a"></i> Uploaded';
+        if (previewEl) previewEl.innerHTML = `<img src="${data.photo_url}" alt="Job Photo">`;
+        _lastPhotoPath = data.photo_path || '';
+        const job = ALL_JOBS.find(j => j.id == jobId);
+        if (job) { job.extra_data_parsed = job.extra_data_parsed || {}; job.extra_data_parsed.die_cutting_photo_url = data.photo_url || ''; job.extra_data_parsed.die_cutting_photo_path = data.photo_path || ''; }
+      } else {
+        if (statusEl) statusEl.innerHTML = '<span style="color:#dc2626">Error: ' + esc(data.error || 'Unknown') + '</span>';
+      }
+    } catch (err) {
+      if (statusEl) statusEl.innerHTML = '<span style="color:#dc2626">Network error</span>';
     }
   }
 
-  const fd = new FormData();
-  fd.append('csrf_token', CSRF); fd.append('action', 'update_status'); fd.append('job_id', id); fd.append('status', 'Running');
-  if (verifiedRolls.length) {
-    fd.append('verified_rolls_json', JSON.stringify(verifiedRolls));
-    fd.append('verified_rolls_csv', verifiedRolls.join(','));
-    fd.append('verified_rolls_count', String(verifiedRolls.length));
-    verifiedRolls.forEach(function(rollNo) {
-      fd.append('verified_rolls[]', rollNo);
+  // ═══ VOICE RECORDING ═══
+  function toggleVoiceRecord(jobId) {
+    const btn = document.getElementById('dc-voice-btn-' + jobId);
+    if (!_voiceRecorder) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { alert('Microphone not supported.'); return; }
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        _voiceChunks = [];
+        _voiceRecorder = new MediaRecorder(stream);
+        _voiceRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) _voiceChunks.push(e.data); };
+        _voiceRecorder.onstop = function () {
+          stream.getTracks().forEach(t => t.stop());
+          const blob = new Blob(_voiceChunks, { type: 'audio/webm' });
+          const file = new File([blob], 'die-cutting-note.webm', { type: 'audio/webm' });
+          const fd = new FormData();
+          fd.append('action', 'upload_die_cutting_voice'); fd.append('job_id', String(jobId)); fd.append('csrf_token', CSRF); fd.append('voice', file);
+          fetch(API_BASE, { method: 'POST', body: fd }).then(r => r.json()).then(res => {
+            if (res && res.ok) { _lastVoicePath = res.voice_path || ''; const st = document.getElementById('dc-voice-status-' + jobId); if (st) st.innerHTML = '<i class="bi bi-check-circle" style="color:#16a34a"></i> Voice recorded'; }
+            else { alert((res && res.error) || 'Voice upload failed'); }
+          }).catch(() => alert('Voice upload failed'));
+          _voiceRecorder = null;
+          if (btn) btn.innerHTML = '<i class="bi bi-mic"></i> Record Voice';
+        };
+        _voiceRecorder.start();
+        if (btn) btn.innerHTML = '<i class="bi bi-stop-circle" style="color:#dc2626"></i> Stop Recording';
+      }).catch(() => alert('Microphone permission denied.'));
+      return;
+    }
+    _voiceRecorder.stop();
+  }
+
+  // ═══ EXTRA DATA FORM ═══
+  function buildDCExtraDataFromForm(form) {
+    if (!form) return null;
+    return {
+      die_cutting_total_qty_pcs: form.querySelector('[name=die_cutting_total_qty_pcs]')?.value || '',
+      die_cutting_wastage_pcs: form.querySelector('[name=die_cutting_wastage_pcs]')?.value || '',
+      die_cutting_wastage_mtr: form.querySelector('[name=die_cutting_wastage_mtr]')?.value || '',
+      die_cutting_notes_text: form.querySelector('[name=die_cutting_notes_text]')?.value || '',
+      voice_language: normalizeDCVoiceLanguage(form.querySelector('[name=voice_language]')?.value || DC_DEFAULT_VOICE_LANGUAGE),
+      die_cutting_printed_roll_length_mtr: form.querySelector('[name=die_cutting_printed_roll_length_mtr]')?.value || '',
+      die_cutting_photo_path: _lastPhotoPath,
+      die_cutting_voice_note_path: _lastVoicePath,
+      die_cutting_submitted_at: new Date().toISOString()
+    };
+  }
+
+  function isDCRequiredValueFilled(input) {
+    if (!input) return false;
+    const value = String(input.value || '').trim();
+    return value !== '';
+  }
+
+  function collectDCMissingRequiredFields(form) {
+    if (!form) return [];
+    const missing = [];
+    const wrappers = form.querySelectorAll('[data-required-field="1"]');
+    wrappers.forEach(wrapper => {
+      const input = wrapper.querySelector('input, select, textarea');
+      if (input && !isDCRequiredValueFilled(input)) {
+        const label = String(wrapper.getAttribute('data-required-label') || input.name || 'Required field').trim();
+        missing.push(label);
+      }
     });
-    fd.append('verified_rolls_mode', CAN_MANUAL_ROLL_ENTRY ? 'qr_manual' : 'qr_only');
+    return missing;
   }
-  try {
-    const res = await fetch(API_BASE, { method: 'POST', body: fd });
-    const data = await res.json();
-    if (!data.ok) { alert('Error: ' + (data.error || 'Unknown')); return; }
-  } catch (err) { alert('Network error: ' + err.message); return; }
 
-  document.getElementById('dcDetailModal').classList.remove('active');
-  _timerJobId = id;
-  _timerStart = Date.now();
-  const activeJob = ALL_JOBS.find(j => j.id == id) || {};
-  const nowIso = new Date().toISOString();
-  activeJob.status = 'Running';
-  if (!activeJob.started_at) activeJob.started_at = nowIso;
-  activeJob.extra_data_parsed = activeJob.extra_data_parsed || {};
-  if (!activeJob.extra_data_parsed.timer_started_at) {
-    activeJob.extra_data_parsed.timer_started_at = nowIso;
-    pushDCTimerEventLocal(activeJob.extra_data_parsed, 'start', nowIso);
-  } else if (String(activeJob.extra_data_parsed.timer_state || '').toLowerCase() === 'paused') {
-    const pausedAt = activeJob.extra_data_parsed.timer_pause_started_at || activeJob.extra_data_parsed.timer_paused_at || '';
-    if (pausedAt) {
-      pushDCTimerSegmentLocal(activeJob.extra_data_parsed, 'timer_pause_segments', pausedAt, nowIso);
-    }
-    pushDCTimerEventLocal(activeJob.extra_data_parsed, 'resume', nowIso);
+  function updateDCRequiredFieldAnimations(form) {
+    if (!form) return;
+    const wrappers = form.querySelectorAll('[data-required-field="1"]');
+    wrappers.forEach(wrapper => {
+      const input = wrapper.querySelector('input, select, textarea');
+      const filled = !!(input && isDCRequiredValueFilled(input));
+      wrapper.classList.toggle('dc-required-pulse', !filled);
+      wrapper.classList.toggle('dc-required-done', filled);
+    });
   }
-  activeJob.extra_data_parsed.timer_active = true;
-  activeJob.extra_data_parsed.timer_state = 'running';
-  activeJob.extra_data_parsed.timer_last_resumed_at = nowIso;
-  activeJob.extra_data_parsed.timer_paused_at = '';
-  activeJob.extra_data_parsed.timer_pause_started_at = '';
-  activeJob.extra_data_parsed.timer_ended_at = '';
-  showDCTimerOverlay(activeJob);
-}
 
-async function cancelTimer() {
-  if (!_timerJobId) return;
-  if (!(await dcConfirmAsync('Cancel will reset this job timer and return it to Pending. Continue?', { okLabel:'Continue' }))) return;
-  try {
-    await resetDCTimer(_timerJobId);
-  } catch (err) {
-    alert('Timer reset failed: ' + err.message);
-    return;
-  }
-  if (_timerInterval) clearInterval(_timerInterval);
-  _timerInterval = null;
-  const ov = document.getElementById('dcTimerOverlay');
-  if (ov) ov.remove();
-  _timerJobId = null;
-  location.reload();
-}
-
-async function pauseTimer() {
-  const jobId = _timerJobId;
-  if (!jobId) return;
-  try {
-    await pauseDCTimer(jobId);
-  } catch (err) {
-    alert('Timer pause failed: ' + err.message);
-    return;
-  }
-  if (_timerInterval) clearInterval(_timerInterval);
-  _timerInterval = null;
-  const ov = document.getElementById('dcTimerOverlay');
-  if (ov) ov.remove();
-  _timerJobId = null;
-  location.reload();
-}
-
-function endTimer() {
-  if (_timerInterval) clearInterval(_timerInterval);
-  _timerInterval = null;
-  const jobId = _timerJobId;
-  _timerJobId = null;
-  endRunningDCTimer(jobId);
-}
-
-// ═══ PHOTO UPLOAD ═══
-async function uploadDCPhoto(jobId) {
-  const input = document.getElementById('dc-photo-input-' + jobId);
-  if (!input || !input.files || !input.files[0]) return;
-  const file = input.files[0];
-  const statusEl = document.getElementById('dc-photo-status-' + jobId);
-  const previewEl = document.getElementById('dc-photo-preview-' + jobId);
-  if (statusEl) statusEl.innerHTML = '<i class="bi bi-hourglass-split"></i> Uploading...';
-  const fd = new FormData();
-  fd.append('csrf_token', CSRF); fd.append('action', 'upload_die_cutting_photo'); fd.append('job_id', jobId); fd.append('photo', file);
-  try {
-    const res = await fetch(API_BASE, { method: 'POST', body: fd });
-    const data = await res.json();
-    if (data.ok) {
-      if (statusEl) statusEl.innerHTML = '<i class="bi bi-check-circle" style="color:#16a34a"></i> Uploaded';
-      if (previewEl) previewEl.innerHTML = `<img src="${data.photo_url}" alt="Job Photo">`;
-      _lastPhotoPath = data.photo_path || '';
-      const job = ALL_JOBS.find(j => j.id == jobId);
-      if (job) { job.extra_data_parsed = job.extra_data_parsed || {}; job.extra_data_parsed.die_cutting_photo_url = data.photo_url || ''; job.extra_data_parsed.die_cutting_photo_path = data.photo_path || ''; }
-    } else {
-      if (statusEl) statusEl.innerHTML = '<span style="color:#dc2626">Error: ' + esc(data.error || 'Unknown') + '</span>';
-    }
-  } catch (err) {
-    if (statusEl) statusEl.innerHTML = '<span style="color:#dc2626">Network error</span>';
-  }
-}
-
-// ═══ VOICE RECORDING ═══
-function toggleVoiceRecord(jobId) {
-  const btn = document.getElementById('dc-voice-btn-' + jobId);
-  if (!_voiceRecorder) {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { alert('Microphone not supported.'); return; }
-    navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
-      _voiceChunks = [];
-      _voiceRecorder = new MediaRecorder(stream);
-      _voiceRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) _voiceChunks.push(e.data); };
-      _voiceRecorder.onstop = function(){
-        stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(_voiceChunks, {type:'audio/webm'});
-        const file = new File([blob], 'die-cutting-note.webm', {type:'audio/webm'});
-        const fd = new FormData();
-        fd.append('action', 'upload_die_cutting_voice'); fd.append('job_id', String(jobId)); fd.append('csrf_token', CSRF); fd.append('voice', file);
-        fetch(API_BASE, {method:'POST', body:fd}).then(r => r.json()).then(res => {
-          if (res && res.ok) { _lastVoicePath = res.voice_path || ''; const st = document.getElementById('dc-voice-status-' + jobId); if (st) st.innerHTML = '<i class="bi bi-check-circle" style="color:#16a34a"></i> Voice recorded'; }
-          else { alert((res && res.error) || 'Voice upload failed'); }
-        }).catch(() => alert('Voice upload failed'));
-        _voiceRecorder = null;
-        if (btn) btn.innerHTML = '<i class="bi bi-mic"></i> Record Voice';
-      };
-      _voiceRecorder.start();
-      if (btn) btn.innerHTML = '<i class="bi bi-stop-circle" style="color:#dc2626"></i> Stop Recording';
-    }).catch(() => alert('Microphone permission denied.'));
-    return;
-  }
-  _voiceRecorder.stop();
-}
-
-// ═══ EXTRA DATA FORM ═══
-function buildDCExtraDataFromForm(form) {
-  if (!form) return null;
-  return {
-    die_cutting_total_qty_pcs: form.querySelector('[name=die_cutting_total_qty_pcs]')?.value || '',
-    die_cutting_wastage_pcs: form.querySelector('[name=die_cutting_wastage_pcs]')?.value || '',
-    die_cutting_wastage_mtr: form.querySelector('[name=die_cutting_wastage_mtr]')?.value || '',
-    die_cutting_notes_text: form.querySelector('[name=die_cutting_notes_text]')?.value || '',
-    voice_language: normalizeDCVoiceLanguage(form.querySelector('[name=voice_language]')?.value || DC_DEFAULT_VOICE_LANGUAGE),
-    die_cutting_printed_roll_length_mtr: form.querySelector('[name=die_cutting_printed_roll_length_mtr]')?.value || '',
-    die_cutting_photo_path: _lastPhotoPath,
-    die_cutting_voice_note_path: _lastVoicePath,
-    die_cutting_submitted_at: new Date().toISOString()
-  };
-}
-
-function isDCRequiredValueFilled(input) {
-  if (!input) return false;
-  const value = String(input.value || '').trim();
-  return value !== '';
-}
-
-function collectDCMissingRequiredFields(form) {
-  if (!form) return [];
-  const missing = [];
-  const wrappers = form.querySelectorAll('[data-required-field="1"]');
-  wrappers.forEach(wrapper => {
-    const input = wrapper.querySelector('input, select, textarea');
-    if (input && !isDCRequiredValueFilled(input)) {
-      const label = String(wrapper.getAttribute('data-required-label') || input.name || 'Required field').trim();
-      missing.push(label);
-    }
-  });
-  return missing;
-}
-
-function updateDCRequiredFieldAnimations(form) {
-  if (!form) return;
-  const wrappers = form.querySelectorAll('[data-required-field="1"]');
-  wrappers.forEach(wrapper => {
-    const input = wrapper.querySelector('input, select, textarea');
-    const filled = !!(input && isDCRequiredValueFilled(input));
-    wrapper.classList.toggle('dc-required-pulse', !filled);
-    wrapper.classList.toggle('dc-required-done', filled);
-  });
-}
-
-function bindDCRequiredFieldAnimations(form) {
-  if (!form || form.dataset.reqBindDone === '1') return;
-  form.dataset.reqBindDone = '1';
-  updateDCRequiredFieldAnimations(form);
-  form.querySelectorAll('[data-required-field="1"] input, [data-required-field="1"] select, [data-required-field="1"] textarea').forEach(input => {
-    input.addEventListener('input', function() { updateDCRequiredFieldAnimations(form); });
-    input.addEventListener('change', function() { updateDCRequiredFieldAnimations(form); });
-    input.addEventListener('blur', function() { updateDCRequiredFieldAnimations(form); });
-  });
-}
-
-function setupDCVoiceInputUI(form) {
-  if (!form) return;
-  const supported = isDCSpeechSupported();
-  const defaultLang = normalizeDCVoiceLanguage(form.querySelector('[name=voice_language]')?.value || DC_DEFAULT_VOICE_LANGUAGE);
-  const langSelect = form.querySelector('[name=voice_language]');
-  if (langSelect) langSelect.value = defaultLang;
-
-  const voiceButtons = form.querySelectorAll('[data-voice-target-field]');
-  voiceButtons.forEach(btn => {
-    const fallbackText = supported
-      ? 'Select language and tap Speak Notes.'
-      : 'Voice input is not supported in this browser. Type notes manually.';
-    setDCVoiceFallbackMessage(btn, fallbackText);
-    if (!supported) {
-      btn.disabled = true;
-      btn.classList.remove('active');
-      btn.title = 'Voice input unavailable in this browser';
-    }
-  });
-}
-
-// ═══ SUBMIT & CLOSE ═══
-async function submitAndClose(id) {
-  const job = ALL_JOBS.find(j => j.id == id) || {};
-  if (isDCTimerActive(job)) {
-    alert('Timer is still running. Please End the timer before finishing this job.');
-    return;
-  }
-  const form = document.getElementById('dm-operator-form');
-  if (!form) return updateJobStatus(id, 'Completed');
-  const extraData = buildDCExtraDataFromForm(form);
-  if (!extraData) return updateJobStatus(id, 'Completed');
-
-  // Validate required fields
-  const missingRequired = collectDCMissingRequiredFields(form);
-  if (missingRequired.length) {
+  function bindDCRequiredFieldAnimations(form) {
+    if (!form || form.dataset.reqBindDone === '1') return;
+    form.dataset.reqBindDone = '1';
     updateDCRequiredFieldAnimations(form);
-    alert('Please fill the required fields before submitting:\n\n- ' + missingRequired.join('\n- '));
-    const firstMissing = form.querySelector('[data-required-field="1"].dc-required-pulse input, [data-required-field="1"].dc-required-pulse select, [data-required-field="1"].dc-required-pulse textarea');
-    if (firstMissing) {
-      firstMissing.focus();
-      firstMissing.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    form.querySelectorAll('[data-required-field="1"] input, [data-required-field="1"] select, [data-required-field="1"] textarea').forEach(input => {
+      input.addEventListener('input', function () { updateDCRequiredFieldAnimations(form); });
+      input.addEventListener('change', function () { updateDCRequiredFieldAnimations(form); });
+      input.addEventListener('blur', function () { updateDCRequiredFieldAnimations(form); });
+    });
+  }
+
+  function setupDCVoiceInputUI(form) {
+    if (!form) return;
+    const supported = isDCSpeechSupported();
+    const defaultLang = normalizeDCVoiceLanguage(form.querySelector('[name=voice_language]')?.value || DC_DEFAULT_VOICE_LANGUAGE);
+    const langSelect = form.querySelector('[name=voice_language]');
+    if (langSelect) langSelect.value = defaultLang;
+
+    const voiceButtons = form.querySelectorAll('[data-voice-target-field]');
+    voiceButtons.forEach(btn => {
+      const fallbackText = supported
+        ? 'Select language and tap Speak Notes.'
+        : 'Voice input is not supported in this browser. Type notes manually.';
+      setDCVoiceFallbackMessage(btn, fallbackText);
+      if (!supported) {
+        btn.disabled = true;
+        btn.classList.remove('active');
+        btn.title = 'Voice input unavailable in this browser';
+      }
+    });
+  }
+
+  // ═══ SUBMIT & CLOSE ═══
+  async function submitAndClose(id) {
+    const job = ALL_JOBS.find(j => j.id == id) || {};
+    if (isDCTimerActive(job)) {
+      alert('Timer is still running. Please End the timer before finishing this job.');
+      return;
     }
-    return;
+    const form = document.getElementById('dm-operator-form');
+    if (!form) return updateJobStatus(id, 'Completed');
+    const extraData = buildDCExtraDataFromForm(form);
+    if (!extraData) return updateJobStatus(id, 'Completed');
+
+    // Validate required fields
+    const missingRequired = collectDCMissingRequiredFields(form);
+    if (missingRequired.length) {
+      updateDCRequiredFieldAnimations(form);
+      alert('Please fill the required fields before submitting:\n\n- ' + missingRequired.join('\n- '));
+      const firstMissing = form.querySelector('[data-required-field="1"].dc-required-pulse input, [data-required-field="1"].dc-required-pulse select, [data-required-field="1"].dc-required-pulse textarea');
+      if (firstMissing) {
+        firstMissing.focus();
+        firstMissing.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return;
+    }
+
+    // Save extra data
+    const fd1 = new FormData();
+    fd1.append('csrf_token', CSRF); fd1.append('action', 'submit_extra_data'); fd1.append('job_id', id); fd1.append('extra_data', JSON.stringify(extraData));
+    try {
+      const r1 = await fetch(API_BASE, { method: 'POST', body: fd1 });
+      const d1 = await r1.json();
+      if (!d1.ok) { alert('Save error: ' + (d1.error || 'Unknown')); return; }
+    } catch (e) { alert('Network error'); return; }
+
+    // Close job
+    await updateJobStatus(id, 'Completed');
   }
 
-  // Save extra data
-  const fd1 = new FormData();
-  fd1.append('csrf_token', CSRF); fd1.append('action', 'submit_extra_data'); fd1.append('job_id', id); fd1.append('extra_data', JSON.stringify(extraData));
-  try {
-    const r1 = await fetch(API_BASE, { method: 'POST', body: fd1 });
-    const d1 = await r1.json();
-    if (!d1.ok) { alert('Save error: ' + (d1.error||'Unknown')); return; }
-  } catch(e) { alert('Network error'); return; }
+  // ═══ DETAIL MODAL ═══
+  async function openJobDetail(id, mode) {
+    const numericId = Number(id);
+    const job = ALL_JOBS.find(j => Number(j.id) === numericId) || ALL_JOBS.find(j => String(j.id) === String(id));
+    if (!job) {
+      alert('Job details not found. Please refresh the page once.');
+      return;
+    }
 
-  // Close job
-  await updateJobStatus(id, 'Completed');
-}
+    const sts = job.status;
+    const stsClass = { Queued: 'queued', Pending: 'pending', Running: 'running', Closed: 'completed', Finalized: 'completed', Completed: 'completed' }[sts] || 'pending';
+    const timerActive = isDCTimerActive(job);
+    const timerState = String((job.extra_data_parsed || {}).timer_state || '').toLowerCase();
+    const extra = job.extra_data_parsed || {};
+    const createdAt = dcFormatDateTime(job.created_at);
+    const startedAt = dcFormatDateTime(extra.timer_started_at || job.started_at);
+    const completedAt = dcFormatDateTime(extra.timer_ended_at || job.completed_at);
+    const activeSeconds = timerActive ? dcTimerTotalSeconds(job) : dcDurationSeconds(job);
+    const pauseSeconds = dcPauseTotalSeconds(extra);
 
-// ═══ DETAIL MODAL ═══
-async function openJobDetail(id, mode) {
-  const numericId = Number(id);
-  const job = ALL_JOBS.find(j => Number(j.id) === numericId) || ALL_JOBS.find(j => String(j.id) === String(id));
-  if (!job) {
-    alert('Job details not found. Please refresh the page once.');
-    return;
-  }
+    // Init photo/voice state
+    _lastPhotoPath = String(extra.die_cutting_photo_path || '');
+    _lastVoicePath = String(extra.die_cutting_voice_note_path || '');
 
-  const sts = job.status;
-  const stsClass = {Queued:'queued',Pending:'pending',Running:'running',Closed:'completed',Finalized:'completed',Completed:'completed'}[sts]||'pending';
-  const timerActive = isDCTimerActive(job);
-  const timerState = String((job.extra_data_parsed || {}).timer_state || '').toLowerCase();
-  const extra = job.extra_data_parsed || {};
-  const createdAt = dcFormatDateTime(job.created_at);
-  const startedAt = dcFormatDateTime(extra.timer_started_at || job.started_at);
-  const completedAt = dcFormatDateTime(extra.timer_ended_at || job.completed_at);
-  const activeSeconds = timerActive ? dcTimerTotalSeconds(job) : dcDurationSeconds(job);
-  const pauseSeconds = dcPauseTotalSeconds(extra);
+    document.getElementById('dm-jobno').textContent = job.job_no;
+    const badge = document.getElementById('dm-status-badge');
+    badge.textContent = sts;
+    badge.className = 'dc-badge dc-badge-' + stsClass;
 
-  // Init photo/voice state
-  _lastPhotoPath = String(extra.die_cutting_photo_path || '');
-  _lastVoicePath = String(extra.die_cutting_voice_note_path || '');
+    let html = '';
 
-  document.getElementById('dm-jobno').textContent = job.job_no;
-  const badge = document.getElementById('dm-status-badge');
-  badge.textContent = sts;
-  badge.className = 'dc-badge dc-badge-' + stsClass;
+    const viewQrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no || '')}`;
+    const viewQrDataUrl = await generateQR(viewQrUrl);
+    const nowText = new Date().toLocaleString();
 
-  let html = '';
-
-  const viewQrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no || '')}`;
-  const viewQrDataUrl = await generateQR(viewQrUrl);
-  const nowText = new Date().toLocaleString();
-
-  // ── Company Header ──
-  html += `<div class="dc-op-section" style="border-color:#99f6e4"><div class="dc-op-b" style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;background:linear-gradient(135deg,#f0fdfa,#fff)">
+    // ── Company Header ──
+    html += `<div class="dc-op-section" style="border-color:#99f6e4"><div class="dc-op-b" style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;background:linear-gradient(135deg,#f0fdfa,#fff)">
     <div style="display:flex;gap:10px;align-items:flex-start">
       ${COMPANY.logo ? `<img src="${COMPANY.logo}" alt="Logo" style="max-height:38px;max-width:110px;display:block">` : ''}
       <div>
@@ -2725,43 +4062,43 @@ async function openJobDetail(id, mode) {
     </div>
   </div></div>`;
 
-  // ── Previous Job (Flexo Printing) ──
-  if (job.prev_job_no) {
-    const prevDone = ['Completed','QC Passed','Closed','Finalized'].includes(job.prev_job_status || '');
-    const pvColor = prevDone ? '#16a34a' : '#f59e0b';
-    html += `<div class="dc-op-section" style="padding:12px;background:${prevDone?'#f0fdf4':'#fef3c7'};border-radius:10px;border-left:4px solid ${pvColor}">
+    // ── Previous Job (Flexo Printing) ──
+    if (job.prev_job_no) {
+      const prevDone = ['Completed', 'QC Passed', 'Closed', 'Finalized'].includes(job.prev_job_status || '');
+      const pvColor = prevDone ? '#16a34a' : '#f59e0b';
+      html += `<div class="dc-op-section" style="padding:12px;background:${prevDone ? '#f0fdf4' : '#fef3c7'};border-radius:10px;border-left:4px solid ${pvColor}">
       <div style="display:flex;align-items:center;gap:8px;font-size:.78rem;font-weight:700">
-        <i class="bi bi-${prevDone?'check-circle-fill':'lock-fill'}" style="color:${pvColor}"></i>
+        <i class="bi bi-${prevDone ? 'check-circle-fill' : 'lock-fill'}" style="color:${pvColor}"></i>
         Previous Job (Flexo): <span style="color:var(--dc-brand)">${esc(job.prev_job_no)}</span>
-        — <span style="color:${pvColor}">${esc(job.prev_job_status||'—')}</span>
+        — <span style="color:${pvColor}">${esc(job.prev_job_status || '—')}</span>
       </div>
     </div>`;
-  }
+    }
 
-  // ── Printing Production vs Planning Quantity ──
-  {
-    const rawPlanQty = String(job.planning_order_qty || '').trim();
-    const rawProducedQty = String(
-      String(DC_PRODUCED_QTY_SOURCE || '').toLowerCase() === 'current'
-        ? (extra.barcode_total_qty_pcs ?? extra.total_qty_pcs ?? extra.die_cutting_total_qty_pcs ?? extra.actual_qty ?? '')
-        : (job.prev_actual_qty || '')
-    ).trim();
-    const hasPlanQty = rawPlanQty !== '';
-    const hasProducedQty = rawProducedQty !== '';
-    const planQty = Number(rawPlanQty || 0);
-    const producedQty = Number(rawProducedQty || 0);
-    if (hasPlanQty || hasProducedQty) {
-      const canCompare = hasPlanQty && hasProducedQty;
-      const diff = canCompare ? (producedQty - planQty) : 0;
-      const pctText = canCompare && planQty > 0
-        ? (((diff / planQty) * 100) > 0 ? '+' : '') + ((diff / planQty) * 100).toFixed(1) + '%'
-        : '';
-      const isExtra = canCompare && diff > 0;
-      const isShort = canCompare && diff < 0;
-      const diffColor = isExtra ? '#16a34a' : (isShort ? '#dc2626' : '#64748b');
-      const diffLabel = canCompare ? (isExtra ? 'Extra' : (isShort ? 'Shortage' : 'Matched')) : 'Difference';
-      const diffIcon = canCompare ? (isExtra ? 'bi-arrow-up-circle-fill' : (isShort ? 'bi-arrow-down-circle-fill' : 'bi-check-circle-fill')) : 'bi-dash-circle';
-      html += `<div class="dc-op-section" style="border-color:#e0e7ff">
+    // ── Printing Production vs Planning Quantity ──
+    {
+      const rawPlanQty = String(job.planning_order_qty || '').trim();
+      const rawProducedQty = String(
+        String(DC_PRODUCED_QTY_SOURCE || '').toLowerCase() === 'current'
+          ? (extra.barcode_total_qty_pcs ?? extra.total_qty_pcs ?? extra.die_cutting_total_qty_pcs ?? extra.actual_qty ?? '')
+          : (job.prev_actual_qty || '')
+      ).trim();
+      const hasPlanQty = rawPlanQty !== '';
+      const hasProducedQty = rawProducedQty !== '';
+      const planQty = Number(rawPlanQty || 0);
+      const producedQty = Number(rawProducedQty || 0);
+      if (hasPlanQty || hasProducedQty) {
+        const canCompare = hasPlanQty && hasProducedQty;
+        const diff = canCompare ? (producedQty - planQty) : 0;
+        const pctText = canCompare && planQty > 0
+          ? (((diff / planQty) * 100) > 0 ? '+' : '') + ((diff / planQty) * 100).toFixed(1) + '%'
+          : '';
+        const isExtra = canCompare && diff > 0;
+        const isShort = canCompare && diff < 0;
+        const diffColor = isExtra ? '#16a34a' : (isShort ? '#dc2626' : '#64748b');
+        const diffLabel = canCompare ? (isExtra ? 'Extra' : (isShort ? 'Shortage' : 'Matched')) : 'Difference';
+        const diffIcon = canCompare ? (isExtra ? 'bi-arrow-up-circle-fill' : (isShort ? 'bi-arrow-down-circle-fill' : 'bi-check-circle-fill')) : 'bi-dash-circle';
+        html += `<div class="dc-op-section" style="border-color:#e0e7ff">
         <div class="dc-op-h" style="background:#eef2ff;color:#4338ca"><i class="bi bi-bar-chart-line"></i> ${esc(DC_COMPARE_SECTION_TITLE || 'Printing Production vs Plan')}</div>
         <div class="dc-op-b">
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;text-align:center">
@@ -2775,7 +4112,7 @@ async function openJobDetail(id, mode) {
               <div style="font-size:1.2rem;font-weight:900;color:#3b82f6;margin-top:4px">${hasProducedQty ? producedQty.toLocaleString() : '—'}</div>
               <div style="font-size:.58rem;color:#64748b">Pcs</div>
             </div>
-            <div style="background:${canCompare ? (isExtra?'#f0fdf4':(isShort?'#fef2f2':'#f8fafc')) : '#f8fafc'};border-radius:10px;padding:10px 8px">
+            <div style="background:${canCompare ? (isExtra ? '#f0fdf4' : (isShort ? '#fef2f2' : '#f8fafc')) : '#f8fafc'};border-radius:10px;padding:10px 8px">
               <div style="font-size:.58rem;font-weight:800;text-transform:uppercase;color:${diffColor};letter-spacing:.06em"><i class="bi ${diffIcon}"></i> ${diffLabel}</div>
               <div style="font-size:1.2rem;font-weight:900;color:${diffColor};margin-top:4px">${canCompare ? Math.abs(diff).toLocaleString() : '—'}</div>
               <div style="font-size:.62rem;font-weight:800;color:${diffColor};min-height:1em">${canCompare ? pctText : '—'}</div>
@@ -2783,11 +4120,11 @@ async function openJobDetail(id, mode) {
           </div>
         </div>
       </div>`;
+      }
     }
-  }
 
-  // ── Timeline ──
-  html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-clock-history"></i> Timeline</div><div class="dc-op-b"><div class="dc-op-topstrip">
+    // ── Timeline ──
+    html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-clock-history"></i> Timeline</div><div class="dc-op-b"><div class="dc-op-topstrip">
     <div class="dc-op-topitem"><span class="k">Created</span><span class="v">${createdAt}</span></div>
     <div class="dc-op-topitem"><span class="k">Started</span><span class="v" style="color:#3b82f6">${startedAt}</span></div>
     <div class="dc-op-topitem"><span class="k">Completed</span><span class="v" style="color:#16a34a">${completedAt}</span></div>
@@ -2795,78 +4132,78 @@ async function openJobDetail(id, mode) {
     <div class="dc-op-topitem"><span class="k">Pause Time</span><span class="v" style="color:#b45309">${pauseSeconds > 0 ? esc(dcFormatDuration(pauseSeconds)) : '—'}</span></div>
   </div>${buildDCTimerHistoryHtml(job)}</div></div>`;
 
-  // ── Notes ──
-  if (job.notes_display || job.notes) {
-    html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-sticky"></i> Notes</div><div class="dc-op-b"><div style="font-size:.82rem;color:#475569;line-height:1.5;background:#fef3c7;padding:12px;border-radius:8px;font-weight:700">${esc(job.notes_display || job.notes || '')}</div></div></div>`;
-  }
+    // ── Notes ──
+    if (job.notes_display || job.notes) {
+      html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-sticky"></i> Notes</div><div class="dc-op-b"><div style="font-size:.82rem;color:#475569;line-height:1.5;background:#fef3c7;padding:12px;border-radius:8px;font-weight:700">${esc(job.notes_display || job.notes || '')}</div></div></div>`;
+    }
 
-  // ── Job Information ──
-  html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-info-circle"></i> Job Information</div><div class="dc-op-b dc-op-grid-2">
+    // ── Job Information ──
+    html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-info-circle"></i> Job Information</div><div class="dc-op-b dc-op-grid-2">
     <div class="dc-op-field"><label>Job No</label><div class="fv" style="color:var(--dc-brand)">${esc(job.job_no)}</div></div>
     <div class="dc-op-field"><label>Job Name</label><div class="fv" style="font-size:1.08rem;font-weight:900;line-height:1.35;color:#0f172a">${esc(resolveJobDisplayName(job))}</div></div>
     <div class="dc-op-field"><label>Client Name</label><div class="fv">${esc(job.planning_client_name || '—')}</div></div>
-    <div class="dc-op-field"><label>Priority</label><div class="fv">${esc(job.planning_priority||'Normal')}</div></div>
-    <div class="dc-op-field"><label>Sequence</label><div class="fv">#${job.sequence_order||1}</div></div>
+    <div class="dc-op-field"><label>Priority</label><div class="fv">${esc(job.planning_priority || 'Normal')}</div></div>
+    <div class="dc-op-field"><label>Sequence</label><div class="fv">#${job.sequence_order || 1}</div></div>
   </div></div>`;
 
-  // ── Die-Cutting Details ──
-  const allRollRows = (() => {
-    const extra = (job && job.extra_data_parsed) ? job.extra_data_parsed : {};
-    let rows = [];
-    const jobRollNos = new Set();
-    ['assigned_child_rolls','child_rolls'].forEach(function(b){(extra[b]||[]).forEach(function(r){const rn=String((r&&(r.roll_no||r.roll||r.roll_number))||'').trim().toLowerCase();if(rn)jobRollNos.add(rn);});});
-    const psChildren = (job && job.paper_stock_child_rolls) || [];
-    const filteredPS = jobRollNos.size > 0 ? psChildren.filter(function(r){return jobRollNos.has(String(r&&r.roll_no||'').trim().toLowerCase());}) : psChildren;
-    rows = dcMergeRollRows(rows, filteredPS, 'Stock');
-    rows = dcMergeRollRows(rows, extra.assigned_child_rolls, 'Job Assign');
-    rows = dcMergeRollRows(rows, extra.child_rolls, 'Job Assign');
-    rows = dcMergeRollRows(rows, extra.stock_rolls, 'Stock');
-    rows = dcMergeRollRows(rows, extra.remaining_rolls, 'Remaining');
-    // NOTE: flatbed_source_rolls and prev_assigned_child_rolls intentionally omitted —
-    // they aggregate ALL upstream rolls across all downstream jobs, not just this job's assigned rolls.
-    return rows;
-  })();
+    // ── Die-Cutting Details ──
+    const allRollRows = (() => {
+      const extra = (job && job.extra_data_parsed) ? job.extra_data_parsed : {};
+      let rows = [];
+      const jobRollNos = new Set();
+      ['assigned_child_rolls', 'child_rolls'].forEach(function (b) { (extra[b] || []).forEach(function (r) { const rn = String((r && (r.roll_no || r.roll || r.roll_number)) || '').trim().toLowerCase(); if (rn) jobRollNos.add(rn); }); });
+      const psChildren = (job && job.paper_stock_child_rolls) || [];
+      const filteredPS = jobRollNos.size > 0 ? psChildren.filter(function (r) { return jobRollNos.has(String(r && r.roll_no || '').trim().toLowerCase()); }) : psChildren;
+      rows = dcMergeRollRows(rows, filteredPS, 'Stock');
+      rows = dcMergeRollRows(rows, extra.assigned_child_rolls, 'Job Assign');
+      rows = dcMergeRollRows(rows, extra.child_rolls, 'Job Assign');
+      rows = dcMergeRollRows(rows, extra.stock_rolls, 'Stock');
+      rows = dcMergeRollRows(rows, extra.remaining_rolls, 'Remaining');
+      // NOTE: flatbed_source_rolls and prev_assigned_child_rolls intentionally omitted —
+      // they aggregate ALL upstream rolls across all downstream jobs, not just this job's assigned rolls.
+      return rows;
+    })();
 
-  let posParentChildTablesHtml = '';
-  if (DC_SHOW_PARENT_CHILD_TABLES) {
-    const parentRollMap = {};
-    const parentRollStockMap = (job && typeof job.parent_roll_stock_map === 'object' && job.parent_roll_stock_map) ? job.parent_roll_stock_map : {};
-    const primaryParentRoll = String(extra.assigned_parent_roll_no || extra.parent_roll || job.roll_no || '').trim();
-    function addParentCandidate(rollNo) {
-      const rn = String(rollNo || '').trim();
-      if (!rn) return;
-      if (!parentRollMap[rn]) parentRollMap[rn] = true;
-    }
-    addParentCandidate(primaryParentRoll);
-    allRollRows.forEach(function(r) { addParentCandidate(r && r.parent_roll_no); });
+    let posParentChildTablesHtml = '';
+    if (DC_SHOW_PARENT_CHILD_TABLES) {
+      const parentRollMap = {};
+      const parentRollStockMap = (job && typeof job.parent_roll_stock_map === 'object' && job.parent_roll_stock_map) ? job.parent_roll_stock_map : {};
+      const primaryParentRoll = String(extra.assigned_parent_roll_no || extra.parent_roll || job.roll_no || '').trim();
+      function addParentCandidate(rollNo) {
+        const rn = String(rollNo || '').trim();
+        if (!rn) return;
+        if (!parentRollMap[rn]) parentRollMap[rn] = true;
+      }
+      addParentCandidate(primaryParentRoll);
+      allRollRows.forEach(function (r) { addParentCandidate(r && r.parent_roll_no); });
 
-    const parentRolls = Object.keys(parentRollMap);
-    if (parentRolls.length) {
-      let parentTableHtml = '<table style="width:100%;border-collapse:collapse;font-size:.75rem;min-width:860px"><thead><tr>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Roll No</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Paper Company</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Material</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Width</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Length</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Weight</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Sqr Mtr</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">GSM</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Status</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Remarks</th>'
-        + '</tr></thead><tbody>';
-      parentRolls.forEach(function(prn) {
-        const stock = parentRollStockMap[prn] || {};
-        const isPrimary = (prn === primaryParentRoll);
-        const company = stock.company || (isPrimary ? (job.paper_company_name || job.company || '') : '');
-        const material = stock.paper_type || (isPrimary ? (job.planning_material || job.paper_type || '') : '');
-        const width = (Number(stock.width_mm || 0) || 0) > 0 ? Number(stock.width_mm).toFixed(2) : '--';
-        const length = (Number(stock.length_mtr || 0) || 0) > 0 ? Number(stock.length_mtr).toFixed(2) : '--';
-        const weight = (Number(stock.weight_kg || 0) || 0) > 0 ? Number(stock.weight_kg).toFixed(2) : '--';
-        const sqm = (Number(stock.sqm || 0) || 0) > 0 ? Number(stock.sqm).toFixed(2) : '--';
-        const gsm = (Number(stock.gsm || 0) || 0) > 0 ? Number(stock.gsm).toString() : '--';
-        const status = String(stock.status || '--');
-        const remarks = String(stock.remarks || '--');
-        parentTableHtml += `<tr>
+      const parentRolls = Object.keys(parentRollMap);
+      if (parentRolls.length) {
+        let parentTableHtml = '<table style="width:100%;border-collapse:collapse;font-size:.75rem;min-width:860px"><thead><tr>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Roll No</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Paper Company</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Material</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Width</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Length</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Weight</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Sqr Mtr</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">GSM</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Status</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Remarks</th>'
+          + '</tr></thead><tbody>';
+        parentRolls.forEach(function (prn) {
+          const stock = parentRollStockMap[prn] || {};
+          const isPrimary = (prn === primaryParentRoll);
+          const company = stock.company || (isPrimary ? (job.paper_company_name || job.company || '') : '');
+          const material = stock.paper_type || (isPrimary ? (job.planning_material || job.paper_type || '') : '');
+          const width = (Number(stock.width_mm || 0) || 0) > 0 ? Number(stock.width_mm).toFixed(2) : '--';
+          const length = (Number(stock.length_mtr || 0) || 0) > 0 ? Number(stock.length_mtr).toFixed(2) : '--';
+          const weight = (Number(stock.weight_kg || 0) || 0) > 0 ? Number(stock.weight_kg).toFixed(2) : '--';
+          const sqm = (Number(stock.sqm || 0) || 0) > 0 ? Number(stock.sqm).toFixed(2) : '--';
+          const gsm = (Number(stock.gsm || 0) || 0) > 0 ? Number(stock.gsm).toString() : '--';
+          const status = String(stock.status || '--');
+          const remarks = String(stock.remarks || '--');
+          parentTableHtml += `<tr>
           <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-weight:800;color:var(--dc-brand)">${esc(prn)}</td>
           <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(company || '--')}</td>
           <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(material || '--')}</td>
@@ -2878,33 +4215,33 @@ async function openJobDetail(id, mode) {
           <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(status)}</td>
           <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(remarks)}</td>
         </tr>`;
-      });
-      parentTableHtml += '</tbody></table>';
-      posParentChildTablesHtml += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-inbox"></i> Parent Rolls</div><div class="dc-op-b" style="overflow:auto">${parentTableHtml}</div></div>`;
-    }
+        });
+        parentTableHtml += '</tbody></table>';
+        posParentChildTablesHtml += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-inbox"></i> Parent Rolls</div><div class="dc-op-b" style="overflow:auto">${parentTableHtml}</div></div>`;
+      }
 
-    if (allRollRows.length) {
-      let allChildTableHtml = '<table style="width:100%;border-collapse:collapse;font-size:.75rem;min-width:980px"><thead><tr>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Parent Roll No</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Child Roll NO.</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Width</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Length</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Type</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Weight</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Sqr Mtr</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">GSM</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Wastage</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Status</th>'
-        + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Remarks</th>'
-        + '</tr></thead><tbody>';
-      allRollRows.forEach(function(r) {
-        const width = (Number(r.width_mm || 0) || 0) > 0 ? Number(r.width_mm).toFixed(2) : '--';
-        const length = (Number(r.length_mtr || 0) || 0) > 0 ? Number(r.length_mtr).toFixed(2) : '--';
-        const weight = (Number(r.weight_kg || 0) || 0) > 0 ? Number(r.weight_kg).toFixed(2) : '--';
-        const sqm = (Number(r.sqm || 0) || 0) > 0 ? Number(r.sqm).toFixed(2) : '--';
-        const gsm = (Number(r.gsm || 0) || 0) > 0 ? Number(r.gsm).toString() : '--';
-        const wastage = (Number(r.wastage || 0) || 0) > 0 ? Number(r.wastage).toFixed(2) : (String(r.wastage || '').trim() || '0');
-        allChildTableHtml += `<tr>
+      if (allRollRows.length) {
+        let allChildTableHtml = '<table style="width:100%;border-collapse:collapse;font-size:.75rem;min-width:980px"><thead><tr>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Parent Roll No</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Child Roll NO.</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Width</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Length</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Type</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Weight</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Sqr Mtr</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">GSM</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Wastage</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Status</th>'
+          + '<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Remarks</th>'
+          + '</tr></thead><tbody>';
+        allRollRows.forEach(function (r) {
+          const width = (Number(r.width_mm || 0) || 0) > 0 ? Number(r.width_mm).toFixed(2) : '--';
+          const length = (Number(r.length_mtr || 0) || 0) > 0 ? Number(r.length_mtr).toFixed(2) : '--';
+          const weight = (Number(r.weight_kg || 0) || 0) > 0 ? Number(r.weight_kg).toFixed(2) : '--';
+          const sqm = (Number(r.sqm || 0) || 0) > 0 ? Number(r.sqm).toFixed(2) : '--';
+          const gsm = (Number(r.gsm || 0) || 0) > 0 ? Number(r.gsm).toString() : '--';
+          const wastage = (Number(r.wastage || 0) || 0) > 0 ? Number(r.wastage).toFixed(2) : (String(r.wastage || '').trim() || '0');
+          allChildTableHtml += `<tr>
           <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-weight:700">${esc(r.parent_roll_no || primaryParentRoll || '--')}</td>
           <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-weight:800;color:var(--dc-brand)">${esc(r.roll_no || '--')}</td>
           <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(width)}</td>
@@ -2917,39 +4254,39 @@ async function openJobDetail(id, mode) {
           <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(r.status || '--')}</td>
           <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(r.remarks || '--')}</td>
         </tr>`;
-      });
-      allChildTableHtml += '</tbody></table>';
-      posParentChildTablesHtml += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-table"></i> All Child Rolls</div><div class="dc-op-b" style="overflow:auto">${allChildTableHtml}</div></div>`;
+        });
+        allChildTableHtml += '</tbody></table>';
+        posParentChildTablesHtml += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-table"></i> All Child Rolls</div><div class="dc-op-b" style="overflow:auto">${allChildTableHtml}</div></div>`;
+      }
     }
-  }
-  const firstRollWithWidth = allRollRows.find(function(r) { return (Number(r && r.width_mm || 0) || 0) > 0; }) || null;
-  const sizeDimensions = getJobSizeDimensions(job);
-  const widthMmText = sizeDimensions.weight
-    ? `${sizeDimensions.weight}`
-    : ((Number(job.planning_size_width_mm || 0) || 0) > 0
-      ? String(job.planning_size_width_mm)
-      : ((Number(job.width_mm || 0) || 0) > 0
-        ? Number(job.width_mm).toFixed(2)
-        : (firstRollWithWidth ? Number(firstRollWithWidth.width_mm).toFixed(2) : '—')));
-  const paperWidthNum = Number(job.width_mm || (firstRollWithWidth ? firstRollWithWidth.width_mm : 0) || 0);
-  const paperWidthText = (paperWidthNum > 0) ? paperWidthNum.toFixed(2) : (String(job.width_mm || '').trim() || '—');
-  const paperTypeText = String(job.planning_paper_type || '').trim() || String(job.planning_material || '').trim() || String(job.paper_type || '').trim() || '—';
-  const itemWidthText = String(job.planning_item_width || '').trim() || widthMmText;
-  const itemLengthText = String(job.planning_item_length || '').trim() || (sizeDimensions.height ? `${sizeDimensions.height}` : '—');
-  const itemSizeText = String(job.planning_paper_size || '').trim() || ((itemWidthText !== '—' && itemLengthText !== '—') ? `${itemWidthText} x ${itemLengthText} mm` : '—');
-  const diaText = String(job.planning_roll_dia || '').trim() || String(job.planning_dia || '').trim() || '—';
-  const coreSizeText = String(job.planning_core_size || '').trim() || String(job.planning_core || '').trim() || '—';
-  const coreText = coreSizeText;
-  const coreTypeText = String(job.planning_core_type || '').trim() || '—';
-  const rollRows = [];
-  allRollRows.forEach(function(r) {
-    const st = String((r && r.status) || '').trim().toLowerCase();
-    if (st === 'job assign' || st === 'job assigned' || st === '') {
-      rollRows.push(Object.assign({ roll_type: 'Child' }, r || {}));
-    }
-  });
+    const firstRollWithWidth = allRollRows.find(function (r) { return (Number(r && r.width_mm || 0) || 0) > 0; }) || null;
+    const sizeDimensions = getJobSizeDimensions(job);
+    const widthMmText = sizeDimensions.weight
+      ? `${sizeDimensions.weight}`
+      : ((Number(job.planning_size_width_mm || 0) || 0) > 0
+        ? String(job.planning_size_width_mm)
+        : ((Number(job.width_mm || 0) || 0) > 0
+          ? Number(job.width_mm).toFixed(2)
+          : (firstRollWithWidth ? Number(firstRollWithWidth.width_mm).toFixed(2) : '—')));
+    const paperWidthNum = Number(job.width_mm || (firstRollWithWidth ? firstRollWithWidth.width_mm : 0) || 0);
+    const paperWidthText = (paperWidthNum > 0) ? paperWidthNum.toFixed(2) : (String(job.width_mm || '').trim() || '—');
+    const paperTypeText = String(job.planning_paper_type || '').trim() || String(job.planning_material || '').trim() || String(job.paper_type || '').trim() || '—';
+    const itemWidthText = String(job.planning_item_width || '').trim() || widthMmText;
+    const itemLengthText = String(job.planning_item_length || '').trim() || (sizeDimensions.height ? `${sizeDimensions.height}` : '—');
+    const itemSizeText = String(job.planning_paper_size || '').trim() || ((itemWidthText !== '—' && itemLengthText !== '—') ? `${itemWidthText} x ${itemLengthText} mm` : '—');
+    const diaText = String(job.planning_roll_dia || '').trim() || String(job.planning_dia || '').trim() || '—';
+    const coreSizeText = String(job.planning_core_size || '').trim() || String(job.planning_core || '').trim() || '—';
+    const coreText = coreSizeText;
+    const coreTypeText = String(job.planning_core_type || '').trim() || '—';
+    const rollRows = [];
+    allRollRows.forEach(function (r) {
+      const st = String((r && r.status) || '').trim().toLowerCase();
+      if (st === 'job assign' || st === 'job assigned' || st === '') {
+        rollRows.push(Object.assign({ roll_type: 'Child' }, r || {}));
+      }
+    });
 
-  html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-scissors"></i> ${esc(DC_DETAILS_SECTION_LABEL || 'Die-Cutting Details')}</div><div class="dc-op-b dc-op-grid-2">
+    html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-scissors"></i> ${esc(DC_DETAILS_SECTION_LABEL || 'Die-Cutting Details')}</div><div class="dc-op-b dc-op-grid-2">
     <div class="dc-op-field"><label>Paper Type</label><div class="fv">${esc(paperTypeText)}</div></div>
     <div class="dc-op-field"><label>Paper Company</label><div class="fv" style="font-size:1.04rem;font-weight:900;line-height:1.25;color:#0f172a">${esc(job.paper_company_name || job.company || '—')}</div></div>
     <div class="dc-op-field"><label>Item Size</label><div class="fv">${esc(itemSizeText)}</div></div>
@@ -2969,12 +4306,12 @@ async function openJobDetail(id, mode) {
     <div class="dc-op-field"><label>GSM</label><div class="fv">${esc((job.gsm ?? '—') + '')}</div></div>
   </div></div>`;
 
-  if (posParentChildTablesHtml) {
-    html += posParentChildTablesHtml;
-  }
+    if (posParentChildTablesHtml) {
+      html += posParentChildTablesHtml;
+    }
 
-  if (rollRows.length && !DC_SHOW_PARENT_CHILD_TABLES) {
-    html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-list-check"></i> Roll Numbers (${rollRows.length})</div><div class="dc-op-b" style="overflow:auto">
+    if (rollRows.length && !DC_SHOW_PARENT_CHILD_TABLES) {
+      html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-list-check"></i> Roll Numbers (${rollRows.length})</div><div class="dc-op-b" style="overflow:auto">
       <table style="width:100%;border-collapse:collapse;font-size:.75rem;min-width:620px">
         <thead><tr>
           <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Type</th>
@@ -2987,8 +4324,8 @@ async function openJobDetail(id, mode) {
           <th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc">Status</th>
         </tr></thead>
         <tbody>
-          ${rollRows.map(function(r){
-            return `<tr>
+          ${rollRows.map(function (r) {
+        return `<tr>
               <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-weight:800">${esc(r.roll_type || '—')}</td>
               <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-weight:800">${esc(r.roll_no || '—')}</td>
               <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(((Number(r.width_mm || 0) || 0) > 0 ? Number(r.width_mm).toFixed(2) : '—'))}</td>
@@ -2998,40 +4335,40 @@ async function openJobDetail(id, mode) {
               <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(((Number(r.gsm || 0) || 0) > 0 ? Number(r.gsm).toString() : '—'))}</td>
               <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9">${esc(r.status || '—')}</td>
             </tr>`;
-          }).join('')}
+      }).join('')}
         </tbody>
       </table>
     </div></div>`;
-  }
+    }
 
-  // ── Job Preview Image ──
-  const existingPhoto = extra.die_cutting_photo_url || '';
-  const previewUrl = job.job_preview_image_url || job.planning_image_url || job.plate_image_url || existingPhoto || '';
-  const normalizedPreviewUrl = String(previewUrl || '').trim();
-  const normalizedExistingPhoto = String(existingPhoto || '').trim();
-  const shouldHideDuplicatePhoto = normalizedPreviewUrl !== '' && normalizedExistingPhoto !== '' && normalizedPreviewUrl === normalizedExistingPhoto;
-  if (previewUrl) {
-    html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-image"></i> Job Preview</div><div class="dc-op-b" style="text-align:center">
+    // ── Job Preview Image ──
+    const existingPhoto = extra.die_cutting_photo_url || '';
+    const previewUrl = job.job_preview_image_url || job.planning_image_url || job.plate_image_url || existingPhoto || '';
+    const normalizedPreviewUrl = String(previewUrl || '').trim();
+    const normalizedExistingPhoto = String(existingPhoto || '').trim();
+    const shouldHideDuplicatePhoto = normalizedPreviewUrl !== '' && normalizedExistingPhoto !== '' && normalizedPreviewUrl === normalizedExistingPhoto;
+    if (previewUrl) {
+      html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-image"></i> Job Preview</div><div class="dc-op-b" style="text-align:center">
       <img src="${esc(previewUrl)}" class="dc-preview" alt="Job Preview">
     </div></div>`;
-  }
+    }
 
-  // ── Operator Entry (readonly view of submitted data) ──
-  {
-    const qtyPcs = extra.die_cutting_total_qty_pcs || '';
-    const wastagePcs = extra.die_cutting_wastage_pcs || '';
-    const wastageMtr = extra.die_cutting_wastage_mtr || '';
-    const dcNotes = extra.die_cutting_notes_text || '';
-    const voiceLanguage = extra.voice_language || '';
-    const voiceOriginal = extra.voice_input_original || '';
-    const voiceEnglish = extra.voice_input_english || '';
-    const planQty = Number(job.planning_order_qty || 0);
-    const producedPcs = Number(qtyPcs || 0);
-    const wastagePcsNum = Number(wastagePcs || 0);
-    const totalWastagePcs = planQty > 0 ? (planQty - producedPcs) : 0;
-    const wastagePct = planQty > 0 && totalWastagePcs > 0 ? ((totalWastagePcs / planQty) * 100).toFixed(1) + '%' : '';
+    // ── Operator Entry (readonly view of submitted data) ──
+    {
+      const qtyPcs = extra.die_cutting_total_qty_pcs || '';
+      const wastagePcs = extra.die_cutting_wastage_pcs || '';
+      const wastageMtr = extra.die_cutting_wastage_mtr || '';
+      const dcNotes = extra.die_cutting_notes_text || '';
+      const voiceLanguage = extra.voice_language || '';
+      const voiceOriginal = extra.voice_input_original || '';
+      const voiceEnglish = extra.voice_input_english || '';
+      const planQty = Number(job.planning_order_qty || 0);
+      const producedPcs = Number(qtyPcs || 0);
+      const wastagePcsNum = Number(wastagePcs || 0);
+      const totalWastagePcs = planQty > 0 ? (planQty - producedPcs) : 0;
+      const wastagePct = planQty > 0 && totalWastagePcs > 0 ? ((totalWastagePcs / planQty) * 100).toFixed(1) + '%' : '';
 
-    let opEntryHtml = `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-person-workspace"></i> Operator Entry</div><div class="dc-op-b dc-op-grid-2">
+      let opEntryHtml = `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-person-workspace"></i> Operator Entry</div><div class="dc-op-b dc-op-grid-2">
       <div class="dc-op-field"><label>Total Qty (Pcs)</label><div class="fv">${esc(qtyPcs || '—')}</div></div>
       <div class="dc-op-field"><label>Wastage (Pcs)</label><div class="fv">${esc(wastagePcs || '—')}</div></div>
       <div class="dc-op-field"><label>Wastage (Mtr)</label><div class="fv">${esc(wastageMtr || '—')}</div></div>
@@ -3040,22 +4377,22 @@ async function openJobDetail(id, mode) {
       <div class="dc-op-field"><label>Voice Language</label><div class="fv">${esc(voiceLanguage ? dcVoiceLanguageLabel(voiceLanguage) : '—')}</div></div>
     </div>`;
 
-    if (voiceOriginal || voiceEnglish) {
-      opEntryHtml += `<div style="margin:0 10px 10px;padding:12px;background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border-radius:8px;border-left:3px solid var(--dc-brand);font-size:.75rem">
+      if (voiceOriginal || voiceEnglish) {
+        opEntryHtml += `<div style="margin:0 10px 10px;padding:12px;background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border-radius:8px;border-left:3px solid var(--dc-brand);font-size:.75rem">
         <div style="margin-bottom:6px"><strong style="color:var(--dc-brand)"><i class="bi bi-mic-fill"></i> Voice Input:</strong></div>`;
-      if (voiceOriginal) opEntryHtml += `<div style="margin:4px 0;color:#475569"><strong>Original:</strong> ${esc(voiceOriginal)}</div>`;
-      if (voiceEnglish) opEntryHtml += `<div style="margin:4px 0;color:#475569"><strong>English:</strong> ${esc(voiceEnglish)}</div>`;
+        if (voiceOriginal) opEntryHtml += `<div style="margin:4px 0;color:#475569"><strong>Original:</strong> ${esc(voiceOriginal)}</div>`;
+        if (voiceEnglish) opEntryHtml += `<div style="margin:4px 0;color:#475569"><strong>English:</strong> ${esc(voiceEnglish)}</div>`;
+        opEntryHtml += `</div>`;
+      }
+
       opEntryHtml += `</div>`;
+      html += opEntryHtml;
     }
 
-    opEntryHtml += `</div>`;
-    html += opEntryHtml;
-  }
-
-  // ── Editable Operator Form (complete mode) ──
-  if (mode === 'complete' && IS_OPERATOR_VIEW && sts === 'Running') {
-    const selectedVoiceLang = normalizeDCVoiceLanguage(extra.voice_language || DC_DEFAULT_VOICE_LANGUAGE);
-    html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-pencil-square"></i> Operator Data — Fill Before Completing</div>
+    // ── Editable Operator Form (complete mode) ──
+    if (mode === 'complete' && IS_OPERATOR_VIEW && sts === 'Running') {
+      const selectedVoiceLang = normalizeDCVoiceLanguage(extra.voice_language || DC_DEFAULT_VOICE_LANGUAGE);
+      html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-pencil-square"></i> Operator Data — Fill Before Completing</div>
     <form id="dm-operator-form" class="dc-op-b" style="display:grid;gap:10px">
       <div class="dc-op-grid-2">
         <div class="dc-op-field" data-required-field="1" data-required-label="Total Qty (Pcs)"><label>Total Qty (Pcs)</label><input type="number" min="0" step="1" name="die_cutting_total_qty_pcs" required value="${esc(extra.die_cutting_total_qty_pcs || '')}"></div>
@@ -3066,11 +4403,11 @@ async function openJobDetail(id, mode) {
       <div class="dc-op-field"><label>Notes</label><textarea name="die_cutting_notes_text" data-voice-target="1">${esc(extra.die_cutting_notes_text || '')}</textarea></div>
       <div class="dc-op-field" data-voice-control="1"><label>Voice Notes</label><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><select name="voice_language" data-voice-language="1" style="padding:7px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:.74rem;font-weight:700;color:#334155"><option value="en-IN"${selectedVoiceLang === 'en-IN' ? ' selected' : ''}>English (India)</option><option value="hi-IN"${selectedVoiceLang === 'hi-IN' ? ' selected' : ''}>Hindi</option><option value="bn-BD"${selectedVoiceLang === 'bn-BD' ? ' selected' : ''}>Bangla (Bangladesh)</option><option value="bn-IN"${selectedVoiceLang === 'bn-IN' ? ' selected' : ''}>Bengali (India)</option><option value="gu-IN"${selectedVoiceLang === 'gu-IN' ? ' selected' : ''}>Gujarati</option><option value="mr-IN"${selectedVoiceLang === 'mr-IN' ? ' selected' : ''}>Marathi</option></select><button type="button" class="dc-voice-btn" data-voice-target-field="die_cutting_notes_text" data-voice-fallback-id="dc-voice-fallback-${job.id}" onclick="startVoiceToField('die_cutting_notes_text', this, 'voice_language')"><i class="bi bi-mic"></i> Speak Notes</button></div><div id="dc-voice-fallback-${job.id}" style="margin-top:8px;font-size:.7rem;color:#64748b;font-weight:700"></div></div>
     </form></div>`;
-  }
+    }
 
-  // ── Photo Upload ──
-  if (!shouldHideDuplicatePhoto) {
-    html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-camera"></i> Job Photo</div><div class="dc-op-b">
+    // ── Photo Upload ──
+    if (!shouldHideDuplicatePhoto) {
+      html += `<div class="dc-op-section"><div class="dc-op-h"><i class="bi bi-camera"></i> Job Photo</div><div class="dc-op-b">
       <div class="dc-upload-zone" onclick="document.getElementById('dc-photo-input-${job.id}').click()">
         <input type="file" id="dc-photo-input-${job.id}" accept="image/*" capture="environment" onchange="uploadDCPhoto(${job.id})">
         <div style="font-size:.75rem;color:#64748b"><i class="bi bi-cloud-arrow-up" style="font-size:1.5rem;color:var(--dc-brand)"></i><br>Tap to open camera</div>
@@ -3078,17 +4415,17 @@ async function openJobDetail(id, mode) {
       </div>
       <div id="dc-photo-preview-${job.id}" class="dc-upload-preview">${existingPhoto ? `<img src="${existingPhoto}" alt="Job Photo">` : ''}</div>
     </div></div>`;
-  }
+    }
 
-  // ── Company Footer ──
-  html += `<div style="display:flex;justify-content:space-between;gap:10px;border-top:1px solid #99f6e4;padding-top:8px;margin-top:4px;font-size:.62rem;color:#64748b">
+    // ── Company Footer ──
+    html += `<div style="display:flex;justify-content:space-between;gap:10px;border-top:1px solid #99f6e4;padding-top:8px;margin-top:4px;font-size:.62rem;color:#64748b">
     <span>${esc(APP_FOOTER_LEFT || '')}</span>
     <span>${esc(APP_FOOTER_RIGHT || '')}</span>
   </div>`;
 
-  // QR code at top
-  if (viewQrDataUrl) {
-    html = `<div class="dc-op-section" style="margin-bottom:0"><div class="dc-op-b" style="display:flex;align-items:center;justify-content:space-between;gap:14px">
+    // QR code at top
+    if (viewQrDataUrl) {
+      html = `<div class="dc-op-section" style="margin-bottom:0"><div class="dc-op-b" style="display:flex;align-items:center;justify-content:space-between;gap:14px">
       <div>
         <div style="font-size:.7rem;font-weight:800;text-transform:uppercase;color:#64748b;letter-spacing:.05em">Job Card QR</div>
         <div style="font-size:.74rem;color:#475569">Scan to open this job card on mobile/desktop</div>
@@ -3097,118 +4434,118 @@ async function openJobDetail(id, mode) {
         <img src="${viewQrDataUrl}" alt="Job QR" style="width:96px;height:96px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:4px">
       </div>
     </div></div>` + html;
-  }
-
-  document.getElementById('dm-body').innerHTML = '<div class="dc-op-form">' + html + '</div>';
-  updateTimers();
-
-  // Footer actions
-  let fHtml = '<div style="display:flex;gap:8px">';
-  fHtml += `<button class="dc-action-btn dc-btn-print" onclick="printJobCard(${job.id})"><i class="bi bi-printer"></i> Job Card Print</button>`;
-  fHtml += '</div><div style="display:flex;gap:8px">';
-  if (IS_OPERATOR_VIEW) {
-    if (mode === 'complete' && sts === 'Running' && !timerActive) {
-      fHtml += `<button class="dc-action-btn dc-btn-complete" onclick="submitAndClose(${job.id})" style="background:#16a34a;color:#fff;border-color:#16a34a"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
-    } else if (sts === 'Pending') {
-      const _lk = dcLinkedSecondaryLock(job);
-      if (_lk.locked) {
-        fHtml += `<button class="dc-action-btn dc-btn-start" disabled title="Start the primary linked job (${esc(_lk.primaryJobNo || '')}) first — same paper roll" style="opacity:.5;cursor:not-allowed"><i class="bi bi-play-fill"></i> Start Job</button>`;
-      } else {
-        fHtml += `<button class="dc-action-btn dc-btn-start" onclick="startJobWithTimer(${job.id})" style="background:var(--dc-brand);color:#fff;border-color:var(--dc-brand)"><i class="bi bi-play-fill"></i> Start Job</button>`;
-      }
-    } else if (sts === 'Running' && timerState === 'paused') {
-      fHtml += `<button class="dc-action-btn dc-btn-start" onclick="startJobWithTimer(${job.id})" style="background:var(--dc-brand);color:#fff;border-color:var(--dc-brand)"><i class="bi bi-play-circle"></i> Again Start</button>`;
-    } else if (sts === 'Running' && timerActive) {
-      fHtml += `<button class="dc-action-btn dc-btn-start" onclick="resumeRunningDCTimer(${job.id})" style="background:var(--dc-brand);color:#fff;border-color:var(--dc-brand)"><i class="bi bi-play-circle"></i> Open Timer</button>`;
-    } else if (sts === 'Running') {
-      fHtml += `<button class="dc-action-btn dc-btn-complete" onclick="openJobDetail(${job.id},'complete')" style="background:#16a34a;color:#fff;border-color:#16a34a"><i class="bi bi-check-lg"></i> Complete</button>`;
     }
-  }
-  if (IS_ADMIN) {
-    fHtml += `<button class="dc-action-btn dc-btn-start" onclick="regenerateJobCard(${job.id})" title="Regenerate"><i class="bi bi-arrow-repeat"></i> Regenerate</button>`;
-    fHtml += `<button class="dc-action-btn dc-btn-delete" onclick="deleteJob(${job.id})" title="Admin: Delete"><i class="bi bi-trash"></i></button>`;
-  }
-  fHtml += '</div>';
-  document.getElementById('dm-footer').innerHTML = fHtml;
 
-  // Disable form fields unless in complete mode
-  setTimeout(() => {
-    const form = document.getElementById('dm-operator-form');
-    if (form) {
-      form.querySelectorAll('input, select, textarea').forEach(el => {
-        el.disabled = !(mode === 'complete' && sts === 'Running');
-      });
-      if (mode === 'complete' && sts === 'Running') {
-        bindDCRequiredFieldAnimations(form);
-        setupDCVoiceInputUI(form);
+    document.getElementById('dm-body').innerHTML = '<div class="dc-op-form">' + html + '</div>';
+    updateTimers();
+
+    // Footer actions
+    let fHtml = '<div style="display:flex;gap:8px">';
+    fHtml += `<button class="dc-action-btn dc-btn-print" onclick="printJobCard(${job.id})"><i class="bi bi-printer"></i> Job Card Print</button>`;
+    fHtml += '</div><div style="display:flex;gap:8px">';
+    if (IS_OPERATOR_VIEW) {
+      if (mode === 'complete' && sts === 'Running' && !timerActive) {
+        fHtml += `<button class="dc-action-btn dc-btn-complete" onclick="submitAndClose(${job.id})" style="background:#16a34a;color:#fff;border-color:#16a34a"><i class="bi bi-check-lg"></i> Complete & Submit</button>`;
+      } else if (sts === 'Pending') {
+        const _lk = dcLinkedSecondaryLock(job);
+        if (_lk.locked) {
+          fHtml += `<button class="dc-action-btn dc-btn-start" disabled title="Start the primary linked job (${esc(_lk.primaryJobNo || '')}) first — same paper roll" style="opacity:.5;cursor:not-allowed"><i class="bi bi-play-fill"></i> Start Job</button>`;
+        } else {
+          fHtml += `<button class="dc-action-btn dc-btn-start" onclick="startJobWithTimer(${job.id})" style="background:var(--dc-brand);color:#fff;border-color:var(--dc-brand)"><i class="bi bi-play-fill"></i> Start Job</button>`;
+        }
+      } else if (sts === 'Running' && timerState === 'paused') {
+        fHtml += `<button class="dc-action-btn dc-btn-start" onclick="startJobWithTimer(${job.id})" style="background:var(--dc-brand);color:#fff;border-color:var(--dc-brand)"><i class="bi bi-play-circle"></i> Again Start</button>`;
+      } else if (sts === 'Running' && timerActive) {
+        fHtml += `<button class="dc-action-btn dc-btn-start" onclick="resumeRunningDCTimer(${job.id})" style="background:var(--dc-brand);color:#fff;border-color:var(--dc-brand)"><i class="bi bi-play-circle"></i> Open Timer</button>`;
+      } else if (sts === 'Running') {
+        fHtml += `<button class="dc-action-btn dc-btn-complete" onclick="openJobDetail(${job.id},'complete')" style="background:#16a34a;color:#fff;border-color:#16a34a"><i class="bi bi-check-lg"></i> Complete</button>`;
       }
     }
-  }, 50);
-
-  document.getElementById('dcDetailModal').classList.add('active');
-}
-
-function closeDetail() {
-  document.getElementById('dcDetailModal').classList.remove('active');
-}
-document.getElementById('dcDetailModal').addEventListener('click', function(e) {
-  if (e.target === this) return;
-});
-
-// ═══ DELETE JOB ═══
-async function deleteJob(id) {
-  if (!IS_ADMIN) { alert('Access denied. Only system admin can delete job cards.'); return; }
-  if (!(await dcConfirmAsync('Delete this job card and reset linked paper stock, planning status?', { okLabel:'Delete' }))) return;
-  const fd = new FormData();
-  fd.append('csrf_token', CSRF); fd.append('action', 'delete_job'); fd.append('job_id', id);
-  try {
-    const res = await fetch(API_BASE, { method: 'POST', body: fd });
-    const data = await res.json();
-    if (data.ok) location.reload();
-    else if (data.blocked_jobs && data.blocked_jobs.length) {
-      const rows = data.blocked_jobs.map(b => `${b.job_no || ('ID ' + b.id)} [${b.status}]`).join('\n');
-      alert((data.error || 'Delete blocked') + '\n\n' + rows);
+    if (IS_ADMIN) {
+      fHtml += `<button class="dc-action-btn dc-btn-start" onclick="regenerateJobCard(${job.id})" title="Regenerate"><i class="bi bi-arrow-repeat"></i> Regenerate</button>`;
+      fHtml += `<button class="dc-action-btn dc-btn-delete" onclick="deleteJob(${job.id})" title="Admin: Delete"><i class="bi bi-trash"></i></button>`;
     }
-    else alert('Error: ' + (data.error || 'Unknown'));
-  } catch (err) { alert('Network error: ' + err.message); }
-}
+    fHtml += '</div>';
+    document.getElementById('dm-footer').innerHTML = fHtml;
 
-// ═══ REGENERATE JOB CARD ═══
-async function regenerateJobCard(id) {
-  if (!IS_ADMIN) { alert('Access denied.'); return; }
-  const job = ALL_JOBS.find(j => j.id == id);
-  if (!job) { alert('Job not found.'); return; }
-  const reason = (typeof window.showERPPrompt === 'function')
-    ? await window.showERPPrompt('Reason for regeneration (required):', 'Die correction / planning update', { title: 'Regenerate Job Card', okLabel: 'Continue' })
-    : 'Die correction / planning update';
-  if (reason === null) return;
-  const reasonText = String(reason || '').trim();
-  if (!reasonText) { alert('Reason is required.'); return; }
-  const notesAppend = (typeof window.showERPPrompt === 'function')
-    ? await window.showERPPrompt('Describe what changed (optional):', '', { title: 'Regenerate Job Card', okLabel: 'Continue' })
-    : '';
-  if (notesAppend === null) return;
+    // Disable form fields unless in complete mode
+    setTimeout(() => {
+      const form = document.getElementById('dm-operator-form');
+      if (form) {
+        form.querySelectorAll('input, select, textarea').forEach(el => {
+          el.disabled = !(mode === 'complete' && sts === 'Running');
+        });
+        if (mode === 'complete' && sts === 'Running') {
+          bindDCRequiredFieldAnimations(form);
+          setupDCVoiceInputUI(form);
+        }
+      }
+    }, 50);
 
-  const fd = new FormData();
-  fd.append('csrf_token', CSRF); fd.append('action', 'regenerate_job_card'); fd.append('job_id', String(id));
-  fd.append('reason', reasonText); fd.append('notes_append', String(notesAppend || '').trim());
-  fd.append('changes_json', JSON.stringify({}));
+    document.getElementById('dcDetailModal').classList.add('active');
+  }
 
-  try {
-    const res = await fetch(API_BASE, { method: 'POST', body: fd });
-    const data = await res.json();
-    if (!data.ok) { alert('Regenerate failed: ' + (data.error || 'Unknown error')); return; }
-    alert('Job card regenerated successfully. Status reset to Pending.');
-    location.reload();
-  } catch (err) { alert('Network error: ' + err.message); }
-}
+  function closeDetail() {
+    document.getElementById('dcDetailModal').classList.remove('active');
+  }
+  document.getElementById('dcDetailModal').addEventListener('click', function (e) {
+    if (e.target === this) return;
+  });
 
-// ═══ PRINT MODE CHOOSER ═══
-function choosePrintMode() {
-  return new Promise(resolve => {
-    const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99999;display:flex;align-items:center;justify-content:center';
-    overlay.innerHTML = `<div style="background:#fff;border-radius:16px;padding:28px 32px;max-width:380px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center;font-family:'Segoe UI',Arial,sans-serif">
+  // ═══ DELETE JOB ═══
+  async function deleteJob(id) {
+    if (!IS_ADMIN) { alert('Access denied. Only system admin can delete job cards.'); return; }
+    if (!(await dcConfirmAsync('Delete this job card and reset linked paper stock, planning status?', { okLabel: 'Delete' }))) return;
+    const fd = new FormData();
+    fd.append('csrf_token', CSRF); fd.append('action', 'delete_job'); fd.append('job_id', id);
+    try {
+      const res = await fetch(API_BASE, { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data.ok) location.reload();
+      else if (data.blocked_jobs && data.blocked_jobs.length) {
+        const rows = data.blocked_jobs.map(b => `${b.job_no || ('ID ' + b.id)} [${b.status}]`).join('\n');
+        alert((data.error || 'Delete blocked') + '\n\n' + rows);
+      }
+      else alert('Error: ' + (data.error || 'Unknown'));
+    } catch (err) { alert('Network error: ' + err.message); }
+  }
+
+  // ═══ REGENERATE JOB CARD ═══
+  async function regenerateJobCard(id) {
+    if (!IS_ADMIN) { alert('Access denied.'); return; }
+    const job = ALL_JOBS.find(j => j.id == id);
+    if (!job) { alert('Job not found.'); return; }
+    const reason = (typeof window.showERPPrompt === 'function')
+      ? await window.showERPPrompt('Reason for regeneration (required):', 'Die correction / planning update', { title: 'Regenerate Job Card', okLabel: 'Continue' })
+      : 'Die correction / planning update';
+    if (reason === null) return;
+    const reasonText = String(reason || '').trim();
+    if (!reasonText) { alert('Reason is required.'); return; }
+    const notesAppend = (typeof window.showERPPrompt === 'function')
+      ? await window.showERPPrompt('Describe what changed (optional):', '', { title: 'Regenerate Job Card', okLabel: 'Continue' })
+      : '';
+    if (notesAppend === null) return;
+
+    const fd = new FormData();
+    fd.append('csrf_token', CSRF); fd.append('action', 'regenerate_job_card'); fd.append('job_id', String(id));
+    fd.append('reason', reasonText); fd.append('notes_append', String(notesAppend || '').trim());
+    fd.append('changes_json', JSON.stringify({}));
+
+    try {
+      const res = await fetch(API_BASE, { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!data.ok) { alert('Regenerate failed: ' + (data.error || 'Unknown error')); return; }
+      alert('Job card regenerated successfully. Status reset to Pending.');
+      location.reload();
+    } catch (err) { alert('Network error: ' + err.message); }
+  }
+
+  // ═══ PRINT MODE CHOOSER ═══
+  function choosePrintMode() {
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99999;display:flex;align-items:center;justify-content:center';
+      overlay.innerHTML = `<div style="background:#fff;border-radius:16px;padding:28px 32px;max-width:380px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center;font-family:'Segoe UI',Arial,sans-serif">
       <div style="font-size:1.1rem;font-weight:900;color:#0f172a;margin-bottom:4px">Print Mode</div>
       <div style="font-size:.78rem;color:#64748b;margin-bottom:20px">Select print mode for best output quality</div>
       <div style="display:flex;gap:12px;justify-content:center">
@@ -3225,93 +4562,93 @@ function choosePrintMode() {
       </div>
       <button id="_pm_cancel" style="margin-top:16px;padding:8px 24px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;font-size:.76rem;font-weight:700;cursor:pointer">Cancel</button>
     </div>`;
-    document.body.appendChild(overlay);
-    document.getElementById('_pm_color').onclick = () => { document.body.removeChild(overlay); resolve('color'); };
-    document.getElementById('_pm_bw').onclick = () => { document.body.removeChild(overlay); resolve('bw'); };
-    document.getElementById('_pm_cancel').onclick = () => { document.body.removeChild(overlay); resolve(null); };
-    overlay.onclick = e => { if (e.target === overlay) { document.body.removeChild(overlay); resolve(null); } };
-  });
-}
-
-function printBwTransform(html) {
-  const map = {
-    '0ea5a4':'000000','0f766e':'000000','14b8a6':'000000','0d9488':'000000',
-    '166534':'000000','15803d':'000000','16a34a':'000000',
-    '1e40af':'000000','5b21b6':'000000','6d28d9':'000000',
-    'a16207':'000000','92400e':'000000','d97706':'333333',
-    '9d174d':'000000','0891b2':'333333',
-    'dcfce7':'e0e0e0','f0fdf4':'f0f0f0','d1fae5':'e0e0e0',
-    'f0fdfa':'f0f0f0','ccfbf1':'e0e0e0','99f6e4':'cccccc',
-    'dbeafe':'d8d8d8','ede9fe':'e0e0e0',
-    'fef3c7':'e8e8e8','fffde7':'f0f0f0',
-    'e0f7fa':'e8e8e8','fce4ec':'e8e8e8','eceff1':'e0e0e0','fee2e2':'e8e8e8',
-    'bbf7d0':'999999','bfdbfe':'999999','c4b5fd':'999999',
-    'd1e7dd':'999999','bae6fd':'999999','fcd34d':'999999',
-    'cbd5e1':'aaaaaa','e2e8f0':'bbbbbb',
-    'f8fafc':'f2f2f2','f1f5f9':'efefef',
-  };
-  let result = html;
-  for (const [from, to] of Object.entries(map)) {
-    result = result.replace(new RegExp('#' + from, 'gi'), '#' + to);
+      document.body.appendChild(overlay);
+      document.getElementById('_pm_color').onclick = () => { document.body.removeChild(overlay); resolve('color'); };
+      document.getElementById('_pm_bw').onclick = () => { document.body.removeChild(overlay); resolve('bw'); };
+      document.getElementById('_pm_cancel').onclick = () => { document.body.removeChild(overlay); resolve(null); };
+      overlay.onclick = e => { if (e.target === overlay) { document.body.removeChild(overlay); resolve(null); } };
+    });
   }
-  return result;
-}
 
-// ═══ PRINT CARD HTML ═══
-function renderDCPrintCardHtml(job, qrDataUrl) {
-  const extra = job.extra_data_parsed || {};
-  const assignedChildRolls = dcCollectAssignedChildRolls(job);
-  const created = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
-  const started = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
-  const completed = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
-  const dur = Number(job.duration_minutes);
-  const durText = Number.isFinite(dur) ? `${Math.floor(dur/60)}h ${dur%60}m` : '—';
+  function printBwTransform(html) {
+    const map = {
+      '0ea5a4': '000000', '0f766e': '000000', '14b8a6': '000000', '0d9488': '000000',
+      '166534': '000000', '15803d': '000000', '16a34a': '000000',
+      '1e40af': '000000', '5b21b6': '000000', '6d28d9': '000000',
+      'a16207': '000000', '92400e': '000000', 'd97706': '333333',
+      '9d174d': '000000', '0891b2': '333333',
+      'dcfce7': 'e0e0e0', 'f0fdf4': 'f0f0f0', 'd1fae5': 'e0e0e0',
+      'f0fdfa': 'f0f0f0', 'ccfbf1': 'e0e0e0', '99f6e4': 'cccccc',
+      'dbeafe': 'd8d8d8', 'ede9fe': 'e0e0e0',
+      'fef3c7': 'e8e8e8', 'fffde7': 'f0f0f0',
+      'e0f7fa': 'e8e8e8', 'fce4ec': 'e8e8e8', 'eceff1': 'e0e0e0', 'fee2e2': 'e8e8e8',
+      'bbf7d0': '999999', 'bfdbfe': '999999', 'c4b5fd': '999999',
+      'd1e7dd': '999999', 'bae6fd': '999999', 'fcd34d': '999999',
+      'cbd5e1': 'aaaaaa', 'e2e8f0': 'bbbbbb',
+      'f8fafc': 'f2f2f2', 'f1f5f9': 'efefef',
+    };
+    let result = html;
+    for (const [from, to] of Object.entries(map)) {
+      result = result.replace(new RegExp('#' + from, 'gi'), '#' + to);
+    }
+    return result;
+  }
 
-  // ── POS-specific field computations (used when DC_SHOW_PARENT_CHILD_TABLES is true) ──
-  const allRollRowsPrint = dcCollectAssignedChildRolls(job);
-  const firstRollWithWidthPrint = allRollRowsPrint.find(function(r){ return (Number(r && r.width_mm || 0) || 0) > 0; }) || null;
-  const sizeDimensionsPrint = getJobSizeDimensions(job);
-  const widthMmTextPrint = sizeDimensionsPrint.weight
-    ? String(sizeDimensionsPrint.weight)
-    : ((Number(job.planning_size_width_mm || 0) || 0) > 0
-      ? String(job.planning_size_width_mm)
-      : ((Number(job.width_mm || 0) || 0) > 0
-        ? Number(job.width_mm).toFixed(2)
-        : (firstRollWithWidthPrint ? Number(firstRollWithWidthPrint.width_mm).toFixed(2) : '—')));
-  const paperWidthNumPrint = Number(job.width_mm || (firstRollWithWidthPrint ? firstRollWithWidthPrint.width_mm : 0) || 0);
-  const paperWidthTextPrint = (paperWidthNumPrint > 0) ? paperWidthNumPrint.toFixed(2) : (String(job.width_mm || '').trim() || '—');
-  const paperTypeTextPrint = String(job.planning_paper_type || '').trim() || String(job.planning_material || '').trim() || String(job.paper_type || '').trim() || '—';
-  const itemWidthTextPrint = String(job.planning_item_width || '').trim() || widthMmTextPrint;
-  const itemLengthTextPrint = String(job.planning_item_length || '').trim() || (sizeDimensionsPrint.height ? String(sizeDimensionsPrint.height) : '—');
-  const itemSizeTextPrint = String(job.planning_paper_size || '').trim() || ((itemWidthTextPrint !== '—' && itemLengthTextPrint !== '—') ? `${itemWidthTextPrint} x ${itemLengthTextPrint} mm` : '—');
-  const diaTextPrint = String(job.planning_roll_dia || '').trim() || String(job.planning_dia || '').trim() || '—';
-  const coreSizeTextPrint = String(job.planning_core_size || '').trim() || String(job.planning_core || '').trim() || '—';
-  const coreTypeTextPrint = String(job.planning_core_type || '').trim() || '—';
-  const paperCompanyPrint = String(job.paper_company_name || job.company || '').trim() || '—';
-  const sequenceOrderPrint = job.sequence_order || 1;
+  // ═══ PRINT CARD HTML ═══
+  function renderDCPrintCardHtml(job, qrDataUrl) {
+    const extra = job.extra_data_parsed || {};
+    const assignedChildRolls = dcCollectAssignedChildRolls(job);
+    const created = job.created_at ? new Date(job.created_at).toLocaleString() : '—';
+    const started = job.started_at ? new Date(job.started_at).toLocaleString() : '—';
+    const completed = job.completed_at ? new Date(job.completed_at).toLocaleString() : '—';
+    const dur = Number(job.duration_minutes);
+    const durText = Number.isFinite(dur) ? `${Math.floor(dur / 60)}h ${dur % 60}m` : '—';
 
-  const qrHtml = qrDataUrl
-    ? `<div style="text-align:center;margin-left:12px"><img src="${qrDataUrl}" style="width:90px;height:90px;display:block"><div style="font-size:.56rem;color:#64748b;margin-top:2px">Scan job card</div></div>`
-    : '';
+    // ── POS-specific field computations (used when DC_SHOW_PARENT_CHILD_TABLES is true) ──
+    const allRollRowsPrint = dcCollectAssignedChildRolls(job);
+    const firstRollWithWidthPrint = allRollRowsPrint.find(function (r) { return (Number(r && r.width_mm || 0) || 0) > 0; }) || null;
+    const sizeDimensionsPrint = getJobSizeDimensions(job);
+    const widthMmTextPrint = sizeDimensionsPrint.weight
+      ? String(sizeDimensionsPrint.weight)
+      : ((Number(job.planning_size_width_mm || 0) || 0) > 0
+        ? String(job.planning_size_width_mm)
+        : ((Number(job.width_mm || 0) || 0) > 0
+          ? Number(job.width_mm).toFixed(2)
+          : (firstRollWithWidthPrint ? Number(firstRollWithWidthPrint.width_mm).toFixed(2) : '—')));
+    const paperWidthNumPrint = Number(job.width_mm || (firstRollWithWidthPrint ? firstRollWithWidthPrint.width_mm : 0) || 0);
+    const paperWidthTextPrint = (paperWidthNumPrint > 0) ? paperWidthNumPrint.toFixed(2) : (String(job.width_mm || '').trim() || '—');
+    const paperTypeTextPrint = String(job.planning_paper_type || '').trim() || String(job.planning_material || '').trim() || String(job.paper_type || '').trim() || '—';
+    const itemWidthTextPrint = String(job.planning_item_width || '').trim() || widthMmTextPrint;
+    const itemLengthTextPrint = String(job.planning_item_length || '').trim() || (sizeDimensionsPrint.height ? String(sizeDimensionsPrint.height) : '—');
+    const itemSizeTextPrint = String(job.planning_paper_size || '').trim() || ((itemWidthTextPrint !== '—' && itemLengthTextPrint !== '—') ? `${itemWidthTextPrint} x ${itemLengthTextPrint} mm` : '—');
+    const diaTextPrint = String(job.planning_roll_dia || '').trim() || String(job.planning_dia || '').trim() || '—';
+    const coreSizeTextPrint = String(job.planning_core_size || '').trim() || String(job.planning_core || '').trim() || '—';
+    const coreTypeTextPrint = String(job.planning_core_type || '').trim() || '—';
+    const paperCompanyPrint = String(job.paper_company_name || job.company || '').trim() || '—';
+    const sequenceOrderPrint = job.sequence_order || 1;
 
-  const existingPhoto = extra.die_cutting_photo_url || '';
-  const photoHtml = existingPhoto
-    ? `<tr><td colspan="4" style="padding:0"><div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#a16207;background:#fef3c7;padding:6px 8px;border-radius:4px;margin:8px 0 4px">Job Photo</div><div style="margin-bottom:6px"><img src="${esc(existingPhoto)}" style="max-width:300px;max-height:180px;border-radius:8px;border:1px solid #e2e8f0"></div></td></tr>`
-    : '';
+    const qrHtml = qrDataUrl
+      ? `<div style="text-align:center;margin-left:12px"><img src="${qrDataUrl}" style="width:90px;height:90px;display:block"><div style="font-size:.56rem;color:#64748b;margin-top:2px">Scan job card</div></div>`
+      : '';
 
-  const previewUrl = job.job_preview_image_url || job.planning_image_url || job.plate_image_url || (extra.die_cutting_photo_url || '') || '';
-  const previewHtml = previewUrl
-    ? `<tr><td colspan="4" style="padding:0"><div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#0f766e;background:#ccfbf1;padding:6px 8px;border-radius:4px;margin:8px 0 4px">Job Preview</div><div style="margin-bottom:6px"><img src="${esc(previewUrl)}" style="max-width:300px;max-height:180px;border-radius:8px;border:1px solid #e2e8f0"></div></td></tr>`
-    : '';
-  const dimensions = getJobSizeDimensions(job);
-  const weightText = dimensions.weight ? `${dimensions.weight} mm` : '—';
-  const heightText = dimensions.height ? `${dimensions.height} mm` : '—';
-  const weightHeightRow = DC_SHOW_WEIGHT_HEIGHT_FIELDS
-    ? `<tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">${esc(DC_WEIGHT_LABEL || 'Weight')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(weightText)}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">${esc(DC_HEIGHT_LABEL || 'Height')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(heightText)}</td></tr>`
-    : '';
-  const assignedRollSummary = assignedChildRolls.length ? (assignedChildRolls.length + ' rolls assigned') : (job.roll_no || '—');
-  const assignedRollRows = assignedChildRolls.length
-    ? `<tr><td colspan="4" style="padding:0"><div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#0f766e;background:#ccfbf1;padding:6px 8px;border-radius:4px;margin:8px 0 4px">Assigned Child Rolls (${assignedChildRolls.length})</div>
+    const existingPhoto = extra.die_cutting_photo_url || '';
+    const photoHtml = existingPhoto
+      ? `<tr><td colspan="4" style="padding:0"><div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#a16207;background:#fef3c7;padding:6px 8px;border-radius:4px;margin:8px 0 4px">Job Photo</div><div style="margin-bottom:6px"><img src="${esc(existingPhoto)}" style="max-width:300px;max-height:180px;border-radius:8px;border:1px solid #e2e8f0"></div></td></tr>`
+      : '';
+
+    const previewUrl = job.job_preview_image_url || job.planning_image_url || job.plate_image_url || (extra.die_cutting_photo_url || '') || '';
+    const previewHtml = previewUrl
+      ? `<tr><td colspan="4" style="padding:0"><div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#0f766e;background:#ccfbf1;padding:6px 8px;border-radius:4px;margin:8px 0 4px">Job Preview</div><div style="margin-bottom:6px"><img src="${esc(previewUrl)}" style="max-width:300px;max-height:180px;border-radius:8px;border:1px solid #e2e8f0"></div></td></tr>`
+      : '';
+    const dimensions = getJobSizeDimensions(job);
+    const weightText = dimensions.weight ? `${dimensions.weight} mm` : '—';
+    const heightText = dimensions.height ? `${dimensions.height} mm` : '—';
+    const weightHeightRow = DC_SHOW_WEIGHT_HEIGHT_FIELDS
+      ? `<tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">${esc(DC_WEIGHT_LABEL || 'Weight')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(weightText)}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800">${esc(DC_HEIGHT_LABEL || 'Height')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(heightText)}</td></tr>`
+      : '';
+    const assignedRollSummary = assignedChildRolls.length ? (assignedChildRolls.length + ' rolls assigned') : (job.roll_no || '—');
+    const assignedRollRows = assignedChildRolls.length
+      ? `<tr><td colspan="4" style="padding:0"><div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#0f766e;background:#ccfbf1;padding:6px 8px;border-radius:4px;margin:8px 0 4px">Assigned Child Rolls (${assignedChildRolls.length})</div>
       <table style="width:100%;border-collapse:collapse;font-size:.68rem;margin-bottom:6px">
         <thead><tr>
           <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#f8fafc;text-align:left">Roll No</th>
@@ -3321,22 +4658,22 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
           <th style="padding:5px 6px;border:1px solid #cbd5e1;background:#f8fafc;text-align:left">Status</th>
         </tr></thead>
         <tbody>
-          ${assignedChildRolls.map(function(r){
-            const widthText = ((Number(r.width_mm || 0) || 0) > 0) ? Number(r.width_mm).toFixed(2) : '—';
-            const lengthText = ((Number(r.length_mtr || 0) || 0) > 0) ? Number(r.length_mtr).toFixed(2) : '—';
-            return `<tr>
+          ${assignedChildRolls.map(function (r) {
+        const widthText = ((Number(r.width_mm || 0) || 0) > 0) ? Number(r.width_mm).toFixed(2) : '—';
+        const lengthText = ((Number(r.length_mtr || 0) || 0) > 0) ? Number(r.length_mtr).toFixed(2) : '—';
+        return `<tr>
               <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.roll_no || '—')}</td>
               <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(widthText)}</td>
               <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(lengthText)}</td>
               <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.company || r.company_name || '—')}</td>
               <td style="padding:5px 6px;border:1px solid #cbd5e1">${esc(r.status || '—')}</td>
             </tr>`;
-          }).join('')}
+      }).join('')}
         </tbody>
       </table></td></tr>`
-    : '';
+      : '';
 
-  return `<div style="font-family:'Segoe UI',Arial,sans-serif;padding:20px;max-width:760px;margin:0 auto;color:#0f172a">
+    return `<div style="font-family:'Segoe UI',Arial,sans-serif;padding:20px;max-width:760px;margin:0 auto;color:#0f172a">
     <div style="border:2px solid #0f766e;border-radius:12px;overflow:hidden">
       <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:12px 14px;background:#f0fdfa;border-bottom:2px solid #0f766e">
         <div>
@@ -3400,29 +4737,29 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
           </table>
         ${previewHtml ? `<table style="width:100%">${previewHtml}</table>` : ''}
         ${(() => {
-          const rawPlanQty = String(job.planning_order_qty || '').trim();
-          const rawProducedQty = String(
-            String(DC_PRODUCED_QTY_SOURCE || '').toLowerCase() === 'current'
-              ? (extra.barcode_total_qty_pcs ?? extra.total_qty_pcs ?? extra.die_cutting_total_qty_pcs ?? extra.actual_qty ?? '')
-              : (job.prev_actual_qty || '')
-          ).trim();
-          const hasPlanQty = rawPlanQty !== '';
-          const hasProducedQty = rawProducedQty !== '';
-          const planQty = Number(rawPlanQty || 0);
-          const producedQty = Number(rawProducedQty || 0);
-          const prevWastage = String(job.prev_wastage_meters || '').trim();
-          const hasWastage = prevWastage !== '';
-          if (!hasPlanQty && !hasProducedQty) return '';
-          const canCompare = hasPlanQty && hasProducedQty;
-          const diff = canCompare ? (producedQty - planQty) : 0;
-          const isExtra = canCompare && diff > 0;
-          const isShort = canCompare && diff < 0;
-          const diffLabel = canCompare ? (isExtra ? 'Extra' : (isShort ? 'Shortage' : 'Matched')) : 'Difference';
-          const diffColor = isExtra ? '#16a34a' : (isShort ? '#dc2626' : '#475569');
-          const pctText = canCompare && planQty > 0
-            ? (((diff / planQty) * 100) > 0 ? '+' : '') + ((diff / planQty) * 100).toFixed(1) + '%'
-            : '';
-          return `<div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#4338ca;background:#eef2ff;padding:5px 8px;border-radius:4px;margin-top:8px">${esc(DC_COMPARE_SECTION_TITLE || 'Printing Production vs Plan')}</div>
+        const rawPlanQty = String(job.planning_order_qty || '').trim();
+        const rawProducedQty = String(
+          String(DC_PRODUCED_QTY_SOURCE || '').toLowerCase() === 'current'
+            ? (extra.barcode_total_qty_pcs ?? extra.total_qty_pcs ?? extra.die_cutting_total_qty_pcs ?? extra.actual_qty ?? '')
+            : (job.prev_actual_qty || '')
+        ).trim();
+        const hasPlanQty = rawPlanQty !== '';
+        const hasProducedQty = rawProducedQty !== '';
+        const planQty = Number(rawPlanQty || 0);
+        const producedQty = Number(rawProducedQty || 0);
+        const prevWastage = String(job.prev_wastage_meters || '').trim();
+        const hasWastage = prevWastage !== '';
+        if (!hasPlanQty && !hasProducedQty) return '';
+        const canCompare = hasPlanQty && hasProducedQty;
+        const diff = canCompare ? (producedQty - planQty) : 0;
+        const isExtra = canCompare && diff > 0;
+        const isShort = canCompare && diff < 0;
+        const diffLabel = canCompare ? (isExtra ? 'Extra' : (isShort ? 'Shortage' : 'Matched')) : 'Difference';
+        const diffColor = isExtra ? '#16a34a' : (isShort ? '#dc2626' : '#475569');
+        const pctText = canCompare && planQty > 0
+          ? (((diff / planQty) * 100) > 0 ? '+' : '') + ((diff / planQty) * 100).toFixed(1) + '%'
+          : '';
+        return `<div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#4338ca;background:#eef2ff;padding:5px 8px;border-radius:4px;margin-top:8px">${esc(DC_COMPARE_SECTION_TITLE || 'Printing Production vs Plan')}</div>
           <table style="width:100%;border-collapse:collapse;font-size:.72rem;margin-bottom:10px">
             <tr>
               <td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:14%">Planning Qty</td>
@@ -3430,11 +4767,11 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
               <td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:14%">${esc(DC_PRODUCED_QTY_LABEL || 'Printing Produced')}</td>
               <td style="padding:5px 7px;border:1px solid #cbd5e1;width:14%;font-weight:700;color:#3b82f6">${hasProducedQty ? producedQty.toLocaleString() + ' Pcs' : '—'}</td>
               ${hasWastage ? `<td style="padding:5px 7px;border:1px solid #cbd5e1;background:#fff7ed;font-weight:800;width:14%;color:#9a3412">Printing Wastage</td><td style="padding:5px 7px;border:1px solid #cbd5e1;width:14%;font-weight:700;color:#ea580c">${esc(prevWastage)} Mtr</td>` : ''}
-              <td style="padding:5px 7px;border:1px solid #cbd5e1;background:${canCompare ? (isExtra?'#f0fdf4':(isShort?'#fef2f2':'#f8fafc')) : '#f8fafc'};font-weight:800;width:12%;color:${diffColor}">${diffLabel}</td>
+              <td style="padding:5px 7px;border:1px solid #cbd5e1;background:${canCompare ? (isExtra ? '#f0fdf4' : (isShort ? '#fef2f2' : '#f8fafc')) : '#f8fafc'};font-weight:800;width:12%;color:${diffColor}">${diffLabel}</td>
               <td style="padding:5px 7px;border:1px solid #cbd5e1;font-weight:900;color:${diffColor};width:14%">${canCompare ? (Math.abs(diff).toLocaleString() + ' Pcs' + (pctText ? ' (' + pctText + ')' : '')) : '—'}</td>
             </tr>
           </table>`;
-        })()}
+      })()}
         <div style="font-size:.66rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#0f766e;background:#ccfbf1;padding:5px 8px;border-radius:4px;margin-top:8px">Execution Summary</div>
         <table style="width:100%;border-collapse:collapse;font-size:.72rem">
           <tr><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Total Qty (Pcs)</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.die_cutting_total_qty_pcs || '—')}</td><td style="padding:5px 7px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:800;width:24%">Wastage (Pcs)</td><td style="padding:5px 7px;border:1px solid #cbd5e1">${esc(extra.die_cutting_wastage_pcs || '—')}</td></tr>
@@ -3453,393 +4790,393 @@ function renderDCPrintCardHtml(job, qrDataUrl) {
       </div>
     </div>
   </div>`;
-}
+  }
 
-// ═══ PRINT JOB CARD ═══
-async function printJobCard(id) {
-  const job = ALL_JOBS.find(j => j.id == id);
-  if (!job) return;
-  const mode = await choosePrintMode();
-  if (!mode) return;
-  const qrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
-  const qrDataUrl = await generateQR(qrUrl);
-  let html = renderDCPrintCardHtml(job, qrDataUrl);
-  if (mode === 'bw') html = printBwTransform(html);
-  const w = window.open('', '_blank', 'width=820,height=920');
-  w.document.write(`<!DOCTYPE html><html><head><title>Job Card - ${esc(job.job_no)}</title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>${html}</body></html>`);
-  w.document.close(); w.focus(); setTimeout(() => w.print(), 400);
-}
-
-// ═══ MULTI-SELECT BULK ═══
-function dcUpdateBulkBar() {
-  if (!DC_ENABLE_BULK_SELECTION) return;
-  const checked = document.querySelectorAll('.dc-select-check:checked');
-  const bar = document.getElementById('dcBulkBar');
-  const countEl = document.getElementById('dcSelectedCount');
-  checked.forEach(cb => { const card = cb.closest('.dc-card'); if (card) card.classList.toggle('dc-selected', cb.checked); });
-  document.querySelectorAll('.dc-select-check:not(:checked)').forEach(cb => { const card = cb.closest('.dc-card'); if (card) card.classList.remove('dc-selected'); });
-  if (checked.length > 0) { bar.style.display = 'flex'; countEl.textContent = checked.length; } else { bar.style.display = 'none'; }
-}
-
-function dcSelectAll() {
-  if (!DC_ENABLE_BULK_SELECTION) return;
-  document.querySelectorAll('.dc-card:not([style*="display: none"]):not([style*="display:none"]) .dc-select-check').forEach(cb => cb.checked = true);
-  dcUpdateBulkBar();
-}
-
-function dcDeselectAll() {
-  if (!DC_ENABLE_BULK_SELECTION) return;
-  document.querySelectorAll('.dc-select-check').forEach(cb => cb.checked = false);
-  dcUpdateBulkBar();
-}
-
-function dcBulkPrint() {
-  if (!DC_ENABLE_BULK_SELECTION) return;
-  const checkedIds = Array.from(document.querySelectorAll('.dc-select-check:checked')).map(cb => cb.dataset.jobId);
-  if (!checkedIds.length) { alert('No job cards selected'); return; }
-  const jobs = checkedIds.map(id => ALL_JOBS.find(j => j.id == id)).filter(Boolean);
-  if (!jobs.length) return;
-  (async function() {
+  // ═══ PRINT JOB CARD ═══
+  async function printJobCard(id) {
+    const job = ALL_JOBS.find(j => j.id == id);
+    if (!job) return;
     const mode = await choosePrintMode();
     if (!mode) return;
-    let pages = '';
-    for (let idx = 0; idx < jobs.length; idx++) {
-      const job = jobs[idx];
-      const qrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
-      const qrDataUrl = await generateQR(qrUrl);
-      const pb = idx < jobs.length - 1 ? 'page-break-after:always;' : '';
-      let cardHtml = renderDCPrintCardHtml(job, qrDataUrl);
-      if (mode === 'bw') cardHtml = printBwTransform(cardHtml);
-      pages += `<div style="${pb}">${cardHtml}</div>`;
-    }
+    const qrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
+    const qrDataUrl = await generateQR(qrUrl);
+    let html = renderDCPrintCardHtml(job, qrDataUrl);
+    if (mode === 'bw') html = printBwTransform(html);
     const w = window.open('', '_blank', 'width=820,height=920');
-    w.document.write('<!DOCTYPE html><html><head><title>Bulk Print - ' + jobs.length + ' <?= addslashes($dcBulkPrintTitle) ?></title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>' + pages + '</body></html>');
+    w.document.write(`<!DOCTYPE html><html><head><title>Job Card - ${esc(job.job_no)}</title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>${html}</body></html>`);
     w.document.close(); w.focus(); setTimeout(() => w.print(), 400);
-  })();
-}
+  }
 
-// ═══ QR GENERATOR ═══
-function generateQR(text) {
-  return new Promise(function(resolve) {
-    const el = document.createElement('div');
-    el.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;overflow:hidden';
-    document.body.appendChild(el);
-    const inner = document.createElement('div');
-    el.appendChild(inner);
-    try {
-      new QRCode(inner, { text: text, width: 160, height: 160, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
-    } catch(e) { document.body.removeChild(el); resolve(''); return; }
-    setTimeout(function() {
-      const canvas = inner.querySelector('canvas');
-      const img = inner.querySelector('img');
-      let url = '';
-      if (canvas) url = canvas.toDataURL('image/png');
-      else if (img && img.src && img.src.startsWith('data:')) url = img.src;
-      document.body.removeChild(el);
-      resolve(url);
-    }, 150);
-  });
-}
+  // ═══ MULTI-SELECT BULK ═══
+  function dcUpdateBulkBar() {
+    if (!DC_ENABLE_BULK_SELECTION) return;
+    const checked = document.querySelectorAll('.dc-select-check:checked');
+    const bar = document.getElementById('dcBulkBar');
+    const countEl = document.getElementById('dcSelectedCount');
+    checked.forEach(cb => { const card = cb.closest('.dc-card'); if (card) card.classList.toggle('dc-selected', cb.checked); });
+    document.querySelectorAll('.dc-select-check:not(:checked)').forEach(cb => { const card = cb.closest('.dc-card'); if (card) card.classList.remove('dc-selected'); });
+    if (checked.length > 0) { bar.style.display = 'flex'; countEl.textContent = checked.length; } else { bar.style.display = 'none'; }
+  }
 
-// ═══ LINKED-JOB CONNECTOR ARROWS (SVG between linked cards, mirrors jumbo) ═══
-function drawLinkConnectors() {
-  const grid = document.getElementById('dcGrid');
-  if (!grid) return;
+  function dcSelectAll() {
+    if (!DC_ENABLE_BULK_SELECTION) return;
+    document.querySelectorAll('.dc-card:not([style*="display: none"]):not([style*="display:none"]) .dc-select-check').forEach(cb => cb.checked = true);
+    dcUpdateBulkBar();
+  }
 
-  // Remove any previous overlay
-  const prev = grid.querySelector('.dc-link-overlay');
-  if (prev) prev.remove();
+  function dcDeselectAll() {
+    if (!DC_ENABLE_BULK_SELECTION) return;
+    document.querySelectorAll('.dc-select-check').forEach(cb => cb.checked = false);
+    dcUpdateBulkBar();
+  }
 
-  // Collect visible primary cards that point to a linked target
-  const primaries = Array.from(grid.querySelectorAll('.dc-card[data-link-role="primary"][data-link-target]'))
-    .filter(card => card.style.display !== 'none' && card.dataset.linkTarget && card.dataset.linkTarget !== '0');
-  if (!primaries.length) return;
+  function dcBulkPrint() {
+    if (!DC_ENABLE_BULK_SELECTION) return;
+    const checkedIds = Array.from(document.querySelectorAll('.dc-select-check:checked')).map(cb => cb.dataset.jobId);
+    if (!checkedIds.length) { alert('No job cards selected'); return; }
+    const jobs = checkedIds.map(id => ALL_JOBS.find(j => j.id == id)).filter(Boolean);
+    if (!jobs.length) return;
+    (async function () {
+      const mode = await choosePrintMode();
+      if (!mode) return;
+      let pages = '';
+      for (let idx = 0; idx < jobs.length; idx++) {
+        const job = jobs[idx];
+        const qrUrl = `${BASE_URL}/modules/scan/job.php?jn=${encodeURIComponent(job.job_no)}`;
+        const qrDataUrl = await generateQR(qrUrl);
+        const pb = idx < jobs.length - 1 ? 'page-break-after:always;' : '';
+        let cardHtml = renderDCPrintCardHtml(job, qrDataUrl);
+        if (mode === 'bw') cardHtml = printBwTransform(cardHtml);
+        pages += `<div style="${pb}">${cardHtml}</div>`;
+      }
+      const w = window.open('', '_blank', 'width=820,height=920');
+      w.document.write('<!DOCTYPE html><html><head><title>Bulk Print - ' + jobs.length + ' <?= addslashes($dcBulkPrintTitle) ?></title><style>@page{margin:12mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>' + pages + '</body></html>');
+      w.document.close(); w.focus(); setTimeout(() => w.print(), 400);
+    })();
+  }
 
-  const gridRect = grid.getBoundingClientRect();
-  const NS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('class', 'dc-link-overlay');
-  svg.setAttribute('width', String(grid.scrollWidth));
-  svg.setAttribute('height', String(grid.scrollHeight));
+  // ═══ QR GENERATOR ═══
+  function generateQR(text) {
+    return new Promise(function (resolve) {
+      const el = document.createElement('div');
+      el.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;overflow:hidden';
+      document.body.appendChild(el);
+      const inner = document.createElement('div');
+      el.appendChild(inner);
+      try {
+        new QRCode(inner, { text: text, width: 160, height: 160, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+      } catch (e) { document.body.removeChild(el); resolve(''); return; }
+      setTimeout(function () {
+        const canvas = inner.querySelector('canvas');
+        const img = inner.querySelector('img');
+        let url = '';
+        if (canvas) url = canvas.toDataURL('image/png');
+        else if (img && img.src && img.src.startsWith('data:')) url = img.src;
+        document.body.removeChild(el);
+        resolve(url);
+      }, 150);
+    });
+  }
 
-  let drawnAny = false;
-  primaries.forEach(card => {
-    const target = grid.querySelector('.dc-card[data-id="' + card.dataset.linkTarget + '"]');
-    if (!target || target.style.display === 'none') return;
+  // ═══ LINKED-JOB CONNECTOR ARROWS (SVG between linked cards, mirrors jumbo) ═══
+  function drawLinkConnectors() {
+    const grid = document.getElementById('dcGrid');
+    if (!grid) return;
 
-    const a = card.getBoundingClientRect();
-    const b = target.getBoundingClientRect();
+    // Remove any previous overlay
+    const prev = grid.querySelector('.dc-link-overlay');
+    if (prev) prev.remove();
 
-    const aRightX = a.right - gridRect.left;
-    const aLeftX = a.left - gridRect.left;
-    const bRightX = b.right - gridRect.left;
-    const bLeftX = b.left - gridRect.left;
-    const aMidY = a.top - gridRect.top + a.height / 2;
-    const bMidY = b.top - gridRect.top + b.height / 2;
+    // Collect visible primary cards that point to a linked target
+    const primaries = Array.from(grid.querySelectorAll('.dc-card[data-link-role="primary"][data-link-target]'))
+      .filter(card => card.style.display !== 'none' && card.dataset.linkTarget && card.dataset.linkTarget !== '0');
+    if (!primaries.length) return;
 
-    let x1, y1, x2, y2;
-    if (b.left >= a.right) {            // target to the right
-      x1 = aRightX; x2 = bLeftX;
-    } else if (b.right <= a.left) {     // target to the left
-      x1 = aLeftX; x2 = bRightX;
-    } else {                            // stacked — connect bottom→top
-      x1 = a.left - gridRect.left + a.width / 2;
-      x2 = b.left - gridRect.left + b.width / 2;
-      y1 = a.bottom - gridRect.top;
-      y2 = b.top - gridRect.top;
-      const midY = (y1 + y2) / 2;
-      dcAppendConnector(svg, NS, `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`, x2, y2, (y2 >= y1 ? 'down' : 'up'));
+    const gridRect = grid.getBoundingClientRect();
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'dc-link-overlay');
+    svg.setAttribute('width', String(grid.scrollWidth));
+    svg.setAttribute('height', String(grid.scrollHeight));
+
+    let drawnAny = false;
+    primaries.forEach(card => {
+      const target = grid.querySelector('.dc-card[data-id="' + card.dataset.linkTarget + '"]');
+      if (!target || target.style.display === 'none') return;
+
+      const a = card.getBoundingClientRect();
+      const b = target.getBoundingClientRect();
+
+      const aRightX = a.right - gridRect.left;
+      const aLeftX = a.left - gridRect.left;
+      const bRightX = b.right - gridRect.left;
+      const bLeftX = b.left - gridRect.left;
+      const aMidY = a.top - gridRect.top + a.height / 2;
+      const bMidY = b.top - gridRect.top + b.height / 2;
+
+      let x1, y1, x2, y2;
+      if (b.left >= a.right) {            // target to the right
+        x1 = aRightX; x2 = bLeftX;
+      } else if (b.right <= a.left) {     // target to the left
+        x1 = aLeftX; x2 = bRightX;
+      } else {                            // stacked — connect bottom→top
+        x1 = a.left - gridRect.left + a.width / 2;
+        x2 = b.left - gridRect.left + b.width / 2;
+        y1 = a.bottom - gridRect.top;
+        y2 = b.top - gridRect.top;
+        const midY = (y1 + y2) / 2;
+        dcAppendConnector(svg, NS, `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`, x2, y2, (y2 >= y1 ? 'down' : 'up'));
+        drawnAny = true;
+        return;
+      }
+      y1 = aMidY; y2 = bMidY;
+      const midX = (x1 + x2) / 2;
+      dcAppendConnector(svg, NS, `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`, x2, y2, (x2 >= x1 ? 'right' : 'left'));
       drawnAny = true;
+    });
+
+    if (drawnAny) grid.appendChild(svg);
+  }
+
+  function dcAppendConnector(svg, NS, d, tipX, tipY, dir) {
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', d);
+    svg.appendChild(path);
+
+    const size = 7;
+    let pts;
+    if (dir === 'right') pts = `${tipX},${tipY} ${tipX - size},${tipY - size} ${tipX - size},${tipY + size}`;
+    else if (dir === 'left') pts = `${tipX},${tipY} ${tipX + size},${tipY - size} ${tipX + size},${tipY + size}`;
+    else if (dir === 'down') pts = `${tipX},${tipY} ${tipX - size},${tipY - size} ${tipX + size},${tipY - size}`;
+    else pts = `${tipX},${tipY} ${tipX - size},${tipY + size} ${tipX + size},${tipY + size}`;
+    const head = document.createElementNS(NS, 'polygon');
+    head.setAttribute('points', pts);
+    svg.appendChild(head);
+
+    const bbox = path.getBBox ? path.getBBox() : null;
+    if (bbox) {
+      const cx = bbox.x + bbox.width / 2;
+      const cy = bbox.y + bbox.height / 2;
+      const badge = document.createElementNS(NS, 'g');
+      badge.setAttribute('class', 'dc-link-badge');
+      const circle = document.createElementNS(NS, 'circle');
+      circle.setAttribute('cx', String(cx));
+      circle.setAttribute('cy', String(cy));
+      circle.setAttribute('r', '11');
+      const txt = document.createElementNS(NS, 'text');
+      txt.setAttribute('x', String(cx));
+      txt.setAttribute('y', String(cy));
+      txt.textContent = '🔗';
+      badge.appendChild(circle);
+      badge.appendChild(txt);
+      svg.appendChild(badge);
+    }
+  }
+
+  // Redraw connectors whenever layout could change
+  let _dcLinkRedrawTimer = null;
+  function scheduleDCLinkRedraw() {
+    if (_dcLinkRedrawTimer) clearTimeout(_dcLinkRedrawTimer);
+    _dcLinkRedrawTimer = setTimeout(drawLinkConnectors, 80);
+  }
+  window.addEventListener('resize', scheduleDCLinkRedraw);
+
+  // Redraw after any filter change (filterJobs toggles card visibility)
+  const _dcOrigFilterJobs = filterJobs;
+  filterJobs = function (status, btn) {
+    _dcOrigFilterJobs(status, btn);
+    scheduleDCLinkRedraw();
+  };
+
+  // Redraw after tab switch (grid becomes visible again)
+  const _dcOrigSwitchTab = switchDCTab;
+  switchDCTab = function (tab) {
+    _dcOrigSwitchTab(tab);
+    if (tab === 'active') scheduleDCLinkRedraw();
+  };
+
+  // ═══ INIT ═══
+  (function () {
+    autoFocusJobFromQuery();
+    const autoId = new URLSearchParams(window.location.search).get('auto_job');
+    if (autoId) setTimeout(function () { try { openJobDetail(parseInt(autoId)); } catch (e) { } }, 600);
+    // Draw linked-card connector arrows after initial layout settles
+    setTimeout(drawLinkConnectors, 300);
+  })();
+
+
+  // Default filter on page load can be overridden by wrapper modules.
+  (function () {
+    const defaultFilter = normalizeFilterStatus(DC_DEFAULT_FILTER_RAW || 'Pending');
+    const targetBtn = findFilterButton(defaultFilter);
+    if (targetBtn) {
+      filterJobs(defaultFilter, targetBtn);
+      if (DC_AUTO_FALLBACK_TO_ALL_ON_EMPTY_DEFAULT && String(defaultFilter).toLowerCase() !== 'all' && getVisibleActiveCardCount() === 0) {
+        const allBtn = findFilterButton('all');
+        if (allBtn) filterJobs('all', allBtn);
+      }
       return;
     }
-    y1 = aMidY; y2 = bMidY;
-    const midX = (x1 + x2) / 2;
-    dcAppendConnector(svg, NS, `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`, x2, y2, (x2 >= x1 ? 'right' : 'left'));
-    drawnAny = true;
-  });
-
-  if (drawnAny) grid.appendChild(svg);
-}
-
-function dcAppendConnector(svg, NS, d, tipX, tipY, dir) {
-  const path = document.createElementNS(NS, 'path');
-  path.setAttribute('d', d);
-  svg.appendChild(path);
-
-  const size = 7;
-  let pts;
-  if (dir === 'right') pts = `${tipX},${tipY} ${tipX - size},${tipY - size} ${tipX - size},${tipY + size}`;
-  else if (dir === 'left') pts = `${tipX},${tipY} ${tipX + size},${tipY - size} ${tipX + size},${tipY + size}`;
-  else if (dir === 'down') pts = `${tipX},${tipY} ${tipX - size},${tipY - size} ${tipX + size},${tipY - size}`;
-  else pts = `${tipX},${tipY} ${tipX - size},${tipY + size} ${tipX + size},${tipY + size}`;
-  const head = document.createElementNS(NS, 'polygon');
-  head.setAttribute('points', pts);
-  svg.appendChild(head);
-
-  const bbox = path.getBBox ? path.getBBox() : null;
-  if (bbox) {
-    const cx = bbox.x + bbox.width / 2;
-    const cy = bbox.y + bbox.height / 2;
-    const badge = document.createElementNS(NS, 'g');
-    badge.setAttribute('class', 'dc-link-badge');
-    const circle = document.createElementNS(NS, 'circle');
-    circle.setAttribute('cx', String(cx));
-    circle.setAttribute('cy', String(cy));
-    circle.setAttribute('r', '11');
-    const txt = document.createElementNS(NS, 'text');
-    txt.setAttribute('x', String(cx));
-    txt.setAttribute('y', String(cy));
-    txt.textContent = '🔗';
-    badge.appendChild(circle);
-    badge.appendChild(txt);
-    svg.appendChild(badge);
-  }
-}
-
-// Redraw connectors whenever layout could change
-let _dcLinkRedrawTimer = null;
-function scheduleDCLinkRedraw() {
-  if (_dcLinkRedrawTimer) clearTimeout(_dcLinkRedrawTimer);
-  _dcLinkRedrawTimer = setTimeout(drawLinkConnectors, 80);
-}
-window.addEventListener('resize', scheduleDCLinkRedraw);
-
-// Redraw after any filter change (filterJobs toggles card visibility)
-const _dcOrigFilterJobs = filterJobs;
-filterJobs = function(status, btn) {
-  _dcOrigFilterJobs(status, btn);
-  scheduleDCLinkRedraw();
-};
-
-// Redraw after tab switch (grid becomes visible again)
-const _dcOrigSwitchTab = switchDCTab;
-switchDCTab = function(tab) {
-  _dcOrigSwitchTab(tab);
-  if (tab === 'active') scheduleDCLinkRedraw();
-};
-
-// ═══ INIT ═══
-(function(){
-  autoFocusJobFromQuery();
-  const autoId = new URLSearchParams(window.location.search).get('auto_job');
-  if (autoId) setTimeout(function(){ try { openJobDetail(parseInt(autoId)); } catch(e){} }, 600);
-  // Draw linked-card connector arrows after initial layout settles
-  setTimeout(drawLinkConnectors, 300);
-})();
-
-
-// Default filter on page load can be overridden by wrapper modules.
-(function(){
-  const defaultFilter = normalizeFilterStatus(DC_DEFAULT_FILTER_RAW || 'Pending');
-  const targetBtn = findFilterButton(defaultFilter);
-  if (targetBtn) {
-    filterJobs(defaultFilter, targetBtn);
-    if (DC_AUTO_FALLBACK_TO_ALL_ON_EMPTY_DEFAULT && String(defaultFilter).toLowerCase() !== 'all' && getVisibleActiveCardCount() === 0) {
-      const allBtn = findFilterButton('all');
-      if (allBtn) filterJobs('all', allBtn);
-    }
-    return;
-  }
-  const allBtn = findFilterButton('all');
-  if (allBtn) filterJobs('all', allBtn);
-})();
+    const allBtn = findFilterButton('all');
+    if (allBtn) filterJobs('all', allBtn);
+  })();
 </script>
 
 <?php if (!empty($dcRequireRollScan) && $isOperatorView): ?>
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-<script>
-let DC_VERIFIER_SCANNER = null;
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script>
+    let DC_VERIFIER_SCANNER = null;
 
-function dcNormalizeRollNo(val) {
-  return String(val || '').trim().toUpperCase();
-}
-
-function dcExtractRollNoFromQr(rawValue) {
-  const raw = String(rawValue || '').trim();
-  if (!raw) return '';
-
-  try {
-    const u = new URL(raw);
-    const qRoll = u.searchParams.get('roll_no') || u.searchParams.get('roll') || u.searchParams.get('rn') || '';
-    if (String(qRoll).trim()) return String(qRoll).trim();
-  } catch (e) {}
-
-  const named = raw.match(/(?:roll\s*no|roll_no|roll)\s*[:=\-]\s*([A-Za-z0-9._\/-]+)/i);
-  if (named && named[1]) return named[1].trim();
-
-  const tokens = raw.split(/[^A-Za-z0-9._\/-]+/).filter(Boolean);
-  if (tokens.length) return tokens[tokens.length - 1].trim();
-  return raw;
-}
-
-function dcBuildRequiredRolls(job) {
-  const out = [];
-  const seen = {};
-  function addRoll(rollNo, meta) {
-    const raw = String(rollNo || '').trim();
-    const norm = dcNormalizeRollNo(raw);
-    if (!norm || seen[norm]) return;
-    seen[norm] = true;
-    out.push({
-      roll_no: raw,
-      norm: norm,
-      paper_type: String((meta && meta.paper_type) || ''),
-      width: (meta && (meta.width ?? meta.width_mm)) ?? '',
-      length: (meta && (meta.length ?? meta.length_mtr)) ?? ''
-    });
-  }
-
-  const extra = (job && job.extra_data_parsed) ? job.extra_data_parsed : {};
-  const parent = extra.parent_details || {};
-  const hasPrevJob = (parseInt(job && job.previous_job_id || 0, 10)) > 0;
-  const jobDept = String(job?.department || '').trim().toLowerCase();
-
-  // One-Ply special logic: direct vs. from slitting
-  if (jobDept === 'oneply') {
-    const prevDept = String(job?.prev_job_department || '').trim().toLowerCase();
-    const grandPrevDept = String(job?.grandprev_department || '').trim().toLowerCase();
-    const fromSlitting = prevDept === 'jumbo_slitting' || prevDept === 'slitting' || grandPrevDept === 'jumbo_slitting' || grandPrevDept === 'slitting';
-
-    if (fromSlitting) {
-      // From slitting: scan assigned child rolls
-      const assignedRows = dcCollectAssignedChildRolls(job);
-      assignedRows.forEach(function(r) {
-        if (!r || typeof r !== 'object') return;
-        addRoll(r.roll_no || '', {
-          paper_type: r.paper_type || job?.paper_type || '',
-          width: r.width_mm ?? job?.width_mm ?? '',
-          length: r.length_mtr ?? job?.length_mtr ?? ''
-        });
-      });
-    } else {
-      // Direct job: scan parent roll(s)
-      const assignedRows = dcCollectAssignedChildRolls(job);
-      addRoll(job?.roll_no || extra.assigned_parent_roll_no || parent.roll_no || '', {
-        paper_type: job?.paper_type || parent.paper_type || '',
-        width: job?.width_mm ?? parent.width_mm ?? '',
-        length: job?.length_mtr ?? parent.length_mtr ?? ''
-      });
-      assignedRows.forEach(function(r) {
-        if (!r || typeof r !== 'object' || !r.parent_roll_no) return;
-        addRoll(r.parent_roll_no, {
-          paper_type: r.paper_type || job?.paper_type || '',
-          width: r.width_mm ?? job?.width_mm ?? '',
-          length: r.length_mtr ?? job?.length_mtr ?? ''
-        });
-      });
+    function dcNormalizeRollNo(val) {
+      return String(val || '').trim().toUpperCase();
     }
-    return out;
-  }
 
-  // Default logic for other departments
-  const childRolls = Array.isArray(extra.parent_rolls) ? extra.parent_rolls.filter(function(r) { return String(r || '').trim() !== ''; }) : [];
-  if (childRolls.length > 0) {
-    childRolls.forEach(function(pr) {
-      addRoll(pr, { paper_type: job?.paper_type || '', width: job?.width_mm ?? '', length: job?.length_mtr ?? '' });
-    });
-  } else {
-    const assignedRows = dcCollectAssignedChildRolls(job);
-    if (assignedRows.length > 0) {
-      assignedRows.forEach(function(r) {
-        if (!r || typeof r !== 'object') return;
-        addRoll(r.roll_no || '', {
-          paper_type: r.paper_type || job?.paper_type || '',
-          width: r.width_mm ?? job?.width_mm ?? '',
-          length: r.length_mtr ?? job?.length_mtr ?? ''
-        });
-      });
-    } else {
-      addRoll(job?.roll_no || extra.assigned_parent_roll_no || parent.roll_no || '', {
-        paper_type: job?.paper_type || parent.paper_type || '',
-        width: job?.width_mm ?? parent.width_mm ?? '',
-        length: job?.length_mtr ?? parent.length_mtr ?? ''
-      });
+    function dcExtractRollNoFromQr(rawValue) {
+      const raw = String(rawValue || '').trim();
+      if (!raw) return '';
+
+      try {
+        const u = new URL(raw);
+        const qRoll = u.searchParams.get('roll_no') || u.searchParams.get('roll') || u.searchParams.get('rn') || '';
+        if (String(qRoll).trim()) return String(qRoll).trim();
+      } catch (e) { }
+
+      const named = raw.match(/(?:roll\s*no|roll_no|roll)\s*[:=\-]\s*([A-Za-z0-9._\/-]+)/i);
+      if (named && named[1]) return named[1].trim();
+
+      const tokens = raw.split(/[^A-Za-z0-9._\/-]+/).filter(Boolean);
+      if (tokens.length) return tokens[tokens.length - 1].trim();
+      return raw;
     }
-  }
 
-  return out;
-}
+    function dcBuildRequiredRolls(job) {
+      const out = [];
+      const seen = {};
+      function addRoll(rollNo, meta) {
+        const raw = String(rollNo || '').trim();
+        const norm = dcNormalizeRollNo(raw);
+        if (!norm || seen[norm]) return;
+        seen[norm] = true;
+        out.push({
+          roll_no: raw,
+          norm: norm,
+          paper_type: String((meta && meta.paper_type) || ''),
+          width: (meta && (meta.width ?? meta.width_mm)) ?? '',
+          length: (meta && (meta.length ?? meta.length_mtr)) ?? ''
+        });
+      }
 
-function dcShowVerificationMessage(el, kind, text) {
-  if (!el) return;
-  const colors = {
-    info: { bg: '#e0f2fe', border: '#7dd3fc', color: '#075985' },
-    ok:   { bg: '#dcfce7', border: '#86efac', color: '#166534' },
-    warn: { bg: '#fef3c7', border: '#fcd34d', color: '#92400e' },
-    bad:  { bg: '#fee2e2', border: '#fca5a5', color: '#991b1b' }
-  };
-  const style = colors[kind] || colors.info;
-  el.style.display = '';
-  el.style.background = style.bg;
-  el.style.border = '1px solid ' + style.border;
-  el.style.color = style.color;
-  el.innerHTML = text;
-}
+      const extra = (job && job.extra_data_parsed) ? job.extra_data_parsed : {};
+      const parent = extra.parent_details || {};
+      const hasPrevJob = (parseInt(job && job.previous_job_id || 0, 10)) > 0;
+      const jobDept = String(job?.department || '').trim().toLowerCase();
 
-async function dcCloseVerifierScanner() {
-  if (!DC_VERIFIER_SCANNER) return;
-  try {
-    await DC_VERIFIER_SCANNER.clear();
-  } catch (e) {}
-  DC_VERIFIER_SCANNER = null;
-}
+      // One-Ply special logic: direct vs. from slitting
+      if (jobDept === 'oneply') {
+        const prevDept = String(job?.prev_job_department || '').trim().toLowerCase();
+        const grandPrevDept = String(job?.grandprev_department || '').trim().toLowerCase();
+        const fromSlitting = prevDept === 'jumbo_slitting' || prevDept === 'slitting' || grandPrevDept === 'jumbo_slitting' || grandPrevDept === 'slitting';
 
-async function dcOpenRollVerification(job) {
-  const required = dcBuildRequiredRolls(job);
-  if (!required.length) {
-    return { ok: false, error: 'No assigned roll found for this job.' };
-  }
+        if (fromSlitting) {
+          // From slitting: scan assigned child rolls
+          const assignedRows = dcCollectAssignedChildRolls(job);
+          assignedRows.forEach(function (r) {
+            if (!r || typeof r !== 'object') return;
+            addRoll(r.roll_no || '', {
+              paper_type: r.paper_type || job?.paper_type || '',
+              width: r.width_mm ?? job?.width_mm ?? '',
+              length: r.length_mtr ?? job?.length_mtr ?? ''
+            });
+          });
+        } else {
+          // Direct job: scan parent roll(s)
+          const assignedRows = dcCollectAssignedChildRolls(job);
+          addRoll(job?.roll_no || extra.assigned_parent_roll_no || parent.roll_no || '', {
+            paper_type: job?.paper_type || parent.paper_type || '',
+            width: job?.width_mm ?? parent.width_mm ?? '',
+            length: job?.length_mtr ?? parent.length_mtr ?? ''
+          });
+          assignedRows.forEach(function (r) {
+            if (!r || typeof r !== 'object' || !r.parent_roll_no) return;
+            addRoll(r.parent_roll_no, {
+              paper_type: r.paper_type || job?.paper_type || '',
+              width: r.width_mm ?? job?.width_mm ?? '',
+              length: r.length_mtr ?? job?.length_mtr ?? ''
+            });
+          });
+        }
+        return out;
+      }
 
-  const isMobileView = window.matchMedia('(max-width: 640px)').matches;
-  const actionWidth = isMobileView ? 'width:100%;justify-content:center;min-height:44px' : '';
-  const rowMap = {};
-  required.forEach(function(r) { rowMap[r.norm] = r; });
-  const matched = {};
-  const methods = {};
+      // Default logic for other departments
+      const childRolls = Array.isArray(extra.parent_rolls) ? extra.parent_rolls.filter(function (r) { return String(r || '').trim() !== ''; }) : [];
+      if (childRolls.length > 0) {
+        childRolls.forEach(function (pr) {
+          addRoll(pr, { paper_type: job?.paper_type || '', width: job?.width_mm ?? '', length: job?.length_mtr ?? '' });
+        });
+      } else {
+        const assignedRows = dcCollectAssignedChildRolls(job);
+        if (assignedRows.length > 0) {
+          assignedRows.forEach(function (r) {
+            if (!r || typeof r !== 'object') return;
+            addRoll(r.roll_no || '', {
+              paper_type: r.paper_type || job?.paper_type || '',
+              width: r.width_mm ?? job?.width_mm ?? '',
+              length: r.length_mtr ?? job?.length_mtr ?? ''
+            });
+          });
+        } else {
+          addRoll(job?.roll_no || extra.assigned_parent_roll_no || parent.roll_no || '', {
+            paper_type: job?.paper_type || parent.paper_type || '',
+            width: job?.width_mm ?? parent.width_mm ?? '',
+            length: job?.length_mtr ?? parent.length_mtr ?? ''
+          });
+        }
+      }
 
-  const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.72);z-index:10050;display:flex;align-items:center;justify-content:center;padding:' + (isMobileView ? '0' : '16px');
-  overlay.innerHTML = `
+      return out;
+    }
+
+    function dcShowVerificationMessage(el, kind, text) {
+      if (!el) return;
+      const colors = {
+        info: { bg: '#e0f2fe', border: '#7dd3fc', color: '#075985' },
+        ok: { bg: '#dcfce7', border: '#86efac', color: '#166534' },
+        warn: { bg: '#fef3c7', border: '#fcd34d', color: '#92400e' },
+        bad: { bg: '#fee2e2', border: '#fca5a5', color: '#991b1b' }
+      };
+      const style = colors[kind] || colors.info;
+      el.style.display = '';
+      el.style.background = style.bg;
+      el.style.border = '1px solid ' + style.border;
+      el.style.color = style.color;
+      el.innerHTML = text;
+    }
+
+    async function dcCloseVerifierScanner() {
+      if (!DC_VERIFIER_SCANNER) return;
+      try {
+        await DC_VERIFIER_SCANNER.clear();
+      } catch (e) { }
+      DC_VERIFIER_SCANNER = null;
+    }
+
+    async function dcOpenRollVerification(job) {
+      const required = dcBuildRequiredRolls(job);
+      if (!required.length) {
+        return { ok: false, error: 'No assigned roll found for this job.' };
+      }
+
+      const isMobileView = window.matchMedia('(max-width: 640px)').matches;
+      const actionWidth = isMobileView ? 'width:100%;justify-content:center;min-height:44px' : '';
+      const rowMap = {};
+      required.forEach(function (r) { rowMap[r.norm] = r; });
+      const matched = {};
+      const methods = {};
+
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.72);z-index:10050;display:flex;align-items:center;justify-content:center;padding:' + (isMobileView ? '0' : '16px');
+      overlay.innerHTML = `
     <div style="width:min(760px,100%);height:${isMobileView ? '100dvh' : 'auto'};max-height:${isMobileView ? '100dvh' : '90vh'};overflow:auto;background:#fff;border-radius:${isMobileView ? '0' : '18px'};box-shadow:0 30px 80px rgba(15,23,42,.35)">
       <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:${isMobileView ? '12px' : '18px 20px'};border-bottom:1px solid #e2e8f0">
         <div>
@@ -3894,216 +5231,216 @@ async function dcOpenRollVerification(job) {
         </div>
       </div>
     </div>`;
-  document.body.appendChild(overlay);
+      document.body.appendChild(overlay);
 
-  const listEl = overlay.querySelector('#dcVList');
-  const msgEl = overlay.querySelector('#dcVMsg');
-  const progressEl = overlay.querySelector('#dcVProgress');
-  const proceedBtn = overlay.querySelector('#dcVProceed');
-  const lastEl = overlay.querySelector('#dcVLast');
-  const manualEl = overlay.querySelector('#dcVManual');
-  const manualBtn = overlay.querySelector('#dcVAdd');
-  const manualLock = overlay.querySelector('#dcVManualLock');
-  const startBtn = overlay.querySelector('#dcVStart');
-  const stopBtn = overlay.querySelector('#dcVStop');
-  const fileInput = overlay.querySelector('#dcVFile');
+      const listEl = overlay.querySelector('#dcVList');
+      const msgEl = overlay.querySelector('#dcVMsg');
+      const progressEl = overlay.querySelector('#dcVProgress');
+      const proceedBtn = overlay.querySelector('#dcVProceed');
+      const lastEl = overlay.querySelector('#dcVLast');
+      const manualEl = overlay.querySelector('#dcVManual');
+      const manualBtn = overlay.querySelector('#dcVAdd');
+      const manualLock = overlay.querySelector('#dcVManualLock');
+      const startBtn = overlay.querySelector('#dcVStart');
+      const stopBtn = overlay.querySelector('#dcVStop');
+      const fileInput = overlay.querySelector('#dcVFile');
 
-  function updateProceedBtnState() {
-    const matchedCount = Object.keys(matched).length;
-    const canProceed = matchedCount > 0 && matchedCount === required.length;
-    proceedBtn.disabled = !canProceed;
-    proceedBtn.style.opacity = canProceed ? '1' : '0.55';
-    proceedBtn.style.cursor = canProceed ? 'pointer' : 'not-allowed';
-    proceedBtn.style.pointerEvents = canProceed ? 'auto' : 'none';
-  }
+      function updateProceedBtnState() {
+        const matchedCount = Object.keys(matched).length;
+        const canProceed = matchedCount > 0 && matchedCount === required.length;
+        proceedBtn.disabled = !canProceed;
+        proceedBtn.style.opacity = canProceed ? '1' : '0.55';
+        proceedBtn.style.cursor = canProceed ? 'pointer' : 'not-allowed';
+        proceedBtn.style.pointerEvents = canProceed ? 'auto' : 'none';
+      }
 
-  // Force a locked visual + functional state until rolls are matched.
-  updateProceedBtnState();
+      // Force a locked visual + functional state until rolls are matched.
+      updateProceedBtnState();
 
-  if (!CAN_MANUAL_ROLL_ENTRY) {
-    if (manualLock) manualLock.style.display = '';
-    if (manualEl) {
-      manualEl.disabled = true;
-      manualEl.placeholder = 'Manual disabled for this account';
-      manualEl.style.background = '#f8fafc';
-      manualEl.style.opacity = '0.65';
-      manualEl.style.cursor = 'not-allowed';
-    }
-    if (manualBtn) {
-      manualBtn.disabled = true;
-      manualBtn.style.opacity = '0.65';
-      manualBtn.style.cursor = 'not-allowed';
-      manualBtn.title = 'Manual roll entry is disabled for this account.';
-    }
-    dcShowVerificationMessage(msgEl, 'info', '<strong>Scan Only Mode:</strong> Your account cannot use manual roll entry. Please verify rolls using QR Scanner and then start the job.');
-  }
+      if (!CAN_MANUAL_ROLL_ENTRY) {
+        if (manualLock) manualLock.style.display = '';
+        if (manualEl) {
+          manualEl.disabled = true;
+          manualEl.placeholder = 'Manual disabled for this account';
+          manualEl.style.background = '#f8fafc';
+          manualEl.style.opacity = '0.65';
+          manualEl.style.cursor = 'not-allowed';
+        }
+        if (manualBtn) {
+          manualBtn.disabled = true;
+          manualBtn.style.opacity = '0.65';
+          manualBtn.style.cursor = 'not-allowed';
+          manualBtn.title = 'Manual roll entry is disabled for this account.';
+        }
+        dcShowVerificationMessage(msgEl, 'info', '<strong>Scan Only Mode:</strong> Your account cannot use manual roll entry. Please verify rolls using QR Scanner and then start the job.');
+      }
 
-  function renderList() {
-    listEl.innerHTML = required.map(function(row) {
-      const ok = !!matched[row.norm];
-      const method = methods[row.norm] ? (' (' + methods[row.norm] + ')') : '';
-      return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 12px;border-radius:10px;background:${ok ? '#dcfce7' : '#fff'};border:1px solid ${ok ? '#86efac' : '#e2e8f0'};margin-bottom:8px">
+      function renderList() {
+        listEl.innerHTML = required.map(function (row) {
+          const ok = !!matched[row.norm];
+          const method = methods[row.norm] ? (' (' + methods[row.norm] + ')') : '';
+          return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 12px;border-radius:10px;background:${ok ? '#dcfce7' : '#fff'};border:1px solid ${ok ? '#86efac' : '#e2e8f0'};margin-bottom:8px">
         <div>
           <div style="font-size:.88rem;font-weight:900;color:#0f172a">${esc(row.roll_no)}</div>
           <div style="font-size:.75rem;color:#64748b">${esc(row.paper_type || '--')} | ${esc(String(row.width || '--'))} x ${esc(String(row.length || '--'))}</div>
         </div>
         <div style="font-size:.72rem;font-weight:900;text-transform:uppercase;color:${ok ? '#166534' : '#92400e'}">${ok ? ('Matched' + method) : 'Pending'}</div>
       </div>`;
-    }).join('');
-    const matchedCount = Object.keys(matched).length;
-    progressEl.textContent = 'Matched ' + matchedCount + ' / ' + required.length;
-    updateProceedBtnState();
-  }
-
-  function processRawValue(rawValue, method) {
-    const shown = String(rawValue || '').trim();
-    if (lastEl) lastEl.value = shown;
-    const extracted = dcExtractRollNoFromQr(rawValue);
-    const norm = dcNormalizeRollNo(extracted);
-    if (!norm) {
-      dcShowVerificationMessage(msgEl, 'bad', 'Could not detect a valid roll number.');
-      return;
-    }
-    if (!rowMap[norm]) {
-      dcShowVerificationMessage(msgEl, 'bad', 'Scanned roll ' + extracted + ' is not assigned to this job.');
-      return;
-    }
-    if (matched[norm]) {
-      dcShowVerificationMessage(msgEl, 'warn', 'Roll ' + rowMap[norm].roll_no + ' already matched.');
-      return;
-    }
-    matched[norm] = true;
-    methods[norm] = String(method || 'qr').toUpperCase();
-    renderList();
-    const done = Object.keys(matched).length === required.length;
-    dcShowVerificationMessage(msgEl, done ? 'ok' : 'info', done ? 'All assigned rolls matched. You can start the job now.' : ('Matched ' + rowMap[norm].roll_no + '. Continue remaining rolls.'));
-  }
-
-  async function startScanner() {
-    if (typeof Html5QrcodeScanner !== 'function') {
-      dcShowVerificationMessage(msgEl, 'bad', 'Scanner unavailable. Use manual input or photo scan.');
-      return;
-    }
-    await dcCloseVerifierScanner();
-    const reader = overlay.querySelector('#dcVScanner');
-    if (reader) reader.innerHTML = '';
-    startBtn.style.display = 'none';
-    stopBtn.style.display = '';
-    dcShowVerificationMessage(msgEl, 'info', 'Scanner opening...');
-    try {
-      DC_VERIFIER_SCANNER = new Html5QrcodeScanner('dcVScanner', {
-        fps: 10,
-        qrbox: { width: 250, height: 250 },
-        rememberLastUsedCamera: false,
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.QR_CODE,
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.CODE_39,
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.EAN_8
-        ]
-      }, false);
-      DC_VERIFIER_SCANNER.render(function(decodedText) {
-        processRawValue(decodedText, 'qr');
-      }, function() {});
-      dcShowVerificationMessage(msgEl, 'info', 'Scanner started. Point camera at assigned roll QR code.');
-    } catch (err) {
-      startBtn.style.display = '';
-      stopBtn.style.display = 'none';
-      dcShowVerificationMessage(msgEl, 'bad', 'Camera could not start. Allow camera permission and retry.');
-    }
-  }
-
-  async function stopScanner() {
-    await dcCloseVerifierScanner();
-    startBtn.style.display = '';
-    stopBtn.style.display = 'none';
-    dcShowVerificationMessage(msgEl, 'info', CAN_MANUAL_ROLL_ENTRY ? 'Scanner stopped. You can use manual input or restart scanner.' : 'Scanner stopped. Restart scanner to continue verification.');
-  }
-
-  async function scanFromImageFile(file) {
-    if (!file) return;
-    if (typeof Html5Qrcode !== 'function') {
-      dcShowVerificationMessage(msgEl, 'bad', 'Image scan library is unavailable.');
-      return;
-    }
-    const tempId = 'dcVTmp_' + Date.now();
-    const temp = document.createElement('div');
-    temp.id = tempId;
-    temp.style.display = 'none';
-    document.body.appendChild(temp);
-    const qr = new Html5Qrcode(tempId);
-    try {
-      const decoded = await qr.scanFile(file, true);
-      processRawValue(decoded, 'qr');
-      dcShowVerificationMessage(msgEl, 'ok', 'QR decoded from image successfully.');
-    } catch (err) {
-      dcShowVerificationMessage(msgEl, 'bad', 'Could not decode QR from image. Try a clearer photo or live scan.');
-    } finally {
-      try { await qr.clear(); } catch (e) {}
-      if (temp.parentNode) temp.parentNode.removeChild(temp);
-    }
-  }
-
-  renderList();
-  setTimeout(function() { startScanner(); }, 150);
-
-  return new Promise(function(resolve) {
-    let done = false;
-    function finish(result) {
-      if (done) return;
-      done = true;
-      dcCloseVerifierScanner().finally(function() {
-        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-        resolve(result);
-      });
-    }
-
-    overlay.querySelector('#dcVClose').addEventListener('click', function() { finish({ ok: false, error: 'Verification cancelled.' }); });
-    overlay.querySelector('#dcVCancel').addEventListener('click', function() { finish({ ok: false, error: 'Verification cancelled.' }); });
-    overlay.querySelector('#dcVProceed').addEventListener('click', function() {
-      if (Object.keys(matched).length !== required.length) {
-        dcShowVerificationMessage(msgEl, 'bad', 'All assigned rolls must be matched before start.');
-        return;
+        }).join('');
+        const matchedCount = Object.keys(matched).length;
+        progressEl.textContent = 'Matched ' + matchedCount + ' / ' + required.length;
+        updateProceedBtnState();
       }
-      const verified = required.filter(function(r) { return !!matched[r.norm]; }).map(function(r) { return r.roll_no; });
-      finish({ ok: true, verified_rolls: verified });
-    });
-    startBtn.addEventListener('click', startScanner);
-    stopBtn.addEventListener('click', stopScanner);
-    overlay.querySelector('#dcVPhoto').addEventListener('click', function() { fileInput.click(); });
-    fileInput.addEventListener('change', function() {
-      const file = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
-      scanFromImageFile(file);
-      fileInput.value = '';
-    });
-    overlay.querySelector('#dcVAdd').addEventListener('click', function() {
-      if (!CAN_MANUAL_ROLL_ENTRY) {
-        dcShowVerificationMessage(msgEl, 'bad', 'Manual roll entry is disabled for this account. Please scan QR.');
-        return;
-      }
-      const raw = String(manualEl.value || '').trim();
-      if (!raw) {
-        dcShowVerificationMessage(msgEl, 'warn', 'Enter a roll number first.');
-        return;
-      }
-      processRawValue(raw, 'manual');
-      manualEl.value = '';
-      manualEl.focus();
-    });
-    manualEl.addEventListener('keydown', function(ev) {
-      if (ev.key === 'Enter') {
-        ev.preventDefault();
-        if (!CAN_MANUAL_ROLL_ENTRY) {
-          dcShowVerificationMessage(msgEl, 'bad', 'Manual roll entry is disabled for this account. Please scan QR.');
+
+      function processRawValue(rawValue, method) {
+        const shown = String(rawValue || '').trim();
+        if (lastEl) lastEl.value = shown;
+        const extracted = dcExtractRollNoFromQr(rawValue);
+        const norm = dcNormalizeRollNo(extracted);
+        if (!norm) {
+          dcShowVerificationMessage(msgEl, 'bad', 'Could not detect a valid roll number.');
           return;
         }
-        overlay.querySelector('#dcVAdd').click();
+        if (!rowMap[norm]) {
+          dcShowVerificationMessage(msgEl, 'bad', 'Scanned roll ' + extracted + ' is not assigned to this job.');
+          return;
+        }
+        if (matched[norm]) {
+          dcShowVerificationMessage(msgEl, 'warn', 'Roll ' + rowMap[norm].roll_no + ' already matched.');
+          return;
+        }
+        matched[norm] = true;
+        methods[norm] = String(method || 'qr').toUpperCase();
+        renderList();
+        const done = Object.keys(matched).length === required.length;
+        dcShowVerificationMessage(msgEl, done ? 'ok' : 'info', done ? 'All assigned rolls matched. You can start the job now.' : ('Matched ' + rowMap[norm].roll_no + '. Continue remaining rolls.'));
       }
-    });
-  });
-}
-</script>
+
+      async function startScanner() {
+        if (typeof Html5QrcodeScanner !== 'function') {
+          dcShowVerificationMessage(msgEl, 'bad', 'Scanner unavailable. Use manual input or photo scan.');
+          return;
+        }
+        await dcCloseVerifierScanner();
+        const reader = overlay.querySelector('#dcVScanner');
+        if (reader) reader.innerHTML = '';
+        startBtn.style.display = 'none';
+        stopBtn.style.display = '';
+        dcShowVerificationMessage(msgEl, 'info', 'Scanner opening...');
+        try {
+          DC_VERIFIER_SCANNER = new Html5QrcodeScanner('dcVScanner', {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+            rememberLastUsedCamera: false,
+            formatsToSupport: [
+              Html5QrcodeSupportedFormats.QR_CODE,
+              Html5QrcodeSupportedFormats.CODE_128,
+              Html5QrcodeSupportedFormats.CODE_39,
+              Html5QrcodeSupportedFormats.EAN_13,
+              Html5QrcodeSupportedFormats.EAN_8
+            ]
+          }, false);
+          DC_VERIFIER_SCANNER.render(function (decodedText) {
+            processRawValue(decodedText, 'qr');
+          }, function () { });
+          dcShowVerificationMessage(msgEl, 'info', 'Scanner started. Point camera at assigned roll QR code.');
+        } catch (err) {
+          startBtn.style.display = '';
+          stopBtn.style.display = 'none';
+          dcShowVerificationMessage(msgEl, 'bad', 'Camera could not start. Allow camera permission and retry.');
+        }
+      }
+
+      async function stopScanner() {
+        await dcCloseVerifierScanner();
+        startBtn.style.display = '';
+        stopBtn.style.display = 'none';
+        dcShowVerificationMessage(msgEl, 'info', CAN_MANUAL_ROLL_ENTRY ? 'Scanner stopped. You can use manual input or restart scanner.' : 'Scanner stopped. Restart scanner to continue verification.');
+      }
+
+      async function scanFromImageFile(file) {
+        if (!file) return;
+        if (typeof Html5Qrcode !== 'function') {
+          dcShowVerificationMessage(msgEl, 'bad', 'Image scan library is unavailable.');
+          return;
+        }
+        const tempId = 'dcVTmp_' + Date.now();
+        const temp = document.createElement('div');
+        temp.id = tempId;
+        temp.style.display = 'none';
+        document.body.appendChild(temp);
+        const qr = new Html5Qrcode(tempId);
+        try {
+          const decoded = await qr.scanFile(file, true);
+          processRawValue(decoded, 'qr');
+          dcShowVerificationMessage(msgEl, 'ok', 'QR decoded from image successfully.');
+        } catch (err) {
+          dcShowVerificationMessage(msgEl, 'bad', 'Could not decode QR from image. Try a clearer photo or live scan.');
+        } finally {
+          try { await qr.clear(); } catch (e) { }
+          if (temp.parentNode) temp.parentNode.removeChild(temp);
+        }
+      }
+
+      renderList();
+      setTimeout(function () { startScanner(); }, 150);
+
+      return new Promise(function (resolve) {
+        let done = false;
+        function finish(result) {
+          if (done) return;
+          done = true;
+          dcCloseVerifierScanner().finally(function () {
+            if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+            resolve(result);
+          });
+        }
+
+        overlay.querySelector('#dcVClose').addEventListener('click', function () { finish({ ok: false, error: 'Verification cancelled.' }); });
+        overlay.querySelector('#dcVCancel').addEventListener('click', function () { finish({ ok: false, error: 'Verification cancelled.' }); });
+        overlay.querySelector('#dcVProceed').addEventListener('click', function () {
+          if (Object.keys(matched).length !== required.length) {
+            dcShowVerificationMessage(msgEl, 'bad', 'All assigned rolls must be matched before start.');
+            return;
+          }
+          const verified = required.filter(function (r) { return !!matched[r.norm]; }).map(function (r) { return r.roll_no; });
+          finish({ ok: true, verified_rolls: verified });
+        });
+        startBtn.addEventListener('click', startScanner);
+        stopBtn.addEventListener('click', stopScanner);
+        overlay.querySelector('#dcVPhoto').addEventListener('click', function () { fileInput.click(); });
+        fileInput.addEventListener('change', function () {
+          const file = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+          scanFromImageFile(file);
+          fileInput.value = '';
+        });
+        overlay.querySelector('#dcVAdd').addEventListener('click', function () {
+          if (!CAN_MANUAL_ROLL_ENTRY) {
+            dcShowVerificationMessage(msgEl, 'bad', 'Manual roll entry is disabled for this account. Please scan QR.');
+            return;
+          }
+          const raw = String(manualEl.value || '').trim();
+          if (!raw) {
+            dcShowVerificationMessage(msgEl, 'warn', 'Enter a roll number first.');
+            return;
+          }
+          processRawValue(raw, 'manual');
+          manualEl.value = '';
+          manualEl.focus();
+        });
+        manualEl.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter') {
+            ev.preventDefault();
+            if (!CAN_MANUAL_ROLL_ENTRY) {
+              dcShowVerificationMessage(msgEl, 'bad', 'Manual roll entry is disabled for this account. Please scan QR.');
+              return;
+            }
+            overlay.querySelector('#dcVAdd').click();
+          }
+        });
+      });
+    }
+  </script>
 <?php endif; ?>
 
 <?php include __DIR__ . '/../../../includes/footer.php'; ?>
