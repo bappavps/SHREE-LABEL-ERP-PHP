@@ -1051,12 +1051,19 @@
     for (var i = 0; i < state.filteredRows.length; i += 1) {
       var row = state.filteredRows[i];
       var rowCls = parseInt(row.id, 10) === state.highlightedDispatchId ? ' class="ds-row-highlight"' : '';
+      var dispatchedCartons = num(row.dispatched_cartons || 0);
+      var ratio = num(row.carton_ratio || row.per_carton || 50);
+      var dQty = num(row.dispatch_qty || 0);
+      if (dispatchedCartons <= 0 && ratio > 0 && dQty > 0) {
+        dispatchedCartons = Math.floor(dQty / ratio);
+      }
+      var cartonsTag = dispatchedCartons > 0 ? ' <span class="ds-qty-badge" style="background:#f1f5f9;color:#475569;font-size:11px;padding:2px 6px;border-radius:4px;margin-left:4px">(' + fmt(dispatchedCartons) + ' Cartons)</span>' : '';
       html += '<tr data-dispatch-entry-id="' + esc(row.id || '') + '"' + rowCls + '>' +
         '<td>' + esc(row.dispatch_id || '') + '</td>' +
         '<td>' + esc(row.dispatch_date || row.entry_date || '') + '</td>' +
         '<td>' + esc(row.client_name || '') + '</td>' +
         '<td>' + esc(row.item_name || '') + '</td>' +
-        '<td>' + fmt(row.dispatch_qty || 0) + ' ' + esc(row.unit || '') + '</td>' +
+        '<td><strong>' + fmt(row.dispatch_qty || 0) + ' ' + esc(row.unit || '') + '</strong>' + cartonsTag + '</td>' +
         '<td>' + esc(row.invoice_no || '') + '</td>' +
         '<td>' + esc(row.transport_type || '') + '</td>' +
         '<td>' + statusPill(String(row.delivery_status || 'Pending')) + '</td>' +
@@ -1912,12 +1919,19 @@
     var html = '';
     for (var i = 0; i < rows.length; i += 1) {
       var row = rows[i];
+      var dispatchedCartons = num(row.dispatched_cartons || 0);
+      var ratio = num(row.carton_ratio || row.per_carton || 50);
+      var dQty = num(row.dispatch_qty || 0);
+      if (dispatchedCartons <= 0 && ratio > 0 && dQty > 0) {
+        dispatchedCartons = Math.floor(dQty / ratio);
+      }
+      var cartonsTag = dispatchedCartons > 0 ? ' <small style="color:#475569;font-weight:600">(' + fmt(dispatchedCartons) + ' Cartons)</small>' : '';
       html += '<tr>' +
         '<td>' + esc(row.client_name || '-') + '</td>' +
         '<td>' + esc(row.item_name || '-') + '</td>' +
         '<td>' + esc(row.batch_no || '-') + '</td>' +
         '<td>' + esc(row.transport_type || '-') + '</td>' +
-        '<td>' + fmt(row.dispatch_qty || 0, 3) + '</td>' +
+        '<td><strong>' + fmt(row.dispatch_qty || 0, 3) + '</strong>' + cartonsTag + '</td>' +
         '<td>' + fmtCurrency(row.transport_cost || 0) + '</td>' +
       '</tr>';
     }
@@ -2523,13 +2537,20 @@
         var statusText = String(r.delivery_status || '').toLowerCase();
         var rowClass = statusText === 'delivered' ? 'ds-row-delivered' : (statusText === 'in transit' ? 'ds-row-transit' : 'ds-row-pending');
         var statusClass = statusText === 'delivered' ? 'is-delivered' : (statusText === 'in transit' ? 'is-transit' : 'is-pending');
+        var dispatchedCartons = num(r.dispatched_cartons || 0);
+        var ratio = num(r.carton_ratio || r.per_carton || 50);
+        var dQty = num(r.dispatch_qty || 0);
+        if (dispatchedCartons <= 0 && ratio > 0 && dQty > 0) {
+          dispatchedCartons = Math.floor(dQty / ratio);
+        }
+        var cartonsTag = dispatchedCartons > 0 ? ' (' + fmt(dispatchedCartons) + ' Cartons)' : '';
         html += '<tr class="' + rowClass + '">' +
           '<td>' + String(i + 1) + '</td>' +
           '<td>' + esc(r.dispatch_id || '') + '</td>' +
           '<td>' + esc(formatDisplayDate(r.dispatch_date || r.entry_date || '')) + '</td>' +
           '<td>' + esc(r.client_name || '') + '</td>' +
           '<td>' + esc(r.item_name || '') + '</td>' +
-          '<td class="ds-report-cell-right">' + fmt(r.dispatch_qty || 0) + ' ' + esc(r.unit || '') + '</td>' +
+          '<td class="ds-report-cell-right">' + fmt(r.dispatch_qty || 0) + ' ' + esc(r.unit || '') + esc(cartonsTag) + '</td>' +
           '<td>' + esc(r.invoice_no || '') + '</td>' +
           '<td>' + esc(r.transport_type || '') + '</td>' +
           '<td><span class="ds-status-pill ' + statusClass + '">' + esc(r.delivery_status || '') + '</span></td>' +

@@ -902,12 +902,21 @@
       var bpr = fg_num(extra.pcs_per_roll || extra.barcode_in_1_roll || 0);
       
       // Calculate total excluded quantity
-      var excludedQty = looseQty + (mixedExtraRolls * bpr);
+      var excludedQty = looseQty;
+      if (bpr > 1 && mixedExtraRolls > 0) {
+        excludedQty += (mixedExtraRolls * bpr);
+      }
+
+      var totalProd = fg_num(extra.total_production || extra.packed_qty || 0);
+      if (totalProd <= 0) {
+        var baseTotal = fg_num(extra.total || 0);
+        totalProd = baseTotal > 0 ? (baseTotal + excludedQty) : (storedQty + excludedQty);
+      }
+      var displayQty = afterPackingQty >= totalProd ? afterPackingQty : totalProd;
       
-      if (excludedQty > 0 && storedQty > 0) {
-        var physicalTotal = storedQty + excludedQty;
-        var displayQty = afterPackingQty >= physicalTotal ? afterPackingQty : physicalTotal;
-        var breakdownText = fg_escapeHtml(displayQty) + ' (' + fg_escapeHtml(storedQty) + ' + ' + fg_escapeHtml(excludedQty) + ' loose/mixed)';
+      if (excludedQty > 0) {
+        var packingCartonStock = displayQty > excludedQty ? (displayQty - excludedQty) : storedQty;
+        var breakdownText = fg_escapeHtml(displayQty) + ' (' + fg_escapeHtml(packingCartonStock) + ' + ' + fg_escapeHtml(excludedQty) + ' loose/mixed)';
         return '<span class="fg-qty-pill fg-qty-pill-packed">' + breakdownText + '</span>';
       }
       

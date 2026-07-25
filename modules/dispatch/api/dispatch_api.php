@@ -398,7 +398,7 @@ function ds_carton_count_for_stock(array $stockRow): float {
 
     // For carton-based categories, prefer the STORED carton value from remarks
     // (includes mixed cartons) over calculated value (which may exclude them).
-    if ($category === 'barcode' || $category === 'printing_label') {
+    if (in_array($category, ['barcode', 'printing_label', 'pos_paper_roll', 'one_ply', 'two_ply', 'paperroll', 'pos', 'oneply', 'twoply'], true)) {
         $explicitCarton = ds_decimal(ds_pick_extra($extra, ['carton', 'cartons', 'carton_count', 'cartons_count', 'display_carton', 'display_cartons']));
         if ($explicitCarton > 0) {
             return floor($explicitCarton);
@@ -443,10 +443,9 @@ function ds_mixed_extra_for_stock(array $row): float {
     $category = strtolower(trim((string)($row['category'] ?? '')));
     $extra = ds_parse_remarks_extra($row['remarks'] ?? '');
 
-    // For barcode and printing_label, quantity already stores the full-carton-only
-    // value (set by packing API as rpc × cartonCount × bpr). Mixed extras are
-    // handled separately and should NOT be subtracted from quantity.
-    if ($category === 'barcode' || $category === 'printing_label') {
+    // For packed categories, quantity already stores the actual carton stock value set by packing API.
+    // Mixed extras are handled separately and should NOT be subtracted from quantity.
+    if (in_array($category, ['barcode', 'printing_label', 'pos_paper_roll', 'one_ply', 'two_ply', 'paperroll', 'pos', 'oneply', 'twoply'], true)) {
         return 0.0;
     }
 
@@ -684,13 +683,17 @@ function ds_recalc_carton_in_remarks(float $newQty, string $remarks, string $cat
             $extra['loose_qty'] = max(0, $prevLooseQty);
         }
     } else {
-        // Non-barcode: recalc based on per_carton
         $perCarton = $pick(['per_carton']);
+        $prevLooseQty = (float)($extra['loose_qty'] ?? 0);
         if ($perCarton > 0) {
             $newCartonCount = floor($newQty / $perCarton);
-            $newLooseQty = (float)fmod($newQty, $perCarton);
             $extra['carton'] = $newCartonCount;
-            $extra['loose_qty'] = max(0, $newLooseQty);
+            // Keep original loose_qty recorded at packing time if set, else calculate remainder
+            if ($prevLooseQty > 0) {
+                $extra['loose_qty'] = $prevLooseQty;
+            } else {
+                $extra['loose_qty'] = (float)fmod($newQty, $perCarton);
+            }
         }
     }
 
@@ -1436,6 +1439,25 @@ if ($action === 'save_dispatch') {
     }
 }
 
+function ds_enrich_dispatch_row(mysqli $db, array $row): array {
+    $stockId = (int)($row['finished_stock_id'] ?? 0);
+    $row['dispatched_cartons'] = 0;
+    $row['carton_ratio'] = 0;
+
+    if ($stockId > 0) {
+        $stock = ds_get_stock_row($db, $stockId);
+        if ($stock) {
+            $ratio = ds_carton_ratio_for_stock($stock);
+            $row['carton_ratio'] = $ratio;
+            $dispatchQty = (float)($row['dispatch_qty'] ?? 0);
+            if ($ratio > 0 && $dispatchQty > 0) {
+                $row['dispatched_cartons'] = (int)floor($dispatchQty / $ratio);
+            }
+        }
+    }
+    return $row;
+}
+
 if ($action === 'list_dispatches') {
     $from = ds_date($_GET['from'] ?? '');
     $to = ds_date($_GET['to'] ?? '');
@@ -1499,8 +1521,14 @@ if ($action === 'list_dispatches') {
     if ($types !== '') {
         $stmt->bind_param($types, ...$params);
     }
+
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+    foreach ($rows as &$r) {
+        $r = ds_enrich_dispatch_row($db, $r);
+    }
+    unset($r);
 
     $rowIds = array_values(array_filter(array_map(static function ($row) {
         return (int)($row['id'] ?? 0);
@@ -1530,6 +1558,7 @@ if ($action === 'get_dispatch') {
     if (!$row) {
         ds_json(404, ['ok' => false, 'error' => 'Dispatch entry not found.']);
     }
+    $row = ds_enrich_dispatch_row($db, $row);
 
     $batchStmt = $db->prepare("SELECT di.id, di.dispatch_id, di.item_id, di.batch_no, di.packing_id, di.dispatch_qty,
         COALESCE(NULLIF(fs.item_name, ''), ?, 'Unknown Item') AS item_name,

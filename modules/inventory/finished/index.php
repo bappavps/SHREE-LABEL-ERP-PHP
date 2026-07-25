@@ -6,7 +6,7 @@ require_once __DIR__ . '/../../../includes/auth_check.php';
 $isAdminUser = isAdmin();
 $canManageRows = $isAdminUser || (function_exists('canAccessPath') && canAccessPath('/modules/inventory/finished/index.php'));
 $csrfToken = generateCSRF();
-$moduleVersion = @filemtime(__DIR__ . '/js/finished.js') ?: time();
+$moduleVersion = time();
 
 $appSettings  = getAppSettings();
 $co_name      = $appSettings['company_name']    ?? (defined('APP_NAME') ? APP_NAME : 'ERP');
