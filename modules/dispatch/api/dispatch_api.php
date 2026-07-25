@@ -1443,19 +1443,121 @@ function ds_enrich_dispatch_row(mysqli $db, array $row): array {
     $stockId = (int)($row['finished_stock_id'] ?? 0);
     $row['dispatched_cartons'] = 0;
     $row['carton_ratio'] = 0;
+    $row['freight_per_carton'] = 0.0;
+    $row['freight_per_unit'] = 0.0;
 
+    $dispatchQty = (float)($row['dispatch_qty'] ?? 0);
+    $transportCost = (float)($row['transport_cost'] ?? 0);
+
+    if ($dispatchQty > 0 && $transportCost > 0) {
+        $row['freight_per_unit'] = round($transportCost / $dispatchQty, 4);
+    }
+
+    $stock = null;
     if ($stockId > 0) {
         $stock = ds_get_stock_row($db, $stockId);
-        if ($stock) {
-            $ratio = ds_carton_ratio_for_stock($stock);
-            $row['carton_ratio'] = $ratio;
-            $dispatchQty = (float)($row['dispatch_qty'] ?? 0);
-            if ($ratio > 0 && $dispatchQty > 0) {
-                $row['dispatched_cartons'] = (int)floor($dispatchQty / $ratio);
+    }
+    if (!$stock && !empty($row['packing_id'])) {
+        $stmt = $db->prepare('SELECT id, category, item_name, item_code, size, batch_no, unit, quantity, remarks FROM finished_goods_stock WHERE item_code = ? LIMIT 1');
+        if ($stmt) {
+            $stmt->bind_param('s', $row['packing_id']);
+            $stmt->execute();
+            $stock = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+        }
+    }
+
+    if ($stock) {
+        $ratio = ds_carton_ratio_for_stock($stock);
+        $row['carton_ratio'] = $ratio;
+        if ($ratio > 0 && $dispatchQty > 0) {
+            $disCartons = (int)floor($dispatchQty / $ratio);
+            $row['dispatched_cartons'] = $disCartons;
+            if ($disCartons > 0 && $transportCost > 0) {
+                $row['freight_per_carton'] = round($transportCost / $disCartons, 2);
             }
         }
     }
     return $row;
+}
+
+if ($action === 'get_ready_queue') {
+    $search = ds_clean($_GET['search'] ?? '', 255);
+    $client = ds_clean($_GET['client'] ?? '', 255);
+    $limit = max(1, min(200, (int)($_GET['limit'] ?? 100)));
+
+    $sql = "SELECT fs.id, fs.category, fs.item_name, fs.item_code AS packing_id, fs.batch_no, fs.size, fs.unit, fs.quantity AS available_qty, fs.remarks, fs.date AS stock_date
+            FROM finished_goods_stock fs
+            WHERE fs.quantity > 0";
+
+    $where = [];
+    $types = '';
+    $params = [];
+
+    if ($client !== '') {
+        $where[] = "(fs.remarks LIKE ? OR fs.item_name LIKE ?)";
+        $types .= 'ss';
+        $p = '%' . $client . '%';
+        $params[] = $p; $params[] = $p;
+    }
+
+    if ($search !== '') {
+        $where[] = "(fs.item_code LIKE ? OR fs.item_name LIKE ? OR fs.batch_no LIKE ? OR fs.size LIKE ?)";
+        $types .= 'ssss';
+        $p = '%' . $search . '%';
+        $params[] = $p; $params[] = $p; $params[] = $p; $params[] = $p;
+    }
+
+    if (!empty($where)) {
+        $sql .= " AND " . implode(" AND ", $where);
+    }
+    $sql .= " ORDER BY fs.id DESC LIMIT {$limit}";
+
+    $stmt = $db->prepare($sql);
+    if ($types !== '') {
+        $stmt->bind_param($types, ...$params);
+    }
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+    $queue = [];
+    foreach ($rows as $r) {
+        $extra = ds_parse_remarks_extra($r['remarks'] ?? '');
+        $cartons = ds_carton_count_for_stock($r);
+        $ratio = ds_carton_ratio_for_stock($r);
+        $clientFromExtra = ds_pick_extra($extra, ['client_name', 'client', 'customer']);
+        $resolvedClient = $clientFromExtra !== '' ? $clientFromExtra : 'General Client';
+
+        $dispatchedSoFar = ds_already_dispatched_qty($db, (int)$r['id']);
+        $storedQty = (float)($r['available_qty'] ?? 0);
+        $looseQty = (float)($extra['loose_qty'] ?? 0);
+        $totalPhysicalOutput = (float)($extra['after_packing_qty'] ?? ($storedQty + $looseQty));
+        $totalOrderQty = $totalPhysicalOutput;
+
+        $dispatchedPercent = $totalOrderQty > 0 ? min(100, round(($dispatchedSoFar / $totalOrderQty) * 100, 1)) : 0;
+        $statusBadge = $dispatchedSoFar <= 0 ? 'Not Dispatched' : ($storedQty <= 0 ? 'Full Dispatch' : 'Partial Dispatch');
+
+        $queue[] = [
+            'id' => (int)$r['id'],
+            'packing_id' => $r['packing_id'],
+            'item_name' => $r['item_name'],
+            'batch_no' => $r['batch_no'],
+            'size' => $r['size'],
+            'unit' => $r['unit'],
+            'client_name' => $resolvedClient,
+            'available_qty' => $storedQty,
+            'available_cartons' => $cartons,
+            'carton_ratio' => $ratio,
+            'total_physical_output' => $totalPhysicalOutput,
+            'order_qty' => $totalOrderQty,
+            'already_dispatched_qty' => $dispatchedSoFar,
+            'dispatched_percent' => $dispatchedPercent,
+            'dispatch_status_badge' => $statusBadge,
+            'stock_date' => $r['stock_date']
+        ];
+    }
+
+    ds_json(200, ['ok' => true, 'rows' => $queue, 'total_items' => count($queue)]);
 }
 
 if ($action === 'list_dispatches') {

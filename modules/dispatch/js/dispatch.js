@@ -138,6 +138,11 @@
     printTableBtn: document.getElementById('dsPrintTableBtn'),
 
     tableBody: document.getElementById('dsTableBody'),
+    readyQueueBody: document.getElementById('dsReadyQueueBody'),
+    readySearchInput: document.getElementById('dsReadySearchInput'),
+    readyClientInput: document.getElementById('dsReadyClientInput'),
+    readyApplyFilterBtn: document.getElementById('dsReadyApplyFilterBtn'),
+    refreshReadyQueueBtn: document.getElementById('dsRefreshReadyQueueBtn'),
 
     viewModal: document.getElementById('dsViewModal'),
     closeViewModal: document.getElementById('dsCloseViewModal'),
@@ -1058,6 +1063,12 @@
         dispatchedCartons = Math.floor(dQty / ratio);
       }
       var cartonsTag = dispatchedCartons > 0 ? ' <span class="ds-qty-badge" style="background:#f1f5f9;color:#475569;font-size:11px;padding:2px 6px;border-radius:4px;margin-left:4px">(' + fmt(dispatchedCartons) + ' Cartons)</span>' : '';
+      var costVal = num(row.transport_cost || 0);
+      var freightPerCarton = num(row.freight_per_carton || 0);
+      if (freightPerCarton <= 0 && dispatchedCartons > 0 && costVal > 0) {
+        freightPerCarton = costVal / dispatchedCartons;
+      }
+      var costTag = costVal > 0 ? ('Rs ' + fmt(costVal, 2) + (freightPerCarton > 0 ? ' <small style="color:#64748b;font-weight:600">(' + fmtCurrency(freightPerCarton) + '/ctn)</small>' : '')) : 'Rs 0.00';
       html += '<tr data-dispatch-entry-id="' + esc(row.id || '') + '"' + rowCls + '>' +
         '<td>' + esc(row.dispatch_id || '') + '</td>' +
         '<td>' + esc(row.dispatch_date || row.entry_date || '') + '</td>' +
@@ -1067,7 +1078,7 @@
         '<td>' + esc(row.invoice_no || '') + '</td>' +
         '<td>' + esc(row.transport_type || '') + '</td>' +
         '<td>' + statusPill(String(row.delivery_status || 'Pending')) + '</td>' +
-        '<td>' + fmt(row.transport_cost || 0, 2) + '</td>' +
+        '<td>' + costTag + '</td>' +
         '<td><div class="ds-row-actions">' +
           '<button type="button" class="ds-row-btn ds-status-btn" data-ds-action="quick-status" data-id="' + row.id + '" title="Change Status"><i class="bi bi-check2-circle"></i></button>' +
           '<button type="button" class="ds-row-btn" data-ds-action="view" data-id="' + row.id + '">View</button>' +
@@ -2797,6 +2808,117 @@
     });
   }
 
+  function switchModuleTab(tabName) {
+    var targetTab = String(tabName || 'operations').toLowerCase();
+    if (nodes.tabButtons && typeof nodes.tabButtons.forEach === 'function') {
+      nodes.tabButtons.forEach(function (button) {
+        var t = String(button.getAttribute('data-ds-tab') || 'operations').toLowerCase();
+        if (t === targetTab) {
+          button.classList.add('is-active');
+          button.setAttribute('aria-selected', 'true');
+        } else {
+          button.classList.remove('is-active');
+          button.setAttribute('aria-selected', 'false');
+        }
+      });
+    }
+
+    if (nodes.tabPanels && typeof nodes.tabPanels.forEach === 'function') {
+      nodes.tabPanels.forEach(function (panel) {
+        var p = String(panel.getAttribute('data-ds-panel') || 'operations').toLowerCase();
+        if (p === targetTab) {
+          panel.classList.add('is-active');
+          panel.removeAttribute('hidden');
+          panel.style.display = 'block';
+        } else {
+          panel.classList.remove('is-active');
+          panel.setAttribute('hidden', 'hidden');
+          panel.style.display = 'none';
+        }
+      });
+    }
+
+    if (targetTab === 'ready_queue') {
+      loadReadyQueue();
+    } else if (targetTab === 'reports') {
+      loadDispatchReports();
+    }
+  }
+
+  function loadReadyQueue() {
+    if (!nodes.readyQueueBody) return;
+    nodes.readyQueueBody.innerHTML = '<tr><td colspan="9" class="ds-empty"><div class="ds-spinner"></div> Loading awaiting stock queue...</td></tr>';
+
+    var searchVal = nodes.readySearchInput ? String(nodes.readySearchInput.value || '').trim() : '';
+    var clientVal = nodes.readyClientInput ? String(nodes.readyClientInput.value || '').trim() : '';
+
+    var params = {
+      search: searchVal,
+      client: clientVal,
+      limit: 100
+    };
+
+    api('get_ready_queue', params, 'GET').then(function (res) {
+      if (!res || !res.ok) {
+        throw new Error((res && res.error) || 'Unable to load ready stock queue.');
+      }
+      var rows = Array.isArray(res.rows) ? res.rows : [];
+      renderReadyQueue(rows);
+    }).catch(function (err) {
+      if (nodes.readyQueueBody) {
+        nodes.readyQueueBody.innerHTML = '<tr><td colspan="9" class="ds-empty" style="color:#ef4444">' + esc(err.message || 'Error loading ready stock queue.') + '</td></tr>';
+      }
+    });
+  }
+
+  function renderReadyQueue(rows) {
+    if (!nodes.readyQueueBody) return;
+    if (!rows.length) {
+      nodes.readyQueueBody.innerHTML = '<tr><td colspan="9" class="ds-empty">No ready stock currently waiting for dispatch.</td></tr>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < rows.length; i += 1) {
+      var r = rows[i];
+      var availCartons = num(r.available_cartons || 0);
+      var availQty = num(r.available_qty || 0);
+      var orderQty = num(r.order_qty || r.total_physical_output || availQty);
+      var alreadyDispatched = num(r.already_dispatched_qty || 0);
+      var pct = num(r.dispatched_percent || 0);
+
+      var progressColor = pct >= 100 ? '#22c55e' : (pct > 0 ? '#3b82f6' : '#94a3b8');
+      var badgeCls = pct >= 100 ? 'is-delivered' : (pct > 0 ? 'is-transit' : 'is-pending');
+      var badgeLabel = esc(r.dispatch_status_badge || 'Not Dispatched');
+
+      var cartonsText = availCartons > 0 ? ' <small style="color:#64748b;font-weight:600">(' + fmt(availCartons) + ' Cartons)</small>' : '';
+
+      html += '<tr>' +
+        '<td><strong style="color:#0f172a">' + esc(r.packing_id || '-') + '</strong></td>' +
+        '<td>' + esc(formatDisplayDate(r.stock_date || '')) + '</td>' +
+        '<td>' + esc(r.client_name || 'General Client') + '</td>' +
+        '<td>' + esc(r.item_name || '-') + (r.size ? ' <span style="color:#64748b">(' + esc(r.size) + ')</span>' : '') + '</td>' +
+        '<td>' + esc(r.batch_no || '-') + '</td>' +
+        '<td><strong>' + fmt(availQty) + ' ' + esc(r.unit || 'PCS') + '</strong>' + cartonsText + '</td>' +
+        '<td>' +
+          '<div style="min-width:140px">' +
+            '<div style="display:flex;justify-content:space-between;font-size:11px;font-weight:600;margin-bottom:2px">' +
+              '<span>' + fmt(alreadyDispatched) + ' / ' + fmt(orderQty) + '</span>' +
+              '<span>' + pct.toFixed(1) + '%</span>' +
+            '</div>' +
+            '<div style="background:#e2e8f0;border-radius:4px;height:6px;overflow:hidden">' +
+              '<div style="background:' + progressColor + ';width:' + Math.min(100, pct) + '%;height:100%"></div>' +
+            '</div>' +
+          '</div>' +
+        '</td>' +
+        '<td><span class="ds-status-pill ' + badgeCls + '">' + badgeLabel + '</span></td>' +
+        '<td><button type="button" class="btn btn-sm btn-primary ds-ready-dispatch-btn" data-packing-id="' + esc(r.packing_id) + '" style="padding:4px 10px;font-size:12px"><i class="bi bi-truck"></i> Dispatch Now</button></td>' +
+      '</tr>';
+    }
+
+    nodes.readyQueueBody.innerHTML = html;
+  }
+
   function bindEvents() {
     nodes.form.addEventListener('submit', submitForm);
 
@@ -2805,6 +2927,27 @@
         button.addEventListener('click', function () {
           switchModuleTab(String(button.getAttribute('data-ds-tab') || 'operations'));
         });
+      });
+    }
+
+    if (nodes.refreshReadyQueueBtn) {
+      nodes.refreshReadyQueueBtn.addEventListener('click', loadReadyQueue);
+    }
+    if (nodes.readyApplyFilterBtn) {
+      nodes.readyApplyFilterBtn.addEventListener('click', loadReadyQueue);
+    }
+
+    if (nodes.readyQueueBody) {
+      nodes.readyQueueBody.addEventListener('click', function (ev) {
+        var btn = ev.target.closest('.ds-ready-dispatch-btn');
+        if (btn) {
+          var pId = btn.getAttribute('data-packing-id');
+          if (pId) {
+            switchModuleTab('operations');
+            nodes.packingId.value = pId;
+            prefillByPackingId(false);
+          }
+        }
       });
     }
 

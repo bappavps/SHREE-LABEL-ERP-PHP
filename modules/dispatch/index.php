@@ -50,6 +50,7 @@ include __DIR__ . '/../../includes/header.php';
 
   <div class="ds-tab-nav" role="tablist" aria-label="Dispatch views">
     <button type="button" class="ds-tab-btn is-active" data-ds-tab="operations" aria-selected="true">Dispatch Operations</button>
+    <button type="button" class="ds-tab-btn" data-ds-tab="ready_queue" aria-selected="false"><i class="bi bi-box-seam"></i> Ready Queue (Awaiting Dispatch)</button>
     <button type="button" class="ds-tab-btn" data-ds-tab="reports" aria-selected="false">Dispatch Reports</button>
   </div>
 
@@ -388,6 +389,50 @@ include __DIR__ . '/../../includes/header.php';
     </div>
   </div>
 
+  </section>
+
+  <section class="ds-tab-panel ds-panel-ready_queue" data-ds-panel="ready_queue" hidden>
+    <div class="card ds-card ds-tone-amber">
+      <div class="card-header ds-card-header ds-table-header" style="background:#fff7ed;border-bottom:1px solid #fed7aa;padding:14px 18px">
+        <span class="card-title" style="color:#9a3412;font-size:16px;font-weight:700"><i class="bi bi-box-seam"></i> Finished Goods Ready Queue (Awaiting Dispatch)</span>
+        <div class="ds-actions">
+          <button type="button" class="ds-btn ds-btn-blue" id="dsRefreshReadyQueueBtn"><i class="bi bi-arrow-clockwise"></i> Refresh Queue</button>
+        </div>
+      </div>
+      <div class="ds-filter-bar" style="background:#fff;padding:12px 18px;border-bottom:1px solid #e2e8f0;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <div class="ds-field-inline" style="flex:1;min-width:200px">
+          <label style="font-weight:600;font-size:12px;color:#475569">Search Queue</label>
+          <input type="text" id="dsReadySearchInput" placeholder="Search item, packing ID, batch, size..." style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px">
+        </div>
+        <div class="ds-field-inline" style="flex:1;min-width:180px">
+          <label style="font-weight:600;font-size:12px;color:#475569">Client</label>
+          <input type="text" id="dsReadyClientInput" placeholder="Filter client..." style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px">
+        </div>
+        <div class="ds-field-inline" style="margin-top:18px">
+          <button type="button" class="btn btn-sm btn-primary" id="dsReadyApplyFilterBtn" style="padding:6px 16px"><i class="bi bi-funnel"></i> Filter</button>
+        </div>
+      </div>
+      <div class="ds-table-wrap">
+        <table class="ds-table">
+          <thead>
+            <tr>
+              <th>Packing ID</th>
+              <th>Date Ready</th>
+              <th>Client Name</th>
+              <th>Item / Size</th>
+              <th>Batch / Roll</th>
+              <th>Available Stock</th>
+              <th>Dispatch Progress</th>
+              <th>Status Badge</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="dsReadyQueueBody">
+            <tr><td colspan="9" class="ds-empty">Loading ready stock queue...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </section>
 
   <section class="ds-tab-panel ds-panel-reports" data-ds-panel="reports" hidden>
