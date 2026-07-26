@@ -927,7 +927,7 @@ if ($action === 'search_packing_ids') {
     if ($query === '') {
         $sql = "SELECT item_code AS packing_id, item_name, COALESCE(SUM(quantity),0) AS available_qty
             FROM finished_goods_stock
-            WHERE item_code <> '' AND quantity > 0
+            WHERE item_code <> '' AND quantity > 0 AND LOWER(category) NOT IN ('core', 'carton')
             GROUP BY item_code, item_name
             ORDER BY MAX(id) DESC
             LIMIT {$limit}";
@@ -940,7 +940,7 @@ if ($action === 'search_packing_ids') {
     $starts = $query . '%';
     $stmt = $db->prepare("SELECT item_code AS packing_id, item_name, COALESCE(SUM(quantity),0) AS available_qty
         FROM finished_goods_stock
-        WHERE item_code <> '' AND quantity > 0
+        WHERE item_code <> '' AND quantity > 0 AND LOWER(category) NOT IN ('core', 'carton')
           AND (item_code LIKE ? OR item_name LIKE ?)
         GROUP BY item_code, item_name
         ORDER BY (item_code LIKE ?) DESC, MAX(id) DESC
@@ -1488,7 +1488,7 @@ if ($action === 'get_ready_queue') {
 
     $sql = "SELECT fs.id, fs.category, fs.item_name, fs.item_code AS packing_id, fs.batch_no, fs.size, fs.unit, fs.quantity AS available_qty, fs.remarks, fs.date AS stock_date
             FROM finished_goods_stock fs
-            WHERE fs.quantity > 0";
+            WHERE fs.quantity > 0 AND LOWER(fs.category) NOT IN ('core', 'carton')";
 
     $where = [];
     $types = '';
