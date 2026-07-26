@@ -1003,7 +1003,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
         $totalCount = $cntRes ? (int)($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
         
         // Extract text search words
-        $stopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'plate', 'plates', 'list', 'show', 'details', 'this', 'the', 'a', 'an', 'job', 'jobs', 'for', 'about', 'get', 'search', 'find'];
+        $stopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'plate', 'plates', 'list', 'show', 'details', 'this', 'the', 'a', 'an', 'job', 'jobs', 'for', 'about', 'get', 'search', 'find', 'there', 'any', 'named', 'by', 'name', 'of', 'with', 'are', 'do', 'have', 'exist', 'does'];
         $pWords = preg_split('/\s+/', strtolower($prompt));
         $terms = [];
         foreach ($pWords as $w) {
@@ -1013,21 +1013,60 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
             }
         }
         $searchTerm = implode('%', $terms);
+        $searchTermDisplay = implode(' ', $terms);
 
-        if ($searchTerm !== '') {
+        if (!empty($terms)) {
+            // 1. Try exact combined terms (e.g. '%blue%500ml%')
             $like = '%' . $searchTerm . '%';
             $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE name LIKE ? OR sl_no = ? OR id = ? ORDER BY id DESC LIMIT 10");
             $stmt->bind_param('sss', $like, $searchTerm, $searchTerm);
             $stmt->execute();
             $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+            // 2. If empty, try matching individual terms
+            if (empty($data) && count($terms) > 1) {
+                $likes = array_map(function($t) { return '%' . $t . '%'; }, $terms);
+                $whereClause = implode(' AND ', array_fill(0, count($likes), "name LIKE ?"));
+                $stmt2 = $db->prepare("SELECT * FROM master_plate_data WHERE {$whereClause} ORDER BY id DESC LIMIT 10");
+                $types = str_repeat('s', count($likes));
+                $stmt2->bind_param($types, ...$likes);
+                $stmt2->execute();
+                $data = $stmt2->get_result()->fetch_all(MYSQLI_ASSOC);
+            }
         }
 
         if (empty($data) && !empty($searchNums)) {
             $num = $searchNums[0];
-            $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE sl_no = ? OR id = ? LIMIT 1");
+            $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE sl_no = ? OR id = ? ORDER BY id DESC LIMIT 5");
             $stmt->bind_param('ss', $num, $num);
             $stmt->execute();
             $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        }
+
+        // If user searched for a specific term and 0 records were found
+        if (empty($data) && !empty($terms)) {
+            $userLang = detect_language($prompt);
+            if ($userLang === 'English') {
+                $directAnswer = "❌ **No Printing Plate Found Matching \"{$searchTermDisplay}\"**\n\n"
+                    . "I searched your ERP Master Plate database, but no plate record matching **\"{$searchTermDisplay}\"** was found.\n\n"
+                    . "💡 **Tip:** Please verify if the plate name or SL No is spelled correctly.";
+            } elseif ($userLang === 'Hindi') {
+                $directAnswer = "❌ **\"{$searchTermDisplay}\" नाम की कोई प्रिंटिंग प्लेट नहीं मिली**\n\n"
+                    . "आपके ईआरपी डेटाबेस में **\"{$searchTermDisplay}\"** नाम की कोई प्लेट उपलब्ध नहीं है।";
+            } else {
+                $directAnswer = "❌ **\"{$searchTermDisplay}\" নামে কোনো প্রিন্টিং প্লেট পাওয়া যায়নি**\n\n"
+                    . "আপনার ইআরপি মাস্টার ডাটাবেসে **\"{$searchTermDisplay}\"** নামে কোনো প্লেটের রেকর্ড নিবন্ধিত নেই।";
+            }
+
+            return [
+                'tool_used' => $toolName,
+                'total_count' => 0,
+                'total_meters' => 0,
+                'filtered_type' => '',
+                'is_company_list' => false,
+                'direct_answer' => $directAnswer,
+                'data' => []
+            ];
         }
 
         if (empty($data)) {
@@ -1039,7 +1078,28 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
         $toolName = 'Die Tooling Master Tool';
         $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_die_tooling");
         $totalCount = $cntRes ? (int)($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
-        if (!empty($searchNums)) {
+        
+        $stopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'die', 'tooling', 'list', 'show', 'details', 'this', 'the', 'a', 'an', 'job', 'jobs', 'for', 'about', 'get', 'search', 'find', 'there', 'any', 'named', 'by', 'name', 'of', 'with', 'are', 'do', 'have', 'exist', 'does'];
+        $pWords = preg_split('/\s+/', strtolower($prompt));
+        $terms = [];
+        foreach ($pWords as $w) {
+            $wClean = trim(preg_replace('/[^a-z0-9]/', '', $w));
+            if ($wClean !== '' && !in_array($wClean, $stopwords, true) && strlen($wClean) >= 2) {
+                $terms[] = $wClean;
+            }
+        }
+        $searchTerm = implode('%', $terms);
+        $searchTermDisplay = implode(' ', $terms);
+
+        if (!empty($terms)) {
+            $like = '%' . $searchTerm . '%';
+            $stmt = $db->prepare("SELECT * FROM master_die_tooling WHERE name LIKE ? OR id = ? ORDER BY id DESC LIMIT 10");
+            $stmt->bind_param('ss', $like, $searchTerm);
+            $stmt->execute();
+            $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        }
+
+        if (empty($data) && !empty($searchNums)) {
             $num = $searchNums[0];
             $stmt = $db->prepare("SELECT * FROM master_die_tooling WHERE id = ? OR name LIKE ? LIMIT 5");
             $like = '%' . $num . '%';
@@ -1047,10 +1107,36 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
             $stmt->execute();
             $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         }
+
+        if (empty($data) && !empty($terms)) {
+            $userLang = detect_language($prompt);
+            if ($userLang === 'English') {
+                $directAnswer = "❌ **No Die Tooling Record Found Matching \"{$searchTermDisplay}\"**\n\n"
+                    . "I searched your ERP Master Die Tooling database, but no record matching **\"{$searchTermDisplay}\"** was found.";
+            } elseif ($userLang === 'Hindi') {
+                $directAnswer = "❌ **\"{$searchTermDisplay}\" नाम का कोई ডাই বা টূলিং नहीं मिला**\n\n"
+                    . "आपके ईआरपी डेटाबेस में **\"{$searchTermDisplay}\"** का कोई रिकॉर्ड उपलब्ध नहीं है।";
+            } else {
+                $directAnswer = "❌ **\"{$searchTermDisplay}\" নামে কোনো ডাই টূলিং পাওয়া যায়নি**\n\n"
+                    . "আপনার ইআরপি মাস্টার ডাটাবেসে **\"{$searchTermDisplay}\"** নামে কোনো ডাই রেকর্ড নিবন্ধিত নেই।";
+            }
+
+            return [
+                'tool_used' => $toolName,
+                'total_count' => 0,
+                'total_meters' => 0,
+                'filtered_type' => '',
+                'is_company_list' => false,
+                'direct_answer' => $directAnswer,
+                'data' => []
+            ];
+        }
+
         if (empty($data)) {
             $res = $db->query("SELECT * FROM master_die_tooling ORDER BY id DESC LIMIT 15");
             $data = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
         }
+
     } elseif (strpos($p, 'paper') !== false || strpos($p, 'roll') !== false || strpos($p, 'slc/') !== false || strpos($p, 'chromo') !== false || strpos($p, 'thermal') !== false) {
         $toolName = 'Paper Stock Tool';
         $typeFilter = '';
