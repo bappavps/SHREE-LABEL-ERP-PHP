@@ -1,0 +1,22 @@
+{
+  "name": "ERP-BOT",
+  "short_name": "ERP-BOT",
+  "description": "Standalone Mobile PWA AI Copilot for ERP Information, Stock & Manufacturing Queries",
+  "start_url": "./app.php",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/4712/4712035.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/4712/4712035.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

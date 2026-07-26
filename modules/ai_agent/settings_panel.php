@@ -20,7 +20,12 @@ $aiMaxTokens   = $aiSettings['ai_agent_max_tokens'] ?? 1500;
 $aiEnabled     = (int)($aiSettings['ai_agent_enabled'] ?? 1);
 $baseUrl       = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
 $kbApiUrl      = $baseUrl . '/modules/ai_agent/knowledge_api.php';
+
+$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$standaloneAppUrl = $protocol . $host . $baseUrl . '/modules/ai_agent/app.php';
 ?>
+
 
 <style>
 .ai-settings-banner {
@@ -249,16 +254,25 @@ $kbApiUrl      = $baseUrl . '/modules/ai_agent/knowledge_api.php';
       <div class="hint" style="margin-top:6px">When disabled, the floating chat widget will not appear on any page.</div>
     </div>
 
-    <div style="margin-top:22px;padding:14px;background:#f0fdf4;border-radius:10px;border:1px solid #bbf7d0">
-      <div style="font-weight:700;color:#166534;font-size:.88rem;margin-bottom:6px"><i class="bi bi-info-circle"></i> Module Info</div>
-      <div style="font-size:.82rem;color:#475569">
-        <div><strong>Module:</strong> AI Agent Plugin v1.0.0</div>
-        <div><strong>Provider:</strong> <span id="ai_info_provider"><?= e(ucwords(str_replace('_', ' ', $aiProvider))) ?></span></div>
-        <div><strong>Files:</strong> modules/ai_agent/ (6 files)</div>
-        <div><strong>Tables:</strong> ai_agent_knowledge</div>
-        <div><strong>Core ERP Impact:</strong> Zero (100% isolated)</div>
-      </div>
-    </div>
+<div style="margin-top:22px;padding:14px;background:#f0fdf4;border-radius:10px;border:1px solid #bbf7d0">
+       <div style="font-weight:700;color:#166534;font-size:.88rem;margin-bottom:6px"><i class="bi bi-info-circle"></i> Module Info</div>
+       <div style="font-size:.82rem;color:#475569">
+         <div><strong>Module:</strong> AI Agent Plugin v1.0.0</div>
+         <div><strong>Provider:</strong> <span id="ai_info_provider"><?= e(ucwords(str_replace('_', ' ', $aiProvider))) ?></span></div>
+         <div><strong>Files:</strong> modules/ai_agent/ (6 files)</div>
+         <div><strong>Tables:</strong> ai_agent_knowledge</div>
+         <div><strong>Core ERP Impact:</strong> Zero (100% isolated)</div>
+         <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #e2e8f0;">
+           <div><strong>Standalone Mobile AI App Link:</strong></div>
+           <div style="background:#f8fafc;padding:10px;border-radius:6px;font-family:monospace;font-size:.8rem;word-break:break-all;">
+             <a href="<?= e($standaloneAppUrl) ?>" target="_blank" style="color:#2563eb;text-decoration:none;"><?= e($standaloneAppUrl) ?></a>
+           </div>
+           <div style="font-size:.75rem;color:#64748b;margin-top:4px;">
+             Open this link on mobile and use "Add to Home Screen" to install the PWA app
+           </div>
+         </div>
+       </div>
+     </div>
   </div>
 </div>
 
