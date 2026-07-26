@@ -78,9 +78,13 @@ function extract_search_numbers(string $prompt): array {
  */
 function check_navigation_intent(string $prompt): ?array {
     $p = strtolower($prompt);
-    $isExplicitNav = (strpos($p, 'open') !== false || strpos($p, 'go to') !== false || strpos($p, 'khul') !== false || strpos($p, 'khol') !== false || strpos($p, 'navigate') !== false) && strpos($p, 'check') === false && strpos($p, 'stage') === false && strpos($p, 'status') === false && strpos($p, 'detail') === false && strpos($p, 'time') === false;
+    $isDataQuery = strpos($p, 'check') !== false || strpos($p, 'stage') !== false || strpos($p, 'status') !== false || strpos($p, 'detail') !== false || strpos($p, 'time') !== false || strpos($p, 'summary') !== false || strpos($p, 'sumary') !== false || strpos($p, 'breakdown') !== false || strpos($p, 'report') !== false;
     
+    if ($isDataQuery) return null;
+
+    $isExplicitNav = (strpos($p, 'open') !== false || strpos($p, 'go to') !== false || strpos($p, 'khul') !== false || strpos($p, 'khol') !== false || strpos($p, 'navigate') !== false || strpos($p, 'page') !== false);
     if (!$isExplicitNav) return null;
+
 
 
     $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
@@ -921,6 +925,11 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
             $answer .= "👉 [লাইভ প্রডাকশন ফ্লোর পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/live/index.php)";
         }
 
+        $navUrl = null;
+        if (strpos($p, 'open') !== false || strpos($p, 'page') !== false || strpos($p, 'go to') !== false || strpos($p, 'khul') !== false || strpos($p, 'khol') !== false) {
+            $navUrl = $baseUrl . '/modules/live/index.php';
+        }
+
         return [
             'tool_used' => $toolName,
             'total_count' => $totalCount,
@@ -928,9 +937,11 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
             'filtered_type' => '',
             'is_company_list' => false,
             'direct_answer' => $answer,
+            'nav_url' => $navUrl,
             'data' => []
         ];
     }
+
 
 
     if (strpos($p, 'plan') !== false || strpos($p, 'planning') !== false) {
@@ -1066,10 +1077,66 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
         }
     } elseif (preg_match('/\b(job|jobs|card|cards|order|orders|flx|lsl|jmb|pck|brc|status|progress|work)\b/i', $prompt)) {
         $toolName = 'ERP Jobs & Planning Tool';
-        $cntRes = $db->query("SELECT COUNT(*) as cnt FROM jobs");
-        $totalCount = $cntRes ? (int)($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
-        $res = $db->query("SELECT id, job_no, planning_id, job_type, department, status, created_at FROM jobs ORDER BY id DESC LIMIT 10");
-        $data = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
+
+        // Extract search term from prompt
+        $jobStopwords = ['give', 'me', 'the', 'detail', 'details', 'about', 'job', 'jobs', 'name', 'named', 'by', 'how', 'many', 'we', 'have', 'is', 'are', 'in', 'show', 'tell', 'list', 'find', 'search', 'for', 'a', 'an', 'what', 'which'];
+        $pWords = preg_split('/\s+/', strtolower($prompt));
+        $terms = [];
+        foreach ($pWords as $w) {
+            $wClean = trim(preg_replace('/[^a-z0-9]/', '', $w));
+            if ($wClean !== '' && !in_array($wClean, $jobStopwords, true) && strlen($wClean) >= 2) {
+                $terms[] = $wClean;
+            }
+        }
+        $jobSearchTerm = implode(' ', $terms);
+
+        if ($jobSearchTerm !== '') {
+            $like = '%' . $jobSearchTerm . '%';
+            $stmt = $db->prepare("
+                SELECT j.id, j.job_no, j.job_type, j.department, j.status, j.created_at,
+                       p.job_no as planning_job_no, p.job_name, p.status as planning_status, p.priority
+                FROM planning p
+                LEFT JOIN jobs j ON j.planning_id = p.id AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')
+                WHERE p.deleted_at IS NULL AND (p.job_name LIKE ? OR p.job_no LIKE ? OR j.job_no LIKE ?)
+                ORDER BY p.id DESC LIMIT 10
+            ");
+            $stmt->bind_param('sss', $like, $like, $like);
+            $stmt->execute();
+            $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $totalCount = count($data);
+
+            if ($totalCount === 0) {
+                $userLang = detect_language($prompt);
+                if ($userLang === 'English') {
+                    $directAnswer = "❌ **No Job Found Matching \"{$jobSearchTerm}\"**\n\n"
+                        . "I searched your ERP Planning Board and Job Cards database, but no active job matching **\"{$jobSearchTerm}\"** was found.\n\n"
+                        . "💡 **Tip:** Please check if the job name or Job Card number is spelled correctly.";
+                } elseif ($userLang === 'Hindi') {
+                    $directAnswer = "❌ **\"{$jobSearchTerm}\" नाम का कोई जॉब नहीं मिला**\n\n"
+                        . "आपके ईआरपी डेटाबेस में **\"{$jobSearchTerm}\"** नाम का कोई जॉब या जॉब कार्ड दर्ज नहीं है।\n\n"
+                        . "💡 **टिप:** कृपया जांचें कि जॉब का नाम या जॉब नंबर सही है या नहीं।";
+                } else {
+                    $directAnswer = "❌ **\"{$jobSearchTerm}\" নামে কোনো জব পাওয়া যায়নি**\n\n"
+                        . "আপনার ইআরপি ডাটাবেসে **\"{$jobSearchTerm}\"** নামে কোনো সচল জব বা জব কার্ড নিবন্ধিত নেই।\n\n"
+                        . "💡 **পরামর্শ:** অনুগ্রহ করে জব এর নাম বা জব কার্ড নম্বরটি সঠিক রয়েছে কিনা চেক করুন।";
+                }
+
+                return [
+                    'tool_used' => $toolName,
+                    'total_count' => 0,
+                    'total_meters' => 0,
+                    'filtered_type' => '',
+                    'is_company_list' => false,
+                    'direct_answer' => $directAnswer,
+                    'data' => []
+                ];
+            }
+        } else {
+            $cntRes = $db->query("SELECT COUNT(*) as cnt FROM jobs");
+            $totalCount = $cntRes ? (int)($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
+            $res = $db->query("SELECT id, job_no, planning_id, job_type, department, status, created_at FROM jobs ORDER BY id DESC LIMIT 10");
+            $data = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
+        }
     } else {
         $toolName = 'Unmatched Query Assistant';
         $totalCount = 0;
@@ -1078,6 +1145,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
 
     return ['tool_used' => $toolName, 'total_count' => $totalCount, 'total_meters' => $totalMeters, 'filtered_type' => $filteredType, 'is_company_list' => $isCompanyList, 'data' => $data];
 }
+
 
 
 $userLang = detect_language($prompt);
@@ -1212,11 +1280,18 @@ if (!empty($retrieved['direct_answer'])) {
     }
 }
 
-echo json_encode([
+$responsePayload = [
     'ok'          => true,
     'answer'      => $finalAnswer,
     'provider'    => ($config['gemini_api_key'] !== '' ? 'Gemini Pro API' : 'ERP Smart RAG Engine'),
     'tool_used'   => $toolUsed,
     'user_lang'   => $userLang,
     'total_count' => $totalCount
-], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+];
+
+if (!empty($retrieved['nav_url'])) {
+    $responsePayload['nav_url'] = $retrieved['nav_url'];
+}
+
+echo json_encode($responsePayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
