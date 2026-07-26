@@ -14,5 +14,6 @@
 </div><!-- /.app-shell -->
 <script src="<?= BASE_URL ?>/assets/js/push-notification.js?v=<?= @filemtime(__DIR__ . '/../assets/js/push-notification.js') ?: time() ?>"></script>
 <script src="<?= BASE_URL ?>/assets/js/app.js?v=<?= @filemtime(__DIR__ . '/../assets/js/app.js') ?: time() ?>"></script>
+<?php if (file_exists(__DIR__ . '/../modules/ai_agent/floating_widget.php')) { include_once __DIR__ . '/../modules/ai_agent/floating_widget.php'; } ?>
 </body>
 </html>

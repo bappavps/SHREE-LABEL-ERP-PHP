@@ -159,5 +159,13 @@
     "sidebar_collapse_delay_ms": 1000,
     "tally_ip": "192.168.1.26",
     "tally_port": 443,
-    "tally_scheme": "https"
+    "tally_scheme": "https",
+    "ai_agent_provider": "gemini_pro",
+    "ai_agent_model": "gemini-2.0-flash",
+    "gemini_api_key": "",
+    "openai_api_key": "",
+    "local_ai_url": "http://localhost:11434/v1/chat/completions",
+    "ai_agent_temperature": 0.2,
+    "ai_agent_max_tokens": 1500,
+    "ai_agent_enabled": 1
 }

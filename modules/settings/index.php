@@ -774,7 +774,7 @@ $tenantSettingsDisplayPath = str_replace($projectRoot . '/', '', str_replace('\\
 $activeTab = $_GET['tab'] ?? 'company';
 // Add 'auto_backup' to allowedTabs
 $isTenantCtx = ($tenantSlug !== 'default');
-$allowedTabs = ['company', 'library', 'theme', 'status-workflow', 'tally', 'backup', 'auto_backup', 'update', 'tenant'];
+$allowedTabs = ['company', 'library', 'theme', 'status-workflow', 'tally', 'ai_agent', 'backup', 'auto_backup', 'update', 'tenant'];
 // Tenant users cannot access the Tenant Provision tab
 if ($isTenantCtx && in_array($activeTab, ['tenant', 'update'], true)) $activeTab = 'company';
 if (!in_array($activeTab, $allowedTabs, true)) $activeTab = 'company';
@@ -2116,6 +2116,7 @@ include __DIR__ . '/../../includes/header.php';
     <a class="settings-tab <?= $activeTab==='theme'?'active':'' ?>" href="?tab=theme">Color Theme</a>
     <a class="settings-tab <?= $activeTab==='status-workflow'?'active':'' ?>" href="?tab=status-workflow">Status Workflow</a>
     <a class="settings-tab <?= $activeTab==='tally'?'active':'' ?>" href="?tab=tally">Tally Integration</a>
+    <a class="settings-tab <?= $activeTab==='ai_agent'?'active':'' ?>" href="?tab=ai_agent">AI Agent</a>
     <?php if (!$isTenantCtx): ?>
     <a class="settings-tab <?= $activeTab==='tenant'?'active':'' ?>" href="?tab=tenant">Tenant Provision</a>
     <?php endif; ?>
@@ -3760,6 +3761,10 @@ include __DIR__ . '/../../includes/header.php';
           </div>
         </div>
       </div>
+    <?php endif; ?>
+
+    <?php if ($activeTab === 'ai_agent'): ?>
+      <?php if (file_exists(__DIR__ . '/../ai_agent/settings_panel.php')) { include __DIR__ . '/../ai_agent/settings_panel.php'; } else { echo '<div style="padding:40px;text-align:center;color:#b91c1c">AI Agent module not installed. Upload modules/ai_agent/ folder first.</div>'; } ?>
     <?php endif; ?>
 
     <?php if ($activeTab === 'backup'): ?>
