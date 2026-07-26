@@ -21,7 +21,7 @@
     isProcessing: false
   };
 
-  function appendMessage(text, sender, toolUsed) {
+  function appendMessage(text, sender, toolUsed, suggestions) {
     if (!chatBody) return;
 
     var msgDiv = document.createElement('div');
@@ -41,6 +41,19 @@
 
     // Basic markdown formatter for text responses
     html += formatMarkdown(text);
+
+    // Suggestions chips rendering
+    if (sender === 'assistant' && suggestions && suggestions.length > 0) {
+      html += '<div class="ai-suggestion-box">';
+      html += '<div class="ai-suggestion-title"><i class="bi bi-lightbulb-fill" style="color:#f59e0b"></i> Suggested Questions:</div>';
+      html += '<div class="ai-suggestion-chips">';
+      for (var s = 0; s < suggestions.length; s++) {
+        var sug = suggestions[s];
+        html += '<button type="button" class="ai-suggestion-chip" data-prompt="' + escapeHtml(sug) + '"><i class="bi bi-chat-left-text"></i> ' + escapeHtml(sug) + '</button>';
+      }
+      html += '</div></div>';
+    }
+
     contentDiv.innerHTML = html;
 
     msgDiv.appendChild(avatarDiv);
@@ -48,6 +61,19 @@
     chatBody.appendChild(msgDiv);
 
     chatBody.scrollTop = chatBody.scrollHeight;
+  }
+
+  // Event delegation on chatBody for suggestion chips
+  if (chatBody) {
+    chatBody.addEventListener('click', function(e) {
+      var chip = e.target.closest('.ai-suggestion-chip');
+      if (chip) {
+        var p = chip.getAttribute('data-prompt');
+        if (p && !state.isProcessing) {
+          handleSend(p);
+        }
+      }
+    });
   }
 
   function formatMarkdown(str) {
@@ -155,7 +181,7 @@
         if (apiStatusEl) apiStatusEl.innerText = res.provider || 'Active';
         if (lastToolEl) lastToolEl.innerText = res.tool_used || 'General RAG';
 
-        appendMessage(res.answer || 'Query completed.', 'assistant', res.tool_used);
+        appendMessage(res.answer || 'Query completed.', 'assistant', res.tool_used, res.suggestions);
 
         if (chatBody) {
           try { sessionStorage.setItem('ai_chat_history', chatBody.innerHTML); } catch (e) {}
@@ -215,13 +241,13 @@
     });
   }
 
-  // Web Speech API Voice Recognition (Continuous Mode)
-  var micBtns = document.querySelectorAll('#aiMicBtn, #aiMicBtnFloat');
+  // Web Speech API Voice Recognition
+  var micBtns = document.querySelectorAll('#aiMicBtn, #aiMicBtnFloat, #micBtn');
   var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
   if (SpeechRecognition) {
     var recognition = new SpeechRecognition();
-    recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
     if (currentLang === 'Bengali') recognition.lang = 'bn-IN';
@@ -229,88 +255,166 @@
     else recognition.lang = 'en-US';
 
     var isListening = false;
-    var finalTranscript = '';
+    var currentUtterance = '';
 
-    micBtns.forEach(function(btn) {
-      if (!btn) return;
+    if (isTouchDevice) {
+      // ─── Mobile: Push-to-Talk ───
+      recognition.continuous = false;
 
-      btn.addEventListener('click', function() {
-        if (isListening) {
-          isListening = false;
-          try { recognition.stop(); } catch(e) {}
-          stopListeningUI();
-          return;
-        }
-
+      function startPushToTalk() {
         isListening = true;
-        finalTranscript = chatInput ? chatInput.value : '';
+        currentUtterance = '';
+        if (chatInput) chatInput.value = '';
         try {
           recognition.start();
         } catch (e) {
+          isListening = false;
           console.warn('Speech recognition start error:', e);
+          return;
         }
-      });
-    });
+        micBtns.forEach(function(btn) {
+          if (btn) {
+            btn.classList.add('listening');
+            btn.setAttribute('title', '🎙️ Speaking... Release to send');
+          }
+        });
+        if (chatInput) {
+          chatInput.placeholder = '🎙️ Speak now... Release mic to send';
+        }
+      }
 
+      function stopPushToTalk() {
+        if (!isListening) return;
+        try {
+          recognition.stop();
+        } catch(e) {}
+      }
 
-    recognition.onstart = function() {
       micBtns.forEach(function(btn) {
-        if (btn) {
-          btn.classList.add('listening');
-          btn.setAttribute('title', '🎙️ Continuous Listening Active (Click mic to stop)');
-        }
-      });
-      if (chatInput) {
-        chatInput.placeholder = '🎙️ Continuous Voice Input Active... Speak freely in English, Bengali, or Hindi...';
-      }
-    };
+        if (!btn) return;
+        var touchFired = false;
 
-    recognition.onresult = function(event) {
-      var interimTranscript = '';
-      for (var i = event.resultIndex; i < event.results.length; i++) {
-        var transcriptChunk = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscript += (finalTranscript ? ' ' : '') + transcriptChunk;
-        } else {
-          interimTranscript += transcriptChunk;
+        btn.addEventListener('touchstart', function(e) {
+          touchFired = true;
+          if (isListening || state.isProcessing) return;
+          startPushToTalk();
+        });
+
+        btn.addEventListener('touchend', function(e) {
+          touchFired = false;
+          stopPushToTalk();
+        });
+
+        btn.addEventListener('touchcancel', function() {
+          touchFired = false;
+          stopPushToTalk();
+        });
+
+        btn.addEventListener('mousedown', function(e) {
+          if (touchFired) return;
+          if (isListening || state.isProcessing) return;
+          startPushToTalk();
+        });
+
+        btn.addEventListener('mouseup', function(e) {
+          if (touchFired) return;
+          stopPushToTalk();
+        });
+
+        btn.addEventListener('mouseleave', function() {
+          stopPushToTalk();
+        });
+      });
+
+      recognition.onend = function() {
+        var text = currentUtterance || (chatInput ? chatInput.value : '');
+        isListening = false;
+        stopListeningUI();
+        if (text.trim()) {
+          handleSend(text.trim());
         }
-      }
-      if (chatInput) {
-        chatInput.value = finalTranscript + (interimTranscript ? (finalTranscript ? ' ' : '') + interimTranscript : '');
+      };
+    } else {
+      // ─── Desktop: Toggle Mode ───
+      recognition.continuous = true;
+
+      micBtns.forEach(function(btn) {
+        if (!btn) return;
+
+        btn.addEventListener('click', function() {
+          if (isListening) {
+            isListening = false;
+            try { recognition.stop(); } catch(e) {}
+            stopListeningUI();
+          } else {
+            isListening = true;
+            currentUtterance = '';
+            if (chatInput) chatInput.value = '';
+            try {
+              recognition.start();
+            } catch (e) {
+              isListening = false;
+              console.warn('Speech recognition start error:', e);
+              return;
+            }
+            micBtns.forEach(function(b) {
+              if (b) {
+                b.classList.add('listening');
+                b.setAttribute('title', '🎙️ Listening... Click to stop');
+              }
+            });
+            if (chatInput) {
+              chatInput.placeholder = '🎙️ Listening... Speak freely';
+            }
+          }
+        });
+      });
+
+      recognition.onend = function() {
+        if (isListening) {
+          try {
+            recognition.start();
+          } catch (e) {
+            isListening = false;
+            stopListeningUI();
+          }
+        } else {
+          stopListeningUI();
+        }
+      };
+    }
+
+    // ─── Shared Handlers ───
+    recognition.onresult = function(event) {
+      var latest = event.results[event.resultIndex][0].transcript;
+      if (event.results[event.resultIndex].isFinal) {
+        currentUtterance = latest;
+        if (chatInput) chatInput.value = latest;
+      } else {
+        if (chatInput) chatInput.value = latest;
       }
     };
 
     recognition.onerror = function(event) {
       console.warn('Speech recognition error:', event.error);
       if (event.error === 'no-speech' || event.error === 'network') {
+        isListening = false;
+        stopListeningUI();
         return;
       }
       isListening = false;
       stopListeningUI();
     };
 
-    recognition.onend = function() {
-      if (isListening) {
-        try {
-          recognition.start();
-        } catch (e) {
-          isListening = false;
-          stopListeningUI();
-        }
-      } else {
-        stopListeningUI();
-      }
-    };
-
     function stopListeningUI() {
       micBtns.forEach(function(btn) {
         if (btn) {
           btn.classList.remove('listening');
-          btn.setAttribute('title', 'Voice Input — Click to Speak Continuously');
+          btn.setAttribute('title', isTouchDevice ? 'Voice Input — Press & Hold to Speak' : 'Voice Input — Click to Speak');
         }
       });
       if (chatInput) {
-        chatInput.placeholder = 'Type query or click mic to speak continuously...';
+        chatInput.placeholder = isTouchDevice ? 'Type query or hold mic to speak...' : 'Type query or click mic to speak...';
       }
     }
   } else {

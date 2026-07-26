@@ -502,30 +502,33 @@ foreach ($quickChips as $c) {
 
     .quick-actions {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-top: 16px;
-      padding: 0 4px;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+      margin-top: 12px;
+      padding: 0 2px;
+      max-height: 220px;
+      overflow-y: auto;
     }
+    .quick-actions::-webkit-scrollbar { width: 3px; }
+    .quick-actions::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
     .quick-action-card {
       background: var(--bg-glass);
       border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 14px 12px;
-      cursor: pointer;
-      transition: all 0.25s ease;
-      text-align: left;
-    }
-    .quick-action-card:active { transform: scale(0.97); border-color: var(--accent); }
-    .quick-action-card .qa-icon {
-      width: 34px; height: 34px;
       border-radius: 10px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 16px; color: #fff;
-      margin-bottom: 8px;
+      padding: 10px 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: center;
     }
-    .quick-action-card .qa-title { font-size: 12px; font-weight: 700; color: #fff; margin-bottom: 2px; }
-    .quick-action-card .qa-desc { font-size: 10.5px; color: var(--text-dim); line-height: 1.3; }
+    .quick-action-card:active { transform: scale(0.95); border-color: var(--accent); }
+    .quick-action-card .qa-icon {
+      width: 28px; height: 28px;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; color: #fff;
+      margin: 0 auto 4px;
+    }
+    .quick-action-card .qa-title { font-size: 10px; font-weight: 600; color: #fff; line-height: 1.2; }
 
     .lang-hint {
       display: flex; align-items: center; justify-content: center;
@@ -640,6 +643,49 @@ foreach ($quickChips as $c) {
     .msg-group.assistant:active .btn-copy-msg { display: flex; }
     .btn-copy-msg:active { color: var(--accent); transform: scale(1.2); }
     .btn-copy-msg.copied { color: #22c55e; }
+
+    /* ─── SUGGESTION CHIPS ─── */
+    .ai-suggestion-box {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px dashed rgba(255,255,255,0.12);
+    }
+    .ai-suggestion-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #94a3b8;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .ai-suggestion-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .ai-suggestion-chip {
+      background: rgba(59, 130, 246, 0.12);
+      border: 1px solid rgba(59, 130, 246, 0.35);
+      color: #60a5fa;
+      padding: 5px 12px;
+      border-radius: 14px;
+      font-size: 11.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .ai-suggestion-chip:hover, .ai-suggestion-chip:active {
+      background: #3b82f6;
+      color: #ffffff;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    }
 
     /* ─── TYPING INDICATOR ─── */
     .typing-box {
@@ -764,14 +810,14 @@ foreach ($quickChips as $c) {
 
     .btn-mic { color: #38bdf8; }
     .btn-mic.listening {
-      background: rgba(239, 68, 68, 0.15);
-      color: #ef4444;
+      background: rgba(59, 130, 246, 0.15);
+      color: #3b82f6;
       animation: micPulse 1s infinite;
     }
     @keyframes micPulse {
-      0% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); }
-      70% { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
-      100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+      0% { box-shadow: 0 0 0 0 rgba(59,130,246,0.5); }
+      70% { box-shadow: 0 0 0 8px rgba(59,130,246,0); }
+      100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
     }
 
     .btn-send {
@@ -883,7 +929,7 @@ foreach ($quickChips as $c) {
             <?php foreach ($cat['items'] as $c): ?>
               <button class="chip-item" data-prompt="<?= e($c['prompt']) ?>">
                 <i class="bi <?= $cat['icon'] ?> chip-icon" style="color: <?= $cat['color'] ?>"></i>
-                <?= e($c['key']) ?>
+                <?= e($c['label']) ?>
               </button>
             <?php endforeach; ?>
           </div>
@@ -902,26 +948,12 @@ foreach ($quickChips as $c) {
       <p>Your smart manufacturing assistant. Ask about production, inventory, orders, dispatches, and more.</p>
 
       <div class="quick-actions">
-        <div class="quick-action-card" data-prompt="Calculate running meters for 100mm x 50mm, 2 ups, 5mm gap, 15000 qty on 250mm roll at Rs 300/kg">
-          <div class="qa-icon" style="background: linear-gradient(135deg, #f59e0b, #d97706);"><i class="bi bi-calculator"></i></div>
-          <div class="qa-title">Label Calculator</div>
-          <div class="qa-desc">Calculate running meters & costs</div>
+        <?php foreach ($quickChips as $c): ?>
+        <div class="quick-action-card" data-prompt="<?= e($c['prompt']) ?>">
+          <div class="qa-icon" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8);"><i class="bi <?= e($c['icon']) ?>"></i></div>
+          <div class="qa-title"><?= e($c['label']) ?></div>
         </div>
-        <div class="quick-action-card" data-prompt="Show active sales orders and job card progress">
-          <div class="qa-icon" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8);"><i class="bi bi-clipboard-data"></i></div>
-          <div class="qa-title">Order Status</div>
-          <div class="qa-desc">Track active sales orders</div>
-        </div>
-        <div class="quick-action-card" data-prompt="Show daily production summary and output metrics">
-          <div class="qa-icon" style="background: linear-gradient(135deg, #10b981, #059669);"><i class="bi bi-graph-up-arrow"></i></div>
-          <div class="qa-title">Production</div>
-          <div class="qa-desc">Daily output & metrics</div>
-        </div>
-        <div class="quick-action-card" data-prompt="Show finished goods stock by category">
-          <div class="qa-icon" style="background: linear-gradient(135deg, #8b5cf6, #6d28d9);"><i class="bi bi-box-seam"></i></div>
-          <div class="qa-title">Inventory</div>
-          <div class="qa-desc">Stock levels & items</div>
-        </div>
+        <?php endforeach; ?>
       </div>
 
       <div class="lang-hint">
@@ -972,7 +1004,6 @@ foreach ($quickChips as $c) {
   <script>
     const API_URL = '<?= $baseUrl ?>/modules/ai_agent/api.php';
     let selectedLang = 'auto';
-    let selectedSpeechLang = 'en-US';
     let newMsgCount = 0;
     let isUserScrolled = false;
     let currentTheme = localStorage.getItem('erp-ai-theme') || 'dark';
@@ -1039,7 +1070,6 @@ foreach ($quickChips as $c) {
         document.querySelectorAll('.lang-pill').forEach(p => p.classList.remove('active'));
         pill.classList.add('active');
         selectedLang = pill.getAttribute('data-lang');
-        selectedSpeechLang = selectedLang === 'auto' ? 'en-US' : selectedLang;
         const names = { 'auto': 'Auto-detect language', 'en-US': 'English', 'bn-IN': 'বাংলা', 'hi-IN': 'हिंदी' };
         langHint.textContent = names[selectedLang] || 'Auto-detect language';
         if (navigator.vibrate) navigator.vibrate(10);
@@ -1132,7 +1162,7 @@ foreach ($quickChips as $c) {
         showTyping(false);
 
         if (data.ok) {
-          appendAiMsg(data.answer);
+          appendAiMsg(data.answer, data.suggestions);
           if (data.nav_url) {
             appendAiMsg(`🚀 **Redirect Link:** [Click here to open ${data.tool_used || 'Module Page'}](${data.nav_url})`);
           }
@@ -1144,6 +1174,18 @@ foreach ($quickChips as $c) {
         appendAiMsg('❌ **Network Error:** Failed to connect to ERP AI engine. Please check your connection.');
       }
     }
+
+    // Delegation for suggestion chips inside chatStream
+    chatStream.addEventListener('click', (e) => {
+      const chip = e.target.closest('.ai-suggestion-chip');
+      if (chip) {
+        const prompt = chip.getAttribute('data-prompt');
+        if (prompt) {
+          chatInput.value = prompt;
+          sendQuery();
+        }
+      }
+    });
 
     function appendUserMsg(text) {
       const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1163,9 +1205,20 @@ foreach ($quickChips as $c) {
       scrollToBottom();
     }
 
-    function appendAiMsg(markdownText) {
+    function appendAiMsg(markdownText, suggestions) {
       const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const parsedHtml = marked.parse(markdownText);
+      let parsedHtml = marked.parse(markdownText);
+
+      if (suggestions && suggestions.length > 0) {
+        parsedHtml += `<div class="ai-suggestion-box">
+          <div class="ai-suggestion-title"><i class="bi bi-lightbulb-fill" style="color:#f59e0b"></i> Suggested Questions:</div>
+          <div class="ai-suggestion-chips">`;
+        for (const sug of suggestions) {
+          parsedHtml += `<button type="button" class="ai-suggestion-chip" data-prompt="${escapeHtml(sug)}"><i class="bi bi-chat-left-text"></i> ${escapeHtml(sug)}</button>`;
+        }
+        parsedHtml += `</div></div>`;
+      }
+
       const html = `
         <div class="msg-group assistant">
           <div class="msg-row">
@@ -1213,56 +1266,127 @@ foreach ($quickChips as $c) {
       return text.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
     }
 
-    // Voice Speech Recognition — Continuous until user taps mic again
+    // Voice Speech Recognition
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    let micActive = false;
+    let isListening = false;
+    let currentUtterance = '';
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
-      recognition.continuous = true;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
 
-      micBtn.addEventListener('click', () => {
-        if (micActive) {
-          micActive = false;
+      if (isTouchDevice) {
+        // Mobile: Push-to-Talk
+        recognition.continuous = false;
+        let touchFired = false;
+
+        micBtn.addEventListener('touchstart', (e) => {
+          touchFired = true;
+          if (isListening) return;
+          isListening = true;
+          currentUtterance = '';
+          chatInput.value = '';
+          recognition.lang = selectedLang === 'auto' ? 'en-US' : selectedLang;
+          try { recognition.start(); } catch(e) { isListening = false; return; }
+          micBtn.classList.add('listening');
+          chatInput.placeholder = '🎙️ Speak... Release to send';
+        });
+
+        micBtn.addEventListener('touchend', (e) => {
+          touchFired = false;
+          if (!isListening) return;
+          try { recognition.stop(); } catch(e) {}
+        });
+
+        micBtn.addEventListener('touchcancel', () => {
+          touchFired = false;
+          if (!isListening) return;
+          isListening = false;
           recognition.stop();
           micBtn.classList.remove('listening');
-          return;
-        }
-        recognition.lang = selectedSpeechLang;
-        try { recognition.start(); } catch(e) {}
-        micActive = true;
-        micBtn.classList.add('listening');
-        if (navigator.vibrate) navigator.vibrate(20);
-      });
+        });
+
+        micBtn.addEventListener('mousedown', (e) => {
+          if (touchFired) return;
+          if (isListening) return;
+          isListening = true;
+          currentUtterance = '';
+          chatInput.value = '';
+          recognition.lang = selectedLang === 'auto' ? 'en-US' : selectedLang;
+          try { recognition.start(); } catch(e) { isListening = false; return; }
+          micBtn.classList.add('listening');
+          chatInput.placeholder = '🎙️ Speak... Release to send';
+        });
+
+        micBtn.addEventListener('mouseup', (e) => {
+          if (touchFired) return;
+          if (!isListening) return;
+          try { recognition.stop(); } catch(e) {}
+        });
+
+        micBtn.addEventListener('mouseleave', () => {
+          if (touchFired) return;
+          if (!isListening) return;
+          try { recognition.stop(); } catch(e) {}
+        });
+      } else {
+        // Desktop: Toggle Mode
+        recognition.continuous = true;
+
+        micBtn.addEventListener('click', () => {
+          if (isListening) {
+            isListening = false;
+            recognition.stop();
+            micBtn.classList.remove('listening');
+            chatInput.placeholder = 'Ask about stock, orders, dispatch...';
+            return;
+          }
+          isListening = true;
+          currentUtterance = '';
+          chatInput.value = '';
+          recognition.lang = selectedLang === 'auto' ? 'en-US' : selectedLang;
+          try { recognition.start(); } catch(e) { isListening = false; return; }
+          micBtn.classList.add('listening');
+          chatInput.placeholder = '🎙️ Listening... Speak freely';
+        });
+      }
 
       recognition.onresult = (e) => {
-        let interimTranscript = '';
-        let finalTranscript = chatInput.value;
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const t = e.results[i][0].transcript;
-          if (e.results[i].isFinal) {
-            finalTranscript += t;
-          } else {
-            interimTranscript += t;
-          }
+        const latest = e.results[e.resultIndex][0].transcript;
+        if (e.results[e.resultIndex].isFinal) {
+          currentUtterance = latest;
+          chatInput.value = latest;
+        } else {
+          chatInput.value = latest;
         }
-        chatInput.value = finalTranscript + interimTranscript;
         chatInput.dispatchEvent(new Event('input'));
       };
 
       recognition.onerror = (e) => {
         if (e.error === 'no-speech' || e.error === 'aborted') return;
-        micActive = false;
+        isListening = false;
         micBtn.classList.remove('listening');
+        chatInput.placeholder = 'Ask about stock, orders, dispatch...';
       };
 
       recognition.onend = () => {
-        if (micActive) {
-          try { recognition.start(); } catch(e) {}
+        if (isListening) {
+          if (isTouchDevice) {
+            isListening = false;
+            micBtn.classList.remove('listening');
+            chatInput.placeholder = 'Ask about stock, orders, dispatch...';
+            if (currentUtterance.trim()) {
+              chatInput.value = currentUtterance;
+              sendQuery();
+            }
+          } else {
+            try { recognition.start(); } catch(e) { isListening = false; micBtn.classList.remove('listening'); }
+          }
         } else {
           micBtn.classList.remove('listening');
+          chatInput.placeholder = 'Ask about stock, orders, dispatch...';
         }
       };
     } else {

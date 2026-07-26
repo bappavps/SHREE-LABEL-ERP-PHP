@@ -80,6 +80,176 @@ function extract_search_numbers(string $prompt): array {
 }
 
 /**
+ * Detect if user is asking a count/total question (e.g. "how many plates?", "total dies?", "kitne anilox hai?")
+ */
+function is_count_intent(string $prompt): bool {
+    $p = mb_strtolower($prompt, 'UTF-8');
+    return (bool) preg_match('/\b(how many|how much|total|count|kitne|kitna|koto|kotogulo|কত|কতগুলো|कितने|कितना)\b/i', $p);
+}
+
+/**
+ * Get context-aware follow-up suggestion questions based on the tool used and query context.
+ * Returns an array of suggestion strings the user can click to ask next.
+ */
+function get_follow_up_suggestions(string $toolUsed, string $prompt, string $userLang = 'English'): array {
+    $p = mb_strtolower($prompt, 'UTF-8');
+    $suggestions = [];
+
+    if (strpos($toolUsed, 'Plate') !== false || strpos($toolUsed, 'Flexo') !== false) {
+        if (is_count_intent($prompt)) {
+            // After count query, suggest detail/filter queries
+            if ($userLang === 'Hindi') {
+                $suggestions = [
+                    'Flat Bed प्लेट कितनी हैं?',
+                    'Rotary प्लेट कितनी हैं?',
+                    'Alpha Flex की प्लेट दिखाओ',
+                    'सबसे नई प्लेट कौन सी है?',
+                    'प्लेट पेज खोलो',
+                ];
+            } elseif ($userLang === 'Bengali') {
+                $suggestions = [
+                    'Flat Bed প্লেট কতগুলো?',
+                    'Rotary প্লেট কতগুলো?',
+                    'Alpha Flex এর প্লেট দেখাও',
+                    'সর্বশেষ প্লেটটি কী?',
+                    'প্লেট পেজ খোলো',
+                ];
+            } else {
+                $suggestions = [
+                    'Show all Flat Bed plates',
+                    'Show all Rotary plates',
+                    'Show Alpha Flex plates',
+                    'What is the latest plate added?',
+                    'Open Plate Management page',
+                ];
+            }
+        } else {
+            // After detail/search query, suggest related actions
+            if ($userLang === 'Hindi') {
+                $suggestions = [
+                    'कुल कितनी प्लेट हैं?',
+                    'इस प्लेट का मीटर कैलकुलेट करो',
+                    'Chromo पेपर वाली प्लेट दिखाओ',
+                    '9 inch सिलेंडर प्लेट दिखाओ',
+                    'प्लेट पेज खोलो',
+                ];
+            } elseif ($userLang === 'Bengali') {
+                $suggestions = [
+                    'মোট কতগুলো প্লেট আছে?',
+                    'এই প্লেটের মিটার ক্যালকুলেট করো',
+                    'Chromo পেপারের প্লেট দেখাও',
+                    '9 inch সিলিন্ডার প্লেট দেখাও',
+                    'প্লেট পেজ খোলো',
+                ];
+            } else {
+                $suggestions = [
+                    'How many plates do we have?',
+                    'Calculate meters for this plate',
+                    'Show Chromo paper plates',
+                    'Show 9 inch cylinder plates',
+                    'Open Plate Management page',
+                ];
+            }
+        }
+    } elseif (strpos($toolUsed, 'Die') !== false) {
+        if ($userLang === 'English') {
+            $suggestions = [
+                'How many dies do we have?',
+                'Show Rotary dies',
+                'Show Flat Bed dies',
+                'Open Die Management page',
+            ];
+        } elseif ($userLang === 'Hindi') {
+            $suggestions = [
+                'कुल कितनी डाई हैं?',
+                'Rotary डाई दिखाओ',
+                'Flat Bed डाई दिखाओ',
+                'डाई पेज खोलो',
+            ];
+        } else {
+            $suggestions = [
+                'মোট কতগুলো ডাই আছে?',
+                'Rotary ডাই দেখাও',
+                'Flat Bed ডাই দেখাও',
+                'ডাই পেজ খোলো',
+            ];
+        }
+    } elseif (strpos($toolUsed, 'Anilox') !== false) {
+        if ($userLang === 'English') {
+            $suggestions = [
+                'How many anilox rolls do we have?',
+                'Show 400 LPI anilox',
+                'Which anilox are out of stock?',
+                'Open Anilox Management page',
+            ];
+        } elseif ($userLang === 'Hindi') {
+            $suggestions = [
+                'कुल कितने एनिलॉक्स हैं?',
+                '400 LPI एनिलॉक्स दिखाओ',
+                'कौन सा एनिलॉक्स स्टॉक में नहीं?',
+                'एनिलॉक्स पेज खोलो',
+            ];
+        } else {
+            $suggestions = [
+                'মোট কতগুলো এনিলক্স আছে?',
+                '400 LPI এনিলক্স দেখাও',
+                'কোন এনিলক্স স্টকে নেই?',
+                'এনিলক্স পেজ খোলো',
+            ];
+        }
+    } elseif (strpos($toolUsed, 'Paper') !== false || strpos($toolUsed, 'Roll') !== false) {
+        if ($userLang === 'English') {
+            $suggestions = [
+                'How many paper rolls in stock?',
+                'Show Chromo paper rolls',
+                'Show PP White paper stock',
+                'Open Paper Stock page',
+            ];
+        } elseif ($userLang === 'Hindi') {
+            $suggestions = [
+                'कुल कितने पेपर रोल हैं?',
+                'Chromo पेपर दिखाओ',
+                'PP White स्टॉक दिखाओ',
+                'पेपर स्टॉक पेज खोलो',
+            ];
+        } else {
+            $suggestions = [
+                'মোট কতগুলো পেপার রোল আছে?',
+                'Chromo পেপার দেখাও',
+                'PP White স্টক দেখাও',
+                'পেপার স্টক পেজ খোলো',
+            ];
+        }
+    } elseif (strpos($toolUsed, 'Dispatch') !== false) {
+        if ($userLang === 'English') {
+            $suggestions = ['Show today\'s dispatch', 'Show pending dispatches', 'Open Dispatch page'];
+        } elseif ($userLang === 'Hindi') {
+            $suggestions = ['आज का डिस्पैच दिखाओ', 'पेंडिंग डिस्पैच दिखाओ', 'डिस्पैच पेज खोलो'];
+        } else {
+            $suggestions = ['আজকের ডিসপ্যাচ দেখাও', 'পেন্ডিং ডিসপ্যাচ দেখাও', 'ডিসপ্যাচ পেজ খোলো'];
+        }
+    } elseif (strpos($toolUsed, 'Dashboard') !== false || strpos($toolUsed, 'KPI') !== false) {
+        if ($userLang === 'English') {
+            $suggestions = ['Show production summary', 'Show today\'s dispatch', 'Show pending jobs'];
+        } elseif ($userLang === 'Hindi') {
+            $suggestions = ['प्रोडक्शन समरी दिखाओ', 'आज का डिस्पैच दिखाओ', 'पेंडिंग जॉब दिखाओ'];
+        } else {
+            $suggestions = ['প্রোডাকশন সামারি দেখাও', 'আজকের ডিসপ্যাচ দেখাও', 'পেন্ডিং জব দেখাও'];
+        }
+    } elseif (strpos($toolUsed, 'Job') !== false || strpos($toolUsed, 'Planning') !== false) {
+        if ($userLang === 'English') {
+            $suggestions = ['Show pending jobs', 'Show live floor status', 'Open Job Planning page'];
+        } elseif ($userLang === 'Hindi') {
+            $suggestions = ['पेंडिंग जॉब दिखाओ', 'लाइव फ्लोर स्टेटस दिखाओ', 'जॉब प्लानिंग पेज खोलो'];
+        } else {
+            $suggestions = ['পেন্ডিং জব দেখাও', 'লাইভ ফ্লোর স্ট্যাটাস দেখাও', 'জব প্ল্যানিং পেজ খোলো'];
+        }
+    }
+
+    return $suggestions;
+}
+
+/**
  * Navigation Intent Matcher
  */
 function check_navigation_intent(string $prompt): ?array {
@@ -1213,7 +1383,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
     if (strpos($p, 'live') !== false || strpos($p, 'floor') !== false || strpos($p, 'stage') !== false || strpos($p, 'next department') !== false || strpos($p, 'journey') !== false || strpos($p, 'current job') !== false || strpos($p, 'running job') !== false || strpos($p, 'লাইভ') !== false || strpos($p, 'ফ্লোর') !== false) {
         $toolName = 'Live Production Floor Pipeline Tool';
         
-        $liveStopwords = ['what', 'is', 'the', 'status', 'of', 'current', 'job', 'jobs', 'running', 'live', 'floor', 'show', 'tell', 'me', 'details', 'for', 'in', 'page', 'kholo', 'khul', 'open', 'go', 'to', 'dekhao', 'dekaw', 'batao'];
+        $liveStopwords = ['can', 'you', 'what', 'is', 'the', 'status', 'of', 'current', 'job', 'jobs', 'running', 'live', 'floor', 'show', 'tell', 'me', 'details', 'for', 'in', 'page', 'kholo', 'khul', 'open', 'go', 'to', 'dekhao', 'dekaw', 'batao'];
         $pWords = preg_split('/\s+/', strtolower($prompt));
         $terms = [];
         foreach ($pWords as $w) {
@@ -1504,13 +1674,120 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
         $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_plate_data");
         $totalCount = $cntRes ? (int)($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
 
+        // --- Count-Only Intent Handler ---
+        if (is_count_intent($prompt)) {
+            $userLang = detect_language($prompt);
+            $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+            // Fetch breakdown stats for richer response
+            $dieBreak = $db->query("SELECT die, COUNT(*) as cnt FROM master_plate_data WHERE die IS NOT NULL AND die != '' GROUP BY die ORDER BY cnt DESC");
+            $dieStats = $dieBreak ? $dieBreak->fetch_all(MYSQLI_ASSOC) : [];
+            $makerBreak = $db->query("SELECT make_by, COUNT(*) as cnt FROM master_plate_data WHERE make_by IS NOT NULL AND make_by != '' GROUP BY make_by ORDER BY cnt DESC LIMIT 5");
+            $makerStats = $makerBreak ? $makerBreak->fetch_all(MYSQLI_ASSOC) : [];
+            $latestRes = $db->query("SELECT name, sl_no, date_received FROM master_plate_data ORDER BY id DESC LIMIT 1");
+            $latest = $latestRes ? $latestRes->fetch_assoc() : null;
+
+            if ($userLang === 'Hindi') {
+                $directAnswer = "📊 **प्रिंटिंग प्लेट — स्टॉक डैशबोर्ड**\n"
+                    . "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    . "🔢 **कुल प्लेट:** **{$totalCount}**\n\n";
+                if (!empty($dieStats)) {
+                    $directAnswer .= "📐 **प्रकार के अनुसार (Die Type):**\n";
+                    foreach ($dieStats as $ds) {
+                        $directAnswer .= "   ▸ **" . ($ds['die'] ?: 'अन्य') . "** — {$ds['cnt']} प्लेट\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if (!empty($makerStats)) {
+                    $directAnswer .= "🏭 **निर्माता / सप्लायर:**\n";
+                    foreach ($makerStats as $ms) {
+                        $directAnswer .= "   ▸ **{$ms['make_by']}** — {$ms['cnt']} प्लेट\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if ($latest) {
+                    $directAnswer .= "🆕 **सबसे हालिया प्लेट:** `{$latest['name']}` (SL: {$latest['sl_no']})";
+                    if (!empty($latest['date_received']) && $latest['date_received'] !== 'NA') {
+                        $directAnswer .= " — प्राप्त: {$latest['date_received']}";
+                    }
+                    $directAnswer .= "\n\n";
+                }
+                $directAnswer .= "━━━━━━━━━━━━━━━━━━━━━━\n"
+                    . "👉 [प्लेट प्रबंधन पेज खोलें]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
+            } elseif ($userLang === 'Bengali' || preg_match('/[\x{0980}-\x{09FF}]/u', $prompt) || preg_match('/\b(koto|kotogulo|ache)\b/i', $prompt)) {
+                $directAnswer = "📊 **প্রিন্টিং প্লেট — স্টক ড্যাশবোর্ড**\n"
+                    . "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    . "🔢 **মোট প্লেট:** **{$totalCount}টি**\n\n";
+                if (!empty($dieStats)) {
+                    $directAnswer .= "📐 **ধরণ অনুযায়ী (Die Type):**\n";
+                    foreach ($dieStats as $ds) {
+                        $directAnswer .= "   ▸ **" . ($ds['die'] ?: 'অন্যান্য') . "** — {$ds['cnt']}টি প্লেট\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if (!empty($makerStats)) {
+                    $directAnswer .= "🏭 **নির্মাতা / সাপ্লায়ার:**\n";
+                    foreach ($makerStats as $ms) {
+                        $directAnswer .= "   ▸ **{$ms['make_by']}** — {$ms['cnt']}টি প্লেট\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if ($latest) {
+                    $directAnswer .= "🆕 **সর্বশেষ যুক্ত প্লেট:** `{$latest['name']}` (SL: {$latest['sl_no']})";
+                    if (!empty($latest['date_received']) && $latest['date_received'] !== 'NA') {
+                        $directAnswer .= " — তারিখ: {$latest['date_received']}";
+                    }
+                    $directAnswer .= "\n\n";
+                }
+                $directAnswer .= "━━━━━━━━━━━━━━━━━━━━━━\n"
+                    . "👉 [প্লেট ম্যানেজমেন্ট পেজ খুলুন]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
+            } else {
+                $directAnswer = "📊 **Printing Plates — Stock Dashboard**\n"
+                    . "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    . "🔢 **Total Plates:** **{$totalCount}**\n\n";
+                if (!empty($dieStats)) {
+                    $directAnswer .= "📐 **By Die Type:**\n";
+                    foreach ($dieStats as $ds) {
+                        $directAnswer .= "   ▸ **" . ($ds['die'] ?: 'Other') . "** — {$ds['cnt']} plates\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if (!empty($makerStats)) {
+                    $directAnswer .= "🏭 **By Maker / Supplier:**\n";
+                    foreach ($makerStats as $ms) {
+                        $directAnswer .= "   ▸ **{$ms['make_by']}** — {$ms['cnt']} plates\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if ($latest) {
+                    $directAnswer .= "🆕 **Latest Plate Added:** `{$latest['name']}` (SL: {$latest['sl_no']})";
+                    if (!empty($latest['date_received']) && $latest['date_received'] !== 'NA') {
+                        $directAnswer .= " — Received: {$latest['date_received']}";
+                    }
+                    $directAnswer .= "\n\n";
+                }
+                $directAnswer .= "━━━━━━━━━━━━━━━━━━━━━━\n"
+                    . "👉 [Open Plate Management Page]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
+            }
+            return [
+                'tool_used' => $toolName,
+                'total_count' => $totalCount,
+                'total_meters' => 0,
+                'filtered_type' => '',
+                'is_company_list' => false,
+                'direct_answer' => $directAnswer,
+                'data' => []
+            ];
+        }
+
         
         // Extract text search words (filtering out attribute query words & calculation filler terms)
         $stopwords = [
             'can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'plate', 'plates', 'list', 'show', 'details', 'detail', 'this', 'the', 'a', 'an',
             'job', 'jobs', 'for', 'about', 'get', 'search', 'find', 'there', 'any', 'named', 'by', 'name', 'of', 'with', 'are', 'do', 'have', 'exist', 'does',
             'repeat', 'gap', 'gaph', 'gapv', 'size', 'ups', 'cylinder', 'paper', 'die', 'core', 'rewinding', 'value', 'color', 'colors', 'spec', 'special', 'what', 'how', 'give',
-            'if', 'run', 'much', 'many', 'quantity', 'qty', 'meter', 'meters', 'mtr', 'will', 'be', 'produced', 'print', 'printing', 'require', 'required', 'need', 'needed', 'or', 'and',
+            'if', 'run', 'running', 'much', 'many', 'quantity', 'qty', 'meter', 'meters', 'mtr', 'will', 'be', 'produced', 'print', 'printing', 'require', 'required', 'need', 'needed', 'or', 'and',
+            'calculate', 'calculating', 'calc', 'length', 'roll', 'pcs', 'pieces', 'labels',
 
             'koto', 'kotogulo', 'hobe', 'lagbe', 'korle', 'korte', 'asob', 'ar', 'er', 'diye', 'giye', 'ache', 'hobe', 'হবে', 'আছে', 'কত', 'কতগুলো', 'কি', 'কী', 'কোন'
         ];
@@ -1531,16 +1808,29 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
         $searchTerm = implode('%', $terms);
         $searchTermDisplay = implode(' ', $terms);
 
+        // 1. Try search by explicit SL No / ID number first if numbers are present (e.g., Plate 1032)
+        if (!empty($searchNums)) {
+            foreach ($searchNums as $num) {
+                $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE sl_no = ? OR id = ? ORDER BY id DESC LIMIT 5");
+                $stmt->bind_param('ss', $num, $num);
+                $stmt->execute();
+                $resData = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+                if (!empty($resData)) {
+                    $data = $resData;
+                    break;
+                }
+            }
+        }
 
-        if (!empty($terms)) {
-            // 1. Try exact combined terms (e.g. '%blue%500ml%')
+        if (empty($data) && !empty($terms)) {
+            // 2. Try exact combined terms (e.g. '%blue%500ml%')
             $like = '%' . $searchTerm . '%';
             $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE name LIKE ? OR sl_no = ? OR id = ? ORDER BY id DESC LIMIT 10");
             $stmt->bind_param('sss', $like, $searchTerm, $searchTerm);
             $stmt->execute();
             $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-            // 2. If empty, try matching individual terms
+            // 3. If empty, try matching individual terms
             if (empty($data) && count($terms) > 1) {
                 $likes = array_map(function($t) { return '%' . $t . '%'; }, $terms);
                 $whereClause = implode(' AND ', array_fill(0, count($likes), "name LIKE ?"));
@@ -1586,12 +1876,22 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
                 $targetQty = (float)str_replace(',', '', $m[3]);
             }
 
-            if ($targetQty === null && $paperMeters === null && !empty($searchNums)) {
-                $num = (float)$searchNums[0];
+            if ($targetQty === null && $paperMeters === null && count($searchNums) >= 2) {
+                // If two numbers present (e.g. Plate 1032 with 15000 qty)
+                $numCandidate = (float)$searchNums[count($searchNums) - 1];
                 if (strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'run') !== false) {
-                    $paperMeters = $num;
+                    $paperMeters = $numCandidate;
                 } else {
-                    $targetQty = $num;
+                    $targetQty = $numCandidate;
+                }
+            } elseif ($targetQty === null && $paperMeters === null && !empty($searchNums)) {
+                $num = (float)$searchNums[0];
+                if ($num != (float)$plate['sl_no'] && $num != (float)$plate['id']) {
+                    if (strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'run') !== false) {
+                        $paperMeters = $num;
+                    } else {
+                        $targetQty = $num;
+                    }
                 }
             }
 
@@ -1730,6 +2030,100 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
         $toolName = 'Die Tooling & Barcode Die Master Tool';
         $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_die_tooling");
         $totalCount = $cntRes ? (int)($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
+
+        // --- Count-Only Intent Handler ---
+        if (is_count_intent($prompt)) {
+            $userLang = detect_language($prompt);
+            $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+            // Fetch breakdown stats
+            $typeBreak = $db->query("SELECT die_type, COUNT(*) as cnt FROM master_die_tooling WHERE die_type IS NOT NULL AND die_type != '' GROUP BY die_type ORDER BY cnt DESC");
+            $typeStats = $typeBreak ? $typeBreak->fetch_all(MYSQLI_ASSOC) : [];
+            $catBreak = $db->query("SELECT used_for, COUNT(*) as cnt FROM master_die_tooling WHERE used_for IS NOT NULL AND used_for != '' GROUP BY used_for ORDER BY cnt DESC LIMIT 5");
+            $catStats = $catBreak ? $catBreak->fetch_all(MYSQLI_ASSOC) : [];
+            $latestRes = $db->query("SELECT barcode_size, sl_no, used_for FROM master_die_tooling ORDER BY id DESC LIMIT 1");
+            $latest = $latestRes ? $latestRes->fetch_assoc() : null;
+
+            if ($userLang === 'Hindi') {
+                $directAnswer = "📏 **बारकोड डाई टूलिंग — स्टॉक डैशबोर्ड**\n"
+                    . "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    . "🔢 **कुल डाई:** **{$totalCount}**\n\n";
+                if (!empty($typeStats)) {
+                    $directAnswer .= "⚙️ **डाई प्रकार:**\n";
+                    foreach ($typeStats as $ts) {
+                        $directAnswer .= "   ▸ **{$ts['die_type']}** — {$ts['cnt']} डाई\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if (!empty($catStats)) {
+                    $directAnswer .= "📦 **श्रेणी (Category):**\n";
+                    foreach ($catStats as $cs) {
+                        $directAnswer .= "   ▸ **{$cs['used_for']}** — {$cs['cnt']} डाई\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if ($latest) {
+                    $directAnswer .= "🆕 **सबसे हालिया डाई:** `{$latest['barcode_size']}` (SL: {$latest['sl_no']}) — श्रेणी: {$latest['used_for']}\n\n";
+                }
+                $directAnswer .= "━━━━━━━━━━━━━━━━━━━━━━\n"
+                    . "👉 [बारकोड डाई प्रबंधन पेज खोलें]({$baseUrl}/modules/plate-tools/die-management/barcode/index.php)";
+            } elseif ($userLang === 'Bengali' || preg_match('/[\x{0980}-\x{09FF}]/u', $prompt) || preg_match('/\b(koto|kotogulo|ache)\b/i', $prompt)) {
+                $directAnswer = "📏 **বারকোড ডাই টূলিং — স্টক ড্যাশবোর্ড**\n"
+                    . "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    . "🔢 **মোট ডাই:** **{$totalCount}টি**\n\n";
+                if (!empty($typeStats)) {
+                    $directAnswer .= "⚙️ **ডাই ধরণ (Die Type):**\n";
+                    foreach ($typeStats as $ts) {
+                        $directAnswer .= "   ▸ **{$ts['die_type']}** — {$ts['cnt']}টি ডাই\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if (!empty($catStats)) {
+                    $directAnswer .= "📦 **ক্যাটাগরি (Category):**\n";
+                    foreach ($catStats as $cs) {
+                        $directAnswer .= "   ▸ **{$cs['used_for']}** — {$cs['cnt']}টি ডাই\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if ($latest) {
+                    $directAnswer .= "🆕 **সর্বশেষ ডাই:** `{$latest['barcode_size']}` (SL: {$latest['sl_no']}) — ক্যাটাগরি: {$latest['used_for']}\n\n";
+                }
+                $directAnswer .= "━━━━━━━━━━━━━━━━━━━━━━\n"
+                    . "👉 [বারকোড ডাই ম্যানেজমেন্ট পেজ খুলুন]({$baseUrl}/modules/plate-tools/die-management/barcode/index.php)";
+            } else {
+                $directAnswer = "📏 **Barcode Die Tooling — Stock Dashboard**\n"
+                    . "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    . "🔢 **Total Dies:** **{$totalCount}**\n\n";
+                if (!empty($typeStats)) {
+                    $directAnswer .= "⚙️ **By Die Type:**\n";
+                    foreach ($typeStats as $ts) {
+                        $directAnswer .= "   ▸ **{$ts['die_type']}** — {$ts['cnt']} dies\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if (!empty($catStats)) {
+                    $directAnswer .= "📦 **By Category:**\n";
+                    foreach ($catStats as $cs) {
+                        $directAnswer .= "   ▸ **{$cs['used_for']}** — {$cs['cnt']} dies\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if ($latest) {
+                    $directAnswer .= "🆕 **Latest Die Added:** `{$latest['barcode_size']}` (SL: {$latest['sl_no']}) — Category: {$latest['used_for']}\n\n";
+                }
+                $directAnswer .= "━━━━━━━━━━━━━━━━━━━━━━\n"
+                    . "👉 [Open Barcode Die Management Page]({$baseUrl}/modules/plate-tools/die-management/barcode/index.php)";
+            }
+            return [
+                'tool_used' => $toolName,
+                'total_count' => $totalCount,
+                'total_meters' => 0,
+                'filtered_type' => '',
+                'is_company_list' => false,
+                'direct_answer' => $directAnswer,
+                'data' => []
+            ];
+        }
         
         $stopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'die', 'tooling', 'barcode', 'list', 'show', 'details', 'this', 'the', 'a', 'an', 'job', 'jobs', 'for', 'about', 'get', 'search', 'find', 'there', 'any', 'named', 'by', 'name', 'of', 'with', 'are', 'do', 'have', 'exist', 'does', 'kholo', 'khul', 'open', 'page', 'go', 'to'];
 
@@ -1851,6 +2245,72 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
         $toolName = 'Anilox Roll Stock Master Tool';
         $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_anilox_data");
         $totalCount = $cntRes ? (int)($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
+
+        // --- Count-Only Intent Handler ---
+        if (is_count_intent($prompt)) {
+            $userLang = detect_language($prompt);
+            $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+            // Fetch breakdown stats
+            $totalStockRes = $db->query("SELECT SUM(CAST(stock_qty AS UNSIGNED)) as total_stock FROM master_anilox_data WHERE stock_qty IS NOT NULL");
+            $totalStock = $totalStockRes ? (int)($totalStockRes->fetch_assoc()['total_stock'] ?? 0) : 0;
+            $lpiRange = $db->query("SELECT MIN(CAST(anilox_lpi AS UNSIGNED)) as min_lpi, MAX(CAST(anilox_lpi AS UNSIGNED)) as max_lpi FROM master_anilox_data WHERE anilox_lpi IS NOT NULL AND anilox_lpi != ''");
+            $lpiR = $lpiRange ? $lpiRange->fetch_assoc() : null;
+            $inStockRes = $db->query("SELECT COUNT(*) as cnt FROM master_anilox_data WHERE CAST(stock_qty AS UNSIGNED) > 0");
+            $inStockCount = $inStockRes ? (int)($inStockRes->fetch_assoc()['cnt'] ?? 0) : 0;
+            $outOfStock = $totalCount - $inStockCount;
+            $latestRes = $db->query("SELECT anilox_lpi, anilox_bmc, sl_no, stock_qty FROM master_anilox_data ORDER BY id DESC LIMIT 1");
+            $latest = $latestRes ? $latestRes->fetch_assoc() : null;
+
+            $lpiRangeStr = ($lpiR && $lpiR['min_lpi']) ? "{$lpiR['min_lpi']} — {$lpiR['max_lpi']} LPI" : 'N/A';
+
+            if ($userLang === 'Hindi') {
+                $directAnswer = "🌀 **एनिलॉक्स रोल — स्टॉक डैशबोर्ड**\n"
+                    . "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    . "🔢 **कुल एनिलॉक्स प्रकार:** **{$totalCount}**\n"
+                    . "📦 **कुल उपलब्ध स्टॉक:** **{$totalStock} रोल**\n\n"
+                    . "📐 **LPI रेंज:** {$lpiRangeStr}\n"
+                    . "✅ **स्टॉक में:** {$inStockCount} प्रकार | ❌ **स्टॉक से बाहर:** {$outOfStock} प्रकार\n\n";
+                if ($latest) {
+                    $directAnswer .= "🆕 **नवीनतम:** `{$latest['anilox_lpi']} LPI` / `{$latest['anilox_bmc']} BCM` (SL: {$latest['sl_no']}) — स्टॉक: {$latest['stock_qty']} रोल\n\n";
+                }
+                $directAnswer .= "━━━━━━━━━━━━━━━━━━━━━━\n"
+                    . "👉 [एनिलॉक्स प्रबंधन पेज खोलें]({$baseUrl}/modules/plate-tools/anilox-management/index.php)";
+            } elseif ($userLang === 'Bengali' || preg_match('/[\x{0980}-\x{09FF}]/u', $prompt) || preg_match('/\b(koto|kotogulo|ache)\b/i', $prompt)) {
+                $directAnswer = "🌀 **এনিলক্স রোল — স্টক ড্যাশবোর্ড**\n"
+                    . "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    . "🔢 **মোট এনিলক্স ধরণ:** **{$totalCount}টি**\n"
+                    . "📦 **মোট উপলব্ধ স্টক:** **{$totalStock}টি রোল**\n\n"
+                    . "📐 **LPI রেঞ্জ:** {$lpiRangeStr}\n"
+                    . "✅ **স্টকে আছে:** {$inStockCount}টি ধরণ | ❌ **স্টকে নেই:** {$outOfStock}টি ধরণ\n\n";
+                if ($latest) {
+                    $directAnswer .= "🆕 **সর্বশেষ:** `{$latest['anilox_lpi']} LPI` / `{$latest['anilox_bmc']} BCM` (SL: {$latest['sl_no']}) — স্টক: {$latest['stock_qty']}টি রোল\n\n";
+                }
+                $directAnswer .= "━━━━━━━━━━━━━━━━━━━━━━\n"
+                    . "👉 [এনিলক্স ম্যানেজমেন্ট পেজ খুলুন]({$baseUrl}/modules/plate-tools/anilox-management/index.php)";
+            } else {
+                $directAnswer = "🌀 **Anilox Roll — Stock Dashboard**\n"
+                    . "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    . "🔢 **Total Anilox Types:** **{$totalCount}**\n"
+                    . "📦 **Total Available Stock:** **{$totalStock} Rolls**\n\n"
+                    . "📐 **LPI Range:** {$lpiRangeStr}\n"
+                    . "✅ **In Stock:** {$inStockCount} types | ❌ **Out of Stock:** {$outOfStock} types\n\n";
+                if ($latest) {
+                    $directAnswer .= "🆕 **Latest Entry:** `{$latest['anilox_lpi']} LPI` / `{$latest['anilox_bmc']} BCM` (SL: {$latest['sl_no']}) — Stock: {$latest['stock_qty']} Rolls\n\n";
+                }
+                $directAnswer .= "━━━━━━━━━━━━━━━━━━━━━━\n"
+                    . "👉 [Open Anilox Management Page]({$baseUrl}/modules/plate-tools/anilox-management/index.php)";
+            }
+            return [
+                'tool_used' => $toolName,
+                'total_count' => $totalCount,
+                'total_meters' => 0,
+                'filtered_type' => '',
+                'is_company_list' => false,
+                'direct_answer' => $directAnswer,
+                'data' => []
+            ];
+        }
 
         $stopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'anilox', 'roll', 'rolls', 'stock', 'lpi', 'bcm', 'bmc', 'management', 'master', 'design', 'list', 'show', 'details', 'this', 'the', 'a', 'an', 'for', 'about', 'get', 'search', 'find', 'there', 'any', 'named', 'by', 'name', 'of', 'with', 'are', 'do', 'have', 'exist', 'does', 'kholo', 'khul', 'open', 'page', 'go', 'to'];
 
@@ -2203,7 +2663,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
         $toolName = 'ERP Jobs & Planning Tool';
 
         // Extract search term from prompt
-        $jobStopwords = ['give', 'me', 'the', 'detail', 'details', 'about', 'job', 'jobs', 'name', 'named', 'by', 'how', 'many', 'we', 'have', 'is', 'are', 'in', 'show', 'tell', 'list', 'find', 'search', 'for', 'a', 'an', 'what', 'which'];
+        $jobStopwords = ['can', 'you', 'of', 'give', 'me', 'the', 'detail', 'details', 'about', 'job', 'jobs', 'name', 'named', 'by', 'how', 'many', 'we', 'have', 'is', 'are', 'in', 'show', 'tell', 'list', 'find', 'search', 'for', 'a', 'an', 'what', 'which', 'please'];
         $pWords = preg_split('/\s+/', strtolower($prompt));
         $terms = [];
         foreach ($pWords as $w) {
@@ -2230,6 +2690,50 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
             $totalCount = count($data);
 
             if ($totalCount === 0) {
+                // Fallback: search master_plate_data
+                $like = '%' . $jobSearchTerm . '%';
+                $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE name LIKE ? ORDER BY id DESC LIMIT 5");
+                $stmt->bind_param('s', $like);
+                $stmt->execute();
+                $plateData = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+                if (!empty($plateData)) {
+                    $userLang = detect_language($prompt);
+                    $sampleCount = count($plateData);
+                    if ($userLang === 'English') {
+                        $answer = "📊 **Printing Plates Master Tool — Technical Specifications:**\n\nFound **{$sampleCount} matching plate record(s)** in your ERP database:\n\n";
+                        foreach ($plateData as $idx => $row) {
+                            $answer .= "• **Plate " . ($idx + 1) . ": `{$row['name']}`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
+                                . "  - 📏 **Repeat Value:** **" . ($row['repeat_value'] ?: 'N/A') . "**\n"
+                                . "  - 📐 **Gap (Horizontal / Vertical):** **Gap H: " . ($row['gap_h'] ?: '0') . "** | **Gap V: " . ($row['gap_v'] ?: '0') . "**\n"
+                                . "  - 📐 **Plate Size:** **" . ($row['size'] ?: 'N/A') . "** | **Ups:** **" . ($row['ups'] ?: '1') . "**\n"
+                                . "  - 📄 **Paper Type & Size:** **" . ($row['paper_type'] ?: 'N/A') . "** (" . ($row['paper_size'] ?: 'N/A') . ")\n"
+                                . "  - ⚙️ **Die & Cylinder:** **" . ($row['die'] ?: 'N/A') . "** | Cylinder: **" . ($row['cylinder'] ?: 'N/A') . "**\n"
+                                . "  - 🏭 **Make By:** **" . ($row['make_by'] ?: 'N/A') . "** | Date Received: **" . ($row['date_received'] ?: 'N/A') . "**\n\n";
+                        }
+                    } else {
+                        $answer = "📊 **প্রিন্টিং প্লেটের বিস্তারিত টেকনিক্যাল স্পেসিফিকেশন:**\n\nআপনার ইআরপি ডাটাবেসে **{$sampleCount}টি ম্যাচিং প্লেট** পাওয়া গেছে:\n\n";
+                        foreach ($plateData as $idx => $row) {
+                            $answer .= "• **প্লেট " . ($idx + 1) . ": `{$row['name']}`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
+                                . "  - 📏 **রিপিট ভ্যালু (Repeat Value):** **" . ($row['repeat_value'] ?: 'N/A') . "**\n"
+                                . "  - 📐 **গ্যাপ (Gap H / Gap V):** **Gap H: " . ($row['gap_h'] ?: '0') . "** | **Gap V: " . ($row['gap_v'] ?: '0') . "**\n"
+                                . "  - 📐 **প্লেট সাইজ:** **" . ($row['size'] ?: 'N/A') . "** | **আফস (Ups):** **" . ($row['ups'] ?: '1') . "**\n"
+                                . "  - 📄 **কাগজের টাইপ ও সাইজ:** **" . ($row['paper_type'] ?: 'N/A') . "** (" . ($row['paper_size'] ?: 'N/A') . ")\n"
+                                . "  - ⚙️ **ডাই ও সিলিন্ডার:** **" . ($row['die'] ?: 'N/A') . "** | সিলিন্ডার: **" . ($row['cylinder'] ?: 'N/A') . "**\n"
+                                . "  - 🏭 **মেকার:** **" . ($row['make_by'] ?: 'N/A') . "** | এন্ট্রি তারিখ: **" . ($row['date_received'] ?: 'N/A') . "**\n\n";
+                        }
+                    }
+                    return [
+                        'tool_used' => 'Printing Plates Master Tool',
+                        'total_count' => $sampleCount,
+                        'total_meters' => 0,
+                        'filtered_type' => '',
+                        'is_company_list' => false,
+                        'direct_answer' => $answer,
+                        'data' => []
+                    ];
+                }
+
                 $userLang = detect_language($prompt);
                 if ($userLang === 'English') {
                     $directAnswer = "❌ **No Job Found Matching \"{$jobSearchTerm}\"**\n\n"
@@ -2262,6 +2766,60 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
             $data = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
         }
     } else {
+        // Fallback: search master_plate_data before giving up
+        $unmatchedStopwords = ['can', 'you', 'give', 'me', 'the', 'details', 'about', 'please', 'show', 'tell', 'find', 'search', 'for', 'a', 'an', 'what', 'which', 'is', 'are', 'in', 'of', 'to', 'do', 'has', 'have'];
+        $pWords = preg_split('/\s+/', strtolower($prompt));
+        $terms = [];
+        foreach ($pWords as $w) {
+            $wClean = trim(preg_replace('/[^a-z0-9]/', '', $w));
+            if ($wClean !== '' && !in_array($wClean, $unmatchedStopwords, true) && strlen($wClean) >= 2) {
+                $terms[] = $wClean;
+            }
+        }
+        if (!empty($terms)) {
+            $searchTerm = implode(' ', $terms);
+            $like = '%' . $searchTerm . '%';
+            $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE name LIKE ? ORDER BY id DESC LIMIT 5");
+            $stmt->bind_param('s', $like);
+            $stmt->execute();
+            $plateData = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            if (!empty($plateData)) {
+                $userLang = detect_language($prompt);
+                $sampleCount = count($plateData);
+                if ($userLang === 'English') {
+                    $answer = "📊 **Printing Plates Master Tool — Technical Specifications:**\n\nFound **{$sampleCount} matching plate record(s)** in your ERP database:\n\n";
+                    foreach ($plateData as $idx => $row) {
+                        $answer .= "• **Plate " . ($idx + 1) . ": `{$row['name']}`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
+                            . "  - 📏 **Repeat Value:** **" . ($row['repeat_value'] ?: 'N/A') . "**\n"
+                            . "  - 📐 **Gap (Horizontal / Vertical):** **Gap H: " . ($row['gap_h'] ?: '0') . "** | **Gap V: " . ($row['gap_v'] ?: '0') . "**\n"
+                            . "  - 📐 **Plate Size:** **" . ($row['size'] ?: 'N/A') . "** | **Ups:** **" . ($row['ups'] ?: '1') . "**\n"
+                            . "  - 📄 **Paper Type & Size:** **" . ($row['paper_type'] ?: 'N/A') . "** (" . ($row['paper_size'] ?: 'N/A') . ")\n"
+                            . "  - ⚙️ **Die & Cylinder:** **" . ($row['die'] ?: 'N/A') . "** | Cylinder: **" . ($row['cylinder'] ?: 'N/A') . "**\n"
+                            . "  - 🏭 **Make By:** **" . ($row['make_by'] ?: 'N/A') . "** | Date Received: **" . ($row['date_received'] ?: 'N/A') . "**\n\n";
+                    }
+                } else {
+                    $answer = "📊 **প্রিন্টিং প্লেটের বিস্তারিত টেকনিক্যাল স্পেসিফিকেশন:**\n\nআপনার ইআরপি ডাটাবেসে **{$sampleCount}টি ম্যাচিং প্লেট** পাওয়া গেছে:\n\n";
+                    foreach ($plateData as $idx => $row) {
+                        $answer .= "• **প্লেট " . ($idx + 1) . ": `{$row['name']}`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
+                            . "  - 📏 **রিপিট ভ্যালু (Repeat Value):** **" . ($row['repeat_value'] ?: 'N/A') . "**\n"
+                            . "  - 📐 **গ্যাপ (Gap H / Gap V):** **Gap H: " . ($row['gap_h'] ?: '0') . "** | **Gap V: " . ($row['gap_v'] ?: '0') . "**\n"
+                            . "  - 📐 **প্লেট সাইজ:** **" . ($row['size'] ?: 'N/A') . "** | **আফস (Ups):** **" . ($row['ups'] ?: '1') . "**\n"
+                            . "  - 📄 **কাগজের টাইপ ও সাইজ:** **" . ($row['paper_type'] ?: 'N/A') . "** (" . ($row['paper_size'] ?: 'N/A') . ")\n"
+                            . "  - ⚙️ **ডাই ও সিলিন্ডার:** **" . ($row['die'] ?: 'N/A') . "** | সিলিন্ডার: **" . ($row['cylinder'] ?: 'N/A') . "**\n"
+                            . "  - 🏭 **মেকার:** **" . ($row['make_by'] ?: 'N/A') . "** | এন্ট্রি তারিখ: **" . ($row['date_received'] ?: 'N/A') . "**\n\n";
+                    }
+                }
+                return [
+                    'tool_used' => 'Printing Plates Master Tool',
+                    'total_count' => $sampleCount,
+                    'total_meters' => 0,
+                    'filtered_type' => '',
+                    'is_company_list' => false,
+                    'direct_answer' => $answer,
+                    'data' => []
+                ];
+            }
+        }
         $toolName = 'Unmatched Query Assistant';
         $totalCount = 0;
         $data = [];
@@ -2429,13 +2987,19 @@ if (!empty($retrieved['direct_answer'])) {
     }
 }
 
+// Generate follow-up suggestion chips
+$suggestions = !empty($retrieved['suggestions'])
+    ? $retrieved['suggestions']
+    : get_follow_up_suggestions($toolUsed, $prompt, $userLang);
+
 $responsePayload = [
     'ok'          => true,
     'answer'      => $finalAnswer,
     'provider'    => ($config['gemini_api_key'] !== '' ? 'Gemini Pro API' : 'ERP Smart RAG Engine'),
     'tool_used'   => $toolUsed,
     'user_lang'   => $userLang,
-    'total_count' => $totalCount
+    'total_count' => $totalCount,
+    'suggestions' => $suggestions
 ];
 
 if (!empty($retrieved['nav_url'])) {
