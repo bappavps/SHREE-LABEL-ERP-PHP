@@ -241,150 +241,92 @@
     });
   }
 
-  // Web Speech API Voice Recognition
+  // Web Speech API Voice Recognition — Press & Hold (Push-to-Talk)
   var micBtns = document.querySelectorAll('#aiMicBtn, #aiMicBtnFloat, #micBtn');
   var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  var isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
   if (SpeechRecognition) {
     var recognition = new SpeechRecognition();
     recognition.interimResults = true;
+    recognition.continuous = true;
     recognition.maxAlternatives = 1;
-    if (currentLang === 'Bengali') recognition.lang = 'bn-IN';
-    else if (currentLang === 'Hindi') recognition.lang = 'hi-IN';
-    else recognition.lang = 'en-US';
 
     var isListening = false;
     var currentUtterance = '';
 
-    if (isTouchDevice) {
-      // ─── Mobile: Push-to-Talk ───
-      recognition.continuous = false;
+    function startPushToTalk() {
+      if (isListening || state.isProcessing) return;
+      isListening = true;
+      currentUtterance = '';
+      if (chatInput) chatInput.value = '';
 
-      function startPushToTalk() {
-        isListening = true;
-        currentUtterance = '';
-        if (chatInput) chatInput.value = '';
-        try {
-          recognition.start();
-        } catch (e) {
-          isListening = false;
-          console.warn('Speech recognition start error:', e);
-          return;
-        }
-        micBtns.forEach(function(btn) {
-          if (btn) {
-            btn.classList.add('listening');
-            btn.setAttribute('title', '🎙️ Speaking... Release to send');
-          }
-        });
-        if (chatInput) {
-          chatInput.placeholder = '🎙️ Speak now... Release mic to send';
-        }
-      }
+      if (currentLang === 'Bengali' || currentLang === 'bn-IN') recognition.lang = 'bn-IN';
+      else if (currentLang === 'Hindi' || currentLang === 'hi-IN') recognition.lang = 'hi-IN';
+      else if (currentLang === 'English' || currentLang === 'en-US') recognition.lang = 'en-US';
+      else recognition.lang = 'hi-IN';
 
-      function stopPushToTalk() {
-        if (!isListening) return;
-        try {
-          recognition.stop();
-        } catch(e) {}
-      }
-
-      micBtns.forEach(function(btn) {
-        if (!btn) return;
-        var touchFired = false;
-
-        btn.addEventListener('touchstart', function(e) {
-          touchFired = true;
-          if (isListening || state.isProcessing) return;
-          startPushToTalk();
-        });
-
-        btn.addEventListener('touchend', function(e) {
-          touchFired = false;
-          stopPushToTalk();
-        });
-
-        btn.addEventListener('touchcancel', function() {
-          touchFired = false;
-          stopPushToTalk();
-        });
-
-        btn.addEventListener('mousedown', function(e) {
-          if (touchFired) return;
-          if (isListening || state.isProcessing) return;
-          startPushToTalk();
-        });
-
-        btn.addEventListener('mouseup', function(e) {
-          if (touchFired) return;
-          stopPushToTalk();
-        });
-
-        btn.addEventListener('mouseleave', function() {
-          stopPushToTalk();
-        });
-      });
-
-      recognition.onend = function() {
-        var text = currentUtterance || (chatInput ? chatInput.value : '');
+      try {
+        recognition.start();
+      } catch (e) {
         isListening = false;
-        stopListeningUI();
-        if (text.trim()) {
-          handleSend(text.trim());
-        }
-      };
-    } else {
-      // ─── Desktop: Toggle Mode ───
-      recognition.continuous = true;
-
+        console.warn('Speech recognition start error:', e);
+        return;
+      }
       micBtns.forEach(function(btn) {
-        if (!btn) return;
-
-        btn.addEventListener('click', function() {
-          if (isListening) {
-            isListening = false;
-            try { recognition.stop(); } catch(e) {}
-            stopListeningUI();
-          } else {
-            isListening = true;
-            currentUtterance = '';
-            if (chatInput) chatInput.value = '';
-            try {
-              recognition.start();
-            } catch (e) {
-              isListening = false;
-              console.warn('Speech recognition start error:', e);
-              return;
-            }
-            micBtns.forEach(function(b) {
-              if (b) {
-                b.classList.add('listening');
-                b.setAttribute('title', '🎙️ Listening... Click to stop');
-              }
-            });
-            if (chatInput) {
-              chatInput.placeholder = '🎙️ Listening... Speak freely';
-            }
-          }
-        });
-      });
-
-      recognition.onend = function() {
-        if (isListening) {
-          try {
-            recognition.start();
-          } catch (e) {
-            isListening = false;
-            stopListeningUI();
-          }
-        } else {
-          stopListeningUI();
+        if (btn) {
+          btn.classList.add('listening');
+          btn.setAttribute('title', '🎙️ Speaking... Release to send');
         }
-      };
+      });
+      if (chatInput) {
+        chatInput.placeholder = '🎙️ Listening... Release mic to send';
+      }
     }
 
-    // ─── Shared Handlers ───
+    function stopPushToTalk() {
+      if (!isListening) return;
+      try {
+        recognition.stop();
+      } catch(e) {}
+    }
+
+    micBtns.forEach(function(btn) {
+      if (!btn) return;
+      var touchFired = false;
+
+      btn.addEventListener('touchstart', function(e) {
+        touchFired = true;
+        startPushToTalk();
+      });
+
+      btn.addEventListener('touchend', function(e) {
+        touchFired = false;
+        stopPushToTalk();
+      });
+
+      btn.addEventListener('touchcancel', function() {
+        touchFired = false;
+        isListening = false;
+        try { recognition.stop(); } catch(e) {}
+        stopListeningUI();
+      });
+
+      btn.addEventListener('mousedown', function(e) {
+        if (touchFired) return;
+        startPushToTalk();
+      });
+
+      btn.addEventListener('mouseup', function(e) {
+        if (touchFired) return;
+        stopPushToTalk();
+      });
+
+      btn.addEventListener('mouseleave', function() {
+        if (touchFired) return;
+        stopPushToTalk();
+      });
+    });
+
     recognition.onresult = function(event) {
       var latest = event.results[event.resultIndex][0].transcript;
       if (event.results[event.resultIndex].isFinal) {
@@ -397,7 +339,7 @@
 
     recognition.onerror = function(event) {
       console.warn('Speech recognition error:', event.error);
-      if (event.error === 'no-speech' || event.error === 'network') {
+      if (event.error === 'no-speech' || event.error === 'network' || event.error === 'aborted') {
         isListening = false;
         stopListeningUI();
         return;
@@ -406,15 +348,24 @@
       stopListeningUI();
     };
 
+    recognition.onend = function() {
+      var text = currentUtterance || (chatInput ? chatInput.value : '');
+      isListening = false;
+      stopListeningUI();
+      if (text.trim()) {
+        handleSend(text.trim());
+      }
+    };
+
     function stopListeningUI() {
       micBtns.forEach(function(btn) {
         if (btn) {
           btn.classList.remove('listening');
-          btn.setAttribute('title', isTouchDevice ? 'Voice Input — Press & Hold to Speak' : 'Voice Input — Click to Speak');
+          btn.setAttribute('title', 'Voice Input — Press & Hold to Speak');
         }
       });
       if (chatInput) {
-        chatInput.placeholder = isTouchDevice ? 'Type query or hold mic to speak...' : 'Type query or click mic to speak...';
+        chatInput.placeholder = 'Press & hold mic to speak...';
       }
     }
   } else {

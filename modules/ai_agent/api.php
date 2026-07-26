@@ -39,9 +39,15 @@ if ($prompt === '') {
  * Detect Language (English / Bengali / Hindi)
  */
 function detect_language(string $prompt): string {
-    $reqLang = trim($_REQUEST['user_lang'] ?? '');
-    if ($reqLang === 'English' || $reqLang === 'Bengali' || $reqLang === 'Hindi') {
-        return $reqLang;
+    $reqLang = strtolower(trim($_REQUEST['user_lang'] ?? ''));
+    if ($reqLang === 'hindi' || $reqLang === 'hi-in' || $reqLang === 'hi') {
+        return 'Hindi';
+    }
+    if ($reqLang === 'bengali' || $reqLang === 'bn-in' || $reqLang === 'bn') {
+        return 'Bengali';
+    }
+    if ($reqLang === 'english' || $reqLang === 'en-us' || $reqLang === 'en') {
+        return 'English';
     }
 
     $p = mb_strtolower($prompt, 'UTF-8');
@@ -57,12 +63,12 @@ function detect_language(string $prompt): string {
     }
 
     // 3. Banglish Keywords Detection
-    if (preg_match('/\b(koto|kotogulo|ache|kono|kivabe|korbo|bhai|bhalo|bolun|din|kon|lagbe|hobe|dam|seba|seta|amar|amake|dekhaw|bolte)\b/i', $p)) {
+    if (preg_match('/\b(koto|kotogulo|ache|kono|kivabe|korbo|bhai|bhalo|bolun|din|kon|lagbe|hobe|dam|seba|seta|amar|amake|dekhaw|bolte|kholo|khul)\b/i', $p)) {
         return 'Bengali';
     }
 
     // 4. Hinglish Keywords Detection
-    if (preg_match('/\b(kitne|kitna|hai|kaise|karo|dekho|batao|kya|mujhe|bataye)\b/i', $p)) {
+    if (preg_match('/\b(kitne|kitna|hai|kaise|karo|dekho|batao|kya|mujhe|bataye|dikhao)\b/i', $p)) {
         return 'Hindi';
     }
 
@@ -779,7 +785,9 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
         $paperTypeFilter = 'thermal';
     }
 
-    if (!empty($compName) || !empty($paperTypeFilter)) {
+    $hasToolIntent = (strpos($p, 'plate') !== false || strpos($p, 'plates') !== false || strpos($p, 'die') !== false || strpos($p, 'anilox') !== false || strpos($p, 'প্লেট') !== false || strpos($p, 'ডাই') !== false || strpos($p, 'এনিলক্স') !== false || strpos($p, 'प्लेट') !== false);
+
+    if ((!empty($compName) || !empty($paperTypeFilter)) && !$hasToolIntent) {
         $toolName = "Paper Stock Analytics Tool (" . trim($compName . ' ' . strtoupper($paperTypeFilter)) . ")";
         
         $likeComp = $compName ? ('%' . $compName . '%') : '%';
@@ -807,31 +815,38 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
 
         $userLang = detect_language($prompt);
         $labelStr = trim($compName . ' ' . strtoupper($paperTypeFilter));
+        $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
 
         if ($userLang === 'English') {
-            $answer = "📊 **{$labelStr} Paper Stock Analytics Summary:**\n\n"
-                . "• **Filter:** **{$labelStr}**\n"
-                . "• **Total Paper Rolls:** **" . number_format($totalRolls) . " Rolls**\n"
-                . "• **Total Running Meters:** **" . number_format($totalRunningMtr, 2) . " Meters**\n"
-                . "• **Total Paper Area (SQM):** **" . number_format($totalSqm, 2) . " SQM**\n"
-                . "• **Jumbo Rolls (Width ≥ 1000mm):** **" . number_format($jumboCount) . " Jumbo Rolls** (1000mm or above width)\n"
-                . "• **Slitted Stock Rolls (Width < 1000mm):** **" . number_format($slittedCount) . " Rolls**\n";
+            $answer = "📊 **{$labelStr} Paper Stock Analytics Dashboard:**\n"
+                . "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                . "🔢 **Total Paper Rolls:** **" . number_format($totalRolls) . " Rolls**\n"
+                . "📏 **Total Running Length:** **" . number_format($totalRunningMtr, 2) . " meters**\n"
+                . "📐 **Total Paper Area (SQM):** **" . number_format($totalSqm, 2) . " SQM**\n\n"
+                . "📜 **Jumbo Parent Rolls (≥1000mm):** **" . number_format($jumboCount) . " Rolls** (1000mm or above width)\n"
+                . "✂️ **Slitted Stock Rolls (<1000mm):** **" . number_format($slittedCount) . " Rolls**\n\n"
+                . "━━━━━━━━━━━━━━━━━━━━━━\n"
+                . "👉 [Open Paper Stock Page]({$baseUrl}/modules/paper_stock/index.php)";
         } elseif ($userLang === 'Hindi') {
-            $answer = "📊 **{$labelStr} पेपर स्टॉक विश्लेषण:**\n\n"
-                . "• **फ़िल्टर:** **{$labelStr}**\n"
-                . "• **कुल पेपर रोल:** **" . number_format($totalRolls) . " रोल**\n"
-                . "• **कुल रनिंग मीटर:** **" . number_format($totalRunningMtr, 2) . " मीटर**\n"
-                . "• **कुल पेपर क्षेत्रफल (SQM):** **" . number_format($totalSqm, 2) . " SQM**\n"
-                . "• **जंबो रोल (चौड़ाई ≥ 1000mm):** **" . number_format($jumboCount) . " जंबो रोल**\n"
-                . "• **स्लिटेड रोल (चौड़ाई < 1000mm):** **" . number_format($slittedCount) . " रोल**\n";
+            $answer = "📊 **{$labelStr} पेपर स्टॉक डैशबोर्ड:**\n"
+                . "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                . "🔢 **कुल पेपर रोल:** **" . number_format($totalRolls) . " रोल**\n"
+                . "📏 **कुल रनिंग मीटर:** **" . number_format($totalRunningMtr, 2) . " मीटर**\n"
+                . "📐 **कुल क्षेत्रफल (SQM):** **" . number_format($totalSqm, 2) . " SQM**\n\n"
+                . "📜 **जंबो रोल (चौड़ाई ≥ 1000mm):** **" . number_format($jumboCount) . " जंबो रोल**\n"
+                . "✂️ **स्लिटेड रोल (चौड़ाई < 1000mm):** **" . number_format($slittedCount) . " रोल**\n\n"
+                . "━━━━━━━━━━━━━━━━━━━━━━\n"
+                . "👉 [पेपर स्टॉक पेज खोलें]({$baseUrl}/modules/paper_stock/index.php)";
         } else {
-            $answer = "📊 **{$labelStr} পেপার স্টক বিশ্লেষণ সারসংক্ষেপ:**\n\n"
-                . "• **ফিল্টার:** **{$labelStr}**\n"
-                . "• **মোট পেপার রোল:** **" . number_format($totalRolls) . "টি রোল**\n"
-                . "• **মোট রানিং মিটার:** **" . number_format($totalRunningMtr, 2) . " মিটার**\n"
-                . "• **মোট পেপার ক্ষেত্রফল (SQM):** **" . number_format($totalSqm, 2) . " SQM**\n"
-                . "• **জাম্বো রোল (চওড়া ≥ ১০০০ মিমি):** **" . number_format($jumboCount) . "টি জাম্বো রোল** (হাজার বা হাজারের বেশি উইথ)\n"
-                . "• **স্লিটেড স্টক রোল (চওড়া < ১০০০ মিমি):** **" . number_format($slittedCount) . "টি রোল**\n";
+            $answer = "📊 **{$labelStr} পেপার স্টক ড্যাশবোর্ড:**\n"
+                . "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                . "🔢 **মোট পেপার রোল:** **" . number_format($totalRolls) . "টি রোল**\n"
+                . "📏 **মোট রানিং মিটার:** **" . number_format($totalRunningMtr, 2) . " মিটার**\n"
+                . "📐 **মোট ক্ষেত্রফল (SQM):** **" . number_format($totalSqm, 2) . " SQM**\n\n"
+                . "📜 **জাম্বো রোল (চওড়া ≥ ১০০০ মিমি):** **" . number_format($jumboCount) . "টি জাম্বো রোল**\n"
+                . "✂️ **স্লিটেড স্টক রোল (চওড়া < ১০০০ মিমি):** **" . number_format($slittedCount) . "টি রোল**\n\n"
+                . "━━━━━━━━━━━━━━━━━━━━━━\n"
+                . "👉 [পেপার স্টক পেজ খুলুন]({$baseUrl}/modules/paper_stock/index.php)";
         }
 
         return [
@@ -841,6 +856,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
             'filtered_type' => $labelStr,
             'is_company_list' => false,
             'direct_answer' => $answer,
+            'nav_url' => $baseUrl . '/modules/paper_stock/index.php',
             'data' => []
         ];
     }
@@ -1668,7 +1684,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
         $res = $db->query("SELECT company, COUNT(*) as roll_count, SUM(length_mtr) as total_meters FROM paper_stock WHERE status IN ('Main','Stock','Job Assign') AND company != '' GROUP BY company ORDER BY roll_count DESC");
         $data = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
         $totalCount = count($data);
-    } elseif ((strpos($p, 'plate') !== false || strpos($p, 'repeat') !== false || strpos($p, 'gap') !== false) && strpos($p, 'paper') === false && strpos($p, 'stock') === false && strpos($p, 'pp') === false && strpos($p, 'white') === false && strpos($p, 'chromo') === false && strpos($p, 'thermal') === false) {
+    } elseif (strpos($p, 'plate') !== false || strpos($p, 'repeat') !== false || strpos($p, 'gap') !== false || strpos($p, 'প্লেট') !== false || strpos($p, 'प्लेट') !== false) {
 
         $toolName = 'Printing Plates Master Tool';
         $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_plate_data");
@@ -1823,20 +1839,32 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
         }
 
         if (empty($data) && !empty($terms)) {
-            // 2. Try exact combined terms (e.g. '%blue%500ml%')
+            // 2. Search across name, paper_type, make_by, and die
             $like = '%' . $searchTerm . '%';
-            $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE name LIKE ? OR sl_no = ? OR id = ? ORDER BY id DESC LIMIT 10");
-            $stmt->bind_param('sss', $like, $searchTerm, $searchTerm);
+            $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE name LIKE ? OR paper_type LIKE ? OR make_by LIKE ? OR die LIKE ? OR sl_no = ? OR id = ? ORDER BY id DESC LIMIT 10");
+            $stmt->bind_param('ssssss', $like, $like, $like, $like, $searchTerm, $searchTerm);
             $stmt->execute();
             $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
             // 3. If empty, try matching individual terms
             if (empty($data) && count($terms) > 1) {
                 $likes = array_map(function($t) { return '%' . $t . '%'; }, $terms);
-                $whereClause = implode(' AND ', array_fill(0, count($likes), "name LIKE ?"));
+                $whereParts = [];
+                foreach ($likes as $l) {
+                    $whereParts[] = "(name LIKE ? OR paper_type LIKE ? OR make_by LIKE ? OR die LIKE ?)";
+                }
+                $whereClause = implode(' AND ', $whereParts);
                 $stmt2 = $db->prepare("SELECT * FROM master_plate_data WHERE {$whereClause} ORDER BY id DESC LIMIT 10");
-                $types = str_repeat('s', count($likes));
-                $stmt2->bind_param($types, ...$likes);
+                $flatParams = [];
+                $types = '';
+                foreach ($likes as $l) {
+                    $flatParams[] = $l;
+                    $flatParams[] = $l;
+                    $flatParams[] = $l;
+                    $flatParams[] = $l;
+                    $types .= 'ssss';
+                }
+                $stmt2->bind_param($types, ...$flatParams);
                 $stmt2->execute();
                 $data = $stmt2->get_result()->fetch_all(MYSQLI_ASSOC);
             }

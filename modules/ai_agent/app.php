@@ -1266,92 +1266,72 @@ foreach ($quickChips as $c) {
       return text.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
     }
 
-    // Voice Speech Recognition
+    // Voice Speech Recognition — Press & Hold (Push-to-Talk)
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let isListening = false;
     let currentUtterance = '';
-    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
       recognition.interimResults = true;
+      recognition.continuous = true;
       recognition.maxAlternatives = 1;
 
-      if (isTouchDevice) {
-        // Mobile: Push-to-Talk
-        recognition.continuous = false;
-        let touchFired = false;
+      let touchFired = false;
 
-        micBtn.addEventListener('touchstart', (e) => {
-          touchFired = true;
-          if (isListening) return;
-          isListening = true;
-          currentUtterance = '';
-          chatInput.value = '';
-          recognition.lang = selectedLang === 'auto' ? 'en-US' : selectedLang;
-          try { recognition.start(); } catch(e) { isListening = false; return; }
-          micBtn.classList.add('listening');
-          chatInput.placeholder = '🎙️ Speak... Release to send';
-        });
+      function startListening() {
+        if (isListening) return;
+        isListening = true;
+        currentUtterance = '';
+        chatInput.value = '';
 
-        micBtn.addEventListener('touchend', (e) => {
-          touchFired = false;
-          if (!isListening) return;
-          try { recognition.stop(); } catch(e) {}
-        });
+        if (selectedLang === 'hi-IN' || selectedLang === 'Hindi') recognition.lang = 'hi-IN';
+        else if (selectedLang === 'bn-IN' || selectedLang === 'Bengali') recognition.lang = 'bn-IN';
+        else if (selectedLang === 'en-US' || selectedLang === 'English') recognition.lang = 'en-US';
+        else recognition.lang = 'hi-IN';
 
-        micBtn.addEventListener('touchcancel', () => {
-          touchFired = false;
-          if (!isListening) return;
-          isListening = false;
-          recognition.stop();
-          micBtn.classList.remove('listening');
-        });
-
-        micBtn.addEventListener('mousedown', (e) => {
-          if (touchFired) return;
-          if (isListening) return;
-          isListening = true;
-          currentUtterance = '';
-          chatInput.value = '';
-          recognition.lang = selectedLang === 'auto' ? 'en-US' : selectedLang;
-          try { recognition.start(); } catch(e) { isListening = false; return; }
-          micBtn.classList.add('listening');
-          chatInput.placeholder = '🎙️ Speak... Release to send';
-        });
-
-        micBtn.addEventListener('mouseup', (e) => {
-          if (touchFired) return;
-          if (!isListening) return;
-          try { recognition.stop(); } catch(e) {}
-        });
-
-        micBtn.addEventListener('mouseleave', () => {
-          if (touchFired) return;
-          if (!isListening) return;
-          try { recognition.stop(); } catch(e) {}
-        });
-      } else {
-        // Desktop: Toggle Mode
-        recognition.continuous = true;
-
-        micBtn.addEventListener('click', () => {
-          if (isListening) {
-            isListening = false;
-            recognition.stop();
-            micBtn.classList.remove('listening');
-            chatInput.placeholder = 'Ask about stock, orders, dispatch...';
-            return;
-          }
-          isListening = true;
-          currentUtterance = '';
-          chatInput.value = '';
-          recognition.lang = selectedLang === 'auto' ? 'en-US' : selectedLang;
-          try { recognition.start(); } catch(e) { isListening = false; return; }
-          micBtn.classList.add('listening');
-          chatInput.placeholder = '🎙️ Listening... Speak freely';
-        });
+        try { recognition.start(); } catch(e) { isListening = false; return; }
+        micBtn.classList.add('listening');
+        chatInput.placeholder = '🎙️ Listening... Release mic to send';
       }
+
+      function stopListening() {
+        if (!isListening) return;
+        try { recognition.stop(); } catch(e) {}
+      }
+
+      micBtn.addEventListener('touchstart', (e) => {
+        touchFired = true;
+        startListening();
+      });
+
+      micBtn.addEventListener('touchend', (e) => {
+        touchFired = false;
+        stopListening();
+      });
+
+      micBtn.addEventListener('touchcancel', () => {
+        touchFired = false;
+        isListening = false;
+        try { recognition.stop(); } catch(e) {}
+        micBtn.classList.remove('listening');
+        chatInput.placeholder = 'Ask about stock, orders, dispatch...';
+      });
+
+      micBtn.addEventListener('mousedown', (e) => {
+        if (touchFired) return;
+        startListening();
+      });
+
+      micBtn.addEventListener('mouseup', (e) => {
+        if (touchFired) return;
+        stopListening();
+      });
+
+      micBtn.addEventListener('mouseleave', () => {
+        if (touchFired) return;
+        stopListening();
+      });
 
       recognition.onresult = (e) => {
         const latest = e.results[e.resultIndex][0].transcript;
@@ -1372,21 +1352,13 @@ foreach ($quickChips as $c) {
       };
 
       recognition.onend = () => {
-        if (isListening) {
-          if (isTouchDevice) {
-            isListening = false;
-            micBtn.classList.remove('listening');
-            chatInput.placeholder = 'Ask about stock, orders, dispatch...';
-            if (currentUtterance.trim()) {
-              chatInput.value = currentUtterance;
-              sendQuery();
-            }
-          } else {
-            try { recognition.start(); } catch(e) { isListening = false; micBtn.classList.remove('listening'); }
-          }
-        } else {
-          micBtn.classList.remove('listening');
-          chatInput.placeholder = 'Ask about stock, orders, dispatch...';
+        isListening = false;
+        micBtn.classList.remove('listening');
+        chatInput.placeholder = 'Ask about stock, orders, dispatch...';
+        const text = currentUtterance.trim() || chatInput.value.trim();
+        if (text) {
+          chatInput.value = text;
+          sendQuery();
         }
       };
     } else {
