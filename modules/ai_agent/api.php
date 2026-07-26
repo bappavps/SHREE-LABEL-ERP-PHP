@@ -483,15 +483,17 @@ function calculate_label_costing_math(string $prompt): array {
     ];
 }
 
-// Check Math Intent
 $hasCompanyQuery = preg_match('/\b(krishna|austin|navkar|nrgi)\b/i', $prompt) || strpos($p, 'কৃষ্ণা') !== false || strpos($p, 'অস্টিন') !== false || strpos($p, 'নভকার') !== false || strpos($p, 'এনআরজিআই') !== false;
+$hasDbQueryIntent = preg_match('/\b(die|dies|plate|plates|stock|inventory|search|find|any|is there|kono|ache)\b/i', $prompt);
 
-$isMathIntent = !$hasCompanyQuery && (
+$isMathIntent = !$hasCompanyQuery && !$hasDbQueryIntent && (
     preg_match('/\d+\s*mm\s*[xX*]\s*\d+\s*mm/i', $prompt) ||
     strpos($p, 'running meter') !== false ||
     strpos($p, 'running mtr') !== false ||
     (strpos($p, 'ups') !== false && strpos($p, 'gap') !== false)
 );
+
+
 
 if ($isMathIntent) {
     $math = calculate_label_costing_math($prompt);
@@ -1083,13 +1085,15 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
             }
         }
         $data = array_values($grouped);
-    } elseif (strpos($p, 'company') !== false || strpos($p, 'companies') !== false || strpos($p, 'brand') !== false || strpos($p, 'supplier') !== false) {
+    } elseif ((strpos($p, 'company') !== false || strpos($p, 'companies') !== false || strpos($p, 'brand') !== false || strpos($p, 'supplier') !== false) && strpos($p, 'pp') === false && strpos($p, 'white') === false && strpos($p, 'chromo') === false && strpos($p, 'thermal') === false && strpos($p, 'jumbo') === false && strpos($p, 'slitting') === false) {
+
         $isCompanyList = true;
         $toolName = 'Paper Company Summary Tool';
         $res = $db->query("SELECT company, COUNT(*) as roll_count, SUM(length_mtr) as total_meters FROM paper_stock WHERE status IN ('Main','Stock','Job Assign') AND company != '' GROUP BY company ORDER BY roll_count DESC");
         $data = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
         $totalCount = count($data);
-    } elseif (strpos($p, 'plate') !== false || strpos($p, 'repeat') !== false || strpos($p, 'gap') !== false || strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'quantity') !== false || strpos($p, 'qty') !== false || strpos($p, 'calculat') !== false) {
+    } elseif ((strpos($p, 'plate') !== false || strpos($p, 'repeat') !== false || strpos($p, 'gap') !== false) && strpos($p, 'paper') === false && strpos($p, 'stock') === false && strpos($p, 'pp') === false && strpos($p, 'white') === false && strpos($p, 'chromo') === false && strpos($p, 'thermal') === false) {
+
         $toolName = 'Printing Plates Master Tool';
         $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_plate_data");
         $totalCount = $cntRes ? (int)($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
@@ -1316,12 +1320,13 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
             $data = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
         }
 
-    } elseif (strpos($p, 'die') !== false || strpos($p, 'tooling') !== false) {
-        $toolName = 'Die Tooling Master Tool';
+    } elseif (strpos($p, 'die') !== false || strpos($p, 'tooling') !== false || strpos($p, 'barcode') !== false) {
+        $toolName = 'Die Tooling & Barcode Die Master Tool';
         $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_die_tooling");
         $totalCount = $cntRes ? (int)($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
         
-        $stopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'die', 'tooling', 'list', 'show', 'details', 'this', 'the', 'a', 'an', 'job', 'jobs', 'for', 'about', 'get', 'search', 'find', 'there', 'any', 'named', 'by', 'name', 'of', 'with', 'are', 'do', 'have', 'exist', 'does'];
+        $stopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'die', 'tooling', 'barcode', 'list', 'show', 'details', 'this', 'the', 'a', 'an', 'job', 'jobs', 'for', 'about', 'get', 'search', 'find', 'there', 'any', 'named', 'by', 'name', 'of', 'with', 'are', 'do', 'have', 'exist', 'does', 'kholo', 'khul', 'open', 'page', 'go', 'to'];
+
         $pWords = preg_split('/\s+/', strtolower($prompt));
         $terms = [];
         foreach ($pWords as $w) {
@@ -1335,17 +1340,17 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
 
         if (!empty($terms)) {
             $like = '%' . $searchTerm . '%';
-            $stmt = $db->prepare("SELECT * FROM master_die_tooling WHERE name LIKE ? OR id = ? ORDER BY id DESC LIMIT 10");
-            $stmt->bind_param('ss', $like, $searchTerm);
+            $stmt = $db->prepare("SELECT * FROM master_die_tooling WHERE barcode_size LIKE ? OR used_for LIKE ? OR die_type LIKE ? OR sl_no = ? OR id = ? ORDER BY id DESC LIMIT 10");
+            $stmt->bind_param('sssss', $like, $like, $like, $searchTerm, $searchTerm);
             $stmt->execute();
             $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         }
 
         if (empty($data) && !empty($searchNums)) {
             $num = $searchNums[0];
-            $stmt = $db->prepare("SELECT * FROM master_die_tooling WHERE id = ? OR name LIKE ? LIMIT 5");
+            $stmt = $db->prepare("SELECT * FROM master_die_tooling WHERE barcode_size LIKE ? OR sl_no = ? OR id = ? ORDER BY id DESC LIMIT 5");
             $like = '%' . $num . '%';
-            $stmt->bind_param('ss', $num, $like);
+            $stmt->bind_param('sss', $like, $num, $num);
             $stmt->execute();
             $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         }
@@ -1353,13 +1358,13 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
         if (empty($data) && !empty($terms)) {
             $userLang = detect_language($prompt);
             if ($userLang === 'English') {
-                $directAnswer = "❌ **No Die Tooling Record Found Matching \"{$searchTermDisplay}\"**\n\n"
+                $directAnswer = "❌ **No Barcode Die Found Matching \"{$searchTermDisplay}\"**\n\n"
                     . "I searched your ERP Master Die Tooling database, but no record matching **\"{$searchTermDisplay}\"** was found.";
             } elseif ($userLang === 'Hindi') {
-                $directAnswer = "❌ **\"{$searchTermDisplay}\" नाम का कोई ডাই বা টূলিং नहीं मिला**\n\n"
+                $directAnswer = "❌ **\"{$searchTermDisplay}\" नाम का कोई बारकोड डाई रिकॉर्ड नहीं मिला**\n\n"
                     . "आपके ईआरपी डेटाबेस में **\"{$searchTermDisplay}\"** का कोई रिकॉर्ड उपलब्ध नहीं है।";
             } else {
-                $directAnswer = "❌ **\"{$searchTermDisplay}\" নামে কোনো ডাই টূলিং পাওয়া যায়নি**\n\n"
+                $directAnswer = "❌ **\"{$searchTermDisplay}\" নামে কোনো বারকোড ডাই টূলিং পাওয়া যায়নি**\n\n"
                     . "আপনার ইআরপি মাস্টার ডাটাবেসে **\"{$searchTermDisplay}\"** নামে কোনো ডাই রেকর্ড নিবন্ধিত নেই।";
             }
 
@@ -1379,31 +1384,416 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
             $data = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
         }
 
-    } elseif (strpos($p, 'paper') !== false || strpos($p, 'roll') !== false || strpos($p, 'slc/') !== false || strpos($p, 'chromo') !== false || strpos($p, 'thermal') !== false) {
-        $toolName = 'Paper Stock Tool';
-        $typeFilter = '';
-        if (strpos($p, 'chromo') !== false) $typeFilter = 'chromo';
-        elseif (strpos($p, 'thermal') !== false) $typeFilter = 'thermal';
-        if ($typeFilter !== '') {
-            $filteredType = strtoupper($typeFilter);
-            $like = '%' . $typeFilter . '%';
-            $cntStmt = $db->prepare("SELECT COUNT(*) as cnt, SUM(length_mtr) as total_mtr FROM paper_stock WHERE (paper_type LIKE ? OR company LIKE ?) AND status IN ('Main','Stock','Job Assign')");
-            $cntStmt->bind_param('ss', $like, $like);
-            $cntStmt->execute();
-            $summaryRow = $cntStmt->get_result()->fetch_assoc();
-            $totalCount = (int)($summaryRow['cnt'] ?? 0);
-            $totalMeters = round((float)($summaryRow['total_mtr'] ?? 0), 2);
-            $stmt = $db->prepare("SELECT id, roll_no, paper_type, company, width_mm, length_mtr, status, job_no, date_received FROM paper_stock WHERE (paper_type LIKE ? OR company LIKE ?) AND status IN ('Main','Stock','Job Assign') ORDER BY id DESC LIMIT 15");
-            $stmt->bind_param('ss', $like, $like);
+        if (!empty($data)) {
+            $userLang = detect_language($prompt);
+            $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+            if ($userLang === 'English') {
+                $answer = "📏 **Barcode Die Management & Tooling Master — Specifications:**\n\nFound **" . count($data) . " matching die record(s)** in your ERP database:\n\n";
+                foreach ($data as $idx => $row) {
+                    $answer .= "• **Die " . ($idx + 1) . ": `" . ($row['barcode_size'] ?: 'Barcode Die') . "`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
+                        . "  - 📐 **Barcode Size:** **" . ($row['barcode_size'] ?: 'N/A') . "**\n"
+                        . "  - 🔢 **Ups (Roll / Die):** Roll Ups: **" . ($row['ups_in_roll'] ?: '1') . "** | Die Ups: **" . ($row['up_in_die'] ?: '1') . "**\n"
+                        . "  - 📏 **Repeat Size:** **" . ($row['repeat_size'] ?: 'N/A') . "** | **Label Gap:** **" . ($row['label_gap'] ?: 'N/A') . "**\n"
+                        . "  - ⚙️ **Die Type & Cylinder:** **" . ($row['die_type'] ?: 'Rotary') . "** | Cylinder: **" . ($row['cylender'] ?: 'N/A') . "**\n"
+                        . "  - 📄 **Paper Size & Core:** Paper Size: **" . ($row['paper_size'] ?: 'N/A') . "** | Core: **" . ($row['core'] ?: 'N/A') . "**\n"
+                        . "  - 📦 **Pieces per Roll:** **" . ($row['pices_per_roll'] ?: 'N/A') . "** | Category: **" . ($row['used_for'] ?: 'Barcode') . "**\n\n";
+                }
+                $answer .= "👉 [Click here to open Barcode Die Management Page]({$baseUrl}/modules/plate-tools/die-management/barcode/index.php)";
+            } elseif ($userLang === 'Hindi') {
+                $answer = "📏 **बारकोड डाई प्रबंधन और टूलिंग मास्टर विवरण:**\n\nआपके ईआरपी डेटाबेस में **" . count($data) . " मैचिंग डाई रिकॉर्ड** मिले हैं:\n\n";
+                foreach ($data as $idx => $row) {
+                    $answer .= "• **डाई " . ($idx + 1) . ": `" . ($row['barcode_size'] ?: 'Barcode Die') . "`** (SL No: **{$row['sl_no']}**)\n"
+                        . "  - 📐 **बारकोड आकार:** **" . ($row['barcode_size'] ?: 'N/A') . "**\n"
+                        . "  - 🔢 **अप्स (Roll / Die):** रोल अप्स: **" . ($row['ups_in_roll'] ?: '1') . "** | डाई अप्स: **" . ($row['up_in_die'] ?: '1') . "**\n"
+                        . "  - 📏 **रिपीट साइज:** **" . ($row['repeat_size'] ?: 'N/A') . "** | **लेबल गैप:** **" . ($row['label_gap'] ?: 'N/A') . "**\n"
+                        . "  - ⚙️ **डाई प्रकार व सिलेंडर:** **" . ($row['die_type'] ?: 'Rotary') . "** | सिलेंडर: **" . ($row['cylender'] ?: 'N/A') . "**\n\n";
+                }
+                $answer .= "👉 [बारकोड डाई प्रबंधन पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/plate-tools/die-management/barcode/index.php)";
+            } else {
+                $answer = "📏 **বারকোড ডাই ম্যানেজমেন্ট ও টূলিং মাস্টার স্পেসিফিকেশন:**\n\nআপনার ইআরপি ডাটাবেসে **" . count($data) . "টি ম্যাচিং ডাই রেকর্ড** পাওয়া গেছে:\n\n";
+                foreach ($data as $idx => $row) {
+                    $answer .= "• **ডাই " . ($idx + 1) . ": `" . ($row['barcode_size'] ?: 'Barcode Die') . "`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
+                        . "  - 📐 **বারকোড সাইজ:** **" . ($row['barcode_size'] ?: 'N/A') . "**\n"
+                        . "  - 🔢 **আফস (Roll / Die):** রোল আফস: **" . ($row['ups_in_roll'] ?: '1') . "** | ডাই আফস: **" . ($row['up_in_die'] ?: '1') . "**\n"
+                        . "  - 📏 **রিপিট সাইজ:** **" . ($row['repeat_size'] ?: 'N/A') . "** | **লেবেল গ্যাপ:** **" . ($row['label_gap'] ?: 'N/A') . "**\n"
+                        . "  - ⚙️ **ডাই টাইপ ও সিলিন্ডার:** **" . ($row['die_type'] ?: 'Rotary') . "** | সিলিন্ডার: **" . ($row['cylender'] ?: 'N/A') . "**\n"
+                        . "  - 📄 **পেপার সাইজ ও কোর:** পেপার সাইজ: **" . ($row['paper_size'] ?: 'N/A') . "** | কোর: **" . ($row['core'] ?: 'N/A') . "**\n"
+                        . "  - 📦 **পিস পার রোল:** **" . ($row['pices_per_roll'] ?: 'N/A') . "** | ক্যাটাগরি: **" . ($row['used_for'] ?: 'Barcode') . "**\n\n";
+                }
+                $answer .= "👉 [বারকোড ডাই ম্যানেজমেন্ট পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/plate-tools/die-management/barcode/index.php)";
+            }
+
+            $navUrl = null;
+            if (strpos($p, 'open') !== false || strpos($p, 'page') !== false || strpos($p, 'go to') !== false || strpos($p, 'khul') !== false || strpos($p, 'khol') !== false) {
+                $navUrl = $baseUrl . '/modules/plate-tools/die-management/barcode/index.php';
+            }
+
+            return [
+                'tool_used' => $toolName,
+                'total_count' => count($data),
+                'total_meters' => 0,
+                'filtered_type' => '',
+                'is_company_list' => false,
+                'direct_answer' => $answer,
+                'nav_url' => $navUrl,
+                'data' => []
+            ];
+        }
+
+    } elseif (strpos($p, 'anilox') !== false || strpos($p, 'lpi') !== false || strpos($p, 'bcm') !== false || strpos($p, 'bmc') !== false || strpos($p, 'এনিলক্স') !== false) {
+        $toolName = 'Anilox Roll Stock Master Tool';
+        $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_anilox_data");
+        $totalCount = $cntRes ? (int)($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
+
+        $stopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'anilox', 'roll', 'rolls', 'stock', 'lpi', 'bcm', 'bmc', 'management', 'master', 'design', 'list', 'show', 'details', 'this', 'the', 'a', 'an', 'for', 'about', 'get', 'search', 'find', 'there', 'any', 'named', 'by', 'name', 'of', 'with', 'are', 'do', 'have', 'exist', 'does', 'kholo', 'khul', 'open', 'page', 'go', 'to'];
+
+        $pWords = preg_split('/\s+/', strtolower($prompt));
+        $terms = [];
+        foreach ($pWords as $w) {
+            $wClean = trim(preg_replace('/[^a-z0-9]/', '', $w));
+            if ($wClean !== '' && !in_array($wClean, $stopwords, true)) {
+                $terms[] = $wClean;
+            }
+        }
+        $searchTerm = implode('%', $terms);
+        $searchTermDisplay = implode(' ', $terms);
+
+        if (!empty($terms)) {
+            $like = '%' . $searchTerm . '%';
+            $stmt = $db->prepare("SELECT * FROM master_anilox_data WHERE anilox_lpi LIKE ? OR anilox_bmc LIKE ? OR sl_no = ? OR id = ? ORDER BY CAST(anilox_lpi AS UNSIGNED) ASC LIMIT 15");
+            $stmt->bind_param('ssss', $like, $like, $searchTerm, $searchTerm);
             $stmt->execute();
             $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-        } else {
-            $cntRes = $db->query("SELECT COUNT(*) as cnt FROM paper_stock WHERE status NOT IN ('Consumed','Dispatched')");
-            $totalCount = $cntRes ? (int)($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
-            $res = $db->query("SELECT id, roll_no, paper_type, company, width_mm, length_mtr, status, job_no, date_received FROM paper_stock WHERE status NOT IN ('Consumed','Dispatched') ORDER BY id DESC LIMIT 15");
+        }
+
+        if (empty($data) && !empty($searchNums)) {
+            $num = $searchNums[0];
+            $stmt = $db->prepare("SELECT * FROM master_anilox_data WHERE anilox_lpi LIKE ? OR anilox_bmc LIKE ? OR sl_no = ? OR id = ? ORDER BY CAST(anilox_lpi AS UNSIGNED) ASC LIMIT 10");
+            $like = '%' . $num . '%';
+            $stmt->bind_param('ssss', $like, $like, $num, $num);
+            $stmt->execute();
+            $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        }
+
+        if (empty($data) && !empty($terms)) {
+            $userLang = detect_language($prompt);
+            if ($userLang === 'English') {
+                $directAnswer = "❌ **No Anilox Roll Found Matching \"{$searchTermDisplay}\"**\n\n"
+                    . "I searched your ERP Master Anilox Stock database, but no record matching **\"{$searchTermDisplay}\"** was found.";
+            } elseif ($userLang === 'Hindi') {
+                $directAnswer = "❌ **\"{$searchTermDisplay}\" नाम का कोई एनिलॉक्स रोल नहीं मिला**\n\n"
+                    . "आपके ईआरपी डेटाबेस में **\"{$searchTermDisplay}\"** का कोई रिकॉर्ड उपलब्ध नहीं है।";
+            } else {
+                $directAnswer = "❌ **\"{$searchTermDisplay}\" নামে কোনো এনিলক্স রোল পাওয়া যায়নি**\n\n"
+                    . "আপনার ইআরপি মাস্টার ডাটাবেসে **\"{$searchTermDisplay}\"** নামে কোনো এনিলক্স রোল রেকর্ড নিবন্ধিত নেই।";
+            }
+
+            return [
+                'tool_used' => $toolName,
+                'total_count' => 0,
+                'total_meters' => 0,
+                'filtered_type' => '',
+                'is_company_list' => false,
+                'direct_answer' => $directAnswer,
+                'data' => []
+            ];
+        }
+
+        if (empty($data)) {
+            $res = $db->query("SELECT * FROM master_anilox_data ORDER BY CAST(anilox_lpi AS UNSIGNED) ASC LIMIT 20");
             $data = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
         }
-    } elseif (preg_match('/\b(job|jobs|card|cards|order|orders|flx|lsl|jmb|pck|brc|status|progress|work)\b/i', $prompt)) {
+
+        if (!empty($data)) {
+            $userLang = detect_language($prompt);
+            $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+            if ($userLang === 'English') {
+                $answer = "🌀 **Anilox Management & Inventory Stock — Live Specifications:**\n\nFound **" . count($data) . " matching Anilox Roll record(s)** in your ERP database:\n\n";
+                foreach ($data as $idx => $row) {
+                    $answer .= "• **Anilox " . ($idx + 1) . ": `" . ($row['anilox_lpi'] ?: 'Anilox') . " LPI`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
+                        . "  - 🌀 **Anilox LPI (Lines Per Inch):** **" . ($row['anilox_lpi'] ?: 'N/A') . " LPI**\n"
+                        . "  - 🧪 **Anilox Volume (BCM / BMC):** **" . ($row['anilox_bmc'] ?: 'N/A') . " BCM**\n"
+                        . "  - 📦 **Available Stock Quantity:** **" . ($row['stock_qty'] ?: '0') . " Roll(s)**\n\n";
+                }
+                $answer .= "👉 [Click here to open Anilox Management Page]({$baseUrl}/modules/plate-tools/anilox-management/index.php)";
+            } elseif ($userLang === 'Hindi') {
+                $answer = "🌀 **एनिलॉक्स प्रबंधन और इन्वेंटरी स्टॉक विवरण:**\n\nआपके ईआरपी डेटाबेस में **" . count($data) . " मैचिंग एनिलॉक्स रोल रिकॉर्ड** मिले हैं:\n\n";
+                foreach ($data as $idx => $row) {
+                    $answer .= "• **एनिलॉक्स " . ($idx + 1) . ": `" . ($row['anilox_lpi'] ?: 'Anilox') . " LPI`** (SL No: **{$row['sl_no']}**)\n"
+                        . "  - 🌀 **एनिलॉक्स एलपीआई (LPI):** **" . ($row['anilox_lpi'] ?: 'N/A') . " LPI**\n"
+                        . "  - 🧪 **एनिलॉक्स वॉल्यूम (BCM):** **" . ($row['anilox_bmc'] ?: 'N/A') . " BCM**\n"
+                        . "  - 📦 **उपलब्ध स्टॉक मात्रा:** **" . ($row['stock_qty'] ?: '0') . " रोल**\n\n";
+                }
+                $answer .= "👉 [एनिलॉक्स प्रबंधन पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/plate-tools/anilox-management/index.php)";
+            } else {
+                $answer = "🌀 **এনিলক্স ম্যানেজমেন্ট ও ইনভেন্টরি স্টক স্পেসিফিকেশন:**\n\nআপনার ইআরপি ডাটাবেসে **" . count($data) . "টি ম্যাচিং এনিলক্স রোল রেকর্ড** পাওয়া গেছে:\n\n";
+                foreach ($data as $idx => $row) {
+                    $answer .= "• **এনিলক্স " . ($idx + 1) . ": `" . ($row['anilox_lpi'] ?: 'Anilox') . " LPI`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
+                        . "  - 🌀 **এনিলক্স এলপিআই (LPI):** **" . ($row['anilox_lpi'] ?: 'N/A') . " LPI**\n"
+                        . "  - 🧪 **এনিলক্স ভলিউম (BCM / BMC):** **" . ($row['anilox_bmc'] ?: 'N/A') . " BCM**\n"
+                        . "  - 📦 **উপলব্ধ স্টক কোয়ান্টিটি:** **" . ($row['stock_qty'] ?: '0') . "টি রোল**\n\n";
+                }
+                $answer .= "👉 [এনিলক্স ম্যানেজমেন্ট পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/plate-tools/anilox-management/index.php)";
+            }
+
+            $navUrl = null;
+            if (strpos($p, 'open') !== false || strpos($p, 'page') !== false || strpos($p, 'go to') !== false || strpos($p, 'khul') !== false || strpos($p, 'khol') !== false) {
+                $navUrl = $baseUrl . '/modules/plate-tools/anilox-management/index.php';
+            }
+
+            return [
+                'tool_used' => $toolName,
+                'total_count' => count($data),
+                'total_meters' => 0,
+                'filtered_type' => '',
+                'is_company_list' => false,
+                'direct_answer' => $answer,
+                'nav_url' => $navUrl,
+                'data' => []
+            ];
+        }
+
+    } elseif (strpos($p, 'paper') !== false || strpos($p, 'roll') !== false || strpos($p, 'slc/') !== false || strpos($p, 'chromo') !== false || strpos($p, 'thermal') !== false || strpos($p, 'stock') !== false || strpos($p, 'maplitho') !== false || strpos($p, 'pp') !== false || strpos($p, 'white') !== false || strpos($p, 'jumbo') !== false || strpos($p, 'slitting') !== false || strpos($p, 'avery') !== false || strpos($p, 'krishna') !== false || strpos($p, 'austin') !== false || strpos($p, 'navkar') !== false || strpos($p, 'nrgi') !== false) {
+
+        $toolName = 'Paper Stock Master Tool';
+
+        // 1. Roll No match
+        $rollNoMatch = null;
+        if (preg_match('/(slc\/\d{4}\/\d+|\d{4})/i', $prompt, $m)) {
+            $rollNoMatch = $m[1];
+        }
+
+        // 2. Company match
+        $companies = ['nrgi', 'krishna', 'austin', 'navkar', 'abhinav', 'raj paper', 'mangalam', 'paper n more', 'narsing das', 'avery', 'nitin'];
+        $matchedCompany = null;
+        foreach ($companies as $comp) {
+            if (strpos($p, $comp) !== false) {
+                $matchedCompany = $comp;
+                break;
+            }
+        }
+
+        // 3. Substrate / Paper Type match
+        $types = ['pp white', 'pp-white', 'pp clear', 'pp-clear', 'chromo', 'thermal paper', 'thermal board', 'maplitho', 'metallic', 'plastic'];
+
+        $matchedType = null;
+        foreach ($types as $t) {
+            if (strpos($p, $t) !== false) {
+                $matchedType = $t;
+                break;
+            }
+        }
+
+        // 4. Width match
+        $widthMm = null;
+        if (preg_match('/(\d{3,4})\s*mm/i', $prompt, $m)) {
+            $widthMm = (float)$m[1];
+        }
+
+        $where = ["LOWER(COALESCE(status,'')) NOT IN ('consumed','disposed','scrap')"];
+        $params = [];
+        $typesStr = '';
+
+        if ($rollNoMatch) {
+            $where[] = "(roll_no LIKE ? OR id = ?)";
+            $params[] = '%' . $rollNoMatch . '%';
+            $params[] = $rollNoMatch;
+            $typesStr .= 'ss';
+        }
+
+        if ($matchedCompany) {
+            $where[] = "company LIKE ?";
+            $params[] = '%' . $matchedCompany . '%';
+            $typesStr .= 's';
+        }
+
+        if ($matchedType) {
+            if ($matchedType === 'pp white' || $matchedType === 'pp-white') {
+                $where[] = "(paper_type LIKE '%pp-white%' OR paper_type LIKE '%pp white%' OR paper_type LIKE '%pp_white%')";
+            } elseif ($matchedType === 'pp clear' || $matchedType === 'pp-clear') {
+                $where[] = "(paper_type LIKE '%pp-clear%' OR paper_type LIKE '%pp clear%' OR paper_type LIKE '%pp_clear%')";
+            } else {
+                $where[] = "paper_type LIKE ?";
+                $params[] = '%' . $matchedType . '%';
+                $typesStr .= 's';
+            }
+        }
+
+
+        if ($widthMm) {
+            $where[] = "width_mm = ?";
+            $params[] = $widthMm;
+            $typesStr .= 'd';
+        }
+
+        $whereSql = implode(' AND ', $where);
+
+        $summarySql = "SELECT COUNT(*) as roll_count, IFNULL(SUM(length_mtr),0) as total_mtr, IFNULL(SUM((width_mm/1000.0)*length_mtr),0) as total_sqm FROM paper_stock WHERE {$whereSql}";
+        $stmt = $db->prepare($summarySql);
+        if (!empty($params)) {
+            $stmt->bind_param($typesStr, ...$params);
+        }
+        $stmt->execute();
+        $summary = $stmt->get_result()->fetch_assoc();
+
+        $totalCount = (int)($summary['roll_count'] ?? 0);
+        $totalMeters = round((float)($summary['total_mtr'] ?? 0), 2);
+        $totalSqm = round((float)($summary['total_sqm'] ?? 0), 2);
+
+        $dataSql = "SELECT id, roll_no, paper_type, company, width_mm, length_mtr, ROUND((width_mm/1000.0)*length_mtr, 2) as sqm, status, job_no, date_received FROM paper_stock WHERE {$whereSql} ORDER BY id DESC LIMIT 15";
+        $stmt2 = $db->prepare($dataSql);
+        if (!empty($params)) {
+            $stmt2->bind_param($typesStr, ...$params);
+        }
+        $stmt2->execute();
+        $data = $stmt2->get_result()->fetch_all(MYSQLI_ASSOC);
+
+        $deepSql = "SELECT 
+            SUM(CASE WHEN width_mm >= 1000 THEN 1 ELSE 0 END) as jumbo_rolls,
+            IFNULL(SUM(CASE WHEN width_mm >= 1000 THEN length_mtr ELSE 0 END),0) as jumbo_mtr,
+            SUM(CASE WHEN width_mm < 1000 THEN 1 ELSE 0 END) as slitted_rolls,
+            IFNULL(SUM(CASE WHEN width_mm < 1000 THEN length_mtr ELSE 0 END),0) as slitted_mtr,
+            MIN(NULLIF(date_received,'0000-00-00')) as min_date,
+            MAX(date_received) as max_date
+            FROM paper_stock WHERE {$whereSql}";
+        $stmtDeep = $db->prepare($deepSql);
+        if (!empty($params)) {
+            $stmtDeep->bind_param($typesStr, ...$params);
+        }
+        $stmtDeep->execute();
+        $deepData = $stmtDeep->get_result()->fetch_assoc();
+
+        $jumboRolls = (int)($deepData['jumbo_rolls'] ?? 0);
+        $jumboMtr = round((float)($deepData['jumbo_mtr'] ?? 0), 2);
+        $slittedRolls = (int)($deepData['slitted_rolls'] ?? 0);
+        $slittedMtr = round((float)($deepData['slitted_mtr'] ?? 0), 2);
+        $latestEntryDate = $deepData['max_date'] ?: 'N/A';
+
+        // Company Breakdown List
+        $compSql = "SELECT company, COUNT(*) as rolls, SUM(length_mtr) as total_mtr FROM paper_stock WHERE {$whereSql} AND company != '' GROUP BY company ORDER BY rolls DESC LIMIT 8";
+        $stmtComp = $db->prepare($compSql);
+        if (!empty($params)) {
+            $stmtComp->bind_param($typesStr, ...$params);
+        }
+        $stmtComp->execute();
+        $companyList = $stmtComp->get_result()->fetch_all(MYSQLI_ASSOC);
+
+        $userLang = detect_language($prompt);
+        $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+        $titleHeading = 'Paper Roll Stock Summary';
+        if ($matchedCompany && $matchedType) {
+            $titleHeading = strtoupper($matchedCompany . ' ' . $matchedType);
+        } elseif ($matchedCompany) {
+            $titleHeading = strtoupper($matchedCompany) . ' Paper Stock';
+        } elseif ($matchedType) {
+            $titleHeading = strtoupper($matchedType) . ' Paper Stock';
+        } elseif ($rollNoMatch) {
+            $titleHeading = 'Roll ' . strtoupper($rollNoMatch);
+        }
+
+        if ($userLang === 'English') {
+            $answer = "📜 **{$titleHeading} — Complete Technical Inventory Summary:**\n\n"
+                . "📊 **Total Stock Metrics:**\n"
+                . "  - Total Paper Rolls: **" . number_format($totalCount) . " Rolls**\n"
+                . "  - Total Running Length: **" . number_format($totalMeters, 2) . " meters**\n"
+                . "  - Total Surface Area: **" . number_format($totalSqm, 2) . " SQM**\n"
+                . "  - Latest Stock Entry Date: `" . $latestEntryDate . "`\n\n"
+                . "🏭 **Jumbo Roll vs Slitting Breakdown:**\n"
+                . "  - 📜 **Jumbo Parent Rolls (≥1000mm):** **" . number_format($jumboRolls) . " Rolls** (" . number_format($jumboMtr, 2) . " meters)\n"
+                . "  - ✂️ **Slitted Stock Rolls (<1000mm):** **" . number_format($slittedRolls) . " Rolls** (" . number_format($slittedMtr, 2) . " meters)\n\n";
+
+            if (!empty($companyList) && count($companyList) > 1) {
+                $answer .= "🏢 **Available Companies / Brands Breakdown:**\n";
+                foreach ($companyList as $cb) {
+                    $answer .= "  - **{$cb['company']}:** **" . number_format($cb['rolls']) . " Rolls** (" . number_format((float)$cb['total_mtr'], 2) . " meters)\n";
+                }
+                $answer .= "\n";
+            }
+
+            $answer .= "📦 **Master Roll Grid (Sample " . count($data) . " Rolls):**\n\n";
+
+            foreach ($data as $idx => $r) {
+                $answer .= "• **Roll " . ($idx + 1) . ": `" . ($r['roll_no'] ?: 'Roll #' . $r['id']) . "`** (ID: **{$r['id']}** | Status: **{$r['status']}**)\n"
+                    . "  - 🏷️ **Brand & Type:** **" . ($r['company'] ?: 'General') . " " . ($r['paper_type'] ?: 'Substrate') . "**\n"
+                    . "  - 📐 **Dimensions:** Width: **" . ($r['width_mm'] ?: '0') . "mm** | Length: **" . number_format((float)$r['length_mtr'], 2) . "m**\n"
+                    . "  - 📐 **Surface Area:** **" . number_format((float)$r['sqm'], 2) . " SQM**\n"
+                    . "  - 📅 **Date Received:** `" . ($r['date_received'] ?: 'N/A') . "`\n\n";
+            }
+
+            $answer .= "👉 [Click here to open Paper Stock Page]({$baseUrl}/modules/paper_stock/index.php)";
+        } elseif ($userLang === 'Hindi') {
+            $answer = "📜 **{$titleHeading} — पूर्ण तकनीकी इन्वेंटरी सारांश:**\n\n"
+                . "📊 **कुल स्टॉक मेट्रिक्स:**\n"
+                . "  - कुल पेपर रोल: **" . number_format($totalCount) . " रोल**\n"
+                . "  - कुल रनिंग लंबाई: **" . number_format($totalMeters, 2) . " मीटर**\n"
+                . "  - कुल सतह क्षेत्रफल: **" . number_format($totalSqm, 2) . " SQM**\n"
+                . "  - नवीनतम प्रविष्टि तिथि: `" . $latestEntryDate . "`\n\n"
+                . "🏭 **जंबो रोल बनाम स्लिटिंग विवरण:**\n"
+                . "  - 📜 **जंबो पैरेंट रोल (≥1000mm):** **" . number_format($jumboRolls) . " रोल** (" . number_format($jumboMtr, 2) . " मीटर)\n"
+                . "  - ✂️ **स्लिटेड स्टॉक रोल (<1000mm):** **" . number_format($slittedRolls) . " रोल** (" . number_format($slittedMtr, 2) . " मीटर)\n\n";
+
+            if (!empty($companyList) && count($companyList) > 1) {
+                $answer .= "🏢 **उपलब्ध कंपनियां / ब्रांड्स:**\n";
+                foreach ($companyList as $cb) {
+                    $answer .= "  - **{$cb['company']}:** **" . number_format($cb['rolls']) . " रोल** (" . number_format((float)$cb['total_mtr'], 2) . " मीटर)\n";
+                }
+                $answer .= "\n";
+            }
+
+            $answer .= "👉 [पेपर स्टॉक पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/paper_stock/index.php)";
+        } else {
+            $answer = "📜 **{$titleHeading} — সম্পূর্ণ টেকনিক্যাল ইনভেন্টরি সামারি:**\n\n"
+                . "📊 **সর্বমোট ইনভেন্টরি ম্যাট্রিক্স:**\n"
+                . "  - সর্বমোট রেডি পেপার রোল: **" . number_format($totalCount) . "টি রোল**\n"
+                . "  - সর্বমোট রানিং দৈর্ঘ্য: **" . number_format($totalMeters, 2) . " মিটার**\n"
+                . "  - সর্বমোট সারফেস এরিয়া (SQM): **" . number_format($totalSqm, 2) . " SQM**\n"
+                . "  - সর্বশেষ এন্ট্রি তারিখ: `" . $latestEntryDate . "`\n\n"
+                . "🏭 **জম্বো রোল বনাম স্লিসিং ব্রেকডাউন:**\n"
+                . "  - 📜 **জম্বো প্যারেন্ট রোল (≥১০০০মিমি):** **" . number_format($jumboRolls) . "টি রোল** (" . number_format($jumboMtr, 2) . " মিটার)\n"
+                . "  - ✂️ **স্লিটেড স্টক রোল (<১০০০মিমি):** **" . number_format($slittedRolls) . "টি রোল** (" . number_format($slittedMtr, 2) . " মিটার)\n\n";
+
+            if (!empty($companyList) && count($companyList) > 1) {
+                $answer .= "🏢 **উপলব্ধ কোম্পানি / ব্র্যান্ড তালিকা:**\n";
+                foreach ($companyList as $cb) {
+                    $answer .= "  - **{$cb['company']}:** **" . number_format($cb['rolls']) . "টি রোল** (" . number_format((float)$cb['total_mtr'], 2) . " মিটার)\n";
+                }
+                $answer .= "\n";
+            }
+
+            $answer .= "📦 **মাস্টার রোল গ্রিড (স্যাম্পল " . count($data) . "টি রোল):**\n\n";
+
+            foreach ($data as $idx => $r) {
+                $answer .= "• **রোল " . ($idx + 1) . ": `" . ($r['roll_no'] ?: 'Roll #' . $r['id']) . "`** (ID: **{$r['id']}** | স্ট্যাটাস: **{$r['status']}**)\n"
+                    . "  - 🏷️ **ব্র্যান্ড ও পেপার টাইপ:** **" . ($r['company'] ?: 'General') . " " . ($r['paper_type'] ?: 'Substrate') . "**\n"
+                    . "  - 📐 **সাইজ ও দৈর্ঘ্য:** প্রস্থ: **" . ($r['width_mm'] ?: '0') . "mm** | দৈর্ঘ্য: **" . number_format((float)$r['length_mtr'], 2) . "m**\n"
+                    . "  - 📐 **সারফেস এরিয়া (SQM):** **" . number_format((float)$r['sqm'], 2) . " SQM**\n"
+                    . "  - 📅 **গ্রহণের তারিখ:** `" . ($r['date_received'] ?: 'N/A') . "`\n\n";
+            }
+
+            $answer .= "👉 [পেপার স্টক পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/paper_stock/index.php)";
+        }
+
+
+        $navUrl = null;
+        if (strpos($p, 'open') !== false || strpos($p, 'page') !== false || strpos($p, 'go to') !== false || strpos($p, 'khul') !== false || strpos($p, 'khol') !== false) {
+            $navUrl = $baseUrl . '/modules/paper_stock/index.php';
+        }
+
+        return [
+            'tool_used' => $toolName,
+            'total_count' => $totalCount,
+            'total_meters' => $totalMeters,
+            'filtered_type' => '',
+            'is_company_list' => false,
+            'direct_answer' => $answer,
+            'nav_url' => $navUrl,
+            'data' => []
+        ];
+    }
+ elseif (preg_match('/\b(job|jobs|card|cards|order|orders|flx|lsl|jmb|pck|brc|status|progress|work)\b/i', $prompt)) {
         $toolName = 'ERP Jobs & Planning Tool';
 
         // Extract search term from prompt
