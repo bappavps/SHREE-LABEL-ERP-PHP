@@ -1270,6 +1270,7 @@ foreach ($quickChips as $c) {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let isListening = false;
     let isUserHoldingMic = false;
+    let accumulatedText = '';
     let currentUtterance = '';
 
     if (SpeechRecognition) {
@@ -1284,6 +1285,7 @@ foreach ($quickChips as $c) {
         if (isUserHoldingMic) return;
         isUserHoldingMic = true;
         isListening = true;
+        accumulatedText = '';
         currentUtterance = '';
         chatInput.value = '';
 
@@ -1338,11 +1340,27 @@ foreach ($quickChips as $c) {
       });
 
       recognition.onresult = (e) => {
-        let fullTranscript = '';
-        for (let i = 0; i < e.results.length; i++) {
-          fullTranscript += e.results[i][0].transcript + ' ';
+        let interimText = '';
+        let finalSessionText = '';
+
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const transcript = e.results[i][0].transcript;
+          if (e.results[i].isFinal) {
+            finalSessionText += transcript + ' ';
+          } else {
+            interimText += transcript;
+          }
         }
-        currentUtterance = fullTranscript.trim();
+
+        if (finalSessionText.trim()) {
+          const newChunk = finalSessionText.trim();
+          if (!accumulatedText.endsWith(newChunk)) {
+            accumulatedText = (accumulatedText ? accumulatedText + ' ' : '') + newChunk;
+          }
+        }
+
+        const liveDisplay = (accumulatedText ? accumulatedText + ' ' : '') + interimText;
+        currentUtterance = liveDisplay.trim();
         chatInput.value = currentUtterance;
         chatInput.dispatchEvent(new Event('input'));
       };

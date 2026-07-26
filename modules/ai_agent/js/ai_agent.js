@@ -253,12 +253,14 @@
 
     var isListening = false;
     var isUserHoldingMic = false;
+    var accumulatedText = '';
     var currentUtterance = '';
 
     function startPushToTalk() {
       if (isUserHoldingMic || state.isProcessing) return;
       isUserHoldingMic = true;
       isListening = true;
+      accumulatedText = '';
       currentUtterance = '';
       if (chatInput) chatInput.value = '';
 
@@ -333,11 +335,27 @@
     });
 
     recognition.onresult = function(event) {
-      var fullTranscript = '';
-      for (var i = 0; i < event.results.length; i++) {
-        fullTranscript += event.results[i][0].transcript + ' ';
+      var interimText = '';
+      var finalSessionText = '';
+
+      for (var i = event.resultIndex; i < event.results.length; i++) {
+        var transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalSessionText += transcript + ' ';
+        } else {
+          interimText += transcript;
+        }
       }
-      currentUtterance = fullTranscript.trim();
+
+      if (finalSessionText.trim()) {
+        var newChunk = finalSessionText.trim();
+        if (!accumulatedText.endsWith(newChunk)) {
+          accumulatedText = (accumulatedText ? accumulatedText + ' ' : '') + newChunk;
+        }
+      }
+
+      var liveDisplay = (accumulatedText ? accumulatedText + ' ' : '') + interimText;
+      currentUtterance = liveDisplay.trim();
       if (chatInput) chatInput.value = currentUtterance;
     };
 
