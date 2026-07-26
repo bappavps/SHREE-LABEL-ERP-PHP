@@ -512,10 +512,14 @@
       }
 
       var info = res.assignment || {};
-      showMessage((res.message || 'Assigned.') + ' Code: ' + String(info.code || '-'), 'success');
+      var msg = (res.message || 'Selected mixed items assigned successfully.') + '\nAssignment Code: ' + String(info.code || '-');
+      alert(msg);
       state.selectedIds = {};
       syncSelectedCount();
       renderTable();
+      if (target === 'packing') {
+        window.location.href = state.packingUrl;
+      }
     }).catch(function (err) {
       showMessage(err.message || 'Unable to assign selected items.', 'error');
     });

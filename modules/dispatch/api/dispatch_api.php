@@ -443,39 +443,39 @@ function ds_mixed_extra_for_stock(array $row): float {
     $category = strtolower(trim((string)($row['category'] ?? '')));
     $extra = ds_parse_remarks_extra($row['remarks'] ?? '');
 
-    // For packed categories, quantity already stores the actual carton stock value set by packing API.
-    // Mixed extras are handled separately and should NOT be subtracted from quantity.
-    if (in_array($category, ['barcode', 'printing_label', 'pos_paper_roll', 'one_ply', 'two_ply', 'paperroll', 'pos', 'oneply', 'twoply'], true)) {
-        return 0.0;
-    }
-
     $mixedEnabled = (string)($extra['mixed_enabled'] ?? '0') === '1';
     $mixedExtra = 0.0;
 
-    if ($category === 'barcode') {
+    if ($category === 'barcode' || $category === 'printing_label') {
         $rpc = (int)floor(ds_decimal(ds_pick_extra($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
+        $pcsPerRoll = ds_decimal(ds_pick_extra($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
+
         if ($mixedEnabled) {
-            $mixedExtra = max(0.0, ds_decimal(ds_pick_extra($extra, ['loose_qty', 'mixed_extra_rolls'])));
+            $mixedExtra = max(0.0, ds_decimal(ds_pick_extra($extra, ['loose_qty'])));
+            if ($mixedExtra <= 0) {
+                $extraRolls = max(0.0, ds_decimal($extra['mixed_extra_rolls'] ?? 0));
+                $mixedExtra = $extraRolls * ($pcsPerRoll > 0 ? $pcsPerRoll : 1);
+            }
         } else {
             $totalRoll = ds_decimal(ds_pick_extra($extra, ['total_roll', 'total_rolls', 'total_roll_value']));
-            if ($totalRoll <= 0) {
-                $pcsPerRoll = ds_decimal(ds_pick_extra($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
-                if ($pcsPerRoll > 0) {
-                    $totalRoll = (float)ceil($qty / $pcsPerRoll);
-                }
+            if ($totalRoll <= 0 && $pcsPerRoll > 0 && $qty > 0) {
+                $totalRoll = (float)ceil($qty / $pcsPerRoll);
             }
+            $extraRolls = 0.0;
             if ($rpc > 0 && $totalRoll > 0) {
-                $mixedExtra = fmod($totalRoll, (float)$rpc);
-            } else {
-                $mixedExtra = $totalRoll;
+                $extraRolls = fmod($totalRoll, (float)$rpc);
+            } elseif ($totalRoll > 0) {
+                $extraRolls = $totalRoll;
             }
+            $loosePcs = max(0.0, ds_decimal(ds_pick_extra($extra, ['loose_qty', 'extra_pcs'])));
+            $mixedExtra = ($extraRolls * ($pcsPerRoll > 0 ? $pcsPerRoll : 1)) + $loosePcs;
         }
     } else {
         if ($mixedEnabled) {
             $mixedExtra = max(0.0, ds_decimal(ds_pick_extra($extra, ['loose_qty', 'mixed_extra_rolls'])));
         } else {
             $perCarton = ds_decimal(ds_pick_extra($extra, ['per_carton']));
-            if ($perCarton > 0) {
+            if ($perCarton > 0 && $qty > 0) {
                 $mixedExtra = fmod($qty, $perCarton);
             }
         }

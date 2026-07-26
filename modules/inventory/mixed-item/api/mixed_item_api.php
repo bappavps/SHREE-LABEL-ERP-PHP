@@ -17,28 +17,32 @@ require_once __DIR__ . '/../../../../includes/auth_check.php';
 
 $db = getDB();
 
-function mi_json(int $status, array $payload): void {
+function mi_json(int $status, array $payload): void
+{
     http_response_code($status);
     echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
 
-function mi_clean($value, int $max = 255): string {
-    $text = trim((string)$value);
+function mi_clean($value, int $max = 255): string
+{
+    $text = trim((string) $value);
     if ($max > 0 && strlen($text) > $max) {
         $text = substr($text, 0, $max);
     }
     return $text;
 }
 
-function mi_num($value): float {
+function mi_num($value): float
+{
     if ($value === null || $value === '') {
         return 0.0;
     }
-    return round((float)$value, 3);
+    return round((float) $value, 3);
 }
 
-function mi_can_operate(): bool {
+function mi_can_operate(): bool
+{
     if (isAdmin()) {
         return true;
     }
@@ -56,14 +60,16 @@ function mi_can_operate(): bool {
     return false;
 }
 
-function mi_require_access(): void {
+function mi_require_access(): void
+{
     if (!mi_can_operate()) {
         mi_json(403, ['ok' => false, 'error' => 'Permission denied.']);
     }
 }
 
-function mi_parse_extra($remarks): array {
-    $raw = trim((string)$remarks);
+function mi_parse_extra($remarks): array
+{
+    $raw = trim((string) $remarks);
     if ($raw === '') {
         return [];
     }
@@ -78,12 +84,13 @@ function mi_parse_extra($remarks): array {
     return is_array($extra) ? $extra : [];
 }
 
-function mi_pick(array $extra, array $keys): string {
+function mi_pick(array $extra, array $keys): string
+{
     foreach ($keys as $k) {
         if (!array_key_exists($k, $extra)) {
             continue;
         }
-        $v = trim((string)$extra[$k]);
+        $v = trim((string) $extra[$k]);
         if ($v !== '') {
             return $v;
         }
@@ -91,7 +98,8 @@ function mi_pick(array $extra, array $keys): string {
     return '';
 }
 
-function mi_categories(): array {
+function mi_categories(): array
+{
     return [
         'pos_paper_roll' => 'POS & Paper Roll Extra',
         'one_ply' => '1 Ply Extra',
@@ -101,24 +109,27 @@ function mi_categories(): array {
     ];
 }
 
-function mi_decode_assoc($raw): array {
-    $decoded = json_decode((string)$raw, true);
+function mi_decode_assoc($raw): array
+{
+    $decoded = json_decode((string) $raw, true);
     return is_array($decoded) ? $decoded : [];
 }
 
-function mi_format_measure($value, string $suffix = ''): string {
-    $raw = trim((string)$value);
+function mi_format_measure($value, string $suffix = ''): string
+{
+    $raw = trim((string) $value);
     if ($raw === '') {
         return '';
     }
     if (preg_match('/-?[0-9]+(?:\.[0-9]+)?/', $raw, $m)) {
-        $num = rtrim(rtrim(number_format((float)$m[0], 3, '.', ''), '0'), '.');
+        $num = rtrim(rtrim(number_format((float) $m[0], 3, '.', ''), '0'), '.');
         return $suffix !== '' ? ($num . ' ' . $suffix) : $num;
     }
     return $raw;
 }
 
-function mi_parse_label_dimensions(string $text): array {
+function mi_parse_label_dimensions(string $text): array
+{
     $raw = trim($text);
     if ($raw === '') {
         return ['width' => '', 'length' => ''];
@@ -132,10 +143,11 @@ function mi_parse_label_dimensions(string $text): array {
     return ['width' => '', 'length' => ''];
 }
 
-function mi_fetch_printing_label_context(mysqli $db, array $jobNos): array {
+function mi_fetch_printing_label_context(mysqli $db, array $jobNos): array
+{
     $clean = [];
     foreach ($jobNos as $jobNo) {
-        $value = trim((string)$jobNo);
+        $value = trim((string) $jobNo);
         if ($value !== '') {
             $clean[$value] = true;
         }
@@ -163,12 +175,12 @@ function mi_fetch_printing_label_context(mysqli $db, array $jobNos): array {
 
     $map = [];
     foreach ($rows as $row) {
-        $jobNo = trim((string)($row['job_no'] ?? ''));
+        $jobNo = trim((string) ($row['job_no'] ?? ''));
         if ($jobNo === '' || isset($map[$jobNo])) {
             continue;
         }
         $planExtra = mi_decode_assoc($row['plan_extra_data'] ?? '');
-        $dims = mi_parse_label_dimensions((string)($planExtra['size'] ?? ($planExtra['label_size'] ?? '')));
+        $dims = mi_parse_label_dimensions((string) ($planExtra['size'] ?? ($planExtra['label_size'] ?? '')));
         $map[$jobNo] = [
             'width' => $dims['width'],
             'length' => $dims['length'],
@@ -178,23 +190,31 @@ function mi_fetch_printing_label_context(mysqli $db, array $jobNos): array {
     return $map;
 }
 
-function mi_compute_extra(array $row, array $extra): array {
-    $category = (string)($row['category'] ?? '');
+function mi_compute_extra(array $row, array $extra): array
+{
+    $category = (string) ($row['category'] ?? '');
     $quantity = mi_num($row['quantity'] ?? 0);
 
     if ($category === 'barcode' || $category === 'printing_label') {
-        $mixedEnabled = (int)($extra['mixed_enabled'] ?? 0) === 1;
-        $rpc = (int)floor(mi_num(mi_pick($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
+        $mixedEnabled = (int) ($extra['mixed_enabled'] ?? 0) === 1;
+        $rpc = (int) floor(mi_num(mi_pick($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
         $looseQty = max(0, mi_num(mi_pick($extra, ['loose_qty'])));
+        $mixedExtraRolls = max(0, mi_num($extra['mixed_extra_rolls'] ?? 0));
 
         if ($mixedEnabled) {
-            $extraQty = $looseQty;
-            if ($extraQty <= 0) {
-                $extraQty = max(0, mi_num($extra['mixed_extra_rolls'] ?? 0));
-            }
-
+            $extraQty = $looseQty > 0 ? $looseQty : $mixedExtraRolls;
             return [
                 'extra_qty' => $extraQty,
+                'unit_type' => 'PCS',
+                'per_carton' => '',
+                'possible_cartons' => '',
+            ];
+        }
+
+        // If mixed_enabled is explicitly 0 and no loose items remain (e.g. repacked items or new repacked full cartons)
+        if (isset($extra['mixed_enabled']) && (int) $extra['mixed_enabled'] === 0 && $looseQty <= 0 && $mixedExtraRolls <= 0) {
+            return [
+                'extra_qty' => 0,
                 'unit_type' => 'PCS',
                 'per_carton' => '',
                 'possible_cartons' => '',
@@ -213,7 +233,7 @@ function mi_compute_extra(array $row, array $extra): array {
             // of truth for the mixed item board (otherwise it shows blank after dispatch).
             $extraQty = $explicitExtraRolls * ($pcsPerRoll > 0 ? $pcsPerRoll : 1);
             if ($rpc > 0) {
-                $possible = (int)floor($explicitExtraRolls / $rpc);
+                $possible = (int) floor($explicitExtraRolls / $rpc);
             }
         } else {
             $totalRoll = mi_num(mi_pick($extra, ['total_roll', 'total_rolls']));
@@ -223,7 +243,7 @@ function mi_compute_extra(array $row, array $extra): array {
                 }
             }
             if ($rpc > 0 && $totalRoll > 0) {
-                $possible = (int)floor($totalRoll / $rpc);
+                $possible = (int) floor($totalRoll / $rpc);
                 $rollRemainder = fmod($totalRoll, $rpc);
                 if ($rollRemainder > 0 && $pcsPerRoll > 0) {
                     $extraQty += $rollRemainder * $pcsPerRoll;
@@ -239,8 +259,8 @@ function mi_compute_extra(array $row, array $extra): array {
             // In the explicit-extra branch $totalRoll is intentionally undefined (we trust
             // extra_rolls directly), so fall back to the explicit extra roll count there.
             $extraRolls = (isset($totalRoll) && $totalRoll > 0)
-                ? (int)fmod($totalRoll, $rpc)
-                : (int)$explicitExtraRolls;
+                ? (int) fmod($totalRoll, $rpc)
+                : (int) $explicitExtraRolls;
         }
         return [
             'extra_qty' => max(0, $extraQty),
@@ -248,16 +268,18 @@ function mi_compute_extra(array $row, array $extra): array {
             'per_carton' => '',
             'possible_cartons' => '',
             'extra_rolls' => $extraRolls,
-            'extra_pcs' => (int)$looseQty,
-            'pcs_per_roll' => (int)$pcsPerRoll,
+            'extra_pcs' => (int) $looseQty,
+            'pcs_per_roll' => (int) $pcsPerRoll,
         ];
     }
 
-    $mixedEnabled = (int)($extra['mixed_enabled'] ?? 0) === 1;
+    $mixedEnabled = (int) ($extra['mixed_enabled'] ?? 0) === 1;
     if ($mixedEnabled) {
         $rpc = mi_num(mi_pick($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton']));
-        $extraQty = max(0, mi_num($extra['mixed_extra_rolls'] ?? 0));
-        $possible = max(0, (int)floor(mi_num($extra['mixed_cartons'] ?? 0)));
+        $looseQty = max(0, mi_num($extra['loose_qty'] ?? 0));
+        $mixedExtraRolls = max(0, mi_num($extra['mixed_extra_rolls'] ?? 0));
+        $extraQty = $looseQty > 0 ? $looseQty : $mixedExtraRolls;
+        $possible = max(0, (int) floor(mi_num($extra['mixed_cartons'] ?? 0)));
         return [
             'extra_qty' => $extraQty,
             'unit_type' => 'PCS',
@@ -266,11 +288,19 @@ function mi_compute_extra(array $row, array $extra): array {
         ];
     }
 
-    $perCarton = mi_num(mi_pick($extra, ['per_carton']));
+    // If mixed_enabled is explicitly 0 and no loose items remain across all categories (e.g. repacked items or new repacked full cartons)
+    if (isset($extra['mixed_enabled']) && (int) $extra['mixed_enabled'] === 0 && $looseQty <= 0 && $mixedExtraRolls <= 0) {
+        return [
+            'extra_qty' => 0,
+            'unit_type' => 'PCS',
+            'per_carton' => $rpc,
+            'possible_cartons' => 0,
+        ];
+    }
     $extraQty = $quantity;
     $possible = 0;
     if ($perCarton > 0 && $quantity > 0) {
-        $possible = (int)floor($quantity / $perCarton);
+        $possible = (int) floor($quantity / $perCarton);
         $extraQty = fmod($quantity, $perCarton);
     }
 
@@ -282,7 +312,8 @@ function mi_compute_extra(array $row, array $extra): array {
     ];
 }
 
-function mi_fetch_rows(mysqli $db, string $category = ''): array {
+function mi_fetch_rows(mysqli $db, string $category = ''): array
+{
     $map = mi_categories();
     $labelContextMap = [];
 
@@ -297,8 +328,8 @@ function mi_fetch_rows(mysqli $db, string $category = ''): array {
 
     $allRows = $res->fetch_all(MYSQLI_ASSOC);
     foreach ($allRows as $seedRow) {
-        if ((string)($seedRow['category'] ?? '') === 'printing_label') {
-            $jobNo = trim((string)($seedRow['batch_no'] ?? ''));
+        if ((string) ($seedRow['category'] ?? '') === 'printing_label') {
+            $jobNo = trim((string) ($seedRow['batch_no'] ?? ''));
             if ($jobNo !== '') {
                 $labelContextMap[$jobNo] = true;
             }
@@ -306,7 +337,7 @@ function mi_fetch_rows(mysqli $db, string $category = ''): array {
     }
     $labelContextMap = mi_fetch_printing_label_context($db, array_keys($labelContextMap));
 
-    // Fetch stock IDs that are currently assigned/pending for repacking
+    // Fetch stock IDs that are currently pending assignment for repacking
     $assignedStockIds = [];
     $aRes = $db->query("SELECT items_json FROM mixed_item_assignments WHERE status = 'pending'");
     if ($aRes) {
@@ -314,7 +345,7 @@ function mi_fetch_rows(mysqli $db, string $category = ''): array {
             $items = json_decode($aRow['items_json'] ?? '[]', true);
             if (is_array($items)) {
                 foreach ($items as $item) {
-                    $sId = (int)($item['source_id'] ?? ($item['id'] ?? 0));
+                    $sId = (int) ($item['source_id'] ?? ($item['id'] ?? 0));
                     if ($sId > 0) {
                         $assignedStockIds[$sId] = true;
                     }
@@ -323,25 +354,14 @@ function mi_fetch_rows(mysqli $db, string $category = ''): array {
         }
     }
 
-    $jRes = $db->query("SELECT extra_data FROM jobs WHERE (job_type = 'Repacking' OR extra_data LIKE '%\"is_repacking_job\":1%') AND (status IS NULL OR status = '' OR LOWER(status) NOT IN ('closed', 'completed', 'dispatched', 'finished')) AND extra_data NOT LIKE '%\"finished_production_flag\":1%' AND extra_data NOT LIKE '%\"finished_production_flag\":\"1\"%'");
-    if ($jRes) {
-        while ($jRow = $jRes->fetch_assoc()) {
-            $jExtra = json_decode($jRow['extra_data'] ?? '{}', true);
-            $sId = (int)($jExtra['source_stock_id'] ?? 0);
-            if ($sId > 0) {
-                $assignedStockIds[$sId] = true;
-            }
-        }
-    }
-
     $rows = [];
     foreach ($allRows as $row) {
-        $stockId = (int)$row['id'];
+        $stockId = (int) $row['id'];
         if (!empty($assignedStockIds[$stockId])) {
             continue; // Skip items currently assigned to Packing for repacking
         }
 
-        $cat = (string)($row['category'] ?? '');
+        $cat = (string) ($row['category'] ?? '');
         if ($category !== '') {
             if ($category === 'printing_roll') {
                 if ($cat !== 'printing_roll' && $cat !== 'printing_label') {
@@ -362,14 +382,14 @@ function mi_fetch_rows(mysqli $db, string $category = ''): array {
         $width = mi_pick($extra, ['width']);
         $length = mi_pick($extra, ['length']);
         if ($cat === 'printing_label') {
-            $jobNo = trim((string)($row['batch_no'] ?? ''));
+            $jobNo = trim((string) ($row['batch_no'] ?? ''));
             if ($jobNo !== '' && isset($labelContextMap[$jobNo])) {
                 $ctx = $labelContextMap[$jobNo];
                 if (($ctx['width'] ?? '') !== '') {
-                    $width = (string)$ctx['width'];
+                    $width = (string) $ctx['width'];
                 }
                 if (($ctx['length'] ?? '') !== '') {
-                    $length = (string)$ctx['length'];
+                    $length = (string) $ctx['length'];
                 }
             }
         }
@@ -385,34 +405,35 @@ function mi_fetch_rows(mysqli $db, string $category = ''): array {
         }
 
         $rows[] = [
-            'id' => $cat . '-' . (int)$row['id'],
-            'source_id' => (int)$row['id'],
+            'id' => $cat . '-' . (int) $row['id'],
+            'source_id' => (int) $row['id'],
             'category' => $cat,
             'category_label' => ($cat === 'printing_label' ? ($map['printing_roll'] ?? 'Printing Extra') : ($map[$cat] ?? $cat)),
-            'item_name' => (string)($row['item_name'] ?? ''),
-            'item_code' => (string)($row['item_code'] ?? ''),
-            'size' => (string)($row['size'] ?? ''),
-            'gsm' => (string)($row['gsm'] ?? ''),
-            'batch_no' => (string)($row['batch_no'] ?? ''),
-            'date' => (string)($row['date'] ?? ''),
+            'item_name' => (string) ($row['item_name'] ?? ''),
+            'item_code' => (string) ($row['item_code'] ?? ''),
+            'size' => (string) ($row['size'] ?? ''),
+            'gsm' => (string) ($row['gsm'] ?? ''),
+            'batch_no' => (string) ($row['batch_no'] ?? ''),
+            'date' => (string) ($row['date'] ?? ''),
             'total_qty' => $totalQty,
             'extra_qty' => $extraQty,
-            'unit_type' => (string)($calc['unit_type'] ?? 'PCS'),
+            'unit_type' => (string) ($calc['unit_type'] ?? 'PCS'),
             'per_carton' => $perCarton,
             'possible_cartons' => $possible,
             'width' => $width,
             'length' => $length,
-            'remarks' => (string)($row['remarks'] ?? ''),
-            'extra_rolls' => (int)($calc['extra_rolls'] ?? 0),
-            'extra_pcs' => (int)($calc['extra_pcs'] ?? 0),
-            'pcs_per_roll' => (int)($calc['pcs_per_roll'] ?? 0),
+            'remarks' => (string) ($row['remarks'] ?? ''),
+            'extra_rolls' => (int) ($calc['extra_rolls'] ?? 0),
+            'extra_pcs' => (int) ($calc['extra_pcs'] ?? 0),
+            'pcs_per_roll' => (int) ($calc['pcs_per_roll'] ?? 0),
         ];
     }
 
     return $rows;
 }
 
-function mi_ensure_assignment_table(mysqli $db): void {
+function mi_ensure_assignment_table(mysqli $db): void
+{
     $sql = "CREATE TABLE IF NOT EXISTS mixed_item_assignments (
         id INT UNSIGNED NOT NULL AUTO_INCREMENT,
         assignment_code VARCHAR(60) NOT NULL DEFAULT '',
@@ -438,8 +459,8 @@ function mi_ensure_assignment_table(mysqli $db): void {
 mi_require_access();
 mi_ensure_assignment_table($db);
 
-$method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
-$action = trim((string)($_REQUEST['action'] ?? ''));
+$method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+$action = trim((string) ($_REQUEST['action'] ?? ''));
 if ($action === '') {
     mi_json(400, ['ok' => false, 'error' => 'Missing action.']);
 }
@@ -467,7 +488,7 @@ if ($action === 'get_tab_counts') {
 
     $rows = mi_fetch_rows($db, '');
     foreach ($rows as $row) {
-        $cat = (string)($row['category'] ?? '');
+        $cat = (string) ($row['category'] ?? '');
         if ($cat === 'printing_label') {
             $cat = 'printing_roll';
         }
@@ -530,7 +551,7 @@ if ($action === 'assign_mixed_items') {
         }
         $compact[] = [
             'id' => mi_clean($item['id'] ?? '', 80),
-            'source_id' => (int)($item['source_id'] ?? 0),
+            'source_id' => (int) ($item['source_id'] ?? 0),
             'category' => mi_clean($item['category'] ?? '', 60),
             'item_name' => mi_clean($item['item_name'] ?? '', 255),
             'batch_no' => mi_clean($item['batch_no'] ?? '', 120),
@@ -550,7 +571,7 @@ if ($action === 'assign_mixed_items') {
 
     $assignmentCode = 'MIX-' . date('Ymd-His') . '-' . mt_rand(100, 999);
     $itemCount = count($compact);
-    $createdBy = (int)($_SESSION['user_id'] ?? 0);
+    $createdBy = (int) ($_SESSION['user_id'] ?? 0);
 
     $stmt = $db->prepare("INSERT INTO mixed_item_assignments
         (assignment_code, target, source_category, item_count, items_json, note, status, created_by)
@@ -566,7 +587,7 @@ if ($action === 'assign_mixed_items') {
 
     if ($target === 'packing') {
         $firstItem = $compact[0];
-        $cat = strtolower(trim((string)($firstItem['category'] ?? $sourceCategory)));
+        $cat = strtolower(trim((string) ($firstItem['category'] ?? $sourceCategory)));
         $dept = 'POS Roll';
         if (strpos($cat, 'barcode') !== false) {
             $dept = 'Barcode';
@@ -582,9 +603,13 @@ if ($action === 'assign_mixed_items') {
         $totalExtraQty = 0;
         $jobNames = [];
         $firstSize = '';
+        $allSourceStockIds = [];
 
         foreach ($compact as $idx => $cItem) {
-            $sourceStockId = (int)($cItem['source_id'] ?? 0);
+            $sourceStockId = (int) ($cItem['source_id'] ?? 0);
+            if ($sourceStockId > 0 && !in_array($sourceStockId, $allSourceStockIds, true)) {
+                $allSourceStockIds[] = $sourceStockId;
+            }
             $width = '';
             $length = '';
             $gsm = '';
@@ -593,14 +618,15 @@ if ($action === 'assign_mixed_items') {
             if ($sourceStockId > 0) {
                 $sRes = $db->query("SELECT size, gsm, remarks FROM finished_goods_stock WHERE id = {$sourceStockId}");
                 if ($sRes && $sRow = $sRes->fetch_assoc()) {
-                    $itemSize = (string)($sRow['size'] ?? '');
-                    if ($firstSize === '') $firstSize = $itemSize;
-                    $gsm = (string)($sRow['gsm'] ?? '');
+                    $itemSize = (string) ($sRow['size'] ?? '');
+                    if ($firstSize === '')
+                        $firstSize = $itemSize;
+                    $gsm = (string) ($sRow['gsm'] ?? '');
                     $sParsed = json_decode($sRow['remarks'] ?? '{}', true) ?: [];
                     $sExtra = $sParsed['extra'] ?? [];
-                    $width = (string)($sExtra['width'] ?? '');
-                    $length = (string)($sExtra['length'] ?? '');
-                    $mixedBatchLabels = trim((string)($sExtra['mixed_batch_labels'] ?? ($sExtra['batch_no'] ?? '')));
+                    $width = (string) ($sExtra['width'] ?? '');
+                    $length = (string) ($sExtra['length'] ?? '');
+                    $mixedBatchLabels = trim((string) ($sExtra['mixed_batch_labels'] ?? ($sExtra['batch_no'] ?? '')));
                 }
             }
 
@@ -613,13 +639,13 @@ if ($action === 'assign_mixed_items') {
                 }
             }
             if (empty($rollLabels)) {
-                $fallbackRoll = (string)($cItem['batch_no'] ?? '');
+                $fallbackRoll = (string) ($cItem['batch_no'] ?? '');
                 $rollLabels = [$fallbackRoll !== '' ? $fallbackRoll : ($assignmentCode . '-' . ($idx + 1))];
             }
 
-            $extraQty = (float)($cItem['extra_qty'] ?? 0);
+            $extraQty = (float) ($cItem['extra_qty'] ?? 0);
             $totalExtraQty += $extraQty;
-            $name = (string)($cItem['item_name'] ?? 'Repacking Job');
+            $name = (string) ($cItem['item_name'] ?? 'Repacking Job');
             if (!in_array($name, $jobNames, true)) {
                 $jobNames[] = $name;
             }
@@ -658,7 +684,8 @@ if ($action === 'assign_mixed_items') {
             'item_length' => $assignedChildRolls[0]['length'] ?? '',
             'paper_size' => $firstSize,
             'gsm' => $assignedChildRolls[0]['gsm'] ?? '',
-            'source_stock_id' => (int)($compact[0]['source_id'] ?? 0),
+            'source_stock_id' => (int) ($compact[0]['source_id'] ?? 0),
+            'source_stock_ids' => $allSourceStockIds,
             'repacking_assignment_code' => $assignmentCode,
             'is_repacking_job' => 1,
             'assigned_child_rolls' => $assignedChildRolls,
@@ -678,7 +705,7 @@ if ($action === 'assign_mixed_items') {
         'ok' => true,
         'message' => 'Selected mixed items assigned successfully.',
         'assignment' => [
-            'id' => (int)$stmt->insert_id,
+            'id' => (int) $stmt->insert_id,
             'code' => $assignmentCode,
             'target' => $target,
             'item_count' => $itemCount,
@@ -703,33 +730,37 @@ if ($action === 'repack_mixed_items') {
     try {
         $repackedCount = 0;
         foreach ($items as $item) {
-            $stockId = (int)($item['source_id'] ?? ($item['id'] ?? 0));
-            if ($stockId <= 0) continue;
+            $stockId = (int) ($item['source_id'] ?? ($item['id'] ?? 0));
+            if ($stockId <= 0)
+                continue;
 
             $stmt = $db->prepare("SELECT id, category, item_name, item_code, batch_no, size, unit, quantity, remarks FROM finished_goods_stock WHERE id = ? FOR UPDATE");
-            if (!$stmt) continue;
+            if (!$stmt)
+                continue;
             $stmt->bind_param('i', $stockId);
             $stmt->execute();
             $row = $stmt->get_result()->fetch_assoc();
-            if (!$row) continue;
+            if (!$row)
+                continue;
 
             $parsed = json_decode($row['remarks'] ?? '{}', true) ?: [];
             $extra = $parsed['extra'] ?? [];
-            $looseQty = (float)($extra['loose_qty'] ?? 0);
-            $perCarton = (float)($extra['per_carton'] ?? 50);
+            $looseQty = (float) ($extra['loose_qty'] ?? 0);
+            $perCarton = (float) ($extra['per_carton'] ?? 50);
 
-            if ($looseQty <= 0) continue;
+            if ($looseQty <= 0)
+                continue;
 
             // Compute full cartons formed from loose rolls
-            $repackedCartons = $perCarton > 0 ? (int)floor($looseQty / $perCarton) : 0;
+            $repackedCartons = $perCarton > 0 ? (int) floor($looseQty / $perCarton) : 0;
             $repackedQty = $perCarton > 0 ? ($repackedCartons * $perCarton) : $looseQty;
 
             if ($repackedQty > 0 || $looseQty > 0) {
                 // If looseQty >= perCarton, convert to full carton, else clear loose qty into finished stock
                 $transferQty = $repackedQty > 0 ? $repackedQty : $looseQty;
-                $newQuantity = (float)($row['quantity'] ?? 0) + $transferQty;
+                $newQuantity = (float) ($row['quantity'] ?? 0) + $transferQty;
                 if ($repackedCartons > 0) {
-                    $extra['carton'] = (int)($extra['carton'] ?? 0) + $repackedCartons;
+                    $extra['carton'] = (int) ($extra['carton'] ?? 0) + $repackedCartons;
                 }
                 $newLoose = max(0, $looseQty - $transferQty);
                 $extra['loose_qty'] = $newLoose;

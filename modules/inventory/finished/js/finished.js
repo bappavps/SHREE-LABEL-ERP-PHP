@@ -578,26 +578,29 @@
         if (category === 'barcode' || category === 'printing_label') {
           var mixedEnabled = String(extra.mixed_enabled || '0') === '1';
           var rpc = Math.floor(fg_num(extraPick(['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
+          var pcsPerRoll = fg_num(extraPick(['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
 
           if (mixedEnabled) {
             mixedExtra = Math.max(0, fg_num(extraPick(['loose_qty'])));
             if (mixedExtra <= 0) {
-              mixedExtra = Math.max(0, fg_num(extra.mixed_extra_rolls || 0));
+              var extraRolls = Math.max(0, fg_num(extra.mixed_extra_rolls || 0));
+              mixedExtra = extraRolls * (pcsPerRoll > 0 ? pcsPerRoll : 1);
             }
           } else {
             var totalRoll = fg_num(extraPick(['total_roll', 'total_rolls', 'total_roll_value']));
-            if (totalRoll <= 0) {
-              var pcsPerRoll = fg_num(extraPick(['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
-              if (pcsPerRoll > 0 && baseRaw > 0) {
-                totalRoll = Math.ceil(baseRaw / pcsPerRoll);
-              }
+            if (totalRoll <= 0 && pcsPerRoll > 0 && baseRaw > 0) {
+              totalRoll = Math.ceil(baseRaw / pcsPerRoll);
             }
 
+            var extraRolls = 0;
             if (rpc > 0 && totalRoll > 0) {
-              mixedExtra = totalRoll % rpc;
-            } else {
-              mixedExtra = totalRoll;
+              extraRolls = totalRoll % rpc;
+            } else if (totalRoll > 0) {
+              extraRolls = totalRoll;
             }
+
+            var loosePcs = Math.max(0, fg_num(extraPick(['loose_qty', 'extra_pcs'])));
+            mixedExtra = (extraRolls * (pcsPerRoll > 0 ? pcsPerRoll : 1)) + loosePcs;
           }
         } else {
           var mixedEnabledOther = String(extra.mixed_enabled || '0') === '1';
@@ -803,17 +806,9 @@
       return fmtQty(mixedAdjustedTotal().packed_net);
     }
     if (key === 'current_total') {
-      // For paper roll, label, and barcode tabs use the raw DB quantity directly — the
-      // stored quantity represents actual available stock in Finished Goods.
-      if (fg_state.activeTab === 'printing_label' || fg_state.activeTab === 'barcode' || fg_state.activeTab === 'pos_paper_roll' || fg_state.activeTab === 'one_ply' || fg_state.activeTab === 'two_ply') {
-        return fmtQty(fg_num(row.quantity));
-      }
       return fmtQty(mixedAdjustedTotal().available_net);
     }
     if (key === 'available_for_dispatch') {
-      if (fg_state.activeTab === 'printing_label' || fg_state.activeTab === 'barcode' || fg_state.activeTab === 'pos_paper_roll' || fg_state.activeTab === 'one_ply' || fg_state.activeTab === 'two_ply') {
-        return fmtQty(fg_num(row.quantity));
-      }
       return fmtQty(mixedAdjustedTotal().available_net);
     }
     if (key === 'stock_status') {

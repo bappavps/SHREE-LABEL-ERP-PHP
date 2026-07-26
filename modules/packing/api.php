@@ -255,10 +255,11 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
     $operatorPayload = packing_decode_json($operatorEntry['roll_payload_json'] ?? null);
     $rollOverrides = is_array($operatorPayload['roll_overrides'] ?? null) ? $operatorPayload['roll_overrides'] : [];
     $mixedPayload = is_array($operatorPayload['mixed'] ?? null) ? $operatorPayload['mixed'] : [];
-    $mixedEnabled = (!empty($mixedPayload['enabled']) && ((int)($mixedPayload['enabled'] ?? 0) === 1 || ($mixedPayload['enabled'] ?? false) === true));
+    $isRepackingJob = !empty($jobExtra['is_repacking_job']) || ((string)($jobDetails['job_type'] ?? '') === 'Repacking');
+    $mixedEnabled = !$isRepackingJob && (!empty($mixedPayload['enabled']) && ((int)($mixedPayload['enabled'] ?? 0) === 1 || ($mixedPayload['enabled'] ?? false) === true));
     $mixedPerCarton = (int)floor((float)($mixedPayload['rolls_per_carton'] ?? 0));
-    $mixedCartons = (int)floor((float)($mixedPayload['mixed_cartons'] ?? 0));
-    $mixedExtraRolls = (int)floor((float)($mixedPayload['mixed_extra_rolls'] ?? 0));
+    $mixedCartons = $isRepackingJob ? 0 : (int)floor((float)($mixedPayload['mixed_cartons'] ?? 0));
+    $mixedExtraRolls = $isRepackingJob ? 0 : (int)floor((float)($mixedPayload['mixed_extra_rolls'] ?? 0));
     $mixedBatchLabels = trim((string)($mixedPayload['batch_labels'] ?? ''));
     $childRolls = packing_api_assigned_child_rolls($jobDetails);
     $barcodeMetricsResolved = packing_api_resolve_barcode_metrics($operatorPayload, $planExtra);
@@ -446,9 +447,9 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         $remarksPayload['extra']['mixed_extra_rolls'] = (int)($mixedPayload['mixed_extra_rolls'] ?? 0);
         $remarksPayload['extra']['mixed_batch_labels'] = trim((string)($mixedPayload['batch_labels'] ?? ''));
         $remarksPayload['extra']['packed_qty'] = round((float)($operatorEntry['packed_qty'] ?? 0), 3);
-        $extraRollsCount = max(0, $barcodeTotalRolls - ($rollsPerCartoon * $cartonCount));
+        $extraRollsCount = $isRepackingJob ? 0 : max(0, $barcodeTotalRolls - ($rollsPerCartoon * $cartonCount));
         $remarksPayload['extra']['extra_rolls'] = $extraRollsCount;
-        $remarksPayload['extra']['extra_pcs'] = $looseQtyCount;
+        $remarksPayload['extra']['extra_pcs'] = $isRepackingJob ? 0 : $looseQtyCount;
         
         // Also exclude mixed extra rolls from finished goods quantity (not in cartons)
         if ($mixedEnabled && $mixedExtraRolls > 0 && $barcodePerRoll > 0) {
@@ -548,26 +549,33 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         }
         $updateStmt->close();
 
-        // If this is a repacking job, deduct repacked loose quantity from the source stock item
-        $sourceStockId = (int)($jobExtra['source_stock_id'] ?? 0);
+        // If this is a repacking job, deduct repacked loose quantity from all source stock items
+        $sourceStockIds = is_array($jobExtra['source_stock_ids'] ?? null) ? $jobExtra['source_stock_ids'] : [];
+        $singleSourceStockId = (int)($jobExtra['source_stock_id'] ?? 0);
+        if ($singleSourceStockId > 0 && !in_array($singleSourceStockId, $sourceStockIds, true)) {
+            $sourceStockIds[] = $singleSourceStockId;
+        }
+
         $repackLooseQty = (float)($jobExtra['loose_qty'] ?? $quantity);
-        if ($sourceStockId > 0 && $repackLooseQty > 0) {
-            $sRes = $db->query("SELECT remarks FROM finished_goods_stock WHERE id = {$sourceStockId}");
-            if ($sRes && $sRow = $sRes->fetch_assoc()) {
-                $sParsed = json_decode($sRow['remarks'] ?? '{}', true) ?: [];
-                $sExtra = $sParsed['extra'] ?? [];
-                $sLoose = (float)($sExtra['loose_qty'] ?? 0);
-                $newLoose = max(0, $sLoose - $repackLooseQty);
-                $sExtra['loose_qty'] = $newLoose;
-                $sExtra['mixed_extra_rolls'] = 0;
-                $sExtra['extra_rolls'] = 0;
-                $sExtra['extra_pcs'] = 0;
-                if ($newLoose <= 0) {
+        if (!empty($sourceStockIds) && $repackLooseQty > 0) {
+            foreach ($sourceStockIds as $sStockId) {
+                $sStockId = (int)$sStockId;
+                if ($sStockId <= 0) continue;
+                $sRes = $db->query("SELECT remarks FROM finished_goods_stock WHERE id = {$sStockId}");
+                if ($sRes && $sRow = $sRes->fetch_assoc()) {
+                    $sParsed = json_decode($sRow['remarks'] ?? '{}', true) ?: [];
+                    $sExtra = $sParsed['extra'] ?? [];
+                    $sLoose = (float)($sExtra['loose_qty'] ?? 0);
+                    $newLoose = max(0, $sLoose - $repackLooseQty);
+                    $sExtra['loose_qty'] = 0;
+                    $sExtra['mixed_extra_rolls'] = 0;
+                    $sExtra['extra_rolls'] = 0;
+                    $sExtra['extra_pcs'] = 0;
                     $sExtra['mixed_enabled'] = 0;
+                    $sParsed['extra'] = $sExtra;
+                    $sRemarks = json_encode($sParsed, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    $db->query("UPDATE finished_goods_stock SET remarks = '" . $db->real_escape_string($sRemarks) . "' WHERE id = {$sStockId}");
                 }
-                $sParsed['extra'] = $sExtra;
-                $sRemarks = json_encode($sParsed, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-                $db->query("UPDATE finished_goods_stock SET remarks = '" . $db->real_escape_string($sRemarks) . "' WHERE id = {$sourceStockId}");
             }
         }
 
@@ -594,6 +602,39 @@ function packing_api_upsert_finished_goods(mysqli $db, array $jobDetails, array 
         packing_api_respond(['ok' => false, 'message' => $msg], 500);
     }
     $insertStmt->close();
+
+    // Deduct repacked loose quantity for insert branch as well
+    $sourceStockIds = is_array($jobExtra['source_stock_ids'] ?? null) ? $jobExtra['source_stock_ids'] : [];
+    $singleSourceStockId = (int)($jobExtra['source_stock_id'] ?? 0);
+    if ($singleSourceStockId > 0 && !in_array($singleSourceStockId, $sourceStockIds, true)) {
+        $sourceStockIds[] = $singleSourceStockId;
+    }
+
+    $repackLooseQty = (float)($jobExtra['loose_qty'] ?? $quantity);
+    if (!empty($sourceStockIds) && $repackLooseQty > 0) {
+        foreach ($sourceStockIds as $sStockId) {
+            $sStockId = (int)$sStockId;
+            if ($sStockId <= 0) continue;
+            $sRes = $db->query("SELECT remarks FROM finished_goods_stock WHERE id = {$sStockId}");
+            if ($sRes && $sRow = $sRes->fetch_assoc()) {
+                $sParsed = json_decode($sRow['remarks'] ?? '{}', true) ?: [];
+                $sExtra = $sParsed['extra'] ?? [];
+                $sLoose = (float)($sExtra['loose_qty'] ?? 0);
+                $newLoose = max(0, $sLoose - $repackLooseQty);
+                $sExtra['loose_qty'] = 0;
+                $sExtra['mixed_extra_rolls'] = 0;
+                $sExtra['extra_rolls'] = 0;
+                $sExtra['extra_pcs'] = 0;
+                $sExtra['mixed_enabled'] = 0;
+                $sParsed['extra'] = $sExtra;
+                $sRemarks = json_encode($sParsed, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                $db->query("UPDATE finished_goods_stock SET remarks = '" . $db->real_escape_string($sRemarks) . "' WHERE id = {$sStockId}");
+            }
+        }
+    }
+    if ($isRepackingJob && $jobNo !== '') {
+        $db->query("UPDATE mixed_item_assignments SET status = 'completed' WHERE assignment_code = '" . $db->real_escape_string($jobNo) . "'");
+    }
 }
 
 function packing_api_ensure_carton_min_column(mysqli $db): void {
