@@ -77,6 +77,36 @@
       .replace(/'/g, '&#039;');
   }
 
+  var currentLang = localStorage.getItem('ai_manual_lang') || 'English';
+  var langPills = document.querySelectorAll('.ai-lang-pill');
+
+  function updateLangPillsUI(selected) {
+    currentLang = selected;
+    localStorage.setItem('ai_manual_lang', selected);
+    langPills.forEach(function(pill) {
+      if (pill.getAttribute('data-lang') === selected) {
+        pill.classList.add('active');
+      } else {
+        pill.classList.remove('active');
+      }
+    });
+    if (typeof recognition !== 'undefined' && recognition) {
+      if (selected === 'Bengali') recognition.lang = 'bn-IN';
+      else if (selected === 'Hindi') recognition.lang = 'hi-IN';
+      else recognition.lang = 'en-US';
+    }
+  }
+
+  if (langPills.length > 0) {
+    updateLangPillsUI(currentLang);
+    langPills.forEach(function(pill) {
+      pill.addEventListener('click', function() {
+        var lang = pill.getAttribute('data-lang');
+        if (lang) updateLangPillsUI(lang);
+      });
+    });
+  }
+
   function handleSend(promptText) {
     var query = promptText || (chatInput ? chatInput.value.trim() : '');
     if (!query || state.isProcessing) return;
@@ -94,6 +124,9 @@
     var body = new FormData();
     body.set('action', 'query');
     body.set('prompt', query);
+    if (currentLang && currentLang !== 'Auto') {
+      body.set('user_lang', currentLang);
+    }
 
     var targetApiUrl = window.AI_AGENT_API_URL || 'api.php';
     fetch(targetApiUrl, {
@@ -191,7 +224,9 @@
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
-    recognition.lang = 'bn-IN';
+    if (currentLang === 'Bengali') recognition.lang = 'bn-IN';
+    else if (currentLang === 'Hindi') recognition.lang = 'hi-IN';
+    else recognition.lang = 'en-US';
 
     var isListening = false;
     var finalTranscript = '';
@@ -216,6 +251,7 @@
         }
       });
     });
+
 
     recognition.onstart = function() {
       micBtns.forEach(function(btn) {

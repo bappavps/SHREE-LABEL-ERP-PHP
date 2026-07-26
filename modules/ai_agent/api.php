@@ -39,9 +39,14 @@ if ($prompt === '') {
  * Detect Language (English / Bengali / Hindi)
  */
 function detect_language(string $prompt): string {
+    $reqLang = trim($_REQUEST['user_lang'] ?? '');
+    if ($reqLang === 'English' || $reqLang === 'Bengali' || $reqLang === 'Hindi') {
+        return $reqLang;
+    }
+
     $p = mb_strtolower($prompt, 'UTF-8');
     
-    // 1. Bengali Script Detection (MUST BE FIRST!)
+    // 1. Bengali Script Detection
     if (preg_match('/[\x{0980}-\x{09FF}]/u', $prompt)) {
         return 'Bengali';
     }
@@ -64,6 +69,7 @@ function detect_language(string $prompt): string {
     // Default to English
     return 'English';
 }
+
 
 /**
  * Extract Numbers / Specific Identifiers from Prompt
