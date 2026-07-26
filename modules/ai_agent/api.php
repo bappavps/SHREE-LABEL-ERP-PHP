@@ -735,7 +735,8 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
     }
 
     // 3. ERP Executive Dashboard & KPI Overview Intent Matcher
-    if (strpos($p, 'dash') !== false || strpos($p, 'kpi') !== false || strpos($p, 'overview') !== false || strpos($p, 'metric') !== false || strpos($p, 'analytic') !== false || strpos($p, 'stat') !== false || strpos($p, 'executive') !== false || strpos($p, 'ড্যাশবোর্ড') !== false) {
+    if (strpos($p, 'dash') !== false || strpos($p, 'kpi') !== false || strpos($p, 'overview') !== false || strpos($p, 'metric') !== false || strpos($p, 'analytic') !== false || preg_match('/\b(stat|stats|statistics)\b/i', $prompt) || strpos($p, 'executive') !== false || strpos($p, 'ড্যাশবোর্ড') !== false) {
+
         $toolName = 'ERP Executive Dashboard & KPI Tool';
         
         $stockCount = (int)($db->query("SELECT COUNT(*) as c FROM paper_stock WHERE LOWER(COALESCE(status,'')) NOT IN ('consumed','disposed','scrap')")->fetch_assoc()['c'] ?? 0);
@@ -817,7 +818,115 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
             'nav_url' => $navUrl,
             'data' => []
         ];
+    } elseif (strpos($p, 'dispatch') !== false || strpos($p, 'dispatched') !== false || strpos($p, 'ready queue') !== false || strpos($p, 'ready stock') !== false || strpos($p, 'challan') !== false || strpos($p, 'sales person') !== false || strpos($p, 'ডিসপ্যাচ') !== false || strpos($p, 'রেডি') !== false) {
+        $toolName = 'Dispatch & Ready Queue Master Tool';
+
+        // Ready Queue (Finished Goods ready to ship)
+        $readyRows = $db->query("SELECT id, category, item_name, item_code, size, quantity, dispatch_qty_total, COALESCE(closing_stock, quantity - dispatch_qty_total) as ready_qty, unit, batch_no FROM finished_goods_stock WHERE COALESCE(closing_stock, quantity - dispatch_qty_total) > 0 ORDER BY id DESC LIMIT 15")->fetch_all(MYSQLI_ASSOC);
+
+        $totalReadyItems = count($readyRows);
+        $totalReadyQty = 0;
+        foreach ($readyRows as $rr) {
+            $totalReadyQty += (float)$rr['ready_qty'];
+        }
+
+        // Dispatches Stats
+        $dStatRes = $db->query("SELECT 
+            COUNT(*) as total_dispatches,
+            IFNULL(SUM(dispatch_qty),0) as total_dispatched_qty,
+            IFNULL(SUM(transport_cost),0) as total_transport_cost,
+            SUM(CASE WHEN LOWER(COALESCE(delivery_status,'')) IN ('pending','in transit','in_transit') THEN 1 ELSE 0 END) as pending_transit,
+            SUM(CASE WHEN LOWER(COALESCE(delivery_status,'')) = 'delivered' THEN 1 ELSE 0 END) as delivered_cnt
+            FROM dispatch_entries
+        ")->fetch_assoc();
+
+        $totalDispatches = (int)($dStatRes['total_dispatches'] ?? 0);
+        $totalDispatchedQty = (float)($dStatRes['total_dispatched_qty'] ?? 0);
+        $totalTransportCost = (float)($dStatRes['total_transport_cost'] ?? 0);
+        $pendingTransit = (int)($dStatRes['pending_transit'] ?? 0);
+        $deliveredCnt = (int)($dStatRes['delivered_cnt'] ?? 0);
+
+        $userLang = detect_language($prompt);
+        $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+        if ($userLang === 'English') {
+            $answer = "🚚 **Dispatch & Ready Queue 3-Tab Operational Summary:**\n\n"
+                . "📦 **1. Ready Queue (Awaiting Dispatch — For Sales & Dispatch Operators):**\n"
+                . "  - Ready Finished Stock Items: **" . number_format($totalReadyItems) . " Items / Batches**\n"
+                . "  - Total Quantity Available to Ship: **" . number_format($totalReadyQty) . " PCS / Labels**\n\n"
+                . "🚚 **2. Live Dispatch Operations Summary:**\n"
+                . "  - Total Shipment Records: **" . number_format($totalDispatches) . " Dispatches**\n"
+                . "  - Total Dispatched Quantity: **" . number_format($totalDispatchedQty) . " PCS**\n"
+                . "  - Pending Delivery / In Transit: **" . number_format($pendingTransit) . " Shipments**\n"
+                . "  - Successfully Delivered: **" . number_format($deliveredCnt) . " Shipments**\n"
+                . "  - Total Transport Logistics Spend: **₹" . number_format($totalTransportCost, 2) . "**\n\n"
+                . "📋 **Itemized Ready Stock List (Awaiting Dispatch Handover):**\n\n";
+
+            foreach ($readyRows as $idx => $r) {
+                $answer .= "• **Item " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Ready Product') . "`** (ID: **{$r['id']}** | Batch: `" . ($r['batch_no'] ?: 'N/A') . "`)\n"
+                    . "  - 📐 **Size:** **" . ($r['size'] ?: 'N/A') . "**\n"
+                    . "  - 📦 **Ready Stock to Dispatch:** **" . number_format((float)$r['ready_qty']) . " " . ($r['unit'] ?: 'PCS') . "**\n\n";
+            }
+
+            $answer .= "👉 [Click here to open Dispatch Workspace]({$baseUrl}/modules/dispatch/index.php)";
+        } elseif ($userLang === 'Hindi') {
+            $answer = "🚚 **डिस्पैच और रेडी क्यू 3-टैब संचालन सारांश:**\n\n"
+                . "📦 **1. रेडी क्यू (डिस्पैच के लिए तैयार - सेल टीम के लिए):**\n"
+                . "  - रेडी स्टॉक आइटम: **" . number_format($totalReadyItems) . " आइटम**\n"
+                . "  - भेजने के लिए कुल उपलब्ध मात्रा: **" . number_format($totalReadyQty) . " पीस**\n\n"
+                . "🚚 **2. लाइव डिस्पैच विवरण:**\n"
+                . "  - कुल डिस्पैच रिकॉर्ड: **" . number_format($totalDispatches) . " डिस्पैच**\n"
+                . "  - कुल भेजी गई मात्रा: **" . number_format($totalDispatchedQty) . " पीस**\n"
+                . "  - पेंडिंग / इन-ट्रांजिट: **" . number_format($pendingTransit) . " शिपमेंट**\n"
+                . "  - कुल ट्रांसपोर्ट लागत: **₹" . number_format($totalTransportCost, 2) . "**\n\n"
+                . "📋 **रेडी स्टॉक सूची (डिस्पैच के लिए तैयार):**\n\n";
+
+            foreach ($readyRows as $idx => $r) {
+                $answer .= "• **आइटम " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Ready Product') . "`** (ID: **{$r['id']}**)\n"
+                    . "  - 📐 **साइज़:** **" . ($r['size'] ?: 'N/A') . "**\n"
+                    . "  - 📦 **रेडी डिस्पैच स्टॉक:** **" . number_format((float)$r['ready_qty']) . " " . ($r['unit'] ?: 'PCS') . "**\n\n";
+            }
+
+            $answer .= "👉 [डिस्पैच पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/dispatch/index.php)";
+        } else {
+            $answer = "🚚 **ডিসপ্যাচ ও রেডি কিউ ৩-ট্যাব অপারেশনাল সামারি:**\n\n"
+                . "📦 **১. রেডি কিউ (ডিসপ্যাচের জন্য প্রস্তুত স্টক - সেলস টিম ও অপারেটরদের জন্য):**\n"
+                . "  - ওয়্যারহাউসে রেডি স্টক আইটেম: **" . number_format($totalReadyItems) . "টি ব্যাচ/আইটেম**\n"
+                . "  - ডিসপ্যাচ বা ডেলিভারি দেওয়ার মতো মোট কোয়ান্টিটি: **" . number_format($totalReadyQty) . "টি পিস/লেবেল**\n\n"
+                . "🚚 **২. লাইভ ডিসপ্যাচ অপারেশন সামারি:**\n"
+                . "  - সর্বমোট ডিসপ্যাচ রেকর্ড: **" . number_format($totalDispatches) . "টি শিপমেন্ট**\n"
+                . "  - সর্বমোট ডিসপ্যাচড কোয়ান্টিটি: **" . number_format($totalDispatchedQty) . "টি পিস**\n"
+                . "  - পেন্ডিং ডেলিভারি / ইন-ট্রানজিট: **" . number_format($pendingTransit) . "টি শিপমেন্ট**\n"
+                . "  - সফলভাবে ডেলিভারড: **" . number_format($deliveredCnt) . "টি শিপমেন্ট**\n"
+                . "  - সর্বমোট ট্রান্সপোর্ট খরচ: **₹" . number_format($totalTransportCost, 2) . "**\n\n"
+                . "📋 **রেডি স্টক আইটেম তালিকা (ডেলিভারির জন্য প্রস্তুত):**\n\n";
+
+            foreach ($readyRows as $idx => $r) {
+                $answer .= "• **আইটেম " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Ready Product') . "`** (ID: **{$r['id']}** | ব্যাচ: `" . ($r['batch_no'] ?: 'N/A') . "`)\n"
+                    . "  - 📐 **সাইজ ও স্পেক:** **" . ($r['size'] ?: 'N/A') . "**\n"
+                    . "  - 📦 **রেডি ডিসপ্যাচ কোয়ান্টিটি:** **" . number_format((float)$r['ready_qty']) . " " . ($r['unit'] ?: 'PCS') . "**\n\n";
+            }
+
+            $answer .= "👉 [ডিসপ্যাচ পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/dispatch/index.php)";
+        }
+
+        $navUrl = null;
+        if (strpos($p, 'open') !== false || strpos($p, 'page') !== false || strpos($p, 'go to') !== false || strpos($p, 'khul') !== false || strpos($p, 'khol') !== false) {
+            $navUrl = $baseUrl . '/modules/dispatch/index.php';
+        }
+
+        return [
+            'tool_used' => $toolName,
+            'total_count' => $totalReadyItems + $totalDispatches,
+            'total_meters' => 0,
+            'filtered_type' => '',
+            'is_company_list' => false,
+            'direct_answer' => $answer,
+            'nav_url' => $navUrl,
+            'data' => []
+        ];
     } elseif (strpos($p, 'finished') !== false || strpos($p, 'fg stock') !== false || strpos($p, 'fg') !== false || strpos($p, 'packed label') !== false || strpos($p, 'packed stock') !== false || strpos($p, 'ফিনিশড') !== false || strpos($p, 'প্যাকড') !== false) {
+
         $toolName = 'Finished Goods Stock Master Tool';
 
         $sum = $db->query("SELECT 
@@ -921,23 +1030,215 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
             'nav_url' => $navUrl,
             'data' => []
         ];
+    } elseif (strpos($p, 'login') !== false || strpos($p, 'logged') !== false || strpos($p, 'who am i') !== false || strpos($p, 'user id') !== false || strpos($p, 'active user') !== false || strpos($p, 'লগইন') !== false || strpos($p, 'ইউজার') !== false) {
+        $toolName = 'User & Session Master Tool';
+
+        $sessionUserId = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 1;
+
+        $currRes = $db->query("SELECT id, name, email, role, is_active, updated_at FROM users WHERE id = {$sessionUserId}");
+        $currUser = $currRes ? $currRes->fetch_assoc() : null;
+
+        $allRes = $db->query("SELECT id, name, email, role, is_active, updated_at FROM users WHERE is_active = 1 ORDER BY id ASC");
+        $allUsers = $allRes ? $allRes->fetch_all(MYSQLI_ASSOC) : [];
+
+        $userLang = detect_language($prompt);
+        $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+        if ($userLang === 'English') {
+            $answer = "👤 **System User & Active Session Overview:**\n\n";
+
+            if ($currUser) {
+                $answer .= "🔑 **Currently Active Logged In Session:**\n"
+                    . "  - 🆔 **User ID:** **`#" . $currUser['id'] . "`**\n"
+                    . "  - 👤 **Name:** **" . $currUser['name'] . "**\n"
+                    . "  - 🛡️ **Role:** **" . strtoupper($currUser['role']) . "**\n"
+                    . "  - 📧 **Email:** `" . $currUser['email'] . "`\n"
+                    . "  - ⏰ **Last Session Activity:** `" . $currUser['updated_at'] . "`\n\n";
+            }
+
+            $answer .= "👥 **Registered Active System Users (" . count($allUsers) . " Users):**\n\n";
+
+            foreach ($allUsers as $u) {
+                $timeStr = date('d M Y, h:i A', strtotime($u['updated_at']));
+                $answer .= "• **User ID `#" . $u['id'] . "`: " . $u['name'] . "** (Role: `" . strtoupper($u['role']) . "`)\n"
+                    . "  - ⏰ **Last Activity / Login:** `" . $timeStr . "`\n\n";
+            }
+
+            $answer .= "👉 [Click here to open User Management Page]({$baseUrl}/modules/hr_management/users/index.php)";
+        } elseif ($userLang === 'Hindi') {
+            $answer = "👤 **सिस्टम उपयोगकर्ता और सक्रिय सत्र विवरण:**\n\n";
+
+            if ($currUser) {
+                $answer .= "🔑 **वर्तमान लॉग-इन सत्र:**\n"
+                    . "  - 🆔 **उपयोगकर्ता आईडी (User ID):** **`#" . $currUser['id'] . "`**\n"
+                    . "  - 👤 **नाम:** **" . $currUser['name'] . "**\n"
+                    . "  - 🛡️ **रोल:** **" . strtoupper($currUser['role']) . "**\n"
+                    . "  - ⏰ **अंतिम गतिविधि समय:** `" . $currUser['updated_at'] . "`\n\n";
+            }
+
+            $answer .= "👥 **पंजीकृत सक्रिय उपयोगकर्ता सूची (" . count($allUsers) . " उपयोगकर्ता):**\n\n";
+
+            foreach ($allUsers as $u) {
+                $answer .= "• **यूजर आईडी `#" . $u['id'] . "`: " . $u['name'] . "** (रोल: `" . strtoupper($u['role']) . "`)\n"
+                    . "  - ⏰ **अंतिम गतिविधि:** `" . $u['updated_at'] . "`\n\n";
+            }
+
+            $answer .= "👉 [उपयोगकर्ता प्रबंधन पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/hr_management/users/index.php)";
+        } else {
+            $answer = "👤 **সিস্টেম ইউজার ও অ্যাক্টিভ লগইন সেশন সামারি:**\n\n";
+
+            if ($currUser) {
+                $answer .= "🔑 **বর্তমানে সক্রিয় লগইন সেশন ইউজার:**\n"
+                    . "  - 🆔 **ইউজার আইডেন্টিটি (User ID):** **`#" . $currUser['id'] . "`**\n"
+                    . "  - 👤 **নাম (Name):** **" . $currUser['name'] . "**\n"
+                    . "  - 🛡️ **রোল (Role):** **" . strtoupper($currUser['role']) . "**\n"
+                    . "  - 📧 **ইমেইল (Email):** `" . $currUser['email'] . "`\n"
+                    . "  - ⏰ **সর্বশেষ অ্যাক্টিভিটি / লগইন সময়:** `" . $currUser['updated_at'] . "`\n\n";
+            }
+
+            $answer .= "👥 **সিস্টেমে নিবন্ধিত অ্যাক্টিভ ইউজারদের তালিকা (" . count($allUsers) . "জন ইউজার):**\n\n";
+
+            foreach ($allUsers as $u) {
+                $timeStr = date('d M Y, h:i A', strtotime($u['updated_at']));
+                $answer .= "• **ইউজার আইডি `#" . $u['id'] . "`: " . $u['name'] . "** (রোল: `" . strtoupper($u['role']) . "`)\n"
+                    . "  - ⏰ **সর্বশেষ অ্যাক্টিভিটি / লগইন:** `" . $timeStr . "`\n\n";
+            }
+
+            $answer .= "👉 [ইউজার ম্যানেজমেন্ট পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/hr_management/users/index.php)";
+        }
+
+        $navUrl = null;
+        if (strpos($p, 'open') !== false || strpos($p, 'page') !== false || strpos($p, 'go to') !== false || strpos($p, 'khul') !== false || strpos($p, 'khol') !== false) {
+            $navUrl = $baseUrl . '/modules/hr_management/users/index.php';
+        }
+
+        return [
+            'tool_used' => $toolName,
+            'total_count' => count($allUsers),
+            'total_meters' => 0,
+            'filtered_type' => '',
+            'is_company_list' => false,
+            'direct_answer' => $answer,
+            'nav_url' => $navUrl,
+            'data' => []
+        ];
+    } elseif (strpos($p, 'mixed') !== false || strpos($p, 'extra pool') !== false || strpos($p, 'repack') !== false || strpos($p, 'মিক্সড') !== false || strpos($p, 'এক্সট্রা') !== false) {
+
+        $toolName = 'Mixed Item Inventory Master Tool';
+
+        $cntRes = $db->query("SELECT COUNT(*) as cnt, IFNULL(SUM(quantity),0) as total_extra FROM finished_goods_stock WHERE category IN ('pos_paper_roll','one_ply','two_ply','barcode','printing_roll','printing_label')");
+        $sumRow = $cntRes ? $cntRes->fetch_assoc() : [];
+        $totalItems = (int)($sumRow['cnt'] ?? 0);
+        $totalExtraQty = (float)($sumRow['total_extra'] ?? 0);
+
+        $assignRes = $db->query("SELECT COUNT(*) as cnt FROM mixed_item_assignments WHERE status = 'pending'");
+        $pendingAssign = $assignRes ? (int)($assignRes->fetch_assoc()['cnt'] ?? 0) : 0;
+
+        $rows = $db->query("SELECT id, category, sub_type, item_name, item_code, size, quantity, unit, batch_no, date, remarks FROM finished_goods_stock WHERE category IN ('pos_paper_roll','one_ply','two_ply','barcode','printing_roll','printing_label') ORDER BY id DESC LIMIT 15")->fetch_all(MYSQLI_ASSOC);
+
+        $userLang = detect_language($prompt);
+        $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+        if ($userLang === 'English') {
+            $answer = "🔀 **Mixed Item & Extra Production Pool — Live Inventory Summary:**\n\n"
+                . "📊 **Pool Metrics Summary:**\n"
+                . "  - Total Extra Pool Batches: **" . number_format($totalItems) . " Items**\n"
+                . "  - Total Extra Stock Quantity: **" . number_format($totalExtraQty) . " PCS / Rolls**\n"
+                . "  - Pending Handover Assignments: **" . number_format($pendingAssign) . " Assignments** (Target: Packing / Planning / Repack)\n\n"
+                . "🔀 **Active Mixed Extra Items Grid:**\n\n";
+
+            foreach ($rows as $idx => $r) {
+                $answer .= "• **Extra Item " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Mixed Item') . "`** (ID: **{$r['id']}** | Category: **" . strtoupper($r['category']) . "**)\n"
+                    . "  - 📐 **Size & Spec:** **" . ($r['size'] ?: 'N/A') . "**\n"
+                    . "  - 🔢 **Extra Quantity:** **" . number_format((float)$r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
+                    . "  - 🏷️ **Batch / Job No:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
+            }
+
+            $answer .= "👉 [Click here to open Mixed Item Inventory Page]({$baseUrl}/modules/inventory/mixed-item/index.php)";
+        } elseif ($userLang === 'Hindi') {
+            $answer = "🔀 **मिक्सड आइटम और एक्स्ट्रा प्रोडक्शन पूल — लाइव इन्वेंटरी सारांश:**\n\n"
+                . "📊 **पूल सारांश:**\n"
+                . "  - कुल एक्स्ट्रा पूल बैच: **" . number_format($totalItems) . " आइटम**\n"
+                . "  - कुल एक्स्ट्रा स्टॉक मात्रा: **" . number_format($totalExtraQty) . " पीस**\n"
+                . "  - पेंडिंग हैंडओवर असाइनमेंट: **" . number_format($pendingAssign) . " असाइनमेंट**\n\n"
+                . "🔀 **एक्टिव मिक्सड आइटम ग्रिड:**\n\n";
+
+            foreach ($rows as $idx => $r) {
+                $answer .= "• **आइटम " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Mixed Item') . "`** (ID: **{$r['id']}**)\n"
+                    . "  - 📐 **साइज़:** **" . ($r['size'] ?: 'N/A') . "**\n"
+                    . "  - 🔢 **एक्स्ट्रा मात्रा:** **" . number_format((float)$r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
+                    . "  - 🏷️ **बैच नंबर:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
+            }
+
+            $answer .= "👉 [मिक्सड आइटम पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/inventory/mixed-item/index.php)";
+        } else {
+            $answer = "🔀 **মিক্সড আইটেম ও এক্সট্রা প্রোডাকশন পুল — লাইভ ইনভেন্টরি সামারি:**\n\n"
+                . "📊 **পূল ম্যাট্রিক্স সামারি:**\n"
+                . "  - সর্বমোট এক্সট্রা পুল ব্যাচ: **" . number_format($totalItems) . "টি আইটেম**\n"
+                . "  - সর্বমোট এক্সট্রা স্টক কোয়ান্টিটি: **" . number_format($totalExtraQty) . "টি পিস/লেবেল**\n"
+                . "  - পেন্ডিং হ্যান্ডওভার অ্যাসাইনমেন্ট: **" . number_format($pendingAssign) . "টি অ্যাসাইনমেন্ট** (টার্গেট: প্যাকিং / প্ল্যানিং / রিপ্যাক)\n\n"
+                . "🔀 **অ্যাক্টিভ মিক্সড এক্সট্রা আইটেম গ্রিড:**\n\n";
+
+            foreach ($rows as $idx => $r) {
+                $answer .= "• **এক্সট্রা আইটেম " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Mixed Item') . "`** (ID: **{$r['id']}** | ক্যাটাগরি: **" . strtoupper($r['category']) . "**)\n"
+                    . "  - 📐 **সাইজ ও স্পেক:** **" . ($r['size'] ?: 'N/A') . "**\n"
+                    . "  - 🔢 **এক্সট্রা কোয়ান্টিটি:** **" . number_format((float)$r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
+                    . "  - 🏷️ **ব্যাচ / জব নম্বর:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
+            }
+
+            $answer .= "👉 [মিক্সড আইটেম পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/inventory/mixed-item/index.php)";
+        }
+
+        $navUrl = null;
+        if (strpos($p, 'open') !== false || strpos($p, 'page') !== false || strpos($p, 'go to') !== false || strpos($p, 'khul') !== false || strpos($p, 'khol') !== false) {
+            $navUrl = $baseUrl . '/modules/inventory/mixed-item/index.php';
+        }
+
+        return [
+            'tool_used' => $toolName,
+            'total_count' => $totalItems,
+            'total_meters' => 0,
+            'filtered_type' => '',
+            'is_company_list' => false,
+            'direct_answer' => $answer,
+            'nav_url' => $navUrl,
+            'data' => []
+        ];
     }
+
 
 
     // 4. Live Production Floor Intent Matcher
 
-    if (strpos($p, 'live') !== false || strpos($p, 'floor') !== false || strpos($p, 'stage') !== false || strpos($p, 'next department') !== false || strpos($p, 'journey') !== false) {
+    if (strpos($p, 'live') !== false || strpos($p, 'floor') !== false || strpos($p, 'stage') !== false || strpos($p, 'next department') !== false || strpos($p, 'journey') !== false || strpos($p, 'current job') !== false || strpos($p, 'running job') !== false || strpos($p, 'লাইভ') !== false || strpos($p, 'ফ্লোর') !== false) {
         $toolName = 'Live Production Floor Pipeline Tool';
         
+        $liveStopwords = ['what', 'is', 'the', 'status', 'of', 'current', 'job', 'jobs', 'running', 'live', 'floor', 'show', 'tell', 'me', 'details', 'for', 'in', 'page', 'kholo', 'khul', 'open', 'go', 'to', 'dekhao', 'dekaw', 'batao'];
+        $pWords = preg_split('/\s+/', strtolower($prompt));
+        $terms = [];
+        foreach ($pWords as $w) {
+            $wClean = trim(preg_replace('/[^a-z0-9\/]/', '', $w));
+            if ($wClean !== '' && !in_array($wClean, $liveStopwords, true) && strlen($wClean) >= 2) {
+                $terms[] = $wClean;
+            }
+        }
+        $searchKey = implode(' ', $terms);
+
         $sql = "SELECT p.id as planning_id, p.job_no as planning_no, p.job_name, p.status as planning_status, p.priority, p.created_at as planning_date,
                        j.id as job_id, j.job_no, j.job_type, j.department, j.status as job_status, j.created_at as job_date
                 FROM planning p
                 LEFT JOIN jobs j ON j.planning_id = p.id AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')
-                WHERE p.deleted_at IS NULL
-                ORDER BY p.id DESC, j.id ASC";
+                WHERE p.deleted_at IS NULL";
+
+        if ($searchKey !== '') {
+            $sql .= " AND (p.job_name LIKE '%" . $db->real_escape_string($searchKey) . "%' OR p.job_no LIKE '%" . $db->real_escape_string($searchKey) . "%' OR j.job_no LIKE '%" . $db->real_escape_string($searchKey) . "%')";
+        }
+
+        $sql .= " ORDER BY p.id DESC, j.id ASC LIMIT 25";
 
         $res = $db->query($sql);
         $rows = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
+
 
         $grouped = [];
         foreach ($rows as $r) {
