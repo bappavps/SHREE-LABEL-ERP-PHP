@@ -1358,9 +1358,10 @@ try {
             }
             }
 
-            // 5. Handle remainder — gets next sequential letter (same as slit children)
+            // 5. Handle remainder — gets next sequential letter/number (same as slit children)
+            $remainderLength = $pl - $allocationUsedLength;
             if ($remainderWidth > 0.5 && $remainderAction === 'STOCK') {
-                // Use next letter after last batch child for remainder
+                // Use next letter after last batch child for width remainder
                 $remIdx = $batchChildIdx;
                 $remSuffix = getNextSuffix('WIDTH', $remIdx);
                 $remRollNo = $parentRollNo . '-' . $remSuffix;
@@ -1432,6 +1433,77 @@ try {
                     'wastage'      => round($remainderWidth, 2),
                     'remarks'      => 'Remainder roll',
                     'is_remainder' => true,
+                ];
+            } elseif ($remainderLength > 0.5 && $remainderAction === 'STOCK') {
+                // Use next number after last batch child for length remainder
+                $remIdx = $batchChildIdx;
+                $remSuffix = getNextSuffix('LENGTH', $remIdx);
+                $remRollNo = $parentRollNo . '-' . $remSuffix;
+                $chkStmt = $db->prepare("SELECT id FROM paper_stock WHERE roll_no = ?");
+                $chkStmt->bind_param('s', $remRollNo);
+                $chkStmt->execute();
+                while ($chkStmt->get_result()->num_rows > 0 && $remIdx < 200) {
+                    $remIdx++;
+                    $remSuffix = getNextSuffix('LENGTH', $remIdx);
+                    $remRollNo = $parentRollNo . '-' . $remSuffix;
+                    $chkStmt->bind_param('s', $remRollNo);
+                    $chkStmt->execute();
+                }
+
+                $remPaperType = (string)($parent['paper_type'] ?? '');
+                $remCompany   = (string)($parent['company'] ?? '');
+                $remGsm       = (float)($parent['gsm'] ?? 0);
+                $remWeightKg  = (float)($parent['weight_kg'] ?? 0);
+                $remPRate     = (float)($parent['purchase_rate'] ?? 0);
+                $remWidth     = $pw;
+                $remSqm       = ($remWidth / 1000) * $remainderLength;
+                $remLotBatch  = (string)($parent['lot_batch_no'] ?? '');
+
+                $insRem = $db->prepare("INSERT INTO paper_stock (roll_no, paper_type, company, width_mm, length_mtr, gsm, weight_kg, purchase_rate, sqm, lot_batch_no, parent_roll_no, source_batch_id, source_allocation_id, status, date_received, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Stock', CURDATE(), ?)");
+                $insRem->bind_param('sssddddddssiii',
+                    $remRollNo, $remPaperType, $remCompany,
+                    $remWidth, $remainderLength, $remGsm, $remWeightKg, $remPRate,
+                    $remSqm, $remLotBatch, $parentRollNo, $batchId, $allocationId, $userId
+                );
+                $insRem->execute();
+
+                $isRem    = 1;
+                $remQty   = 1;
+                $remDest  = 'STOCK';
+                $remMode  = 'LENGTH';
+                $emptyStr = '';
+                $entryStmt->bind_param('issddissisiissssi',
+                    $batchId, $parentRollNo, $remRollNo,
+                    $remWidth, $remainderLength, $remQty,
+                    $remMode, $remDest,
+                    $allocationPlanningId, $allocationPlanNo, $allocationId, $allocationSequence, $allocationDepartmentRoute,
+                    $emptyStr, $emptyStr, $emptyStr,
+                    $isRem
+                );
+                $entryStmt->execute();
+
+                $childRolls[] = [
+                    'roll_no'      => $remRollNo,
+                    'parent_roll_no' => $parentRollNo,
+                    'width'        => $remWidth,
+                    'length'       => $remainderLength,
+                    'mode'         => 'LENGTH',
+                    'dest'         => 'STOCK',
+                    'status'       => 'Stock',
+                    'planning_id' => $allocationPlanningId,
+                    'plan_no' => $allocationPlanNo,
+                    'allocation_id' => $allocationId,
+                    'allocation_sequence' => $allocationSequence,
+                    'department_route' => $allocationDepartmentRoute,
+                    'job_no'       => '',
+                    'job_name'     => '',
+                    'company'      => $remCompany,
+                    'paper_type'   => $remPaperType,
+                    'gsm'          => $remGsm,
+                    'weight_kg'    => $remWeightKg,
+                    'sqm'          => round($remSqm, 2),
+                    'wastage'      => 0,
+                    'remarks'      => 'Length Remainder',
                 ];
             } elseif ($remainderWidth > 0.5 && $remainderAction === 'ADJUST') {
                 // Distribute remainder evenly across child rolls — update their widths

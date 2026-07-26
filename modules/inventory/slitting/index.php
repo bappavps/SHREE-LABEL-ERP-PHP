@@ -1388,17 +1388,32 @@ const SLT = (() => {
       }
     });
 
-    // Remainder roll preview — uses next sequential letter (e.g., D after A,B,C)
-    let totalUsed = 0;
-    cfg.runs.forEach(r => { totalUsed += (parseFloat(r.width) || 0) * (parseInt(r.qty) || 1); });
+    // Remainder roll preview — width or length remainder
+    let totalUsedWidth = 0;
+    let maxUsedLength = 0;
+    let hasLengthRun = false;
+    cfg.runs.forEach(r => {
+      const w = parseFloat(r.width) || 0;
+      const l = parseFloat(r.length) || 0;
+      const q = parseInt(r.qty) || 1;
+      totalUsedWidth += w * q;
+      if (l > 0) {
+        maxUsedLength = Math.max(maxUsedLength, l * q);
+        if (parentLength > 0 && l < parentLength) hasLengthRun = true;
+      }
+    });
     const roll = loadedRolls.find(r => r.roll_no === rollNo);
     const pw = roll ? parseFloat(roll.width_mm) : 0;
-    const rem = pw - totalUsed;
-    if (rem > 0.5 && cfg.remainderAction === 'STOCK') {
+    const remW = pw - totalUsedWidth;
+    if (remW > 0.5 && cfg.remainderAction === 'STOCK') {
       let remSuffix = String.fromCharCode(65 + (widthIdx % 26));
       const remCycle = Math.floor(widthIdx / 26);
       if (remCycle > 0) remSuffix += remCycle;
-      names.push({name: rollNo + '-' + remSuffix, width: rem.toFixed(2), mode: 'WIDTH', dest: 'STOCK', isRemainder: true});
+      names.push({name: rollNo + '-' + remSuffix, width: remW.toFixed(2), mode: 'WIDTH', dest: 'STOCK', isRemainder: true});
+    } else if (hasLengthRun && parentLength - maxUsedLength > 0.5 && cfg.remainderAction === 'STOCK') {
+      const remL = parentLength - maxUsedLength;
+      const remSuffix = String(lengthIdx + 1);
+      names.push({name: rollNo + '-' + remSuffix, width: pw.toFixed(2), length: remL.toFixed(2), mode: 'LENGTH', dest: 'STOCK', isRemainder: true});
     }
 
     return names;

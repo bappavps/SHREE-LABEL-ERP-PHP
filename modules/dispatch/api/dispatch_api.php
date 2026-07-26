@@ -18,14 +18,16 @@ if (!isset($_SESSION['user_id'])) {
 
 $db = getDB();
 
-function ds_json(int $status, array $payload): void {
+function ds_json(int $status, array $payload): void
+{
     http_response_code($status);
     echo json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-function ds_clean($value, int $max = 255): string {
-    $text = trim(strip_tags((string)$value));
+function ds_clean($value, int $max = 255): string
+{
+    $text = trim(strip_tags((string) $value));
     $text = preg_replace('/[\x00-\x1F\x7F]/u', '', $text) ?? '';
     if ($max > 0 && strlen($text) > $max) {
         $text = substr($text, 0, $max);
@@ -33,7 +35,8 @@ function ds_clean($value, int $max = 255): string {
     return $text;
 }
 
-function ds_has_column(mysqli $db, string $table, string $column): bool {
+function ds_has_column(mysqli $db, string $table, string $column): bool
+{
     $tableSafe = $db->real_escape_string($table);
     $columnSafe = $db->real_escape_string($column);
     $sql = "SHOW COLUMNS FROM `{$tableSafe}` LIKE '{$columnSafe}'";
@@ -41,10 +44,11 @@ function ds_has_column(mysqli $db, string $table, string $column): bool {
     if (!$res) {
         return false;
     }
-    return (bool)$res->fetch_assoc();
+    return (bool) $res->fetch_assoc();
 }
 
-function ds_require_dispatch_access(): void {
+function ds_require_dispatch_access(): void
+{
     if (isAdmin()) {
         return;
     }
@@ -54,23 +58,26 @@ function ds_require_dispatch_access(): void {
     ds_json(403, ['ok' => false, 'error' => 'Permission denied for dispatch module.']);
 }
 
-function ds_decimal($value, int $precision = 3): float {
+function ds_decimal($value, int $precision = 3): float
+{
     if ($value === null || $value === '') {
         return 0.0;
     }
-    return round((float)$value, $precision);
+    return round((float) $value, $precision);
 }
 
-function ds_truthy($value): bool {
-    $raw = strtolower(trim((string)$value));
+function ds_truthy($value): bool
+{
+    $raw = strtolower(trim((string) $value));
     return in_array($raw, ['1', 'true', 'yes', 'on'], true);
 }
 
-function ds_dispatch_qty_mismatches(mysqli $db, array $entryIds = [], string $whereSql = ''): array {
+function ds_dispatch_qty_mismatches(mysqli $db, array $entryIds = [], string $whereSql = ''): array
+{
     $filters = [];
     if (!empty($entryIds)) {
         $safeIds = array_values(array_filter(array_map(static function ($id) {
-            return (int)$id;
+            return (int) $id;
         }, $entryIds), static function ($id) {
             return $id > 0;
         }));
@@ -100,24 +107,26 @@ function ds_dispatch_qty_mismatches(mysqli $db, array $entryIds = [], string $wh
     if ($res) {
         while ($row = $res->fetch_assoc()) {
             $rows[] = $row;
-            error_log('Dispatch qty mismatch: dispatch_id=' . (string)($row['dispatch_id'] ?? '')
-                . ' entry_qty=' . (string)($row['dispatch_qty'] ?? '0')
-                . ' items_qty=' . (string)($row['item_qty'] ?? '0'));
+            error_log('Dispatch qty mismatch: dispatch_id=' . (string) ($row['dispatch_id'] ?? '')
+                . ' entry_qty=' . (string) ($row['dispatch_qty'] ?? '0')
+                . ' items_qty=' . (string) ($row['item_qty'] ?? '0'));
         }
     }
 
     return $rows;
 }
 
-function ds_assert_dispatch_qty_match(mysqli $db, array $entryIds = []): void {
+function ds_assert_dispatch_qty_match(mysqli $db, array $entryIds = []): void
+{
     $mismatches = ds_dispatch_qty_mismatches($db, $entryIds);
     if (!empty($mismatches)) {
         $first = $mismatches[0];
-        throw new RuntimeException('Dispatch quantity integrity check failed for ' . (string)($first['dispatch_id'] ?? 'dispatch entry') . '.');
+        throw new RuntimeException('Dispatch quantity integrity check failed for ' . (string) ($first['dispatch_id'] ?? 'dispatch entry') . '.');
     }
 }
 
-function ds_finished_goods_category_source_expr(mysqli $db, string $stockAlias, string $entryAlias = 'de'): string {
+function ds_finished_goods_category_source_expr(mysqli $db, string $stockAlias, string $entryAlias = 'de'): string
+{
     $parts = [];
     foreach (['item_category', 'item_type', 'tab_name', 'category', 'sub_type', 'item_name'] as $column) {
         if (ds_has_column($db, 'finished_goods_stock', $column)) {
@@ -129,7 +138,8 @@ function ds_finished_goods_category_source_expr(mysqli $db, string $stockAlias, 
     return "LOWER(REPLACE(REPLACE(REPLACE(CONCAT_WS('', " . implode(', ', $parts) . "), ' ', ''), '_', ''), '-', ''))";
 }
 
-function ds_dispatch_category_bucket_case(string $sourceExpr): string {
+function ds_dispatch_category_bucket_case(string $sourceExpr): string
+{
     return "CASE
         WHEN {$sourceExpr} LIKE '%pospaperroll%' OR {$sourceExpr} LIKE '%paperroll%' OR {$sourceExpr} LIKE '%posroll%' OR {$sourceExpr} LIKE 'pos%' THEN 'pos_paper_roll'
         WHEN {$sourceExpr} LIKE '%1ply%' OR {$sourceExpr} LIKE '%oneply%' THEN 'one_ply'
@@ -143,8 +153,9 @@ function ds_dispatch_category_bucket_case(string $sourceExpr): string {
     END";
 }
 
-function ds_date($value): ?string {
-    $raw = trim((string)$value);
+function ds_date($value): ?string
+{
+    $raw = trim((string) $value);
     if ($raw === '') {
         return null;
     }
@@ -164,7 +175,8 @@ function ds_date($value): ?string {
     return date('Y-m-d', $ts);
 }
 
-function ds_get_payload(): array {
+function ds_get_payload(): array
+{
     $payload = $_POST;
     if (!empty($payload)) {
         return $payload;
@@ -179,7 +191,8 @@ function ds_get_payload(): array {
     return is_array($decoded) ? $decoded : [];
 }
 
-function ds_ensure_tables(mysqli $db): void {
+function ds_ensure_tables(mysqli $db): void
+{
     $finishedStockSql = "CREATE TABLE IF NOT EXISTS finished_goods_stock (
         id INT UNSIGNED NOT NULL AUTO_INCREMENT,
         category VARCHAR(60) NOT NULL,
@@ -301,7 +314,8 @@ function ds_ensure_tables(mysqli $db): void {
     }
 }
 
-function ds_already_dispatched_qty(mysqli $db, int $stockId): float {
+function ds_already_dispatched_qty(mysqli $db, int $stockId): float
+{
     $stmt = $db->prepare('SELECT COALESCE(SUM(deducted_qty),0) AS dispatched_qty FROM finished_goods_dispatch_log WHERE stock_id = ?');
     if (!$stmt) {
         return 0.0;
@@ -309,10 +323,11 @@ function ds_already_dispatched_qty(mysqli $db, int $stockId): float {
     $stmt->bind_param('i', $stockId);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
-    return (float)($row['dispatched_qty'] ?? 0);
+    return (float) ($row['dispatched_qty'] ?? 0);
 }
 
-function ds_next_dispatch_id(mysqli $db): string {
+function ds_next_dispatch_id(mysqli $db): string
+{
     $prefix = 'DIS-' . date('Ym') . '-';
     $like = $prefix . '%';
     $stmt = $db->prepare('SELECT dispatch_id FROM dispatch_entries WHERE dispatch_id LIKE ? ORDER BY id DESC LIMIT 1');
@@ -326,14 +341,15 @@ function ds_next_dispatch_id(mysqli $db): string {
         return $prefix . '0001';
     }
 
-    $last = (string)$row['dispatch_id'];
+    $last = (string) $row['dispatch_id'];
     $parts = explode('-', $last);
-    $seq = isset($parts[2]) ? (int)$parts[2] : 0;
+    $seq = isset($parts[2]) ? (int) $parts[2] : 0;
     $seq++;
-    return $prefix . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+    return $prefix . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
 }
 
-function ds_get_stock_row(mysqli $db, int $stockId): ?array {
+function ds_get_stock_row(mysqli $db, int $stockId): ?array
+{
     $stmt = $db->prepare('SELECT id, category, item_name, item_code, size, batch_no, unit, quantity, remarks FROM finished_goods_stock WHERE id = ? LIMIT 1');
     if (!$stmt) {
         return null;
@@ -344,8 +360,9 @@ function ds_get_stock_row(mysqli $db, int $stockId): ?array {
     return $row ?: null;
 }
 
-function ds_parse_remarks_extra($remarks): array {
-    $raw = trim((string)$remarks);
+function ds_parse_remarks_extra($remarks): array
+{
+    $raw = trim((string) $remarks);
     if ($raw === '' || $raw[0] !== '{') {
         return [];
     }
@@ -357,12 +374,13 @@ function ds_parse_remarks_extra($remarks): array {
     return is_array($extra) ? $extra : [];
 }
 
-function ds_pick_extra(array $extra, array $keys): string {
+function ds_pick_extra(array $extra, array $keys): string
+{
     foreach ($keys as $k) {
         if (!array_key_exists($k, $extra)) {
             continue;
         }
-        $v = trim((string)$extra[$k]);
+        $v = trim((string) $extra[$k]);
         if ($v !== '') {
             return $v;
         }
@@ -370,9 +388,10 @@ function ds_pick_extra(array $extra, array $keys): string {
     return '';
 }
 
-function ds_carton_ratio_for_stock(array $stockRow): float {
+function ds_carton_ratio_for_stock(array $stockRow): float
+{
     $extra = ds_parse_remarks_extra($stockRow['remarks'] ?? '');
-    $category = strtolower(trim((string)($stockRow['category'] ?? '')));
+    $category = strtolower(trim((string) ($stockRow['category'] ?? '')));
     if ($category === 'barcode') {
         $directQtyPerCarton = ds_decimal(ds_pick_extra($extra, ['qty_per_carton', 'pcs_per_carton', 'per_carton_qty']));
         if ($directQtyPerCarton > 0) {
@@ -391,9 +410,10 @@ function ds_carton_ratio_for_stock(array $stockRow): float {
     return ds_decimal(ds_pick_extra($extra, ['per_carton', 'roll_per_cartoon', 'roll_per_carton']));
 }
 
-function ds_carton_count_for_stock(array $stockRow): float {
+function ds_carton_count_for_stock(array $stockRow): float
+{
     $extra = ds_parse_remarks_extra($stockRow['remarks'] ?? '');
-    $category = strtolower(trim((string)($stockRow['category'] ?? '')));
+    $category = strtolower(trim((string) ($stockRow['category'] ?? '')));
     $qty = max(0.0, ds_decimal($stockRow['quantity'] ?? 0));
 
     // For carton-based categories, prefer the STORED carton value from remarks
@@ -421,12 +441,13 @@ function ds_carton_count_for_stock(array $stockRow): float {
     return 0.0;
 }
 
-function ds_available_net_for_stock(array $row): float {
-    $qty = (float)($row['quantity'] ?? 0);
+function ds_available_net_for_stock(array $row): float
+{
+    $qty = (float) ($row['quantity'] ?? 0);
     if ($qty <= 0) {
         return 0.0;
     }
-    $category = strtolower(trim((string)($row['category'] ?? '')));
+    $category = strtolower(trim((string) ($row['category'] ?? '')));
     $supportsMixed = in_array($category, ['pos_paper_roll', 'one_ply', 'two_ply', 'barcode', 'printing_roll', 'printing_label'], true);
     if (!$supportsMixed) {
         return $qty;
@@ -435,19 +456,20 @@ function ds_available_net_for_stock(array $row): float {
     return max(0.0, round($qty - max(0.0, $mixedExtra), 3));
 }
 
-function ds_mixed_extra_for_stock(array $row): float {
-    $qty = (float)($row['quantity'] ?? 0);
+function ds_mixed_extra_for_stock(array $row): float
+{
+    $qty = (float) ($row['quantity'] ?? 0);
     if ($qty <= 0) {
         return 0.0;
     }
-    $category = strtolower(trim((string)($row['category'] ?? '')));
+    $category = strtolower(trim((string) ($row['category'] ?? '')));
     $extra = ds_parse_remarks_extra($row['remarks'] ?? '');
 
-    $mixedEnabled = (string)($extra['mixed_enabled'] ?? '0') === '1';
+    $mixedEnabled = (string) ($extra['mixed_enabled'] ?? '0') === '1';
     $mixedExtra = 0.0;
 
     if ($category === 'barcode' || $category === 'printing_label') {
-        $rpc = (int)floor(ds_decimal(ds_pick_extra($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
+        $rpc = (int) floor(ds_decimal(ds_pick_extra($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton'])));
         $pcsPerRoll = ds_decimal(ds_pick_extra($extra, ['pcs_per_roll', 'pieces_per_roll', 'barcode_in_1_roll', 'qty_per_roll']));
 
         if ($mixedEnabled) {
@@ -459,11 +481,11 @@ function ds_mixed_extra_for_stock(array $row): float {
         } else {
             $totalRoll = ds_decimal(ds_pick_extra($extra, ['total_roll', 'total_rolls', 'total_roll_value']));
             if ($totalRoll <= 0 && $pcsPerRoll > 0 && $qty > 0) {
-                $totalRoll = (float)ceil($qty / $pcsPerRoll);
+                $totalRoll = (float) ceil($qty / $pcsPerRoll);
             }
             $extraRolls = 0.0;
             if ($rpc > 0 && $totalRoll > 0) {
-                $extraRolls = fmod($totalRoll, (float)$rpc);
+                $extraRolls = fmod($totalRoll, (float) $rpc);
             } elseif ($totalRoll > 0) {
                 $extraRolls = $totalRoll;
             }
@@ -483,7 +505,8 @@ function ds_mixed_extra_for_stock(array $row): float {
     return max(0.0, round($mixedExtra, 3));
 }
 
-function ds_parse_batch_items($raw): array {
+function ds_parse_batch_items($raw): array
+{
     if (is_string($raw)) {
         $raw = json_decode($raw, true);
     }
@@ -497,7 +520,7 @@ function ds_parse_batch_items($raw): array {
             continue;
         }
 
-        $itemId = (int)($entry['item_id'] ?? 0);
+        $itemId = (int) ($entry['item_id'] ?? 0);
         $batchNo = ds_clean($entry['batch_no'] ?? '', 120);
         $packingId = ds_clean($entry['packing_id'] ?? '', 120);
         $dispatchQty = ds_decimal($entry['dispatch_qty'] ?? 0);
@@ -519,7 +542,8 @@ function ds_parse_batch_items($raw): array {
     return $items;
 }
 
-function ds_get_item_batches(mysqli $db, string $itemName, string $packingId = ''): array {
+function ds_get_item_batches(mysqli $db, string $itemName, string $packingId = ''): array
+{
     if ($itemName === '') {
         return [];
     }
@@ -553,13 +577,14 @@ function ds_get_item_batches(mysqli $db, string $itemName, string $packingId = '
     return $normalizeRows($rows);
 }
 
-function ds_related_prefill_rows(mysqli $db, array $seedRow): array {
+function ds_related_prefill_rows(mysqli $db, array $seedRow): array
+{
     $rows = [];
     $seen = [];
 
-    $appendRows = static function(array $items) use (&$rows, &$seen): void {
+    $appendRows = static function (array $items) use (&$rows, &$seen): void {
         foreach ($items as $r) {
-            $id = (int)($r['id'] ?? 0);
+            $id = (int) ($r['id'] ?? 0);
             if ($id > 0) {
                 if (isset($seen[$id])) {
                     continue;
@@ -570,7 +595,7 @@ function ds_related_prefill_rows(mysqli $db, array $seedRow): array {
         }
     };
 
-    $seedId = (int)($seedRow['id'] ?? 0);
+    $seedId = (int) ($seedRow['id'] ?? 0);
     if ($seedId > 0) {
         $appendRows([$seedRow]);
     }
@@ -586,7 +611,7 @@ function ds_related_prefill_rows(mysqli $db, array $seedRow): array {
         }
     }
 
-    $category = strtolower(trim((string)($seedRow['category'] ?? '')));
+    $category = strtolower(trim((string) ($seedRow['category'] ?? '')));
     $jobNo = ds_clean($seedRow['batch_no'] ?? '', 120);
     if ($category === 'printing_label' && $jobNo !== '') {
         $stmtByJob = $db->prepare("SELECT id, category, quantity, remarks, batch_no, item_code FROM finished_goods_stock WHERE category = 'printing_label' AND batch_no = ? AND quantity > 0");
@@ -601,14 +626,15 @@ function ds_related_prefill_rows(mysqli $db, array $seedRow): array {
     return $rows;
 }
 
-function ds_prefill_totals_from_rows(array $rows): array {
+function ds_prefill_totals_from_rows(array $rows): array
+{
     $totalNet = 0.0;
     $totalRaw = 0.0;
     $totalCartons = 0.0;
     $totalMixed = 0.0;
 
     foreach ($rows as $sr) {
-        $totalRaw += (float)($sr['quantity'] ?? 0);
+        $totalRaw += (float) ($sr['quantity'] ?? 0);
         $totalNet += ds_available_net_for_stock($sr);
         $totalCartons += ds_carton_count_for_stock($sr);
         $totalMixed += ds_mixed_extra_for_stock($sr);
@@ -622,8 +648,9 @@ function ds_prefill_totals_from_rows(array $rows): array {
     ];
 }
 
-function ds_recalc_carton_in_remarks(float $newQty, string $remarks, string $category = ''): string {
-    $raw = trim((string)$remarks);
+function ds_recalc_carton_in_remarks(float $newQty, string $remarks, string $category = ''): string
+{
+    $raw = trim((string) $remarks);
     if ($raw === '' || $raw[0] !== '{') {
         return $remarks;
     }
@@ -636,13 +663,13 @@ function ds_recalc_carton_in_remarks(float $newQty, string $remarks, string $cat
     $extra = $parsed['extra'];
     $normalizedCategory = strtolower(trim($category));
     if ($normalizedCategory === '') {
-        $normalizedCategory = strtolower(trim((string)($extra['category'] ?? '')));
+        $normalizedCategory = strtolower(trim((string) ($extra['category'] ?? '')));
     }
 
     // Helper to pick first available key from extra
-    $pick = function($keys) use ($extra) {
+    $pick = function ($keys) use ($extra) {
         foreach ($keys as $k) {
-            if (array_key_exists($k, $extra) && trim((string)$extra[$k]) !== '') {
+            if (array_key_exists($k, $extra) && trim((string) $extra[$k]) !== '') {
                 return ds_decimal($extra[$k]);
             }
         }
@@ -658,8 +685,8 @@ function ds_recalc_carton_in_remarks(float $newQty, string $remarks, string $cat
         // Preserve the explicit extra rolls / loose pcs recorded at packing time.
         // A dispatch only removes full cartons, so the mixed-item pool must survive
         // recalculation instead of being collapsed into total_roll / loose_qty.
-        $prevExtraRolls = (float)($extra['extra_rolls'] ?? 0);
-        $prevLooseQty = (float)($extra['loose_qty'] ?? 0);
+        $prevExtraRolls = (float) ($extra['extra_rolls'] ?? 0);
+        $prevLooseQty = (float) ($extra['loose_qty'] ?? 0);
 
         if ($pcsPerRoll > 0) {
             $fullRolls = floor($newQty / $pcsPerRoll);
@@ -684,7 +711,7 @@ function ds_recalc_carton_in_remarks(float $newQty, string $remarks, string $cat
         }
     } else {
         $perCarton = $pick(['per_carton']);
-        $prevLooseQty = (float)($extra['loose_qty'] ?? 0);
+        $prevLooseQty = (float) ($extra['loose_qty'] ?? 0);
         if ($perCarton > 0) {
             $newCartonCount = floor($newQty / $perCarton);
             $extra['carton'] = $newCartonCount;
@@ -692,7 +719,7 @@ function ds_recalc_carton_in_remarks(float $newQty, string $remarks, string $cat
             if ($prevLooseQty > 0) {
                 $extra['loose_qty'] = $prevLooseQty;
             } else {
-                $extra['loose_qty'] = (float)fmod($newQty, $perCarton);
+                $extra['loose_qty'] = (float) fmod($newQty, $perCarton);
             }
         }
     }
@@ -701,7 +728,8 @@ function ds_recalc_carton_in_remarks(float $newQty, string $remarks, string $cat
     return json_encode($parsed, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 }
 
-function ds_adjust_stock(mysqli $db, int $stockId, float $deltaQty, string $referenceNo, string $reason, int $userId): array {
+function ds_adjust_stock(mysqli $db, int $stockId, float $deltaQty, string $referenceNo, string $reason, int $userId): array
+{
     if ($deltaQty == 0.0) {
         return ['ok' => true];
     }
@@ -718,9 +746,9 @@ function ds_adjust_stock(mysqli $db, int $stockId, float $deltaQty, string $refe
         return ['ok' => false, 'error' => 'Selected stock item not found.'];
     }
 
-    $current = (float)($row['quantity'] ?? 0);
-    $category = (string)($row['category'] ?? '');
-    $remarks = (string)($row['remarks'] ?? '');
+    $current = (float) ($row['quantity'] ?? 0);
+    $category = (string) ($row['category'] ?? '');
+    $remarks = (string) ($row['remarks'] ?? '');
     $alreadyDispatched = ds_already_dispatched_qty($db, $stockId);
     $totalProduction = round($current + $alreadyDispatched, 3);
     $available = round($totalProduction - $alreadyDispatched, 3);
@@ -777,7 +805,8 @@ function ds_adjust_stock(mysqli $db, int $stockId, float $deltaQty, string $refe
     ];
 }
 
-function ds_upsert_dispatch_items_table(mysqli $db): void {
+function ds_upsert_dispatch_items_table(mysqli $db): void
+{
     $sql = "CREATE TABLE IF NOT EXISTS dispatch_items (
         id INT UNSIGNED NOT NULL AUTO_INCREMENT,
         dispatch_id INT UNSIGNED NOT NULL,
@@ -802,7 +831,7 @@ ds_upsert_dispatch_items_table($db);
 ds_require_dispatch_access();
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-$action = trim((string)($_REQUEST['action'] ?? ''));
+$action = trim((string) ($_REQUEST['action'] ?? ''));
 
 if ($action === '') {
     ds_json(400, ['ok' => false, 'error' => 'Missing action.']);
@@ -815,14 +844,14 @@ if ($method === 'POST') {
     }
 }
 
-$userId = (int)($_SESSION['user_id'] ?? 0);
+$userId = (int) ($_SESSION['user_id'] ?? 0);
 
 if ($action === 'get_next_dispatch_id') {
     ds_json(200, ['ok' => true, 'dispatch_id' => ds_next_dispatch_id($db)]);
 }
 
 if ($action === 'prefill_stock') {
-    $stockId = (int)($_GET['item_id'] ?? 0);
+    $stockId = (int) ($_GET['item_id'] ?? 0);
     if ($stockId <= 0) {
         ds_json(400, ['ok' => false, 'error' => 'Invalid stock item id.']);
     }
@@ -841,8 +870,8 @@ if ($action === 'prefill_stock') {
 
     // Try to resolve client_name from planning table via item_name match or packing_id link
     $row['client_name'] = '';
-    $itemName = trim((string)($row['item_name'] ?? ''));
-    $itemCode = trim((string)($row['item_code'] ?? ''));
+    $itemName = trim((string) ($row['item_name'] ?? ''));
+    $itemCode = trim((string) ($row['item_code'] ?? ''));
     // 1) Try matching planning.job_name to item_name
     if ($itemName !== '') {
         $planStmt = $db->prepare("SELECT extra_data FROM planning WHERE job_name = ? AND deleted_at IS NULL ORDER BY id DESC LIMIT 1");
@@ -853,7 +882,7 @@ if ($action === 'prefill_stock') {
             if ($planRes && !empty($planRes['extra_data'])) {
                 $planExtra = json_decode($planRes['extra_data'], true);
                 if (is_array($planExtra) && !empty($planExtra['client_name'])) {
-                    $row['client_name'] = trim((string)$planExtra['client_name']);
+                    $row['client_name'] = trim((string) $planExtra['client_name']);
                 }
             }
             $planStmt->close();
@@ -865,7 +894,7 @@ if ($action === 'prefill_stock') {
         if (is_array($remarksData)) {
             $extraBlock = $remarksData['extra'] ?? [];
             if (is_array($extraBlock) && !empty($extraBlock['client_name'])) {
-                $row['client_name'] = trim((string)$extraBlock['client_name']);
+                $row['client_name'] = trim((string) $extraBlock['client_name']);
             }
         }
     }
@@ -880,7 +909,7 @@ if ($action === 'prefill_stock') {
             if ($planRes2 && !empty($planRes2['extra_data'])) {
                 $planExtra2 = json_decode($planRes2['extra_data'], true);
                 if (is_array($planExtra2) && !empty($planExtra2['client_name'])) {
-                    $row['client_name'] = trim((string)$planExtra2['client_name']);
+                    $row['client_name'] = trim((string) $planExtra2['client_name']);
                 }
             }
             $planStmt2->close();
@@ -891,7 +920,7 @@ if ($action === 'prefill_stock') {
 }
 
 if ($action === 'get_item_batches') {
-    $stockId = (int)($_GET['stock_id'] ?? 0);
+    $stockId = (int) ($_GET['stock_id'] ?? 0);
     $itemName = ds_clean($_GET['item_name'] ?? '', 255);
     $packingId = ds_clean($_GET['packing_id'] ?? '', 120);
 
@@ -916,7 +945,7 @@ if ($action === 'get_item_batches') {
 
 if ($action === 'search_packing_ids') {
     $query = ds_clean($_GET['q'] ?? '', 120);
-    $limit = (int)($_GET['limit'] ?? 25);
+    $limit = (int) ($_GET['limit'] ?? 25);
     if ($limit < 1) {
         $limit = 1;
     }
@@ -1005,11 +1034,11 @@ if ($action === 'save_dispatch') {
     }
 
     $payload = ds_get_payload();
-    $pk = (int)($payload['id'] ?? 0);
+    $pk = (int) ($payload['id'] ?? 0);
 
     $entryDate = ds_date($payload['entry_date'] ?? date('Y-m-d'));
     $clientName = ds_clean($payload['client_name'] ?? '', 255);
-    $finishedStockId = (int)($payload['finished_stock_id'] ?? 0);
+    $finishedStockId = (int) ($payload['finished_stock_id'] ?? 0);
     $itemName = ds_clean($payload['item_name'] ?? '', 255);
     $packingId = ds_clean($payload['packing_id'] ?? '', 120);
     $batchNo = ds_clean($payload['batch_no'] ?? '', 120);
@@ -1021,8 +1050,8 @@ if ($action === 'save_dispatch') {
     $unitNorm = strtoupper($unit);
 
     $invoiceNo = ds_clean($payload['invoice_no'] ?? '', 120);
-    $invoiceIdRaw = trim((string)($payload['invoice_id'] ?? ''));
-    $invoiceId = ($invoiceIdRaw === '' || !ctype_digit($invoiceIdRaw)) ? null : (int)$invoiceIdRaw;
+    $invoiceIdRaw = trim((string) ($payload['invoice_id'] ?? ''));
+    $invoiceId = ($invoiceIdRaw === '' || !ctype_digit($invoiceIdRaw)) ? null : (int) $invoiceIdRaw;
     $invoiceDate = ds_date($payload['invoice_date'] ?? '');
 
     $transportType = ds_clean($payload['transport_type'] ?? 'Transport', 60);
@@ -1039,7 +1068,7 @@ if ($action === 'save_dispatch') {
     $dispatchDate = ds_date($payload['dispatch_date'] ?? '');
     $expectedDeliveryDate = ds_date($payload['expected_delivery_date'] ?? '');
     $deliveryStatus = ds_clean($payload['delivery_status'] ?? 'Pending', 30);
-    $remarks = trim((string)($payload['remarks'] ?? ''));
+    $remarks = trim((string) ($payload['remarks'] ?? ''));
     $batchItems = ds_parse_batch_items($payload['batch_items'] ?? []);
 
     if (empty($batchItems) && $finishedStockId > 0 && $dispatchQty > 0) {
@@ -1076,7 +1105,7 @@ if ($action === 'save_dispatch') {
     $normalizedBatchItems = [];
     foreach ($batchItems as $bi) {
         $batchQtyInput = ds_decimal($bi['dispatch_qty'] ?? 0);
-        $itemId = (int)($bi['item_id'] ?? 0);
+        $itemId = (int) ($bi['item_id'] ?? 0);
         if ($itemId <= 0 || $batchQtyInput <= 0) {
             ds_json(422, ['ok' => false, 'error' => 'Invalid batch dispatch payload.']);
         }
@@ -1097,14 +1126,14 @@ if ($action === 'save_dispatch') {
             $cartons = $ratio > 0 ? ($batchQtyInput / $ratio) : 0;
             $cartons = round($cartons, 2);
             if ($pk <= 0 && $cartons > $availableCartons) {
-                ds_json(422, ['ok' => false, 'error' => 'Dispatch carton (' . $cartons . ') cannot exceed available cartons (' . $availableCartons . ').', 'batch_no' => (string)($bi['batch_no'] ?? '')]);
+                ds_json(422, ['ok' => false, 'error' => 'Dispatch carton (' . $cartons . ') cannot exceed available cartons (' . $availableCartons . ').', 'batch_no' => (string) ($bi['batch_no'] ?? '')]);
             }
             $batchQty = ds_decimal($cartons * $ratio);
         }
 
-        $currentAvail = (float)($stockRow['quantity'] ?? 0);
+        $currentAvail = (float) ($stockRow['quantity'] ?? 0);
         if ($pk <= 0 && $batchQty > $currentAvail) {
-            ds_json(422, ['ok' => false, 'error' => 'Batch dispatch quantity exceeds available stock.', 'batch_no' => (string)($bi['batch_no'] ?? '')]);
+            ds_json(422, ['ok' => false, 'error' => 'Batch dispatch quantity exceeds available stock.', 'batch_no' => (string) ($bi['batch_no'] ?? '')]);
         }
 
         if ($firstStockId === 0) {
@@ -1160,7 +1189,7 @@ if ($action === 'save_dispatch') {
         }
 
         if ($extraDispatchQtyInput > 0) {
-            $stockCategory = strtolower(trim((string)($stock['category'] ?? '')));
+            $stockCategory = strtolower(trim((string) ($stock['category'] ?? '')));
             if ($stockCategory !== 'printing_label') {
                 ds_json(422, ['ok' => false, 'error' => 'Extra mixed dispatch is allowed only for Printing Label category.']);
             }
@@ -1189,7 +1218,7 @@ if ($action === 'save_dispatch') {
                     if ($remainingExtra <= 0) {
                         break;
                     }
-                    $mixedRowId = (int)($mixedRow['id'] ?? 0);
+                    $mixedRowId = (int) ($mixedRow['id'] ?? 0);
                     if ($mixedRowId <= 0) {
                         continue;
                     }
@@ -1204,7 +1233,7 @@ if ($action === 'save_dispatch') {
 
                     $batchItems[] = [
                         'item_id' => $mixedRowId,
-                        'batch_no' => ds_clean(((string)($mixedRow['batch_no'] ?? $batchNo)) . ' [Mixed Extra]', 120),
+                        'batch_no' => ds_clean(((string) ($mixedRow['batch_no'] ?? $batchNo)) . ' [Mixed Extra]', 120),
                         'packing_id' => ds_clean($mixedRow['item_code'] ?? $packingId, 120),
                         'dispatch_qty' => $take,
                         'available_qty' => $rowMixedAvail,
@@ -1246,9 +1275,9 @@ if ($action === 'save_dispatch') {
                 throw new RuntimeException('Dispatch entry not found.');
             }
 
-            $oldStockId = (int)($existing['finished_stock_id'] ?? 0);
-            $oldQty = (float)($existing['dispatch_qty'] ?? 0);
-            $dispatchId = (string)($existing['dispatch_id'] ?? '');
+            $oldStockId = (int) ($existing['finished_stock_id'] ?? 0);
+            $oldQty = (float) ($existing['dispatch_qty'] ?? 0);
+            $dispatchId = (string) ($existing['dispatch_id'] ?? '');
 
             $oldBatchStmt = $db->prepare('SELECT item_id, dispatch_qty, batch_no FROM dispatch_items WHERE dispatch_id = ? ORDER BY id ASC');
             if (!$oldBatchStmt) {
@@ -1261,19 +1290,19 @@ if ($action === 'save_dispatch') {
             if (!empty($oldBatchRows)) {
                 foreach ($oldBatchRows as $oldBatch) {
                     $revertQty = ds_decimal($oldBatch['dispatch_qty'] ?? 0);
-                    $revertItemId = (int)($oldBatch['item_id'] ?? 0);
+                    $revertItemId = (int) ($oldBatch['item_id'] ?? 0);
                     if ($revertItemId <= 0 || $revertQty <= 0) {
                         continue;
                     }
                     $revert = ds_adjust_stock($db, $revertItemId, -$revertQty, $dispatchId, 'Dispatch update rollback (batch: ' . ds_clean($oldBatch['batch_no'] ?? '', 120) . ')', $userId);
                     if (empty($revert['ok'])) {
-                        throw new RuntimeException((string)($revert['error'] ?? 'Unable to rollback previous stock deduction.'));
+                        throw new RuntimeException((string) ($revert['error'] ?? 'Unable to rollback previous stock deduction.'));
                     }
                 }
             } elseif ($oldStockId > 0 && $oldQty > 0) {
                 $revert = ds_adjust_stock($db, $oldStockId, -$oldQty, $dispatchId, 'Dispatch update rollback', $userId);
                 if (empty($revert['ok'])) {
-                    throw new RuntimeException((string)($revert['error'] ?? 'Unable to rollback previous stock deduction.'));
+                    throw new RuntimeException((string) ($revert['error'] ?? 'Unable to rollback previous stock deduction.'));
                 }
             }
 
@@ -1292,14 +1321,14 @@ if ($action === 'save_dispatch') {
             }
 
             foreach ($batchItems as $batchItem) {
-                $biItemId = (int)$batchItem['item_id'];
+                $biItemId = (int) $batchItem['item_id'];
                 $biQty = ds_decimal($batchItem['dispatch_qty'] ?? 0);
                 $biBatchNo = ds_clean($batchItem['batch_no'] ?? '', 120);
                 $biPackingId = ds_clean($batchItem['packing_id'] ?? '', 120);
 
                 $deduct = ds_adjust_stock($db, $biItemId, $biQty, $dispatchId, 'Dispatch quantity deducted (batch: ' . $biBatchNo . ')', $userId);
                 if (empty($deduct['ok'])) {
-                    throw new RuntimeException((string)($deduct['error'] ?? 'Unable to deduct stock for dispatch update.'));
+                    throw new RuntimeException((string) ($deduct['error'] ?? 'Unable to deduct stock for dispatch update.'));
                 }
 
                 $insertBatch->bind_param('iissd', $pk, $biItemId, $biBatchNo, $biPackingId, $biQty);
@@ -1358,12 +1387,12 @@ if ($action === 'save_dispatch') {
         $dispatchId = ds_next_dispatch_id($db);
 
         foreach ($batchItems as $batchItem) {
-            $biItemId = (int)$batchItem['item_id'];
+            $biItemId = (int) $batchItem['item_id'];
             $biQty = ds_decimal($batchItem['dispatch_qty'] ?? 0);
             $biBatchNo = ds_clean($batchItem['batch_no'] ?? '', 120);
             $deduct = ds_adjust_stock($db, $biItemId, $biQty, $dispatchId, 'Dispatch quantity deducted (batch: ' . $biBatchNo . ')', $userId);
             if (empty($deduct['ok'])) {
-                throw new RuntimeException((string)($deduct['error'] ?? 'Unable to deduct stock for dispatch.'));
+                throw new RuntimeException((string) ($deduct['error'] ?? 'Unable to deduct stock for dispatch.'));
             }
         }
 
@@ -1411,14 +1440,14 @@ if ($action === 'save_dispatch') {
             throw new RuntimeException('Dispatch insert failed.');
         }
 
-        $id = (int)$insert->insert_id;
+        $id = (int) $insert->insert_id;
 
         $insertBatch = $db->prepare('INSERT INTO dispatch_items (dispatch_id, item_id, batch_no, packing_id, dispatch_qty) VALUES (?, ?, ?, ?, ?)');
         if (!$insertBatch) {
             throw new RuntimeException('Unable to prepare dispatch batch insert.');
         }
         foreach ($batchItems as $batchItem) {
-            $biItemId = (int)$batchItem['item_id'];
+            $biItemId = (int) $batchItem['item_id'];
             $biQty = ds_decimal($batchItem['dispatch_qty'] ?? 0);
             $biBatchNo = ds_clean($batchItem['batch_no'] ?? '', 120);
             $biPackingId = ds_clean($batchItem['packing_id'] ?? '', 120);
@@ -1439,15 +1468,16 @@ if ($action === 'save_dispatch') {
     }
 }
 
-function ds_enrich_dispatch_row(mysqli $db, array $row): array {
-    $stockId = (int)($row['finished_stock_id'] ?? 0);
+function ds_enrich_dispatch_row(mysqli $db, array $row): array
+{
+    $stockId = (int) ($row['finished_stock_id'] ?? 0);
     $row['dispatched_cartons'] = 0;
     $row['carton_ratio'] = 0;
     $row['freight_per_carton'] = 0.0;
     $row['freight_per_unit'] = 0.0;
 
-    $dispatchQty = (float)($row['dispatch_qty'] ?? 0);
-    $transportCost = (float)($row['transport_cost'] ?? 0);
+    $dispatchQty = (float) ($row['dispatch_qty'] ?? 0);
+    $transportCost = (float) ($row['transport_cost'] ?? 0);
 
     if ($dispatchQty > 0 && $transportCost > 0) {
         $row['freight_per_unit'] = round($transportCost / $dispatchQty, 4);
@@ -1471,7 +1501,7 @@ function ds_enrich_dispatch_row(mysqli $db, array $row): array {
         $ratio = ds_carton_ratio_for_stock($stock);
         $row['carton_ratio'] = $ratio;
         if ($ratio > 0 && $dispatchQty > 0) {
-            $disCartons = (int)floor($dispatchQty / $ratio);
+            $disCartons = (int) floor($dispatchQty / $ratio);
             $row['dispatched_cartons'] = $disCartons;
             if ($disCartons > 0 && $transportCost > 0) {
                 $row['freight_per_carton'] = round($transportCost / $disCartons, 2);
@@ -1484,7 +1514,7 @@ function ds_enrich_dispatch_row(mysqli $db, array $row): array {
 if ($action === 'get_ready_queue') {
     $search = ds_clean($_GET['search'] ?? '', 255);
     $client = ds_clean($_GET['client'] ?? '', 255);
-    $limit = max(1, min(200, (int)($_GET['limit'] ?? 100)));
+    $limit = max(1, min(200, (int) ($_GET['limit'] ?? 100)));
 
     $sql = "SELECT fs.id, fs.category, fs.item_name, fs.item_code AS packing_id, fs.batch_no, fs.size, fs.unit, fs.quantity AS available_qty, fs.remarks, fs.date AS stock_date
             FROM finished_goods_stock fs
@@ -1498,14 +1528,18 @@ if ($action === 'get_ready_queue') {
         $where[] = "(fs.remarks LIKE ? OR fs.item_name LIKE ?)";
         $types .= 'ss';
         $p = '%' . $client . '%';
-        $params[] = $p; $params[] = $p;
+        $params[] = $p;
+        $params[] = $p;
     }
 
     if ($search !== '') {
         $where[] = "(fs.item_code LIKE ? OR fs.item_name LIKE ? OR fs.batch_no LIKE ? OR fs.size LIKE ?)";
         $types .= 'ssss';
         $p = '%' . $search . '%';
-        $params[] = $p; $params[] = $p; $params[] = $p; $params[] = $p;
+        $params[] = $p;
+        $params[] = $p;
+        $params[] = $p;
+        $params[] = $p;
     }
 
     if (!empty($where)) {
@@ -1528,10 +1562,10 @@ if ($action === 'get_ready_queue') {
         $clientFromExtra = ds_pick_extra($extra, ['client_name', 'client', 'customer']);
         $resolvedClient = $clientFromExtra !== '' ? $clientFromExtra : 'General Client';
 
-        $dispatchedSoFar = ds_already_dispatched_qty($db, (int)$r['id']);
-        $storedQty = (float)($r['available_qty'] ?? 0);
-        $looseQty = (float)($extra['loose_qty'] ?? 0);
-        $totalPhysicalOutput = (float)($extra['after_packing_qty'] ?? 0);
+        $dispatchedSoFar = ds_already_dispatched_qty($db, (int) $r['id']);
+        $storedQty = (float) ($r['available_qty'] ?? 0);
+        $looseQty = (float) ($extra['loose_qty'] ?? 0);
+        $totalPhysicalOutput = (float) ($extra['after_packing_qty'] ?? 0);
         if ($totalPhysicalOutput <= 0) {
             $totalPhysicalOutput = $storedQty + $dispatchedSoFar + $looseQty;
         }
@@ -1541,7 +1575,7 @@ if ($action === 'get_ready_queue') {
         $statusBadge = $dispatchedSoFar <= 0 ? 'Not Dispatched' : ($storedQty <= 0 ? 'Full Dispatch' : 'Partial Dispatch');
 
         $queue[] = [
-            'id' => (int)$r['id'],
+            'id' => (int) $r['id'],
             'packing_id' => $r['packing_id'],
             'item_name' => $r['item_name'],
             'batch_no' => $r['batch_no'],
@@ -1636,7 +1670,7 @@ if ($action === 'list_dispatches') {
     unset($r);
 
     $rowIds = array_values(array_filter(array_map(static function ($row) {
-        return (int)($row['id'] ?? 0);
+        return (int) ($row['id'] ?? 0);
     }, $rows)));
     $mismatches = ds_dispatch_qty_mismatches($db, $rowIds);
     if ($strict && !empty($mismatches)) {
@@ -1647,7 +1681,7 @@ if ($action === 'list_dispatches') {
 }
 
 if ($action === 'get_dispatch') {
-    $id = (int)($_GET['id'] ?? 0);
+    $id = (int) ($_GET['id'] ?? 0);
     if ($id <= 0) {
         ds_json(400, ['ok' => false, 'error' => 'Invalid dispatch id.']);
     }
@@ -1676,8 +1710,8 @@ if ($action === 'get_dispatch') {
     if (!$batchStmt) {
         ds_json(500, ['ok' => false, 'error' => 'Unable to load dispatch batch rows.']);
     }
-    $fallbackItemName = (string)($row['item_name'] ?? '');
-    $fallbackUnit = (string)($row['unit'] ?? 'PCS');
+    $fallbackItemName = (string) ($row['item_name'] ?? '');
+    $fallbackUnit = (string) ($row['unit'] ?? 'PCS');
     $batchStmt->bind_param('ssi', $fallbackItemName, $fallbackUnit, $id);
     $batchStmt->execute();
     $batchRows = $batchStmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -1697,7 +1731,7 @@ if ($action === 'delete_dispatch') {
     }
 
     $payload = ds_get_payload();
-    $id = (int)($payload['id'] ?? 0);
+    $id = (int) ($payload['id'] ?? 0);
     if ($id <= 0) {
         ds_json(400, ['ok' => false, 'error' => 'Invalid dispatch id.']);
     }
@@ -1715,8 +1749,8 @@ if ($action === 'delete_dispatch') {
             throw new RuntimeException('Dispatch entry not found.');
         }
 
-        $dispatchId = (string)($entry['dispatch_id'] ?? '');
-        $oldStockId = (int)($entry['finished_stock_id'] ?? 0);
+        $dispatchId = (string) ($entry['dispatch_id'] ?? '');
+        $oldStockId = (int) ($entry['finished_stock_id'] ?? 0);
         $oldQty = ds_decimal($entry['dispatch_qty'] ?? 0);
 
         $batchStmt = $db->prepare('SELECT item_id, dispatch_qty, batch_no FROM dispatch_items WHERE dispatch_id = ? ORDER BY id ASC');
@@ -1729,7 +1763,7 @@ if ($action === 'delete_dispatch') {
 
         if (!empty($batchRows)) {
             foreach ($batchRows as $batchRow) {
-                $revertItemId = (int)($batchRow['item_id'] ?? 0);
+                $revertItemId = (int) ($batchRow['item_id'] ?? 0);
                 $revertQty = ds_decimal($batchRow['dispatch_qty'] ?? 0);
                 if ($revertItemId <= 0 || $revertQty <= 0) {
                     continue;
@@ -1743,7 +1777,7 @@ if ($action === 'delete_dispatch') {
                     if ($stockExists) {
                         $revert = ds_adjust_stock($db, $revertItemId, -$revertQty, $dispatchId, 'Dispatch delete rollback (batch: ' . ds_clean($batchRow['batch_no'] ?? '', 120) . ')', $userId);
                         if (empty($revert['ok'])) {
-                            error_log('Stock adjustment warning during delete: ' . (string)($revert['error'] ?? 'Unknown error'));
+                            error_log('Stock adjustment warning during delete: ' . (string) ($revert['error'] ?? 'Unknown error'));
                         }
                     } else {
                         error_log('Stock item ' . $revertItemId . ' not found during dispatch delete rollback - skipping stock adjustment');
@@ -1760,7 +1794,7 @@ if ($action === 'delete_dispatch') {
                 if ($stockExists) {
                     $revert = ds_adjust_stock($db, $oldStockId, -$oldQty, $dispatchId, 'Dispatch delete rollback', $userId);
                     if (empty($revert['ok'])) {
-                        error_log('Stock adjustment warning during delete: ' . (string)($revert['error'] ?? 'Unknown error'));
+                        error_log('Stock adjustment warning during delete: ' . (string) ($revert['error'] ?? 'Unknown error'));
                     }
                 } else {
                     error_log('Stock item ' . $oldStockId . ' not found during dispatch delete rollback - skipping stock adjustment');
@@ -1796,17 +1830,17 @@ if ($action === 'delete_dispatch') {
 
 if ($action === 'update_dispatch_status') {
     $payload = ds_get_payload();
-    $id = (int)($payload['id'] ?? 0);
+    $id = (int) ($payload['id'] ?? 0);
     $status = ds_clean($payload['status'] ?? '', 50);
-    
+
     if ($id <= 0) {
         ds_json(400, ['ok' => false, 'error' => 'Invalid dispatch id.']);
     }
-    
+
     if (!in_array($status, ['Pending', 'In Transit', 'Delivered'], true)) {
         ds_json(400, ['ok' => false, 'error' => 'Invalid delivery status.']);
     }
-    
+
     // Check if dispatch exists
     $stmt = $db->prepare('SELECT id, dispatch_id, delivery_status, item_name, batch_no FROM dispatch_entries WHERE id = ? LIMIT 1');
     if (!$stmt) {
@@ -1818,7 +1852,7 @@ if ($action === 'update_dispatch_status') {
     if (!$existing) {
         ds_json(404, ['ok' => false, 'error' => 'Dispatch entry not found.']);
     }
-    
+
     // Update status
     $updateStmt = $db->prepare('UPDATE dispatch_entries SET delivery_status = ? WHERE id = ?');
     if (!$updateStmt) {
@@ -1856,10 +1890,10 @@ if ($action === 'update_dispatch_status') {
             $id,
             $message,
             'info',
-            '/modules/dispatch/index.php?dispatch_entry=' . rawurlencode((string)$id) . '&open=view&highlight=1'
+            '/modules/dispatch/index.php?dispatch_entry=' . rawurlencode((string) $id) . '&open=view&highlight=1'
         );
     }
-    
+
     ds_json(200, ['ok' => true, 'message' => 'Dispatch status updated successfully.']);
 }
 
@@ -1930,13 +1964,13 @@ if ($action === 'dispatch_reports') {
     }
 
     while ($row = $detailRes->fetch_assoc()) {
-        $row['dispatch_qty'] = (float)($row['dispatch_qty'] ?? 0);
-        $row['transport_cost'] = round((float)($row['transport_cost'] ?? 0), 2);
+        $row['dispatch_qty'] = (float) ($row['dispatch_qty'] ?? 0);
+        $row['transport_cost'] = round((float) ($row['transport_cost'] ?? 0), 2);
         $rows[] = $row;
 
-        $clientName = trim((string)($row['client_name'] ?? ''));
-        $itemName = trim((string)($row['item_name'] ?? ''));
-        $transportName = trim((string)($row['transport_type'] ?? ''));
+        $clientName = trim((string) ($row['client_name'] ?? ''));
+        $itemName = trim((string) ($row['item_name'] ?? ''));
+        $transportName = trim((string) ($row['transport_type'] ?? ''));
 
         if ($clientName !== '') {
             $clientOptions[$clientName] = true;
@@ -1961,7 +1995,7 @@ if ($action === 'dispatch_reports') {
         $aRank = $transportOrder[$a] ?? 99;
         $bRank = $transportOrder[$b] ?? 99;
         if ($aRank === $bRank) {
-            return strcasecmp((string)$a, (string)$b);
+            return strcasecmp((string) $a, (string) $b);
         }
         return $aRank <=> $bRank;
     });
@@ -2025,7 +2059,7 @@ if ($action === 'dashboard_stats') {
             COALESCE(SUM(CASE WHEN de.delivery_status IN ('Pending','In Transit') THEN 1 ELSE 0 END),0) AS pending_transit,
             COALESCE(SUM(CASE WHEN de.delivery_status = 'Delivered' THEN 1 ELSE 0 END),0) AS delivered
          FROM dispatch_entries de"
-         . $whereSql
+        . $whereSql
     );
     $kpiEntry = $kpiEntryRes ? ($kpiEntryRes->fetch_assoc() ?: []) : [];
 
@@ -2033,7 +2067,7 @@ if ($action === 'dashboard_stats') {
         "SELECT COALESCE(SUM(di.dispatch_qty),0) AS total_qty
          FROM dispatch_items di
          INNER JOIN dispatch_entries de ON de.id = di.dispatch_id"
-         . $whereSql
+        . $whereSql
     );
     $kpiQty = $kpiQtyRes ? ($kpiQtyRes->fetch_assoc() ?: []) : [];
 
@@ -2041,7 +2075,7 @@ if ($action === 'dashboard_stats') {
         "SELECT DATE_FORMAT(COALESCE(de.dispatch_date, de.entry_date),'%Y-%m') AS ym, COALESCE(SUM(di.dispatch_qty),0) AS qty
          FROM dispatch_entries de
          LEFT JOIN dispatch_items di ON di.dispatch_id = de.id"
-         . $whereSql .
+        . $whereSql .
         " GROUP BY ym ORDER BY ym ASC"
     );
     if ($monthlyRes) {
@@ -2054,7 +2088,7 @@ if ($action === 'dashboard_stats') {
         "SELECT de.client_name, COALESCE(SUM(di.dispatch_qty),0) AS qty
          FROM dispatch_entries de
          LEFT JOIN dispatch_items di ON di.dispatch_id = de.id"
-         . $whereSql .
+        . $whereSql .
         " GROUP BY de.client_name ORDER BY qty DESC LIMIT 8"
     );
     if ($clientRes) {
@@ -2066,7 +2100,7 @@ if ($action === 'dashboard_stats') {
     $costRes = $db->query(
         "SELECT DATE_FORMAT(COALESCE(de.dispatch_date, de.entry_date),'%Y-%m') AS ym, COALESCE(SUM(de.transport_cost),0) AS cost
          FROM dispatch_entries de"
-         . $whereSql .
+        . $whereSql .
         " GROUP BY ym ORDER BY ym ASC"
     );
     if ($costRes) {
@@ -2078,7 +2112,7 @@ if ($action === 'dashboard_stats') {
     $transportCostRes = $db->query(
         "SELECT de.transport_type, COALESCE(SUM(de.transport_cost),0) AS cost
          FROM dispatch_entries de"
-         . $whereSql .
+        . $whereSql .
         " GROUP BY de.transport_type ORDER BY cost DESC"
     );
     if ($transportCostRes) {
@@ -2109,9 +2143,9 @@ if ($action === 'dashboard_stats') {
     );
     if ($categorySummaryRes) {
         while ($r = $categorySummaryRes->fetch_assoc()) {
-            $categorySummaryRows[(string)($r['category_key'] ?? 'other')] = [
-                'dispatch_count' => (int)($r['dispatch_count'] ?? 0),
-                'qty' => (float)($r['qty'] ?? 0),
+            $categorySummaryRows[(string) ($r['category_key'] ?? 'other')] = [
+                'dispatch_count' => (int) ($r['dispatch_count'] ?? 0),
+                'qty' => (float) ($r['qty'] ?? 0),
             ];
         }
     }
@@ -2145,18 +2179,18 @@ if ($action === 'dashboard_stats') {
     );
     if ($itemWiseRes) {
         while ($r = $itemWiseRes->fetch_assoc()) {
-            $catKey = (string)($r['category_key'] ?? 'unmapped');
+            $catKey = (string) ($r['category_key'] ?? 'unmapped');
             if (!isset($itemWiseByCategory[$catKey])) {
                 $itemWiseByCategory[$catKey] = [
                     'category_key' => $catKey,
-                    'category_label' => (string)($r['category_label'] ?? 'Unmapped'),
+                    'category_label' => (string) ($r['category_label'] ?? 'Unmapped'),
                     'items' => [],
                 ];
                 $categoryTotals[$catKey] = 0.0;
             }
-            $qty = (float)($r['qty'] ?? 0);
+            $qty = (float) ($r['qty'] ?? 0);
             $itemWiseByCategory[$catKey]['items'][] = [
-                'item_name' => (string)($r['item_name'] ?? 'Unknown Item'),
+                'item_name' => (string) ($r['item_name'] ?? 'Unknown Item'),
                 'qty' => $qty,
             ];
             $categoryTotals[$catKey] += $qty;
@@ -2164,18 +2198,18 @@ if ($action === 'dashboard_stats') {
     }
 
     foreach ($itemWiseByCategory as $catKey => &$catPayload) {
-        $catPayload['total_qty'] = (float)($categoryTotals[$catKey] ?? 0);
+        $catPayload['total_qty'] = (float) ($categoryTotals[$catKey] ?? 0);
     }
     unset($catPayload);
 
     ds_json(200, [
         'ok' => true,
         'kpi' => [
-            'total_dispatches' => (int)($kpiEntry['total_dispatches'] ?? 0),
-            'total_qty' => (float)($kpiQty['total_qty'] ?? 0),
-            'total_cost' => (float)($kpiEntry['total_cost'] ?? 0),
-            'pending_transit' => (int)($kpiEntry['pending_transit'] ?? 0),
-            'delivered' => (int)($kpiEntry['delivered'] ?? 0),
+            'total_dispatches' => (int) ($kpiEntry['total_dispatches'] ?? 0),
+            'total_qty' => (float) ($kpiQty['total_qty'] ?? 0),
+            'total_cost' => (float) ($kpiEntry['total_cost'] ?? 0),
+            'pending_transit' => (int) ($kpiEntry['pending_transit'] ?? 0),
+            'delivered' => (int) ($kpiEntry['delivered'] ?? 0),
         ],
         'monthly_qty' => $monthlyRows,
         'client_qty' => $clientRows,
