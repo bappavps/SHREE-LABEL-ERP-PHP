@@ -78,9 +78,10 @@ function extract_search_numbers(string $prompt): array {
  */
 function check_navigation_intent(string $prompt): ?array {
     $p = strtolower($prompt);
-    $isNav = strpos($p, 'open') !== false || strpos($p, 'go to') !== false || strpos($p, 'page') !== false || strpos($p, 'tab') !== false || strpos($p, 'khul') !== false || strpos($p, 'khol') !== false;
+    $isExplicitNav = (strpos($p, 'open') !== false || strpos($p, 'go to') !== false || strpos($p, 'khul') !== false || strpos($p, 'khol') !== false || strpos($p, 'navigate') !== false) && strpos($p, 'check') === false && strpos($p, 'stage') === false && strpos($p, 'status') === false && strpos($p, 'detail') === false && strpos($p, 'time') === false;
     
-    if (!$isNav) return null;
+    if (!$isExplicitNav) return null;
+
 
     $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
 
@@ -214,7 +215,8 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array {
 
     $promptLower = mb_strtolower(trim($prompt), 'UTF-8');
     preg_match_all('/[\x{0980}-\x{09FF}\x{0900}-\x{097F}\w]+/u', $promptLower, $promptMatches);
-    $kbStopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'show', 'details', 'this', 'the', 'a', 'an', 'what', 'where', 'how', 'when', 'who', 'list', 'get', 'for', 'about', 'with', 'from'];
+    $kbStopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'show', 'details', 'this', 'the', 'a', 'an', 'what', 'where', 'how', 'when', 'who', 'list', 'get', 'for', 'about', 'with', 'from', 'ache', 'koto', 'kotogulo', 'ki', 'kon', 'jabe', 'hote', 'ar', 'er', 'diye', 'giye', 'ache', 'hobe', 'হবে', 'আছে', 'কত', 'কতগুলো', 'কি', 'কী', 'কোন', 'দিয়ে', 'গিয়ে'];
+
     $promptTokens = array_filter($promptMatches[0] ?? [], function($t) use ($kbStopwords) {
         return mb_strlen($t) >= 3 && !in_array($t, $kbStopwords, true);
     });
@@ -244,11 +246,16 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array {
             foreach ($kwTokens as $kwToken) {
                 foreach ($promptTokens as $pToken) {
                     if ($pToken === $kwToken) {
-                        $matchScore += 1.5;
-                    } elseif (mb_strlen($pToken) >= 4 && mb_strlen($kwToken) >= 4) {
-                        $lev = levenshtein($pToken, $kwToken);
-                        if ($lev <= 2) {
-                            $matchScore += 1.2;
+                        $matchScore += 2.0;
+                    } else {
+                        $pLen = mb_strlen($pToken);
+                        $kLen = mb_strlen($kwToken);
+                        if ($pLen >= 4 && $kLen >= 4) {
+                            $lev = levenshtein($pToken, $kwToken);
+                            // Strictly require lev <= 1 for short words (4-5 chars) to avoid false matches like "cross" vs "cost"
+                            if (($pLen <= 5 && $lev <= 1) || ($pLen >= 6 && $lev <= 2)) {
+                                $matchScore += 1.5;
+                            }
                         }
                     }
                 }
@@ -261,11 +268,12 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array {
         }
     }
 
-    if ($bestMatch && $bestScore >= 1.5) {
+    if ($bestMatch && $bestScore >= 2.0) {
         return $bestMatch;
     }
     return null;
 }
+
 
 
 
@@ -714,7 +722,219 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
         ];
     }
 
+    // 3. Live Production Floor Intent Matcher
+    if (strpos($p, 'live') !== false || strpos($p, 'floor') !== false || strpos($p, 'stage') !== false || strpos($p, 'next department') !== false || strpos($p, 'journey') !== false) {
+        $toolName = 'Live Production Floor Pipeline Tool';
+        
+        $sql = "SELECT p.id as planning_id, p.job_no as planning_no, p.job_name, p.status as planning_status, p.priority, p.created_at as planning_date,
+                       j.id as job_id, j.job_no, j.job_type, j.department, j.status as job_status, j.created_at as job_date
+                FROM planning p
+                LEFT JOIN jobs j ON j.planning_id = p.id AND (j.deleted_at IS NULL OR j.deleted_at = '0000-00-00 00:00:00')
+                WHERE p.deleted_at IS NULL
+                ORDER BY p.id DESC, j.id ASC";
+
+        $res = $db->query($sql);
+        $rows = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
+
+        $grouped = [];
+        foreach ($rows as $r) {
+            $pid = $r['planning_id'];
+            if (!isset($grouped[$pid])) {
+                $grouped[$pid] = [
+                    'planning_id' => $pid,
+                    'planning_no' => $r['planning_no'],
+                    'job_name' => $r['job_name'],
+                    'priority' => $r['priority'] ?: 'Normal',
+                    'planning_status' => $r['planning_status'] ?: 'Planning Stage',
+                    'planning_date' => $r['planning_date'],
+                    'departments' => []
+                ];
+            }
+            if (!empty($r['job_id'])) {
+                $grouped[$pid]['departments'][] = [
+                    'job_id' => $r['job_id'],
+                    'job_no' => $r['job_no'],
+                    'job_type' => $r['job_type'],
+                    'department' => $r['department'],
+                    'status' => $r['job_status'] ?: 'Queued',
+                    'created_at' => $r['job_date']
+                ];
+            }
+        }
+
+        $totalCount = count($grouped);
+        $userLang = detect_language($prompt);
+        $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+        if ($userLang === 'English') {
+            $answer = "🏭 **Live Production Floor — Job Journey & Multi-Department Pipeline Summary:**\n\n"
+                . "Found **{$totalCount} Master Jobs** moving across production departments:\n\n";
+
+            foreach ($grouped as $job) {
+                $answer .= "📋 **Master Job: `{$job['planning_no']}`** | **{$job['job_name']}** (Priority: `{$job['priority']}`)\n";
+                
+                $depts = $job['departments'];
+                if (empty($depts)) {
+                    $answer .= "  - ⏳ **Current Stage:** `Planning Stage` (Queued for departmental assignment)\n"
+                        . "  - ⏩ **Next Pipeline:** Jumbo Slitting ➔ Flexo Printing ➔ Label Slitting ➔ Packing ➔ Finished Goods\n"
+                        . "  - 📊 **Remaining Departments to Cross:** `4 Departments left`\n\n";
+                    continue;
+                }
+
+                $completed = [];
+                $current = null;
+                $upcoming = [];
+
+                foreach ($depts as $d) {
+                    $deptName = strtoupper(str_replace('_', ' ', $d['department']));
+                    $st = strtolower($d['status']);
+                    $timeStr = date('d M Y, h:i A', strtotime($d['created_at']));
+
+                    if ($st === 'completed' || $st === 'finished production' || $st === 'packing done') {
+                        $completed[] = "✅ **{$deptName}** (`{$d['job_no']}`): Finished at {$timeStr}";
+                    } elseif ($current === null) {
+                        $current = "⚡ **CURRENT DEPARTMENT:** `{$deptName}` (`{$d['job_no']}`) | Status: **{$d['status']}** (Entry Time: `{$timeStr}`)";
+                    } else {
+                        $upcoming[] = "⏩ **NEXT:** `{$deptName}` (`{$d['job_no']}`) | Status: `{$d['status']}`";
+                    }
+                }
+
+                $hasPacking = false;
+                foreach ($depts as $d) {
+                    if (strpos(strtolower($d['department']), 'pack') !== false) {
+                        $hasPacking = true;
+                        break;
+                    }
+                }
+                if (!$hasPacking) {
+                    $upcoming[] = "⏩ **NEXT:** `Packing & Packaging` (Pending release)";
+                }
+                $upcoming[] = "🏁 **FINAL:** `Finished Production Stock & Dispatch`";
+
+                $answer .= "  - " . ($current ?: "⚡ **CURRENT DEPARTMENT:** `Department Assignment in Progress`") . "\n";
+
+                if (!empty($completed)) {
+                    $answer .= "  - 🟢 **Completed Stages:** " . implode(' ➔ ', array_slice($completed, 0, 3)) . "\n";
+                }
+
+                $answer .= "  - ⏩ **Next Pipeline:** " . implode(' ➔ ', array_slice($upcoming, 0, 3)) . "\n";
+                $remCount = count($upcoming);
+                $answer .= "  - 📊 **Remaining Steps to Finished Production:** **`{$remCount} Departments / Stages left`**\n\n";
+            }
+
+            $answer .= "👉 [Click here to open full Live Production Floor page]({$baseUrl}/modules/live/index.php)";
+        } elseif ($userLang === 'Hindi') {
+            $answer = "🏭 **लाइव प्रोडक्शन फ्लोर — जॉब जर्नी और विभागीय स्थिति सारांश:**\n\n"
+                . "कुल **{$totalCount} मास्टर जॉब्स** विभिन्न विभागों से होकर गुजर रहे हैं:\n\n";
+
+            foreach ($grouped as $job) {
+                $answer .= "📋 **मास्टर जॉब: `{$job['planning_no']}`** | **{$job['job_name']}** (प्राथमिकता: `{$job['priority']}`)\n";
+                
+                $depts = $job['departments'];
+                if (empty($depts)) {
+                    $answer .= "  - ⏳ **वर्तमान चरण:** `प्लानिंग स्टेज`\n"
+                        . "  - 📊 **शेष विभाग (Remaining):** `4 विभाग बाकी हैं` (जंबो ➔ प्रिंटिंग ➔ स्लिटिंग ➔ पैकिंग ➔ फिनिश्ड)\n\n";
+                    continue;
+                }
+
+                $current = null;
+                $upcoming = [];
+
+                foreach ($depts as $d) {
+                    $deptName = strtoupper(str_replace('_', ' ', $d['department']));
+                    $st = strtolower($d['status']);
+                    $timeStr = date('d M Y, h:i A', strtotime($d['created_at']));
+
+                    if ($current === null && !in_array($st, ['completed', 'finished production', 'packing done'], true)) {
+                        $current = "⚡ **वर्तमान विभाग:** `{$deptName}` (`{$d['job_no']}`) | स्थिति: **{$d['status']}** (समय: `{$timeStr}`)";
+                    } else {
+                        $upcoming[] = "`{$deptName}`";
+                    }
+                }
+
+                $upcoming[] = "`पैकिंग`";
+                $upcoming[] = "`फिनिश्ड गुड्स स्टॉक`";
+
+                $answer .= "  - " . ($current ?: "⚡ **वर्तमान विभाग:** `प्रक्रिया जारी`") . "\n";
+                $answer .= "  - ⏩ **आगे का रास्ता (Next):** " . implode(' ➔ ', array_slice($upcoming, 0, 3)) . "\n";
+                $remCount = count($upcoming);
+                $answer .= "  - 📊 **फिनिश्ड प्रोडक्शन तक शेष विभाग:** **`{$remCount} विभाग पार करने बाकी हैं`**\n\n";
+            }
+
+            $answer .= "👉 [लाइव प्रोडक्शन फ्लोर पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/live/index.php)";
+        } else {
+            $answer = "🏭 **লাইভ প্রডাকশন ফ্লোর — জব জার্নি ও ডিপার্টমেন্টাল সামারি:**\n\n"
+                . "আপনার লাইভ প্রডাকশন ফ্লোরে মোট **{$totalCount}টি মাস্টার জব** বিভিন্ন ডিপার্টমেন্ট অতিক্রম করছে:\n\n";
+
+            foreach ($grouped as $job) {
+                $answer .= "📋 **মাস্টার জব: `{$job['planning_no']}`** | **{$job['job_name']}** (প্রায়োরিটি: `{$job['priority']}`)\n";
+                
+                $depts = $job['departments'];
+                if (empty($depts)) {
+                    $answer .= "  - ⏳ **বর্তমান স্টেজ:** `প্ল্যানিং স্টেজ` (ডিপার্টমেন্টে ছাড়ার অপেক্ষায়)\n"
+                        . "  - ⏩ **পরবর্তী ডিপার্টমেন্টসমূহ:** জাম্বো স্লিটিং ➔ ফ্লেক্সো প্রিন্টিং ➔ লেবেল স্লিটিং ➔ প্যাকিং ➔ ফিনিশড স্টক\n"
+                        . "  - 📊 **বাকি ডিপার্টমেন্ট:** `৪টি ডিপার্টমেন্ট ক্রস করতে হবে`\n\n";
+                    continue;
+                }
+
+                $completed = [];
+                $current = null;
+                $upcoming = [];
+
+                foreach ($depts as $d) {
+                    $deptName = strtoupper(str_replace('_', ' ', $d['department']));
+                    $st = strtolower($d['status']);
+                    $timeStr = date('d M Y, h:i A', strtotime($d['created_at']));
+
+                    if ($st === 'completed' || $st === 'finished production' || $st === 'packing done') {
+                        $completed[] = "✅ **{$deptName}** (`{$d['job_no']}`): Finished at {$timeStr}";
+                    } elseif ($current === null) {
+                        $current = "⚡ **বর্তমান ডিপার্টমেন্ট (NOW):** `{$deptName}` (`{$d['job_no']}`) | স্ট্যাটাস: **{$d['status']}** (এন্ট্রি সময়: `{$timeStr}`)";
+                    } else {
+                        $upcoming[] = "`{$deptName}` (`{$d['job_no']}`)";
+                    }
+                }
+
+                $hasPacking = false;
+                foreach ($depts as $d) {
+                    if (strpos(strtolower($d['department']), 'pack') !== false) {
+                        $hasPacking = true;
+                        break;
+                    }
+                }
+                if (!$hasPacking) {
+                    $upcoming[] = "`প্যাকিং ও প্যাকেজিং`";
+                }
+                $upcoming[] = "`ফিনিশড প্রডাকশন স্টক ও ডিসপ্যাচ`";
+
+                $answer .= "  - " . ($current ?: "⚡ **বর্তমান ডিপার্টমেন্ট (NOW):** `ডিপার্টমেন্টে এন্ট্রি প্রসেসিং`") . "\n";
+
+                if (!empty($completed)) {
+                    $answer .= "  - 🟢 **সম্পন্ন ডিপার্টমেন্ট:** " . implode(' ➔ ', array_slice($completed, 0, 3)) . "\n";
+                }
+
+                $answer .= "  - ⏩ **পরবর্তী ডিপার্টমেন্টসমূহ (NEXT):** " . implode(' ➔ ', array_slice($upcoming, 0, 3)) . "\n";
+                $remCount = count($upcoming);
+                $answer .= "  - 📊 **ফিনিশড প্রডাকশন হতে বাকি ডিপার্টমেন্ট:** **`আর {$remCount}টি ডিপার্টমেন্ট অতিক্রম করতে হবে`**\n\n";
+            }
+
+            $answer .= "👉 [লাইভ প্রডাকশন ফ্লোর পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/live/index.php)";
+        }
+
+        return [
+            'tool_used' => $toolName,
+            'total_count' => $totalCount,
+            'total_meters' => 0,
+            'filtered_type' => '',
+            'is_company_list' => false,
+            'direct_answer' => $answer,
+            'data' => []
+        ];
+    }
+
+
     if (strpos($p, 'plan') !== false || strpos($p, 'planning') !== false) {
+
         $toolName = 'Job Planning Board Tool';
         $cntRes = $db->query("SELECT COUNT(*) as cnt FROM planning WHERE deleted_at IS NULL");
         $totalCount = $cntRes ? (int)($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
