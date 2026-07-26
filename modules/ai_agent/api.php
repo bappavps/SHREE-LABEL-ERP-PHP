@@ -817,7 +817,112 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
             'nav_url' => $navUrl,
             'data' => []
         ];
+    } elseif (strpos($p, 'finished') !== false || strpos($p, 'fg stock') !== false || strpos($p, 'fg') !== false || strpos($p, 'packed label') !== false || strpos($p, 'packed stock') !== false || strpos($p, 'ফিনিশড') !== false || strpos($p, 'প্যাকড') !== false) {
+        $toolName = 'Finished Goods Stock Master Tool';
+
+        $sum = $db->query("SELECT 
+            COUNT(*) as total_items,
+            IFNULL(SUM(quantity),0) as total_qty,
+            IFNULL(SUM(dispatch_qty_total),0) as total_dispatch,
+            IFNULL(SUM(COALESCE(closing_stock, quantity - dispatch_qty_total)),0) as total_closing
+            FROM finished_goods_stock
+        ")->fetch_assoc();
+
+        $totalItems = (int)($sum['total_items'] ?? 0);
+        $totalQty = (float)($sum['total_qty'] ?? 0);
+        $totalDispatch = (float)($sum['total_dispatch'] ?? 0);
+        $totalClosing = (float)($sum['total_closing'] ?? 0);
+
+        $where = ["1=1"];
+        if (strpos($p, 'barcode') !== false) {
+            $where[] = "category = 'barcode'";
+        } elseif (strpos($p, 'print') !== false) {
+            $where[] = "category = 'printing_label'";
+        } elseif (strpos($p, 'pos') !== false) {
+            $where[] = "category = 'pos_paper_roll'";
+        } elseif (strpos($p, 'carton') !== false) {
+            $where[] = "category = 'carton'";
+        }
+
+        $whereSql = implode(' AND ', $where);
+        $rows = $db->query("SELECT id, category, item_name, item_code, size, quantity, dispatch_qty_total, COALESCE(closing_stock, quantity - dispatch_qty_total) as available_closing, unit, location, batch_no, date FROM finished_goods_stock WHERE {$whereSql} ORDER BY id DESC LIMIT 15")->fetch_all(MYSQLI_ASSOC);
+
+        $userLang = detect_language($prompt);
+        $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+        if ($userLang === 'English') {
+            $answer = "📦 **Finished Goods & Packed Label Stock — Live Inventory Summary:**\n\n"
+                . "📊 **Inventory Summary Metrics:**\n"
+                . "  - Total Finished Products/Batches: **" . number_format($totalItems) . " Items**\n"
+                . "  - Total Quantity Packed: **" . number_format($totalQty) . " PCS / Labels**\n"
+                . "  - Total Dispatched Quantity: **" . number_format($totalDispatch) . " PCS**\n"
+                . "  - Total Available Closing Stock: **" . number_format($totalClosing) . " PCS**\n\n"
+                . "📦 **Master Finished Stock Grid:**\n\n";
+
+            foreach ($rows as $idx => $r) {
+                $answer .= "• **Item " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Finished Product') . "`** (ID: **{$r['id']}** | Category: **" . strtoupper($r['category']) . "**)\n"
+                    . "  - 📐 **Size & Spec:** **" . ($r['size'] ?: 'N/A') . "**\n"
+                    . "  - 🔢 **Packed Quantity:** **" . number_format((float)$r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
+                    . "  - 🚚 **Dispatched:** **" . number_format((float)$r['dispatch_qty_total']) . " PCS** | Available Closing: **" . number_format((float)$r['available_closing']) . " PCS**\n"
+                    . "  - 🏷️ **Batch / Job No:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
+            }
+
+            $answer .= "👉 [Click here to open Finished Goods Page]({$baseUrl}/modules/inventory/finished/index.php)";
+        } elseif ($userLang === 'Hindi') {
+            $answer = "📦 **फिनिश्ड गुड्स और पैक्ड लेबल स्टॉक — लाइव इन्वेंटरी सारांश:**\n\n"
+                . "📊 **इन्वेंटरी सारांश:**\n"
+                . "  - कुल फिनिश्ड उत्पाद / बैच: **" . number_format($totalItems) . " आइटम**\n"
+                . "  - कुल पैक्ड मात्रा: **" . number_format($totalQty) . " पीस**\n"
+                . "  - कुल डिस्पैच मात्रा: **" . number_format($totalDispatch) . " पीस**\n"
+                . "  - कुल उपलब्ध क्लोजिंग स्टॉक: **" . number_format($totalClosing) . " पीस**\n\n"
+                . "📦 **फिनिश्ड स्टॉक ग्रिड:**\n\n";
+
+            foreach ($rows as $idx => $r) {
+                $answer .= "• **आइटम " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Finished Product') . "`** (ID: **{$r['id']}**)\n"
+                    . "  - 📐 **साइज़:** **" . ($r['size'] ?: 'N/A') . "**\n"
+                    . "  - 🔢 **पैक्ड मात्रा:** **" . number_format((float)$r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
+                    . "  - 🚚 **उपलब्ध स्टॉक:** **" . number_format((float)$r['available_closing']) . " पीस**\n"
+                    . "  - 🏷️ **बैच नंबर:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
+            }
+
+            $answer .= "👉 [फिनिश्ड गुड्स पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/inventory/finished/index.php)";
+        } else {
+            $answer = "📦 **ফিনিশড গুডস ও প্যাকড লেবেল স্টক — লাইভ ইনভентরি সামারি:**\n\n"
+                . "📊 **ইনভেন্টরি সামারি ম্যাট্রিক্স:**\n"
+                . "  - সর্বমোট ফিনিশড প্রোডাক্ট/ব্যাচ: **" . number_format($totalItems) . "টি আইটেম**\n"
+                . "  - সর্বমোট প্যাকড কোয়ান্টিটি: **" . number_format($totalQty) . "টি পিস/লেবেল**\n"
+                . "  - সর্বমোট ডিসপ্যাচড কোয়ান্টিটি: **" . number_format($totalDispatch) . "টি পিস**\n"
+                . "  - সর্বমোট উপলব্ধ ক্লোজিং স্টক: **" . number_format($totalClosing) . "টি পিস**\n\n"
+                . "📦 **মাস্টার ফিনিশড স্টক গ্রিড:**\n\n";
+
+            foreach ($rows as $idx => $r) {
+                $answer .= "• **আইটেম " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Finished Product') . "`** (ID: **{$r['id']}** | ক্যাটাগরি: **" . strtoupper($r['category']) . "**)\n"
+                    . "  - 📐 **সাইজ ও স্পেক:** **" . ($r['size'] ?: 'N/A') . "**\n"
+                    . "  - 🔢 **প্যাকড কোয়ান্টিটি:** **" . number_format((float)$r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
+                    . "  - 🚚 **ডিসপ্যাচড:** **" . number_format((float)$r['dispatch_qty_total']) . "টি পিস** | উপলব্ধ ক্লোজিং স্টক: **" . number_format((float)$r['available_closing']) . "টি পিস**\n"
+                    . "  - 🏷️ **ব্যাচ / জব নম্বর:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
+            }
+
+            $answer .= "👉 [ফিনিশড গুডস পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/inventory/finished/index.php)";
+        }
+
+        $navUrl = null;
+        if (strpos($p, 'open') !== false || strpos($p, 'page') !== false || strpos($p, 'go to') !== false || strpos($p, 'khul') !== false || strpos($p, 'khol') !== false) {
+            $navUrl = $baseUrl . '/modules/inventory/finished/index.php';
+        }
+
+        return [
+            'tool_used' => $toolName,
+            'total_count' => $totalItems,
+            'total_meters' => 0,
+            'filtered_type' => '',
+            'is_company_list' => false,
+            'direct_answer' => $answer,
+            'nav_url' => $navUrl,
+            'data' => []
+        ];
     }
+
 
     // 4. Live Production Floor Intent Matcher
 
