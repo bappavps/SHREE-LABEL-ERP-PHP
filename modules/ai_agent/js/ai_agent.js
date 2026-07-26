@@ -124,11 +124,22 @@
 
         appendMessage(res.answer || 'Query completed.', 'assistant', res.tool_used);
 
+        if (chatBody) {
+          try { sessionStorage.setItem('ai_chat_history', chatBody.innerHTML); } catch (e) {}
+        }
+
         if (res.nav_url) {
+          if (chatBody) {
+            try {
+              sessionStorage.setItem('ai_chat_history', chatBody.innerHTML);
+              sessionStorage.setItem('ai_auto_open_chat', 'true');
+            } catch (e) {}
+          }
           setTimeout(function() {
             window.location.href = res.nav_url;
           }, 1500);
         }
+
       })
       .catch(function (err) {
         var msgs = chatBody ? chatBody.querySelectorAll('.ai-msg.assistant') : [];

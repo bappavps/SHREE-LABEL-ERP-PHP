@@ -97,6 +97,19 @@ $floatChips = getAiAgentQuickChips();
   var clearBtn = document.getElementById('aiFloatClearBtn');
   var chatBody = document.getElementById('aiChatBody');
 
+  // Auto-restore chat popup window state & history across page navigation
+  if (sessionStorage.getItem('ai_auto_open_chat') === 'true' && popupCard) {
+    popupCard.classList.add('active');
+    var savedHistory = sessionStorage.getItem('ai_chat_history');
+    if (savedHistory && chatBody) {
+      chatBody.innerHTML = savedHistory;
+      chatBody.scrollTop = chatBody.scrollHeight;
+    }
+    sessionStorage.removeItem('ai_auto_open_chat');
+  } else if (sessionStorage.getItem('ai_chat_history') && chatBody) {
+    chatBody.innerHTML = sessionStorage.getItem('ai_chat_history');
+  }
+
   if (triggerBtn && popupCard) {
     triggerBtn.addEventListener('click', function() {
       popupCard.classList.toggle('active');
@@ -121,9 +134,12 @@ $floatChips = getAiAgentQuickChips();
   }
   if (clearBtn && chatBody) {
     clearBtn.addEventListener('click', function() {
+      sessionStorage.removeItem('ai_chat_history');
+      sessionStorage.removeItem('ai_auto_open_chat');
       chatBody.innerHTML = '<div class="ai-msg assistant"><div class="ai-msg-avatar"><i class="bi bi-robot"></i></div><div class="ai-msg-content" style="font-size:.82rem">🧹 <em>Chat history cleared.</em><br>How can I assist you now?</div></div>';
     });
   }
 })();
 </script>
+
 <script src="<?= $moduleBaseUrl ?>/js/ai_agent.js?v=<?= time() ?>"></script>
