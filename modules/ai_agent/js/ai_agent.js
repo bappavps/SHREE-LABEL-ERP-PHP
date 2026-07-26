@@ -252,10 +252,12 @@
     recognition.maxAlternatives = 1;
 
     var isListening = false;
+    var isUserHoldingMic = false;
     var currentUtterance = '';
 
     function startPushToTalk() {
-      if (isListening || state.isProcessing) return;
+      if (isUserHoldingMic || state.isProcessing) return;
+      isUserHoldingMic = true;
       isListening = true;
       currentUtterance = '';
       if (chatInput) chatInput.value = '';
@@ -269,6 +271,7 @@
         recognition.start();
       } catch (e) {
         isListening = false;
+        isUserHoldingMic = false;
         console.warn('Speech recognition start error:', e);
         return;
       }
@@ -284,7 +287,8 @@
     }
 
     function stopPushToTalk() {
-      if (!isListening) return;
+      if (!isUserHoldingMic) return;
+      isUserHoldingMic = false;
       try {
         recognition.stop();
       } catch(e) {}
@@ -306,6 +310,7 @@
 
       btn.addEventListener('touchcancel', function() {
         touchFired = false;
+        isUserHoldingMic = false;
         isListening = false;
         try { recognition.stop(); } catch(e) {}
         stopListeningUI();
@@ -328,27 +333,41 @@
     });
 
     recognition.onresult = function(event) {
-      var latest = event.results[event.resultIndex][0].transcript;
-      if (event.results[event.resultIndex].isFinal) {
-        currentUtterance = latest;
-        if (chatInput) chatInput.value = latest;
-      } else {
-        if (chatInput) chatInput.value = latest;
+      var fullTranscript = '';
+      for (var i = 0; i < event.results.length; i++) {
+        fullTranscript += event.results[i][0].transcript + ' ';
       }
+      currentUtterance = fullTranscript.trim();
+      if (chatInput) chatInput.value = currentUtterance;
     };
 
     recognition.onerror = function(event) {
       console.warn('Speech recognition error:', event.error);
       if (event.error === 'no-speech' || event.error === 'network' || event.error === 'aborted') {
-        isListening = false;
-        stopListeningUI();
-        return;
+        if (isUserHoldingMic) {
+          try { recognition.start(); } catch(err) {}
+          return;
+        }
       }
       isListening = false;
+      isUserHoldingMic = false;
       stopListeningUI();
     };
 
     recognition.onend = function() {
+      if (isUserHoldingMic) {
+        // User is STILL holding the mic button! Restart across silence pauses
+        try {
+          recognition.start();
+        } catch(e) {
+          isUserHoldingMic = false;
+          isListening = false;
+          stopListeningUI();
+        }
+        return;
+      }
+
+      // User HAS RELEASED the mic button! Send prompt
       var text = currentUtterance || (chatInput ? chatInput.value : '');
       isListening = false;
       stopListeningUI();

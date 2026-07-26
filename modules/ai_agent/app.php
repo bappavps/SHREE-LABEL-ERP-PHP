@@ -1266,9 +1266,10 @@ foreach ($quickChips as $c) {
       return text.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
     }
 
-    // Voice Speech Recognition — Press & Hold (Push-to-Talk)
+    // Voice Speech Recognition — True Push-to-Talk (Hold to Speak)
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let isListening = false;
+    let isUserHoldingMic = false;
     let currentUtterance = '';
 
     if (SpeechRecognition) {
@@ -1280,7 +1281,8 @@ foreach ($quickChips as $c) {
       let touchFired = false;
 
       function startListening() {
-        if (isListening) return;
+        if (isUserHoldingMic) return;
+        isUserHoldingMic = true;
         isListening = true;
         currentUtterance = '';
         chatInput.value = '';
@@ -1290,13 +1292,14 @@ foreach ($quickChips as $c) {
         else if (selectedLang === 'en-US' || selectedLang === 'English') recognition.lang = 'en-US';
         else recognition.lang = 'hi-IN';
 
-        try { recognition.start(); } catch(e) { isListening = false; return; }
+        try { recognition.start(); } catch(e) { isListening = false; isUserHoldingMic = false; return; }
         micBtn.classList.add('listening');
         chatInput.placeholder = '🎙️ Listening... Release mic to send';
       }
 
       function stopListening() {
-        if (!isListening) return;
+        if (!isUserHoldingMic) return;
+        isUserHoldingMic = false;
         try { recognition.stop(); } catch(e) {}
       }
 
@@ -1312,6 +1315,7 @@ foreach ($quickChips as $c) {
 
       micBtn.addEventListener('touchcancel', () => {
         touchFired = false;
+        isUserHoldingMic = false;
         isListening = false;
         try { recognition.stop(); } catch(e) {}
         micBtn.classList.remove('listening');
@@ -1334,24 +1338,44 @@ foreach ($quickChips as $c) {
       });
 
       recognition.onresult = (e) => {
-        const latest = e.results[e.resultIndex][0].transcript;
-        if (e.results[e.resultIndex].isFinal) {
-          currentUtterance = latest;
-          chatInput.value = latest;
-        } else {
-          chatInput.value = latest;
+        let fullTranscript = '';
+        for (let i = 0; i < e.results.length; i++) {
+          fullTranscript += e.results[i][0].transcript + ' ';
         }
+        currentUtterance = fullTranscript.trim();
+        chatInput.value = currentUtterance;
         chatInput.dispatchEvent(new Event('input'));
       };
 
       recognition.onerror = (e) => {
-        if (e.error === 'no-speech' || e.error === 'aborted') return;
+        console.warn('Speech recognition error:', e.error);
+        if (e.error === 'no-speech' || e.error === 'aborted' || e.error === 'network') {
+          if (isUserHoldingMic) {
+            try { recognition.start(); } catch(err) {}
+            return;
+          }
+        }
         isListening = false;
+        isUserHoldingMic = false;
         micBtn.classList.remove('listening');
         chatInput.placeholder = 'Ask about stock, orders, dispatch...';
       };
 
       recognition.onend = () => {
+        if (isUserHoldingMic) {
+          // User is STILL pressing the mic button! Restart recognition across silence pauses
+          try {
+            recognition.start();
+          } catch(e) {
+            isUserHoldingMic = false;
+            isListening = false;
+            micBtn.classList.remove('listening');
+            chatInput.placeholder = 'Ask about stock, orders, dispatch...';
+          }
+          return;
+        }
+
+        // User HAS RELEASED the mic button! Send prompt
         isListening = false;
         micBtn.classList.remove('listening');
         chatInput.placeholder = 'Ask about stock, orders, dispatch...';
