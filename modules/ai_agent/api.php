@@ -732,7 +732,93 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
         ];
     }
 
-    // 3. Live Production Floor Intent Matcher
+    // 3. ERP Executive Dashboard & KPI Overview Intent Matcher
+    if (strpos($p, 'dash') !== false || strpos($p, 'kpi') !== false || strpos($p, 'overview') !== false || strpos($p, 'metric') !== false || strpos($p, 'analytic') !== false || strpos($p, 'stat') !== false || strpos($p, 'executive') !== false || strpos($p, 'ড্যাশবোর্ড') !== false) {
+        $toolName = 'ERP Executive Dashboard & KPI Tool';
+        
+        $stockCount = (int)($db->query("SELECT COUNT(*) as c FROM paper_stock WHERE LOWER(COALESCE(status,'')) NOT IN ('consumed','disposed','scrap')")->fetch_assoc()['c'] ?? 0);
+        $stockMtr = round((float)($db->query("SELECT IFNULL(SUM(length_mtr),0) as total FROM paper_stock WHERE LOWER(COALESCE(status,'')) NOT IN ('consumed','disposed','scrap')")->fetch_assoc()['total'] ?? 0), 2);
+        $lowStock = (int)($db->query("SELECT COUNT(*) as c FROM paper_stock WHERE status='Available' AND length_mtr < 500")->fetch_assoc()['c'] ?? 0);
+
+        $estimatesActive = (int)($db->query("SELECT COUNT(*) as c FROM estimates WHERE LOWER(COALESCE(status,'')) NOT IN ('rejected','converted','cancelled')")->fetch_assoc()['c'] ?? 0);
+        $estimatesVal = round((float)($db->query("SELECT IFNULL(SUM(selling_price),0) as total FROM estimates WHERE created_at >= DATE_FORMAT(NOW(),'%Y-%m-01')")->fetch_assoc()['total'] ?? 0), 2);
+
+        $ordersActive = (int)($db->query("SELECT COUNT(*) as c FROM sales_orders WHERE LOWER(COALESCE(status,'')) NOT IN ('completed','dispatched','cancelled','closed')")->fetch_assoc()['c'] ?? 0);
+
+        $jobsActive = (int)($db->query("SELECT COUNT(*) as c FROM planning WHERE LOWER(COALESCE(status,'')) NOT IN ('completed','closed','finalized','cancelled','done')")->fetch_assoc()['c'] ?? 0);
+        $jobsRunning = (int)($db->query("SELECT COUNT(*) as c FROM jobs WHERE LOWER(status) = 'running'")->fetch_assoc()['c'] ?? 0);
+        $jobsPending = (int)($db->query("SELECT COUNT(*) as c FROM jobs WHERE LOWER(status) IN ('pending','queued')")->fetch_assoc()['c'] ?? 0);
+        $jobsCompletedMonth = (int)($db->query("SELECT COUNT(*) as c FROM jobs WHERE LOWER(status) IN ('closed','finalized','completed','qc passed') AND completed_at IS NOT NULL AND DATE_FORMAT(completed_at, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m')")->fetch_assoc()['c'] ?? 0);
+
+        $userLang = detect_language($prompt);
+        $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+        if ($userLang === 'English') {
+            $answer = "📊 **ERP Executive Dashboard & Live System KPIs:**\n\n"
+                . "Here is the real-time operational summary from your ERP Dashboard:\n\n"
+                . "📜 **Paper Roll Inventory:**\n"
+                . "  - Total Available Rolls: **" . number_format($stockCount) . " Rolls** (" . number_format($stockMtr, 2) . " meters)\n"
+                . "  - Low Stock Alert (<500m): **" . number_format($lowStock) . " Rolls**\n\n"
+                . "🏭 **Production & Live Floor:**\n"
+                . "  - Active Master Jobs: **" . number_format($jobsActive) . " Jobs**\n"
+                . "  - Currently Running Jobs: **" . number_format($jobsRunning) . " Jobs**\n"
+                . "  - Pending / Queued Department Jobs: **" . number_format($jobsPending) . " Job Cards**\n"
+                . "  - Completed Jobs This Month: **" . number_format($jobsCompletedMonth) . " Jobs**\n\n"
+                . "💼 **Sales & Estimates:**\n"
+                . "  - Active Running Sales Orders: **" . number_format($ordersActive) . " Orders**\n"
+                . "  - Active Cost Estimates: **" . number_format($estimatesActive) . " Estimates** (This Month Value: **₹" . number_format($estimatesVal, 2) . "**)\n\n"
+                . "👉 [Click here to open Executive Dashboard Page]({$baseUrl}/modules/dashboard/index.php)";
+        } elseif ($userLang === 'Hindi') {
+            $answer = "📊 **ईआरपी एक्जीक्यूटिव डैशबोर्ड और लाइव केपीआई सारांश:**\n\n"
+                . "आपके ईआरपी डैशबोर्ड से वास्तविक समय का डेटा सारांश:\n\n"
+                . "📜 **पेपर रोल इन्वेंटरी:**\n"
+                . "  - कुल उपलब्ध रोल: **" . number_format($stockCount) . " रोल** (" . number_format($stockMtr, 2) . " मीटर)\n"
+                . "  - कम स्टॉक अलर्ट (<500m): **" . number_format($lowStock) . " रोल**\n\n"
+                . "🏭 **उत्पादन और लाइव फ्लोर:**\n"
+                . "  - सक्रिय मास्टर जॉब्स: **" . number_format($jobsActive) . " जॉब्स**\n"
+                . "  - वर्तमान में चल रहे जॉब्स: **" . number_format($jobsRunning) . " जॉब्स**\n"
+                . "  - लंबित / कतारबद्ध जॉब्स: **" . number_format($jobsPending) . " जॉब कार्ड**\n"
+                . "  - इस महीने पूर्ण जॉब्स: **" . number_format($jobsCompletedMonth) . " जॉब्स**\n\n"
+                . "💼 **बिक्री और अनुमान:**\n"
+                . "  - सक्रिय बिक्री के आदेश: **" . number_format($ordersActive) . " ऑर्डर**\n"
+                . "  - सक्रिय लागत अनुमान: **" . number_format($estimatesActive) . " अनुमान** (इस महीने का मूल्य: **₹" . number_format($estimatesVal, 2) . "**)\n\n"
+                . "👉 [एक्जीक्यूटिव डैशबोर्ड पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/dashboard/index.php)";
+        } else {
+            $answer = "📊 **ইআরপি এক্সিকিউটিভ ড্যাশবোর্ড ও লাইভ কেপিআই ওভারভিউ:**\n\n"
+                . "আপনার ইআরপি ড্যাশবোর্ড থেকে রিয়েল-টাইম রানিং ডাটা সম্বলিত ওভারভিউ:\n\n"
+                . "📜 **পেপার রোল ইনভেন্টরি স্টক:**\n"
+                . "  - সর্বমোট রেডি পেপার রোল: **" . number_format($stockCount) . "টি রোল** (" . number_format($stockMtr, 2) . " মিটার স্টক)\n"
+                . "  - লো স্টক অ্যালার্ট (<৫০০মি.): **" . number_format($lowStock) . "টি রোল**\n\n"
+                . "🏭 **প্রডাকশন ও লাইভ ফ্লোর প্রোগ্রেস:**\n"
+                . "  - সচল মাস্টার প্রডাকশন জব: **" . number_format($jobsActive) . "টি জব**\n"
+                . "  - বর্তমানে রানিং প্রডাকশন জব: **" . number_format($jobsRunning) . "টি জব**\n"
+                . "  - পেন্ডিং / কিউড ডিপার্টমেন্ট জব: **" . number_format($jobsPending) . "টি জব কার্ড**\n"
+                . "  - চলতি মাসে সম্পন্ন প্রডাকশন জব: **" . number_format($jobsCompletedMonth) . "টি জব**\n\n"
+                . "💼 **সেলস অর্ডার ও কস্টিং এস্টিমেট:**\n"
+                . "  - সচল রানিং সেলস অর্ডার: **" . number_format($ordersActive) . "টি অর্ডার**\n"
+                . "  - সচল কস্টিং এস্টিমেট: **" . number_format($estimatesActive) . "টি এস্টিমেট** (চলতি মাসের মোট ভ্যালু: **₹" . number_format($estimatesVal, 2) . "**)\n\n"
+                . "👉 [ড্যাশবোর্ড পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/dashboard/index.php)";
+        }
+
+        $navUrl = null;
+        if (strpos($p, 'open') !== false || strpos($p, 'page') !== false || strpos($p, 'go to') !== false || strpos($p, 'khul') !== false || strpos($p, 'khol') !== false) {
+            $navUrl = $baseUrl . '/modules/dashboard/index.php';
+        }
+
+        return [
+            'tool_used' => $toolName,
+            'total_count' => $jobsActive + $stockCount,
+            'total_meters' => $stockMtr,
+            'filtered_type' => '',
+            'is_company_list' => false,
+            'direct_answer' => $answer,
+            'nav_url' => $navUrl,
+            'data' => []
+        ];
+    }
+
+    // 4. Live Production Floor Intent Matcher
+
     if (strpos($p, 'live') !== false || strpos($p, 'floor') !== false || strpos($p, 'stage') !== false || strpos($p, 'next department') !== false || strpos($p, 'journey') !== false) {
         $toolName = 'Live Production Floor Pipeline Tool';
         
@@ -1003,28 +1089,38 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
         $res = $db->query("SELECT company, COUNT(*) as roll_count, SUM(length_mtr) as total_meters FROM paper_stock WHERE status IN ('Main','Stock','Job Assign') AND company != '' GROUP BY company ORDER BY roll_count DESC");
         $data = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
         $totalCount = count($data);
-    } elseif (strpos($p, 'plate') !== false) {
+    } elseif (strpos($p, 'plate') !== false || strpos($p, 'repeat') !== false || strpos($p, 'gap') !== false || strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'quantity') !== false || strpos($p, 'qty') !== false || strpos($p, 'calculat') !== false) {
         $toolName = 'Printing Plates Master Tool';
         $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_plate_data");
         $totalCount = $cntRes ? (int)($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
+
         
-        // Extract text search words (filtering out attribute query words like repeat, gap, size, etc.)
+        // Extract text search words (filtering out attribute query words & calculation filler terms)
         $stopwords = [
             'can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'plate', 'plates', 'list', 'show', 'details', 'detail', 'this', 'the', 'a', 'an',
             'job', 'jobs', 'for', 'about', 'get', 'search', 'find', 'there', 'any', 'named', 'by', 'name', 'of', 'with', 'are', 'do', 'have', 'exist', 'does',
-            'repeat', 'gap', 'gaph', 'gapv', 'size', 'ups', 'cylinder', 'paper', 'die', 'core', 'rewinding', 'value', 'color', 'colors', 'spec', 'special', 'what', 'how', 'give'
+            'repeat', 'gap', 'gaph', 'gapv', 'size', 'ups', 'cylinder', 'paper', 'die', 'core', 'rewinding', 'value', 'color', 'colors', 'spec', 'special', 'what', 'how', 'give',
+            'if', 'run', 'much', 'many', 'quantity', 'qty', 'meter', 'meters', 'mtr', 'will', 'be', 'produced', 'print', 'printing', 'require', 'required', 'need', 'needed', 'or', 'and',
+
+            'koto', 'kotogulo', 'hobe', 'lagbe', 'korle', 'korte', 'asob', 'ar', 'er', 'diye', 'giye', 'ache', 'hobe', 'হবে', 'আছে', 'কত', 'কতগুলো', 'কি', 'কী', 'কোন'
         ];
+
 
         $pWords = preg_split('/\s+/', strtolower($prompt));
         $terms = [];
         foreach ($pWords as $w) {
             $wClean = trim(preg_replace('/[^a-z0-9]/', '', $w));
             if ($wClean !== '' && !in_array($wClean, $stopwords, true) && strlen($wClean) >= 2) {
+                // Skip standalone calculation numbers (e.g. 2000, 5000, 1500) from plate name search
+                if (is_numeric($wClean) && (float)$wClean >= 100 && !preg_match('/(ml|mm|cm|inc|inch)/i', $w)) {
+                    continue;
+                }
                 $terms[] = $wClean;
             }
         }
         $searchTerm = implode('%', $terms);
         $searchTermDisplay = implode(' ', $terms);
+
 
         if (!empty($terms)) {
             // 1. Try exact combined terms (e.g. '%blue%500ml%')
@@ -1045,6 +1141,141 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
                 $data = $stmt2->get_result()->fetch_all(MYSQLI_ASSOC);
             }
         }
+
+        // Calculation Handler (Meters to Quantity OR Quantity to Meters)
+        $isCalcQuery = (strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'qty') !== false || strpos($p, 'quantity') !== false || strpos($p, 'pcs') !== false || strpos($p, 'run') !== false || strpos($p, 'print') !== false || strpos($p, 'calculat') !== false || strpos($p, 'koto') !== false);
+
+        if ($isCalcQuery && !empty($data)) {
+            $plate = $data[0];
+            $name = $plate['name'];
+            $ups = max(1, (int)$plate['ups']);
+            $repeatVal = (float)$plate['repeat_value'];
+            
+            if ($repeatVal <= 0) {
+                if (preg_match('/x\s*([\d\.]+)/i', $plate['size'] ?? '', $m)) {
+                    $height = (float)$m[1];
+                    $gapV = (float)($plate['gap_v'] ?? 0);
+                    $repeatVal = $height + $gapV;
+                } else {
+                    $repeatVal = 100.0;
+                }
+            }
+
+            $targetQty = null;
+            $paperMeters = null;
+
+            if (preg_match('/([\d,]+)\s*(meters|meter|mtr|m)\b/i', $prompt, $m)) {
+                $paperMeters = (float)str_replace(',', '', $m[1]);
+            } elseif (preg_match('/(run|length|roll|paper)\s*(of|about|with)?\s*([\d,]+)/i', $prompt, $m)) {
+                $paperMeters = (float)str_replace(',', '', $m[3]);
+            }
+
+            if (preg_match('/([\d,]+)\s*(qty|quantity|pcs|pieces|labels)\b/i', $prompt, $m)) {
+                $targetQty = (float)str_replace(',', '', $m[1]);
+            } elseif (preg_match('/(print|producing|make|quantity|qty)\s*(of|about)?\s*([\d,]+)/i', $prompt, $m)) {
+                $targetQty = (float)str_replace(',', '', $m[3]);
+            }
+
+            if ($targetQty === null && $paperMeters === null && !empty($searchNums)) {
+                $num = (float)$searchNums[0];
+                if (strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'run') !== false) {
+                    $paperMeters = $num;
+                } else {
+                    $targetQty = $num;
+                }
+            }
+
+            $userLang = detect_language($prompt);
+            $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+            if ($userLang === 'English') {
+                $answer = "📐 **Flexo Printing & Plate Production Calculator:**\n\n"
+                    . "📋 **Job / Plate Name:** `{$name}` (SL No: **{$plate['sl_no']}** | ID: **{$plate['id']}**)\n"
+                    . "⚙️ **Plate Specifications:** Ups: **{$ups}** | Repeat Value: **{$repeatVal}mm** | Size: **{$plate['size']}**\n\n";
+
+                if ($targetQty !== null && $targetQty > 0) {
+                    $revs = $targetQty / $ups;
+                    $rawMeters = ($revs * $repeatVal) / 1000.0;
+                    $wastageMeters = $rawMeters * 1.05;
+                    $answer .= "🎯 **Target Quantity:** **" . number_format($targetQty) . " pcs**\n"
+                        . "📏 **Net Paper Length Required:** **" . number_format($rawMeters, 2) . " meters**\n"
+                        . "🛡️ **Total Paper (with 5% setup wastage):** **" . number_format($wastageMeters, 2) . " meters**\n\n";
+                }
+
+                if ($paperMeters !== null && $paperMeters > 0) {
+                    $totalMM = $paperMeters * 1000.0;
+                    $revs = $totalMM / $repeatVal;
+                    $totalQty = floor($revs * $ups);
+                    $answer .= "📜 **Paper Roll Run Length:** **" . number_format($paperMeters, 2) . " meters**\n"
+                        . "📦 **Expected Label Production Output:** **" . number_format($totalQty) . " pcs / labels**\n\n";
+                }
+
+                $answer .= "👉 [Click here to open Plate Management Page]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
+            } elseif ($userLang === 'Hindi') {
+                $answer = "📐 **फ्लेक्सो प्रिंटिंग और प्लेट उत्पादन कैलकुलेटर:**\n\n"
+                    . "📋 **जॉब / प्लेट का नाम:** `{$name}` (SL No: **{$plate['sl_no']}**)\n"
+                    . "⚙️ **प्लेट विवरण:** Ups: **{$ups}** | Repeat Value: **{$repeatVal}mm** | Size: **{$plate['size']}**\n\n";
+
+                if ($targetQty !== null && $targetQty > 0) {
+                    $revs = $targetQty / $ups;
+                    $rawMeters = ($revs * $repeatVal) / 1000.0;
+                    $wastageMeters = $rawMeters * 1.05;
+                    $answer .= "🎯 **लक्ष्य मात्रा (Target Quantity):** **" . number_format($targetQty) . " पीस**\n"
+                        . "📏 **आवश्यक कागज (Net Paper Needed):** **" . number_format($rawMeters, 2) . " मीटर**\n"
+                        . "🛡️ **कुल कागज (5% वेस्टेज सहित):** **" . number_format($wastageMeters, 2) . " मीटर**\n\n";
+                }
+
+                if ($paperMeters !== null && $paperMeters > 0) {
+                    $totalMM = $paperMeters * 1000.0;
+                    $revs = $totalMM / $repeatVal;
+                    $totalQty = floor($revs * $ups);
+                    $answer .= "📜 **पेपर रोल की लंबाई:** **" . number_format($paperMeters, 2) . " मीटर**\n"
+                        . "📦 **कुल उत्पादन मात्रा:** **" . number_format($totalQty) . " पीस / लेबल**\n\n";
+                }
+
+                $answer .= "👉 [प्लेट प्रबंधन पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
+            } else {
+                $answer = "📐 **ফ্লেক্সো প্রিন্টিং ও প্লেট প্রডাকশন ক্যালকুলেটর:**\n\n"
+                    . "📋 **জব / প্লেটের নাম:** `{$name}` (SL No: **{$plate['sl_no']}** | ID: **{$plate['id']}**)\n"
+                    . "⚙️ **প্লেট স্পেসিফিকেশন:** আফস (Ups): **{$ups}** | রিপিট ভ্যালু: **{$repeatVal}mm** | সাইজ: **{$plate['size']}**\n\n";
+
+                if ($targetQty !== null && $targetQty > 0) {
+                    $revs = $targetQty / $ups;
+                    $rawMeters = ($revs * $repeatVal) / 1000.0;
+                    $wastageMeters = $rawMeters * 1.05;
+                    $answer .= "🎯 **টার্গেট কোয়ান্টিটি (Target Quantity):** **" . number_format($targetQty) . "টি**\n"
+                        . "📏 **প্রয়োজনীয় নেট পেপার:** **" . number_format($rawMeters, 2) . " মিটার**\n"
+                        . "🛡️ **সর্বমোট পেপার (৫% সেটআপ ওয়েস্টেজসহ):** **" . number_format($wastageMeters, 2) . " মিটার**\n\n";
+                }
+
+                if ($paperMeters !== null && $paperMeters > 0) {
+                    $totalMM = $paperMeters * 1000.0;
+                    $revs = $totalMM / $repeatVal;
+                    $totalQty = floor($revs * $ups);
+                    $answer .= "📜 **পেপার রোলের দৈর্ঘ্য (Paper Roll Length):** **" . number_format($paperMeters, 2) . " মিটার**\n"
+                        . "📦 **প্রত্যাশিত মোট প্রডাকশন কোয়ান্টিটি:** **" . number_format($totalQty) . "টি লেবেল/পিস**\n\n";
+                }
+
+                $answer .= "👉 [প্লেট ম্যানেজমেন্ট পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
+            }
+
+            $navUrl = null;
+            if (strpos($p, 'open') !== false || strpos($p, 'page') !== false || strpos($p, 'go to') !== false || strpos($p, 'khul') !== false || strpos($p, 'khol') !== false) {
+                $navUrl = $baseUrl . '/modules/plate-tools/plate-management/index.php';
+            }
+
+            return [
+                'tool_used' => 'Flexo Label Production Calculator Tool',
+                'total_count' => 1,
+                'total_meters' => $paperMeters ?: 0,
+                'filtered_type' => '',
+                'is_company_list' => false,
+                'direct_answer' => $answer,
+                'nav_url' => $navUrl,
+                'data' => []
+            ];
+        }
+
 
         if (empty($data) && !empty($searchNums)) {
             $num = $searchNums[0];
