@@ -214,8 +214,9 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array {
 
     $promptLower = mb_strtolower(trim($prompt), 'UTF-8');
     preg_match_all('/[\x{0980}-\x{09FF}\x{0900}-\x{097F}\w]+/u', $promptLower, $promptMatches);
-    $promptTokens = array_filter($promptMatches[0] ?? [], function($t) {
-        return mb_strlen($t) >= 3;
+    $kbStopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'show', 'details', 'this', 'the', 'a', 'an', 'what', 'where', 'how', 'when', 'who', 'list', 'get', 'for', 'about', 'with', 'from'];
+    $promptTokens = array_filter($promptMatches[0] ?? [], function($t) use ($kbStopwords) {
+        return mb_strlen($t) >= 3 && !in_array($t, $kbStopwords, true);
     });
 
     $bestMatch = null;
@@ -236,10 +237,11 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array {
 
             // Token & Fuzzy Levenshtein match (e.g. "delevery" -> "delivery")
             preg_match_all('/[\x{0980}-\x{09FF}\x{0900}-\x{097F}\w]+/u', $kw, $kwMatches);
-            $kwTokens = $kwMatches[0] ?? [];
+            $kwTokens = array_filter($kwMatches[0] ?? [], function($t) use ($kbStopwords) {
+                return mb_strlen($t) >= 3 && !in_array($t, $kbStopwords, true);
+            });
 
             foreach ($kwTokens as $kwToken) {
-                if (mb_strlen($kwToken) < 3) continue;
                 foreach ($promptTokens as $pToken) {
                     if ($pToken === $kwToken) {
                         $matchScore += 1.5;
@@ -259,11 +261,12 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array {
         }
     }
 
-    if ($bestMatch && $bestScore >= 1.0) {
+    if ($bestMatch && $bestScore >= 1.5) {
         return $bestMatch;
     }
     return null;
 }
+
 
 
 $knowledgeMatch = check_knowledge_base($db, $prompt);
@@ -768,24 +771,39 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt): array {
         $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_plate_data");
         $totalCount = $cntRes ? (int)($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
         
-        if (!empty($searchNums)) {
+        // Extract text search words
+        $stopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'plate', 'plates', 'list', 'show', 'details', 'this', 'the', 'a', 'an', 'job', 'jobs', 'for', 'about', 'get', 'search', 'find'];
+        $pWords = preg_split('/\s+/', strtolower($prompt));
+        $terms = [];
+        foreach ($pWords as $w) {
+            $wClean = trim(preg_replace('/[^a-z0-9]/', '', $w));
+            if ($wClean !== '' && !in_array($wClean, $stopwords, true) && strlen($wClean) >= 2) {
+                $terms[] = $wClean;
+            }
+        }
+        $searchTerm = implode('%', $terms);
+
+        if ($searchTerm !== '') {
+            $like = '%' . $searchTerm . '%';
+            $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE name LIKE ? OR sl_no = ? OR id = ? ORDER BY id DESC LIMIT 10");
+            $stmt->bind_param('sss', $like, $searchTerm, $searchTerm);
+            $stmt->execute();
+            $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        }
+
+        if (empty($data) && !empty($searchNums)) {
             $num = $searchNums[0];
             $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE sl_no = ? OR id = ? LIMIT 1");
             $stmt->bind_param('ss', $num, $num);
             $stmt->execute();
             $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-            if (empty($data)) {
-                $stmtLike = $db->prepare("SELECT * FROM master_plate_data WHERE name LIKE ? ORDER BY id DESC LIMIT 5");
-                $like = '%' . $num . '%';
-                $stmtLike->bind_param('s', $like);
-                $stmtLike->execute();
-                $data = $stmtLike->get_result()->fetch_all(MYSQLI_ASSOC);
-            }
         }
+
         if (empty($data)) {
             $res = $db->query("SELECT id, sl_no, name, size, ups, paper_type, die, date_received FROM master_plate_data ORDER BY id DESC LIMIT 15");
             $data = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
         }
+
     } elseif (strpos($p, 'die') !== false || strpos($p, 'tooling') !== false) {
         $toolName = 'Die Tooling Master Tool';
         $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_die_tooling");
