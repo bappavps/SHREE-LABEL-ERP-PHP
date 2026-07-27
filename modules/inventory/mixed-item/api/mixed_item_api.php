@@ -13,7 +13,12 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-require_once __DIR__ . '/../../../../includes/auth_check.php';
+$currentTenantSlug = defined('TENANT_SLUG') ? (string)TENANT_SLUG : 'default';
+if (!empty($_SESSION['tenant_slug']) && (string)$_SESSION['tenant_slug'] !== $currentTenantSlug) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'Tenant session mismatch.']);
+    exit;
+}
 
 $db = getDB();
 
@@ -274,10 +279,12 @@ function mi_compute_extra(array $row, array $extra): array
     }
 
     $mixedEnabled = (int) ($extra['mixed_enabled'] ?? 0) === 1;
+    $rpc = mi_num(mi_pick($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton']));
+    $perCarton = $rpc;
+    $looseQty = max(0, mi_num($extra['loose_qty'] ?? 0));
+    $mixedExtraRolls = max(0, mi_num($extra['mixed_extra_rolls'] ?? 0));
+    
     if ($mixedEnabled) {
-        $rpc = mi_num(mi_pick($extra, ['roll_per_cartoon', 'roll_per_carton', 'per_carton']));
-        $looseQty = max(0, mi_num($extra['loose_qty'] ?? 0));
-        $mixedExtraRolls = max(0, mi_num($extra['mixed_extra_rolls'] ?? 0));
         $extraQty = $looseQty > 0 ? $looseQty : $mixedExtraRolls;
         $possible = max(0, (int) floor(mi_num($extra['mixed_cartons'] ?? 0)));
         return [
@@ -297,6 +304,18 @@ function mi_compute_extra(array $row, array $extra): array
             'possible_cartons' => 0,
         ];
     }
+
+    if ($looseQty > 0 || $mixedExtraRolls > 0) {
+        $extraQty = $looseQty > 0 ? $looseQty : $mixedExtraRolls;
+        $possible = ($perCarton > 0) ? (int) floor($extraQty / $perCarton) : 0;
+        return [
+            'extra_qty' => $extraQty,
+            'unit_type' => 'PCS',
+            'per_carton' => $rpc,
+            'possible_cartons' => $possible,
+        ];
+    }
+
     $extraQty = $quantity;
     $possible = 0;
     if ($perCarton > 0 && $quantity > 0) {

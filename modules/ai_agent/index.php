@@ -10,24 +10,28 @@ require_once __DIR__ . '/../../includes/functions.php';
 require_once __DIR__ . '/config.php';
 
 if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+  session_start();
 }
 if (!isset($_SESSION['user_id'])) {
-    header('Location: ' . BASE_URL . '/index.php');
-    exit;
+  header('Location: ' . BASE_URL . '/index.php');
+  exit;
 }
 
 $pageTitle = 'AI Agent Assistant — ERP Master';
 $config = getAiAgentConfig();
 $quickChips = getAiAgentQuickChips();
 
+// Use file modification time for cache busting - more efficient than time()
+$css_version = file_exists(__DIR__ . '/css/ai_agent.css') ? filemtime(__DIR__ . '/css/ai_agent.css') : '1.0.2';
+$js_version = file_exists(__DIR__ . '/js/ai_agent.js') ? filemtime(__DIR__ . '/js/ai_agent.js') : '1.0.2';
+
 include __DIR__ . '/../../includes/header.php';
 ?>
 
-<link rel="stylesheet" href="<?= BASE_URL ?>/modules/ai_agent/css/ai_agent.css?v=<?= time() ?>">
+<link rel="stylesheet" href="<?= BASE_URL ?>/modules/ai_agent/css/ai_agent.css?v=<?= $css_version ?>">
 
 <div class="ai-agent-container">
-  
+
   <!-- Header Banner -->
   <div class="ai-header-banner">
     <div class="ai-banner-left">
@@ -36,7 +40,8 @@ include __DIR__ . '/../../includes/header.php';
       </div>
       <div>
         <h1 class="ai-banner-title"><?= e($config['module_name']) ?></h1>
-        <p class="ai-banner-sub">Smart RAG Copilot for Orders, Dispatches, Paper Stock, Finished Goods, Machine Operations & Label Math</p>
+        <p class="ai-banner-sub">Smart RAG Copilot for Orders, Dispatches, Paper Stock, Finished Goods, Machine
+          Operations & Label Math</p>
       </div>
     </div>
     <div class="ai-banner-right">
@@ -46,7 +51,7 @@ include __DIR__ . '/../../includes/header.php';
 
   <!-- Main Layout Grid -->
   <div class="ai-main-grid">
-    
+
     <!-- Left: Interactive Chat Drawer -->
     <div class="ai-card ai-chat-card">
       <div class="ai-card-header">
@@ -67,15 +72,18 @@ include __DIR__ . '/../../includes/header.php';
           <div class="ai-msg-content">
             👋 <strong>Welcome to Shree Label ERP AI Assistant!</strong><br>
             I am your dedicated <strong>Industrial ERP & Label Manufacturing Copilot</strong>.<br><br>
-            You can ask me questions in <strong>English, Bengali, or Hindi</strong>. Click any quick chip below or type your query!
+            You can ask me questions in <strong>English, Bengali, or Hindi</strong>. Click any quick chip below or type
+            your query!
           </div>
         </div>
       </div>
 
       <!-- Chat Input Area -->
       <div class="ai-chat-input-wrap">
-        <input type="text" class="ai-chat-input" id="aiChatInput" placeholder="Type query or click mic to speak (English, Bengali, Hindi)..." autocomplete="off">
-        <button type="button" class="ai-mic-btn" id="aiMicBtn" title="Voice Input — Speak to Type (Auto Language Detect)">
+        <input type="text" class="ai-chat-input" id="aiChatInput"
+          placeholder="Type query or click mic to speak (English, Bengali, Hindi)..." autocomplete="off">
+        <button type="button" class="ai-mic-btn" id="aiMicBtn"
+          title="Voice Input — Speak to Type (Auto Language Detect)">
           <i class="bi bi-mic-fill"></i>
         </button>
         <button type="button" class="ai-send-btn" id="aiSendBtn">
@@ -86,7 +94,7 @@ include __DIR__ . '/../../includes/header.php';
 
     <!-- Right: Quick Chips & Telemetry -->
     <div class="ai-sidebar">
-      
+
       <!-- 21 Quick Action Chips -->
       <div class="ai-card">
         <div class="ai-card-header">
@@ -97,7 +105,8 @@ include __DIR__ . '/../../includes/header.php';
         </div>
         <div class="ai-chips-grid">
           <?php foreach ($quickChips as $chip): ?>
-            <button type="button" class="ai-chip-btn" data-key="<?= e($chip['key']) ?>" data-prompt="<?= e($chip['prompt']) ?>">
+            <button type="button" class="ai-chip-btn" data-key="<?= e($chip['key']) ?>"
+              data-prompt="<?= e($chip['prompt']) ?>">
               <i class="bi <?= e($chip['icon']) ?>"></i>
               <span><?= e($chip['label']) ?></span>
             </button>
@@ -133,6 +142,6 @@ include __DIR__ . '/../../includes/header.php';
   </div>
 </div>
 
-<script src="<?= BASE_URL ?>/modules/ai_agent/js/ai_agent.js?v=<?= time() ?>"></script>
+<script src="<?= BASE_URL ?>/modules/ai_agent/js/ai_agent.js?v=<?= $js_version ?>"></script>
 
 <?php include __DIR__ . '/../../includes/footer.php'; ?>

@@ -129,7 +129,6 @@ foreach ($quickChips as $c) {
       background: rgba(255, 255, 255, 0.92);
     }
     [data-theme="light"] .app-title h2 { color: #0f172a; }
-    [data-theme="light"] .lang-toolbar { background: rgba(255, 255, 255, 0.85); }
     [data-theme="light"] .chips-section { background: rgba(255, 255, 255, 0.7); }
     [data-theme="light"] .chips-toggle { background: rgba(0,0,0,0.02); }
     [data-theme="light"] .app-footer { background: rgba(255, 255, 255, 0.95); }
@@ -159,6 +158,11 @@ foreach ($quickChips as $c) {
     [data-theme="light"] .msg-bubble a { color: #2563eb; border-color: rgba(37,99,235,0.3); }
     [data-theme="light"] .msg-bubble th { background: rgba(37,99,235,0.08); color: #1d4ed8; }
     [data-theme="light"] .msg-bubble td, [data-theme="light"] .msg-bubble th { border-color: rgba(0,0,0,0.08); }
+    [data-theme="light"] .msg-bubble tr:nth-child(even) td { background: rgba(0,0,0,0.02); }
+
+    [data-theme="light"] .msg-group.assistant.ai-cmd-paperstock .msg-bubble { border-color: #10b981; background: linear-gradient(135deg, rgba(16,185,129,0.04) 0%, rgba(16,185,129,0.01) 100%); }
+    [data-theme="light"] .msg-group.assistant.ai-cmd-plate .msg-bubble { border-color: #8b5cf6; background: linear-gradient(135deg, rgba(139,92,246,0.04) 0%, rgba(139,92,246,0.01) 100%); }
+    [data-theme="light"] .msg-group.assistant.ai-cmd-quoted .msg-bubble { border-color: #f59e0b; background: linear-gradient(135deg, rgba(245,158,11,0.04) 0%, rgba(245,158,11,0.01) 100%); }
 
     [data-theme="light"] .typing-box { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); }
     [data-theme="light"] .input-container { background: rgba(0,0,0,0.04); }
@@ -168,7 +172,6 @@ foreach ($quickChips as $c) {
 
     [data-theme="light"] .chat-container::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); }
     [data-theme="light"] .quick-action-card { background: rgba(0,0,0,0.03); }
-    [data-theme="light"] .lang-hint .hint-pill { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); color: #475569; }
     [data-theme="light"] .msg-meta { color: #94a3b8; }
     [data-theme="light"] .btn-copy-msg { color: #94a3b8; }
     [data-theme="light"] .status-dot { box-shadow: 0 0 8px #22c55e; }
@@ -324,39 +327,6 @@ foreach ($quickChips as $c) {
       border: 2px solid var(--bg-main);
     }
 
-    /* ─── LANGUAGE TOOLBAR ─── */
-    .lang-toolbar {
-      position: relative; z-index: 10;
-      background: rgba(10, 15, 30, 0.9);
-      padding: 8px 14px;
-      display: flex; gap: 6px;
-      overflow-x: auto;
-      border-bottom: 1px solid var(--border);
-      -webkit-overflow-scrolling: touch;
-    }
-    .lang-toolbar::-webkit-scrollbar { display: none; }
-
-    .lang-pill {
-      background: var(--bg-glass);
-      border: 1px solid var(--border);
-      color: var(--text-dim);
-      font-size: 12px; font-weight: 700;
-      padding: 6px 14px;
-      border-radius: 20px;
-      white-space: nowrap;
-      cursor: pointer;
-      transition: all 0.25s ease;
-      display: flex; align-items: center; gap: 5px;
-    }
-    .lang-pill:active { transform: scale(0.95); }
-    .lang-pill.active {
-      background: linear-gradient(135deg, #2563eb, #7c3aed);
-      color: #fff;
-      border-color: transparent;
-      box-shadow: 0 3px 12px rgba(37,99,235,0.5);
-    }
-    .lang-pill .lang-flag { font-size: 14px; }
-
     /* ─── CHIPS CATEGORY GRID ─── */
     .chips-section {
       position: relative; z-index: 10;
@@ -445,7 +415,7 @@ foreach ($quickChips as $c) {
       flex: 1;
       overflow-y: auto;
       overflow-x: hidden;
-      padding: 16px 14px;
+      padding: 16px 8px;
       padding-bottom: 8px;
       display: flex;
       flex-direction: column;
@@ -530,23 +500,11 @@ foreach ($quickChips as $c) {
     }
     .quick-action-card .qa-title { font-size: 10px; font-weight: 600; color: #fff; line-height: 1.2; }
 
-    .lang-hint {
-      display: flex; align-items: center; justify-content: center;
-      gap: 6px; margin-top: 14px;
-      font-size: 11px; color: var(--text-dim); font-weight: 600;
-    }
-    .lang-hint .hint-pill {
-      background: var(--bg-glass);
-      border: 1px solid var(--border);
-      padding: 3px 8px; border-radius: 6px;
-      font-size: 11px; color: var(--text-secondary);
-    }
-
     /* ─── MESSAGE GROUPS ─── */
     .msg-group {
       display: flex;
       flex-direction: column;
-      max-width: 88%;
+      max-width: 96%;
       animation: msgSlide 0.3s cubic-bezier(0.22, 1, 0.36, 1);
     }
     @keyframes msgSlide {
@@ -601,6 +559,9 @@ foreach ($quickChips as $c) {
       backdrop-filter: blur(8px);
     }
 
+    .msg-bubble p { margin: 0 0 12px 0; }
+    .msg-bubble p:last-child { margin-bottom: 0; }
+    
     .msg-bubble strong { color: #60a5fa; font-weight: 700; }
     .msg-group.user .msg-bubble strong { color: #bfdbfe; }
     .msg-bubble code { background: rgba(0,0,0,0.35); padding: 2px 6px; border-radius: 5px; color: #f472b6; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
@@ -610,6 +571,20 @@ foreach ($quickChips as $c) {
     .msg-bubble table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12px; }
     .msg-bubble th, .msg-bubble td { padding: 6px 8px; border: 1px solid rgba(255,255,255,0.1); text-align: left; }
     .msg-bubble th { background: rgba(59,130,246,0.15); color: #93c5fd; font-weight: 700; }
+    .msg-bubble tr:nth-child(even) td { background: rgba(255,255,255,0.03); }
+
+    /* Special Command Visual Styling — Paper Stock (green) */
+    .msg-group.assistant.ai-cmd-paperstock .msg-bubble { border: 1.5px solid #10b981; background: linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(16,185,129,0.02) 100%); }
+    .msg-group.assistant.ai-cmd-paperstock .msg-avatar { background: linear-gradient(135deg, #10b981, #059669); }
+
+    /* Special Command Visual Styling — Plate (purple) */
+    .msg-group.assistant.ai-cmd-plate .msg-bubble { border: 1.5px solid #8b5cf6; background: linear-gradient(135deg, rgba(139,92,246,0.06) 0%, rgba(139,92,246,0.02) 100%); }
+    .msg-group.assistant.ai-cmd-plate .msg-avatar { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+
+    /* Special Command Visual Styling — Quoted Query (amber) */
+    .msg-group.assistant.ai-cmd-quoted .msg-bubble { border: 1.5px solid #f59e0b; background: linear-gradient(135deg, rgba(245,158,11,0.06) 0%, rgba(245,158,11,0.02) 100%); }
+    .msg-group.assistant.ai-cmd-quoted .msg-avatar { background: linear-gradient(135deg, #f59e0b, #d97706); }
+
     .msg-bubble ul, .msg-bubble ol { padding-left: 18px; margin: 6px 0; }
     .msg-bubble li { margin-bottom: 3px; }
     .msg-bubble blockquote { border-left: 3px solid var(--accent); padding-left: 10px; margin: 8px 0; color: var(--text-secondary); font-style: italic; }
@@ -808,17 +783,38 @@ foreach ($quickChips as $c) {
     }
     .btn-input:active { transform: scale(0.88); }
 
-    .btn-mic { color: #38bdf8; }
+    .btn-mic {
+      color: var(--text-secondary);
+      margin-right: 4px;
+      transition: all 0.25s ease;
+    }
     .btn-mic.listening {
-      background: rgba(59, 130, 246, 0.15);
-      color: #3b82f6;
-      animation: micPulse 1s infinite;
+      color: #ef4444 !important;
+      background: rgba(239, 68, 68, 0.2) !important;
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+      animation: pulseMic 1.5s infinite;
     }
-    @keyframes micPulse {
-      0% { box-shadow: 0 0 0 0 rgba(59,130,246,0.5); }
-      70% { box-shadow: 0 0 0 8px rgba(59,130,246,0); }
-      100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
+    @keyframes pulseMic {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
     }
+
+    .code-block-wrapper { position: relative; margin: 8px 0; }
+    .btn-copy-code {
+      position: absolute;
+      top: 6px; right: 6px;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #94a3b8;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex; align-items: center; gap: 4px;
+      transition: all 0.2s;
+      z-index: 5;
+    }
+    .btn-copy-code:hover { background: rgba(255,255,255,0.25); color: #fff; }
 
     .btn-send {
       background: var(--user-grad);
@@ -857,13 +853,13 @@ foreach ($quickChips as $c) {
 
     /* ─── RESPONSIVE ─── */
     @media (min-width: 480px) {
-      .chat-container { padding: 20px 24px; }
-      .msg-group { max-width: 75%; }
+      .chat-container { padding: 20px 16px; }
+      .msg-group { max-width: 88%; }
       .quick-actions { grid-template-columns: 1fr 1fr 1fr; }
     }
     @media (min-width: 768px) {
-      .chat-container { padding: 24px 32px; max-width: 800px; margin: 0 auto; width: 100%; }
-      .msg-group { max-width: 65%; }
+      .chat-container { padding: 24px 20px; max-width: 800px; margin: 0 auto; width: 100%; }
+      .msg-group { max-width: 85%; }
     }
   </style>
 </head>
@@ -898,14 +894,6 @@ foreach ($quickChips as $c) {
       </button>
     </div>
   </header>
-
-  <!-- Language Pills -->
-  <div class="lang-toolbar">
-    <button class="lang-pill" data-lang="en-US"><span class="lang-flag">🇬🇧</span> English</button>
-    <button class="lang-pill" data-lang="bn-IN"><span class="lang-flag">🇧🇩</span> বাংলা</button>
-    <button class="lang-pill" data-lang="hi-IN"><span class="lang-flag">🇮🇳</span> हिंदी</button>
-    <button class="lang-pill active" data-lang="auto"><span class="lang-flag">🤖</span> Auto</button>
-  </div>
 
   <!-- Chips Toggle Button -->
   <div class="chips-toggle" id="chipsToggle">
@@ -956,13 +944,6 @@ foreach ($quickChips as $c) {
         <?php endforeach; ?>
       </div>
 
-      <div class="lang-hint">
-        <i class="bi bi-translate"></i>
-        Speak in
-        <span class="hint-pill">English</span>
-        <span class="hint-pill">বাংলা</span>
-        <span class="hint-pill">हिंदी</span>
-      </div>
     </div>
 
     <!-- Typing Indicator -->
@@ -985,25 +966,24 @@ foreach ($quickChips as $c) {
   <!-- Input Footer -->
   <footer class="app-footer">
     <div class="input-container">
-      <textarea class="chat-input" id="chatInput" placeholder="Ask about stock, orders, dispatch..." rows="1" autocomplete="off"></textarea>
+      <button class="btn-input btn-mic" id="micBtn" title="Speak to AI Agent">
+        <i class="bi bi-mic-fill" id="micIcon"></i>
+      </button>
+      <textarea class="chat-input" id="chatInput" placeholder="Ask about stock, orders or speak..." rows="1" autocomplete="off"></textarea>
       <div class="input-actions">
-        <button class="btn-input btn-mic" id="micBtn" title="Voice Input">
-          <i class="bi bi-mic-fill"></i>
-        </button>
         <button class="btn-input btn-send" id="sendBtn" title="Send" disabled>
           <i class="bi bi-send-fill"></i>
         </button>
       </div>
     </div>
     <div class="input-hint">
-      <span id="langHint">Auto-detect language</span>
+      <span id="voiceStatusText" style="color:#3b82f6;font-weight:700"></span>
       <span class="char-count" id="charCount"></span>
     </div>
   </footer>
 
   <script>
     const API_URL = '<?= $baseUrl ?>/modules/ai_agent/api.php';
-    let selectedLang = 'auto';
     let newMsgCount = 0;
     let isUserScrolled = false;
     let currentTheme = localStorage.getItem('erp-ai-theme') || 'dark';
@@ -1035,7 +1015,6 @@ foreach ($quickChips as $c) {
     const chatStream = document.getElementById('chatStream');
     const chatInput = document.getElementById('chatInput');
     const sendBtn = document.getElementById('sendBtn');
-    const micBtn = document.getElementById('micBtn');
     const clearBtn = document.getElementById('clearBtn');
     const typingBox = document.getElementById('typingBox');
     const scrollFab = document.getElementById('scrollFab');
@@ -1046,7 +1025,6 @@ foreach ($quickChips as $c) {
     const statusText = document.getElementById('statusText');
     const connectionBanner = document.getElementById('connectionBanner');
     const charCount = document.getElementById('charCount');
-    const langHint = document.getElementById('langHint');
     const welcomeHero = document.getElementById('welcomeHero');
 
     // Auto-resize textarea
@@ -1062,18 +1040,6 @@ foreach ($quickChips as $c) {
     chipsToggle.addEventListener('click', () => {
       chipsSection.classList.toggle('open');
       chipsToggle.classList.toggle('active');
-    });
-
-    // Language pills
-    document.querySelectorAll('.lang-pill').forEach(pill => {
-      pill.addEventListener('click', () => {
-        document.querySelectorAll('.lang-pill').forEach(p => p.classList.remove('active'));
-        pill.classList.add('active');
-        selectedLang = pill.getAttribute('data-lang');
-        const names = { 'auto': 'Auto-detect language', 'en-US': 'English', 'bn-IN': 'বাংলা', 'hi-IN': 'हिंदी' };
-        langHint.textContent = names[selectedLang] || 'Auto-detect language';
-        if (navigator.vibrate) navigator.vibrate(10);
-      });
     });
 
     // Quick chips click
@@ -1156,13 +1122,13 @@ foreach ($quickChips as $c) {
         const res = await fetch(API_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ action: 'query', prompt: prompt, user_lang: selectedLang })
+          body: new URLSearchParams({ action: 'query', prompt: prompt })
         });
         const data = await res.json();
         showTyping(false);
 
         if (data.ok) {
-          appendAiMsg(data.answer, data.suggestions);
+          appendAiMsg(data.answer, data.suggestions, data.command_type);
           if (data.nav_url) {
             appendAiMsg(`🚀 **Redirect Link:** [Click here to open ${data.tool_used || 'Module Page'}](${data.nav_url})`);
           }
@@ -1175,16 +1141,105 @@ foreach ($quickChips as $c) {
       }
     }
 
-    // Delegation for suggestion chips inside chatStream
-    chatStream.addEventListener('click', (e) => {
-      const chip = e.target.closest('.ai-suggestion-chip');
-      if (chip) {
-        const prompt = chip.getAttribute('data-prompt');
-        if (prompt) {
-          chatInput.value = prompt;
-          sendQuery();
+    // Web Speech API Voice Recognition Controller
+    const micBtn = document.getElementById('micBtn');
+    const micIcon = document.getElementById('micIcon');
+    const voiceStatusText = document.getElementById('voiceStatusText');
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+    let isListening = false;
+
+    if (SpeechRecognition && micBtn) {
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+
+      recognition.onstart = () => {
+        isListening = true;
+        micBtn.classList.add('listening');
+        if (micIcon) micIcon.className = 'bi bi-mic-fill ai-pulse';
+        if (voiceStatusText) voiceStatusText.textContent = '🎙️ Listening... Speak now';
+        chatInput.placeholder = 'Listening...';
+        if (navigator.vibrate) navigator.vibrate(20);
+      };
+
+      recognition.onresult = (e) => {
+        let transcript = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          transcript += e.results[i][0].transcript;
         }
+        chatInput.value = transcript;
+        chatInput.dispatchEvent(new Event('input'));
+      };
+
+      recognition.onerror = (e) => {
+        console.warn('Speech error:', e.error);
+        stopListening();
+        if (voiceStatusText) voiceStatusText.textContent = 'Voice error: ' + e.error;
+        setTimeout(() => { if (voiceStatusText) voiceStatusText.textContent = ''; }, 3000);
+      };
+
+      recognition.onend = () => {
+        stopListening();
+      };
+
+      function stopListening() {
+        isListening = false;
+        micBtn.classList.remove('listening');
+        if (micIcon) micIcon.className = 'bi bi-mic-fill';
+        if (voiceStatusText) voiceStatusText.textContent = '';
+        chatInput.placeholder = 'Ask about stock, orders or speak...';
       }
+
+      micBtn.addEventListener('click', () => {
+        if (isListening) {
+          recognition.stop();
+        } else {
+          try {
+            recognition.start();
+          } catch (err) {
+            console.error(err);
+          }
+        }
+      });
+    } else if (micBtn) {
+      micBtn.addEventListener('click', () => {
+        alert('Voice input is not supported in this browser. Please use Google Chrome, Edge, or Safari.');
+      });
+    }
+
+    // Save & Restore Chat History in localStorage
+    function saveHistory() {
+      try {
+        localStorage.setItem('erp_pwa_chat_history', chatStream.innerHTML);
+      } catch (e) {}
+    }
+
+    function loadHistory() {
+      try {
+        const saved = localStorage.getItem('erp_pwa_chat_history');
+        if (saved && saved.trim() !== '') {
+          chatStream.innerHTML = saved;
+          if (!document.getElementById('typingBox')) {
+            chatStream.appendChild(typingBox);
+          }
+          scrollToBottom();
+        }
+      } catch (e) {}
+    }
+    loadHistory();
+
+    // Clear Chat
+    clearBtn.addEventListener('click', () => {
+      if (navigator.vibrate) navigator.vibrate(20);
+      try { localStorage.removeItem('erp_pwa_chat_history'); } catch (e) {}
+      const welcomeHTML = welcomeHero ? welcomeHero.outerHTML : '';
+      chatStream.innerHTML = '';
+      if (welcomeHTML) chatStream.innerHTML = welcomeHTML;
+      chatStream.appendChild(typingBox);
+      newMsgCount = 0;
+      fabBadge.classList.remove('visible');
     });
 
     function appendUserMsg(text) {
@@ -1202,12 +1257,38 @@ foreach ($quickChips as $c) {
           </div>
         </div>`;
       chatStream.insertAdjacentHTML('beforeend', html);
+      saveHistory();
       scrollToBottom();
     }
 
-    function appendAiMsg(markdownText, suggestions) {
+    function appendAiMsg(markdownText, suggestions, commandType) {
       const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      marked.setOptions({ breaks: true, gfm: true });
       let parsedHtml = marked.parse(markdownText);
+
+      // Enhance code blocks with Copy buttons
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = parsedHtml;
+      tempDiv.querySelectorAll('pre').forEach(pre => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'code-block-wrapper';
+        pre.parentNode.insertBefore(wrapper, pre);
+        wrapper.appendChild(pre);
+
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'btn-copy-code';
+        copyBtn.type = 'button';
+        copyBtn.innerHTML = '<i class="bi bi-clipboard"></i> Copy code';
+        copyBtn.onclick = function() {
+          const code = pre.querySelector('code') ? pre.querySelector('code').innerText : pre.innerText;
+          navigator.clipboard.writeText(code).then(() => {
+            copyBtn.innerHTML = '<i class="bi bi-check2"></i> Copied!';
+            setTimeout(() => { copyBtn.innerHTML = '<i class="bi bi-clipboard"></i> Copy code'; }, 2000);
+          });
+        };
+        wrapper.appendChild(copyBtn);
+      });
+      parsedHtml = tempDiv.innerHTML;
 
       if (suggestions && suggestions.length > 0) {
         parsedHtml += `<div class="ai-suggestion-box">
@@ -1219,8 +1300,9 @@ foreach ($quickChips as $c) {
         parsedHtml += `</div></div>`;
       }
 
+      const cmdClass = commandType ? ` ai-cmd-${commandType}` : '';
       const html = `
-        <div class="msg-group assistant">
+        <div class="msg-group assistant${cmdClass}">
           <div class="msg-row">
             <div class="msg-avatar"><i class="bi bi-robot"></i></div>
             <div class="msg-content">
@@ -1233,6 +1315,8 @@ foreach ($quickChips as $c) {
           </div>
         </div>`;
       chatStream.insertAdjacentHTML('beforeend', html);
+      saveHistory();
+
       if (!isUserScrolled) {
         scrollToBottom();
       } else {
@@ -1264,147 +1348,6 @@ foreach ($quickChips as $c) {
 
     function escapeHtml(text) {
       return text.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
-    }
-
-    // Voice Speech Recognition — True Push-to-Talk (Hold to Speak)
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    let isListening = false;
-    let isUserHoldingMic = false;
-    let accumulatedText = '';
-    let currentUtterance = '';
-
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.interimResults = true;
-      recognition.continuous = true;
-      recognition.maxAlternatives = 1;
-
-      let touchFired = false;
-
-      function startListening() {
-        if (isUserHoldingMic) return;
-        isUserHoldingMic = true;
-        isListening = true;
-        accumulatedText = '';
-        currentUtterance = '';
-        chatInput.value = '';
-
-        if (selectedLang === 'hi-IN' || selectedLang === 'Hindi') recognition.lang = 'hi-IN';
-        else if (selectedLang === 'bn-IN' || selectedLang === 'Bengali') recognition.lang = 'bn-IN';
-        else if (selectedLang === 'en-US' || selectedLang === 'English') recognition.lang = 'en-US';
-        else recognition.lang = 'hi-IN';
-
-        try { recognition.start(); } catch(e) { isListening = false; isUserHoldingMic = false; return; }
-        micBtn.classList.add('listening');
-        chatInput.placeholder = '🎙️ Listening... Release mic to send';
-      }
-
-      function stopListening() {
-        if (!isUserHoldingMic) return;
-        isUserHoldingMic = false;
-        try { recognition.stop(); } catch(e) {}
-      }
-
-      micBtn.addEventListener('touchstart', (e) => {
-        touchFired = true;
-        startListening();
-      });
-
-      micBtn.addEventListener('touchend', (e) => {
-        touchFired = false;
-        stopListening();
-      });
-
-      micBtn.addEventListener('touchcancel', () => {
-        touchFired = false;
-        isUserHoldingMic = false;
-        isListening = false;
-        try { recognition.stop(); } catch(e) {}
-        micBtn.classList.remove('listening');
-        chatInput.placeholder = 'Ask about stock, orders, dispatch...';
-      });
-
-      micBtn.addEventListener('mousedown', (e) => {
-        if (touchFired) return;
-        startListening();
-      });
-
-      micBtn.addEventListener('mouseup', (e) => {
-        if (touchFired) return;
-        stopListening();
-      });
-
-      micBtn.addEventListener('mouseleave', () => {
-        if (touchFired) return;
-        stopListening();
-      });
-
-      recognition.onresult = (e) => {
-        let interimText = '';
-        let finalSessionText = '';
-
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const transcript = e.results[i][0].transcript;
-          if (e.results[i].isFinal) {
-            finalSessionText += transcript + ' ';
-          } else {
-            interimText += transcript;
-          }
-        }
-
-        if (finalSessionText.trim()) {
-          const newChunk = finalSessionText.trim();
-          if (!accumulatedText.endsWith(newChunk)) {
-            accumulatedText = (accumulatedText ? accumulatedText + ' ' : '') + newChunk;
-          }
-        }
-
-        const liveDisplay = (accumulatedText ? accumulatedText + ' ' : '') + interimText;
-        currentUtterance = liveDisplay.trim();
-        chatInput.value = currentUtterance;
-        chatInput.dispatchEvent(new Event('input'));
-      };
-
-      recognition.onerror = (e) => {
-        console.warn('Speech recognition error:', e.error);
-        if (e.error === 'no-speech' || e.error === 'aborted' || e.error === 'network') {
-          if (isUserHoldingMic) {
-            try { recognition.start(); } catch(err) {}
-            return;
-          }
-        }
-        isListening = false;
-        isUserHoldingMic = false;
-        micBtn.classList.remove('listening');
-        chatInput.placeholder = 'Ask about stock, orders, dispatch...';
-      };
-
-      recognition.onend = () => {
-        if (isUserHoldingMic) {
-          // User is STILL pressing the mic button! Restart recognition across silence pauses
-          try {
-            recognition.start();
-          } catch(e) {
-            isUserHoldingMic = false;
-            isListening = false;
-            micBtn.classList.remove('listening');
-            chatInput.placeholder = 'Ask about stock, orders, dispatch...';
-          }
-          return;
-        }
-
-        // User HAS RELEASED the mic button! Send prompt
-        isListening = false;
-        micBtn.classList.remove('listening');
-        chatInput.placeholder = 'Ask about stock, orders, dispatch...';
-        const text = currentUtterance.trim() || chatInput.value.trim();
-        if (text) {
-          chatInput.value = text;
-          sendQuery();
-        }
-      };
-    } else {
-      micBtn.style.display = 'none';
     }
 
     // Focus input on load

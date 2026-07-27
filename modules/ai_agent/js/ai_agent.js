@@ -21,11 +21,14 @@
     isProcessing: false
   };
 
-  function appendMessage(text, sender, toolUsed, suggestions) {
+  function appendMessage(text, sender, toolUsed, suggestions, commandType) {
     if (!chatBody) return;
 
     var msgDiv = document.createElement('div');
     msgDiv.className = 'ai-msg ' + sender;
+    if (commandType) {
+      msgDiv.className += ' ai-cmd-' + commandType;
+    }
 
     var avatarDiv = document.createElement('div');
     avatarDiv.className = 'ai-msg-avatar';
@@ -79,7 +82,38 @@
   function formatMarkdown(str) {
     if (!str) return '';
     var escaped = escapeHtml(str);
-    
+
+    // Markdown Table → HTML Table
+    var lines = escaped.split('\n');
+    var tableLines = [];
+    var inTable = false;
+    var result = [];
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim();
+      if (line.indexOf('|') === 0 && line.lastIndexOf('|') > 0) {
+        var cells = line.split('|').slice(1, -1).map(function(c) { return c.trim(); });
+        if (cells.length > 0 && /^[\-\|:\s]+$/.test(line.replace(/[^\-\|:\s]/g, ''))) {
+          inTable = true;
+          continue;
+        }
+        if (inTable || (cells.length > 0 && line.charAt(0) === '|')) {
+          tableLines.push(cells);
+          inTable = true;
+          continue;
+        }
+      }
+      if (inTable && tableLines.length > 0) {
+        result.push(buildTable(tableLines));
+        tableLines = [];
+        inTable = false;
+      }
+      result.push(lines[i]);
+    }
+    if (inTable && tableLines.length > 0) {
+      result.push(buildTable(tableLines));
+    }
+    escaped = result.join('\n');
+
     // Bold
     escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     // Italic
@@ -94,6 +128,26 @@
     return escaped;
   }
 
+  function buildTable(rows) {
+    if (!rows || rows.length === 0) return '';
+    var html = '<table class="ai-md-table"><thead><tr>';
+    var headers = rows[0];
+    for (var h = 0; h < headers.length; h++) {
+      html += '<th>' + headers[h] + '</th>';
+    }
+    html += '</tr></thead><tbody>';
+    for (var r = 1; r < rows.length; r++) {
+      html += '<tr>';
+      var cols = rows[r];
+      for (var c = 0; c < cols.length; c++) {
+        html += '<td>' + cols[c] + '</td>';
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    return html;
+  }
+
   function escapeHtml(str) {
     return str
       .replace(/&/g, '&amp;')
@@ -101,36 +155,6 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
-  }
-
-  var currentLang = localStorage.getItem('ai_manual_lang') || 'English';
-  var langPills = document.querySelectorAll('.ai-lang-pill');
-
-  function updateLangPillsUI(selected) {
-    currentLang = selected;
-    localStorage.setItem('ai_manual_lang', selected);
-    langPills.forEach(function(pill) {
-      if (pill.getAttribute('data-lang') === selected) {
-        pill.classList.add('active');
-      } else {
-        pill.classList.remove('active');
-      }
-    });
-    if (typeof recognition !== 'undefined' && recognition) {
-      if (selected === 'Bengali') recognition.lang = 'bn-IN';
-      else if (selected === 'Hindi') recognition.lang = 'hi-IN';
-      else recognition.lang = 'en-US';
-    }
-  }
-
-  if (langPills.length > 0) {
-    updateLangPillsUI(currentLang);
-    langPills.forEach(function(pill) {
-      pill.addEventListener('click', function() {
-        var lang = pill.getAttribute('data-lang');
-        if (lang) updateLangPillsUI(lang);
-      });
-    });
   }
 
   function handleSend(promptText) {
@@ -150,9 +174,7 @@
     var body = new FormData();
     body.set('action', 'query');
     body.set('prompt', query);
-    if (currentLang && currentLang !== 'Auto') {
-      body.set('user_lang', currentLang);
-    }
+
 
     var targetApiUrl = window.AI_AGENT_API_URL || 'api.php';
     fetch(targetApiUrl, {
@@ -181,7 +203,7 @@
         if (apiStatusEl) apiStatusEl.innerText = res.provider || 'Active';
         if (lastToolEl) lastToolEl.innerText = res.tool_used || 'General RAG';
 
-        appendMessage(res.answer || 'Query completed.', 'assistant', res.tool_used, res.suggestions);
+        appendMessage(res.answer || 'Query completed.', 'assistant', res.tool_used, res.suggestions, res.command_type);
 
         if (chatBody) {
           try { sessionStorage.setItem('ai_chat_history', chatBody.innerHTML); } catch (e) {}
@@ -241,177 +263,73 @@
     });
   }
 
-  // Web Speech API Voice Recognition — Press & Hold (Push-to-Talk)
-  var micBtns = document.querySelectorAll('#aiMicBtn, #aiMicBtnFloat, #micBtn');
+  // Speech Recognition (Voice / Mic Input)
+  var micBtn = document.getElementById('aiMicBtn');
+  var micIcon = document.getElementById('aiMicIcon');
+  var recognition = null;
+  var isListening = false;
+
   var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-  if (SpeechRecognition) {
-    var recognition = new SpeechRecognition();
+  if (SpeechRecognition && micBtn) {
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
     recognition.interimResults = true;
-    recognition.continuous = true;
-    recognition.maxAlternatives = 1;
 
-    var isListening = false;
-    var isUserHoldingMic = false;
-    var accumulatedText = '';
-    var currentUtterance = '';
-
-    function startPushToTalk() {
-      if (isUserHoldingMic || state.isProcessing) return;
-      isUserHoldingMic = true;
+    recognition.onstart = function() {
       isListening = true;
-      accumulatedText = '';
-      currentUtterance = '';
-      if (chatInput) chatInput.value = '';
-
-      if (currentLang === 'Bengali' || currentLang === 'bn-IN') recognition.lang = 'bn-IN';
-      else if (currentLang === 'Hindi' || currentLang === 'hi-IN') recognition.lang = 'hi-IN';
-      else if (currentLang === 'English' || currentLang === 'en-US') recognition.lang = 'en-US';
-      else recognition.lang = 'hi-IN';
-
-      try {
-        recognition.start();
-      } catch (e) {
-        isListening = false;
-        isUserHoldingMic = false;
-        console.warn('Speech recognition start error:', e);
-        return;
+      if (micBtn) {
+        micBtn.style.color = '#ef4444';
+        micBtn.style.background = 'rgba(239, 68, 68, 0.2)';
+        micBtn.style.borderColor = '#ef4444';
       }
-      micBtns.forEach(function(btn) {
-        if (btn) {
-          btn.classList.add('listening');
-          btn.setAttribute('title', '🎙️ Speaking... Release to send');
-        }
-      });
-      if (chatInput) {
-        chatInput.placeholder = '🎙️ Listening... Release mic to send';
-      }
-    }
-
-    function stopPushToTalk() {
-      if (!isUserHoldingMic) return;
-      isUserHoldingMic = false;
-      try {
-        recognition.stop();
-      } catch(e) {}
-    }
-
-    micBtns.forEach(function(btn) {
-      if (!btn) return;
-      var touchFired = false;
-
-      btn.addEventListener('touchstart', function(e) {
-        touchFired = true;
-        startPushToTalk();
-      });
-
-      btn.addEventListener('touchend', function(e) {
-        touchFired = false;
-        stopPushToTalk();
-      });
-
-      btn.addEventListener('touchcancel', function() {
-        touchFired = false;
-        isUserHoldingMic = false;
-        isListening = false;
-        try { recognition.stop(); } catch(e) {}
-        stopListeningUI();
-      });
-
-      btn.addEventListener('mousedown', function(e) {
-        if (touchFired) return;
-        startPushToTalk();
-      });
-
-      btn.addEventListener('mouseup', function(e) {
-        if (touchFired) return;
-        stopPushToTalk();
-      });
-
-      btn.addEventListener('mouseleave', function() {
-        if (touchFired) return;
-        stopPushToTalk();
-      });
-    });
+      if (micIcon) micIcon.className = 'bi bi-mic-fill ai-pulse';
+      if (chatInput) chatInput.placeholder = '🎙️ Listening... Speak now';
+    };
 
     recognition.onresult = function(event) {
-      var interimText = '';
-      var finalSessionText = '';
-
+      var transcript = '';
       for (var i = event.resultIndex; i < event.results.length; i++) {
-        var transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalSessionText += transcript + ' ';
-        } else {
-          interimText += transcript;
-        }
+        transcript += event.results[i][0].transcript;
       }
-
-      if (finalSessionText.trim()) {
-        var newChunk = finalSessionText.trim();
-        if (!accumulatedText.endsWith(newChunk)) {
-          accumulatedText = (accumulatedText ? accumulatedText + ' ' : '') + newChunk;
-        }
-      }
-
-      var liveDisplay = (accumulatedText ? accumulatedText + ' ' : '') + interimText;
-      currentUtterance = liveDisplay.trim();
-      if (chatInput) chatInput.value = currentUtterance;
+      if (chatInput) chatInput.value = transcript;
     };
 
     recognition.onerror = function(event) {
       console.warn('Speech recognition error:', event.error);
-      if (event.error === 'no-speech' || event.error === 'network' || event.error === 'aborted') {
-        if (isUserHoldingMic) {
-          try { recognition.start(); } catch(err) {}
-          return;
-        }
-      }
-      isListening = false;
-      isUserHoldingMic = false;
-      stopListeningUI();
+      stopListening();
+      if (chatInput) chatInput.placeholder = 'Voice error: ' + event.error + '. Try typing.';
     };
 
     recognition.onend = function() {
-      if (isUserHoldingMic) {
-        // User is STILL holding the mic button! Restart across silence pauses
-        try {
-          recognition.start();
-        } catch(e) {
-          isUserHoldingMic = false;
-          isListening = false;
-          stopListeningUI();
-        }
-        return;
-      }
-
-      // User HAS RELEASED the mic button! Send prompt
-      var text = currentUtterance || (chatInput ? chatInput.value : '');
-      isListening = false;
-      stopListeningUI();
-      if (text.trim()) {
-        handleSend(text.trim());
-      }
+      stopListening();
     };
 
-    function stopListeningUI() {
-      micBtns.forEach(function(btn) {
-        if (btn) {
-          btn.classList.remove('listening');
-          btn.setAttribute('title', 'Voice Input — Press & Hold to Speak');
-        }
-      });
-      if (chatInput) {
-        chatInput.placeholder = 'Press & hold mic to speak...';
+    function stopListening() {
+      isListening = false;
+      if (micBtn) {
+        micBtn.style.color = '#94a3b8';
+        micBtn.style.background = 'rgba(255,255,255,0.08)';
+        micBtn.style.borderColor = 'rgba(255,255,255,0.15)';
       }
+      if (micIcon) micIcon.className = 'bi bi-mic-fill';
+      if (chatInput) chatInput.placeholder = 'Type query or click mic to speak...';
     }
-  } else {
-    micBtns.forEach(function(btn) {
-      if (btn) {
-        btn.addEventListener('click', function() {
-          alert('Voice Speech Recognition is not supported by your current browser. Please use Google Chrome, Edge, or Safari.');
-        });
+
+    micBtn.addEventListener('click', function() {
+      if (isListening) {
+        recognition.stop();
+      } else {
+        try {
+          recognition.start();
+        } catch (e) {
+          console.error(e);
+        }
       }
+    });
+  } else if (micBtn) {
+    micBtn.addEventListener('click', function() {
+      alert('Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari.');
     });
   }
 

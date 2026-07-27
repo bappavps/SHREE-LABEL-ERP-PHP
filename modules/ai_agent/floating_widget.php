@@ -75,20 +75,10 @@ $floatChips = getAiAgentQuickChips();
     </div>
   </div>
 
-  <div class="ai-lang-selector-bar" style="padding:6px 12px;background:#f1f5f9;display:flex;align-items:center;justify-content:space-between;border-top:1px solid #e2e8f0;font-size:.75rem">
-    <span style="color:#64748b;font-weight:600"><i class="bi bi-translate"></i> Lang:</span>
-    <div class="ai-lang-pills" style="display:flex;gap:4px">
-      <button type="button" class="ai-lang-pill active" data-lang="English" title="Manual English Language Mode">English</button>
-      <button type="button" class="ai-lang-pill" data-lang="Bengali" title="Manual Bengali Language Mode">বাংলা</button>
-      <button type="button" class="ai-lang-pill" data-lang="Hindi" title="Manual Hindi Language Mode">हिंदी</button>
-      <button type="button" class="ai-lang-pill" data-lang="Auto" title="Auto Detect Language Mode">Auto</button>
-    </div>
-  </div>
-
-  <div class="ai-chat-input-wrap" style="padding:10px 12px;gap:6px">
-    <input type="text" class="ai-chat-input" id="aiChatInput" placeholder="Type query or click mic to speak..." style="font-size:.82rem;padding:8px 12px">
-    <button type="button" class="ai-mic-btn" id="aiMicBtnFloat" title="Voice Input — Speak to Type" style="padding:8px 10px;font-size:.82rem;display:flex;align-items:center;gap:4px">
-      <i class="bi bi-mic-fill"></i>
+  <div class="ai-chat-input-wrap" style="padding:10px 12px;gap:6px;display:flex;align-items:center">
+    <input type="text" class="ai-chat-input" id="aiChatInput" placeholder="Type query or click mic to speak..." style="font-size:.82rem;padding:8px 12px;flex:1">
+    <button type="button" class="ai-mic-btn" id="aiMicBtn" title="Speak to AI Agent" style="padding:8px 10px;font-size:.9rem;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#94a3b8;border-radius:8px;cursor:pointer;transition:all 0.2s">
+      <i class="bi bi-mic-fill" id="aiMicIcon"></i>
     </button>
     <button type="button" class="ai-send-btn" id="aiSendBtn" style="padding:8px 14px;font-size:.82rem">
       <i class="bi bi-send-fill"></i>

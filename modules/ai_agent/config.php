@@ -25,6 +25,8 @@ function getAiAgentConfig(): array
         'default_provider' => $provider,
         'gemini_api_key' => $appSettings['gemini_api_key'] ?? (getenv('GEMINI_API_KEY') ?: ''),
         'openai_api_key' => $appSettings['openai_api_key'] ?? (getenv('OPENAI_API_KEY') ?: ''),
+        'openrouter_api_key' => $appSettings['openrouter_api_key'] ?? (getenv('OPENROUTER_API_KEY') ?: ''),
+        'opencode_api_key' => $appSettings['opencode_api_key'] ?? (getenv('OPENCODE_API_KEY') ?: ''),
         'local_api_endpoint' => $appSettings['local_ai_url'] ?? 'http://localhost:11434/v1/chat/completions',
         'model_name' => $appSettings['ai_agent_model'] ?? 'gemini-2.0-flash',
         'max_tokens' => (int) ($appSettings['ai_agent_max_tokens'] ?? 1500),

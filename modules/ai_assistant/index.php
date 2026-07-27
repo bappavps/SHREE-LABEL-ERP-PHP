@@ -13,15 +13,23 @@ include __DIR__ . '/../../includes/header.php';
 </div>
 <div class="page-header">
   <div>
-    <h1>AI Assistant</h1>
-    <p>General AI helper for ERP workflow guidance and task support.</p>
+    <h1>AI Assistant Module Update</h1>
+    <p>This module has been integrated into the central AI Agent.</p>
   </div>
 </div>
 <div class="card">
-  <div class="card-header"><span class="card-title">AI Assistant</span></div>
+  <div class="card-header"><span class="card-title">Module Deprecated</span></div>
   <div style="padding:40px;text-align:center;color:#6b7280">
-    <i class="bi bi-robot" style="font-size:2.5rem;opacity:.3"></i>
-    <p style="margin-top:12px;font-size:.9rem">This AI workspace is ready for the next implementation phase.</p>
+    <i class="bi bi-info-circle-fill" style="font-size:2.5rem;color:#007bff;"></i>
+    <h3 style="margin-top:1rem;">This Module Has Been Merged!</h3>
+    <p style="margin-top:12px;font-size:1rem;max-width:600px;margin-left:auto;margin-right:auto;">
+      The <strong>AI Assistant</strong> has been upgraded and merged into the new, more powerful <strong>AI
+        Agent</strong> module.
+      All AI capabilities are now centralized for a better experience.
+    </p>
+    <a href="<?= BASE_URL ?>/modules/ai_agent/index.php" class="btn btn-primary" style="margin-top:20px;">
+      <i class="bi bi-robot"></i> Go to AI Agent Module
+    </a>
   </div>
 </div>
 <?php include __DIR__ . '/../../includes/footer.php'; ?>

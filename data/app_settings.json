@@ -100,7 +100,7 @@
             },
             "batch": {
                 "prefix": "BAT",
-                "counter": 3
+                "counter": 1
             },
             "sales_order": {
                 "prefix": "SO",
@@ -108,7 +108,7 @@
             },
             "planning": {
                 "prefix": "PLN",
-                "counter": 1
+                "counter": 0
             },
             "planning_barcode": {
                 "prefix": "PLN-BAR",
@@ -136,7 +136,7 @@
             },
             "printing_job": {
                 "prefix": "FLX",
-                "counter": 1
+                "counter": 0
             },
             "die_cutting_job": {
                 "prefix": "DCT",
@@ -144,11 +144,11 @@
             },
             "label_slitting_job": {
                 "prefix": "LSL",
-                "counter": 1
+                "counter": 0
             },
             "barcode_job": {
                 "prefix": "BRC-BAR",
-                "counter": 2
+                "counter": 0
             },
             "planning_paperroll": {
                 "prefix": "",
@@ -165,7 +165,7 @@
     "gemini_api_key": "",
     "openai_api_key": "",
     "local_ai_url": "http://localhost:11434/v1/chat/completions",
-    "ai_agent_temperature": 0.2,
+    "ai_agent_temperature": 0.6,
     "ai_agent_max_tokens": 1500,
     "ai_agent_enabled": 1
 }

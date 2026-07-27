@@ -6,8 +6,8 @@ require_once __DIR__ . '/../tally/tally_helper.php';
 
 $db = getDB();
 $settings = getAppSettings();
-$tenantSlug = defined('TENANT_SLUG') ? trim((string)TENANT_SLUG) : 'default';
-$tenantLabel = defined('TENANT_NAME') ? trim((string)TENANT_NAME) : APP_NAME;
+$tenantSlug = defined('TENANT_SLUG') ? trim((string) TENANT_SLUG) : 'default';
+$tenantLabel = defined('TENANT_NAME') ? trim((string) TENANT_NAME) : APP_NAME;
 $tenantSettingsPath = getAppSettingsPath();
 $projectRoot = str_replace('\\', '/', realpath(__DIR__ . '/../../') ?: (__DIR__ . '/../../'));
 
@@ -19,7 +19,8 @@ $libraryCategories = [
   'misc' => 'Misc',
 ];
 
-function tenantSettingsZipPath(string $projectRoot, string $settingsPath): string {
+function tenantSettingsZipPath(string $projectRoot, string $settingsPath): string
+{
   $projectRoot = rtrim(str_replace('\\', '/', $projectRoot), '/');
   $settingsPath = str_replace('\\', '/', $settingsPath);
   if ($projectRoot !== '' && strpos($settingsPath, $projectRoot . '/') === 0) {
@@ -28,23 +29,26 @@ function tenantSettingsZipPath(string $projectRoot, string $settingsPath): strin
   return 'data/tenants/imported/app_settings.json';
 }
 
-function normalizeHexColor($value, $fallback) {
-  $value = trim((string)$value);
+function normalizeHexColor($value, $fallback)
+{
+  $value = trim((string) $value);
   if (preg_match('/^#[0-9a-fA-F]{6}$/', $value)) {
     return strtoupper($value);
   }
   return $fallback;
 }
 
-function isDirectImageUrl($url) {
-  $url = trim((string)$url);
+function isDirectImageUrl($url)
+{
+  $url = trim((string) $url);
   if ($url === '') {
     return false;
   }
-  return (bool)preg_match('/\.(gif|png|jpe?g|webp|avif|svg)(\?|#|$)/i', $url);
+  return (bool) preg_match('/\.(gif|png|jpe?g|webp|avif|svg)(\?|#|$)/i', $url);
 }
 
-function tenantAssetDirectories(string $tenantSlug): array {
+function tenantAssetDirectories(string $tenantSlug): array
+{
   $safeTenantSlug = preg_replace('/[^a-z0-9._-]+/i', '-', trim($tenantSlug));
   if ($safeTenantSlug === '') {
     $safeTenantSlug = 'default';
@@ -55,11 +59,12 @@ function tenantAssetDirectories(string $tenantSlug): array {
   ];
 }
 
-function parseCsvList(string $csv): array {
+function parseCsvList(string $csv): array
+{
   $items = preg_split('/\s*,\s*/', trim($csv)) ?: [];
   $out = [];
   foreach ($items as $item) {
-    $item = trim((string)$item);
+    $item = trim((string) $item);
     if ($item === '') {
       continue;
     }
@@ -68,7 +73,8 @@ function parseCsvList(string $csv): array {
   return array_values(array_unique($out));
 }
 
-function statusWorkflowDefaults(): array {
+function statusWorkflowDefaults(): array
+{
   return [
     'version' => 1,
     'updated_at' => '',
@@ -184,7 +190,8 @@ function statusWorkflowDefaults(): array {
   ];
 }
 
-function sanitizeStatusWorkflowPayload($payload): array {
+function sanitizeStatusWorkflowPayload($payload): array
+{
   $defaults = statusWorkflowDefaults();
   if (!is_array($payload)) {
     return $defaults;
@@ -205,24 +212,24 @@ function sanitizeStatusWorkflowPayload($payload): array {
     if (!is_array($section)) {
       continue;
     }
-    $sectionName = trim((string)($section['section_name'] ?? ''));
+    $sectionName = trim((string) ($section['section_name'] ?? ''));
     if ($sectionName === '') {
-      $sectionName = 'Section ' . ((int)$sIdx + 1);
+      $sectionName = 'Section ' . ((int) $sIdx + 1);
     }
 
-    $sectionKey = trim((string)($section['section_key'] ?? ''));
+    $sectionKey = trim((string) ($section['section_key'] ?? ''));
     if ($sectionKey === '') {
       $sectionKey = strtolower(preg_replace('/[^a-z0-9]+/i', '_', $sectionName));
     }
     $sectionKey = trim($sectionKey, '_');
     if ($sectionKey === '') {
-      $sectionKey = 'section_' . ((int)$sIdx + 1);
+      $sectionKey = 'section_' . ((int) $sIdx + 1);
     }
 
     $cleanSection = [
       'section_key' => $sectionKey,
       'section_name' => $sectionName,
-      'description' => trim((string)($section['description'] ?? '')),
+      'description' => trim((string) ($section['description'] ?? '')),
       'pages' => [],
     ];
 
@@ -235,19 +242,19 @@ function sanitizeStatusWorkflowPayload($payload): array {
       if (!is_array($page)) {
         continue;
       }
-      $pageName = trim((string)($page['page_name'] ?? ''));
+      $pageName = trim((string) ($page['page_name'] ?? ''));
       if ($pageName === '') {
-        $pageName = 'Page ' . ((int)$pIdx + 1);
+        $pageName = 'Page ' . ((int) $pIdx + 1);
       }
-      $pagePath = trim((string)($page['page_path'] ?? ''));
+      $pagePath = trim((string) ($page['page_path'] ?? ''));
 
-      $pageKey = trim((string)($page['page_key'] ?? ''));
+      $pageKey = trim((string) ($page['page_key'] ?? ''));
       if ($pageKey === '') {
         $pageKey = strtolower(preg_replace('/[^a-z0-9]+/i', '_', $pageName));
       }
       $pageKey = trim($pageKey, '_');
       if ($pageKey === '') {
-        $pageKey = 'page_' . ((int)$pIdx + 1);
+        $pageKey = 'page_' . ((int) $pIdx + 1);
       }
 
       $cleanPage = [
@@ -267,8 +274,8 @@ function sanitizeStatusWorkflowPayload($payload): array {
           continue;
         }
 
-        $code = trim((string)($status['code'] ?? ''));
-        $label = trim((string)($status['label'] ?? ''));
+        $code = trim((string) ($status['code'] ?? ''));
+        $label = trim((string) ($status['label'] ?? ''));
         if ($code === '' && $label === '') {
           continue;
         }
@@ -279,11 +286,11 @@ function sanitizeStatusWorkflowPayload($payload): array {
           $label = $code;
         }
 
-        $bg = normalizeHexColor((string)($status['bg_color'] ?? ''), '#64748B');
-        $tx = normalizeHexColor((string)($status['text_color'] ?? ''), '#FFFFFF');
+        $bg = normalizeHexColor((string) ($status['bg_color'] ?? ''), '#64748B');
+        $tx = normalizeHexColor((string) ($status['text_color'] ?? ''), '#FFFFFF');
         $conceptDefaults = statusConceptDefaults($code);
-        $whenText = trim((string)($status['when'] ?? ''));
-        $conceptText = trim((string)($status['concept'] ?? ''));
+        $whenText = trim((string) ($status['when'] ?? ''));
+        $conceptText = trim((string) ($status['concept'] ?? ''));
         if ($whenText === '') {
           $whenText = $conceptDefaults['when'];
         }
@@ -329,7 +336,8 @@ function sanitizeStatusWorkflowPayload($payload): array {
   return $out;
 }
 
-function statusConceptDefaults(string $status): array {
+function statusConceptDefaults(string $status): array
+{
   $code = trim($status);
   $norm = strtolower(preg_replace('/[^a-z0-9]+/', ' ', $code));
   $norm = trim(preg_replace('/\s+/', ' ', $norm));
@@ -378,10 +386,11 @@ function statusConceptDefaults(string $status): array {
   return ['when' => $when, 'concept' => $concept];
 }
 
-function statusRowsFromCodes(array $codes): array {
+function statusRowsFromCodes(array $codes): array
+{
   $rows = [];
   foreach ($codes as $code) {
-    $label = trim((string)$code);
+    $label = trim((string) $code);
     if ($label === '') {
       continue;
     }
@@ -392,14 +401,15 @@ function statusRowsFromCodes(array $codes): array {
       'label' => $label,
       'when' => $concept['when'],
       'concept' => $concept['concept'],
-      'bg_color' => normalizeHexColor((string)($palette['background'] ?? ''), '#64748B'),
-      'text_color' => normalizeHexColor((string)($palette['color'] ?? ''), '#FFFFFF'),
+      'bg_color' => normalizeHexColor((string) ($palette['background'] ?? ''), '#64748B'),
+      'text_color' => normalizeHexColor((string) ($palette['color'] ?? ''), '#FFFFFF'),
     ];
   }
   return $rows;
 }
 
-function collectProvisionMigrationFiles(string $migrationDir): array {
+function collectProvisionMigrationFiles(string $migrationDir): array
+{
   if (!is_dir($migrationDir)) {
     return [];
   }
@@ -413,7 +423,7 @@ function collectProvisionMigrationFiles(string $migrationDir): array {
     if (!$entry->isFile()) {
       continue;
     }
-    $path = str_replace('\\', '/', (string)$entry->getPathname());
+    $path = str_replace('\\', '/', (string) $entry->getPathname());
     if (substr($path, -4) !== '.sql') {
       continue;
     }
@@ -427,7 +437,8 @@ function collectProvisionMigrationFiles(string $migrationDir): array {
   return $files;
 }
 
-function loadDynamicTenantRegistry(string $registryPath): array {
+function loadDynamicTenantRegistry(string $registryPath): array
+{
   if (!is_file($registryPath)) {
     return [
       'default_slug' => 'default',
@@ -461,7 +472,8 @@ function loadDynamicTenantRegistry(string $registryPath): array {
   return $decoded;
 }
 
-function saveDynamicTenantRegistry(string $registryPath, array $registry): bool {
+function saveDynamicTenantRegistry(string $registryPath, array $registry): bool
+{
   $dir = dirname($registryPath);
   if (!is_dir($dir) && !@mkdir($dir, 0775, true)) {
     return false;
@@ -481,7 +493,8 @@ function saveDynamicTenantRegistry(string $registryPath, array $registry): bool 
   return @file_put_contents($registryPath, $json, LOCK_EX) !== false;
 }
 
-function fetchWebsiteImageFromUrl(string $url): string {
+function fetchWebsiteImageFromUrl(string $url): string
+{
   $url = trim($url);
   if ($url === '' || !filter_var($url, FILTER_VALIDATE_URL)) {
     return '';
@@ -500,7 +513,8 @@ function fetchWebsiteImageFromUrl(string $url): string {
   ]);
 
   $html = @file_get_contents($url, false, $context);
-  if ($html === false || trim($html) === '') return '';
+  if ($html === false || trim($html) === '')
+    return '';
 
   $patterns = [
     '/<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']/i',
@@ -511,7 +525,7 @@ function fetchWebsiteImageFromUrl(string $url): string {
 
   foreach ($patterns as $pattern) {
     if (preg_match($pattern, $html, $m)) {
-      $candidate = html_entity_decode(trim((string)$m[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+      $candidate = html_entity_decode(trim((string) $m[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8');
       if (filter_var($candidate, FILTER_VALIDATE_URL) && isDirectImageUrl($candidate)) {
         return $candidate;
       }
@@ -521,7 +535,8 @@ function fetchWebsiteImageFromUrl(string $url): string {
   return '';
 }
 
-function buildDatabaseBackupSql(?mysqli $db = null) {
+function buildDatabaseBackupSql(?mysqli $db = null)
+{
   if (!$db instanceof mysqli) {
     $db = getDB();
   }
@@ -540,14 +555,16 @@ function buildDatabaseBackupSql(?mysqli $db = null) {
   }
 
   while ($row = $tablesRes->fetch_row()) {
-    $table = (string)$row[0];
+    $table = (string) $row[0];
     $safeTable = '`' . str_replace('`', '``', $table) . '`';
 
     $createRes = $db->query("SHOW CREATE TABLE " . $safeTable);
-    if (!$createRes) continue;
+    if (!$createRes)
+      continue;
     $createRow = $createRes->fetch_assoc();
-    $createStmt = (string)($createRow['Create Table'] ?? '');
-    if ($createStmt === '') continue;
+    $createStmt = (string) ($createRow['Create Table'] ?? '');
+    if ($createStmt === '')
+      continue;
 
     $sql[] = '--';
     $sql[] = '-- Structure for table ' . $table;
@@ -557,7 +574,8 @@ function buildDatabaseBackupSql(?mysqli $db = null) {
     $sql[] = '';
 
     $dataRes = $db->query("SELECT * FROM " . $safeTable);
-    if (!$dataRes) continue;
+    if (!$dataRes)
+      continue;
     if ($dataRes->num_rows > 0) {
       $sql[] = '--';
       $sql[] = '-- Data for table ' . $table;
@@ -568,16 +586,17 @@ function buildDatabaseBackupSql(?mysqli $db = null) {
       $columns = [];
       $values = [];
       foreach ($dataRow as $col => $val) {
-        $columns[] = '`' . str_replace('`', '``', (string)$col) . '`';
+        $columns[] = '`' . str_replace('`', '``', (string) $col) . '`';
         if ($val === null) {
           $values[] = 'NULL';
         } else {
-          $values[] = "'" . $db->real_escape_string((string)$val) . "'";
+          $values[] = "'" . $db->real_escape_string((string) $val) . "'";
         }
       }
       $sql[] = 'INSERT INTO ' . $safeTable . ' (' . implode(', ', $columns) . ') VALUES (' . implode(', ', $values) . ');';
     }
-    if ($dataRes->num_rows > 0) $sql[] = '';
+    if ($dataRes->num_rows > 0)
+      $sql[] = '';
   }
 
   $sql[] = 'SET FOREIGN_KEY_CHECKS = 1;';
@@ -585,7 +604,8 @@ function buildDatabaseBackupSql(?mysqli $db = null) {
   return implode("\n", $sql);
 }
 
-function restoreDatabaseFromSql(mysqli $db, string $sqlDump): array {
+function restoreDatabaseFromSql(mysqli $db, string $sqlDump): array
+{
   $restoreErr = '';
   $db->query('SET FOREIGN_KEY_CHECKS=0');
   $restoreOk = true;
@@ -638,14 +658,16 @@ function restoreDatabaseFromSql(mysqli $db, string $sqlDump): array {
 
     if ($ch === "'" && !$inDouble) {
       $escaped = ($i > 0 && $sqlDump[$i - 1] === '\\');
-      if (!$escaped) $inSingle = !$inSingle;
+      if (!$escaped)
+        $inSingle = !$inSingle;
       $buffer .= $ch;
       continue;
     }
 
     if ($ch === '"' && !$inSingle) {
       $escaped = ($i > 0 && $sqlDump[$i - 1] === '\\');
-      if (!$escaped) $inDouble = !$inDouble;
+      if (!$escaped)
+        $inDouble = !$inDouble;
       $buffer .= $ch;
       continue;
     }
@@ -679,10 +701,13 @@ function restoreDatabaseFromSql(mysqli $db, string $sqlDump): array {
   return ['ok' => $restoreOk, 'error' => $restoreErr];
 }
 
-function addDirectoryToZip(ZipArchive $zip, string $sourceDir, string $zipPrefix): void {
-  if (!is_dir($sourceDir)) return;
+function addDirectoryToZip(ZipArchive $zip, string $sourceDir, string $zipPrefix): void
+{
+  if (!is_dir($sourceDir))
+    return;
   $base = rtrim(str_replace('\\', '/', realpath($sourceDir) ?: $sourceDir), '/');
-  if (!is_dir($base)) return;
+  if (!is_dir($base))
+    return;
 
   $it = new RecursiveIteratorIterator(
     new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS),
@@ -692,7 +717,8 @@ function addDirectoryToZip(ZipArchive $zip, string $sourceDir, string $zipPrefix
   foreach ($it as $entry) {
     $path = str_replace('\\', '/', $entry->getPathname());
     $rel = ltrim(substr($path, strlen($base)), '/');
-    if ($rel === '') continue;
+    if ($rel === '')
+      continue;
     $zipPath = trim($zipPrefix, '/') . '/' . $rel;
     if ($entry->isDir()) {
       $zip->addEmptyDir($zipPath);
@@ -702,7 +728,8 @@ function addDirectoryToZip(ZipArchive $zip, string $sourceDir, string $zipPrefix
   }
 }
 
-function restoreZipAsset(ZipArchive $zip, string $entryName, string $projectRoot, array $allowedPrefixes, array $allowedSingles): void {
+function restoreZipAsset(ZipArchive $zip, string $entryName, string $projectRoot, array $allowedPrefixes, array $allowedSingles): void
+{
   $name = str_replace('\\', '/', $entryName);
 
   $isAllowed = in_array($name, $allowedSingles, true);
@@ -714,8 +741,10 @@ function restoreZipAsset(ZipArchive $zip, string $entryName, string $projectRoot
       }
     }
   }
-  if (!$isAllowed) return;
-  if (strpos($name, '..') !== false) return;
+  if (!$isAllowed)
+    return;
+  if (strpos($name, '..') !== false)
+    return;
 
   $target = $projectRoot . '/' . $name;
   $targetDir = dirname($target);
@@ -724,7 +753,8 @@ function restoreZipAsset(ZipArchive $zip, string $entryName, string $projectRoot
   }
 
   $in = $zip->getStream($entryName);
-  if (!$in) return;
+  if (!$in)
+    return;
   $out = @fopen($target, 'wb');
   if (!$out) {
     fclose($in);
@@ -732,19 +762,25 @@ function restoreZipAsset(ZipArchive $zip, string $entryName, string $projectRoot
   }
   while (!feof($in)) {
     $chunk = fread($in, 8192);
-    if ($chunk === false) break;
+    if ($chunk === false)
+      break;
     fwrite($out, $chunk);
   }
   fclose($out);
   fclose($in);
 }
 
-function saveUploadedImage($fileKey, $targetDir, $prefix) {
-  if (empty($_FILES[$fileKey]) || !is_array($_FILES[$fileKey])) return ['', ''];
+function saveUploadedImage($fileKey, $targetDir, $prefix)
+{
+  if (empty($_FILES[$fileKey]) || !is_array($_FILES[$fileKey]))
+    return ['', ''];
   $file = $_FILES[$fileKey];
-  if (($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) return ['', ''];
-  if (($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) return ['', 'Upload failed for ' . $fileKey . '.'];
-  if (($file['size'] ?? 0) > 5 * 1024 * 1024) return ['', 'File size must be below 5MB.'];
+  if (($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE)
+    return ['', ''];
+  if (($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK)
+    return ['', 'Upload failed for ' . $fileKey . '.'];
+  if (($file['size'] ?? 0) > 5 * 1024 * 1024)
+    return ['', 'File size must be below 5MB.'];
 
   $tmp = $file['tmp_name'] ?? '';
   $mime = @mime_content_type($tmp);
@@ -754,14 +790,17 @@ function saveUploadedImage($fileKey, $targetDir, $prefix) {
     'image/webp' => 'webp',
     'image/gif' => 'gif',
   ];
-  if (!isset($allowed[$mime])) return ['', 'Only PNG, JPG, WEBP, GIF files are allowed.'];
+  if (!isset($allowed[$mime]))
+    return ['', 'Only PNG, JPG, WEBP, GIF files are allowed.'];
 
   $ext = $allowed[$mime];
   $safeName = $prefix . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
   $absDir = __DIR__ . '/../../uploads/' . trim($targetDir, '/');
-  if (!is_dir($absDir)) @mkdir($absDir, 0777, true);
+  if (!is_dir($absDir))
+    @mkdir($absDir, 0777, true);
   $absPath = $absDir . '/' . $safeName;
-  if (!@move_uploaded_file($tmp, $absPath)) return ['', 'Unable to save uploaded file.'];
+  if (!@move_uploaded_file($tmp, $absPath))
+    return ['', 'Unable to save uploaded file.'];
 
   return ['uploads/' . trim($targetDir, '/') . '/' . $safeName, ''];
 }
@@ -776,8 +815,10 @@ $activeTab = $_GET['tab'] ?? 'company';
 $isTenantCtx = ($tenantSlug !== 'default');
 $allowedTabs = ['company', 'library', 'theme', 'status-workflow', 'tally', 'ai_agent', 'backup', 'auto_backup', 'update', 'tenant'];
 // Tenant users cannot access the Tenant Provision tab
-if ($isTenantCtx && in_array($activeTab, ['tenant', 'update'], true)) $activeTab = 'company';
-if (!in_array($activeTab, $allowedTabs, true)) $activeTab = 'company';
+if ($isTenantCtx && in_array($activeTab, ['tenant', 'update'], true))
+  $activeTab = 'company';
+if (!in_array($activeTab, $allowedTabs, true))
+  $activeTab = 'company';
 
 $statusWorkflowSettings = sanitizeStatusWorkflowPayload($settings['status_workflow_matrix'] ?? statusWorkflowDefaults());
 $statusWorkflowGlobalReference = [
@@ -790,7 +831,7 @@ $statusWorkflowGlobalReference = [
 $statusWorkflowGlobalFlat = [];
 foreach ($statusWorkflowGlobalReference as $path => $statuses) {
   foreach ($statuses as $statusRow) {
-    $k = strtolower(trim((string)($statusRow['code'] ?? '')));
+    $k = strtolower(trim((string) ($statusRow['code'] ?? '')));
     if ($k === '' || isset($statusWorkflowGlobalFlat[$k])) {
       continue;
     }
@@ -800,7 +841,7 @@ foreach ($statusWorkflowGlobalReference as $path => $statuses) {
 $statusWorkflowGlobalFlat = array_values($statusWorkflowGlobalFlat);
 
 // Support paper_type parameter from paper stock view
-$targetPaperType = trim((string)($_GET['paper_type'] ?? ''));
+$targetPaperType = trim((string) ($_GET['paper_type'] ?? ''));
 if ($targetPaperType !== '') {
   $activeTab = 'library';
   $libraryFilter = 'all';
@@ -817,7 +858,7 @@ $paperTypeOptions = [];
 $paperTypesResult = $db->query("SELECT DISTINCT paper_type_name FROM (SELECT TRIM(COALESCE(paper_type, '')) AS paper_type_name FROM paper_stock UNION SELECT TRIM(COALESCE(name, '')) AS paper_type_name FROM master_paper_types) AS t WHERE paper_type_name <> '' ORDER BY paper_type_name ASC");
 if ($paperTypesResult) {
   while ($row = $paperTypesResult->fetch_assoc()) {
-    $paperTypeOptions[] = trim((string)($row['paper_type_name'] ?? ''));
+    $paperTypeOptions[] = trim((string) ($row['paper_type_name'] ?? ''));
   }
 }
 
@@ -829,20 +870,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   $action = $_POST['action'] ?? '';
 
+  if ($action === 'save_ai_settings') {
+    $newAiSettings = [
+      'ai_agent_provider' => $_POST['ai_agent_provider'] ?? 'gemini_pro',
+      'ai_agent_model' => $_POST['ai_agent_model'] ?? 'gemini-2.0-flash',
+      'gemini_api_key' => $_POST['gemini_api_key'] ?? '',
+      'openai_api_key' => $_POST['openai_api_key'] ?? '',
+      'local_ai_url' => $_POST['local_ai_url'] ?? '',
+      'ai_agent_temperature' => (float) ($_POST['ai_agent_temperature'] ?? 0.2),
+      'ai_agent_max_tokens' => (int) ($_POST['ai_agent_max_tokens'] ?? 1500),
+      'ai_agent_enabled' => isset($_POST['ai_agent_enabled']) ? 1 : 0,
+    ];
+    if (saveAppSettings($newAiSettings)) {
+      setFlash('success', 'AI Agent settings saved successfully.');
+    } else {
+      setFlash('error', 'Failed to save AI Agent settings.');
+    }
+    $settings = getAppSettings(); // Refresh
+    redirect(BASE_URL . '/modules/settings/index.php?tab=ai_agent');
+  }
+
   if ($action === 'save_company') {
     // Only save ERP settings (company profile is set during tenant provisioning)
-    $settings['erp_display_name'] = trim((string)($_POST['erp_display_name'] ?? ''));
-    $settings['erp_email'] = trim((string)($_POST['erp_email'] ?? ''));
-    $settings['erp_phone'] = trim((string)($_POST['erp_phone'] ?? ''));
-    $settings['erp_address'] = trim((string)($_POST['erp_address'] ?? ''));
-    $settings['erp_gst'] = trim((string)($_POST['erp_gst'] ?? ''));
+    $settings['erp_display_name'] = trim((string) ($_POST['erp_display_name'] ?? ''));
+    $settings['erp_email'] = trim((string) ($_POST['erp_email'] ?? ''));
+    $settings['erp_phone'] = trim((string) ($_POST['erp_phone'] ?? ''));
+    $settings['erp_address'] = trim((string) ($_POST['erp_address'] ?? ''));
+    $settings['erp_gst'] = trim((string) ($_POST['erp_gst'] ?? ''));
 
     list($erpLogoPath, $erpLogoErr) = saveUploadedImage('erp_logo', $tenantAssetDirs['company'], 'erp_logo');
     if ($erpLogoErr !== '') {
       setFlash('error', $erpLogoErr);
       redirect(BASE_URL . '/modules/settings/index.php?tab=company');
     }
-    if ($erpLogoPath !== '') $settings['erp_logo_path'] = $erpLogoPath;
+    if ($erpLogoPath !== '')
+      $settings['erp_logo_path'] = $erpLogoPath;
 
     if (saveAppSettings($settings)) {
       setFlash('success', 'ERP profile saved successfully.');
@@ -858,35 +920,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
     }
 
-    $slugRaw = strtolower(trim((string)($_POST['tenant_slug'] ?? '')));
+    $slugRaw = strtolower(trim((string) ($_POST['tenant_slug'] ?? '')));
     $tenantSlugNew = preg_replace('/[^a-z0-9._-]+/', '-', $slugRaw);
-    $tenantSlugNew = trim((string)$tenantSlugNew, '-');
-    $tenantLabelNew = trim((string)($_POST['tenant_label'] ?? ''));
-    $tenantCompanyName = trim((string)($_POST['tenant_company_name'] ?? ''));
-    $tenantErpDisplayName = trim((string)($_POST['tenant_erp_display_name'] ?? ''));
-    $tenantHostCsv = trim((string)($_POST['tenant_hosts'] ?? ''));
-    $tenantPrefixCsv = trim((string)($_POST['tenant_path_prefixes'] ?? ''));
+    $tenantSlugNew = trim((string) $tenantSlugNew, '-');
+    $tenantLabelNew = trim((string) ($_POST['tenant_label'] ?? ''));
+    $tenantCompanyName = trim((string) ($_POST['tenant_company_name'] ?? ''));
+    $tenantErpDisplayName = trim((string) ($_POST['tenant_erp_display_name'] ?? ''));
+    $tenantHostCsv = trim((string) ($_POST['tenant_hosts'] ?? ''));
+    $tenantPrefixCsv = trim((string) ($_POST['tenant_path_prefixes'] ?? ''));
 
-    $newDbHost = trim((string)($_POST['db_host'] ?? 'localhost'));
-    $newDbPort = (int)($_POST['db_port'] ?? 3306);
-    $newDbName = trim((string)($_POST['db_name'] ?? ''));
-    $newDbUser = trim((string)($_POST['db_user'] ?? ''));
-    $newDbPass = (string)($_POST['db_pass'] ?? '');
+    $newDbHost = trim((string) ($_POST['db_host'] ?? 'localhost'));
+    $newDbPort = (int) ($_POST['db_port'] ?? 3306);
+    $newDbName = trim((string) ($_POST['db_name'] ?? ''));
+    $newDbUser = trim((string) ($_POST['db_user'] ?? ''));
+    $newDbPass = (string) ($_POST['db_pass'] ?? '');
     $newDbCreate = (($_POST['create_database'] ?? '1') === '1');
 
-    $adminName = trim((string)($_POST['admin_name'] ?? 'System Admin'));
-    $adminEmail = trim((string)($_POST['admin_email'] ?? 'admin@example.com'));
-    $adminPass = (string)($_POST['admin_password'] ?? 'admin123');
+    $adminName = trim((string) ($_POST['admin_name'] ?? 'System Admin'));
+    $adminEmail = trim((string) ($_POST['admin_email'] ?? 'admin@example.com'));
+    $adminPass = (string) ($_POST['admin_password'] ?? 'admin123');
 
     // Company details (comprehensive - captured during provisioning)
-    $tenantCompanyEmailNew = trim((string)($_POST['tenant_company_email'] ?? ''));
-    $tenantCompanyPhoneNew = trim((string)($_POST['tenant_company_phone'] ?? ''));
-    $tenantCompanyAddressNew = trim((string)($_POST['tenant_company_address'] ?? ''));
-    $tenantCompanyCurrencyNew = trim((string)($_POST['tenant_company_currency'] ?? 'INR'));
-    $tenantCompanyGstNew = trim((string)($_POST['tenant_company_gst'] ?? ''));
-    $tenantContactPersonNew = trim((string)($_POST['tenant_contact_person'] ?? ''));
-    $tenantCompanyNameLegalNew = trim((string)($_POST['tenant_company_name_legal'] ?? $tenantCompanyName));
-    $tenantFlagEmojiNew = trim((string)($_POST['tenant_flag_emoji'] ?? '🇮🇳')) ?: '🇮🇳';
+    $tenantCompanyEmailNew = trim((string) ($_POST['tenant_company_email'] ?? ''));
+    $tenantCompanyPhoneNew = trim((string) ($_POST['tenant_company_phone'] ?? ''));
+    $tenantCompanyAddressNew = trim((string) ($_POST['tenant_company_address'] ?? ''));
+    $tenantCompanyCurrencyNew = trim((string) ($_POST['tenant_company_currency'] ?? 'INR'));
+    $tenantCompanyGstNew = trim((string) ($_POST['tenant_company_gst'] ?? ''));
+    $tenantContactPersonNew = trim((string) ($_POST['tenant_contact_person'] ?? ''));
+    $tenantCompanyNameLegalNew = trim((string) ($_POST['tenant_company_name_legal'] ?? $tenantCompanyName));
+    $tenantFlagEmojiNew = trim((string) ($_POST['tenant_flag_emoji'] ?? '🇮🇳')) ?: '🇮🇳';
 
     if ($tenantSlugNew === '' || strlen($tenantSlugNew) < 2) {
       setFlash('error', 'Tenant slug is required and must be at least 2 characters.');
@@ -1024,7 +1086,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $tenantSettingsFile = $tenantDataDir . '/app_settings.json';
     $tenantDefaults = appSettingsDefaults();
-    
+
     // Company brand and contact details
     $tenantDefaults['company_name'] = $tenantCompanyName;
     $tenantDefaults['company_legal_name'] = $tenantCompanyNameLegalNew !== '' ? $tenantCompanyNameLegalNew : $tenantCompanyName;
@@ -1036,7 +1098,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $tenantDefaults['company_currency'] = $tenantCompanyCurrencyNew;
     $tenantDefaults['company_gst'] = $tenantCompanyGstNew;
     $tenantDefaults['flag_emoji'] = $tenantFlagEmojiNew;
-    
+
     // ERP details from global settings
     $tenantDefaults['erp_display_name'] = $tenantErpDisplayName;
     $tenantDefaults['image_library'] = [];
@@ -1068,21 +1130,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $tenantPrefixes = ['/' . $tenantSlugNew];
     }
 
-    $tenantExpiresAtRaw = trim((string)($_POST['tenant_expires_at'] ?? ''));
+    $tenantExpiresAtRaw = trim((string) ($_POST['tenant_expires_at'] ?? ''));
     $tenantExpiresAt = '';
     if ($tenantExpiresAtRaw !== '') {
       $expTs = strtotime($tenantExpiresAtRaw);
-      if ($expTs !== false) $tenantExpiresAt = date('Y-m-d\T23:59:59', $expTs);
+      if ($expTs !== false)
+        $tenantExpiresAt = date('Y-m-d\T23:59:59', $expTs);
     }
 
     $dynamicRegistry = loadDynamicTenantRegistry($tenantRegistryPath);
     $dynamicRegistry['tenants'][$tenantSlugNew] = [
-      'label'        => $tenantLabelNew,
-      'active'       => true,
-      'created_at'   => date('c'),
-      'expires_at'   => $tenantExpiresAt,
+      'label' => $tenantLabelNew,
+      'active' => true,
+      'created_at' => date('c'),
+      'expires_at' => $tenantExpiresAt,
       'company_name' => $tenantCompanyName,
-      'admin_email'  => $adminEmail,
+      'admin_email' => $adminEmail,
       'hosts' => $tenantHosts,
       'path_prefixes' => $tenantPrefixes,
       'settings_file' => 'data/tenants/' . $tenantSlugNew . '/app_settings.json',
@@ -1123,7 +1186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       setFlash('error', 'Only administrators can update tenant settings.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
     }
-    $editSlug = trim((string)($_POST['edit_slug'] ?? ''));
+    $editSlug = trim((string) ($_POST['edit_slug'] ?? ''));
     if ($editSlug === '') {
       setFlash('error', 'Tenant slug is required.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
@@ -1134,15 +1197,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
     }
     $t = &$reg['tenants'][$editSlug];
-    $newLabel = trim((string)($_POST['edit_label'] ?? ''));
-    if ($newLabel !== '') $t['label'] = $newLabel;
-    $newHostsList = parseCsvList(trim((string)($_POST['edit_hosts'] ?? '')));
+    $newLabel = trim((string) ($_POST['edit_label'] ?? ''));
+    if ($newLabel !== '')
+      $t['label'] = $newLabel;
+    $newHostsList = parseCsvList(trim((string) ($_POST['edit_hosts'] ?? '')));
     $t['hosts'] = $newHostsList;
-    $newPfx = parseCsvList(trim((string)($_POST['edit_path_prefixes'] ?? '')));
-    if (!empty($newPfx)) $t['path_prefixes'] = $newPfx;
-    $t['erp_display_name'] = trim((string)($_POST['edit_erp_display_name'] ?? ''));
+    $newPfx = parseCsvList(trim((string) ($_POST['edit_path_prefixes'] ?? '')));
+    if (!empty($newPfx))
+      $t['path_prefixes'] = $newPfx;
+    $t['erp_display_name'] = trim((string) ($_POST['edit_erp_display_name'] ?? ''));
     $t['active'] = (($_POST['edit_active'] ?? '1') === '1');
-    $rawExpiry = trim((string)($_POST['edit_expires_at'] ?? ''));
+    $rawExpiry = trim((string) ($_POST['edit_expires_at'] ?? ''));
     $t['expires_at'] = ($rawExpiry !== '' && strtotime($rawExpiry) !== false)
       ? date('Y-m-d\T23:59:59', strtotime($rawExpiry))
       : ($rawExpiry === '' ? '' : $t['expires_at'] ?? '');
@@ -1161,7 +1226,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       setFlash('error', 'Only administrators can extend tenant subscriptions.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
     }
-    $extSlug = trim((string)($_POST['extend_slug'] ?? ''));
+    $extSlug = trim((string) ($_POST['extend_slug'] ?? ''));
     if ($extSlug === '') {
       setFlash('error', 'Tenant slug is required.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
@@ -1172,8 +1237,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
     }
     $t = &$reg['tenants'][$extSlug];
-    $extUntil = trim((string)($_POST['extend_until'] ?? ''));
-    $extDays  = (int)($_POST['extend_days'] ?? 0);
+    $extUntil = trim((string) ($_POST['extend_until'] ?? ''));
+    $extDays = (int) ($_POST['extend_days'] ?? 0);
     if ($extUntil !== '') {
       $ts = strtotime($extUntil);
       if ($ts === false) {
@@ -1182,11 +1247,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
       $t['expires_at'] = date('Y-m-d\T23:59:59', $ts);
     } elseif ($extDays > 0) {
-      $curExpiry = trim((string)($t['expires_at'] ?? ''));
+      $curExpiry = trim((string) ($t['expires_at'] ?? ''));
       $baseTs = time();
       if ($curExpiry !== '') {
         $curTs = strtotime($curExpiry);
-        if ($curTs !== false && $curTs > time()) $baseTs = $curTs;
+        if ($curTs !== false && $curTs > time())
+          $baseTs = $curTs;
       }
       $t['expires_at'] = date('Y-m-d\T23:59:59', $baseTs + ($extDays * 86400));
     }
@@ -1206,7 +1272,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       setFlash('error', 'Only administrators can delete tenants.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
     }
-    $delSlug = trim((string)($_POST['delete_slug'] ?? ''));
+    $delSlug = trim((string) ($_POST['delete_slug'] ?? ''));
     if ($delSlug === '') {
       setFlash('error', 'Tenant slug is required.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
@@ -1236,9 +1302,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       setFlash('error', 'Only administrators can change tenant credentials.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
     }
-    $cpSlug  = trim((string)($_POST['cp_slug'] ?? ''));
-    $cpEmail = trim(strtolower((string)($_POST['cp_admin_email'] ?? '')));
-    $cpPass  = (string)($_POST['cp_new_password'] ?? '');
+    $cpSlug = trim((string) ($_POST['cp_slug'] ?? ''));
+    $cpEmail = trim(strtolower((string) ($_POST['cp_admin_email'] ?? '')));
+    $cpPass = (string) ($_POST['cp_new_password'] ?? '');
     if ($cpSlug === '' || $cpEmail === '' || strlen($cpPass) < 6) {
       setFlash('error', 'Slug, email, and new password (min 6 chars) are required.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
@@ -1260,7 +1326,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
     }
     try {
-      $tConn = new mysqli($tDb['DB_HOST'], $tDb['DB_USER'], $tDb['DB_PASS'] ?? '', $tDb['DB_NAME'], (int)($tDb['DB_PORT'] ?? 3306));
+      $tConn = new mysqli($tDb['DB_HOST'], $tDb['DB_USER'], $tDb['DB_PASS'] ?? '', $tDb['DB_NAME'], (int) ($tDb['DB_PORT'] ?? 3306));
     } catch (mysqli_sql_exception $e) {
       setFlash('error', 'Cannot connect to tenant DB: ' . $e->getMessage());
       redirect(BASE_URL . '/modules/settings/index.php?tab=tenant');
@@ -1295,13 +1361,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if ($action === 'rebuild_library') {
     // Scan all uploads/uploads/library/ subdirectories and re-register any images
     // not yet tracked in image_library. Also deduplicates existing entries by path.
-    if (!isset($settings['image_library']) || !is_array($settings['image_library'])) $settings['image_library'] = [];
+    if (!isset($settings['image_library']) || !is_array($settings['image_library']))
+      $settings['image_library'] = [];
 
     // Deduplicate existing entries by path (keep first occurrence)
     $seen = [];
     $deduped = [];
     foreach ($settings['image_library'] as $entry) {
-      $p = (string)($entry['path'] ?? '');
+      $p = (string) ($entry['path'] ?? '');
       if ($p !== '' && !isset($seen[$p])) {
         $seen[$p] = true;
         $deduped[] = $entry;
@@ -1314,21 +1381,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $scanRoot = $projectRoot . '/uploads/uploads/library/';
     $added = 0;
     if (is_dir($scanRoot)) {
-      $allowedExts = ['jpg','jpeg','png','gif','webp'];
+      $allowedExts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
       $slugDirs = glob($scanRoot . '*', GLOB_ONLYDIR) ?: [];
       foreach ($slugDirs as $slugDir) {
         $files = scandir($slugDir) ?: [];
         foreach ($files as $f) {
-          if ($f === '.' || $f === '..') continue;
+          if ($f === '.' || $f === '..')
+            continue;
           $ext = strtolower(pathinfo($f, PATHINFO_EXTENSION));
-          if (!in_array($ext, $allowedExts, true)) continue;
+          if (!in_array($ext, $allowedExts, true))
+            continue;
           $relPath = 'uploads/uploads/library/' . basename($slugDir) . '/' . $f;
           if (!in_array($relPath, $existingPaths, true)) {
             $settings['image_library'][] = [
-              'path'        => $relPath,
-              'name'        => $f,
-              'uploaded_at' => date('Y-m-d H:i:s', (int)@filemtime($slugDir . '/' . $f) ?: time()),
-              'category'    => 'misc',
+              'path' => $relPath,
+              'name' => $f,
+              'uploaded_at' => date('Y-m-d H:i:s', (int) @filemtime($slugDir . '/' . $f) ?: time()),
+              'category' => 'misc',
             ];
             $existingPaths[] = $relPath;
             $added++;
@@ -1347,9 +1416,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   if ($action === 'upload_library_image') {
     $category = $_POST['image_category'] ?? 'misc';
-    if (!isset($libraryCategories[$category])) $category = 'misc';
+    if (!isset($libraryCategories[$category]))
+      $category = 'misc';
 
-    $paperType = trim((string)($_POST['paper_type_tag'] ?? ''));
+    $paperType = trim((string) ($_POST['paper_type_tag'] ?? ''));
     if ($category === 'product-type' && $paperType === '') {
       setFlash('error', 'Paper type name is required for Product Type images.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=library');
@@ -1361,7 +1431,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       redirect(BASE_URL . '/modules/settings/index.php?tab=library');
     }
     if ($imgPath !== '') {
-      if (!isset($settings['image_library']) || !is_array($settings['image_library'])) $settings['image_library'] = [];
+      if (!isset($settings['image_library']) || !is_array($settings['image_library']))
+        $settings['image_library'] = [];
       $entry = [
         'path' => $imgPath,
         'name' => basename($imgPath),
@@ -1372,7 +1443,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $entry['paper_type'] = $paperType;
       }
       $settings['image_library'][] = $entry;
-      if ($category === 'background' && trim((string)($settings['login_background_image'] ?? '')) === '') {
+      if ($category === 'background' && trim((string) ($settings['login_background_image'] ?? '')) === '') {
         $settings['login_background_image'] = $imgPath;
       }
       if (saveAppSettings($settings)) {
@@ -1389,11 +1460,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   if ($action === 'remove_library_image') {
-    $idx = (int)($_POST['image_index'] ?? -1);
+    $idx = (int) ($_POST['image_index'] ?? -1);
     if (isset($settings['image_library'][$idx])) {
-      $path = (string)$settings['image_library'][$idx]['path'];
+      $path = (string) $settings['image_library'][$idx]['path'];
       $abs = __DIR__ . '/../../' . ltrim($path, '/');
-      if (is_file($abs)) @unlink($abs);
+      if (is_file($abs))
+        @unlink($abs);
       array_splice($settings['image_library'], $idx, 1);
       saveAppSettings($settings);
       setFlash('success', 'Image removed from library.');
@@ -1402,24 +1474,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   if ($action === 'assign_image_to_papertype') {
-    $imageIdx = (int)($_POST['image_index'] ?? -1);
-    $paperType = trim((string)($_POST['paper_type'] ?? ''));
-    
+    $imageIdx = (int) ($_POST['image_index'] ?? -1);
+    $paperType = trim((string) ($_POST['paper_type'] ?? ''));
+
     if ($imageIdx >= 0 && isset($settings['image_library'][$imageIdx]) && $paperType !== '') {
-      $imagePath = (string)($settings['image_library'][$imageIdx]['path'] ?? '');
-      
+      $imagePath = (string) ($settings['image_library'][$imageIdx]['path'] ?? '');
+
       // Find existing entry for this paper type and update it
       $found = false;
       foreach (($settings['image_library'] ?? []) as &$img) {
-        if (($img['category'] ?? '') === 'product-type' && 
-            strtolower(trim((string)($img['paper_type'] ?? ''))) === strtolower($paperType)) {
+        if (
+          ($img['category'] ?? '') === 'product-type' &&
+          strtolower(trim((string) ($img['paper_type'] ?? ''))) === strtolower($paperType)
+        ) {
           $img['path'] = $imagePath;
           $img['paper_type'] = $paperType;
           $found = true;
           break;
         }
       }
-      
+
       // If not found, add new entry
       if (!$found) {
         $settings['image_library'][] = [
@@ -1431,7 +1505,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           'uploaded_at' => date('Y-m-d H:i:s')
         ];
       }
-      
+
       if (saveAppSettings($settings)) {
         setFlash('success', 'Image assigned to paper type "' . htmlspecialchars($paperType) . '" successfully.');
       } else {
@@ -1447,12 +1521,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $settings['sidebar_hover_color'] = normalizeHexColor($_POST['sidebar_hover_color'] ?? '', '#263445');
     $settings['sidebar_active_bg'] = normalizeHexColor($_POST['sidebar_active_bg'] ?? '', '#214036');
     $settings['sidebar_active_text'] = normalizeHexColor($_POST['sidebar_active_text'] ?? '', '#BBF7D0');
-    $settings['sidebar_collapse_delay_ms'] = min(600000, max(300, (int)($_POST['sidebar_collapse_delay_ms'] ?? 1000)));
-    $settings['login_background_image'] = trim((string)($_POST['login_background_image'] ?? ''));
+    $settings['sidebar_collapse_delay_ms'] = min(600000, max(300, (int) ($_POST['sidebar_collapse_delay_ms'] ?? 1000)));
+    $settings['login_background_image'] = trim((string) ($_POST['login_background_image'] ?? ''));
 
     $validLibraryPaths = [];
     foreach (($settings['image_library'] ?? []) as $img) {
-      if (!empty($img['path'])) $validLibraryPaths[] = (string)$img['path'];
+      if (!empty($img['path']))
+        $validLibraryPaths[] = (string) $img['path'];
     }
     if ($settings['login_background_image'] !== '' && !in_array($settings['login_background_image'], $validLibraryPaths, true)) {
       $settings['login_background_image'] = '';
@@ -1467,7 +1542,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   if ($action === 'save_status_workflow') {
-    $jsonPayload = trim((string)($_POST['status_workflow_json'] ?? ''));
+    $jsonPayload = trim((string) ($_POST['status_workflow_json'] ?? ''));
     if ($jsonPayload === '') {
       setFlash('error', 'Status workflow payload is empty.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=status-workflow');
@@ -1490,20 +1565,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   if ($action === 'save_tally_settings') {
-    $ipRaw = trim((string)($_POST['tally_ip'] ?? ''));
-    $schemeRaw = trim((string)($_POST['tally_scheme'] ?? 'http'));
-    $portRaw = (int)($_POST['tally_port'] ?? 9000);
+    $ipRaw = trim((string) ($_POST['tally_ip'] ?? ''));
+    $schemeRaw = trim((string) ($_POST['tally_scheme'] ?? 'http'));
+    $portRaw = (int) ($_POST['tally_port'] ?? 9000);
 
     // Allow pasting a full endpoint like https://host:443
     if (stripos($ipRaw, '://') !== false) {
       $parsed = @parse_url($ipRaw);
       if (is_array($parsed) && !empty($parsed['host'])) {
-        $ipRaw = (string)$parsed['host'];
+        $ipRaw = (string) $parsed['host'];
         if (!empty($parsed['scheme'])) {
-          $schemeRaw = (string)$parsed['scheme'];
+          $schemeRaw = (string) $parsed['scheme'];
         }
         if (!empty($parsed['port'])) {
-          $portRaw = (int)$parsed['port'];
+          $portRaw = (int) $parsed['port'];
         }
       }
     }
@@ -1530,20 +1605,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   if ($action === 'test_tally_connection') {
-    $ipRaw = trim((string)($_POST['tally_ip'] ?? ''));
-    $schemeRaw = trim((string)($_POST['tally_scheme'] ?? 'http'));
-    $portRaw = (int)($_POST['tally_port'] ?? 9000);
+    $ipRaw = trim((string) ($_POST['tally_ip'] ?? ''));
+    $schemeRaw = trim((string) ($_POST['tally_scheme'] ?? 'http'));
+    $portRaw = (int) ($_POST['tally_port'] ?? 9000);
 
     // Allow pasting a full endpoint like https://host:443
     if (stripos($ipRaw, '://') !== false) {
       $parsed = @parse_url($ipRaw);
       if (is_array($parsed) && !empty($parsed['host'])) {
-        $ipRaw = (string)$parsed['host'];
+        $ipRaw = (string) $parsed['host'];
         if (!empty($parsed['scheme'])) {
-          $schemeRaw = (string)$parsed['scheme'];
+          $schemeRaw = (string) $parsed['scheme'];
         }
         if (!empty($parsed['port'])) {
-          $portRaw = (int)$parsed['port'];
+          $portRaw = (int) $parsed['port'];
         }
       }
     }
@@ -1647,7 +1722,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
     }
 
-    $name = strtolower((string)($file['name'] ?? ''));
+    $name = strtolower((string) ($file['name'] ?? ''));
     $isSql = (substr($name, -4) === '.sql');
     $isZip = (substr($name, -4) === '.zip');
     if (!$isSql && !$isZip) {
@@ -1656,7 +1731,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($isSql) {
-      $sqlDump = @file_get_contents((string)$file['tmp_name']);
+      $sqlDump = @file_get_contents((string) $file['tmp_name']);
       if ($sqlDump === false || trim($sqlDump) === '') {
         setFlash('error', 'Could not read uploaded SQL backup file.');
         redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
@@ -1676,7 +1751,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $zip = new ZipArchive();
-    if ($zip->open((string)$file['tmp_name']) !== true) {
+    if ($zip->open((string) $file['tmp_name']) !== true) {
       setFlash('error', 'Could not open ZIP backup file.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=backup');
     }
@@ -1687,7 +1762,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $sqlIndex = $zip->locateName('database.sql', ZipArchive::FL_NOCASE | ZipArchive::FL_NODIR);
     }
     if ($sqlIndex !== false) {
-      $sqlDump = (string)$zip->getFromIndex($sqlIndex);
+      $sqlDump = (string) $zip->getFromIndex($sqlIndex);
     }
     if (trim($sqlDump) === '') {
       $zip->close();
@@ -1718,8 +1793,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       'data/app_settings.json',
     ])));
     for ($i = 0; $i < $zip->numFiles; $i++) {
-      $entryName = (string)$zip->getNameIndex($i);
-      if ($entryName === '' || substr($entryName, -1) === '/') continue;
+      $entryName = (string) $zip->getNameIndex($i);
+      if ($entryName === '' || substr($entryName, -1) === '/')
+        continue;
       restoreZipAsset($zip, $entryName, $projectRoot, $allowedRestorePrefixes, $allowedRestoreSingles);
     }
 
@@ -1735,16 +1811,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       // If not found, scan all entries for any app_settings.json
       if ($fallbackJson === false) {
         for ($j = 0; $j < $zip->numFiles; $j++) {
-          $jName = (string)$zip->getNameIndex($j);
+          $jName = (string) $zip->getNameIndex($j);
           if (basename($jName) === 'app_settings.json') {
             $fallbackJson = $zip->getFromIndex($j);
-            if ($fallbackJson !== false) break;
+            if ($fallbackJson !== false)
+              break;
           }
         }
       }
       if ($fallbackJson !== false && trim($fallbackJson) !== '') {
         $targetDir = dirname($tenantSettingsPath);
-        if (!is_dir($targetDir)) @mkdir($targetDir, 0777, true);
+        if (!is_dir($targetDir))
+          @mkdir($targetDir, 0777, true);
         @file_put_contents($tenantSettingsPath, $fallbackJson);
       }
     }
@@ -1771,7 +1849,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       setFlash('error', 'Update file too large. Maximum 50 MB.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=update');
     }
-    $fname = strtolower((string)($fileInput['name'] ?? ''));
+    $fname = strtolower((string) ($fileInput['name'] ?? ''));
     if (substr($fname, -4) !== '.zip') {
       setFlash('error', 'Only .zip update packages are accepted.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=update');
@@ -1782,7 +1860,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $zip = new ZipArchive();
-    if ($zip->open((string)$fileInput['tmp_name']) !== true) {
+    if ($zip->open((string) $fileInput['tmp_name']) !== true) {
       setFlash('error', 'Cannot open update ZIP file.');
       redirect(BASE_URL . '/modules/settings/index.php?tab=update');
     }
@@ -1795,7 +1873,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       redirect(BASE_URL . '/modules/settings/index.php?tab=update');
     }
     // Be tolerant of UTF-8 BOM in manifests produced by some zip/build tools.
-    $manifestJson = preg_replace('/^\xEF\xBB\xBF/', '', (string)$manifestJson);
+    $manifestJson = preg_replace('/^\xEF\xBB\xBF/', '', (string) $manifestJson);
     $manifest = json_decode($manifestJson, true);
     if (!is_array($manifest) || empty($manifest['version']) || empty($manifest['files'])) {
       $zip->close();
@@ -1805,13 +1883,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Validate checksum
     $checksumData = '';
-    foreach ((array)$manifest['files'] as $relPath) {
+    foreach ((array) $manifest['files'] as $relPath) {
       $content = $zip->getFromName('files/' . $relPath);
       if ($content !== false) {
         $checksumData .= hash('sha256', $content);
       }
     }
-    foreach ((array)($manifest['migrations'] ?? []) as $mf) {
+    foreach ((array) ($manifest['migrations'] ?? []) as $mf) {
       $content = $zip->getFromName('migrations/' . $mf);
       if ($content !== false) {
         $checksumData .= hash('sha256', $content);
@@ -1825,8 +1903,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Security: validate all file paths
     $projectRoot = str_replace('\\', '/', realpath(__DIR__ . '/../../') ?: (__DIR__ . '/../../'));
-    foreach ((array)$manifest['files'] as $relPath) {
-      $relPath = str_replace('\\', '/', (string)$relPath);
+    foreach ((array) $manifest['files'] as $relPath) {
+      $relPath = str_replace('\\', '/', (string) $relPath);
       if (strpos($relPath, '..') !== false || $relPath === 'config/db.php') {
         $zip->close();
         setFlash('error', 'Security violation: invalid file path in update package.');
@@ -1838,7 +1916,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $totalSize = 0;
     for ($i = 0; $i < $zip->numFiles; $i++) {
       $stat = $zip->statIndex($i);
-      if ($stat) $totalSize += (int)($stat['size'] ?? 0);
+      if ($stat)
+        $totalSize += (int) ($stat['size'] ?? 0);
     }
     if ($totalSize > 100 * 1024 * 1024) {
       $zip->close();
@@ -1857,14 +1936,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $bkZip = new ZipArchive();
     if ($bkZip->open($preBackupPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true) {
       // Backup files that will be overwritten
-      foreach ((array)$manifest['files'] as $relPath) {
+      foreach ((array) $manifest['files'] as $relPath) {
         $absPath = $projectRoot . '/' . str_replace('\\', '/', $relPath);
         if (is_file($absPath)) {
           $bkZip->addFile($absPath, 'files/' . $relPath);
         }
       }
       // Backup database
-      if (!isset($db) || !($db instanceof mysqli)) $db = getDB();
+      if (!isset($db) || !($db instanceof mysqli))
+        $db = getDB();
       $bkSql = buildDatabaseBackupSql($db);
       if ($bkSql !== '') {
         $bkZip->addFromString('backup/database.sql', $bkSql);
@@ -1874,7 +1954,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'version' => APP_VERSION,
         'timestamp' => date('c'),
         'description' => 'Pre-update backup before applying v' . $manifest['version'],
-        'files' => (array)$manifest['files'],
+        'files' => (array) $manifest['files'],
       ];
       $bkZip->addFromString('manifest.json', json_encode($bkManifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
       $bkZip->close();
@@ -1882,10 +1962,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // ── Extract files ──
     $extractedCount = 0;
-    foreach ((array)$manifest['files'] as $relPath) {
-      $relPath = str_replace('\\', '/', (string)$relPath);
+    foreach ((array) $manifest['files'] as $relPath) {
+      $relPath = str_replace('\\', '/', (string) $relPath);
       $content = $zip->getFromName('files/' . $relPath);
-      if ($content === false) continue;
+      if ($content === false)
+        continue;
       $absTarget = $projectRoot . '/' . $relPath;
       $targetDir = dirname($absTarget);
       if (!is_dir($targetDir)) {
@@ -1898,13 +1979,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // ── Run SQL migrations ──
     $migrationResults = [];
-    $migrations = (array)($manifest['migrations'] ?? []);
+    $migrations = (array) ($manifest['migrations'] ?? []);
     sort($migrations);
     if (!empty($migrations)) {
-      if (!isset($db) || !($db instanceof mysqli)) $db = getDB();
+      if (!isset($db) || !($db instanceof mysqli))
+        $db = getDB();
       foreach ($migrations as $mf) {
         $sqlContent = $zip->getFromName('migrations/' . $mf);
-        if ($sqlContent === false || trim($sqlContent) === '') continue;
+        if ($sqlContent === false || trim($sqlContent) === '')
+          continue;
         $res = restoreDatabaseFromSql($db, $sqlContent);
         $migrationResults[] = [
           'file' => $mf,
@@ -1937,20 +2020,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (is_file($logFile)) {
       $logRaw = file_get_contents($logFile);
       $log = json_decode($logRaw, true);
-      if (!is_array($log)) $log = [];
+      if (!is_array($log))
+        $log = [];
     }
-    $failedMigrations = array_filter($migrationResults, function($r) { return !$r['ok']; });
+    $failedMigrations = array_filter($migrationResults, function ($r) {
+      return !$r['ok'];
+    });
     $log[] = [
-      'version'         => $manifest['version'],
-      'from_version'    => $manifest['from_version'] ?? APP_VERSION,
-      'description'     => $manifest['description'] ?? '',
-      'timestamp'       => date('c'),
-      'files_count'     => $extractedCount,
-      'files'           => (array)$manifest['files'],
-      'migrations_run'  => count($migrationResults),
+      'version' => $manifest['version'],
+      'from_version' => $manifest['from_version'] ?? APP_VERSION,
+      'description' => $manifest['description'] ?? '',
+      'timestamp' => date('c'),
+      'files_count' => $extractedCount,
+      'files' => (array) $manifest['files'],
+      'migrations_run' => count($migrationResults),
       'migrations_failed' => count($failedMigrations),
-      'backup_path'     => str_replace($projectRoot . '/', '', $preBackupPath),
-      'applied_by'      => $_SESSION['username'] ?? 'admin',
+      'backup_path' => str_replace($projectRoot . '/', '', $preBackupPath),
+      'applied_by' => $_SESSION['username'] ?? 'admin',
     ];
     file_put_contents($logFile, json_encode($log, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
@@ -1960,7 +2046,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $msg .= ', ' . count($migrationResults) . ' migration(s) executed';
     }
     if (!empty($failedMigrations)) {
-      $failNames = array_map(function($r) { return $r['file']; }, $failedMigrations);
+      $failNames = array_map(function ($r) {
+        return $r['file'];
+      }, $failedMigrations);
       $msg .= '. WARNING: Failed migrations: ' . implode(', ', $failNames);
       setFlash('error', $msg);
     } else {
@@ -1977,13 +2065,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       redirect(BASE_URL . '/modules/settings/index.php?tab=update');
     }
 
-    $rollbackIdx = (int)($_POST['rollback_index'] ?? -1);
+    $rollbackIdx = (int) ($_POST['rollback_index'] ?? -1);
     $projectRoot = str_replace('\\', '/', realpath(__DIR__ . '/../../') ?: (__DIR__ . '/../../'));
     $logFile = $projectRoot . '/data/update_log.json';
     $log = [];
     if (is_file($logFile)) {
       $log = json_decode(file_get_contents($logFile), true);
-      if (!is_array($log)) $log = [];
+      if (!is_array($log))
+        $log = [];
     }
 
     if ($rollbackIdx < 0 || !isset($log[$rollbackIdx])) {
@@ -2007,15 +2096,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Restore files
     $restoredCount = 0;
     for ($i = 0; $i < $zip->numFiles; $i++) {
-      $eName = str_replace('\\', '/', (string)$zip->getNameIndex($i));
+      $eName = str_replace('\\', '/', (string) $zip->getNameIndex($i));
       if (strpos($eName, 'files/') === 0 && substr($eName, -1) !== '/') {
         $relPath = substr($eName, 6); // strip 'files/'
-        if (strpos($relPath, '..') !== false) continue;
+        if (strpos($relPath, '..') !== false)
+          continue;
         $content = $zip->getFromIndex($i);
-        if ($content === false) continue;
+        if ($content === false)
+          continue;
         $absTarget = $projectRoot . '/' . $relPath;
         $targetDir = dirname($absTarget);
-        if (!is_dir($targetDir)) @mkdir($targetDir, 0755, true);
+        if (!is_dir($targetDir))
+          @mkdir($targetDir, 0755, true);
         if (file_put_contents($absTarget, $content) !== false) {
           $restoredCount++;
         }
@@ -2026,7 +2118,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $sqlDump = $zip->getFromName('backup/database.sql');
     $dbRestored = false;
     if ($sqlDump !== false && trim($sqlDump) !== '') {
-      if (!isset($db) || !($db instanceof mysqli)) $db = getDB();
+      if (!isset($db) || !($db instanceof mysqli))
+        $db = getDB();
       $dbRes = restoreDatabaseFromSql($db, $sqlDump);
       $dbRestored = $dbRes['ok'];
     }
@@ -2061,13 +2154,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Mark rollback in log
-    $log[$rollbackIdx]['rolled_back']    = true;
+    $log[$rollbackIdx]['rolled_back'] = true;
     $log[$rollbackIdx]['rolled_back_at'] = date('c');
     $log[$rollbackIdx]['rolled_back_by'] = $_SESSION['username'] ?? 'admin';
     file_put_contents($logFile, json_encode($log, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
     $msg = "Rollback complete: {$restoredCount} file(s) restored";
-    if ($dbRestored) $msg .= ', database restored';
+    if ($dbRestored)
+      $msg .= ', database restored';
     $msg .= ", version reverted to {$oldVersion}.";
     setFlash('success', $msg);
     redirect(BASE_URL . '/modules/settings/index.php?tab=update');
@@ -2105,42 +2199,81 @@ include __DIR__ . '/../../includes/header.php';
   <div>
     <h1>Settings</h1>
     <p>Modern configuration panel for company profile, image assets, and visual theme.</p>
-    <p style="margin-top:6px;font-size:.85rem;color:#475569">Workspace: <strong><?= e($tenantLabel) ?></strong> | Tenant: <strong><?= e($tenantSlug) ?></strong> | Settings File: <strong><?= e($tenantSettingsDisplayPath) ?></strong></p>
+    <p style="margin-top:6px;font-size:.85rem;color:#475569">Workspace: <strong><?= e($tenantLabel) ?></strong> |
+      Tenant: <strong><?= e($tenantSlug) ?></strong> | Settings File:
+      <strong><?= e($tenantSettingsDisplayPath) ?></strong>
+    </p>
   </div>
 </div>
 
 <div class="card settings-card settings-modern">
   <div class="settings-tabs" role="tablist" aria-label="Settings Tabs">
-    <a class="settings-tab <?= $activeTab==='company'?'active':'' ?>" href="?tab=company">ERP Profile</a>
-    <a class="settings-tab <?= $activeTab==='library'?'active':'' ?>" href="?tab=library">Image Library</a>
-    <a class="settings-tab <?= $activeTab==='theme'?'active':'' ?>" href="?tab=theme">Color Theme</a>
-    <a class="settings-tab <?= $activeTab==='status-workflow'?'active':'' ?>" href="?tab=status-workflow">Status Workflow</a>
-    <a class="settings-tab <?= $activeTab==='tally'?'active':'' ?>" href="?tab=tally">Tally Integration</a>
-    <a class="settings-tab <?= $activeTab==='ai_agent'?'active':'' ?>" href="?tab=ai_agent">AI Agent</a>
+    <a class="settings-tab <?= $activeTab === 'company' ? 'active' : '' ?>" href="?tab=company">ERP Profile</a>
+    <a class="settings-tab <?= $activeTab === 'library' ? 'active' : '' ?>" href="?tab=library">Image Library</a>
+    <a class="settings-tab <?= $activeTab === 'theme' ? 'active' : '' ?>" href="?tab=theme">Color Theme</a>
+    <a class="settings-tab <?= $activeTab === 'status-workflow' ? 'active' : '' ?>" href="?tab=status-workflow">Status
+      Workflow</a>
+    <a class="settings-tab <?= $activeTab === 'tally' ? 'active' : '' ?>" href="?tab=tally">Tally Integration</a>
+    <a class="settings-tab <?= $activeTab === 'ai_agent' ? 'active' : '' ?>" href="?tab=ai_agent">AI Agent</a>
     <?php if (!$isTenantCtx): ?>
-    <a class="settings-tab <?= $activeTab==='tenant'?'active':'' ?>" href="?tab=tenant">Tenant Provision</a>
+      <a class="settings-tab <?= $activeTab === 'tenant' ? 'active' : '' ?>" href="?tab=tenant">Tenant Provision</a>
     <?php endif; ?>
-    <a class="settings-tab <?= $activeTab==='backup'?'active':'' ?>" href="?tab=backup">Backup &amp; Restore</a>
-    <a class="settings-tab <?= $activeTab==='auto_backup'?'active':'' ?>" href="?tab=auto_backup">Auto Backup</a>
+    <a class="settings-tab <?= $activeTab === 'backup' ? 'active' : '' ?>" href="?tab=backup">Backup &amp; Restore</a>
+    <a class="settings-tab <?= $activeTab === 'auto_backup' ? 'active' : '' ?>" href="?tab=auto_backup">Auto Backup</a>
     <?php if (!$isTenantCtx): ?>
-    <a class="settings-tab <?= $activeTab==='update'?'active':'' ?>" href="?tab=update">System Update</a>
+      <a class="settings-tab <?= $activeTab === 'update' ? 'active' : '' ?>" href="?tab=update">System Update</a>
     <?php endif; ?>
   </div>
 
   <div class="settings-body">
     <?php if ($activeTab === 'company'): ?>
       <style>
-      .info-box { background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%); border: 1px solid #0284c7; border-radius: 10px; padding: 14px; margin-bottom: 20px; color: #0c4a6e; font-size: .95rem; }
-      .info-box strong { color: #0555cc; }
-      .profile-section { border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin-bottom: 20px; background: #fafbfc; }
-      .profile-section h3 { margin: 0 0 14px; font-size: 1.1rem; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 10px; }
-      .profile-section h3 i { font-size: 1.3rem; }
-      .profile-section.erp { border-left: 4px solid #6366f1; background: linear-gradient(135deg, #ede9fe 0%, #f3f4f6 100%); }
+        .info-box {
+          background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%);
+          border: 1px solid #0284c7;
+          border-radius: 10px;
+          padding: 14px;
+          margin-bottom: 20px;
+          color: #0c4a6e;
+          font-size: .95rem;
+        }
+
+        .info-box strong {
+          color: #0555cc;
+        }
+
+        .profile-section {
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          padding: 18px;
+          margin-bottom: 20px;
+          background: #fafbfc;
+        }
+
+        .profile-section h3 {
+          margin: 0 0 14px;
+          font-size: 1.1rem;
+          font-weight: 700;
+          color: #0f172a;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .profile-section h3 i {
+          font-size: 1.3rem;
+        }
+
+        .profile-section.erp {
+          border-left: 4px solid #6366f1;
+          background: linear-gradient(135deg, #ede9fe 0%, #f3f4f6 100%);
+        }
       </style>
 
       <div class="info-box">
         <i class="bi bi-info-circle"></i> <strong>ERP Software Settings Only</strong><br>
-        Company profile details (name, logo, address, GST, contact) are created separately in the <strong>Tenant Provision</strong> page when setting up a new company workspace.
+        Company profile details (name, logo, address, GST, contact) are created separately in the <strong>Tenant
+          Provision</strong> page when setting up a new company workspace.
       </div>
 
       <form method="POST" enctype="multipart/form-data" class="form-grid-2">
@@ -2150,28 +2283,32 @@ include __DIR__ . '/../../includes/header.php';
         <!-- ERP PROFILE SECTION ONLY -->
         <div class="profile-section erp col-span-2">
           <h3><i class="bi bi-gear"></i> ERP Software Profile</h3>
-          
+
           <div class="form-grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
             <div class="form-group col-span-2">
               <label>ERP Display Name</label>
-              <input type="text" name="erp_display_name" value="<?= e($settings['erp_display_name'] ?? '') ?>" placeholder="e.g. e-Flexo ERP">
+              <input type="text" name="erp_display_name" value="<?= e($settings['erp_display_name'] ?? '') ?>"
+                placeholder="e.g. e-Flexo ERP">
               <small class="help-text">Global ERP title shown on login page and headers.</small>
             </div>
 
             <div class="form-group">
               <label>ERP Email</label>
-              <input type="email" name="erp_email" value="<?= e($settings['erp_email'] ?? '') ?>" placeholder="e.g. support@yourerp.com">
+              <input type="email" name="erp_email" value="<?= e($settings['erp_email'] ?? '') ?>"
+                placeholder="e.g. support@yourerp.com">
               <small class="help-text">Global ERP support email address.</small>
             </div>
             <div class="form-group">
               <label>ERP Phone</label>
-              <input type="text" name="erp_phone" value="<?= e($settings['erp_phone'] ?? '') ?>" placeholder="e.g. +91 9876543210">
+              <input type="text" name="erp_phone" value="<?= e($settings['erp_phone'] ?? '') ?>"
+                placeholder="e.g. +91 9876543210">
               <small class="help-text">Global ERP support phone number.</small>
             </div>
 
             <div class="form-group col-span-2">
               <label>ERP Address</label>
-              <textarea name="erp_address" rows="2" placeholder="ERP vendor/support office address"><?= e($settings['erp_address'] ?? '') ?></textarea>
+              <textarea name="erp_address" rows="2"
+                placeholder="ERP vendor/support office address"><?= e($settings['erp_address'] ?? '') ?></textarea>
             </div>
 
             <div class="form-group">
@@ -2183,9 +2320,11 @@ include __DIR__ . '/../../includes/header.php';
             <div class="form-group col-span-2">
               <label>ERP Logo</label>
               <input type="file" name="erp_logo" accept="image/png,image/jpeg,image/webp,image/gif">
-              <small class="help-text">Displayed on ERP login page, header, and sidebar. Each company can override this.</small>
+              <small class="help-text">Displayed on ERP login page, header, and sidebar. Each company can override
+                this.</small>
               <?php if (!empty($settings['erp_logo_path'])): ?>
-                <div class="settings-preview mt-8"><img src="<?= e(appUrl($settings['erp_logo_path'])) ?>" alt="Current ERP logo"></div>
+                <div class="settings-preview mt-8"><img src="<?= e(appUrl($settings['erp_logo_path'])) ?>"
+                    alt="Current ERP logo"></div>
               <?php endif; ?>
             </div>
           </div>
@@ -2199,8 +2338,11 @@ include __DIR__ . '/../../includes/header.php';
 
     <?php if ($activeTab === 'library'): ?>
       <?php if ($targetPaperType !== ''): ?>
-        <div style="background:#e0f2fe;border:1px solid #0284c7;border-radius:8px;padding:12px 16px;margin-bottom:16px;color:#0c4a6e;font-size:.95rem">
-          <i class="bi bi-info-circle"></i> <strong>Assigning image to paper type:</strong> <strong><?= e($targetPaperType) ?></strong> - Click "<strong>Assign to Type</strong>" on any image below, then enter the paper type name.
+        <div
+          style="background:#e0f2fe;border:1px solid #0284c7;border-radius:8px;padding:12px 16px;margin-bottom:16px;color:#0c4a6e;font-size:.95rem">
+          <i class="bi bi-info-circle"></i> <strong>Assigning image to paper type:</strong>
+          <strong><?= e($targetPaperType) ?></strong> - Click "<strong>Assign to Type</strong>" on any image below, then
+          enter the paper type name.
         </div>
       <?php endif; ?>
       <form method="POST" enctype="multipart/form-data" class="library-upload-bar mb-16">
@@ -2211,7 +2353,9 @@ include __DIR__ . '/../../includes/header.php';
             <option value="<?= e($k) ?>"><?= e($label) ?></option>
           <?php endforeach; ?>
         </select>
-        <input type="text" name="paper_type_tag" id="paper-type-tag-input" class="form-control" placeholder="Paper type (e.g. Thermal Paper)" style="display:none;max-width:220px" list="paperTypeList" autocomplete="off">
+        <input type="text" name="paper_type_tag" id="paper-type-tag-input" class="form-control"
+          placeholder="Paper type (e.g. Thermal Paper)" style="display:none;max-width:220px" list="paperTypeList"
+          autocomplete="off">
         <datalist id="paperTypeList">
           <?php foreach ($paperTypeOptions as $opt): ?>
             <option value="<?= e($opt) ?>"></option>
@@ -2221,31 +2365,35 @@ include __DIR__ . '/../../includes/header.php';
         <button class="btn btn-primary" type="submit"><i class="bi bi-upload"></i> Upload</button>
       </form>
       <script>
-      (function(){
-        var sel = document.getElementById('lib-cat-select');
-        var inp = document.getElementById('paper-type-tag-input');
-        function toggle() {
-          var isProductType = sel.value === 'product-type';
-          inp.style.display = isProductType ? '' : 'none';
-          inp.required = isProductType;
-          if (!isProductType) inp.value = '';
-        }
-        sel.addEventListener('change', toggle);
-        toggle();
-      })();
+        (function () {
+          var sel = document.getElementById('lib-cat-select');
+          var inp = document.getElementById('paper-type-tag-input');
+          function toggle() {
+            var isProductType = sel.value === 'product-type';
+            inp.style.display = isProductType ? '' : 'none';
+            inp.required = isProductType;
+            if (!isProductType) inp.value = '';
+          }
+          sel.addEventListener('change', toggle);
+          toggle();
+        })();
       </script>
 
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <div
+        style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
         <div class="library-category-pills" style="margin-bottom:0">
-          <a href="?tab=library&category=all" class="library-pill <?= $libraryFilter==='all'?'active':'' ?>">All</a>
+          <a href="?tab=library&category=all" class="library-pill <?= $libraryFilter === 'all' ? 'active' : '' ?>">All</a>
           <?php foreach ($libraryCategories as $k => $label): ?>
-            <a href="?tab=library&category=<?= e($k) ?>" class="library-pill <?= $libraryFilter===$k?'active':'' ?>"><?= e($label) ?></a>
+            <a href="?tab=library&category=<?= e($k) ?>"
+              class="library-pill <?= $libraryFilter === $k ? 'active' : '' ?>"><?= e($label) ?></a>
           <?php endforeach; ?>
         </div>
         <form method="POST" style="margin:0">
           <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
           <input type="hidden" name="action" value="rebuild_library">
-          <button type="submit" class="btn btn-secondary btn-sm" title="Scan uploads folder and register any untracked images"><i class="bi bi-arrow-repeat"></i> Rebuild from Disk</button>
+          <button type="submit" class="btn btn-secondary btn-sm"
+            title="Scan uploads folder and register any untracked images"><i class="bi bi-arrow-repeat"></i> Rebuild from
+            Disk</button>
         </form>
       </div>
 
@@ -2253,21 +2401,23 @@ include __DIR__ . '/../../includes/header.php';
         <?php foreach ($filteredLibrary as $idx => $img): ?>
           <div class="library-card library-card-modern">
             <div class="library-chip"><?= e($libraryCategories[$img['category'] ?? 'misc'] ?? 'Misc') ?></div>
-            <div class="library-thumb"><img src="<?= e(appUrl((string)$img['path'])) ?>" alt="Library image"></div>
+            <div class="library-thumb"><img src="<?= e(appUrl((string) $img['path'])) ?>" alt="Library image"></div>
             <div class="library-meta">
-              <div class="library-name"><?= e((string)($img['name'] ?? 'image')) ?></div>
+              <div class="library-name"><?= e((string) ($img['name'] ?? 'image')) ?></div>
               <?php if (($img['category'] ?? '') === 'product-type' && !empty($img['paper_type'])): ?>
-                <div style="font-size:.72rem;color:#f97316;font-weight:700;margin-top:2px"><i class="bi bi-tag-fill"></i> <?= e($img['paper_type']) ?></div>
+                <div style="font-size:.72rem;color:#f97316;font-weight:700;margin-top:2px"><i class="bi bi-tag-fill"></i>
+                  <?= e($img['paper_type']) ?></div>
               <?php endif; ?>
-              <div class="library-time">Uploaded: <?= e((string)($img['uploaded_at'] ?? '')) ?></div>
-            <?php if (($img['category'] ?? '') === 'product-type' || !isset($img['category']) || $img['category'] === 'misc'): ?>
-              <button type="button" class="btn btn-primary btn-sm" onclick="openPaperTypeModal(<?= (int)$idx ?>)" style="width:100%;margin-top:8px;margin-bottom:8px"><i class="bi bi-tag"></i> Assign to Type</button>
-            <?php endif; ?>
+              <div class="library-time">Uploaded: <?= e((string) ($img['uploaded_at'] ?? '')) ?></div>
+              <?php if (($img['category'] ?? '') === 'product-type' || !isset($img['category']) || $img['category'] === 'misc'): ?>
+                <button type="button" class="btn btn-primary btn-sm" onclick="openPaperTypeModal(<?= (int) $idx ?>)"
+                  style="width:100%;margin-top:8px;margin-bottom:8px"><i class="bi bi-tag"></i> Assign to Type</button>
+              <?php endif; ?>
             </div>
             <form method="POST" data-confirm="Remove this image?">
               <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
               <input type="hidden" name="action" value="remove_library_image">
-              <input type="hidden" name="image_index" value="<?= (int)$idx ?>">
+              <input type="hidden" name="image_index" value="<?= (int) $idx ?>">
               <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-trash"></i> Remove</button>
             </form>
           </div>
@@ -2289,8 +2439,9 @@ include __DIR__ . '/../../includes/header.php';
         <div class="form-group">
           <label>Theme Mode</label>
           <select name="theme_mode">
-            <option value="light" <?= ($settings['theme_mode'] ?? 'light')==='light'?'selected':'' ?>>Light Mode</option>
-            <option value="dark" <?= ($settings['theme_mode'] ?? 'light')==='dark'?'selected':'' ?>>Dark Mode</option>
+            <option value="light" <?= ($settings['theme_mode'] ?? 'light') === 'light' ? 'selected' : '' ?>>Light Mode
+            </option>
+            <option value="dark" <?= ($settings['theme_mode'] ?? 'light') === 'dark' ? 'selected' : '' ?>>Dark Mode</option>
           </select>
         </div>
 
@@ -2299,8 +2450,8 @@ include __DIR__ . '/../../includes/header.php';
           <select name="login_background_image">
             <option value="">Default Gradient</option>
             <?php foreach ($backgroundOptions as $bg): ?>
-              <option value="<?= e((string)$bg['path']) ?>" <?= (($settings['login_background_image'] ?? '') === (string)$bg['path']) ? 'selected' : '' ?>>
-                <?= e((string)($bg['name'] ?? 'background')) ?>
+              <option value="<?= e((string) $bg['path']) ?>" <?= (($settings['login_background_image'] ?? '') === (string) $bg['path']) ? 'selected' : '' ?>>
+                <?= e((string) ($bg['name'] ?? 'background')) ?>
               </option>
             <?php endforeach; ?>
           </select>
@@ -2308,27 +2459,32 @@ include __DIR__ . '/../../includes/header.php';
 
         <div class="form-group">
           <label>Sidebar Button Color</label>
-          <input type="color" name="sidebar_button_color" value="<?= e(normalizeHexColor($settings['sidebar_button_color'] ?? '#22C55E', '#22C55E')) ?>">
+          <input type="color" name="sidebar_button_color"
+            value="<?= e(normalizeHexColor($settings['sidebar_button_color'] ?? '#22C55E', '#22C55E')) ?>">
         </div>
 
         <div class="form-group">
           <label>Sidebar Hover Color</label>
-          <input type="color" name="sidebar_hover_color" value="<?= e(normalizeHexColor($settings['sidebar_hover_color'] ?? '#263445', '#263445')) ?>">
+          <input type="color" name="sidebar_hover_color"
+            value="<?= e(normalizeHexColor($settings['sidebar_hover_color'] ?? '#263445', '#263445')) ?>">
         </div>
 
         <div class="form-group">
           <label>Sidebar Active Background</label>
-          <input type="color" name="sidebar_active_bg" value="<?= e(normalizeHexColor($settings['sidebar_active_bg'] ?? '#214036', '#214036')) ?>">
+          <input type="color" name="sidebar_active_bg"
+            value="<?= e(normalizeHexColor($settings['sidebar_active_bg'] ?? '#214036', '#214036')) ?>">
         </div>
 
         <div class="form-group">
           <label>Sidebar Active Text</label>
-          <input type="color" name="sidebar_active_text" value="<?= e(normalizeHexColor($settings['sidebar_active_text'] ?? '#BBF7D0', '#BBF7D0')) ?>">
+          <input type="color" name="sidebar_active_text"
+            value="<?= e(normalizeHexColor($settings['sidebar_active_text'] ?? '#BBF7D0', '#BBF7D0')) ?>">
         </div>
 
         <div class="form-group">
           <label>Sidebar Collapse Delay (ms)</label>
-          <input type="number" name="sidebar_collapse_delay_ms" min="300" max="600000" step="100" value="<?= (int)($settings['sidebar_collapse_delay_ms'] ?? 1000) ?>">
+          <input type="number" name="sidebar_collapse_delay_ms" min="300" max="600000" step="100"
+            value="<?= (int) ($settings['sidebar_collapse_delay_ms'] ?? 1000) ?>">
           <small>Time in milliseconds after mouse leaves sidebar before it collapses (300-600000, max 10 minutes)</small>
         </div>
 
@@ -2340,109 +2496,333 @@ include __DIR__ . '/../../includes/header.php';
 
     <?php if ($activeTab === 'status-workflow'): ?>
       <style>
-      .status-workflow-shell { display:grid; gap:14px; }
-      /* Hero */
-      .status-hero {
-        background:linear-gradient(120deg,#6366f1 0%,#7c3aed 60%,#a21caf 100%);
-        border-radius:14px;
-        padding:18px 22px;
-        color:#fff;
-        display:flex;
-        align-items:center;
-        justify-content:space-between;
-        gap:12px;
-      }
-      .status-hero h3 { margin:0 0 4px; font-size:1.1rem; font-weight:900; }
-      .status-hero p  { margin:0; opacity:.88; font-size:.84rem; }
-      /* Toolbar */
-      .status-toolbar {
-        display:flex; flex-wrap:wrap; gap:10px;
-        justify-content:space-between; align-items:center;
-        background:#fff; border:1.5px solid #e2e8f0;
-        border-radius:12px; padding:10px 14px;
-        box-shadow:0 2px 8px rgba(0,0,0,.05);
-      }
-      .status-toolbar .left,.status-toolbar .right{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-      .status-toolbar input[type="text"]{min-width:200px;border:1.5px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:.84rem}
-      .status-toolbar input[type="text"]:focus{outline:none;border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.15)}
-      /* Reference card */
-      .sw-ref-toggle{cursor:pointer;display:flex;align-items:center;gap:6px;font-size:.82rem;font-weight:700;color:#6366f1;user-select:none}
-      .sw-ref-toggle:hover{color:#4f46e5}
-      .status-reference-card{
-        border:1.5px solid #e0e7ff; border-radius:12px;
-        background:linear-gradient(180deg,#f5f3ff 0%,#fff 100%); padding:12px;
-      }
-      .status-reference-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
-      .status-reference-item{
-        border:1px solid #e0e7ff; border-radius:10px; padding:8px 10px; background:#fff;
-      }
-      .status-reference-item p{margin:4px 0 0;font-size:.73rem;color:#475569;line-height:1.35}
-      /* Section card */
-      .status-section-card{
-        border-radius:14px; overflow:hidden;
-        box-shadow:0 2px 10px rgba(0,0,0,.06);
-        border:1.5px solid transparent;
-      }
-      .status-section-card[data-sect-color="0"]{border-color:#c7d2fe}
-      .status-section-card[data-sect-color="1"]{border-color:#99f6e4}
-      .status-section-card[data-sect-color="2"]{border-color:#fde68a}
-      .status-section-card[data-sect-color="3"]{border-color:#fca5a5}
-      .status-section-card[data-sect-color="4"]{border-color:#d9f99d}
-      .status-section-card[data-sect-color="5"]{border-color:#fbcfe8}
-      .status-section-head{
-        display:flex;justify-content:space-between;gap:10px;align-items:center;
-        padding:12px 14px;
-        border-bottom:1.5px solid rgba(0,0,0,.07);
-      }
-      .status-section-card[data-sect-color="0"] .status-section-head{background:linear-gradient(120deg,#eef2ff,#f5f3ff)}
-      .status-section-card[data-sect-color="1"] .status-section-head{background:linear-gradient(120deg,#f0fdf4,#ecfeff)}
-      .status-section-card[data-sect-color="2"] .status-section-head{background:linear-gradient(120deg,#fffbeb,#fef9c3)}
-      .status-section-card[data-sect-color="3"] .status-section-head{background:linear-gradient(120deg,#fff1f2,#ffe4e6)}
-      .status-section-card[data-sect-color="4"] .status-section-head{background:linear-gradient(120deg,#f7fee7,#ecfccb)}
-      .status-section-card[data-sect-color="5"] .status-section-head{background:linear-gradient(120deg,#fdf4ff,#fce7f3)}
-      .status-section-head h4{margin:0;font-size:.95rem;font-weight:800;color:#0f172a}
-      .status-section-head p{margin:3px 0 0;color:#64748b;font-size:.77rem}
-      .status-section-body{padding:12px;display:grid;gap:10px;background:#fff}
-      /* Page card */
-      .status-page-card{
-        border:1px solid #e2e8f0; border-radius:12px;
-        background:#fafafa; overflow:hidden;
-      }
-      .status-page-head{
-        display:grid;gap:8px;
-        grid-template-columns:1fr 1.2fr auto;
-        padding:10px 12px;
-        background:#f8fafc;
-        border-bottom:1px solid #e2e8f0;
-      }
-      .status-page-head input{border:1px solid #e2e8f0;border-radius:7px;padding:6px 9px;font-size:.8rem;background:#fff}
-      .status-page-head input:focus{outline:none;border-color:#6366f1}
-      /* Status table */
-      .status-table{width:100%;border-collapse:collapse}
-      .status-table th,.status-table td{border:1px solid #f1f5f9;padding:6px 8px;vertical-align:middle;font-size:.78rem}
-      .status-table th{background:#f1f5f9;text-align:left;color:#475569;font-size:.67rem;text-transform:uppercase;letter-spacing:.06em}
-      .status-table tbody tr:hover td{background:#f8f8ff}
-      .status-table input[type="text"],.status-table textarea{width:100%;font-size:.78rem;border:1px solid #e2e8f0;border-radius:6px;padding:4px 6px}
-      .status-table input[type="text"]:focus,.status-table textarea:focus{outline:none;border-color:#6366f1}
-      .status-table textarea{min-height:42px;resize:vertical}
-      .status-table input[type="color"]{width:36px;height:28px;border:none;cursor:pointer;border-radius:5px;padding:1px}
-      /* Badge preview */
-      .status-badge-preview{
-        display:inline-flex;align-items:center;justify-content:center;
-        border-radius:999px;min-width:80px;height:26px;
-        font-weight:800;font-size:.68rem;padding:0 10px;
-        white-space:nowrap;
-      }
-      .status-actions-row{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;gap:8px;background:#f8fafc;border-top:1px solid #e2e8f0}
-      .status-muted{color:#94a3b8;font-size:.73rem}
-      .status-empty{
-        border:1.5px dashed #cbd5e1;border-radius:10px;
-        padding:16px;text-align:center;color:#94a3b8;font-size:.82rem;
-      }
-      @media(max-width:900px){
-        .status-page-head{grid-template-columns:1fr}
-        .status-toolbar{flex-direction:column;align-items:stretch}
-      }
+        .status-workflow-shell {
+          display: grid;
+          gap: 14px;
+        }
+
+        /* Hero */
+        .status-hero {
+          background: linear-gradient(120deg, #6366f1 0%, #7c3aed 60%, #a21caf 100%);
+          border-radius: 14px;
+          padding: 18px 22px;
+          color: #fff;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+        }
+
+        .status-hero h3 {
+          margin: 0 0 4px;
+          font-size: 1.1rem;
+          font-weight: 900;
+        }
+
+        .status-hero p {
+          margin: 0;
+          opacity: .88;
+          font-size: .84rem;
+        }
+
+        /* Toolbar */
+        .status-toolbar {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          justify-content: space-between;
+          align-items: center;
+          background: #fff;
+          border: 1.5px solid #e2e8f0;
+          border-radius: 12px;
+          padding: 10px 14px;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, .05);
+        }
+
+        .status-toolbar .left,
+        .status-toolbar .right {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          flex-wrap: wrap
+        }
+
+        .status-toolbar input[type="text"] {
+          min-width: 200px;
+          border: 1.5px solid #e2e8f0;
+          border-radius: 8px;
+          padding: 8px 10px;
+          font-size: .84rem
+        }
+
+        .status-toolbar input[type="text"]:focus {
+          outline: none;
+          border-color: #6366f1;
+          box-shadow: 0 0 0 3px rgba(99, 102, 241, .15)
+        }
+
+        /* Reference card */
+        .sw-ref-toggle {
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: .82rem;
+          font-weight: 700;
+          color: #6366f1;
+          user-select: none
+        }
+
+        .sw-ref-toggle:hover {
+          color: #4f46e5
+        }
+
+        .status-reference-card {
+          border: 1.5px solid #e0e7ff;
+          border-radius: 12px;
+          background: linear-gradient(180deg, #f5f3ff 0%, #fff 100%);
+          padding: 12px;
+        }
+
+        .status-reference-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 8px
+        }
+
+        .status-reference-item {
+          border: 1px solid #e0e7ff;
+          border-radius: 10px;
+          padding: 8px 10px;
+          background: #fff;
+        }
+
+        .status-reference-item p {
+          margin: 4px 0 0;
+          font-size: .73rem;
+          color: #475569;
+          line-height: 1.35
+        }
+
+        /* Section card */
+        .status-section-card {
+          border-radius: 14px;
+          overflow: hidden;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, .06);
+          border: 1.5px solid transparent;
+        }
+
+        .status-section-card[data-sect-color="0"] {
+          border-color: #c7d2fe
+        }
+
+        .status-section-card[data-sect-color="1"] {
+          border-color: #99f6e4
+        }
+
+        .status-section-card[data-sect-color="2"] {
+          border-color: #fde68a
+        }
+
+        .status-section-card[data-sect-color="3"] {
+          border-color: #fca5a5
+        }
+
+        .status-section-card[data-sect-color="4"] {
+          border-color: #d9f99d
+        }
+
+        .status-section-card[data-sect-color="5"] {
+          border-color: #fbcfe8
+        }
+
+        .status-section-head {
+          display: flex;
+          justify-content: space-between;
+          gap: 10px;
+          align-items: center;
+          padding: 12px 14px;
+          border-bottom: 1.5px solid rgba(0, 0, 0, .07);
+        }
+
+        .status-section-card[data-sect-color="0"] .status-section-head {
+          background: linear-gradient(120deg, #eef2ff, #f5f3ff)
+        }
+
+        .status-section-card[data-sect-color="1"] .status-section-head {
+          background: linear-gradient(120deg, #f0fdf4, #ecfeff)
+        }
+
+        .status-section-card[data-sect-color="2"] .status-section-head {
+          background: linear-gradient(120deg, #fffbeb, #fef9c3)
+        }
+
+        .status-section-card[data-sect-color="3"] .status-section-head {
+          background: linear-gradient(120deg, #fff1f2, #ffe4e6)
+        }
+
+        .status-section-card[data-sect-color="4"] .status-section-head {
+          background: linear-gradient(120deg, #f7fee7, #ecfccb)
+        }
+
+        .status-section-card[data-sect-color="5"] .status-section-head {
+          background: linear-gradient(120deg, #fdf4ff, #fce7f3)
+        }
+
+        .status-section-head h4 {
+          margin: 0;
+          font-size: .95rem;
+          font-weight: 800;
+          color: #0f172a
+        }
+
+        .status-section-head p {
+          margin: 3px 0 0;
+          color: #64748b;
+          font-size: .77rem
+        }
+
+        .status-section-body {
+          padding: 12px;
+          display: grid;
+          gap: 10px;
+          background: #fff
+        }
+
+        /* Page card */
+        .status-page-card {
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          background: #fafafa;
+          overflow: hidden;
+        }
+
+        .status-page-head {
+          display: grid;
+          gap: 8px;
+          grid-template-columns: 1fr 1.2fr auto;
+          padding: 10px 12px;
+          background: #f8fafc;
+          border-bottom: 1px solid #e2e8f0;
+        }
+
+        .status-page-head input {
+          border: 1px solid #e2e8f0;
+          border-radius: 7px;
+          padding: 6px 9px;
+          font-size: .8rem;
+          background: #fff
+        }
+
+        .status-page-head input:focus {
+          outline: none;
+          border-color: #6366f1
+        }
+
+        /* Status table */
+        .status-table {
+          width: 100%;
+          border-collapse: collapse
+        }
+
+        .status-table th,
+        .status-table td {
+          border: 1px solid #f1f5f9;
+          padding: 6px 8px;
+          vertical-align: middle;
+          font-size: .78rem
+        }
+
+        .status-table th {
+          background: #f1f5f9;
+          text-align: left;
+          color: #475569;
+          font-size: .67rem;
+          text-transform: uppercase;
+          letter-spacing: .06em
+        }
+
+        .status-table tbody tr:hover td {
+          background: #f8f8ff
+        }
+
+        .status-table input[type="text"],
+        .status-table textarea {
+          width: 100%;
+          font-size: .78rem;
+          border: 1px solid #e2e8f0;
+          border-radius: 6px;
+          padding: 4px 6px
+        }
+
+        .status-table input[type="text"]:focus,
+        .status-table textarea:focus {
+          outline: none;
+          border-color: #6366f1
+        }
+
+        .status-table textarea {
+          min-height: 42px;
+          resize: vertical
+        }
+
+        .status-table input[type="color"] {
+          width: 36px;
+          height: 28px;
+          border: none;
+          cursor: pointer;
+          border-radius: 5px;
+          padding: 1px
+        }
+
+        /* Badge preview */
+        .status-badge-preview {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 999px;
+          min-width: 80px;
+          height: 26px;
+          font-weight: 800;
+          font-size: .68rem;
+          padding: 0 10px;
+          white-space: nowrap;
+        }
+
+        .status-actions-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 8px 12px;
+          gap: 8px;
+          background: #f8fafc;
+          border-top: 1px solid #e2e8f0
+        }
+
+        .status-muted {
+          color: #94a3b8;
+          font-size: .73rem
+        }
+
+        .status-empty {
+          border: 1.5px dashed #cbd5e1;
+          border-radius: 10px;
+          padding: 16px;
+          text-align: center;
+          color: #94a3b8;
+          font-size: .82rem;
+        }
+
+        @media(max-width:900px) {
+          .status-page-head {
+            grid-template-columns: 1fr
+          }
+
+          .status-toolbar {
+            flex-direction: column;
+            align-items: stretch
+          }
+        }
       </style>
 
       <div class="status-workflow-shell">
@@ -2460,8 +2840,10 @@ include __DIR__ . '/../../includes/header.php';
 
           <div class="status-toolbar">
             <div class="left">
-              <button type="button" class="btn btn-secondary btn-sm" id="sw-add-section"><i class="bi bi-plus-circle"></i> Add Section</button>
-              <button type="button" class="btn btn-light btn-sm" id="sw-reset-default"><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="sw-add-section"><i class="bi bi-plus-circle"></i>
+                Add Section</button>
+              <button type="button" class="btn btn-light btn-sm" id="sw-reset-default"><i
+                  class="bi bi-arrow-counterclockwise"></i> Reset</button>
               <span class="sw-ref-toggle" id="sw-toggle-ref"><i class="bi bi-palette"></i> Global Reference</span>
             </div>
             <div class="right">
@@ -2472,11 +2854,13 @@ include __DIR__ . '/../../includes/header.php';
 
           <div id="sw-ref-panel" style="display:none">
             <div class="status-reference-card">
-              <div style="margin-bottom:8px;font-size:.82rem;font-weight:700;color:#6366f1">Global Status Reference — click &ldquo;Use Global Statuses&rdquo; on any page card to auto-fill.</div>
+              <div style="margin-bottom:8px;font-size:.82rem;font-weight:700;color:#6366f1">Global Status Reference —
+                click &ldquo;Use Global Statuses&rdquo; on any page card to auto-fill.</div>
               <div class="status-reference-grid">
                 <?php foreach ($statusWorkflowGlobalFlat as $refStatus): ?>
                   <div class="status-reference-item">
-                    <span class="status-badge-preview" style="background:<?= e($refStatus['bg_color']) ?>;color:<?= e($refStatus['text_color']) ?>"><?= e($refStatus['label']) ?></span>
+                    <span class="status-badge-preview"
+                      style="background:<?= e($refStatus['bg_color']) ?>;color:<?= e($refStatus['text_color']) ?>"><?= e($refStatus['label']) ?></span>
                     <p><strong>When:</strong> <?= e($refStatus['when']) ?></p>
                     <p><strong>Concept:</strong> <?= e($refStatus['concept']) ?></p>
                   </div>
@@ -2490,51 +2874,51 @@ include __DIR__ . '/../../includes/header.php';
       </div>
 
       <script>
-      (function () {
-        var defaults = <?= json_encode(statusWorkflowDefaults(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
-        var loaded = <?= json_encode($statusWorkflowSettings, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
-        var globalReference = <?= json_encode($statusWorkflowGlobalReference, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
-        var state = JSON.parse(JSON.stringify((loaded && loaded.sections && loaded.sections.length) ? loaded : defaults));
+        (function () {
+          var defaults = <?= json_encode(statusWorkflowDefaults(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+          var loaded = <?= json_encode($statusWorkflowSettings, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+          var globalReference = <?= json_encode($statusWorkflowGlobalReference, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+          var state = JSON.parse(JSON.stringify((loaded && loaded.sections && loaded.sections.length) ? loaded : defaults));
 
-        var root = document.getElementById('sw-sections-root');
-        var searchInput = document.getElementById('sw-search');
-        var hiddenJson = document.getElementById('status-workflow-json');
-        var form = document.getElementById('status-workflow-form');
-        var btnAddSection = document.getElementById('sw-add-section');
-        var btnResetDefault = document.getElementById('sw-reset-default');
+          var root = document.getElementById('sw-sections-root');
+          var searchInput = document.getElementById('sw-search');
+          var hiddenJson = document.getElementById('status-workflow-json');
+          var form = document.getElementById('status-workflow-form');
+          var btnAddSection = document.getElementById('sw-add-section');
+          var btnResetDefault = document.getElementById('sw-reset-default');
 
-        function escHtml(v) {
-          return String(v || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-        }
-
-        function randomKey(prefix) {
-          return prefix + '_' + Math.random().toString(36).slice(2, 8);
-        }
-
-        function normalizePath(path) {
-          return String(path || '').trim().toLowerCase();
-        }
-
-        function ensureStateShape() {
-          if (!state || typeof state !== 'object') {
-            state = JSON.parse(JSON.stringify(defaults));
+          function escHtml(v) {
+            return String(v || '')
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#39;');
           }
-          if (!Array.isArray(state.sections)) {
-            state.sections = [];
-          }
-        }
 
-        function statusRowMarkup(sIdx, pIdx, stIdx, st) {
-          var bg = st.bg_color || '#64748B';
-          var tx = st.text_color || '#FFFFFF';
-          var label = st.label || st.code || 'Status';
-          return '' +
-            '<tr data-status-row="1">' +
+          function randomKey(prefix) {
+            return prefix + '_' + Math.random().toString(36).slice(2, 8);
+          }
+
+          function normalizePath(path) {
+            return String(path || '').trim().toLowerCase();
+          }
+
+          function ensureStateShape() {
+            if (!state || typeof state !== 'object') {
+              state = JSON.parse(JSON.stringify(defaults));
+            }
+            if (!Array.isArray(state.sections)) {
+              state.sections = [];
+            }
+          }
+
+          function statusRowMarkup(sIdx, pIdx, stIdx, st) {
+            var bg = st.bg_color || '#64748B';
+            var tx = st.text_color || '#FFFFFF';
+            var label = st.label || st.code || 'Status';
+            return '' +
+              '<tr data-status-row="1">' +
               '<td style="width:13%"><input data-bind="code" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" type="text" value="' + escHtml(st.code || '') + '" placeholder="Code"></td>' +
               '<td style="width:13%"><input data-bind="label" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" type="text" value="' + escHtml(st.label || '') + '" placeholder="Label"></td>' +
               '<td style="width:34%"><textarea data-bind="when" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" placeholder="When to use / meaning">' + escHtml(st.when || st.concept || '') + '</textarea></td>' +
@@ -2542,380 +2926,800 @@ include __DIR__ . '/../../includes/header.php';
               '<td style="width:5%;text-align:center"><input data-bind="text_color" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '" type="color" value="' + escHtml(tx) + '"></td>' +
               '<td style="width:14%"><span class="status-badge-preview" style="background:' + escHtml(bg) + ';color:' + escHtml(tx) + '">' + escHtml(label) + '</span></td>' +
               '<td style="width:4%;text-align:center"><button type="button" class="btn btn-danger btn-sm" data-remove-status="1" data-s="' + sIdx + '" data-p="' + pIdx + '" data-st="' + stIdx + '"><i class="bi bi-trash"></i></button></td>' +
-            '</tr>';
-        }
-
-        function pageCardMarkup(sIdx, pIdx, page) {
-          var rows = '';
-          var list = Array.isArray(page.statuses) ? page.statuses : [];
-          var canUseGlobal = !!globalReference[normalizePath(page.page_path || '')];
-          for (var i = 0; i < list.length; i += 1) {
-            rows += statusRowMarkup(sIdx, pIdx, i, list[i]);
-          }
-          if (!rows) {
-            rows = '<tr><td colspan="8" class="status-empty">No statuses in this page yet.</td></tr>';
+              '</tr>';
           }
 
-          return '' +
-            '<div class="status-page-card" data-page-card="1">' +
+          function pageCardMarkup(sIdx, pIdx, page) {
+            var rows = '';
+            var list = Array.isArray(page.statuses) ? page.statuses : [];
+            var canUseGlobal = !!globalReference[normalizePath(page.page_path || '')];
+            for (var i = 0; i < list.length; i += 1) {
+              rows += statusRowMarkup(sIdx, pIdx, i, list[i]);
+            }
+            if (!rows) {
+              rows = '<tr><td colspan="8" class="status-empty">No statuses in this page yet.</td></tr>';
+            }
+
+            return '' +
+              '<div class="status-page-card" data-page-card="1">' +
               '<div class="status-page-head">' +
-                '<input data-page-bind="page_name" data-s="' + sIdx + '" data-p="' + pIdx + '" type="text" value="' + escHtml(page.page_name || '') + '" placeholder="Page name (e.g. Paperroll Planning)">' +
-                '<input data-page-bind="page_path" data-s="' + sIdx + '" data-p="' + pIdx + '" type="text" value="' + escHtml(page.page_path || '') + '" placeholder="Path (e.g. /modules/planning/paperroll/index.php)">' +
-                '<button type="button" class="btn btn-danger btn-sm" data-remove-page="1" data-s="' + sIdx + '" data-p="' + pIdx + '"><i class="bi bi-trash"></i> Remove Page</button>' +
+              '<input data-page-bind="page_name" data-s="' + sIdx + '" data-p="' + pIdx + '" type="text" value="' + escHtml(page.page_name || '') + '" placeholder="Page name (e.g. Paperroll Planning)">' +
+              '<input data-page-bind="page_path" data-s="' + sIdx + '" data-p="' + pIdx + '" type="text" value="' + escHtml(page.page_path || '') + '" placeholder="Path (e.g. /modules/planning/paperroll/index.php)">' +
+              '<button type="button" class="btn btn-danger btn-sm" data-remove-page="1" data-s="' + sIdx + '" data-p="' + pIdx + '"><i class="bi bi-trash"></i> Remove Page</button>' +
               '</div>' +
               '<table class="status-table">' +
-                '<thead>' +
-                  '<tr>' +
-                    '<th>Code</th>' +
-                    '<th>Label</th>' +
-                    '<th>When / Meaning</th>' +
-                    '<th title="Background">BG</th>' +
-                    '<th title="Text color">Txt</th>' +
-                    '<th>Preview</th>' +
-                    '<th></th>' +
-                  '</tr>' +
-                '</thead>' +
-                '<tbody>' + rows + '</tbody>' +
+              '<thead>' +
+              '<tr>' +
+              '<th>Code</th>' +
+              '<th>Label</th>' +
+              '<th>When / Meaning</th>' +
+              '<th title="Background">BG</th>' +
+              '<th title="Text color">Txt</th>' +
+              '<th>Preview</th>' +
+              '<th></th>' +
+              '</tr>' +
+              '</thead>' +
+              '<tbody>' + rows + '</tbody>' +
               '</table>' +
               '<div class="status-actions-row">' +
-                '<div class="status-muted">Page key: ' + escHtml(page.page_key || '') + '</div>' +
-                '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">' +
-                  (canUseGlobal ? '<button type="button" class="btn btn-light btn-sm" data-use-global-statuses="1" data-s="' + sIdx + '" data-p="' + pIdx + '"><i class="bi bi-stars"></i> Use Global Statuses</button>' : '') +
-                  '<button type="button" class="btn btn-secondary btn-sm" data-add-status="1" data-s="' + sIdx + '" data-p="' + pIdx + '"><i class="bi bi-plus"></i> Add Status</button>' +
-                '</div>' +
+              '<div class="status-muted">Page key: ' + escHtml(page.page_key || '') + '</div>' +
+              '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">' +
+              (canUseGlobal ? '<button type="button" class="btn btn-light btn-sm" data-use-global-statuses="1" data-s="' + sIdx + '" data-p="' + pIdx + '"><i class="bi bi-stars"></i> Use Global Statuses</button>' : '') +
+              '<button type="button" class="btn btn-secondary btn-sm" data-add-status="1" data-s="' + sIdx + '" data-p="' + pIdx + '"><i class="bi bi-plus"></i> Add Status</button>' +
               '</div>' +
-            '</div>';
-        }
-
-        var SECT_COLORS = ['0','1','2','3','4','5'];
-
-        function sectionCardMarkup(sIdx, section) {
-          var pagesHtml = '';
-          var pages = Array.isArray(section.pages) ? section.pages : [];
-          for (var i = 0; i < pages.length; i += 1) {
-            pagesHtml += pageCardMarkup(sIdx, i, pages[i]);
+              '</div>' +
+              '</div>';
           }
-          if (!pagesHtml) {
-            pagesHtml = '<div class="status-empty">No pages in this section yet.</div>';
-          }
-          var colorIdx = SECT_COLORS[sIdx % SECT_COLORS.length];
 
-          return '' +
-            '<section class="status-section-card" data-section-card="1" data-sect-color="' + colorIdx + '">' +
+          var SECT_COLORS = ['0', '1', '2', '3', '4', '5'];
+
+          function sectionCardMarkup(sIdx, section) {
+            var pagesHtml = '';
+            var pages = Array.isArray(section.pages) ? section.pages : [];
+            for (var i = 0; i < pages.length; i += 1) {
+              pagesHtml += pageCardMarkup(sIdx, i, pages[i]);
+            }
+            if (!pagesHtml) {
+              pagesHtml = '<div class="status-empty">No pages in this section yet.</div>';
+            }
+            var colorIdx = SECT_COLORS[sIdx % SECT_COLORS.length];
+
+            return '' +
+              '<section class="status-section-card" data-section-card="1" data-sect-color="' + colorIdx + '">' +
               '<div class="status-section-head">' +
-                '<div style="flex:1;display:grid;grid-template-columns:1fr 1.4fr;gap:8px;align-items:center">' +
-                  '<input data-section-bind="section_name" data-s="' + sIdx + '" type="text" value="' + escHtml(section.section_name || '') + '" placeholder="Section name" style="font-weight:800;font-size:.92rem;border:1px solid rgba(0,0,0,.1);border-radius:7px;padding:5px 9px;background:transparent">' +
-                  '<input data-section-bind="description" data-s="' + sIdx + '" type="text" value="' + escHtml(section.description || '') + '" placeholder="Description" style="font-size:.78rem;border:1px solid rgba(0,0,0,.1);border-radius:7px;padding:5px 9px;background:transparent;color:#64748b">' +
-                '</div>' +
-                '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-                  '<button type="button" class="btn btn-secondary btn-sm" data-add-page="1" data-s="' + sIdx + '"><i class="bi bi-plus"></i> Add Page</button>' +
-                  '<button type="button" class="btn btn-danger btn-sm" data-remove-section="1" data-s="' + sIdx + '"><i class="bi bi-trash"></i></button>' +
-                '</div>' +
+              '<div style="flex:1;display:grid;grid-template-columns:1fr 1.4fr;gap:8px;align-items:center">' +
+              '<input data-section-bind="section_name" data-s="' + sIdx + '" type="text" value="' + escHtml(section.section_name || '') + '" placeholder="Section name" style="font-weight:800;font-size:.92rem;border:1px solid rgba(0,0,0,.1);border-radius:7px;padding:5px 9px;background:transparent">' +
+              '<input data-section-bind="description" data-s="' + sIdx + '" type="text" value="' + escHtml(section.description || '') + '" placeholder="Description" style="font-size:.78rem;border:1px solid rgba(0,0,0,.1);border-radius:7px;padding:5px 9px;background:transparent;color:#64748b">' +
+              '</div>' +
+              '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+              '<button type="button" class="btn btn-secondary btn-sm" data-add-page="1" data-s="' + sIdx + '"><i class="bi bi-plus"></i> Add Page</button>' +
+              '<button type="button" class="btn btn-danger btn-sm" data-remove-section="1" data-s="' + sIdx + '"><i class="bi bi-trash"></i></button>' +
+              '</div>' +
               '</div>' +
               '<div class="status-section-body">' +
-                '<div data-pages-wrapper="1">' + pagesHtml + '</div>' +
+              '<div data-pages-wrapper="1">' + pagesHtml + '</div>' +
               '</div>' +
-            '</section>';
-        }
-
-        function render() {
-          ensureStateShape();
-          var html = '';
-          for (var i = 0; i < state.sections.length; i += 1) {
-            html += sectionCardMarkup(i, state.sections[i]);
+              '</section>';
           }
-          if (!html) {
-            html = '<div class="status-empty">No workflow sections found. Click "Add Section" to begin.</div>';
-          }
-          root.innerHTML = html;
-          applyFilter();
-        }
 
-        function applyFilter() {
-          var q = (searchInput.value || '').trim().toLowerCase();
-          var sections = root.querySelectorAll('[data-section-card="1"]');
-          sections.forEach(function (sec) {
-            if (!q) {
-              sec.style.display = '';
-              return;
+          function render() {
+            ensureStateShape();
+            var html = '';
+            for (var i = 0; i < state.sections.length; i += 1) {
+              html += sectionCardMarkup(i, state.sections[i]);
             }
-            var txt = (sec.textContent || '').toLowerCase();
-            sec.style.display = txt.indexOf(q) >= 0 ? '' : 'none';
-          });
-        }
-
-        function addSection() {
-          state.sections.push({
-            section_key: randomKey('section'),
-            section_name: 'New Section',
-            description: 'Describe this stage group',
-            pages: [{
-              page_key: randomKey('page'),
-              page_name: 'New Page',
-              page_path: '',
-              statuses: [{ code: 'Pending', label: 'Pending', when: '', concept: '', bg_color: '#64748B', text_color: '#FFFFFF' }]
-            }]
-          });
-          render();
-        }
-
-        function buildSubmitPayload() {
-          hiddenJson.value = JSON.stringify(state);
-        }
-
-        root.addEventListener('input', function (ev) {
-          var t = ev.target;
-          var s = parseInt(t.getAttribute('data-s') || '-1', 10);
-          var p = parseInt(t.getAttribute('data-p') || '-1', 10);
-          var st = parseInt(t.getAttribute('data-st') || '-1', 10);
-
-          var secBind = t.getAttribute('data-section-bind');
-          if (secBind && state.sections[s]) {
-            state.sections[s][secBind] = t.value;
-            return;
-          }
-
-          var pageBind = t.getAttribute('data-page-bind');
-          if (pageBind && state.sections[s] && state.sections[s].pages && state.sections[s].pages[p]) {
-            state.sections[s].pages[p][pageBind] = t.value;
-            return;
-          }
-
-          var bind = t.getAttribute('data-bind');
-          if (bind && state.sections[s] && state.sections[s].pages && state.sections[s].pages[p] && state.sections[s].pages[p].statuses && state.sections[s].pages[p].statuses[st]) {
-            state.sections[s].pages[p].statuses[st][bind] = t.value;
-            if (bind === 'label' || bind === 'bg_color' || bind === 'text_color') {
-              render();
+            if (!html) {
+              html = '<div class="status-empty">No workflow sections found. Click "Add Section" to begin.</div>';
             }
+            root.innerHTML = html;
+            applyFilter();
           }
-        });
 
-        root.addEventListener('click', function (ev) {
-          var btn = ev.target.closest('button');
-          if (!btn) return;
-
-          var s = parseInt(btn.getAttribute('data-s') || '-1', 10);
-          var p = parseInt(btn.getAttribute('data-p') || '-1', 10);
-          var st = parseInt(btn.getAttribute('data-st') || '-1', 10);
-
-          if (btn.hasAttribute('data-remove-section')) {
-            state.sections.splice(s, 1);
-            render();
-            return;
+          function applyFilter() {
+            var q = (searchInput.value || '').trim().toLowerCase();
+            var sections = root.querySelectorAll('[data-section-card="1"]');
+            sections.forEach(function (sec) {
+              if (!q) {
+                sec.style.display = '';
+                return;
+              }
+              var txt = (sec.textContent || '').toLowerCase();
+              sec.style.display = txt.indexOf(q) >= 0 ? '' : 'none';
+            });
           }
-          if (btn.hasAttribute('data-add-page') && state.sections[s]) {
-            state.sections[s].pages = state.sections[s].pages || [];
-            state.sections[s].pages.push({
-              page_key: randomKey('page'),
-              page_name: 'New Page',
-              page_path: '',
-              statuses: [{ code: 'Pending', label: 'Pending', when: '', concept: '', bg_color: '#64748B', text_color: '#FFFFFF' }]
+
+          function addSection() {
+            state.sections.push({
+              section_key: randomKey('section'),
+              section_name: 'New Section',
+              description: 'Describe this stage group',
+              pages: [{
+                page_key: randomKey('page'),
+                page_name: 'New Page',
+                page_path: '',
+                statuses: [{ code: 'Pending', label: 'Pending', when: '', concept: '', bg_color: '#64748B', text_color: '#FFFFFF' }]
+              }]
             });
             render();
-            return;
           }
-          if (btn.hasAttribute('data-remove-page') && state.sections[s] && state.sections[s].pages) {
-            state.sections[s].pages.splice(p, 1);
-            render();
-            return;
+
+          function buildSubmitPayload() {
+            hiddenJson.value = JSON.stringify(state);
           }
-          if (btn.hasAttribute('data-add-status') && state.sections[s] && state.sections[s].pages && state.sections[s].pages[p]) {
-            state.sections[s].pages[p].statuses = state.sections[s].pages[p].statuses || [];
-            state.sections[s].pages[p].statuses.push({ code: 'New Status', label: 'New Status', when: '', concept: '', bg_color: '#64748B', text_color: '#FFFFFF' });
-            render();
-            return;
-          }
-          if (btn.hasAttribute('data-use-global-statuses') && state.sections[s] && state.sections[s].pages && state.sections[s].pages[p]) {
-            var pagePath = normalizePath(state.sections[s].pages[p].page_path || '');
-            var refRows = globalReference[pagePath] || [];
-            if (!Array.isArray(refRows) || !refRows.length) {
-              window.alert('No global status reference mapped for this page path yet.');
+
+          root.addEventListener('input', function (ev) {
+            var t = ev.target;
+            var s = parseInt(t.getAttribute('data-s') || '-1', 10);
+            var p = parseInt(t.getAttribute('data-p') || '-1', 10);
+            var st = parseInt(t.getAttribute('data-st') || '-1', 10);
+
+            var secBind = t.getAttribute('data-section-bind');
+            if (secBind && state.sections[s]) {
+              state.sections[s][secBind] = t.value;
               return;
             }
-            state.sections[s].pages[p].statuses = JSON.parse(JSON.stringify(refRows));
-            render();
-            return;
-          }
-          if (btn.hasAttribute('data-remove-status') && state.sections[s] && state.sections[s].pages && state.sections[s].pages[p] && state.sections[s].pages[p].statuses) {
-            state.sections[s].pages[p].statuses.splice(st, 1);
-            render();
-          }
-        });
 
-        btnAddSection.addEventListener('click', addSection);
-        document.getElementById('sw-toggle-ref').addEventListener('click', function () {
-          var panel = document.getElementById('sw-ref-panel');
-          panel.style.display = panel.style.display === 'none' ? '' : 'none';
-        });
+            var pageBind = t.getAttribute('data-page-bind');
+            if (pageBind && state.sections[s] && state.sections[s].pages && state.sections[s].pages[p]) {
+              state.sections[s].pages[p][pageBind] = t.value;
+              return;
+            }
 
-        btnResetDefault.addEventListener('click', function () {
-          if (!window.confirm('Reset workflow matrix to default values?')) {
-            return;
-          }
-          state = JSON.parse(JSON.stringify(defaults));
+            var bind = t.getAttribute('data-bind');
+            if (bind && state.sections[s] && state.sections[s].pages && state.sections[s].pages[p] && state.sections[s].pages[p].statuses && state.sections[s].pages[p].statuses[st]) {
+              state.sections[s].pages[p].statuses[st][bind] = t.value;
+              if (bind === 'label' || bind === 'bg_color' || bind === 'text_color') {
+                render();
+              }
+            }
+          });
+
+          root.addEventListener('click', function (ev) {
+            var btn = ev.target.closest('button');
+            if (!btn) return;
+
+            var s = parseInt(btn.getAttribute('data-s') || '-1', 10);
+            var p = parseInt(btn.getAttribute('data-p') || '-1', 10);
+            var st = parseInt(btn.getAttribute('data-st') || '-1', 10);
+
+            if (btn.hasAttribute('data-remove-section')) {
+              state.sections.splice(s, 1);
+              render();
+              return;
+            }
+            if (btn.hasAttribute('data-add-page') && state.sections[s]) {
+              state.sections[s].pages = state.sections[s].pages || [];
+              state.sections[s].pages.push({
+                page_key: randomKey('page'),
+                page_name: 'New Page',
+                page_path: '',
+                statuses: [{ code: 'Pending', label: 'Pending', when: '', concept: '', bg_color: '#64748B', text_color: '#FFFFFF' }]
+              });
+              render();
+              return;
+            }
+            if (btn.hasAttribute('data-remove-page') && state.sections[s] && state.sections[s].pages) {
+              state.sections[s].pages.splice(p, 1);
+              render();
+              return;
+            }
+            if (btn.hasAttribute('data-add-status') && state.sections[s] && state.sections[s].pages && state.sections[s].pages[p]) {
+              state.sections[s].pages[p].statuses = state.sections[s].pages[p].statuses || [];
+              state.sections[s].pages[p].statuses.push({ code: 'New Status', label: 'New Status', when: '', concept: '', bg_color: '#64748B', text_color: '#FFFFFF' });
+              render();
+              return;
+            }
+            if (btn.hasAttribute('data-use-global-statuses') && state.sections[s] && state.sections[s].pages && state.sections[s].pages[p]) {
+              var pagePath = normalizePath(state.sections[s].pages[p].page_path || '');
+              var refRows = globalReference[pagePath] || [];
+              if (!Array.isArray(refRows) || !refRows.length) {
+                window.alert('No global status reference mapped for this page path yet.');
+                return;
+              }
+              state.sections[s].pages[p].statuses = JSON.parse(JSON.stringify(refRows));
+              render();
+              return;
+            }
+            if (btn.hasAttribute('data-remove-status') && state.sections[s] && state.sections[s].pages && state.sections[s].pages[p] && state.sections[s].pages[p].statuses) {
+              state.sections[s].pages[p].statuses.splice(st, 1);
+              render();
+            }
+          });
+
+          btnAddSection.addEventListener('click', addSection);
+          document.getElementById('sw-toggle-ref').addEventListener('click', function () {
+            var panel = document.getElementById('sw-ref-panel');
+            panel.style.display = panel.style.display === 'none' ? '' : 'none';
+          });
+
+          btnResetDefault.addEventListener('click', function () {
+            if (!window.confirm('Reset workflow matrix to default values?')) {
+              return;
+            }
+            state = JSON.parse(JSON.stringify(defaults));
+            render();
+          });
+          searchInput.addEventListener('input', applyFilter);
+          form.addEventListener('submit', function () {
+            buildSubmitPayload();
+          });
+
           render();
-        });
-        searchInput.addEventListener('input', applyFilter);
-        form.addEventListener('submit', function () {
-          buildSubmitPayload();
-        });
-
-        render();
-      })();
+        })();
       </script>
     <?php endif; ?>
 
     <?php if ($activeTab === 'tenant'): ?>
       <style>
-      .tenant-shell { display:grid; grid-template-columns:1.4fr .8fr; gap:16px; }
-      .tenant-hero { border:1px solid #c7d2fe; background:linear-gradient(135deg,#eef2ff 0%, #ecfeff 100%); border-radius:14px; padding:14px 16px; margin-bottom:14px; }
-      .tenant-hero h3 { margin:0 0 4px; color:#1e1b4b; font-size:1rem; }
-      .tenant-hero p { margin:0; color:#334155; font-size:.85rem; }
-      .tenant-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-      .tenant-group { border:1px solid #e2e8f0; background:#fff; border-radius:12px; padding:12px; }
-      .tenant-group h4 { margin:0 0 10px; font-size:.82rem; text-transform:uppercase; letter-spacing:.05em; color:#475569; }
-      .tenant-field { margin-bottom:10px; }
-      .tenant-field:last-child { margin-bottom:0; }
-      .tenant-field label { display:block; font-size:.76rem; font-weight:700; color:#334155; margin-bottom:4px; }
-      .tenant-field input, .tenant-field textarea { width:100%; }
-      .tenant-field small { color:#64748b; font-size:.72rem; display:block; margin-top:4px; }
-      .tenant-check { border:1px solid #e2e8f0; background:#f8fafc; border-radius:10px; padding:10px 12px; font-size:.82rem; color:#334155; }
-      .tenant-note { border:1px solid #bfdbfe; background:linear-gradient(180deg,#eff6ff 0%,#f8fbff 100%); border-radius:12px; padding:12px; margin-bottom:12px; }
-      .tenant-note h4 { margin:0 0 8px; font-size:.84rem; color:#1d4ed8; text-transform:uppercase; letter-spacing:.05em; }
-      .tenant-note ol { margin:0; padding-left:18px; color:#334155; font-size:.82rem; line-height:1.55; }
-      .tenant-meta-card { border:1px solid #e2e8f0; border-radius:12px; background:#fff; overflow:hidden; }
-      .tenant-meta-head { padding:10px 12px; background:#f8fafc; border-bottom:1px solid #e2e8f0; font-weight:700; font-size:.82rem; color:#0f172a; }
-      .tenant-meta-body { padding:10px 12px; }
-      .tenant-meta-row { display:flex; gap:8px; justify-content:space-between; padding:6px 0; font-size:.8rem; border-bottom:1px dashed #e2e8f0; }
-      .tenant-meta-row:last-child { border-bottom:none; }
-      .tenant-actions { margin-top:12px; display:flex; justify-content:flex-start; }
-      /* Subscriber table */
-      .sub-stats { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
-      .sub-stat { background:#fff; border:1.5px solid #e2e8f0; border-radius:12px; padding:10px 16px; min-width:100px; text-align:center; }
-      .sub-stat .sub-stat-num { font-size:1.6rem; font-weight:900; color:#0f172a; line-height:1; }
-      .sub-stat .sub-stat-lbl { font-size:.72rem; color:#64748b; margin-top:3px; }
-      .sub-stat.active-stat { border-color:#22c55e; }  .sub-stat.active-stat .sub-stat-num { color:#16a34a; }
-      .sub-stat.expired-stat { border-color:#ef4444; } .sub-stat.expired-stat .sub-stat-num { color:#dc2626; }
-      .sub-stat.soon-stat { border-color:#f97316; }    .sub-stat.soon-stat .sub-stat-num { color:#ea580c; }
-      .sub-stat.suspended-stat { border-color:#94a3b8; } .sub-stat.suspended-stat .sub-stat-num { color:#64748b; }
-      .sub-table-wrap { background:#fff; border:1.5px solid #e2e8f0; border-radius:14px; overflow:hidden; margin-bottom:18px; }
-      .sub-table { width:100%; border-collapse:collapse; font-size:.8rem; }
-      .sub-table th { background:#f1f5f9; padding:8px 10px; text-align:left; font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:#475569; border-bottom:1.5px solid #e2e8f0; }
-      .sub-table td { padding:8px 10px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
-      .sub-table tr:last-child td { border-bottom:none; }
-      .sub-table tr:hover td { background:#f8fafc; }
-      .sub-badge { display:inline-flex; align-items:center; gap:4px; border-radius:999px; padding:2px 9px; font-size:.69rem; font-weight:800; }
-      .sub-badge.active   { background:#dcfce7; color:#16a34a; }
-      .sub-badge.expired  { background:#fee2e2; color:#dc2626; }
-      .sub-badge.soon     { background:#ffedd5; color:#ea580c; }
-      .sub-badge.suspended{ background:#f1f5f9; color:#64748b; }
-      .sub-actions { display:flex; gap:5px; flex-wrap:wrap; }
-      .sub-empty { padding:24px; text-align:center; color:#94a3b8; font-size:.84rem; }
-      /* Accordion */
-      .prov-accordion { border:1.5px solid #e2e8f0; border-radius:14px; overflow:hidden; }
-      .prov-acc-head { display:flex; justify-content:space-between; align-items:center; padding:13px 16px; background:#f8fafc; cursor:pointer; user-select:none; }
-      .prov-acc-head h3 { margin:0; font-size:.97rem; font-weight:800; color:#0f172a; }
-      .prov-acc-head span { font-size:.8rem; color:#6366f1; font-weight:700; }
-      .prov-acc-body { display:none; padding:14px; border-top:1.5px solid #e2e8f0; }
-      .prov-acc-body.open { display:block; }
-      /* Modals */
-      .sub-modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:9999; align-items:center; justify-content:center; }
-      .sub-modal-overlay.active { display:flex; }
-      .sub-modal { background:#fff; border-radius:16px; padding:22px; width:min(520px,95vw); max-height:90vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,.25); }
-      .sub-modal h4 { margin:0 0 14px; font-size:1rem; font-weight:900; color:#0f172a; }
-      .sub-modal .form-group { margin-bottom:11px; }
-      .sub-modal label { display:block; font-size:.76rem; font-weight:700; color:#334155; margin-bottom:4px; }
-      .sub-modal input, .sub-modal select, .sub-modal textarea { width:100%; border:1.5px solid #e2e8f0; border-radius:8px; padding:8px 10px; font-size:.84rem; }
-      .sub-modal input:focus, .sub-modal select:focus { outline:none; border-color:#6366f1; }
-      .sub-modal .modal-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
-      .sub-modal .extend-presets { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:10px; }
-      .sub-modal .extend-presets button { border:1.5px solid #6366f1; background:#ede9fe; color:#4f46e5; border-radius:8px; padding:6px 12px; font-size:.78rem; font-weight:700; cursor:pointer; }
-      .sub-modal .extend-presets button:hover { background:#6366f1; color:#fff; }
-      @media (max-width: 980px) {
-        .tenant-shell { grid-template-columns:1fr; }
-        .tenant-grid { grid-template-columns:1fr; }
-        .sub-table { font-size:.72rem; }
-      }
+        .tenant-shell {
+          display: grid;
+          grid-template-columns: 1.4fr .8fr;
+          gap: 16px;
+        }
+
+        .tenant-hero {
+          border: 1px solid #c7d2fe;
+          background: linear-gradient(135deg, #eef2ff 0%, #ecfeff 100%);
+          border-radius: 14px;
+          padding: 14px 16px;
+          margin-bottom: 14px;
+        }
+
+        .tenant-hero h3 {
+          margin: 0 0 4px;
+          color: #1e1b4b;
+          font-size: 1rem;
+        }
+
+        .tenant-hero p {
+          margin: 0;
+          color: #334155;
+          font-size: .85rem;
+        }
+
+        .tenant-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+        }
+
+        .tenant-group {
+          border: 1px solid #e2e8f0;
+          background: #fff;
+          border-radius: 12px;
+          padding: 12px;
+        }
+
+        .tenant-group h4 {
+          margin: 0 0 10px;
+          font-size: .82rem;
+          text-transform: uppercase;
+          letter-spacing: .05em;
+          color: #475569;
+        }
+
+        .tenant-field {
+          margin-bottom: 10px;
+        }
+
+        .tenant-field:last-child {
+          margin-bottom: 0;
+        }
+
+        .tenant-field label {
+          display: block;
+          font-size: .76rem;
+          font-weight: 700;
+          color: #334155;
+          margin-bottom: 4px;
+        }
+
+        .tenant-field input,
+        .tenant-field textarea {
+          width: 100%;
+        }
+
+        .tenant-field small {
+          color: #64748b;
+          font-size: .72rem;
+          display: block;
+          margin-top: 4px;
+        }
+
+        .tenant-check {
+          border: 1px solid #e2e8f0;
+          background: #f8fafc;
+          border-radius: 10px;
+          padding: 10px 12px;
+          font-size: .82rem;
+          color: #334155;
+        }
+
+        .tenant-note {
+          border: 1px solid #bfdbfe;
+          background: linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%);
+          border-radius: 12px;
+          padding: 12px;
+          margin-bottom: 12px;
+        }
+
+        .tenant-note h4 {
+          margin: 0 0 8px;
+          font-size: .84rem;
+          color: #1d4ed8;
+          text-transform: uppercase;
+          letter-spacing: .05em;
+        }
+
+        .tenant-note ol {
+          margin: 0;
+          padding-left: 18px;
+          color: #334155;
+          font-size: .82rem;
+          line-height: 1.55;
+        }
+
+        .tenant-meta-card {
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          background: #fff;
+          overflow: hidden;
+        }
+
+        .tenant-meta-head {
+          padding: 10px 12px;
+          background: #f8fafc;
+          border-bottom: 1px solid #e2e8f0;
+          font-weight: 700;
+          font-size: .82rem;
+          color: #0f172a;
+        }
+
+        .tenant-meta-body {
+          padding: 10px 12px;
+        }
+
+        .tenant-meta-row {
+          display: flex;
+          gap: 8px;
+          justify-content: space-between;
+          padding: 6px 0;
+          font-size: .8rem;
+          border-bottom: 1px dashed #e2e8f0;
+        }
+
+        .tenant-meta-row:last-child {
+          border-bottom: none;
+        }
+
+        .tenant-actions {
+          margin-top: 12px;
+          display: flex;
+          justify-content: flex-start;
+        }
+
+        /* Subscriber table */
+        .sub-stats {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-bottom: 14px;
+        }
+
+        .sub-stat {
+          background: #fff;
+          border: 1.5px solid #e2e8f0;
+          border-radius: 12px;
+          padding: 10px 16px;
+          min-width: 100px;
+          text-align: center;
+        }
+
+        .sub-stat .sub-stat-num {
+          font-size: 1.6rem;
+          font-weight: 900;
+          color: #0f172a;
+          line-height: 1;
+        }
+
+        .sub-stat .sub-stat-lbl {
+          font-size: .72rem;
+          color: #64748b;
+          margin-top: 3px;
+        }
+
+        .sub-stat.active-stat {
+          border-color: #22c55e;
+        }
+
+        .sub-stat.active-stat .sub-stat-num {
+          color: #16a34a;
+        }
+
+        .sub-stat.expired-stat {
+          border-color: #ef4444;
+        }
+
+        .sub-stat.expired-stat .sub-stat-num {
+          color: #dc2626;
+        }
+
+        .sub-stat.soon-stat {
+          border-color: #f97316;
+        }
+
+        .sub-stat.soon-stat .sub-stat-num {
+          color: #ea580c;
+        }
+
+        .sub-stat.suspended-stat {
+          border-color: #94a3b8;
+        }
+
+        .sub-stat.suspended-stat .sub-stat-num {
+          color: #64748b;
+        }
+
+        .sub-table-wrap {
+          background: #fff;
+          border: 1.5px solid #e2e8f0;
+          border-radius: 14px;
+          overflow: hidden;
+          margin-bottom: 18px;
+        }
+
+        .sub-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: .8rem;
+        }
+
+        .sub-table th {
+          background: #f1f5f9;
+          padding: 8px 10px;
+          text-align: left;
+          font-size: .68rem;
+          text-transform: uppercase;
+          letter-spacing: .06em;
+          color: #475569;
+          border-bottom: 1.5px solid #e2e8f0;
+        }
+
+        .sub-table td {
+          padding: 8px 10px;
+          border-bottom: 1px solid #f1f5f9;
+          vertical-align: middle;
+        }
+
+        .sub-table tr:last-child td {
+          border-bottom: none;
+        }
+
+        .sub-table tr:hover td {
+          background: #f8fafc;
+        }
+
+        .sub-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          border-radius: 999px;
+          padding: 2px 9px;
+          font-size: .69rem;
+          font-weight: 800;
+        }
+
+        .sub-badge.active {
+          background: #dcfce7;
+          color: #16a34a;
+        }
+
+        .sub-badge.expired {
+          background: #fee2e2;
+          color: #dc2626;
+        }
+
+        .sub-badge.soon {
+          background: #ffedd5;
+          color: #ea580c;
+        }
+
+        .sub-badge.suspended {
+          background: #f1f5f9;
+          color: #64748b;
+        }
+
+        .sub-actions {
+          display: flex;
+          gap: 5px;
+          flex-wrap: wrap;
+        }
+
+        .sub-empty {
+          padding: 24px;
+          text-align: center;
+          color: #94a3b8;
+          font-size: .84rem;
+        }
+
+        /* Accordion */
+        .prov-accordion {
+          border: 1.5px solid #e2e8f0;
+          border-radius: 14px;
+          overflow: hidden;
+        }
+
+        .prov-acc-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 13px 16px;
+          background: #f8fafc;
+          cursor: pointer;
+          user-select: none;
+        }
+
+        .prov-acc-head h3 {
+          margin: 0;
+          font-size: .97rem;
+          font-weight: 800;
+          color: #0f172a;
+        }
+
+        .prov-acc-head span {
+          font-size: .8rem;
+          color: #6366f1;
+          font-weight: 700;
+        }
+
+        .prov-acc-body {
+          display: none;
+          padding: 14px;
+          border-top: 1.5px solid #e2e8f0;
+        }
+
+        .prov-acc-body.open {
+          display: block;
+        }
+
+        /* Modals */
+        .sub-modal-overlay {
+          display: none;
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, .45);
+          z-index: 9999;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .sub-modal-overlay.active {
+          display: flex;
+        }
+
+        .sub-modal {
+          background: #fff;
+          border-radius: 16px;
+          padding: 22px;
+          width: min(520px, 95vw);
+          max-height: 90vh;
+          overflow-y: auto;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+        }
+
+        .sub-modal h4 {
+          margin: 0 0 14px;
+          font-size: 1rem;
+          font-weight: 900;
+          color: #0f172a;
+        }
+
+        .sub-modal .form-group {
+          margin-bottom: 11px;
+        }
+
+        .sub-modal label {
+          display: block;
+          font-size: .76rem;
+          font-weight: 700;
+          color: #334155;
+          margin-bottom: 4px;
+        }
+
+        .sub-modal input,
+        .sub-modal select,
+        .sub-modal textarea {
+          width: 100%;
+          border: 1.5px solid #e2e8f0;
+          border-radius: 8px;
+          padding: 8px 10px;
+          font-size: .84rem;
+        }
+
+        .sub-modal input:focus,
+        .sub-modal select:focus {
+          outline: none;
+          border-color: #6366f1;
+        }
+
+        .sub-modal .modal-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+          margin-top: 16px;
+        }
+
+        .sub-modal .extend-presets {
+          display: flex;
+          gap: 7px;
+          flex-wrap: wrap;
+          margin-bottom: 10px;
+        }
+
+        .sub-modal .extend-presets button {
+          border: 1.5px solid #6366f1;
+          background: #ede9fe;
+          color: #4f46e5;
+          border-radius: 8px;
+          padding: 6px 12px;
+          font-size: .78rem;
+          font-weight: 700;
+          cursor: pointer;
+        }
+
+        .sub-modal .extend-presets button:hover {
+          background: #6366f1;
+          color: #fff;
+        }
+
+        @media (max-width: 980px) {
+          .tenant-shell {
+            grid-template-columns: 1fr;
+          }
+
+          .tenant-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .sub-table {
+            font-size: .72rem;
+          }
+        }
       </style>
 
       <?php
-        $subRegistry = loadDynamicTenantRegistry($tenantRegistryPath);
-        $subTenants = $subRegistry['tenants'] ?? [];
-        $subTotal = count($subTenants); $subActive = 0; $subExpired = 0; $subSoon = 0; $subSuspended = 0;
-        $now = time();
-        foreach ($subTenants as $_sl => $_t) {
-          $_exTs = (($_t['expires_at'] ?? '') !== '') ? strtotime($_t['expires_at']) : false;
-          $_isAct = !isset($_t['active']) || (bool)$_t['active'];
-          $_isExp = ($_exTs !== false && $_exTs < $now);
-          $_isSoon = (!$_isExp && $_exTs !== false && ($_exTs - $now) < 7 * 86400);
-          $_isSusp = !$_isAct && !$_isExp;
-          if ($_isExp) $subExpired++;
-          elseif ($_isSusp) $subSuspended++;
-          elseif ($_isSoon) $subSoon++;
-          else $subActive++;
-        }
+      $subRegistry = loadDynamicTenantRegistry($tenantRegistryPath);
+      $subTenants = $subRegistry['tenants'] ?? [];
+      $subTotal = count($subTenants);
+      $subActive = 0;
+      $subExpired = 0;
+      $subSoon = 0;
+      $subSuspended = 0;
+      $now = time();
+      foreach ($subTenants as $_sl => $_t) {
+        $_exTs = (($_t['expires_at'] ?? '') !== '') ? strtotime($_t['expires_at']) : false;
+        $_isAct = !isset($_t['active']) || (bool) $_t['active'];
+        $_isExp = ($_exTs !== false && $_exTs < $now);
+        $_isSoon = (!$_isExp && $_exTs !== false && ($_exTs - $now) < 7 * 86400);
+        $_isSusp = !$_isAct && !$_isExp;
+        if ($_isExp)
+          $subExpired++;
+        elseif ($_isSusp)
+          $subSuspended++;
+        elseif ($_isSoon)
+          $subSoon++;
+        else
+          $subActive++;
+      }
       ?>
 
       <div class="sub-stats">
-        <div class="sub-stat"><div class="sub-stat-num"><?= $subTotal ?></div><div class="sub-stat-lbl">Total</div></div>
-        <div class="sub-stat active-stat"><div class="sub-stat-num"><?= $subActive ?></div><div class="sub-stat-lbl">Active</div></div>
-        <div class="sub-stat expired-stat"><div class="sub-stat-num"><?= $subExpired ?></div><div class="sub-stat-lbl">Expired</div></div>
-        <div class="sub-stat soon-stat"><div class="sub-stat-num"><?= $subSoon ?></div><div class="sub-stat-lbl">Expiring Soon</div></div>
-        <div class="sub-stat suspended-stat"><div class="sub-stat-num"><?= $subSuspended ?></div><div class="sub-stat-lbl">Suspended</div></div>
+        <div class="sub-stat">
+          <div class="sub-stat-num"><?= $subTotal ?></div>
+          <div class="sub-stat-lbl">Total</div>
+        </div>
+        <div class="sub-stat active-stat">
+          <div class="sub-stat-num"><?= $subActive ?></div>
+          <div class="sub-stat-lbl">Active</div>
+        </div>
+        <div class="sub-stat expired-stat">
+          <div class="sub-stat-num"><?= $subExpired ?></div>
+          <div class="sub-stat-lbl">Expired</div>
+        </div>
+        <div class="sub-stat soon-stat">
+          <div class="sub-stat-num"><?= $subSoon ?></div>
+          <div class="sub-stat-lbl">Expiring Soon</div>
+        </div>
+        <div class="sub-stat suspended-stat">
+          <div class="sub-stat-num"><?= $subSuspended ?></div>
+          <div class="sub-stat-lbl">Suspended</div>
+        </div>
       </div>
 
       <div class="sub-table-wrap">
         <table class="sub-table">
           <thead>
-            <tr><th>Company / Slug</th><th>Hosts</th><th>Admin Email</th><th>Created</th><th>Expires</th><th>Days Left</th><th>Status</th><th>Actions</th></tr>
+            <tr>
+              <th>Company / Slug</th>
+              <th>Hosts</th>
+              <th>Admin Email</th>
+              <th>Created</th>
+              <th>Expires</th>
+              <th>Days Left</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
           </thead>
           <tbody>
-          <?php if (empty($subTenants)): ?>
-            <tr><td colspan="8" class="sub-empty"><i class="bi bi-buildings"></i><br>No tenants provisioned yet. Use the form below to create your first company workspace.</td></tr>
-          <?php else: ?>
-            <?php foreach ($subTenants as $_sl => $_t):
-              $_expiresAt = $_t['expires_at'] ?? '';
-              $_exTs = $_expiresAt !== '' ? strtotime($_expiresAt) : false;
-              $_isAct = !isset($_t['active']) || (bool)$_t['active'];
-              $_isExp = ($_exTs !== false && $_exTs < $now);
-              $_daysDiff = $_exTs !== false ? (int)ceil(($_exTs - $now) / 86400) : null;
-              $_isSoon = (!$_isExp && $_exTs !== false && ($_exTs - $now) < 7 * 86400);
-              $_isSusp = !$_isAct && !$_isExp;
-              if ($_isExp) { $_badge = 'expired'; $_badgeTxt = 'Expired'; }
-              elseif ($_isSusp) { $_badge = 'suspended'; $_badgeTxt = 'Suspended'; }
-              elseif ($_isSoon) { $_badge = 'soon'; $_badgeTxt = 'Expiring Soon'; }
-              else { $_badge = 'active'; $_badgeTxt = 'Active'; }
-              $_hostsStr = implode(', ', (array)($_t['hosts'] ?? []));
-              $_adminEmail = $_t['admin_email'] ?? '';
-              $_companyName = $_t['company_name'] ?? ($_t['label'] ?? $_sl);
-              $_createdAt = $_t['created_at'] ?? '';
-              $_createdFmt = $_createdAt !== '' ? date('d M Y', strtotime($_createdAt)) : '—';
-              $_expiresFmt = $_exTs !== false ? date('d M Y', $_exTs) : '&#8734; Never';
-              $_daysLbl = $_exTs !== false ? ($_isExp ? '<span style="color:#dc2626">'.abs($_daysDiff).' days ago</span>' : '<strong>'.$_daysDiff.'</strong> days') : '—';
-              $_editData = json_encode(['slug'=>$_sl,'label'=>$_t['label']??$_sl,'hosts'=>$_hostsStr,'path_prefixes'=>implode(', ',(array)($_t['path_prefixes']??[])),'erp_display_name'=>$_t['erp_display_name']??'','active'=>$_isAct?'1':'0','expires_at'=>$_expiresAt!==''?date('Y-m-d',strtotime($_expiresAt)):'']);
-              $_extData = json_encode(['slug'=>$_sl,'label'=>$_t['label']??$_sl,'expires_at'=>$_expiresAt!==''?date('Y-m-d',strtotime($_expiresAt)):'']);
-              $_passData = json_encode(['slug'=>$_sl,'label'=>$_t['label']??$_sl,'admin_email'=>$_adminEmail]);
-              $_delData  = json_encode(['slug'=>$_sl,'label'=>$_t['label']??$_sl]);
-            ?>
-            <tr>
-              <td><div style="font-weight:800;color:#0f172a"><?= e($_companyName) ?></div><div style="font-size:.7rem;color:#64748b;margin-top:2px"><code><?= e($_sl) ?></code></div></td>
-              <td style="font-size:.75rem;color:#334155"><?= e($_hostsStr ?: '—') ?></td>
-              <td style="font-size:.75rem"><?= e($_adminEmail ?: '—') ?></td>
-              <td style="font-size:.75rem;white-space:nowrap"><?= e($_createdFmt) ?></td>
-              <td style="font-size:.75rem;white-space:nowrap"><?= $_expiresFmt ?></td>
-              <td style="font-size:.75rem"><?= $_daysLbl ?></td>
-              <td><span class="sub-badge <?= $_badge ?>"><?= e($_badgeTxt) ?></span></td>
-              <td>
-                <div class="sub-actions">
-                  <button type="button" class="btn btn-secondary btn-sm" onclick="subOpenEdit(<?= htmlspecialchars($_editData, ENT_QUOTES) ?>)"><i class="bi bi-pencil"></i> Edit</button>
-                  <button type="button" class="btn btn-primary btn-sm" onclick="subOpenExtend(<?= htmlspecialchars($_extData, ENT_QUOTES) ?>)"><i class="bi bi-calendar-plus"></i> Extend</button>
-                  <button type="button" class="btn btn-light btn-sm" onclick="subOpenPass(<?= htmlspecialchars($_passData, ENT_QUOTES) ?>)"><i class="bi bi-key"></i> Password</button>
-                  <button type="button" class="btn btn-danger btn-sm" onclick="subOpenDelete(<?= htmlspecialchars($_delData, ENT_QUOTES) ?>)"><i class="bi bi-trash"></i></button>
-                </div>
-              </td>
-            </tr>
-            <?php endforeach; ?>
-          <?php endif; ?>
+            <?php if (empty($subTenants)): ?>
+              <tr>
+                <td colspan="8" class="sub-empty"><i class="bi bi-buildings"></i><br>No tenants provisioned yet. Use the
+                  form below to create your first company workspace.</td>
+              </tr>
+            <?php else: ?>
+              <?php foreach ($subTenants as $_sl => $_t):
+                $_expiresAt = $_t['expires_at'] ?? '';
+                $_exTs = $_expiresAt !== '' ? strtotime($_expiresAt) : false;
+                $_isAct = !isset($_t['active']) || (bool) $_t['active'];
+                $_isExp = ($_exTs !== false && $_exTs < $now);
+                $_daysDiff = $_exTs !== false ? (int) ceil(($_exTs - $now) / 86400) : null;
+                $_isSoon = (!$_isExp && $_exTs !== false && ($_exTs - $now) < 7 * 86400);
+                $_isSusp = !$_isAct && !$_isExp;
+                if ($_isExp) {
+                  $_badge = 'expired';
+                  $_badgeTxt = 'Expired';
+                } elseif ($_isSusp) {
+                  $_badge = 'suspended';
+                  $_badgeTxt = 'Suspended';
+                } elseif ($_isSoon) {
+                  $_badge = 'soon';
+                  $_badgeTxt = 'Expiring Soon';
+                } else {
+                  $_badge = 'active';
+                  $_badgeTxt = 'Active';
+                }
+                $_hostsStr = implode(', ', (array) ($_t['hosts'] ?? []));
+                $_adminEmail = $_t['admin_email'] ?? '';
+                $_companyName = $_t['company_name'] ?? ($_t['label'] ?? $_sl);
+                $_createdAt = $_t['created_at'] ?? '';
+                $_createdFmt = $_createdAt !== '' ? date('d M Y', strtotime($_createdAt)) : '—';
+                $_expiresFmt = $_exTs !== false ? date('d M Y', $_exTs) : '&#8734; Never';
+                $_daysLbl = $_exTs !== false ? ($_isExp ? '<span style="color:#dc2626">' . abs($_daysDiff) . ' days ago</span>' : '<strong>' . $_daysDiff . '</strong> days') : '—';
+                $_editData = json_encode(['slug' => $_sl, 'label' => $_t['label'] ?? $_sl, 'hosts' => $_hostsStr, 'path_prefixes' => implode(', ', (array) ($_t['path_prefixes'] ?? [])), 'erp_display_name' => $_t['erp_display_name'] ?? '', 'active' => $_isAct ? '1' : '0', 'expires_at' => $_expiresAt !== '' ? date('Y-m-d', strtotime($_expiresAt)) : '']);
+                $_extData = json_encode(['slug' => $_sl, 'label' => $_t['label'] ?? $_sl, 'expires_at' => $_expiresAt !== '' ? date('Y-m-d', strtotime($_expiresAt)) : '']);
+                $_passData = json_encode(['slug' => $_sl, 'label' => $_t['label'] ?? $_sl, 'admin_email' => $_adminEmail]);
+                $_delData = json_encode(['slug' => $_sl, 'label' => $_t['label'] ?? $_sl]);
+                ?>
+                <tr>
+                  <td>
+                    <div style="font-weight:800;color:#0f172a"><?= e($_companyName) ?></div>
+                    <div style="font-size:.7rem;color:#64748b;margin-top:2px"><code><?= e($_sl) ?></code></div>
+                  </td>
+                  <td style="font-size:.75rem;color:#334155"><?= e($_hostsStr ?: '—') ?></td>
+                  <td style="font-size:.75rem"><?= e($_adminEmail ?: '—') ?></td>
+                  <td style="font-size:.75rem;white-space:nowrap"><?= e($_createdFmt) ?></td>
+                  <td style="font-size:.75rem;white-space:nowrap"><?= $_expiresFmt ?></td>
+                  <td style="font-size:.75rem"><?= $_daysLbl ?></td>
+                  <td><span class="sub-badge <?= $_badge ?>"><?= e($_badgeTxt) ?></span></td>
+                  <td>
+                    <div class="sub-actions">
+                      <button type="button" class="btn btn-secondary btn-sm"
+                        onclick="subOpenEdit(<?= htmlspecialchars($_editData, ENT_QUOTES) ?>)"><i class="bi bi-pencil"></i>
+                        Edit</button>
+                      <button type="button" class="btn btn-primary btn-sm"
+                        onclick="subOpenExtend(<?= htmlspecialchars($_extData, ENT_QUOTES) ?>)"><i
+                          class="bi bi-calendar-plus"></i> Extend</button>
+                      <button type="button" class="btn btn-light btn-sm"
+                        onclick="subOpenPass(<?= htmlspecialchars($_passData, ENT_QUOTES) ?>)"><i class="bi bi-key"></i>
+                        Password</button>
+                      <button type="button" class="btn btn-danger btn-sm"
+                        onclick="subOpenDelete(<?= htmlspecialchars($_delData, ENT_QUOTES) ?>)"><i
+                          class="bi bi-trash"></i></button>
+                    </div>
+                  </td>
+                </tr>
+              <?php endforeach; ?>
+            <?php endif; ?>
           </tbody>
         </table>
       </div>
@@ -2928,12 +3732,18 @@ include __DIR__ . '/../../includes/header.php';
             <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
             <input type="hidden" name="action" value="update_tenant_meta">
             <input type="hidden" name="edit_slug" id="editSlug">
-            <div class="form-group"><label>Slug (read-only)</label><input type="text" id="editSlugDisplay" readonly style="background:#f1f5f9;color:#64748b"></div>
-            <div class="form-group"><label>Tenant Label</label><input type="text" name="edit_label" id="editLabel" required></div>
-            <div class="form-group"><label>Hosts (comma separated)</label><input type="text" name="edit_hosts" id="editHosts" placeholder="e.g. abc.shreelabel.com"></div>
-            <div class="form-group"><label>Path Prefixes (comma separated)</label><input type="text" name="edit_path_prefixes" id="editPrefixes"></div>
-            <div class="form-group"><label>ERP Display Name</label><input type="text" name="edit_erp_display_name" id="editErpName"></div>
-            <div class="form-group"><label>Subscription Expires At</label><input type="date" name="edit_expires_at" id="editExpiresAt"><small style="color:#64748b;font-size:.72rem">Leave empty for no expiry.</small></div>
+            <div class="form-group"><label>Slug (read-only)</label><input type="text" id="editSlugDisplay" readonly
+                style="background:#f1f5f9;color:#64748b"></div>
+            <div class="form-group"><label>Tenant Label</label><input type="text" name="edit_label" id="editLabel"
+                required></div>
+            <div class="form-group"><label>Hosts (comma separated)</label><input type="text" name="edit_hosts"
+                id="editHosts" placeholder="e.g. abc.shreelabel.com"></div>
+            <div class="form-group"><label>Path Prefixes (comma separated)</label><input type="text"
+                name="edit_path_prefixes" id="editPrefixes"></div>
+            <div class="form-group"><label>ERP Display Name</label><input type="text" name="edit_erp_display_name"
+                id="editErpName"></div>
+            <div class="form-group"><label>Subscription Expires At</label><input type="date" name="edit_expires_at"
+                id="editExpiresAt"><small style="color:#64748b;font-size:.72rem">Leave empty for no expiry.</small></div>
             <div class="form-group"><label>Status</label>
               <select name="edit_active" id="editActive">
                 <option value="1">Active (enabled)</option>
@@ -2951,7 +3761,8 @@ include __DIR__ . '/../../includes/header.php';
       <!-- Modal: Extend Subscription -->
       <div class="sub-modal-overlay" id="subModalExtend">
         <div class="sub-modal">
-          <h4><i class="bi bi-calendar-plus"></i> Extend Subscription &mdash; <span id="extendLabel" style="color:#6366f1"></span></h4>
+          <h4><i class="bi bi-calendar-plus"></i> Extend Subscription &mdash; <span id="extendLabel"
+              style="color:#6366f1"></span></h4>
           <form method="POST">
             <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
             <input type="hidden" name="action" value="extend_tenant">
@@ -2965,10 +3776,13 @@ include __DIR__ . '/../../includes/header.php';
                 <button type="button" onclick="subAddDays(730)">+2 Years</button>
               </div>
             </div>
-            <div class="form-group"><label>Or set exact expiry date</label><input type="date" name="extend_until" id="extendUntil"></div>
+            <div class="form-group"><label>Or set exact expiry date</label><input type="date" name="extend_until"
+                id="extendUntil"></div>
             <input type="hidden" name="extend_days" id="extendDaysHidden" value="0">
-            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px;font-size:.8rem;color:#166534;margin-bottom:10px">
-              <i class="bi bi-info-circle"></i> Tenant will be <strong>re-activated</strong> automatically when subscription is extended.
+            <div
+              style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px;font-size:.8rem;color:#166534;margin-bottom:10px">
+              <i class="bi bi-info-circle"></i> Tenant will be <strong>re-activated</strong> automatically when
+              subscription is extended.
             </div>
             <div class="modal-actions">
               <button type="button" class="btn btn-secondary" onclick="subCloseModal('subModalExtend')">Cancel</button>
@@ -2981,15 +3795,20 @@ include __DIR__ . '/../../includes/header.php';
       <!-- Modal: Change Password -->
       <div class="sub-modal-overlay" id="subModalPass">
         <div class="sub-modal">
-          <h4><i class="bi bi-key"></i> Change Admin Password &mdash; <span id="passLabel" style="color:#6366f1"></span></h4>
+          <h4><i class="bi bi-key"></i> Change Admin Password &mdash; <span id="passLabel" style="color:#6366f1"></span>
+          </h4>
           <form method="POST">
             <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
             <input type="hidden" name="action" value="change_tenant_admin_password">
             <input type="hidden" name="cp_slug" id="passSlug">
-            <div class="form-group"><label>Admin Email (in tenant DB)</label><input type="email" name="cp_admin_email" id="passEmail" required></div>
-            <div class="form-group"><label>New Password (min 6 characters)</label><input type="password" name="cp_new_password" required minlength="6" placeholder="New password"></div>
-            <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px;font-size:.8rem;color:#854d0e;margin-bottom:10px">
-              <i class="bi bi-exclamation-triangle"></i> This updates the user's password directly in the <strong>tenant's database</strong>.
+            <div class="form-group"><label>Admin Email (in tenant DB)</label><input type="email" name="cp_admin_email"
+                id="passEmail" required></div>
+            <div class="form-group"><label>New Password (min 6 characters)</label><input type="password"
+                name="cp_new_password" required minlength="6" placeholder="New password"></div>
+            <div
+              style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px;font-size:.8rem;color:#854d0e;margin-bottom:10px">
+              <i class="bi bi-exclamation-triangle"></i> This updates the user's password directly in the <strong>tenant's
+                database</strong>.
             </div>
             <div class="modal-actions">
               <button type="button" class="btn btn-secondary" onclick="subCloseModal('subModalPass')">Cancel</button>
@@ -3008,8 +3827,10 @@ include __DIR__ . '/../../includes/header.php';
             <input type="hidden" name="action" value="delete_tenant">
             <input type="hidden" name="delete_slug" id="deleteSlug">
             <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:10px;padding:14px;margin-bottom:14px">
-              <p style="margin:0 0 6px;font-weight:800;color:#991b1b">You are about to remove: <span id="deleteLabel" style="color:#dc2626"></span></p>
-              <p style="margin:0;font-size:.82rem;color:#7f1d1d">This <strong>only removes the tenant from the registry</strong>. The database and uploaded files will <strong>NOT</strong> be deleted.</p>
+              <p style="margin:0 0 6px;font-weight:800;color:#991b1b">You are about to remove: <span id="deleteLabel"
+                  style="color:#dc2626"></span></p>
+              <p style="margin:0;font-size:.82rem;color:#7f1d1d">This <strong>only removes the tenant from the
+                  registry</strong>. The database and uploaded files will <strong>NOT</strong> be deleted.</p>
             </div>
             <div class="modal-actions">
               <button type="button" class="btn btn-secondary" onclick="subCloseModal('subModalDelete')">Cancel</button>
@@ -3020,216 +3841,228 @@ include __DIR__ . '/../../includes/header.php';
       </div>
 
       <script>
-      function subOpenEdit(d){document.getElementById('editSlug').value=d.slug;document.getElementById('editSlugDisplay').value=d.slug;document.getElementById('editLabel').value=d.label;document.getElementById('editHosts').value=d.hosts;document.getElementById('editPrefixes').value=d.path_prefixes;document.getElementById('editErpName').value=d.erp_display_name;document.getElementById('editActive').value=d.active;document.getElementById('editExpiresAt').value=d.expires_at;document.getElementById('subModalEdit').classList.add('active');}
-      function subOpenExtend(d){document.getElementById('extendSlug').value=d.slug;document.getElementById('extendLabel').textContent=d.label;document.getElementById('extendUntil').value=d.expires_at;document.getElementById('extendDaysHidden').value='0';document.getElementById('subModalExtend').classList.add('active');}
-      function subOpenPass(d){document.getElementById('passSlug').value=d.slug;document.getElementById('passLabel').textContent=d.label;document.getElementById('passEmail').value=d.admin_email;document.getElementById('subModalPass').classList.add('active');}
-      function subOpenDelete(d){document.getElementById('deleteSlug').value=d.slug;document.getElementById('deleteLabel').textContent=d.label+' ('+d.slug+')';document.getElementById('subModalDelete').classList.add('active');}
-      function subCloseModal(id){document.getElementById(id).classList.remove('active');}
-      document.querySelectorAll('.sub-modal-overlay').forEach(function(el){el.addEventListener('click',function(e){if(e.target===el)el.classList.remove('active');});});
-      function subAddDays(days){var base=document.getElementById('extendUntil').value;var baseTs=base?new Date(base+'T00:00:00'):new Date();if(baseTs<new Date())baseTs=new Date();baseTs.setDate(baseTs.getDate()+days);var y=baseTs.getFullYear();var m=String(baseTs.getMonth()+1).padStart(2,'0');var day=String(baseTs.getDate()).padStart(2,'0');document.getElementById('extendUntil').value=y+'-'+m+'-'+day;document.getElementById('extendDaysHidden').value='0';}
+        function subOpenEdit(d) { document.getElementById('editSlug').value = d.slug; document.getElementById('editSlugDisplay').value = d.slug; document.getElementById('editLabel').value = d.label; document.getElementById('editHosts').value = d.hosts; document.getElementById('editPrefixes').value = d.path_prefixes; document.getElementById('editErpName').value = d.erp_display_name; document.getElementById('editActive').value = d.active; document.getElementById('editExpiresAt').value = d.expires_at; document.getElementById('subModalEdit').classList.add('active'); }
+        function subOpenExtend(d) { document.getElementById('extendSlug').value = d.slug; document.getElementById('extendLabel').textContent = d.label; document.getElementById('extendUntil').value = d.expires_at; document.getElementById('extendDaysHidden').value = '0'; document.getElementById('subModalExtend').classList.add('active'); }
+        function subOpenPass(d) { document.getElementById('passSlug').value = d.slug; document.getElementById('passLabel').textContent = d.label; document.getElementById('passEmail').value = d.admin_email; document.getElementById('subModalPass').classList.add('active'); }
+        function subOpenDelete(d) { document.getElementById('deleteSlug').value = d.slug; document.getElementById('deleteLabel').textContent = d.label + ' (' + d.slug + ')'; document.getElementById('subModalDelete').classList.add('active'); }
+        function subCloseModal(id) { document.getElementById(id).classList.remove('active'); }
+        document.querySelectorAll('.sub-modal-overlay').forEach(function (el) { el.addEventListener('click', function (e) { if (e.target === el) el.classList.remove('active'); }); });
+        function subAddDays(days) { var base = document.getElementById('extendUntil').value; var baseTs = base ? new Date(base + 'T00:00:00') : new Date(); if (baseTs < new Date()) baseTs = new Date(); baseTs.setDate(baseTs.getDate() + days); var y = baseTs.getFullYear(); var m = String(baseTs.getMonth() + 1).padStart(2, '0'); var day = String(baseTs.getDate()).padStart(2, '0'); document.getElementById('extendUntil').value = y + '-' + m + '-' + day; document.getElementById('extendDaysHidden').value = '0'; }
       </script>
 
       <!-- Accordion: Provision New Tenant -->
       <div class="prov-accordion">
-        <div class="prov-acc-head" onclick="this.nextElementSibling.classList.toggle('open');this.querySelector('span').textContent=this.nextElementSibling.classList.contains('open')?'▲ Collapse':'▼ Expand'">
+        <div class="prov-acc-head"
+          onclick="this.nextElementSibling.classList.toggle('open');this.querySelector('span').textContent=this.nextElementSibling.classList.contains('open')?'▲ Collapse':'▼ Expand'">
           <h3><i class="bi bi-plus-circle"></i> Provision New Company Workspace</h3>
           <span>▼ Expand</span>
         </div>
         <div class="prov-acc-body">
 
-      <div class="tenant-hero">
-        <h3><i class="bi bi-diagram-3"></i> Provision New Company Workspace</h3>
-        <p>Create a new branded tenant with isolated database, auto schema/migration setup, default admin, settings file, and asset folders.</p>
-      </div>
+          <div class="tenant-hero">
+            <h3><i class="bi bi-diagram-3"></i> Provision New Company Workspace</h3>
+            <p>Create a new branded tenant with isolated database, auto schema/migration setup, default admin, settings
+              file, and asset folders.</p>
+          </div>
 
-      <div class="tenant-shell">
-        <form method="POST" enctype="multipart/form-data" data-confirm="Provision this tenant now?">
-          <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
-          <input type="hidden" name="action" value="provision_tenant">
+          <div class="tenant-shell">
+            <form method="POST" enctype="multipart/form-data" data-confirm="Provision this tenant now?">
+              <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
+              <input type="hidden" name="action" value="provision_tenant">
 
-          <div class="tenant-grid">
-            <div class="tenant-group">
-              <h4>Identity</h4>
-              <div class="tenant-field">
-                <label>Tenant Slug</label>
-                <input type="text" id="tenant_slug" name="tenant_slug" required placeholder="e.g. ram">
-                <small>Use lowercase letters, numbers, dot, underscore, hyphen.</small>
-              </div>
-              <div class="tenant-field">
-                <label>Tenant Label</label>
-                <input type="text" name="tenant_label" required placeholder="e.g. Ram Company">
-              </div>
-              <div class="tenant-field">
-                <label>Company Legal Name</label>
-                <input type="text" name="tenant_company_name" required placeholder="e.g. Ram Flexible Packaging Pvt Ltd">
-              </div>
-              <div class="tenant-field">
-                <label>ERP Display Name</label>
-                <input type="text" name="tenant_erp_display_name" placeholder="e.g. e-Flexo for Ram">
-              </div>
-            </div>
+              <div class="tenant-grid">
+                <div class="tenant-group">
+                  <h4>Identity</h4>
+                  <div class="tenant-field">
+                    <label>Tenant Slug</label>
+                    <input type="text" id="tenant_slug" name="tenant_slug" required placeholder="e.g. ram">
+                    <small>Use lowercase letters, numbers, dot, underscore, hyphen.</small>
+                  </div>
+                  <div class="tenant-field">
+                    <label>Tenant Label</label>
+                    <input type="text" name="tenant_label" required placeholder="e.g. Ram Company">
+                  </div>
+                  <div class="tenant-field">
+                    <label>Company Legal Name</label>
+                    <input type="text" name="tenant_company_name" required
+                      placeholder="e.g. Ram Flexible Packaging Pvt Ltd">
+                  </div>
+                  <div class="tenant-field">
+                    <label>ERP Display Name</label>
+                    <input type="text" name="tenant_erp_display_name" placeholder="e.g. e-Flexo for Ram">
+                  </div>
+                </div>
 
-            <div class="tenant-group">
-              <h4>Routing</h4>
-              <div class="tenant-field">
-                <label>Hosts / Subdomains</label>
-                <input type="text" name="tenant_hosts" placeholder="e.g. ram.localhost, ram.example.com">
-                <small>Comma separated values.</small>
-              </div>
-              <div class="tenant-field">
-                <label>Path Prefixes</label>
-                <input type="text" id="tenant_path_prefixes" name="tenant_path_prefixes" placeholder="e.g. /ram">
-                <small>Fallback routing when host mapping is unavailable.</small>
-              </div>
-            </div>
+                <div class="tenant-group">
+                  <h4>Routing</h4>
+                  <div class="tenant-field">
+                    <label>Hosts / Subdomains</label>
+                    <input type="text" name="tenant_hosts" placeholder="e.g. ram.localhost, ram.example.com">
+                    <small>Comma separated values.</small>
+                  </div>
+                  <div class="tenant-field">
+                    <label>Path Prefixes</label>
+                    <input type="text" id="tenant_path_prefixes" name="tenant_path_prefixes" placeholder="e.g. /ram">
+                    <small>Fallback routing when host mapping is unavailable.</small>
+                  </div>
+                </div>
 
-            <div class="tenant-group">
-              <h4>Database</h4>
-              <div class="tenant-field">
-                <label>DB Host</label>
-                <input type="text" name="db_host" value="localhost" required>
-              </div>
-              <div class="tenant-field">
-                <label>DB Port</label>
-                <input type="number" name="db_port" value="3306" min="1" max="65535" required>
-              </div>
-              <div class="tenant-field">
-                <label>DB Name</label>
-                <input type="text" name="db_name" required placeholder="e.g. ram_erp">
-              </div>
-              <div class="tenant-field">
-                <label>DB User</label>
-                <input type="text" name="db_user" required>
-              </div>
-              <div class="tenant-field">
-                <label>DB Password</label>
-                <input type="password" name="db_pass" placeholder="Database password">
-              </div>
-              <label class="tenant-check"><input type="checkbox" name="create_database" value="1" checked> Create database if missing</label>
-            </div>
+                <div class="tenant-group">
+                  <h4>Database</h4>
+                  <div class="tenant-field">
+                    <label>DB Host</label>
+                    <input type="text" name="db_host" value="localhost" required>
+                  </div>
+                  <div class="tenant-field">
+                    <label>DB Port</label>
+                    <input type="number" name="db_port" value="3306" min="1" max="65535" required>
+                  </div>
+                  <div class="tenant-field">
+                    <label>DB Name</label>
+                    <input type="text" name="db_name" required placeholder="e.g. ram_erp">
+                  </div>
+                  <div class="tenant-field">
+                    <label>DB User</label>
+                    <input type="text" name="db_user" required>
+                  </div>
+                  <div class="tenant-field">
+                    <label>DB Password</label>
+                    <input type="password" name="db_pass" placeholder="Database password">
+                  </div>
+                  <label class="tenant-check"><input type="checkbox" name="create_database" value="1" checked> Create
+                    database if missing</label>
+                </div>
 
-            <div class="tenant-group">
-              <h4>Default Admin</h4>
-              <div class="tenant-field">
-                <label>Admin Name</label>
-                <input type="text" name="admin_name" value="System Admin" required>
-              </div>
-              <div class="tenant-field">
-                <label>Admin Email</label>
-                <input type="email" name="admin_email" value="admin@example.com" required>
-              </div>
-              <div class="tenant-field">
-                <label>Admin Password</label>
-                <input type="password" name="admin_password" value="admin123" minlength="6" required>
-              </div>
-            </div>
+                <div class="tenant-group">
+                  <h4>Default Admin</h4>
+                  <div class="tenant-field">
+                    <label>Admin Name</label>
+                    <input type="text" name="admin_name" value="System Admin" required>
+                  </div>
+                  <div class="tenant-field">
+                    <label>Admin Email</label>
+                    <input type="email" name="admin_email" value="admin@example.com" required>
+                  </div>
+                  <div class="tenant-field">
+                    <label>Admin Password</label>
+                    <input type="password" name="admin_password" value="admin123" minlength="6" required>
+                  </div>
+                </div>
 
-            <div class="tenant-group">
-              <h4><i class="bi bi-building"></i> Company Profile</h4>
-              <div class="tenant-field">
-                <label>Company Legal Name</label>
-                <input type="text" name="tenant_company_name_legal" placeholder="e.g. Ram Flexible Packaging Private Limited">
-                <small>Actual company name registered with government/tax authorities.</small>
-              </div>
-              <div class="tenant-field">
-                <label>Contact Person / Owner Name</label>
-                <input type="text" name="tenant_contact_person" placeholder="e.g. Raj Kumar Sharma">
-                <small>Primary contact person for this company.</small>
-              </div>
-              <div class="tenant-field">
-                <label>Company Email</label>
-                <input type="email" name="tenant_company_email" placeholder="e.g. contact@company.com">
-              </div>
-              <div class="tenant-field">
-                <label>Company Phone</label>
-                <input type="text" name="tenant_company_phone" placeholder="e.g. +91 9876543210">
-              </div>
-              <div class="tenant-field">
-                <label>Currency</label>
-                <input type="text" name="tenant_company_currency" value="INR" placeholder="e.g. INR, USD">
-              </div>
-              <div class="tenant-field">
-                <label>GST / Tax ID</label>
-                <input type="text" name="tenant_company_gst" placeholder="e.g. 27AAFCD5055K1Z0">
-              </div>
-            </div>
+                <div class="tenant-group">
+                  <h4><i class="bi bi-building"></i> Company Profile</h4>
+                  <div class="tenant-field">
+                    <label>Company Legal Name</label>
+                    <input type="text" name="tenant_company_name_legal"
+                      placeholder="e.g. Ram Flexible Packaging Private Limited">
+                    <small>Actual company name registered with government/tax authorities.</small>
+                  </div>
+                  <div class="tenant-field">
+                    <label>Contact Person / Owner Name</label>
+                    <input type="text" name="tenant_contact_person" placeholder="e.g. Raj Kumar Sharma">
+                    <small>Primary contact person for this company.</small>
+                  </div>
+                  <div class="tenant-field">
+                    <label>Company Email</label>
+                    <input type="email" name="tenant_company_email" placeholder="e.g. contact@company.com">
+                  </div>
+                  <div class="tenant-field">
+                    <label>Company Phone</label>
+                    <input type="text" name="tenant_company_phone" placeholder="e.g. +91 9876543210">
+                  </div>
+                  <div class="tenant-field">
+                    <label>Currency</label>
+                    <input type="text" name="tenant_company_currency" value="INR" placeholder="e.g. INR, USD">
+                  </div>
+                  <div class="tenant-field">
+                    <label>GST / Tax ID</label>
+                    <input type="text" name="tenant_company_gst" placeholder="e.g. 27AAFCD5055K1Z0">
+                  </div>
+                </div>
 
-            <div class="tenant-group">
-              <h4><i class="bi bi-map"></i> Address & Branding</h4>
-              <div class="tenant-field">
-                <label>Company Address</label>
-                <textarea name="tenant_company_address" rows="2" placeholder="Street address, city, state, PIN code"></textarea>
-              </div>
-              <div class="tenant-field">
-                <label>Company Logo (JPG/PNG)</label>
-                <input type="file" name="tenant_company_logo" accept="image/png,image/jpeg,image/webp,image/gif">
-                <small>Logo to be used for company documents and exports. Optional - can be uploaded later.</small>
-              </div>
-              <div class="tenant-field">
-                <label>Flag Emoji Fallback</label>
-                <input type="text" name="tenant_flag_emoji" value="🇮🇳" maxlength="4" placeholder="e.g. 🇮🇳">
-                <small>Country flag emoji for branding.</small>
-              </div>
-            </div>
+                <div class="tenant-group">
+                  <h4><i class="bi bi-map"></i> Address & Branding</h4>
+                  <div class="tenant-field">
+                    <label>Company Address</label>
+                    <textarea name="tenant_company_address" rows="2"
+                      placeholder="Street address, city, state, PIN code"></textarea>
+                  </div>
+                  <div class="tenant-field">
+                    <label>Company Logo (JPG/PNG)</label>
+                    <input type="file" name="tenant_company_logo" accept="image/png,image/jpeg,image/webp,image/gif">
+                    <small>Logo to be used for company documents and exports. Optional - can be uploaded later.</small>
+                  </div>
+                  <div class="tenant-field">
+                    <label>Flag Emoji Fallback</label>
+                    <input type="text" name="tenant_flag_emoji" value="🇮🇳" maxlength="4" placeholder="e.g. 🇮🇳">
+                    <small>Country flag emoji for branding.</small>
+                  </div>
+                </div>
 
-            <div class="tenant-group">
-              <h4><i class="bi bi-clock"></i> Subscription</h4>
-              <div class="tenant-field">
-                <label>Subscription Expires At</label>
-                <input type="date" name="tenant_expires_at">
-                <small>Leave empty for no expiry (lifetime). After this date, login will be blocked automatically.</small>
+                <div class="tenant-group">
+                  <h4><i class="bi bi-clock"></i> Subscription</h4>
+                  <div class="tenant-field">
+                    <label>Subscription Expires At</label>
+                    <input type="date" name="tenant_expires_at">
+                    <small>Leave empty for no expiry (lifetime). After this date, login will be blocked
+                      automatically.</small>
+                  </div>
+                </div>
+              </div>
+
+              <div class="tenant-actions">
+                <button class="btn btn-primary" type="submit"><i class="bi bi-plus-circle"></i> Provision Tenant</button>
+              </div>
+            </form>
+
+            <div>
+              <div class="tenant-note">
+                <h4>How To Use</h4>
+                <ol>
+                  <li>In Identity, enter tenant slug, tenant label, and legal company name.</li>
+                  <li>If host mapping is ready, enter Hosts; otherwise provide a path prefix like /ram.</li>
+                  <li>Provide database host, port, name, user, and password for this company.</li>
+                  <li>Set default admin name, email, and password for first login.</li>
+                  <li>Optionally set a subscription expiry date.</li>
+                  <li>Click Provision Tenant to create DB schema, run migrations, and seed admin/settings.</li>
+                  <li>Open the configured tenant URL and complete company branding from profile settings.</li>
+                </ol>
+              </div>
+
+              <div class="tenant-meta-card">
+                <div class="tenant-meta-head">Provisioning Target</div>
+                <div class="tenant-meta-body">
+                  <div class="tenant-meta-row"><span>Registry
+                      File</span><strong><?= e(str_replace($projectRoot . '/', '', str_replace('\\', '/', $tenantRegistryPath))) ?></strong>
+                  </div>
+                  <div class="tenant-meta-row"><span>Schema Source</span><strong>database/schema.sql +
+                      pending_migrations/*.sql</strong></div>
+                  <div class="tenant-meta-row"><span>Asset Folders</span><strong>uploads/company/{slug},
+                      uploads/library/{slug}</strong></div>
+                  <div class="tenant-meta-row"><span>Settings
+                      Path</span><strong>data/tenants/{slug}/app_settings.json</strong></div>
+                </div>
               </div>
             </div>
           </div>
 
-          <div class="tenant-actions">
-            <button class="btn btn-primary" type="submit"><i class="bi bi-plus-circle"></i> Provision Tenant</button>
-          </div>
-        </form>
-
-        <div>
-          <div class="tenant-note">
-            <h4>How To Use</h4>
-            <ol>
-              <li>In Identity, enter tenant slug, tenant label, and legal company name.</li>
-              <li>If host mapping is ready, enter Hosts; otherwise provide a path prefix like /ram.</li>
-              <li>Provide database host, port, name, user, and password for this company.</li>
-              <li>Set default admin name, email, and password for first login.</li>
-              <li>Optionally set a subscription expiry date.</li>
-              <li>Click Provision Tenant to create DB schema, run migrations, and seed admin/settings.</li>
-              <li>Open the configured tenant URL and complete company branding from profile settings.</li>
-            </ol>
-          </div>
-
-          <div class="tenant-meta-card">
-            <div class="tenant-meta-head">Provisioning Target</div>
-            <div class="tenant-meta-body">
-              <div class="tenant-meta-row"><span>Registry File</span><strong><?= e(str_replace($projectRoot . '/', '', str_replace('\\', '/', $tenantRegistryPath))) ?></strong></div>
-              <div class="tenant-meta-row"><span>Schema Source</span><strong>database/schema.sql + pending_migrations/*.sql</strong></div>
-              <div class="tenant-meta-row"><span>Asset Folders</span><strong>uploads/company/{slug}, uploads/library/{slug}</strong></div>
-              <div class="tenant-meta-row"><span>Settings Path</span><strong>data/tenants/{slug}/app_settings.json</strong></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <script>
-      (function() {
-        var slugInput = document.getElementById('tenant_slug');
-        var prefixInput = document.getElementById('tenant_path_prefixes');
-        if (!slugInput || !prefixInput) return;
-        slugInput.addEventListener('input', function() {
-          var clean = (slugInput.value || '')
-            .toLowerCase()
-            .replace(/[^a-z0-9._-]+/g, '-')
-            .replace(/^-+|-+$/g, '');
-          slugInput.value = clean;
-          if ((prefixInput.value || '').trim() === '' && clean !== '') {
-            prefixInput.value = '/' + clean;
-          }
-        });
-      })();
-      </script>
+          <script>
+            (function () {
+              var slugInput = document.getElementById('tenant_slug');
+              var prefixInput = document.getElementById('tenant_path_prefixes');
+              if (!slugInput || !prefixInput) return;
+              slugInput.addEventListener('input', function () {
+                var clean = (slugInput.value || '')
+                  .toLowerCase()
+                  .replace(/[^a-z0-9._-]+/g, '-')
+                  .replace(/^-+|-+$/g, '');
+                slugInput.value = clean;
+                if ((prefixInput.value || '').trim() === '' && clean !== '') {
+                  prefixInput.value = '/' + clean;
+                }
+              });
+            })();
+          </script>
 
         </div><!-- /.prov-acc-body -->
       </div><!-- /.prov-accordion -->
@@ -3237,192 +4070,228 @@ include __DIR__ . '/../../includes/header.php';
 
     <?php if ($activeTab === 'tally'): ?>
       <style>
-      .tally-tab-banner {
-        display:flex;
-        align-items:center;
-        gap:12px;
-        padding:14px 16px;
-        border-radius:12px;
-        border:1px solid #bfdbfe;
-        background: linear-gradient(135deg, #eff6ff 0%, #ecfeff 100%);
-        color:#0c4a6e;
-        margin-bottom:14px;
-      }
-      .tally-tab-grid {
-        display:grid;
-        grid-template-columns:repeat(2, minmax(0, 1fr));
-        gap:14px;
-      }
-      .tally-tab-card {
-        border:1px solid #dbe5ef;
-        border-radius:12px;
-        background:#ffffff;
-        padding:16px;
-      }
-      .tally-tab-card.full {
-        grid-column:1 / -1;
-      }
-      .tally-tab-card h4 {
-        margin:0 0 6px;
-        font-size:1rem;
-        color:#0f172a;
-      }
-      .tally-tab-card p {
-        margin:0 0 12px;
-        font-size:.84rem;
-        color:#475569;
-      }
-      .tally-stack {
-        display:grid;
-        gap:10px;
-      }
-      .tally-field label {
-        display:block;
-        margin-bottom:4px;
-        font-weight:700;
-        font-size:.78rem;
-        color:#334155;
-      }
-      .tally-field input,
-      .tally-field select {
-        width:100%;
-      }
-      .tally-status {
-        border:1px dashed #cbd5e1;
-        border-radius:10px;
-        background:#f8fafc;
-        padding:10px 12px;
-        font-size:.82rem;
-        color:#475569;
-      }
-      .tally-actions {
-        display:flex;
-        gap:10px;
-        flex-wrap:wrap;
-      }
-      .tally-guide-title {
-        margin:0 0 10px;
-        font-size:1.05rem;
-        color:#0f172a;
-      }
-      .tally-guide-sub {
-        margin:0;
-        color:#475569;
-        font-size:.84rem;
-      }
-      .tally-guide-stack {
-        display:grid;
-        gap:14px;
-      }
-      .tally-guide-section {
-        border:1px solid #dbe5ef;
-        border-radius:12px;
-        padding:14px;
-        background:#ffffff;
-      }
-      .tally-guide-section h5 {
-        margin:0 0 10px;
-        font-size:.95rem;
-        color:#0f172a;
-      }
-      .tally-image-grid {
-        display:grid;
-        grid-template-columns:repeat(4, minmax(0, 1fr));
-        gap:10px;
-        margin-bottom:12px;
-      }
-      .tally-image-grid.tally-image-grid-3 {
-        grid-template-columns:repeat(3, minmax(0, 1fr));
-      }
-      .tally-image-card {
-        border:1px solid #dbe5ef;
-        border-radius:12px;
-        display:flex;
-        flex-direction:column;
-        justify-content:center;
-        align-items:center;
-        gap:8px;
-        min-height:128px;
-        background:linear-gradient(140deg, #f8fafc 0%, #eef2ff 100%);
-        color:#334155;
-        padding:10px;
-        text-align:center;
-      }
-      .tally-image-card i {
-        font-size:1.35rem;
-        color:#0284c7;
-      }
-      .tally-image-card strong {
-        font-size:.78rem;
-        color:#0f172a;
-      }
-      .tally-image-card span {
-        font-size:.76rem;
-        color:#475569;
-      }
-      .tally-steps {
-        list-style:none;
-        margin:0;
-        padding:0;
-        display:grid;
-        gap:10px;
-      }
-      .tally-step {
-        border:1px solid #e2e8f0;
-        border-radius:10px;
-        background:#f8fafc;
-        padding:9px 10px;
-        display:grid;
-        grid-template-columns:auto 1fr;
-        gap:8px;
-        align-items:flex-start;
-      }
-      .tally-step-badge {
-        display:inline-flex;
-        align-items:center;
-        justify-content:center;
-        min-width:60px;
-        padding:3px 8px;
-        border-radius:999px;
-        background:#0ea5e9;
-        color:#ffffff;
-        font-size:.68rem;
-        font-weight:700;
-        letter-spacing:.2px;
-      }
-      .tally-step p {
-        margin:0;
-        color:#334155;
-        font-size:.82rem;
-        line-height:1.45;
-      }
-      .tally-fix-list {
-        margin:0;
-        padding-left:20px;
-        color:#334155;
-        font-size:.82rem;
-        line-height:1.5;
-      }
-      @media (max-width: 920px) {
-        .tally-tab-grid { grid-template-columns:1fr; }
-        .tally-image-grid,
-        .tally-image-grid.tally-image-grid-3 { grid-template-columns:repeat(2, minmax(0, 1fr)); }
-      }
-      @media (max-width: 640px) {
-        .tally-image-grid,
-        .tally-image-grid.tally-image-grid-3 { grid-template-columns:1fr; }
-      }
+        .tally-tab-banner {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 14px 16px;
+          border-radius: 12px;
+          border: 1px solid #bfdbfe;
+          background: linear-gradient(135deg, #eff6ff 0%, #ecfeff 100%);
+          color: #0c4a6e;
+          margin-bottom: 14px;
+        }
+
+        .tally-tab-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
+        }
+
+        .tally-tab-card {
+          border: 1px solid #dbe5ef;
+          border-radius: 12px;
+          background: #ffffff;
+          padding: 16px;
+        }
+
+        .tally-tab-card.full {
+          grid-column: 1 / -1;
+        }
+
+        .tally-tab-card h4 {
+          margin: 0 0 6px;
+          font-size: 1rem;
+          color: #0f172a;
+        }
+
+        .tally-tab-card p {
+          margin: 0 0 12px;
+          font-size: .84rem;
+          color: #475569;
+        }
+
+        .tally-stack {
+          display: grid;
+          gap: 10px;
+        }
+
+        .tally-field label {
+          display: block;
+          margin-bottom: 4px;
+          font-weight: 700;
+          font-size: .78rem;
+          color: #334155;
+        }
+
+        .tally-field input,
+        .tally-field select {
+          width: 100%;
+        }
+
+        .tally-status {
+          border: 1px dashed #cbd5e1;
+          border-radius: 10px;
+          background: #f8fafc;
+          padding: 10px 12px;
+          font-size: .82rem;
+          color: #475569;
+        }
+
+        .tally-actions {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+
+        .tally-guide-title {
+          margin: 0 0 10px;
+          font-size: 1.05rem;
+          color: #0f172a;
+        }
+
+        .tally-guide-sub {
+          margin: 0;
+          color: #475569;
+          font-size: .84rem;
+        }
+
+        .tally-guide-stack {
+          display: grid;
+          gap: 14px;
+        }
+
+        .tally-guide-section {
+          border: 1px solid #dbe5ef;
+          border-radius: 12px;
+          padding: 14px;
+          background: #ffffff;
+        }
+
+        .tally-guide-section h5 {
+          margin: 0 0 10px;
+          font-size: .95rem;
+          color: #0f172a;
+        }
+
+        .tally-image-grid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 10px;
+          margin-bottom: 12px;
+        }
+
+        .tally-image-grid.tally-image-grid-3 {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .tally-image-card {
+          border: 1px solid #dbe5ef;
+          border-radius: 12px;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          gap: 8px;
+          min-height: 128px;
+          background: linear-gradient(140deg, #f8fafc 0%, #eef2ff 100%);
+          color: #334155;
+          padding: 10px;
+          text-align: center;
+        }
+
+        .tally-image-card i {
+          font-size: 1.35rem;
+          color: #0284c7;
+        }
+
+        .tally-image-card strong {
+          font-size: .78rem;
+          color: #0f172a;
+        }
+
+        .tally-image-card span {
+          font-size: .76rem;
+          color: #475569;
+        }
+
+        .tally-steps {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+          display: grid;
+          gap: 10px;
+        }
+
+        .tally-step {
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          background: #f8fafc;
+          padding: 9px 10px;
+          display: grid;
+          grid-template-columns: auto 1fr;
+          gap: 8px;
+          align-items: flex-start;
+        }
+
+        .tally-step-badge {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 60px;
+          padding: 3px 8px;
+          border-radius: 999px;
+          background: #0ea5e9;
+          color: #ffffff;
+          font-size: .68rem;
+          font-weight: 700;
+          letter-spacing: .2px;
+        }
+
+        .tally-step p {
+          margin: 0;
+          color: #334155;
+          font-size: .82rem;
+          line-height: 1.45;
+        }
+
+        .tally-fix-list {
+          margin: 0;
+          padding-left: 20px;
+          color: #334155;
+          font-size: .82rem;
+          line-height: 1.5;
+        }
+
+        @media (max-width: 920px) {
+          .tally-tab-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .tally-image-grid,
+          .tally-image-grid.tally-image-grid-3 {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 640px) {
+
+          .tally-image-grid,
+          .tally-image-grid.tally-image-grid-3 {
+            grid-template-columns: 1fr;
+          }
+        }
       </style>
 
       <?php
-        $tallyIpValue = (string)($settings['tally_ip'] ?? '');
-        $tallySchemeValue = tally_normalize_scheme((string)($settings['tally_scheme'] ?? 'http'));
-        $tallyPortValue = (int)($settings['tally_port'] ?? 9000);
-        if ($tallyPortValue <= 0 || $tallyPortValue > 65535) {
-          $tallyPortValue = 9000;
-        }
-        $tallyEndpointValue = $tallyIpValue !== '' ? tally_base_url($tallyIpValue, $tallyPortValue, $tallySchemeValue) : 'Not configured';
-        $tallyConnected = $tallyIpValue !== '' ? tally_ping($tallyIpValue, $tallyPortValue, 1) : false;
+      $tallyIpValue = (string) ($settings['tally_ip'] ?? '');
+      $tallySchemeValue = tally_normalize_scheme((string) ($settings['tally_scheme'] ?? 'http'));
+      $tallyPortValue = (int) ($settings['tally_port'] ?? 9000);
+      if ($tallyPortValue <= 0 || $tallyPortValue > 65535) {
+        $tallyPortValue = 9000;
+      }
+      $tallyEndpointValue = $tallyIpValue !== '' ? tally_base_url($tallyIpValue, $tallyPortValue, $tallySchemeValue) : 'Not configured';
+      $tallyConnected = $tallyIpValue !== '' ? tally_ping($tallyIpValue, $tallyPortValue, 1) : false;
       ?>
 
       <div class="tally-tab-banner">
@@ -3448,15 +4317,19 @@ include __DIR__ . '/../../includes/header.php';
             </div>
             <div class="tally-field">
               <label for="tally_ip">Tally Host / IP</label>
-              <input id="tally_ip" type="text" name="tally_ip" placeholder="e.g. 192.168.1.10 or tally.yourdomain.com" value="<?= e($tallyIpValue) ?>" required>
+              <input id="tally_ip" type="text" name="tally_ip" placeholder="e.g. 192.168.1.10 or tally.yourdomain.com"
+                value="<?= e($tallyIpValue) ?>" required>
             </div>
             <div class="tally-field">
               <label for="tally_port">Port</label>
-              <input id="tally_port" type="number" name="tally_port" min="1" max="65535" value="<?= (int)$tallyPortValue ?>" required>
+              <input id="tally_port" type="number" name="tally_port" min="1" max="65535"
+                value="<?= (int) $tallyPortValue ?>" required>
             </div>
             <div class="tally-actions">
-              <button class="btn" type="submit" name="action" value="test_tally_connection"><i class="bi bi-wifi"></i> Test Connection</button>
-              <button class="btn btn-primary" type="submit" name="action" value="save_tally_settings"><i class="bi bi-save"></i> Save Settings</button>
+              <button class="btn" type="submit" name="action" value="test_tally_connection"><i class="bi bi-wifi"></i>
+                Test Connection</button>
+              <button class="btn btn-primary" type="submit" name="action" value="save_tally_settings"><i
+                  class="bi bi-save"></i> Save Settings</button>
             </div>
           </form>
         </div>
@@ -3465,7 +4338,9 @@ include __DIR__ . '/../../includes/header.php';
           <h4>Status</h4>
           <div class="tally-status">
             <div><strong>Endpoint:</strong> <?= e($tallyEndpointValue) ?></div>
-            <div style="margin-top:6px"><strong>Connection:</strong> <?= $tallyConnected ? '<span style="color:#166534">Connected</span>' : '<span style="color:#b91c1c">Tally Disconnected</span>' ?></div>
+            <div style="margin-top:6px"><strong>Connection:</strong>
+              <?= $tallyConnected ? '<span style="color:#166534">Connected</span>' : '<span style="color:#b91c1c">Tally Disconnected</span>' ?>
+            </div>
             <div style="margin-top:6px">If Tally is not reachable, ERP manual input continues safely.</div>
           </div>
 
@@ -3479,33 +4354,60 @@ include __DIR__ . '/../../includes/header.php';
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:.875rem">
 
             <div style="background:#fff;border:1px solid #bae6fd;border-radius:8px;padding:14px">
-              <div style="font-weight:700;color:#0369a1;margin-bottom:8px;font-size:.9rem">&#128421; Scenario 1 — Same Network (LAN / Localhost)</div>
-              <div style="color:#475569;margin-bottom:6px">Use when ERP and Tally are on the same computer or same local network (office LAN).</div>
+              <div style="font-weight:700;color:#0369a1;margin-bottom:8px;font-size:.9rem">&#128421; Scenario 1 — Same
+                Network (LAN / Localhost)</div>
+              <div style="color:#475569;margin-bottom:6px">Use when ERP and Tally are on the same computer or same local
+                network (office LAN).</div>
               <table style="width:100%;border-collapse:collapse;font-size:.84rem">
                 <tr style="background:#e0f2fe">
                   <th style="padding:5px 8px;text-align:left;border-radius:4px 0 0 4px">Field</th>
                   <th style="padding:5px 8px;text-align:left;border-radius:0 4px 4px 0">Value</th>
                 </tr>
-                <tr><td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><strong>Protocol</strong></td><td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><code>HTTP</code></td></tr>
-                <tr><td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><strong>Host / IP</strong></td><td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><code>localhost</code> or the LAN IP of the Tally PC (e.g. <code>192.168.1.X</code>)</td></tr>
-                <tr><td style="padding:5px 8px"><strong>Port</strong></td><td style="padding:5px 8px"><code>9000</code> (Tally default)</td></tr>
+                <tr>
+                  <td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><strong>Protocol</strong></td>
+                  <td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><code>HTTP</code></td>
+                </tr>
+                <tr>
+                  <td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><strong>Host / IP</strong></td>
+                  <td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><code>localhost</code> or the LAN IP of the
+                    Tally PC (e.g. <code>192.168.1.X</code>)</td>
+                </tr>
+                <tr>
+                  <td style="padding:5px 8px"><strong>Port</strong></td>
+                  <td style="padding:5px 8px"><code>9000</code> (Tally default)</td>
+                </tr>
               </table>
-              <div style="margin-top:8px;font-size:.8rem;color:#64748b">&#9888; ERP and Tally must be on the same machine or same local network for this to work.</div>
+              <div style="margin-top:8px;font-size:.8rem;color:#64748b">&#9888; ERP and Tally must be on the same machine
+                or same local network for this to work.</div>
             </div>
 
             <div style="background:#fff;border:1px solid #bbf7d0;border-radius:8px;padding:14px">
-              <div style="font-weight:700;color:#15803d;margin-bottom:8px;font-size:.9rem">&#9729; Scenario 2 — Cloudflare Tunnel (Remote / Internet Access)</div>
-              <div style="color:#475569;margin-bottom:6px">Use when ERP is hosted online and needs to reach Tally on a remote PC via Cloudflare Tunnel.</div>
+              <div style="font-weight:700;color:#15803d;margin-bottom:8px;font-size:.9rem">&#9729; Scenario 2 — Cloudflare
+                Tunnel (Remote / Internet Access)</div>
+              <div style="color:#475569;margin-bottom:6px">Use when ERP is hosted online and needs to reach Tally on a
+                remote PC via Cloudflare Tunnel.</div>
               <table style="width:100%;border-collapse:collapse;font-size:.84rem">
                 <tr style="background:#dcfce7">
                   <th style="padding:5px 8px;text-align:left;border-radius:4px 0 0 4px">Field</th>
                   <th style="padding:5px 8px;text-align:left;border-radius:0 4px 4px 0">Value</th>
                 </tr>
-                <tr><td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><strong>Protocol</strong></td><td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><code>HTTPS</code></td></tr>
-                <tr><td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><strong>Host / IP</strong></td><td style="padding:5px 8px;border-bottom:1px solid #e2e8f0">Your Cloudflare Tunnel subdomain (e.g. <code>tally.yourdomain.com</code>)</td></tr>
-                <tr><td style="padding:5px 8px"><strong>Port</strong></td><td style="padding:5px 8px"><code>443</code> (HTTPS default)</td></tr>
+                <tr>
+                  <td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><strong>Protocol</strong></td>
+                  <td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><code>HTTPS</code></td>
+                </tr>
+                <tr>
+                  <td style="padding:5px 8px;border-bottom:1px solid #e2e8f0"><strong>Host / IP</strong></td>
+                  <td style="padding:5px 8px;border-bottom:1px solid #e2e8f0">Your Cloudflare Tunnel subdomain (e.g.
+                    <code>tally.yourdomain.com</code>)
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:5px 8px"><strong>Port</strong></td>
+                  <td style="padding:5px 8px"><code>443</code> (HTTPS default)</td>
+                </tr>
               </table>
-              <div style="margin-top:8px;font-size:.8rem;color:#64748b">&#9888; Cloudflare Tunnel must be running on the Tally PC and configured to forward to <code>localhost:9000</code> (HTTP, not HTTPS) on that machine.</div>
+              <div style="margin-top:8px;font-size:.8rem;color:#64748b">&#9888; Cloudflare Tunnel must be running on the
+                Tally PC and configured to forward to <code>localhost:9000</code> (HTTP, not HTTPS) on that machine.</div>
             </div>
 
           </div>
@@ -3513,48 +4415,84 @@ include __DIR__ . '/../../includes/header.php';
 
         <div class="tally-tab-card full" style="background:#fafaf9;border:1.5px solid #d4d4d4">
           <h4 style="color:#1c1917;margin-bottom:4px">&#9729; Cloudflare Tunnel Setup Guide</h4>
-          <p style="font-size:.84rem;color:#57534e;margin-bottom:14px">Follow these steps once per client PC. Tally itself needs no changes — only install and configure <strong>cloudflared</strong> on the same PC where Tally runs.</p>
+          <p style="font-size:.84rem;color:#57534e;margin-bottom:14px">Follow these steps once per client PC. Tally itself
+            needs no changes — only install and configure <strong>cloudflared</strong> on the same PC where Tally runs.
+          </p>
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:.85rem">
 
             <!-- Left column: Cloudflare side -->
             <div>
-              <div style="font-weight:700;color:#1c1917;margin-bottom:8px">&#9312; Cloudflare Dashboard (one-time per domain)</div>
+              <div style="font-weight:700;color:#1c1917;margin-bottom:8px">&#9312; Cloudflare Dashboard (one-time per
+                domain)</div>
               <ol style="padding-left:18px;margin:0;line-height:1.9">
-                <li>Go to <strong>dash.cloudflare.com</strong> → your domain → <strong>Zero Trust</strong> → <strong>Networks → Tunnels</strong>.</li>
+                <li>Go to <strong>dash.cloudflare.com</strong> → your domain → <strong>Zero Trust</strong> →
+                  <strong>Networks → Tunnels</strong>.
+                </li>
                 <li>Click <strong>Create a Tunnel</strong> → give it a name (e.g. <em>tally-client-1</em>) → Save.</li>
                 <li>Copy the tunnel token/install command shown on screen.</li>
                 <li>Under <strong>Public Hostnames</strong>, click <strong>Add a public hostname</strong>:
                   <table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:.82rem">
-                    <tr style="background:#e7e5e4"><th style="padding:4px 8px;text-align:left">Field</th><th style="padding:4px 8px;text-align:left">Value</th></tr>
-                    <tr><td style="padding:4px 8px;border-bottom:1px solid #e2e8f0">Subdomain</td><td style="padding:4px 8px;border-bottom:1px solid #e2e8f0"><em>any unique name</em> (e.g. <code>tally-client1</code>)</td></tr>
-                    <tr><td style="padding:4px 8px;border-bottom:1px solid #e2e8f0">Domain</td><td style="padding:4px 8px;border-bottom:1px solid #e2e8f0">your domain on Cloudflare</td></tr>
-                    <tr><td style="padding:4px 8px;border-bottom:1px solid #e2e8f0">Service → Type</td><td style="padding:4px 8px;border-bottom:1px solid #e2e8f0"><strong style="color:#b45309">HTTP</strong> &nbsp;⚠️ NOT HTTPS</td></tr>
-                    <tr><td style="padding:4px 8px">Service → URL</td><td style="padding:4px 8px"><code>localhost:9000</code></td></tr>
+                    <tr style="background:#e7e5e4">
+                      <th style="padding:4px 8px;text-align:left">Field</th>
+                      <th style="padding:4px 8px;text-align:left">Value</th>
+                    </tr>
+                    <tr>
+                      <td style="padding:4px 8px;border-bottom:1px solid #e2e8f0">Subdomain</td>
+                      <td style="padding:4px 8px;border-bottom:1px solid #e2e8f0"><em>any unique name</em> (e.g.
+                        <code>tally-client1</code>)
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:4px 8px;border-bottom:1px solid #e2e8f0">Domain</td>
+                      <td style="padding:4px 8px;border-bottom:1px solid #e2e8f0">your domain on Cloudflare</td>
+                    </tr>
+                    <tr>
+                      <td style="padding:4px 8px;border-bottom:1px solid #e2e8f0">Service → Type</td>
+                      <td style="padding:4px 8px;border-bottom:1px solid #e2e8f0"><strong
+                          style="color:#b45309">HTTP</strong> &nbsp;⚠️ NOT HTTPS</td>
+                    </tr>
+                    <tr>
+                      <td style="padding:4px 8px">Service → URL</td>
+                      <td style="padding:4px 8px"><code>localhost:9000</code></td>
+                    </tr>
                   </table>
                 </li>
-                <li>Save. Cloudflare will now route <code>https://yoursubdomain.yourdomain.com</code> → tunnel → <code>localhost:9000</code>.</li>
+                <li>Save. Cloudflare will now route <code>https://yoursubdomain.yourdomain.com</code> → tunnel →
+                  <code>localhost:9000</code>.
+                </li>
               </ol>
             </div>
 
             <!-- Right column: Client PC side -->
             <div>
-              <div style="font-weight:700;color:#1c1917;margin-bottom:8px">&#9313; Client PC (Tally machine) — one-time install</div>
+              <div style="font-weight:700;color:#1c1917;margin-bottom:8px">&#9313; Client PC (Tally machine) — one-time
+                install</div>
               <ol style="padding-left:18px;margin:0;line-height:1.9">
-                <li>Download <strong>cloudflared</strong> for Windows from:<br><code style="font-size:.8rem">developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads</code></li>
+                <li>Download <strong>cloudflared</strong> for Windows from:<br><code
+                    style="font-size:.8rem">developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads</code>
+                </li>
                 <li>Open <strong>Command Prompt as Administrator</strong>.</li>
-                <li>Run the install command copied from Cloudflare dashboard:<br><code style="font-size:.8rem">cloudflared service install &lt;YOUR_TOKEN&gt;</code></li>
+                <li>Run the install command copied from Cloudflare dashboard:<br><code
+                    style="font-size:.8rem">cloudflared service install &lt;YOUR_TOKEN&gt;</code></li>
                 <li>This installs cloudflared as a <strong>Windows Service</strong> — it auto-starts on every reboot.</li>
-                <li>Verify: open <strong>services.msc</strong>, find <em>Cloudflared</em> → Status should be <strong>Running</strong>.</li>
+                <li>Verify: open <strong>services.msc</strong>, find <em>Cloudflared</em> → Status should be
+                  <strong>Running</strong>.
+                </li>
               </ol>
 
-              <div style="margin-top:12px;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:10px;font-size:.82rem">
-                <strong>&#9888; Common Mistake:</strong> In Cloudflare dashboard, if you set Service Type to <strong>HTTPS</strong> instead of <strong>HTTP</strong>, the tunnel will fail — because Tally only speaks plain HTTP on localhost. Always use <strong>HTTP + localhost:9000</strong> as the origin service.
+              <div
+                style="margin-top:12px;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:10px;font-size:.82rem">
+                <strong>&#9888; Common Mistake:</strong> In Cloudflare dashboard, if you set Service Type to
+                <strong>HTTPS</strong> instead of <strong>HTTP</strong>, the tunnel will fail — because Tally only speaks
+                plain HTTP on localhost. Always use <strong>HTTP + localhost:9000</strong> as the origin service.
               </div>
 
-              <div style="margin-top:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:10px;font-size:.82rem">
+              <div
+                style="margin-top:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:10px;font-size:.82rem">
                 <strong>After tunnel is running — enter in ERP Tally Settings:</strong><br>
-                Protocol: <code>HTTPS</code> &nbsp;|&nbsp; Host: <code>yoursubdomain.yourdomain.com</code> &nbsp;|&nbsp; Port: <code>443</code>
+                Protocol: <code>HTTPS</code> &nbsp;|&nbsp; Host: <code>yoursubdomain.yourdomain.com</code> &nbsp;|&nbsp;
+                Port: <code>443</code>
               </div>
             </div>
 
@@ -3563,7 +4501,8 @@ include __DIR__ . '/../../includes/header.php';
 
         <div class="tally-tab-card full">
           <h4 class="tally-guide-title">Tally Setup Guide (Step-by-Step with Screenshots)</h4>
-          <p class="tally-guide-sub">Use this guide to complete Tally integration in a clear visual flow for new users.</p>
+          <p class="tally-guide-sub">Use this guide to complete Tally integration in a clear visual flow for new users.
+          </p>
 
           <div class="tally-guide-stack" style="margin-top:12px">
             <section class="tally-guide-section">
@@ -3764,7 +4703,11 @@ include __DIR__ . '/../../includes/header.php';
     <?php endif; ?>
 
     <?php if ($activeTab === 'ai_agent'): ?>
-      <?php if (file_exists(__DIR__ . '/../ai_agent/settings_panel.php')) { include __DIR__ . '/../ai_agent/settings_panel.php'; } else { echo '<div style="padding:40px;text-align:center;color:#b91c1c">AI Agent module not installed. Upload modules/ai_agent/ folder first.</div>'; } ?>
+      <?php if (file_exists(__DIR__ . '/../ai_agent/settings_panel.php')) {
+        include __DIR__ . '/../ai_agent/settings_panel.php';
+      } else {
+        echo '<div style="padding:40px;text-align:center;color:#b91c1c">AI Agent module not installed. Upload modules/ai_agent/ folder first.</div>';
+      } ?>
     <?php endif; ?>
 
     <?php if ($activeTab === 'backup'): ?>
@@ -3783,19 +4726,22 @@ include __DIR__ . '/../../includes/header.php';
           <form method="POST" class="mt-12">
             <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
             <input type="hidden" name="action" value="download_backup">
-            <button class="btn btn-primary" type="submit"><i class="bi bi-cloud-arrow-down"></i> Download Full Backup (.zip)</button>
+            <button class="btn btn-primary" type="submit"><i class="bi bi-cloud-arrow-down"></i> Download Full Backup
+              (.zip)</button>
           </form>
         </div>
 
         <div class="backup-panel backup-danger">
           <h3><i class="bi bi-upload"></i> Restore Database</h3>
           <p>Restore from full backup (.zip) or SQL (.sql). ZIP restore also restores company/library images.</p>
-          <form method="POST" enctype="multipart/form-data" class="mt-12" data-confirm="This will restore database data. Continue?">
+          <form method="POST" enctype="multipart/form-data" class="mt-12"
+            data-confirm="This will restore database data. Continue?">
             <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
             <input type="hidden" name="action" value="restore_backup">
             <input type="file" name="backup_file" accept=".zip,.sql" required>
             <div class="mt-12">
-              <button class="btn btn-danger" type="submit"><i class="bi bi-cloud-arrow-up"></i> Restore from Backup</button>
+              <button class="btn btn-danger" type="submit"><i class="bi bi-cloud-arrow-up"></i> Restore from
+                Backup</button>
             </div>
           </form>
         </div>
@@ -3806,11 +4752,26 @@ include __DIR__ . '/../../includes/header.php';
         <div class="card-body">
           <table style="font-size:.82rem">
             <tbody>
-              <tr><td class="text-muted" style="padding:5px 0">PHP Version</td><td class="fw-600"><?= phpversion() ?></td></tr>
-              <tr><td class="text-muted" style="padding:5px 0">MySQL</td><td class="fw-600"><?= $db->server_info ?></td></tr>
-              <tr><td class="text-muted" style="padding:5px 0">Database Name</td><td class="fw-600"><?= e(DB_NAME) ?></td></tr>
-              <tr><td class="text-muted" style="padding:5px 0">App Version</td><td class="fw-600"><?= e(APP_VERSION) ?></td></tr>
-              <tr><td class="text-muted" style="padding:5px 0">Server Time</td><td class="fw-600"><?= date('d M Y H:i') ?></td></tr>
+              <tr>
+                <td class="text-muted" style="padding:5px 0">PHP Version</td>
+                <td class="fw-600"><?= phpversion() ?></td>
+              </tr>
+              <tr>
+                <td class="text-muted" style="padding:5px 0">MySQL</td>
+                <td class="fw-600"><?= $db->server_info ?></td>
+              </tr>
+              <tr>
+                <td class="text-muted" style="padding:5px 0">Database Name</td>
+                <td class="fw-600"><?= e(DB_NAME) ?></td>
+              </tr>
+              <tr>
+                <td class="text-muted" style="padding:5px 0">App Version</td>
+                <td class="fw-600"><?= e(APP_VERSION) ?></td>
+              </tr>
+              <tr>
+                <td class="text-muted" style="padding:5px 0">Server Time</td>
+                <td class="fw-600"><?= date('d M Y H:i') ?></td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -3823,15 +4784,16 @@ include __DIR__ . '/../../includes/header.php';
 
     <?php if ($activeTab === 'update'): ?>
       <?php
-        // Load update log
-        $updateLogFile = realpath(__DIR__ . '/../../') . '/data/update_log.json';
-        $updateLog = [];
-        if (is_file($updateLogFile)) {
-          $raw = file_get_contents($updateLogFile);
-          $updateLog = json_decode($raw, true);
-          if (!is_array($updateLog)) $updateLog = [];
-        }
-        $lastUpdate = !empty($updateLog) ? end($updateLog) : null;
+      // Load update log
+      $updateLogFile = realpath(__DIR__ . '/../../') . '/data/update_log.json';
+      $updateLog = [];
+      if (is_file($updateLogFile)) {
+        $raw = file_get_contents($updateLogFile);
+        $updateLog = json_decode($raw, true);
+        if (!is_array($updateLog))
+          $updateLog = [];
+      }
+      $lastUpdate = !empty($updateLog) ? end($updateLog) : null;
       ?>
 
       <!-- Version Banner -->
@@ -3845,7 +4807,8 @@ include __DIR__ . '/../../includes/header.php';
         </div>
         <div class="upd-version-meta">
           <?php if ($lastUpdate): ?>
-            <span><i class="bi bi-clock-history"></i> Last updated: <?= e(date('d M Y, H:i', strtotime($lastUpdate['timestamp'] ?? ''))) ?></span>
+            <span><i class="bi bi-clock-history"></i> Last updated:
+              <?= e(date('d M Y, H:i', strtotime($lastUpdate['timestamp'] ?? ''))) ?></span>
             <span><i class="bi bi-person"></i> By: <?= e($lastUpdate['applied_by'] ?? 'admin') ?></span>
           <?php else: ?>
             <span><i class="bi bi-info-circle"></i> No updates applied yet</span>
@@ -3857,8 +4820,10 @@ include __DIR__ . '/../../includes/header.php';
         <!-- Upload Update Panel -->
         <div class="backup-panel">
           <h3><i class="bi bi-cloud-arrow-up"></i> Apply Update</h3>
-          <p>Upload an update package (.zip) created with the build tool. A backup is created automatically before applying.</p>
-          <form method="POST" enctype="multipart/form-data" class="mt-12" data-confirm="Apply this update? A backup will be created automatically before changes are applied.">
+          <p>Upload an update package (.zip) created with the build tool. A backup is created automatically before
+            applying.</p>
+          <form method="POST" enctype="multipart/form-data" class="mt-12"
+            data-confirm="Apply this update? A backup will be created automatically before changes are applied.">
             <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
             <input type="hidden" name="action" value="apply_update">
             <div class="upd-upload-zone" id="upd-drop-zone">
@@ -3889,9 +4854,12 @@ include __DIR__ . '/../../includes/header.php';
             <code>php build_update.php</code>
           </div>
           <div class="upd-steps mt-12">
-            <div class="upd-step"><span class="upd-step-num">1</span><span>Make changes in VS Code &amp; commit to Git</span></div>
-            <div class="upd-step"><span class="upd-step-num">2</span><span>Run <strong>php build_update.php</strong> in terminal</span></div>
-            <div class="upd-step"><span class="upd-step-num">3</span><span>Choose version &amp; select changed files</span></div>
+            <div class="upd-step"><span class="upd-step-num">1</span><span>Make changes in VS Code &amp; commit to
+                Git</span></div>
+            <div class="upd-step"><span class="upd-step-num">2</span><span>Run <strong>php build_update.php</strong> in
+                terminal</span></div>
+            <div class="upd-step"><span class="upd-step-num">3</span><span>Choose version &amp; select changed
+                files</span></div>
             <div class="upd-step"><span class="upd-step-num">4</span><span>Upload the generated ZIP here</span></div>
           </div>
           <div class="mt-12" style="font-size:.82rem;color:#64748b">
@@ -3928,18 +4896,20 @@ include __DIR__ . '/../../includes/header.php';
               <tbody>
                 <?php foreach (array_reverse($updateLog, true) as $idx => $entry): ?>
                   <tr>
-                    <td style="padding:6px"><?= (int)$idx + 1 ?></td>
+                    <td style="padding:6px"><?= (int) $idx + 1 ?></td>
                     <td style="padding:6px">
                       <strong>v<?= e($entry['version'] ?? '') ?></strong>
                       <br><small class="text-muted">from v<?= e($entry['from_version'] ?? '') ?></small>
                     </td>
                     <td style="padding:6px"><?= e($entry['description'] ?? '—') ?></td>
-                    <td style="padding:6px;white-space:nowrap"><?= e(date('d M Y H:i', strtotime($entry['timestamp'] ?? ''))) ?></td>
-                    <td style="padding:6px;text-align:center"><?= (int)($entry['files_count'] ?? 0) ?></td>
+                    <td style="padding:6px;white-space:nowrap">
+                      <?= e(date('d M Y H:i', strtotime($entry['timestamp'] ?? ''))) ?>
+                    </td>
+                    <td style="padding:6px;text-align:center"><?= (int) ($entry['files_count'] ?? 0) ?></td>
                     <td style="padding:6px;text-align:center">
-                      <?= (int)($entry['migrations_run'] ?? 0) ?>
+                      <?= (int) ($entry['migrations_run'] ?? 0) ?>
                       <?php if (($entry['migrations_failed'] ?? 0) > 0): ?>
-                        <span class="badge badge-cancelled"><?= (int)$entry['migrations_failed'] ?> failed</span>
+                        <span class="badge badge-cancelled"><?= (int) $entry['migrations_failed'] ?> failed</span>
                       <?php endif; ?>
                     </td>
                     <td style="padding:6px"><?= e($entry['applied_by'] ?? 'admin') ?></td>
@@ -3952,11 +4922,13 @@ include __DIR__ . '/../../includes/header.php';
                     </td>
                     <td style="padding:6px">
                       <?php if (empty($entry['rolled_back']) && !empty($entry['backup_path'])): ?>
-                        <form method="POST" style="margin:0" data-confirm="Rollback this update? This will restore files and database to the pre-update state.">
+                        <form method="POST" style="margin:0"
+                          data-confirm="Rollback this update? This will restore files and database to the pre-update state.">
                           <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
                           <input type="hidden" name="action" value="rollback_update">
-                          <input type="hidden" name="rollback_index" value="<?= (int)$idx ?>">
-                          <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-arrow-counterclockwise"></i> Rollback</button>
+                          <input type="hidden" name="rollback_index" value="<?= (int) $idx ?>">
+                          <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-arrow-counterclockwise"></i>
+                            Rollback</button>
                         </form>
                       <?php else: ?>
                         <span class="text-muted">—</span>
@@ -3971,225 +4943,273 @@ include __DIR__ . '/../../includes/header.php';
       </div>
 
       <style>
-      .upd-version-banner {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        padding: 18px 22px;
-        border-radius: 16px;
-        color: #fff;
-        background: linear-gradient(135deg, #0f172a 0%, #1e40af 55%, #0ea5e9 100%);
-        box-shadow: 0 12px 28px rgba(29, 78, 216, .2);
-      }
-      .upd-version-main { display: flex; align-items: center; gap: 14px; }
-      .upd-version-icon {
-        width: 48px; height: 48px;
-        display: grid; place-items: center;
-        background: rgba(255,255,255,.15);
-        border-radius: 12px;
-        font-size: 22px;
-        backdrop-filter: blur(6px);
-      }
-      .upd-version-label {
-        display: block;
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: .1em;
-        opacity: .8;
-      }
-      .upd-version-number {
-        display: block;
-        font-size: 24px;
-        font-weight: 800;
-        letter-spacing: -.02em;
-        margin-top: 2px;
-      }
-      .upd-version-meta {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        font-size: .82rem;
-        opacity: .85;
-        text-align: right;
-      }
-      .upd-upload-zone {
-        position: relative;
-        border: 2px dashed #cbd5e1;
-        border-radius: 12px;
-        padding: 24px;
-        text-align: center;
-        transition: .18s ease;
-        background: #fafbfc;
-        cursor: pointer;
-      }
-      .upd-upload-zone.drag-over {
-        border-color: #3b82f6;
-        background: #eff6ff;
-      }
-      .upd-upload-zone input[type="file"] {
-        position: absolute;
-        inset: 0;
-        opacity: 0;
-        cursor: pointer;
-        width: 100%;
-        height: 100%;
-      }
-      .upd-upload-placeholder,
-      .upd-upload-selected {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 6px;
-        pointer-events: none;
-      }
-      .upd-upload-placeholder span,
-      .upd-upload-selected span { font-weight: 600; color: #334155; font-size: .92rem; }
-      .upd-upload-placeholder small,
-      .upd-upload-selected small { color: #94a3b8; font-size: .78rem; }
-      .upd-code-block {
-        background: #0f172a;
-        color: #e2e8f0;
-        border-radius: 10px;
-        padding: 14px 16px;
-        font-family: 'Consolas', 'Courier New', monospace;
-        font-size: .82rem;
-        line-height: 1.7;
-      }
-      .upd-code-block code {
-        display: block;
-        color: #67e8f9;
-      }
-      .upd-code-block code::before {
-        content: '> ';
-        color: #64748b;
-      }
-      .upd-steps { display: grid; gap: 10px; }
-      .upd-step {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-size: .85rem;
-        color: #334155;
-      }
-      .upd-step-num {
-        width: 24px; height: 24px;
-        display: grid; place-items: center;
-        background: #dbeafe;
-        color: #1d4ed8;
-        border-radius: 50%;
-        font-size: .72rem;
-        font-weight: 800;
-        flex-shrink: 0;
-      }
-      @media (max-width: 720px) {
-        .upd-version-banner { flex-direction: column; align-items: flex-start; }
-        .upd-version-meta { text-align: left; }
-      }
+        .upd-version-banner {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          padding: 18px 22px;
+          border-radius: 16px;
+          color: #fff;
+          background: linear-gradient(135deg, #0f172a 0%, #1e40af 55%, #0ea5e9 100%);
+          box-shadow: 0 12px 28px rgba(29, 78, 216, .2);
+        }
+
+        .upd-version-main {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+        }
+
+        .upd-version-icon {
+          width: 48px;
+          height: 48px;
+          display: grid;
+          place-items: center;
+          background: rgba(255, 255, 255, .15);
+          border-radius: 12px;
+          font-size: 22px;
+          backdrop-filter: blur(6px);
+        }
+
+        .upd-version-label {
+          display: block;
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: .1em;
+          opacity: .8;
+        }
+
+        .upd-version-number {
+          display: block;
+          font-size: 24px;
+          font-weight: 800;
+          letter-spacing: -.02em;
+          margin-top: 2px;
+        }
+
+        .upd-version-meta {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          font-size: .82rem;
+          opacity: .85;
+          text-align: right;
+        }
+
+        .upd-upload-zone {
+          position: relative;
+          border: 2px dashed #cbd5e1;
+          border-radius: 12px;
+          padding: 24px;
+          text-align: center;
+          transition: .18s ease;
+          background: #fafbfc;
+          cursor: pointer;
+        }
+
+        .upd-upload-zone.drag-over {
+          border-color: #3b82f6;
+          background: #eff6ff;
+        }
+
+        .upd-upload-zone input[type="file"] {
+          position: absolute;
+          inset: 0;
+          opacity: 0;
+          cursor: pointer;
+          width: 100%;
+          height: 100%;
+        }
+
+        .upd-upload-placeholder,
+        .upd-upload-selected {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+          pointer-events: none;
+        }
+
+        .upd-upload-placeholder span,
+        .upd-upload-selected span {
+          font-weight: 600;
+          color: #334155;
+          font-size: .92rem;
+        }
+
+        .upd-upload-placeholder small,
+        .upd-upload-selected small {
+          color: #94a3b8;
+          font-size: .78rem;
+        }
+
+        .upd-code-block {
+          background: #0f172a;
+          color: #e2e8f0;
+          border-radius: 10px;
+          padding: 14px 16px;
+          font-family: 'Consolas', 'Courier New', monospace;
+          font-size: .82rem;
+          line-height: 1.7;
+        }
+
+        .upd-code-block code {
+          display: block;
+          color: #67e8f9;
+        }
+
+        .upd-code-block code::before {
+          content: '> ';
+          color: #64748b;
+        }
+
+        .upd-steps {
+          display: grid;
+          gap: 10px;
+        }
+
+        .upd-step {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: .85rem;
+          color: #334155;
+        }
+
+        .upd-step-num {
+          width: 24px;
+          height: 24px;
+          display: grid;
+          place-items: center;
+          background: #dbeafe;
+          color: #1d4ed8;
+          border-radius: 50%;
+          font-size: .72rem;
+          font-weight: 800;
+          flex-shrink: 0;
+        }
+
+        @media (max-width: 720px) {
+          .upd-version-banner {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+
+          .upd-version-meta {
+            text-align: left;
+          }
+        }
       </style>
 
       <script>
-      (function(){
-        var fileInput = document.getElementById('upd-file-input');
-        var placeholder = document.getElementById('upd-placeholder');
-        var selected = document.getElementById('upd-selected');
-        var fileNameEl = document.getElementById('upd-file-name');
-        var fileSizeEl = document.getElementById('upd-file-size');
-        var dropZone = document.getElementById('upd-drop-zone');
+        (function () {
+          var fileInput = document.getElementById('upd-file-input');
+          var placeholder = document.getElementById('upd-placeholder');
+          var selected = document.getElementById('upd-selected');
+          var fileNameEl = document.getElementById('upd-file-name');
+          var fileSizeEl = document.getElementById('upd-file-size');
+          var dropZone = document.getElementById('upd-drop-zone');
 
-        if (fileInput) {
-          fileInput.addEventListener('change', function(){
-            if (fileInput.files && fileInput.files[0]) {
-              var f = fileInput.files[0];
-              placeholder.style.display = 'none';
-              selected.style.display = '';
-              fileNameEl.textContent = f.name;
-              fileSizeEl.textContent = (f.size / 1024 / 1024).toFixed(2) + ' MB';
-            } else {
-              placeholder.style.display = '';
-              selected.style.display = 'none';
-            }
-          });
-        }
+          if (fileInput) {
+            fileInput.addEventListener('change', function () {
+              if (fileInput.files && fileInput.files[0]) {
+                var f = fileInput.files[0];
+                placeholder.style.display = 'none';
+                selected.style.display = '';
+                fileNameEl.textContent = f.name;
+                fileSizeEl.textContent = (f.size / 1024 / 1024).toFixed(2) + ' MB';
+              } else {
+                placeholder.style.display = '';
+                selected.style.display = 'none';
+              }
+            });
+          }
 
-        if (dropZone) {
-          ['dragenter','dragover'].forEach(function(ev){
-            dropZone.addEventListener(ev, function(e){ e.preventDefault(); dropZone.classList.add('drag-over'); });
-          });
-          ['dragleave','drop'].forEach(function(ev){
-            dropZone.addEventListener(ev, function(e){ e.preventDefault(); dropZone.classList.remove('drag-over'); });
-          });
-          dropZone.addEventListener('drop', function(e){
-            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-              fileInput.files = e.dataTransfer.files;
-              fileInput.dispatchEvent(new Event('change'));
-            }
-          });
-        }
-      })();
+          if (dropZone) {
+            ['dragenter', 'dragover'].forEach(function (ev) {
+              dropZone.addEventListener(ev, function (e) { e.preventDefault(); dropZone.classList.add('drag-over'); });
+            });
+            ['dragleave', 'drop'].forEach(function (ev) {
+              dropZone.addEventListener(ev, function (e) { e.preventDefault(); dropZone.classList.remove('drag-over'); });
+            });
+            dropZone.addEventListener('drop', function (e) {
+              if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                fileInput.files = e.dataTransfer.files;
+                fileInput.dispatchEvent(new Event('change'));
+              }
+            });
+          }
+        })();
       </script>
     <?php endif; ?>
   </div>
 </div>
 
 <!-- Paper Type Assignment Modal -->
-<div id="paperTypeModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
-  <div style="background:#fff;border-radius:12px;padding:24px;width:90%;max-width:400px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)">
+<div id="paperTypeModal"
+  style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+  <div
+    style="background:#fff;border-radius:12px;padding:24px;width:90%;max-width:400px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)">
     <h3 style="margin:0 0 16px;font-size:1.1rem">Assign to Paper Type</h3>
     <form method="POST" id="assignPaperTypeForm">
       <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
       <input type="hidden" name="action" value="assign_image_to_papertype">
       <input type="hidden" name="image_index" id="modalImageIndex" value="">
-      
+
       <div style="margin-bottom:16px">
         <label style="display:block;font-weight:600;margin-bottom:8px;color:#334155">Paper Type Name</label>
-        <input type="text" name="paper_type" id="modalPaperType" placeholder="e.g., Thermal Paper, Chromo Matt" style="width:100%;padding:8px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:.95rem" list="modalPaperTypeList" autocomplete="off" required>
+        <input type="text" name="paper_type" id="modalPaperType" placeholder="e.g., Thermal Paper, Chromo Matt"
+          style="width:100%;padding:8px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:.95rem"
+          list="modalPaperTypeList" autocomplete="off" required>
         <datalist id="modalPaperTypeList">
           <?php foreach ($paperTypeOptions as $opt): ?>
             <option value="<?= e($opt) ?>"></option>
           <?php endforeach; ?>
         </datalist>
       </div>
-      
+
       <div style="display:flex;gap:12px;justify-content:space-between">
-        <button type="button" onclick="closePaperTypeModal()" style="flex:1;padding:10px;border:1px solid #e2e8f0;background:#fff;border-radius:6px;cursor:pointer;font-weight:600">Cancel</button>
-        <button type="submit" style="flex:1;padding:10px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">Assign</button>
+        <button type="button" onclick="closePaperTypeModal()"
+          style="flex:1;padding:10px;border:1px solid #e2e8f0;background:#fff;border-radius:6px;cursor:pointer;font-weight:600">Cancel</button>
+        <button type="submit"
+          style="flex:1;padding:10px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">Assign</button>
       </div>
     </form>
   </div>
 </div>
 
 <script>
-let currentImageIndex = null;
+  let currentImageIndex = null;
 
-function openPaperTypeModal(imageIndex) {
-  currentImageIndex = imageIndex;
-  document.getElementById('modalImageIndex').value = imageIndex;
-  document.getElementById('modalPaperType').value = '<?= e($targetPaperType) ?>';
-  document.getElementById('paperTypeModal').style.display = 'flex';
-  document.getElementById('modalPaperType').focus();
-}
-
-function closePaperTypeModal() {
-  document.getElementById('paperTypeModal').style.display = 'none';
-  currentImageIndex = null;
-}
-
-// Close modal when clicking outside
-document.getElementById('paperTypeModal')?.addEventListener('click', function(e) {
-  if (e.target === this) closePaperTypeModal();
-});
-
-// Handle form submission
-document.getElementById('assignPaperTypeForm')?.addEventListener('submit', function(e) {
-  const paperType = document.getElementById('modalPaperType').value.trim();
-  if (!paperType) {
-    e.preventDefault();
-    alert('Please enter a paper type name');
-    return;
+  function openPaperTypeModal(imageIndex) {
+    currentImageIndex = imageIndex;
+    document.getElementById('modalImageIndex').value = imageIndex;
+    document.getElementById('modalPaperType').value = '<?= e($targetPaperType) ?>';
+    document.getElementById('paperTypeModal').style.display = 'flex';
+    document.getElementById('modalPaperType').focus();
   }
-  // Form will submit naturally
-});
+
+  function closePaperTypeModal() {
+    document.getElementById('paperTypeModal').style.display = 'none';
+    currentImageIndex = null;
+  }
+
+  // Close modal when clicking outside
+  document.getElementById('paperTypeModal')?.addEventListener('click', function (e) {
+    if (e.target === this) closePaperTypeModal();
+  });
+
+  // Handle form submission
+  document.getElementById('assignPaperTypeForm')?.addEventListener('submit', function (e) {
+    const paperType = document.getElementById('modalPaperType').value.trim();
+    if (!paperType) {
+      e.preventDefault();
+      alert('Please enter a paper type name');
+      return;
+    }
+    // Form will submit naturally
+  });
 </script>
 
 <?php include __DIR__ . '/../../includes/footer.php'; ?>
