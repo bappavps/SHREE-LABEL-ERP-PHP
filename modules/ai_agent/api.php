@@ -980,44 +980,7 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array
 }
 
 
-// ─── KB Skip-Logic: Queries with specific data entities bypass KB, go straight to ERP search ───
-$kbSkipPatterns = ['how many', 'কত', 'কতগুলো', 'কতটা', 'kitne', 'kitna', 'total count', 'total rolls', 'total paper', 'stock count', 'roll count', 'paper count', 'summary', 'সারসংক্ষেপ', 'সমষ্টি', 'सारांश', 'कुल गिनती', 'date', 'time', 'ajke', 'kon date', 'today', 'tarikh', 'তারিখ', 'আজকে', 'সময়', 'somoy', 'hello', 'hi ', 'kemon acho'];
-$kbSkipEntities = ['krishna', 'austin', 'nrgi', 'navkar', 'abhinav', 'nitin', 'avery', 'chromo', 'thermal', 'pp white', 'pp-clear', 'maplitho', 'metallic', 'plastic', 'flexo', 'creative', 'pidilite', 'sfl'];
-$skipKB = false;
-foreach ($kbSkipPatterns as $pat) {
-    if (mb_strpos($p, $pat) !== false) {
-        $skipKB = true;
-        break;
-    }
-}
-if (!$skipKB) {
-    foreach ($kbSkipEntities as $ent) {
-        if (mb_strpos($p, $ent) !== false) {
-            $skipKB = true;
-            break;
-        }
-    }
-}
-
-$knowledgeMatch = $skipKB ? null : check_knowledge_base($db, $prompt);
-if ($knowledgeMatch !== null) {
-
-    $kbAnswer = $knowledgeMatch['answer'];
-    $kbCategory = $knowledgeMatch['category'];
-
-    echo json_encode([
-        'ok' => true,
-        'answer' => "📚 " . $kbAnswer,
-        'provider' => 'ERP AI Knowledge Base',
-        'tool_used' => 'Admin Knowledge Base (' . $kbCategory . ')',
-        'user_lang' => $userLang,
-        'kb_match_id' => (int) $knowledgeMatch['id']
-    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    exit;
-}
-
-
-// Direct SQM <-> SQ Inch Unit Conversion Handler
+// ─── Direct SQM <-> SQ Inch Unit Conversion Handler ───
 if (strpos($p, 'inch') !== false && (strpos($p, 'sqm') !== false || strpos($p, 'sq mtr') !== false || strpos($p, 'sqr mtr') !== false || strpos($p, 'square meter') !== false) && !preg_match('/\d+\s*mm\s*[xX*]\s*\d+\s*mm/', $prompt)) {
 
     preg_match('/(\d+(\.\d+)?)\s*(\/|per|\s*)\s*(sq inch|sqr inch|inch)|(sq inch|sqr inch|inch)\s*(is|=|:|\s*)\s*(\d+(\.\d+)?)/i', $prompt, $inchMatch);
@@ -1087,6 +1050,46 @@ if (strpos($p, 'inch') !== false && (strpos($p, 'sqm') !== false || strpos($p, '
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
+
+
+// ─── KB Skip-Logic: Queries with specific data entities bypass KB, go straight to ERP search ───
+$kbSkipPatterns = ['how many', 'কত', 'কতগুলো', 'কতটা', 'kitne', 'kitna', 'total count', 'total rolls', 'total paper', 'stock count', 'roll count', 'paper count', 'summary', 'সারসংক্ষেপ', 'সমষ্টি', 'सारांश', 'कुल गिनती', 'date', 'time', 'ajke', 'kon date', 'today', 'tarikh', 'তারিখ', 'আজকে', 'সময়', 'somoy', 'hello', 'hi ', 'kemon acho'];
+$kbSkipEntities = ['krishna', 'austin', 'nrgi', 'navkar', 'abhinav', 'nitin', 'avery', 'chromo', 'thermal', 'pp white', 'pp-clear', 'maplitho', 'metallic', 'plastic', 'flexo', 'creative', 'pidilite', 'sfl'];
+$skipKB = false;
+foreach ($kbSkipPatterns as $pat) {
+    if (mb_strpos($p, $pat) !== false) {
+        $skipKB = true;
+        break;
+    }
+}
+if (!$skipKB) {
+    foreach ($kbSkipEntities as $ent) {
+        if (mb_strpos($p, $ent) !== false) {
+            $skipKB = true;
+            break;
+        }
+    }
+}
+
+$knowledgeMatch = $skipKB ? null : check_knowledge_base($db, $prompt);
+if ($knowledgeMatch !== null) {
+
+    $kbAnswer = $knowledgeMatch['answer'];
+    $kbCategory = $knowledgeMatch['category'];
+
+    echo json_encode([
+        'ok' => true,
+        'answer' => "📚 " . $kbAnswer,
+        'provider' => 'ERP AI Knowledge Base',
+        'tool_used' => 'Admin Knowledge Base (' . $kbCategory . ')',
+        'user_lang' => $userLang,
+        'kb_match_id' => (int) $knowledgeMatch['id']
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
+
+
 
 /**
  * Industrial Label Mathematics Engine
@@ -2122,7 +2125,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
     if (strpos($p, 'live') !== false || strpos($p, 'life') !== false || strpos($p, 'floor') !== false || strpos($p, 'stage') !== false || strpos($p, 'next department') !== false || strpos($p, 'journey') !== false || strpos($p, 'current job') !== false || strpos($p, 'running job') !== false || strpos($p, 'লাইভ') !== false || strpos($p, 'ফ্লোর') !== false) {
         $toolName = 'Live Production Floor Pipeline Tool';
 
-        $liveStopwords = ['can', 'you', 'what', 'is', 'the', 'status', 'of', 'current', 'job', 'jobs', 'running', 'live', 'life', 'floor', 'show', 'tell', 'me', 'details', 'for', 'in', 'page', 'pages', 'summary', 'sumary', 'overview', 'list', 'all', 'production', 'pipeline', 'report', 'reports', 'board', 'kholo', 'khul', 'open', 'go', 'to', 'dekhao', 'dekaw', 'batao', 'give', 'bring', 'find', 'search', 'how', 'many', 'are', 'there', 'please', 'pls', 'lookup', 'display'];
+        $liveStopwords = ['can', 'you', 'what', 'is', 'the', 'status', 'of', 'current', 'job', 'jobs', 'running', 'live', 'life', 'floor', 'show', 'tell', 'me', 'details', 'for', 'in', 'page', 'pages', 'summary', 'sumary', 'overview', 'list', 'all', 'production', 'pipeline', 'report', 'reports', 'board', 'kholo', 'khul', 'open', 'go', 'to', 'dekhao', 'dekaw', 'batao', 'give', 'bring', 'find', 'search', 'how', 'many', 'are', 'there', 'please', 'pls', 'lookup', 'display', 'and', 'or', 'about', 'with', 'this', 'that', 'get', 'fetch', 'on', 'at', 'from', 'a', 'an', 'ki', 'kya', 'hai', 'ami', 'tumi', 'do', 'we', 'have', 'any', 'my'];
         $pWords = preg_split('/\s+/', strtolower($prompt));
         $terms = [];
         foreach ($pWords as $w) {

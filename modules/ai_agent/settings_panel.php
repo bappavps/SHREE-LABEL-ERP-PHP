@@ -24,6 +24,11 @@ $kbApiUrl = $baseUrl . '/modules/ai_agent/knowledge_api.php';
 $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
 $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
 $standaloneAppUrl = $protocol . $host . $baseUrl . '/modules/ai_agent/app.php';
+
+if (empty($_SESSION['ai_agent_csrf_token'])) {
+    $_SESSION['ai_agent_csrf_token'] = bin2hex(random_bytes(32));
+}
+$aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
 ?>
 
 
@@ -788,6 +793,7 @@ $standaloneAppUrl = $protocol . $host . $baseUrl . '/modules/ai_agent/app.php';
 
 <script>
   const KB_API = '<?= $kbApiUrl ?>';
+  const AI_CSRF_TOKEN = '<?= $aiCsrfToken ?>';
 
   const AI_MODELS = {
     'gemini_pro': ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
@@ -986,6 +992,7 @@ $standaloneAppUrl = $protocol . $host . $baseUrl . '/modules/ai_agent/app.php';
     fd.append('question', document.getElementById('kb_question').value);
     fd.append('answer', document.getElementById('kb_answer').value);
     fd.append('is_active', document.getElementById('kb_active').checked ? '1' : '0');
+    fd.append('csrf_token', AI_CSRF_TOKEN);
 
     fetch(KB_API, { method: 'POST', body: fd })
       .then(r => r.json())
@@ -1016,6 +1023,7 @@ $standaloneAppUrl = $protocol . $host . $baseUrl . '/modules/ai_agent/app.php';
     const fd = new FormData();
     fd.append('action', 'delete');
     fd.append('id', id);
+    fd.append('csrf_token', AI_CSRF_TOKEN);
     fetch(KB_API, { method: 'POST', body: fd })
       .then(r => r.json())
       .then(d => { if (d.ok) kbLoad(); else alert(d.error || 'Delete failed.'); })
