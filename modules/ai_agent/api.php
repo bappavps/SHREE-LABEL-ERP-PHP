@@ -407,11 +407,12 @@ function get_follow_up_suggestions(string $toolUsed, string $prompt, string $use
  */
 function call_llm_api(string $prompt, array $config): ?string
 {
-    $provider = strtolower($config['default_provider'] ?? 'gemini_pro');
-    $model = $config['model_name'] ?? 'gemini-2.0-flash';
+    $provider = strtolower($config['default_provider'] ?? 'openrouter');
+    $model = $config['model_name'] ?? 'openrouter/free';
     $temperature = (float) ($config['temperature'] ?? 0.2);
     $maxTokens = (int) ($config['max_tokens'] ?? 1500);
     $systemPrompt = $config['system_prompt'] ?? "You are a helpful ERP assistant for Shree Label ERP. Be concise and accurate.";
+    $systemPrompt .= "\n\nCurrent System Time: " . date('l, d F Y, h:i A');
 
     // 1. Google Gemini Provider
     if ($provider === 'gemini_pro' || $provider === 'gemini') {
@@ -452,14 +453,17 @@ function call_llm_api(string $prompt, array $config): ?string
         curl_close($ch);
 
         if ($error || !$response) {
-            error_log("Gemini API Error: " . ($error ?: 'empty response'));
-            return null;
+            return "[API_ERROR] Connection failed: " . ($error ?: 'empty response');
         }
         $result = json_decode($response, true);
+        if (isset($result['error'])) {
+            $msg = is_array($result['error']) ? ($result['error']['message'] ?? json_encode($result['error'])) : $result['error'];
+            return "[API_ERROR] Gemini Error: " . $msg;
+        }
         if (isset($result['candidates'][0]['content']['parts'][0]['text'])) {
             return trim($result['candidates'][0]['content']['parts'][0]['text']);
         }
-        return null;
+        return "[API_ERROR] Unexpected API response format.";
     }
 
     // 2. OpenAI / OpenRouter / OpenCode / Local LLM (OpenAI-compatible)
@@ -473,8 +477,8 @@ function call_llm_api(string $prompt, array $config): ?string
         if (empty($model) || strpos($model, 'gemini') !== false) $model = 'gpt-4o-mini';
     } elseif ($provider === 'openrouter') {
         $apiKey = !empty($config['openrouter_api_key']) ? $config['openrouter_api_key'] : ($config['openai_api_key'] ?? '');
-        $url = 'https://openrouter.ai/api/v1/chat/completions';
-        if (empty($model) || strpos($model, 'gemini') !== false) $model = 'google/gemini-2.0-flash-001';
+        $url = !empty($config['openrouter_ai_url']) ? $config['openrouter_ai_url'] : 'https://openrouter.ai/api/v1/chat/completions';
+        if (empty($model)) $model = 'openrouter/free';
         $headers[] = 'HTTP-Referer: http://localhost';
         $headers[] = 'X-Title: Shree Label ERP AI';
     } elseif ($provider === 'opencode') {
@@ -517,15 +521,18 @@ function call_llm_api(string $prompt, array $config): ?string
     curl_close($ch);
 
     if ($error || !$response) {
-        error_log("LLM API Error ($provider): " . ($error ?: 'empty response'));
-        return null;
+        return "[API_ERROR] Connection failed ($provider): " . ($error ?: 'empty response');
     }
     $result = json_decode($response, true);
+    if (isset($result['error'])) {
+        $msg = is_array($result['error']) ? ($result['error']['message'] ?? json_encode($result['error'])) : $result['error'];
+        return "[API_ERROR] API Error: " . $msg;
+    }
     if (isset($result['choices'][0]['message']['content'])) {
         return trim($result['choices'][0]['message']['content']);
     }
 
-    return null;
+    return "[API_ERROR] Unexpected API response format.";
 }
 
 /**
@@ -912,7 +919,7 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array
 
     $promptLower = mb_strtolower(trim($prompt), 'UTF-8');
     preg_match_all('/[\x{0980}-\x{09FF}\x{0900}-\x{097F}\w]+/u', $promptLower, $promptMatches);
-    $kbStopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'show', 'details', 'this', 'the', 'a', 'an', 'what', 'where', 'how', 'when', 'who', 'list', 'get', 'for', 'about', 'with', 'from', 'ache', 'koto', 'kotogulo', 'ki', 'kon', 'jabe', 'hote', 'ar', 'er', 'diye', 'giye', 'ache', 'hobe', 'হবে', 'আছে', 'কত', 'কতগুলো', 'কি', 'কী', 'কোন', 'দিয়ে', 'গিয়ে'];
+    $kbStopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'show', 'details', 'this', 'the', 'a', 'an', 'what', 'where', 'how', 'when', 'who', 'list', 'get', 'for', 'about', 'with', 'from', 'ache', 'koto', 'kotogulo', 'ki', 'kon', 'jabe', 'hote', 'ar', 'er', 'diye', 'giye', 'ache', 'hobe', 'হবে', 'আছে', 'কত', 'কতগুলো', 'কি', 'কী', 'কোন', 'দিয়ে', 'গিয়ে', 'নাম', 'বলো', 'কোথায়', 'কোনটি', 'এবং', 'বা', 'এর', 'সেরা', 'টি', 'গুলো', 'গুলা', 'দাও', 'করো', 'করবে', 'কে', 'কেন', 'কবে', 'থেকে', 'তে', 'যে', 'ও', 'আর', 'হলো', 'হল', 'নাকি', 'তাই', 'যেন', 'তবে', 'সুতরাং', 'খুব', 'সবচেয়ে', 'কয়েকটি', 'বৈশিষ্ট্য', 'পৃথিবীর'];
 
     $promptTokens = array_filter($promptMatches[0] ?? [], function ($t) use ($kbStopwords) {
         return mb_strlen($t) >= 3 && !in_array($t, $kbStopwords, true);
@@ -929,10 +936,10 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array
             if ($kw === '')
                 continue;
 
-            // Direct substring match
-            if (mb_strpos($promptLower, $kw) !== false) {
-                $matchScore += 2.0;
-                continue;
+            // Direct substring match only for phrases (multiple words) to prevent single generic word triggering
+            $isPhrase = (mb_strpos(trim($kw), ' ') !== false);
+            if ($isPhrase && mb_strpos($promptLower, $kw) !== false) {
+                $matchScore += 3.0; // Strong match for exact phrases
             }
 
             // Token & Fuzzy Levenshtein match (e.g. "delevery" -> "delivery")
@@ -974,7 +981,7 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array
 
 
 // ─── KB Skip-Logic: Queries with specific data entities bypass KB, go straight to ERP search ───
-$kbSkipPatterns = ['how many', 'কত', 'কতগুলো', 'কতটা', 'kitne', 'kitna', 'total count', 'total rolls', 'total paper', 'stock count', 'roll count', 'paper count', 'summary', 'সারসংক্ষেপ', 'সমষ্টি', 'सारांश', 'कुल गिनती'];
+$kbSkipPatterns = ['how many', 'কত', 'কতগুলো', 'কতটা', 'kitne', 'kitna', 'total count', 'total rolls', 'total paper', 'stock count', 'roll count', 'paper count', 'summary', 'সারসংক্ষেপ', 'সমষ্টি', 'सारांश', 'कुल गिनती', 'date', 'time', 'ajke', 'kon date', 'today', 'tarikh', 'তারিখ', 'আজকে', 'সময়', 'somoy', 'hello', 'hi ', 'kemon acho'];
 $kbSkipEntities = ['krishna', 'austin', 'nrgi', 'navkar', 'abhinav', 'nitin', 'avery', 'chromo', 'thermal', 'pp white', 'pp-clear', 'maplitho', 'metallic', 'plastic', 'flexo', 'creative', 'pidilite', 'sfl'];
 $skipKB = false;
 foreach ($kbSkipPatterns as $pat) {
@@ -2394,8 +2401,10 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_plate_data");
         $totalCount = $cntRes ? (int) ($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
 
+        $isCalcQuery = (strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'qty') !== false || strpos($p, 'quantity') !== false || strpos($p, 'qnty') !== false || strpos($p, 'pcs') !== false || strpos($p, 'run') !== false || strpos($p, 'print') !== false || strpos($p, 'calculat') !== false || strpos($p, 'koto') !== false);
+
         // --- Count-Only Intent Handler ---
-        if (is_count_intent($prompt)) {
+        if (is_count_intent($prompt) && !$isCalcQuery) {
 
             $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
 
@@ -2676,7 +2685,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         }
 
         // Calculation Handler (Meters to Quantity OR Quantity to Meters)
-        $isCalcQuery = (strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'qty') !== false || strpos($p, 'quantity') !== false || strpos($p, 'pcs') !== false || strpos($p, 'run') !== false || strpos($p, 'print') !== false || strpos($p, 'calculat') !== false || strpos($p, 'koto') !== false);
+        // $isCalcQuery is defined above
 
         if ($isCalcQuery && !empty($data)) {
             $plate = $data[0];
@@ -2703,9 +2712,9 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 $paperMeters = (float) str_replace(',', '', $m[3]);
             }
 
-            if (preg_match('/([\d,]+)\s*(qty|quantity|pcs|pices|pieces|labels|required)?/i', $prompt, $m)) {
+            if (preg_match('/([\d,]+)\s*(qty|quantity|qnty|pcs|pices|pieces|labels|required)\b/i', $prompt, $m)) {
                 $targetQty = (float) str_replace(',', '', $m[1]);
-            } elseif (preg_match('/(print|producing|make|quantity|qty)\s*(of|about)?\s*([\d,]+)/i', $prompt, $m)) {
+            } elseif (preg_match('/(print|producing|make|quantity|qty|qnty)\s*(of|about)?\s*([\d,]+)/i', $prompt, $m)) {
                 $targetQty = (float) str_replace(',', '', $m[3]);
             }
 
@@ -3723,8 +3732,13 @@ if (!empty($retrieved['direct_answer'])) {
 } elseif ($toolUsed === 'Unmatched Query Assistant') {
     $llmAnswer = call_llm_api($prompt, $config);
     if ($llmAnswer !== null) {
-        $finalAnswer = "🧠 **AI Copilot says:**\n\n" . $llmAnswer;
-        $toolUsed = ucwords(str_replace('_', ' ', $config['default_provider'] ?? 'LLM Engine'));
+        if (strpos($llmAnswer, '[API_ERROR]') === 0) {
+            $finalAnswer = "⚠️ **AI Provider Error**\n\n" . str_replace('[API_ERROR] ', '', $llmAnswer) . "\n\n💡 *Hint: Did you click 'Save Settings' after entering your API Key?*";
+            $toolUsed = 'Configuration Error';
+        } else {
+            $finalAnswer = $llmAnswer;
+            $toolUsed = '';
+        }
     } else {
         if ($userLang === 'English') {
             $finalAnswer = "ℹ️ **Information Not Found in Trained Knowledge Base**\n\n"

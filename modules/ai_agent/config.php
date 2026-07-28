@@ -17,7 +17,7 @@ function getAiAgentConfig(): array
 {
     $appSettings = function_exists('getAppSettings') ? getAppSettings() : [];
 
-    $provider = $appSettings['ai_agent_provider'] ?? 'gemini_pro';
+    $provider = $appSettings['ai_agent_provider'] ?? 'openrouter';
 
     return [
         'module_name' => 'ERP AI Enterprise Brain',
@@ -28,7 +28,7 @@ function getAiAgentConfig(): array
         'openrouter_api_key' => $appSettings['openrouter_api_key'] ?? (getenv('OPENROUTER_API_KEY') ?: ''),
         'opencode_api_key' => $appSettings['opencode_api_key'] ?? (getenv('OPENCODE_API_KEY') ?: ''),
         'local_api_endpoint' => $appSettings['local_ai_url'] ?? 'http://localhost:11434/v1/chat/completions',
-        'model_name' => $appSettings['ai_agent_model'] ?? 'gemini-2.0-flash',
+        'model_name' => $appSettings['ai_agent_model'] ?? 'openrouter/free',
         'max_tokens' => (int) ($appSettings['ai_agent_max_tokens'] ?? 1500),
         'temperature' => (float) ($appSettings['ai_agent_temperature'] ?? 0.2),
         'enabled' => (int) ($appSettings['ai_agent_enabled'] ?? 1),
@@ -55,6 +55,10 @@ Your Mathematical & Technical Knowledge:
 4. ERP Page Navigation Intent:
    - When the user asks to open or go to an ERP page/tab (Live Floor, Slitting, Dispatch, Paper Stock, Finished Goods, Planning, Packing, Dashboard, Reports):
    - Always provide a clear clickable Link to the page AND format the answer with full navigation guidance.
+
+5. General Knowledge & Other Queries:
+   - YOU MUST ANSWER ANY general knowledge, non-ERP, or casual questions (e.g., math puzzles, history, weather, general facts, poetry) accurately and helpfully, exactly like standard ChatGPT.
+   - Do NOT refuse to answer general topics, and do NOT forcefully steer the conversation back to ERP if the user asks a completely unrelated question. Just give the correct answer naturally.
 
 Always respond in the user's language (English, Bengali, or Hindi) with exact mathematical step-by-step breakdowns!
 PROMPT

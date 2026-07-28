@@ -872,10 +872,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   if ($action === 'save_ai_settings') {
     $newAiSettings = [
-      'ai_agent_provider' => $_POST['ai_agent_provider'] ?? 'gemini_pro',
-      'ai_agent_model' => $_POST['ai_agent_model'] ?? 'gemini-2.0-flash',
+      'ai_agent_provider' => $_POST['ai_agent_provider'] ?? 'openrouter',
+      'ai_agent_model' => $_POST['ai_agent_model'] ?? 'openrouter/free',
       'gemini_api_key' => $_POST['gemini_api_key'] ?? '',
       'openai_api_key' => $_POST['openai_api_key'] ?? '',
+      'openrouter_api_key' => $_POST['openrouter_api_key'] ?? '',
+      'openrouter_ai_url' => $_POST['openrouter_ai_url'] ?? '',
       'local_ai_url' => $_POST['local_ai_url'] ?? '',
       'ai_agent_temperature' => (float) ($_POST['ai_agent_temperature'] ?? 0.2),
       'ai_agent_max_tokens' => (int) ($_POST['ai_agent_max_tokens'] ?? 1500),

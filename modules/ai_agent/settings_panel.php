@@ -10,8 +10,8 @@ if (!function_exists('isAdmin') || !isAdmin()) {
 }
 
 $aiSettings = function_exists('getAppSettings') ? getAppSettings() : [];
-$aiProvider = $aiSettings['ai_agent_provider'] ?? 'gemini_pro';
-$aiModel = $aiSettings['ai_agent_model'] ?? 'gemini-2.0-flash';
+$aiProvider = $aiSettings['ai_agent_provider'] ?? 'openrouter';
+$aiModel = $aiSettings['ai_agent_model'] ?? 'openrouter/free';
 $geminiKey = $aiSettings['gemini_api_key'] ?? '';
 $openaiKey = $aiSettings['openai_api_key'] ?? '';
 $localUrl = $aiSettings['local_ai_url'] ?? 'http://localhost:11434/v1/chat/completions';
@@ -475,6 +475,7 @@ $standaloneAppUrl = $protocol . $host . $baseUrl . '/modules/ai_agent/app.php';
 </div>
 
 <!-- Section 1: Provider & Model -->
+<form method="POST">
 <input type="hidden" name="action" value="save_ai_settings">
 <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
 <div class="ai-settings-grid">
@@ -491,8 +492,9 @@ $standaloneAppUrl = $protocol . $host . $baseUrl . '/modules/ai_agent/app.php';
     </div>
     <div class="ai-field" id="ai_model_group">
       <label for="ai_agent_model">AI Model Name</label>
+      <select id="ai_agent_model_select" onchange="handleModelSelect()"></select>
       <input name="ai_agent_model" id="ai_agent_model" type="text" value="<?= e($aiModel) ?>"
-        placeholder="e.g. gemini-2.0-flash, gpt-4o-mini">
+        placeholder="e.g. gemini-2.0-flash, gpt-4o-mini" style="margin-top:8px; display:none;">
     </div>
     <div class="ai-field" id="gemini_key_group">
       <label for="gemini_api_key">Gemini API Key</label>
@@ -529,6 +531,11 @@ $standaloneAppUrl = $protocol . $host . $baseUrl . '/modules/ai_agent/app.php';
           style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#64748b;font-size:1rem"><i
             class="bi bi-eye"></i></button>
       </div>
+    </div>
+    <div class="ai-field" id="openrouter_url_group" style="display:none">
+      <label for="openrouter_ai_url">OpenRouter Endpoint URL</label>
+      <input name="openrouter_ai_url" id="openrouter_ai_url" type="url" value="<?= e($aiSettings['openrouter_ai_url'] ?? 'https://openrouter.ai/api/v1/chat/completions') ?>"
+        placeholder="https://openrouter.ai/api/v1/chat/completions">
     </div>
 
     <div id="ai_test_result" style="margin-top:10px;font-size:.84rem;display:none"></div>
@@ -594,6 +601,7 @@ $standaloneAppUrl = $protocol . $host . $baseUrl . '/modules/ai_agent/app.php';
     </div>
   </div>
 </div>
+</form>
 
 <!-- Section 2: Knowledge Base Training -->
 <div class="ai-card full" style="margin-bottom:24px">
@@ -780,16 +788,70 @@ $standaloneAppUrl = $protocol . $host . $baseUrl . '/modules/ai_agent/app.php';
 <script>
   const KB_API = '<?= $kbApiUrl ?>';
 
-  // ─── Provider Settings ───
-  function aiSettingsToggleProvider() {
+  const AI_MODELS = {
+    'gemini_pro': ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+    'openai': ['gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo'],
+    'openrouter': ['openrouter/free', 'google/gemini-2.5-flash', 'openai/gpt-4o-mini', 'anthropic/claude-3-haiku', 'meta-llama/llama-3.3-70b-instruct'],
+    'local': ['llama3', 'mistral', 'qwen2']
+  };
+
+  function handleModelSelect() {
+    const sel = document.getElementById('ai_agent_model_select');
+    const inp = document.getElementById('ai_agent_model');
+    if (sel.value === 'custom') {
+      inp.style.display = 'block';
+    } else {
+      inp.style.display = 'none';
+      inp.value = sel.value;
+    }
+  }
+
+  function aiSettingsToggleProvider(isInit = false) {
     const p = document.getElementById('ai_provider').value;
     document.getElementById('gemini_key_group').style.display = p === 'gemini_pro' ? '' : 'none';
     document.getElementById('openai_key_group').style.display = p === 'openai' ? '' : 'none';
     document.getElementById('local_url_group').style.display = p === 'local' ? '' : 'none';
     const org = document.getElementById('openrouter_key_group');
     if (org) org.style.display = p === 'openrouter' ? '' : 'none';
+    const ourl = document.getElementById('openrouter_url_group');
+    if (ourl) ourl.style.display = p === 'openrouter' ? '' : 'none';
+
+    const sel = document.getElementById('ai_agent_model_select');
+    const inp = document.getElementById('ai_agent_model');
+    const currentVal = inp.value;
+
+    if (sel) {
+      sel.innerHTML = '';
+      let found = false;
+      if (AI_MODELS[p]) {
+        AI_MODELS[p].forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m;
+          opt.textContent = m;
+          if (m === currentVal) found = true;
+          sel.appendChild(opt);
+        });
+      }
+      
+      const customOpt = document.createElement('option');
+      customOpt.value = 'custom';
+      customOpt.textContent = 'Other (Custom...)';
+      sel.appendChild(customOpt);
+
+      if (isInit && currentVal && !found) {
+        sel.value = 'custom';
+      } else if (isInit && found) {
+        sel.value = currentVal;
+      } else if (!isInit && AI_MODELS[p] && AI_MODELS[p].length > 0) {
+        sel.value = AI_MODELS[p][0];
+        inp.value = AI_MODELS[p][0];
+      } else {
+        sel.value = 'custom';
+      }
+      handleModelSelect();
+    }
   }
-  aiSettingsToggleProvider();
+  aiSettingsToggleProvider(true);
 
   function toggleKeyVisibility(id) {
     const inp = document.getElementById(id);
@@ -800,9 +862,18 @@ $standaloneAppUrl = $protocol . $host . $baseUrl . '/modules/ai_agent/app.php';
     const provider = document.getElementById('ai_provider').value;
     let apiKey = '';
     let localUrl = '';
+    let openrouterUrl = '';
     if (provider === 'gemini_pro') apiKey = document.getElementById('gemini_api_key').value;
-    else if (provider === 'openai') apiKey = document.getElementById('openai_api_key').value;
-    else if (provider === 'openrouter') apiKey = document.getElementById('openrouter_api_key').value;
+    else if (provider === 'openai') {
+        apiKey = document.getElementById('openai_api_key').value;
+        if (!apiKey) apiKey = document.getElementById('openrouter_api_key').value;
+    }
+    else if (provider === 'openrouter') { 
+        apiKey = document.getElementById('openrouter_api_key').value;
+        if (!apiKey) apiKey = document.getElementById('openai_api_key').value;
+        const oUrlInput = document.getElementById('openrouter_ai_url');
+        if (oUrlInput) openrouterUrl = oUrlInput.value;
+    }
     else { localUrl = document.getElementById('local_ai_url').value; apiKey = 'local'; }
 
     const res = document.getElementById('ai_test_result');
@@ -813,7 +884,14 @@ $standaloneAppUrl = $protocol . $host . $baseUrl . '/modules/ai_agent/app.php';
     fd.append('action', 'test_provider');
     fd.append('provider', provider);
     fd.append('api_key', apiKey);
+    
+    const modelInput = document.getElementById('ai_agent_model');
+    if (modelInput && modelInput.value) {
+      fd.append('model', modelInput.value);
+    }
+
     if (localUrl) fd.append('local_url', localUrl);
+    if (openrouterUrl) fd.append('openrouter_url', openrouterUrl);
 
     fetch(KB_API, { method: 'POST', body: fd })
       .then(r => r.json())

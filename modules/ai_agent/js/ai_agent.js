@@ -42,8 +42,11 @@
       html += '<div class="ai-tool-call-tag"><i class="bi bi-lightning-charge-fill"></i> Executed ERP Tool: ' + escapeHtml(toolUsed) + '</div>';
     }
 
-    // Basic markdown formatter for text responses
-    html += formatMarkdown(text);
+    if (text === '<div class="ai-thinking-indicator"><i class="bi bi-three-dots ai-pulse"></i> <em>AI is thinking...</em></div>') {
+      html += text;
+    } else {
+      html += formatMarkdown(text);
+    }
 
     // Suggestions chips rendering
     if (sender === 'assistant' && suggestions && suggestions.length > 0) {
@@ -62,7 +65,7 @@
     msgDiv.appendChild(avatarDiv);
     msgDiv.appendChild(contentDiv);
     chatBody.appendChild(msgDiv);
-
+    
     chatBody.scrollTop = chatBody.scrollHeight;
   }
 
@@ -169,7 +172,7 @@
     appendMessage(query, 'user');
 
     // Add Typing Indicator
-    appendMessage('<i class="bi bi-three-dots ai-pulse"></i> <em>ERP AI Brain is thinking...</em>', 'assistant');
+    appendMessage('<div class="ai-thinking-indicator"><i class="bi bi-three-dots ai-pulse"></i> <em>AI is thinking...</em></div>', 'assistant');
 
     var body = new FormData();
     body.set('action', 'query');
@@ -188,7 +191,7 @@
         var msgs = chatBody ? chatBody.querySelectorAll('.ai-msg.assistant') : [];
         if (msgs.length > 0) {
           var lastMsg = msgs[msgs.length - 1];
-          if (lastMsg.innerHTML.indexOf('ai-pulse') !== -1) {
+          if (lastMsg.innerHTML.indexOf('ai-thinking-indicator') !== -1) {
             lastMsg.remove();
           }
         }
@@ -226,7 +229,7 @@
         var msgs = chatBody ? chatBody.querySelectorAll('.ai-msg.assistant') : [];
         if (msgs.length > 0) {
           var lastMsg = msgs[msgs.length - 1];
-          if (lastMsg.innerHTML.indexOf('ai-pulse') !== -1) {
+          if (lastMsg.innerHTML.indexOf('ai-thinking-indicator') !== -1) {
             lastMsg.remove();
           }
         }

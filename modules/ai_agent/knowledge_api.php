@@ -200,8 +200,10 @@ function deleteKnowledge($db)
 
 function testProvider()
 {
-    $provider = $_POST['provider'] ?? 'gemini_pro';
+    $provider = $_POST['provider'] ?? 'openrouter';
     $apiKey = trim($_POST['api_key'] ?? '');
+    $model = trim($_POST['model'] ?? '');
+    if ($model === '') $model = 'gemini-2.0-flash';
     $localUrl = trim($_POST['local_url'] ?? '');
 
     if ($apiKey === '' && $provider !== 'local') {
@@ -213,7 +215,7 @@ function testProvider()
 
     if ($provider === 'gemini_pro') {
         // Google Gemini API
-        $url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' . urlencode($apiKey);
+        $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . urlencode($model) . ':generateContent?key=' . urlencode($apiKey);
         $payload = json_encode([
             'contents' => [['parts' => [['text' => $testPrompt]]]],
             'generationConfig' => ['maxOutputTokens' => 20],
@@ -246,8 +248,9 @@ function testProvider()
     } elseif ($provider === 'openai') {
         // OpenAI API
         $url = 'https://api.openai.com/v1/chat/completions';
+        if ($model === 'gemini-2.0-flash' || $model === '') $model = 'gpt-4o-mini';
         $payload = json_encode([
-            'model' => 'gpt-4o-mini',
+            'model' => $model,
             'messages' => [['role' => 'user', 'content' => $testPrompt]],
             'max_tokens' => 20,
         ]);
@@ -272,12 +275,52 @@ function testProvider()
             echo json_encode(['ok' => false, 'error' => 'Network error: ' . $curlErr], JSON_UNESCAPED_UNICODE);
             return;
         }
-        if ($httpCode >= 200 && $httpCode < 300) {
+        $data = json_decode($response, true);
+        if ($httpCode >= 200 && $httpCode < 300 && !isset($data['error'])) {
             echo json_encode(['ok' => true, 'message' => 'OpenAI API connected successfully! (HTTP ' . $httpCode . ')'], JSON_UNESCAPED_UNICODE);
         } else {
-            $data = json_decode($response, true);
             $errMsg = $data['error']['message'] ?? ('HTTP ' . $httpCode);
             echo json_encode(['ok' => false, 'error' => 'OpenAI API error: ' . $errMsg], JSON_UNESCAPED_UNICODE);
+        }
+    } elseif ($provider === 'openrouter') {
+        // OpenRouter API
+        $url = trim($_POST['openrouter_url'] ?? '');
+        if (empty($url)) $url = 'https://openrouter.ai/api/v1/chat/completions';
+        if ($model === 'gemini-2.0-flash' || $model === '') $model = 'openrouter/free';
+        $payload = json_encode([
+            'model' => $model,
+            'messages' => [['role' => 'user', 'content' => $testPrompt]],
+            'max_tokens' => 20,
+        ]);
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $apiKey,
+                'HTTP-Referer: http://localhost',
+                'X-Title: Shree Label ERP'
+            ],
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_SSL_VERIFYPEER => true,
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr = curl_error($ch);
+        curl_close($ch);
+
+        if ($curlErr) {
+            echo json_encode(['ok' => false, 'error' => 'Network error: ' . $curlErr], JSON_UNESCAPED_UNICODE);
+            return;
+        }
+        $data = json_decode($response, true);
+        if ($httpCode >= 200 && $httpCode < 300 && !isset($data['error'])) {
+            echo json_encode(['ok' => true, 'message' => 'OpenRouter API connected successfully! (HTTP ' . $httpCode . ')'], JSON_UNESCAPED_UNICODE);
+        } else {
+            $errMsg = $data['error']['message'] ?? ('HTTP ' . $httpCode);
+            echo json_encode(['ok' => false, 'error' => 'OpenRouter API error: ' . $errMsg], JSON_UNESCAPED_UNICODE);
         }
     } elseif ($provider === 'local') {
         // Local LLM (Ollama / LM Studio)
