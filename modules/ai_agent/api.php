@@ -1473,17 +1473,20 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
     // 1. Company / Paper Type Analytics (Krishna, Austin, Navkar, NRGI, Chromo, Thermal etc.)
     $compName = '';
-    if (preg_match('/\b(krishna|austin|navkar|nrgi|flexo)\b/i', $prompt) || strpos($p, 'কৃষ্ণা') !== false || strpos($p, 'অস্টিন') !== false || strpos($p, 'নভকার') !== false || strpos($p, 'এনআরজিআই') !== false) {
-        if (strpos($p, 'krishna') !== false || strpos($p, 'কৃষ্ণা') !== false)
-            $compName = 'KRISHNA';
-        elseif (strpos($p, 'austin') !== false || strpos($p, 'অস্টিন') !== false)
-            $compName = 'AUSTIN';
-        elseif (strpos($p, 'navkar') !== false || strpos($p, 'নভকার') !== false)
-            $compName = 'NAVKAR';
-        elseif (strpos($p, 'nrgi') !== false || strpos($p, 'এনআরজিআই') !== false)
-            $compName = 'NRGI';
-        elseif (strpos($p, 'flexo') !== false)
-            $compName = 'FLEXO';
+    $companies = ['nrgi', 'krishna', 'austin', 'navkar', 'abhinav', 'raj paper', 'mangalam', 'paper n more', 'narsing das', 'avery', 'nitin', 'flexo'];
+    foreach ($companies as $comp) {
+        if (strpos($p, $comp) !== false) {
+            $compName = strtoupper($comp);
+            break;
+        }
+    }
+    // Bengali fallback for few common ones
+    if (empty($compName)) {
+        if (strpos($p, 'কৃষ্ণা') !== false) $compName = 'KRISHNA';
+        elseif (strpos($p, 'অস্টিন') !== false) $compName = 'AUSTIN';
+        elseif (strpos($p, 'নভকার') !== false) $compName = 'NAVKAR';
+        elseif (strpos($p, 'এনআরজিআই') !== false) $compName = 'NRGI';
+        elseif (strpos($p, 'নিতিন') !== false) $compName = 'NITIN';
     }
 
     $paperTypeFilter = '';
@@ -1491,6 +1494,12 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         $paperTypeFilter = 'chromo';
     } elseif (strpos($p, 'thermal') !== false || strpos($p, 'থার্মাল') !== false) {
         $paperTypeFilter = 'thermal';
+    } elseif (strpos($p, 'pp white') !== false || strpos($p, 'pp-white') !== false || strpos($p, 'পিপি হোয়াইট') !== false) {
+        $paperTypeFilter = 'pp-white';
+    } elseif (strpos($p, 'pp clear') !== false || strpos($p, 'pp-clear') !== false || strpos($p, 'পিপি ক্লিয়ার') !== false) {
+        $paperTypeFilter = 'pp-clear';
+    } elseif (strpos($p, 'maplitho') !== false || strpos($p, 'ম্যাপলিথো') !== false) {
+        $paperTypeFilter = 'maplitho';
     }
 
     $hasToolIntent = (strpos($p, 'plate') !== false || strpos($p, 'plates') !== false || strpos($p, 'die') !== false || strpos($p, 'anilox') !== false || strpos($p, 'প্লেট') !== false || strpos($p, 'ডাই') !== false || strpos($p, 'এনিলক্স') !== false || strpos($p, 'प्लेट') !== false);
@@ -1499,7 +1508,13 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         $toolName = "Paper Stock Analytics Tool (" . trim($compName . ' ' . strtoupper($paperTypeFilter)) . ")";
 
         $likeComp = $compName ? ('%' . $compName . '%') : '%';
-        $likeType = $paperTypeFilter ? ('%' . $paperTypeFilter . '%') : '%';
+        
+        $typeOp = 'LIKE';
+        if ($paperTypeFilter === 'pp-white' || $paperTypeFilter === 'pp-clear') {
+            $likeType = $paperTypeFilter; // exact match
+        } else {
+            $likeType = $paperTypeFilter ? ('%' . $paperTypeFilter . '%') : '%';
+        }
 
         $stmtSum = $db->prepare("
             SELECT 
@@ -3319,9 +3334,9 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
         if ($matchedType) {
             if ($matchedType === 'pp white' || $matchedType === 'pp-white') {
-                $where[] = "(paper_type LIKE '%pp-white%' OR paper_type LIKE '%pp white%' OR paper_type LIKE '%pp_white%')";
+                $where[] = "paper_type = 'PP-WHITE'";
             } elseif ($matchedType === 'pp clear' || $matchedType === 'pp-clear') {
-                $where[] = "(paper_type LIKE '%pp-clear%' OR paper_type LIKE '%pp clear%' OR paper_type LIKE '%pp_clear%')";
+                $where[] = "paper_type = 'PP-CLEAR'";
             } else {
                 $where[] = "paper_type LIKE ?";
                 $params[] = '%' . $matchedType . '%';

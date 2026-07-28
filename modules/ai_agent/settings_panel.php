@@ -476,131 +476,132 @@ $standaloneAppUrl = $protocol . $host . $baseUrl . '/modules/ai_agent/app.php';
 
 <!-- Section 1: Provider & Model -->
 <form method="POST">
-<input type="hidden" name="action" value="save_ai_settings">
-<input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
-<div class="ai-settings-grid">
-  <div class="ai-card">
-    <h4><i class="bi bi-cpu"></i> AI Provider & Model</h4>
-    <div class="ai-field">
-      <label for="ai_provider">Provider</label>
-      <select name="ai_agent_provider" id="ai_provider" onchange="aiSettingsToggleProvider()">
-        <option value="gemini_pro" <?= $aiProvider === 'gemini_pro' ? 'selected' : '' ?>>Google Gemini Pro</option>
-        <option value="openai" <?= $aiProvider === 'openai' ? 'selected' : '' ?>>OpenAI GPT</option>
-        <option value="local" <?= $aiProvider === 'local' ? 'selected' : '' ?>>Local LLM (Ollama / LM Studio)</option>
-        <option value="openrouter" <?= $aiProvider === 'openrouter' ? 'selected' : '' ?>>OpenRouter</option>
-      </select>
-    </div>
-    <div class="ai-field" id="ai_model_group">
-      <label for="ai_agent_model">AI Model Name</label>
-      <select id="ai_agent_model_select" onchange="handleModelSelect()"></select>
-      <input name="ai_agent_model" id="ai_agent_model" type="text" value="<?= e($aiModel) ?>"
-        placeholder="e.g. gemini-2.0-flash, gpt-4o-mini" style="margin-top:8px; display:none;">
-    </div>
-    <div class="ai-field" id="gemini_key_group">
-      <label for="gemini_api_key">Gemini API Key</label>
-      <div style="position:relative">
-        <input name="gemini_api_key" id="gemini_api_key" type="password" value="<?= e($geminiKey) ?>"
-          placeholder="Enter Gemini API key" autocomplete="off">
-        <button type="button" onclick="toggleKeyVisibility('gemini_api_key')"
-          style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#64748b;font-size:1rem"><i
-            class="bi bi-eye"></i></button>
+  <input type="hidden" name="action" value="save_ai_settings">
+  <input type="hidden" name="csrf_token" value="<?= e(generateCSRF()) ?>">
+  <div class="ai-settings-grid">
+    <div class="ai-card">
+      <h4><i class="bi bi-cpu"></i> AI Provider & Model</h4>
+      <div class="ai-field">
+        <label for="ai_provider">Provider</label>
+        <select name="ai_agent_provider" id="ai_provider" onchange="aiSettingsToggleProvider()">
+          <option value="gemini_pro" <?= $aiProvider === 'gemini_pro' ? 'selected' : '' ?>>Google Gemini Pro</option>
+          <option value="openai" <?= $aiProvider === 'openai' ? 'selected' : '' ?>>OpenAI GPT</option>
+          <option value="local" <?= $aiProvider === 'local' ? 'selected' : '' ?>>Local LLM (Ollama / LM Studio)</option>
+          <option value="openrouter" <?= $aiProvider === 'openrouter' ? 'selected' : '' ?>>OpenRouter</option>
+        </select>
       </div>
-    </div>
-    <div class="ai-field" id="openai_key_group" style="display:none">
-      <label for="openai_api_key">OpenAI API Key</label>
-      <div style="position:relative">
-        <input name="openai_api_key" id="openai_api_key" type="password" value="<?= e($openaiKey) ?>"
-          placeholder="Enter OpenAI API key (sk-...)" autocomplete="off">
-        <button type="button" onclick="toggleKeyVisibility('openai_api_key')"
-          style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#64748b;font-size:1rem"><i
-            class="bi bi-eye"></i></button>
+      <div class="ai-field" id="ai_model_group">
+        <label for="ai_agent_model">AI Model Name</label>
+        <select id="ai_agent_model_select" onchange="handleModelSelect()"></select>
+        <input name="ai_agent_model" id="ai_agent_model" type="text" value="<?= e($aiModel) ?>"
+          placeholder="e.g. gemini-2.0-flash, gpt-4o-mini" style="margin-top:8px; display:none;">
       </div>
-    </div>
-    <div class="ai-field" id="local_url_group" style="display:none">
-      <label for="local_ai_url">Local LLM Endpoint URL</label>
-      <input name="local_ai_url" id="local_ai_url" type="url" value="<?= e($localUrl) ?>"
-        placeholder="http://localhost:11434/v1/chat/completions">
-    </div>
-    <div class="ai-field" id="openrouter_key_group" style="display:none">
-      <label for="openrouter_api_key">OpenRouter API Key</label>
-      <div style="position:relative">
-        <input name="openrouter_api_key" id="openrouter_api_key" type="password"
-          value="<?= e($aiSettings['openrouter_api_key'] ?? '') ?>" placeholder="Enter OpenRouter API key"
-          autocomplete="off">
-        <button type="button" onclick="toggleKeyVisibility('openrouter_api_key')"
-          style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#64748b;font-size:1rem"><i
-            class="bi bi-eye"></i></button>
+      <div class="ai-field" id="gemini_key_group">
+        <label for="gemini_api_key">Gemini API Key</label>
+        <div style="position:relative">
+          <input name="gemini_api_key" id="gemini_api_key" type="password" value="<?= e($geminiKey) ?>"
+            placeholder="Enter Gemini API key" autocomplete="off">
+          <button type="button" onclick="toggleKeyVisibility('gemini_api_key')"
+            style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#64748b;font-size:1rem"><i
+              class="bi bi-eye"></i></button>
+        </div>
       </div>
-    </div>
-    <div class="ai-field" id="openrouter_url_group" style="display:none">
-      <label for="openrouter_ai_url">OpenRouter Endpoint URL</label>
-      <input name="openrouter_ai_url" id="openrouter_ai_url" type="url" value="<?= e($aiSettings['openrouter_ai_url'] ?? 'https://openrouter.ai/api/v1/chat/completions') ?>"
-        placeholder="https://openrouter.ai/api/v1/chat/completions">
+      <div class="ai-field" id="openai_key_group" style="display:none">
+        <label for="openai_api_key">OpenAI API Key</label>
+        <div style="position:relative">
+          <input name="openai_api_key" id="openai_api_key" type="password" value="<?= e($openaiKey) ?>"
+            placeholder="Enter OpenAI API key (sk-...)" autocomplete="off">
+          <button type="button" onclick="toggleKeyVisibility('openai_api_key')"
+            style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#64748b;font-size:1rem"><i
+              class="bi bi-eye"></i></button>
+        </div>
+      </div>
+      <div class="ai-field" id="local_url_group" style="display:none">
+        <label for="local_ai_url">Local LLM Endpoint URL</label>
+        <input name="local_ai_url" id="local_ai_url" type="url" value="<?= e($localUrl) ?>"
+          placeholder="http://localhost:11434/v1/chat/completions">
+      </div>
+      <div class="ai-field" id="openrouter_key_group" style="display:none">
+        <label for="openrouter_api_key">OpenRouter API Key</label>
+        <div style="position:relative">
+          <input name="openrouter_api_key" id="openrouter_api_key" type="password"
+            value="<?= e($aiSettings['openrouter_api_key'] ?? '') ?>" placeholder="Enter OpenRouter API key"
+            autocomplete="off">
+          <button type="button" onclick="toggleKeyVisibility('openrouter_api_key')"
+            style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#64748b;font-size:1rem"><i
+              class="bi bi-eye"></i></button>
+        </div>
+      </div>
+      <div class="ai-field" id="openrouter_url_group" style="display:none">
+        <label for="openrouter_ai_url">OpenRouter Endpoint URL</label>
+        <input name="openrouter_ai_url" id="openrouter_ai_url" type="url"
+          value="<?= e($aiSettings['openrouter_ai_url'] ?? 'https://openrouter.ai/api/v1/chat/completions') ?>"
+          placeholder="https://openrouter.ai/api/v1/chat/completions">
+      </div>
+
+      <div id="ai_test_result" style="margin-top:10px;font-size:.84rem;display:none"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button type="button" class="ai-btn ai-btn-outline ai-btn-sm" onclick="aiTestProvider()"><i
+            class="bi bi-lightning"></i> Test Connection</button>
+        <button type="submit" class="ai-btn ai-btn-success ai-btn-sm"><i class="bi bi-save"></i> Save Settings</button>
+      </div>
+      <div id="ai_set_save_result" style="margin-top:px;font-size:.rem"></div>
     </div>
 
-    <div id="ai_test_result" style="margin-top:10px;font-size:.84rem;display:none"></div>
-    <div style="display:flex;gap:8px;margin-top:14px">
-      <button type="button" class="ai-btn ai-btn-outline ai-btn-sm" onclick="aiTestProvider()"><i
-          class="bi bi-lightning"></i> Test Connection</button>
-      <button type="submit" class="ai-btn ai-btn-success ai-btn-sm"><i class="bi bi-save"></i> Save Settings</button>
-    </div>
-    <div id="ai_set_save_result" style="margin-top:px;font-size:.rem"></div>
-  </div>
-
-  <div class="ai-card">
-    <h4><i class="bi bi-sliders"></i> Advanced Options</h4>
-    <div class="ai-field">
-      <label for="ai_temperature">Temperature: <span
-          id="ai_temp_val"><?= number_format((float) $aiTemp, 1) ?></span></label>
-      <input name="ai_agent_temperature" id="ai_temperature" type="range" min="0" max="1" step="0.1"
-        value="<?= (float) $aiTemp ?>" oninput="document.getElementById('ai_temp_val').textContent=this.value"
-        style="accent-color:#4338ca">
-      <div class="hint">Lower = more precise. Higher = more creative.</div>
-    </div>
-    <div class="ai-field">
-      <label for="ai_max_tokens">Max Tokens: <span id="ai_tok_val"><?= (int) $aiMaxTokens ?></span></label>
-      <input name="ai_agent_max_tokens" id="ai_max_tokens" type="range" min="100" max="4000" step="100"
-        value="<?= (int) $aiMaxTokens ?>" oninput="document.getElementById('ai_tok_val').textContent=this.value"
-        style="accent-color:#4338ca">
-      <div class="hint">Maximum response length (100–4000 tokens).</div>
-    </div>
-    <div class="ai-field" style="margin-top:20px">
-      <div class="ai-toggle">
-        <label class="ai-toggle-switch">
-          <input name="ai_agent_enabled" type="checkbox" id="ai_enabled" value="1" <?= $aiEnabled ? 'checked' : '' ?>>
-          <span class="ai-toggle-track"></span>
-        </label>
-        <label for="ai_enabled" style="font-weight:600;color:#334155;cursor:pointer">Enable AI Agent Chatbot</label>
+    <div class="ai-card">
+      <h4><i class="bi bi-sliders"></i> Advanced Options</h4>
+      <div class="ai-field">
+        <label for="ai_temperature">Temperature: <span
+            id="ai_temp_val"><?= number_format((float) $aiTemp, 1) ?></span></label>
+        <input name="ai_agent_temperature" id="ai_temperature" type="range" min="0" max="1" step="0.1"
+          value="<?= (float) $aiTemp ?>" oninput="document.getElementById('ai_temp_val').textContent=this.value"
+          style="accent-color:#4338ca">
+        <div class="hint">Lower = more precise. Higher = more creative.</div>
       </div>
-      <div class="hint" style="margin-top:6px">When disabled, the floating chat widget will not appear on any page.
+      <div class="ai-field">
+        <label for="ai_max_tokens">Max Tokens: <span id="ai_tok_val"><?= (int) $aiMaxTokens ?></span></label>
+        <input name="ai_agent_max_tokens" id="ai_max_tokens" type="range" min="100" max="4000" step="100"
+          value="<?= (int) $aiMaxTokens ?>" oninput="document.getElementById('ai_tok_val').textContent=this.value"
+          style="accent-color:#4338ca">
+        <div class="hint">Maximum response length (100–4000 tokens).</div>
       </div>
-    </div>
+      <div class="ai-field" style="margin-top:20px">
+        <div class="ai-toggle">
+          <label class="ai-toggle-switch">
+            <input name="ai_agent_enabled" type="checkbox" id="ai_enabled" value="1" <?= $aiEnabled ? 'checked' : '' ?>>
+            <span class="ai-toggle-track"></span>
+          </label>
+          <label for="ai_enabled" style="font-weight:600;color:#334155;cursor:pointer">Enable AI Agent Chatbot</label>
+        </div>
+        <div class="hint" style="margin-top:6px">When disabled, the floating chat widget will not appear on any page.
+        </div>
+      </div>
 
-    <div style="margin-top:22px;padding:14px;background:#f0fdf4;border-radius:10px;border:1px solid #bbf7d0">
-      <div style="font-weight:700;color:#166534;font-size:.88rem;margin-bottom:6px"><i class="bi bi-info-circle"></i>
-        Module Info</div>
-      <div style="font-size:.82rem;color:#475569">
-        <div><strong>Module:</strong> AI Agent Plugin v1.0.0</div>
-        <div><strong>Provider:</strong> <span
-            id="ai_info_provider"><?= e(ucwords(str_replace('_', ' ', $aiProvider))) ?></span></div>
-        <div><strong>Files:</strong> modules/ai_agent/ (6 files)</div>
-        <div><strong>Tables:</strong> ai_agent_knowledge</div>
-        <div><strong>Core ERP Impact:</strong> Zero (100% isolated)</div>
-        <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #e2e8f0;">
-          <div><strong>Standalone Mobile AI App Link:</strong></div>
-          <div
-            style="background:#f8fafc;padding:10px;border-radius:6px;font-family:monospace;font-size:.8rem;word-break:break-all;">
-            <a href="<?= e($standaloneAppUrl) ?>" target="_blank"
-              style="color:#2563eb;text-decoration:none;"><?= e($standaloneAppUrl) ?></a>
-          </div>
-          <div style="font-size:.75rem;color:#64748b;margin-top:4px;">
-            Open this link on mobile and use "Add to Home Screen" to install the PWA app
+      <div style="margin-top:22px;padding:14px;background:#f0fdf4;border-radius:10px;border:1px solid #bbf7d0">
+        <div style="font-weight:700;color:#166534;font-size:.88rem;margin-bottom:6px"><i class="bi bi-info-circle"></i>
+          Module Info</div>
+        <div style="font-size:.82rem;color:#475569">
+          <div><strong>Module:</strong> AI Agent Plugin v1.0.0</div>
+          <div><strong>Provider:</strong> <span
+              id="ai_info_provider"><?= e(ucwords(str_replace('_', ' ', $aiProvider))) ?></span></div>
+          <div><strong>Files:</strong> modules/ai_agent/ (6 files)</div>
+          <div><strong>Tables:</strong> ai_agent_knowledge</div>
+          <div><strong>Core ERP Impact:</strong> Zero (100% isolated)</div>
+          <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #e2e8f0;">
+            <div><strong>Standalone Mobile AI App Link:</strong></div>
+            <div
+              style="background:#f8fafc;padding:10px;border-radius:6px;font-family:monospace;font-size:.8rem;word-break:break-all;">
+              <a href="<?= e($standaloneAppUrl) ?>" target="_blank"
+                style="color:#2563eb;text-decoration:none;"><?= e($standaloneAppUrl) ?></a>
+            </div>
+            <div style="font-size:.75rem;color:#64748b;margin-top:4px;">
+              Open this link on mobile and use "Add to Home Screen" to install the PWA app
+            </div>
           </div>
         </div>
       </div>
     </div>
   </div>
-</div>
 </form>
 
 <!-- Section 2: Knowledge Base Training -->
@@ -832,7 +833,7 @@ $standaloneAppUrl = $protocol . $host . $baseUrl . '/modules/ai_agent/app.php';
           sel.appendChild(opt);
         });
       }
-      
+
       const customOpt = document.createElement('option');
       customOpt.value = 'custom';
       customOpt.textContent = 'Other (Custom...)';
@@ -865,14 +866,14 @@ $standaloneAppUrl = $protocol . $host . $baseUrl . '/modules/ai_agent/app.php';
     let openrouterUrl = '';
     if (provider === 'gemini_pro') apiKey = document.getElementById('gemini_api_key').value;
     else if (provider === 'openai') {
-        apiKey = document.getElementById('openai_api_key').value;
-        if (!apiKey) apiKey = document.getElementById('openrouter_api_key').value;
+      apiKey = document.getElementById('openai_api_key').value;
+      if (!apiKey) apiKey = document.getElementById('openrouter_api_key').value;
     }
-    else if (provider === 'openrouter') { 
-        apiKey = document.getElementById('openrouter_api_key').value;
-        if (!apiKey) apiKey = document.getElementById('openai_api_key').value;
-        const oUrlInput = document.getElementById('openrouter_ai_url');
-        if (oUrlInput) openrouterUrl = oUrlInput.value;
+    else if (provider === 'openrouter') {
+      apiKey = document.getElementById('openrouter_api_key').value;
+      if (!apiKey) apiKey = document.getElementById('openai_api_key').value;
+      const oUrlInput = document.getElementById('openrouter_ai_url');
+      if (oUrlInput) openrouterUrl = oUrlInput.value;
     }
     else { localUrl = document.getElementById('local_ai_url').value; apiKey = 'local'; }
 
@@ -884,7 +885,7 @@ $standaloneAppUrl = $protocol . $host . $baseUrl . '/modules/ai_agent/app.php';
     fd.append('action', 'test_provider');
     fd.append('provider', provider);
     fd.append('api_key', apiKey);
-    
+
     const modelInput = document.getElementById('ai_agent_model');
     if (modelInput && modelInput.value) {
       fd.append('model', modelInput.value);
