@@ -246,8 +246,9 @@ function testProvider()
             echo json_encode(['ok' => false, 'error' => 'Gemini API error: ' . $errMsg], JSON_UNESCAPED_UNICODE);
         }
     } elseif ($provider === 'openai') {
-        // OpenAI API
-        $url = 'https://api.openai.com/v1/chat/completions';
+        // OpenAI API — support custom endpoint URL
+        $customUrl = trim($_POST['openai_url'] ?? '');
+        $url = $customUrl !== '' ? $customUrl : 'https://api.openai.com/v1/chat/completions';
         if ($model === 'gemini-2.0-flash' || $model === '') $model = 'gpt-4o-mini';
         $payload = json_encode([
             'model' => $model,

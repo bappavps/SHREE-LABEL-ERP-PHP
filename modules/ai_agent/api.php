@@ -473,7 +473,7 @@ function call_llm_api(string $prompt, array $config): ?string
 
     if ($provider === 'openai') {
         $apiKey = $config['openai_api_key'] ?? '';
-        $url = 'https://api.openai.com/v1/chat/completions';
+        $url = !empty($config['openai_api_url']) ? $config['openai_api_url'] : 'https://api.openai.com/v1/chat/completions';
         if (empty($model) || strpos($model, 'gemini') !== false) $model = 'gpt-4o-mini';
     } elseif ($provider === 'openrouter') {
         $apiKey = !empty($config['openrouter_api_key']) ? $config['openrouter_api_key'] : ($config['openai_api_key'] ?? '');
@@ -931,6 +931,9 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array
     while ($row = $res->fetch_assoc()) {
         $rawKeywords = array_map('trim', explode(',', mb_strtolower($row['keywords'], 'UTF-8')));
         $matchScore = 0;
+        $matchedPairs = [];   // Track unique kwToken↔pToken pairs to prevent double-counting
+        $hasExactMatch = false;
+        $fuzzyPromptTokensMatched = []; // Track which distinct prompt tokens contributed fuzzy matches
 
         foreach ($rawKeywords as $kw) {
             if ($kw === '')
@@ -940,6 +943,7 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array
             $isPhrase = (mb_strpos(trim($kw), ' ') !== false);
             if ($isPhrase && mb_strpos($promptLower, $kw) !== false) {
                 $matchScore += 3.0; // Strong match for exact phrases
+                $hasExactMatch = true;
             }
 
             // Token & Fuzzy Levenshtein match (e.g. "delevery" -> "delivery")
@@ -950,8 +954,14 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array
 
             foreach ($kwTokens as $kwToken) {
                 foreach ($promptTokens as $pToken) {
+                    $pairKey = $pToken . '|' . $kwToken;
+                    if (isset($matchedPairs[$pairKey]))
+                        continue; // Skip already-counted pairs
+
                     if ($pToken === $kwToken) {
                         $matchScore += 2.0;
+                        $hasExactMatch = true;
+                        $matchedPairs[$pairKey] = true;
                     } else {
                         $pLen = mb_strlen($pToken);
                         $kLen = mb_strlen($kwToken);
@@ -960,11 +970,19 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array
                             // Strictly require lev <= 1 for short words (4-5 chars) to avoid false matches like "cross" vs "cost"
                             if (($pLen <= 5 && $lev <= 1) || ($pLen >= 6 && $lev <= 2)) {
                                 $matchScore += 1.5;
+                                $matchedPairs[$pairKey] = true;
+                                $fuzzyPromptTokensMatched[$pToken] = true;
                             }
                         }
                     }
                 }
             }
+        }
+
+        // If ONLY fuzzy matches contributed (no exact or phrase matches), require at least
+        // 2 distinct prompt tokens to have matched — a single fuzzy token is too weak.
+        if (!$hasExactMatch && count($fuzzyPromptTokensMatched) < 2) {
+            $matchScore = min($matchScore, 1.9); // Clamp below threshold
         }
 
         if ($matchScore > $bestScore) {
@@ -1069,6 +1087,10 @@ if (!$skipKB) {
             break;
         }
     }
+}
+// Skip KB when prompt has plate/roll/job keyword + a specific number (user wants to look up a record, not read FAQ)
+if (!$skipKB && preg_match('/\b\d{2,}\b/', $prompt) && preg_match('/(plate|প্লেট|प्लेट|roll|রোল|रोल|job|জব|जॉब)/iu', $p)) {
+    $skipKB = true;
 }
 
 $knowledgeMatch = $skipKB ? null : check_knowledge_base($db, $prompt);
@@ -1443,8 +1465,8 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 $pSearchTerm = implode('%', $pTerms);
                 if (!empty($searchNums)) {
                     foreach ($searchNums as $num) {
-                        $pStmt = $db->prepare("SELECT * FROM master_plate_data WHERE sl_no = ? OR id = ? ORDER BY id DESC LIMIT 5");
-                        $pStmt->bind_param('ss', $num, $num);
+                        $pStmt = $db->prepare("SELECT * FROM master_plate_data WHERE sl_no = ? OR id = ? OR plate = ? ORDER BY id DESC LIMIT 5");
+                        $pStmt->bind_param('sss', $num, $num, $num);
                         $pStmt->execute();
                         $pData = $pStmt->get_result()->fetch_all(MYSQLI_ASSOC);
                         if (!empty($pData)) {
@@ -1455,8 +1477,8 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 }
                 if (empty($data) && !empty($pTerms)) {
                     $pLike = '%' . $pSearchTerm . '%';
-                    $pStmt2 = $db->prepare("SELECT * FROM master_plate_data WHERE name LIKE ? OR paper_type LIKE ? OR make_by LIKE ? OR die LIKE ? OR sl_no = ? OR id = ? ORDER BY id DESC LIMIT 10");
-                    $pStmt2->bind_param('ssssss', $pLike, $pLike, $pLike, $pLike, $pSearchTerm, $pSearchTerm);
+                    $pStmt2 = $db->prepare("SELECT * FROM master_plate_data WHERE name LIKE ? OR paper_type LIKE ? OR make_by LIKE ? OR die LIKE ? OR plate LIKE ? OR sl_no = ? OR id = ? ORDER BY id DESC LIMIT 10");
+                    $pStmt2->bind_param('sssssss', $pLike, $pLike, $pLike, $pLike, $pLike, $pSearchTerm, $pSearchTerm);
                     $pStmt2->execute();
                     $data = $pStmt2->get_result()->fetch_all(MYSQLI_ASSOC);
                 }
@@ -2413,7 +2435,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         $res = $db->query("SELECT company, COUNT(*) as roll_count, SUM(length_mtr) as total_meters FROM paper_stock WHERE status IN ('Main','Stock','Job Assign') AND company != '' GROUP BY company ORDER BY roll_count DESC");
         $data = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
         $totalCount = count($data);
-    } elseif (strpos($p, 'plate') !== false || strpos($p, 'repeat') !== false || strpos($p, 'gap') !== false || strpos($p, 'প্লেট') !== false || strpos($p, 'प्लेट') !== false) {
+    } elseif (strpos($p, 'plate') !== false || strpos($p, 'repeat') !== false || strpos($p, 'gap') !== false || strpos($p, 'প্লেট') !== false || strpos($p, 'प्लेट') !== false || ((strpos($p, 'print') !== false || strpos($p, 'calculat') !== false || strpos($p, 'koto') !== false || strpos($p, 'কত') !== false) && (strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'qty') !== false || strpos($p, 'quantity') !== false || strpos($p, 'qnty') !== false || strpos($p, 'pcs') !== false || preg_match('/\b(run|paper)\b/', $p)))) {
 
         $toolName = 'Printing Plates Master Tool';
         $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_plate_data");
@@ -2530,6 +2552,8 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
         // Extract text search words (filtering out attribute query words & calculation filler terms)
         $stopwords = [
+            'to',
+            'qnty',
             'can',
             'you',
             'tell',
@@ -2657,8 +2681,8 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         // 1. Try search by explicit SL No / ID number first if numbers are present (e.g., Plate 1032)
         if (!empty($searchNums)) {
             foreach ($searchNums as $num) {
-                $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE sl_no = ? OR id = ? ORDER BY id DESC LIMIT 5");
-                $stmt->bind_param('ss', $num, $num);
+                $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE sl_no = ? OR id = ? OR plate = ? ORDER BY id DESC LIMIT 5");
+                $stmt->bind_param('sss', $num, $num, $num);
                 $stmt->execute();
                 $resData = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                 if (!empty($resData)) {
@@ -2671,8 +2695,8 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         if (empty($data) && !empty($terms)) {
             // 2. Search across name, paper_type, make_by, and die
             $like = '%' . $searchTerm . '%';
-            $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE name LIKE ? OR paper_type LIKE ? OR make_by LIKE ? OR die LIKE ? OR sl_no = ? OR id = ? ORDER BY id DESC LIMIT 10");
-            $stmt->bind_param('ssssss', $like, $like, $like, $like, $searchTerm, $searchTerm);
+            $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE name LIKE ? OR paper_type LIKE ? OR make_by LIKE ? OR die LIKE ? OR plate LIKE ? OR sl_no = ? OR id = ? ORDER BY id DESC LIMIT 10");
+            $stmt->bind_param('sssssss', $like, $like, $like, $like, $like, $searchTerm, $searchTerm);
             $stmt->execute();
             $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
@@ -2849,8 +2873,8 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
         if (empty($data) && !empty($searchNums)) {
             $num = $searchNums[0];
-            $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE sl_no = ? OR id = ? ORDER BY id DESC LIMIT 5");
-            $stmt->bind_param('ss', $num, $num);
+            $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE sl_no = ? OR id = ? OR plate = ? ORDER BY id DESC LIMIT 5");
+            $stmt->bind_param('sss', $num, $num, $num);
             $stmt->execute();
             $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         }

@@ -876,6 +876,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       'ai_agent_model' => $_POST['ai_agent_model'] ?? 'openrouter/free',
       'gemini_api_key' => $_POST['gemini_api_key'] ?? '',
       'openai_api_key' => $_POST['openai_api_key'] ?? '',
+      'openai_api_url' => $_POST['openai_api_url'] ?? '',
       'openrouter_api_key' => $_POST['openrouter_api_key'] ?? '',
       'openrouter_ai_url' => $_POST['openrouter_ai_url'] ?? '',
       'local_ai_url' => $_POST['local_ai_url'] ?? '',

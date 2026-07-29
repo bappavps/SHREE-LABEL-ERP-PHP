@@ -14,6 +14,7 @@ $aiProvider = $aiSettings['ai_agent_provider'] ?? 'openrouter';
 $aiModel = $aiSettings['ai_agent_model'] ?? 'openrouter/free';
 $geminiKey = $aiSettings['gemini_api_key'] ?? '';
 $openaiKey = $aiSettings['openai_api_key'] ?? '';
+$openaiUrl = $aiSettings['openai_api_url'] ?? '';
 $localUrl = $aiSettings['local_ai_url'] ?? 'http://localhost:11434/v1/chat/completions';
 $aiTemp = $aiSettings['ai_agent_temperature'] ?? 0.2;
 $aiMaxTokens = $aiSettings['ai_agent_max_tokens'] ?? 1500;
@@ -26,7 +27,7 @@ $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
 $standaloneAppUrl = $protocol . $host . $baseUrl . '/modules/ai_agent/app.php';
 
 if (empty($_SESSION['ai_agent_csrf_token'])) {
-    $_SESSION['ai_agent_csrf_token'] = bin2hex(random_bytes(32));
+  $_SESSION['ai_agent_csrf_token'] = bin2hex(random_bytes(32));
 }
 $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
 ?>
@@ -521,6 +522,16 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
               class="bi bi-eye"></i></button>
         </div>
       </div>
+      <div class="ai-field" id="openai_url_group" style="display:none">
+        <label for="openai_api_url">OpenAI API URL</label>
+        <div style="position:relative">
+          <input name="openai_api_url" id="openai_api_url" type="url" value="<?= e($openaiUrl) ?>"
+            placeholder="https://api.openai.com/v1/chat/completions">
+          <button type="button" onclick="toggleKeyVisibility('openai_api_url')"
+            style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#64748b;font-size:1rem"><i
+              class="bi bi-eye"></i></button>
+        </div>
+      </div>
       <div class="ai-field" id="local_url_group" style="display:none">
         <label for="local_ai_url">Local LLM Endpoint URL</label>
         <input name="local_ai_url" id="local_ai_url" type="url" value="<?= e($localUrl) ?>"
@@ -817,6 +828,7 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
     const p = document.getElementById('ai_provider').value;
     document.getElementById('gemini_key_group').style.display = p === 'gemini_pro' ? '' : 'none';
     document.getElementById('openai_key_group').style.display = p === 'openai' ? '' : 'none';
+    document.getElementById('openai_url_group').style.display = p === 'openai' ? '' : 'none';
     document.getElementById('local_url_group').style.display = p === 'local' ? '' : 'none';
     const org = document.getElementById('openrouter_key_group');
     if (org) org.style.display = p === 'openrouter' ? '' : 'none';
@@ -849,13 +861,11 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
         sel.value = 'custom';
       } else if (isInit && found) {
         sel.value = currentVal;
-      } else if (!isInit && AI_MODELS[p] && AI_MODELS[p].length > 0) {
-        sel.value = AI_MODELS[p][0];
-        inp.value = AI_MODELS[p][0];
-      } else {
-        sel.value = 'custom';
       }
-      handleModelSelect();
+
+      if (sel) {
+        handleModelSelect();
+      }
     }
   }
   aiSettingsToggleProvider(true);
@@ -870,18 +880,20 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
     let apiKey = '';
     let localUrl = '';
     let openrouterUrl = '';
-    if (provider === 'gemini_pro') apiKey = document.getElementById('gemini_api_key').value;
-    else if (provider === 'openai') {
+    let openaiUrl = '';
+    if (provider === 'gemini_pro') {
+      apiKey = document.getElementById('gemini_api_key').value;
+    } else if (provider === 'openai') {
       apiKey = document.getElementById('openai_api_key').value;
-      if (!apiKey) apiKey = document.getElementById('openrouter_api_key').value;
-    }
-    else if (provider === 'openrouter') {
+      const urlInput = document.getElementById('openai_api_url');
+      if (urlInput) openaiUrl = urlInput.value;
+    } else if (provider === 'openrouter') {
       apiKey = document.getElementById('openrouter_api_key').value;
-      if (!apiKey) apiKey = document.getElementById('openai_api_key').value;
       const oUrlInput = document.getElementById('openrouter_ai_url');
       if (oUrlInput) openrouterUrl = oUrlInput.value;
+    } else {
+      localUrl = document.getElementById('local_ai_url').value; apiKey = 'local';
     }
-    else { localUrl = document.getElementById('local_ai_url').value; apiKey = 'local'; }
 
     const res = document.getElementById('ai_test_result');
     res.style.display = 'block';
@@ -899,6 +911,7 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
 
     if (localUrl) fd.append('local_url', localUrl);
     if (openrouterUrl) fd.append('openrouter_url', openrouterUrl);
+    if (openaiUrl) fd.append('openai_url', openaiUrl);
 
     fetch(KB_API, { method: 'POST', body: fd })
       .then(r => r.json())
