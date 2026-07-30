@@ -16,6 +16,8 @@ $geminiKey = $aiSettings['gemini_api_key'] ?? '';
 $openaiKey = $aiSettings['openai_api_key'] ?? '';
 $openaiUrl = $aiSettings['openai_api_url'] ?? '';
 $localUrl = $aiSettings['local_ai_url'] ?? 'http://localhost:11434/v1/chat/completions';
+$rawEndpoints = $aiSettings['ai_custom_endpoints'] ?? '[]';
+$customEndpoints = is_array($rawEndpoints) ? $rawEndpoints : (json_decode($rawEndpoints, true) ?: []);
 $aiTemp = $aiSettings['ai_agent_temperature'] ?? 0.2;
 $aiMaxTokens = $aiSettings['ai_agent_max_tokens'] ?? 1500;
 $aiEnabled = (int) ($aiSettings['ai_agent_enabled'] ?? 1);
@@ -494,6 +496,7 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
           <option value="openai" <?= $aiProvider === 'openai' ? 'selected' : '' ?>>OpenAI GPT</option>
           <option value="local" <?= $aiProvider === 'local' ? 'selected' : '' ?>>Local LLM (Ollama / LM Studio)</option>
           <option value="openrouter" <?= $aiProvider === 'openrouter' ? 'selected' : '' ?>>OpenRouter</option>
+          <option value="custom" <?= $aiProvider === 'custom' ? 'selected' : '' ?>>Custom API (Multiple Endpoints)</option>
         </select>
       </div>
       <div class="ai-field" id="ai_model_group">
@@ -556,14 +559,78 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
       </div>
 
       <div id="ai_test_result" style="margin-top:10px;font-size:.84rem;display:none"></div>
-      <div style="display:flex;gap:8px;margin-top:14px">
-        <button type="button" class="ai-btn ai-btn-outline ai-btn-sm" onclick="aiTestProvider()"><i
-            class="bi bi-lightning"></i> Test Connection</button>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center">
+        <button type="button" class="ai-btn ai-btn-outline ai-btn-sm" onclick="aiTestProvider()"><i class="bi bi-lightning"></i> Test Connection</button>
         <button type="submit" class="ai-btn ai-btn-success ai-btn-sm"><i class="bi bi-save"></i> Save Settings</button>
+        <div class="ai-toggle" style="margin-left:auto">
+          <label class="ai-toggle-switch">
+            <input name="ai_fallback_enabled" type="checkbox" id="ai_fallback_enabled" value="1" <?= ($aiSettings['ai_fallback_enabled'] ?? 0) ? 'checked' : '' ?>>
+            <span class="ai-toggle-track"></span>
+          </label>
+          <label for="ai_fallback_enabled" style="font-weight:600;color:#334155;cursor:pointer;font-size:.85rem">Enable Fallback</label>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:6px;font-size:.78rem;color:#94a3b8">
+        Fallback: If the primary API fails, the system will try each <strong>active Custom API Endpoint</strong> in order until one succeeds.
       </div>
       <div id="ai_set_save_result" style="margin-top:px;font-size:.rem"></div>
     </div>
 
+    <!-- Custom API Endpoints Card (always visible) -->
+    <div class="ai-card">
+      <h4><i class="bi bi-plugin"></i> Custom API Endpoints <span style="font-weight:400;font-size:.78rem;color:#94a3b8">(fallback targets)</span></h4>
+      <p style="font-size:.82rem;color:#64748b;margin:0 0 14px">
+        Add multiple OpenAI-compatible API endpoints. Each endpoint can be saved, tested, and activated independently.
+        When <strong>Fallback</strong> is enabled, active endpoints are tried in order if the primary API fails.
+      </p>
+      <div id="custom_endpoints_list">
+        <?php if (!empty($customEndpoints)): ?>
+          <?php foreach ($customEndpoints as $i => $ep): ?>
+            <div class="custom-ep-row" data-index="<?= $i ?>" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:10px">
+              <div class="ai-field-row">
+                <div class="ai-field" style="flex:2">
+                  <label>Label</label>
+                  <input type="text" class="ep-label" value="<?= e($ep['label'] ?? '') ?>" placeholder="e.g. 9Router">
+                </div>
+                <div class="ai-field" style="flex:3">
+                  <label>API URL</label>
+                  <input type="url" class="ep-url" value="<?= e($ep['url'] ?? '') ?>" placeholder="https://example.com/v1/chat/completions">
+                </div>
+              </div>
+              <div class="ai-field-row">
+                <div class="ai-field" style="flex:3">
+                  <label>API Key</label>
+                  <input type="password" class="ep-key" value="<?= e($ep['api_key'] ?? '') ?>" placeholder="sk-..." autocomplete="off">
+                </div>
+                <div class="ai-field" style="flex:2">
+                  <label>Default Model</label>
+                  <input type="text" class="ep-model" value="<?= e($ep['model'] ?? 'gpt-4o-mini') ?>" placeholder="gpt-4o-mini">
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+                <div class="ai-toggle">
+                  <label class="ai-toggle-switch" style="width:36px;height:20px">
+                    <input type="checkbox" class="ep-active" value="1" <?= !empty($ep['active']) ? 'checked' : '' ?>>
+                    <span class="ai-toggle-track" style="width:36px;height:20px"></span>
+                  </label>
+                  <span style="font-size:.78rem;color:#64748b;margin-left:4px">Active</span>
+                </div>
+                <button type="button" class="ai-btn ai-btn-outline ai-btn-sm ep-save-btn" onclick="saveEndpoint(this)"><i class="bi bi-save"></i> Save</button>
+                <button type="button" class="ai-btn ai-btn-outline ai-btn-sm ep-test-btn" onclick="testEndpoint(this)"><i class="bi bi-lightning"></i> Test</button>
+                <button type="button" class="ai-btn ai-btn-danger ai-btn-sm" onclick="removeEndpoint(this)" title="Remove"><i class="bi bi-trash"></i></button>
+                <span class="ep-status" style="font-size:.78rem;display:none"></span>
+              </div>
+            </div>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </div>
+      <button type="button" class="ai-btn ai-btn-primary ai-btn-sm" onclick="addEndpoint()"><i class="bi bi-plus-lg"></i> Add Endpoint</button>
+      <button type="button" class="ai-btn ai-btn-outline ai-btn-sm" onclick="testFallbackChain()" style="margin-left:8px"><i class="bi bi-diagram-3"></i> Test Fallback Chain</button>
+      <span id="ai_fallback_test_result" style="font-size:.82rem;display:none;margin-left:12px"></span>
+      <input type="hidden" name="ai_custom_endpoints" id="ai_custom_endpoints" value="<?= e($customEndpointsJson) ?>">
+    </div>
+
+    <!-- Advanced Options Card -->
     <div class="ai-card">
       <h4><i class="bi bi-sliders"></i> Advanced Options</h4>
       <div class="ai-field">
@@ -834,7 +901,6 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
     if (org) org.style.display = p === 'openrouter' ? '' : 'none';
     const ourl = document.getElementById('openrouter_url_group');
     if (ourl) ourl.style.display = p === 'openrouter' ? '' : 'none';
-
     const sel = document.getElementById('ai_agent_model_select');
     const inp = document.getElementById('ai_agent_model');
     const currentVal = inp.value;
@@ -842,7 +908,29 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
     if (sel) {
       sel.innerHTML = '';
       let found = false;
-      if (AI_MODELS[p]) {
+      if (p === 'custom') {
+        // Populate with saved custom endpoints as model options
+        try {
+          const eps = JSON.parse(document.getElementById('ai_custom_endpoints').value || '[]');
+          eps.forEach((ep, idx) => {
+            const opt = document.createElement('option');
+            opt.value = 'custom:' + ep.label + ':' + ep.url + ':' + (ep.model || 'gpt-4o-mini');
+            opt.textContent = (ep.label || 'Endpoint ' + (idx + 1)) + ' — ' + (ep.model || 'gpt-4o-mini');
+            opt.dataset.key = ep.api_key || '';
+            if (ep.label === currentVal || 'custom:' + ep.label === currentVal) found = true;
+            sel.appendChild(opt);
+          });
+        } catch (e) {}
+        const customOpt = document.createElement('option');
+        customOpt.value = 'custom';
+        customOpt.textContent = 'Other (Custom...)';
+        sel.appendChild(customOpt);
+        if (isInit && currentVal && !found) {
+          sel.value = 'custom';
+        } else if (isInit && found) {
+          sel.value = currentVal;
+        }
+      } else if (AI_MODELS[p]) {
         AI_MODELS[p].forEach(m => {
           const opt = document.createElement('option');
           opt.value = m;
@@ -850,17 +938,15 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
           if (m === currentVal) found = true;
           sel.appendChild(opt);
         });
-      }
-
-      const customOpt = document.createElement('option');
-      customOpt.value = 'custom';
-      customOpt.textContent = 'Other (Custom...)';
-      sel.appendChild(customOpt);
-
-      if (isInit && currentVal && !found) {
-        sel.value = 'custom';
-      } else if (isInit && found) {
-        sel.value = currentVal;
+        const customOpt = document.createElement('option');
+        customOpt.value = 'custom';
+        customOpt.textContent = 'Other (Custom...)';
+        sel.appendChild(customOpt);
+        if (isInit && currentVal && !found) {
+          sel.value = 'custom';
+        } else if (isInit && found) {
+          sel.value = currentVal;
+        }
       }
 
       if (sel) {
@@ -881,6 +967,8 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
     let localUrl = '';
     let openrouterUrl = '';
     let openaiUrl = '';
+    let customUrl = '';
+    let customModel = '';
     if (provider === 'gemini_pro') {
       apiKey = document.getElementById('gemini_api_key').value;
     } else if (provider === 'openai') {
@@ -891,6 +979,20 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
       apiKey = document.getElementById('openrouter_api_key').value;
       const oUrlInput = document.getElementById('openrouter_ai_url');
       if (oUrlInput) openrouterUrl = oUrlInput.value;
+    } else if (provider === 'custom') {
+      const sel = document.getElementById('ai_agent_model_select');
+      if (sel && sel.value && sel.value.startsWith('custom:')) {
+        const parts = sel.value.split(':');
+        customUrl = parts[2] || '';
+        customModel = parts[3] || 'gpt-4o-mini';
+        // Look up API key from the endpoints data
+        try {
+          const eps = JSON.parse(document.getElementById('ai_custom_endpoints').value || '[]');
+          const label = parts[1] || '';
+          const found = eps.find(e => e.label === label);
+          if (found) apiKey = found.api_key || '';
+        } catch (e) {}
+      }
     } else {
       localUrl = document.getElementById('local_ai_url').value; apiKey = 'local';
     }
@@ -906,12 +1008,13 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
 
     const modelInput = document.getElementById('ai_agent_model');
     if (modelInput && modelInput.value) {
-      fd.append('model', modelInput.value);
+      fd.append('model', customModel || modelInput.value);
     }
 
     if (localUrl) fd.append('local_url', localUrl);
     if (openrouterUrl) fd.append('openrouter_url', openrouterUrl);
     if (openaiUrl) fd.append('openai_url', openaiUrl);
+    if (customUrl) fd.append('custom_url', customUrl);
 
     fetch(KB_API, { method: 'POST', body: fd })
       .then(r => r.json())
@@ -925,6 +1028,171 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
       .catch(e => {
         res.innerHTML = '<span style="color:#b91c1c"><i class="bi bi-exclamation-triangle-fill"></i> Network error.</span>';
       });
+  }
+
+  // ─── Custom API Endpoints Management (per-endpoint AJAX) ───
+  function saveEndpoint(btn) {
+    const row = btn.closest('.custom-ep-row');
+    const label = row.querySelector('.ep-label').value.trim();
+    const url = row.querySelector('.ep-url').value.trim();
+    const apiKey = row.querySelector('.ep-key').value.trim();
+    const model = row.querySelector('.ep-model').value.trim();
+    const active = row.querySelector('.ep-active').checked ? 1 : 0;
+    const status = row.querySelector('.ep-status');
+
+    if (!label || !url) {
+      status.style.display = 'inline';
+      status.innerHTML = '<span style="color:#b91c1c">Label & URL required</span>';
+      return;
+    }
+
+    const fd = new FormData();
+    fd.append('action', 'save_endpoint');
+    fd.append('label', label);
+    fd.append('url', url);
+    fd.append('api_key', apiKey);
+    fd.append('model', model || 'gpt-4o-mini');
+    fd.append('active', active);
+    fd.append('csrf_token', AI_CSRF_TOKEN);
+
+    status.style.display = 'inline';
+    status.innerHTML = '<span style="color:#4338ca"><i class="bi bi-arrow-repeat spin"></i> Saving...</span>';
+
+    fetch(KB_API, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok) {
+          status.innerHTML = '<span style="color:#166534"><i class="bi bi-check-circle-fill"></i> Saved</span>';
+          setTimeout(() => { status.style.display = 'none'; }, 2000);
+        } else {
+          status.innerHTML = '<span style="color:#b91c1c">' + (d.error || 'Save failed.') + '</span>';
+        }
+      })
+      .catch(e => {
+        status.innerHTML = '<span style="color:#b91c1c">Network error.</span>';
+      });
+  }
+
+  function testEndpoint(btn) {
+    const row = btn.closest('.custom-ep-row');
+    const label = row.querySelector('.ep-label').value.trim();
+    const url = row.querySelector('.ep-url').value.trim();
+    const apiKey = row.querySelector('.ep-key').value.trim();
+    const model = row.querySelector('.ep-model').value.trim();
+    const status = row.querySelector('.ep-status');
+
+    if (!label || !url) {
+      status.style.display = 'inline';
+      status.innerHTML = '<span style="color:#b91c1c">Label & URL required</span>';
+      return;
+    }
+
+    const fd = new FormData();
+    fd.append('action', 'test_single_endpoint');
+    fd.append('label', label);
+    fd.append('url', url);
+    fd.append('api_key', apiKey);
+    fd.append('model', model || 'gpt-4o-mini');
+    fd.append('csrf_token', AI_CSRF_TOKEN);
+
+    status.style.display = 'inline';
+    status.innerHTML = '<span style="color:#4338ca"><i class="bi bi-arrow-repeat spin"></i> Testing...</span>';
+
+    fetch(KB_API, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok) {
+          status.innerHTML = '<span style="color:#166534"><i class="bi bi-check-circle-fill"></i> ' + (d.message || 'Connected!') + '</span>';
+          setTimeout(() => { status.style.display = 'none'; }, 3000);
+        } else {
+          status.innerHTML = '<span style="color:#b91c1c">' + (d.error || 'Connection failed.') + '</span>';
+        }
+      })
+      .catch(e => {
+        status.innerHTML = '<span style="color:#b91c1c">Network error.</span>';
+      });
+  }
+
+  function testFallbackChain() {
+    const result = document.getElementById('ai_fallback_test_result');
+    result.style.display = 'inline';
+    result.innerHTML = '<span style="color:#4338ca"><i class="bi bi-arrow-repeat spin"></i> Testing fallback chain...</span>';
+
+    const fd = new FormData();
+    fd.append('action', 'test_fallback_chain');
+    fd.append('csrf_token', AI_CSRF_TOKEN);
+
+    fetch(KB_API, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok) {
+          let html = '<span style="color:#166534"><i class="bi bi-check-circle-fill"></i> Fallback OK — ' + d.message + '</span>';
+          if (d.details) {
+            html += '<div style="margin-top:6px;font-size:.78rem;line-height:1.6">';
+            d.details.forEach(function(item) {
+              const icon = item.status === 'ok' ? '✅' : item.status === 'skip' ? '⏭️' : '❌';
+              html += '<div>' + icon + ' ' + item.label + ': ' + item.info + '</div>';
+            });
+            html += '</div>';
+          }
+          result.innerHTML = html;
+        } else {
+          result.innerHTML = '<span style="color:#b91c1c"><i class="bi bi-exclamation-triangle-fill"></i> ' + (d.error || 'Fallback test failed.') + '</span>';
+        }
+      })
+      .catch(e => {
+        result.innerHTML = '<span style="color:#b91c1c">Network error.</span>';
+      });
+  }
+
+  function addEndpoint() {
+    const list = document.getElementById('custom_endpoints_list');
+    const div = document.createElement('div');
+    div.className = 'custom-ep-row';
+    div.style.cssText = 'background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:10px';
+    div.innerHTML = `
+      <div class="ai-field-row">
+        <div class="ai-field" style="flex:2">
+          <label>Label</label>
+          <input type="text" class="ep-label" placeholder="e.g. 9Router">
+        </div>
+        <div class="ai-field" style="flex:3">
+          <label>API URL</label>
+          <input type="url" class="ep-url" placeholder="https://example.com/v1/chat/completions">
+        </div>
+      </div>
+      <div class="ai-field-row">
+        <div class="ai-field" style="flex:3">
+          <label>API Key</label>
+          <input type="password" class="ep-key" placeholder="sk-..." autocomplete="off">
+        </div>
+        <div class="ai-field" style="flex:2">
+          <label>Default Model</label>
+          <input type="text" class="ep-model" value="gpt-4o-mini" placeholder="gpt-4o-mini">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+        <div class="ai-toggle">
+          <label class="ai-toggle-switch" style="width:36px;height:20px">
+            <input type="checkbox" class="ep-active" value="1" checked>
+            <span class="ai-toggle-track" style="width:36px;height:20px"></span>
+          </label>
+          <span style="font-size:.78rem;color:#64748b;margin-left:4px">Active</span>
+        </div>
+        <button type="button" class="ai-btn ai-btn-outline ai-btn-sm ep-save-btn" onclick="saveEndpoint(this)"><i class="bi bi-save"></i> Save</button>
+        <button type="button" class="ai-btn ai-btn-outline ai-btn-sm ep-test-btn" onclick="testEndpoint(this)"><i class="bi bi-lightning"></i> Test</button>
+        <button type="button" class="ai-btn ai-btn-danger ai-btn-sm" onclick="removeEndpoint(this)" title="Remove"><i class="bi bi-trash"></i></button>
+        <span class="ep-status" style="font-size:.78rem;display:none"></span>
+      </div>`;
+    list.appendChild(div);
+  }
+
+  function removeEndpoint(btn) {
+    if (!confirm('Remove this endpoint?')) return;
+    const row = btn.closest('.custom-ep-row');
+    if (row) {
+      row.remove();
+    }
   }
 
 

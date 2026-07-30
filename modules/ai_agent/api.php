@@ -95,11 +95,13 @@ function extract_search_numbers(string $prompt): array
 /**
  * Format database records into a clean markdown table
  */
-function format_records_table(array $data, string $type = 'paper_stock', string $lang = 'English'): string
+function format_records_table(array $data, string $type = 'paper_stock', string $lang = 'English', ?int $totalCount = null, int $jumboRolls = 0, int $slittedRolls = 0): string
 {
     if (empty($data))
         return '';
     $count = count($data);
+    $displayCount = $totalCount ?? $count;
+    $hasJumbo = $jumboRolls > 0 || $slittedRolls > 0;
     $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
 
     if ($type === 'paper_stock') {
@@ -124,7 +126,10 @@ function format_records_table(array $data, string $type = 'paper_stock', string 
                     . " | " . ($r['sqm'] ? number_format((float) $r['sqm'], 1) : '-')
                     . " | " . ($r['status'] ?? '-') . " |\n";
             }
-            $tbl .= "\n**Total: {$count} rolls** | **" . number_format($totalMtr, 1) . " meters** | **" . number_format($totalSqm, 1) . " SQM**\n";
+            $tbl .= "\n**Total: {$displayCount} rolls** | **" . number_format($totalMtr, 1) . " meters** | **" . number_format($totalSqm, 1) . " SQM**\n";
+            if ($hasJumbo) {
+                $tbl .= "\n🏭 **Jumbo Parent Rolls (≥1000mm):** {$jumboRolls} | **Slitted Stock (<1000mm):** {$slittedRolls}\n";
+            }
             $tbl .= "\n👉 [Open Paper Stock Page]({$baseUrl}/modules/paper_stock/index.php)";
         } elseif ($lang === 'Hindi') {
             $tbl = "| # | रोल नं. | टाइप | कंपनी | चौड़ाई | लंबाई | SQM | स्थिति |\n";
@@ -139,8 +144,11 @@ function format_records_table(array $data, string $type = 'paper_stock', string 
                     . " | " . ($r['sqm'] ? number_format((float) $r['sqm'], 1) : '-')
                     . " | " . ($r['status'] ?? '-') . " |\n";
             }
-            $tbl .= "\n**कुल: {$count} रोल** | **" . number_format($totalMtr, 1) . " मीटर** | **" . number_format($totalSqm, 1) . " SQM**\n";
-            $tbl .= "\n👉 [पेपर स्टॉक पेज खोलें]({$baseUrl}/modules/paper_stock/index.php)";
+            $tbl .= "\n**कुल: {$displayCount} रोल** | **" . number_format($totalMtr, 1) . " मीटर** | **" . number_format($totalSqm, 1) . " SQM**\n";
+            if ($hasJumbo) {
+                $tbl .= "\n🏭 **जंबो पैरेंट (≥1000mm):** {$jumboRolls} | **स्लिटेड स्टॉक (<1000mm):** {$slittedRolls}\n";
+            }
+            $tbl .= "\n👉 [पेपर स्टक पेज खोलें]({$baseUrl}/modules/paper_stock/index.php)";
         } else {
             $tbl = "| # | রোল নং | টাইপ | কোম্পানি | চওড়া | দৈর্ঘ্য | SQM | স্ট্যাটাস |\n";
             $tbl .= "|--:|--------|------|----------|------:|-------:|----:|----------|\n";
@@ -154,7 +162,10 @@ function format_records_table(array $data, string $type = 'paper_stock', string 
                     . " | " . ($r['sqm'] ? number_format((float) $r['sqm'], 1) : '-')
                     . " | " . ($r['status'] ?? '-') . " |\n";
             }
-            $tbl .= "\n**মোট: {$count}টি রোল** | **" . number_format($totalMtr, 1) . " মিটার** | **" . number_format($totalSqm, 1) . " SQM**\n";
+            $tbl .= "\n**মোট: {$displayCount}টি রোল** | **" . number_format($totalMtr, 1) . " মিটার** | **" . number_format($totalSqm, 1) . " SQM**\n";
+            if ($hasJumbo) {
+                $tbl .= "\n🏭 **জাম্বো প্যারেন্ট (≥1000mm):** {$jumboRolls} | **স্লিটেড স্টক (<1000mm):** {$slittedRolls}\n";
+            }
             $tbl .= "\n👉 [পেপার স্টক পেজ খুলুন]({$baseUrl}/modules/paper_stock/index.php)";
         }
         return $tbl;
@@ -192,7 +203,7 @@ function format_records_table(array $data, string $type = 'paper_stock', string 
                     . " | " . ($r['paper_type'] ?? '-')
                     . " | " . ($r['die'] ?? '-') . " |\n";
             }
-            $tbl .= "\n**মোট: {$count}টি প্লেট**\n";
+            $tbl .= "\n**কুল: {$count} প্লেট**\n";
         }
         return $tbl;
     }
@@ -240,6 +251,99 @@ function is_count_intent(string $prompt): bool
 }
 
 /**
+ * Generate 5 contextual suggestions based on the user's question and the ERP/KB answer.
+ * Extracts topic keywords and builds relevant follow-up questions.
+ */
+function generate_erp_suggestions(string $prompt, string $answer, string $toolUsed, string $userLang = 'English'): array
+{
+    $p = mb_strtolower($prompt, 'UTF-8');
+    $a = mb_strtolower($answer, 'UTF-8');
+    $suggestions = [];
+
+    // Detect key entities from prompt and answer
+    $hasPlate = preg_match('/(plate|প্লেট|प्लेट)/iu', $p . ' ' . $a);
+    $hasPaper = preg_match('/(paper|roll|stock|রোল|পেপার|पेपर|रोल)/iu', $p . ' ' . $a);
+    $hasJob = preg_match('/(job|জব|जॉब)/iu', $p . ' ' . $a);
+    $hasDispatch = preg_match('/(dispatch|ডিস্পৈচ|डिस्पैच)/iu', $p . ' ' . $a);
+    $hasCompany = preg_match('/(krishna|austin|navkar|nrgi|pidilite|sfl|alpha|flex)/iu', $p . ' ' . $a);
+    $hasCount = preg_match('/(how many|total|count|কত|कितने|कितना)/iu', $p);
+    $hasCalculation = preg_match('/(sqm|sqr? mtr|square|weight|gsm|label|mm\s*[xX*]\s*mm)/iu', $p);
+    $hasKnowledge = strpos($toolUsed, 'Knowledge Base') !== false;
+    $hasCalculator = strpos($toolUsed, 'Calculator') !== false || strpos($toolUsed, 'Converter') !== false;
+
+    // Extract a key term for targeted follow-ups
+    $keyTerm = '';
+    if (preg_match('/["\x{201C}\x{201D}]([^"\x{201C}\x{201D}]+)["\x{201C}\x{201D}]/u', $prompt, $qm)) {
+        $keyTerm = trim($qm[1]);
+    } elseif ($hasCompany && preg_match('/\b(krishna|austin|navkar|nrgi|pidilite|sfl|alpha|flex)\b/i', $p, $cm)) {
+        $keyTerm = ucfirst(strtolower($cm[1]));
+    }
+
+    if ($hasKnowledge) {
+        // Knowledge Base — suggest related FAQs
+        if ($userLang === 'Bengali') {
+            $suggestions = ['এই বিষয়ে আরও বিস্তারিত বলুন', 'আরেকটি FAQ দেখুন', 'প্লেট সম্পর্কে জানতে চাই', 'পেপার স্টক সম্পর্কে জানতে চাই', 'ERP হেল্প দেখুন'];
+        } elseif ($userLang === 'Hindi') {
+            $suggestions = ['इस विषय पर और बताएं', 'कोई अन्य FAQ देखें', 'प्लेट के बारे में जानें', 'पेपर स्टॉक के बारे में जानें', 'ERP सहायता देखें'];
+        } else {
+            $suggestions = ['Tell me more about this topic', 'Show another FAQ', 'Learn about plates', 'Learn about paper stock', 'View ERP help'];
+        }
+    } elseif ($hasCalculator) {
+        // Calculator — suggest related calculations
+        if ($userLang === 'Bengali') {
+            $suggestions = ['ভিন্ন সাইজে ক্যালকুলেশন করুন', '/cal 200mm x 300mm', 'SQM রেট ক্যালকুলেট করুন', 'ওজন ক্যালকুলেট করুন', 'ইঞ্চিতে এরিয়া বের করুন'];
+        } elseif ($userLang === 'Hindi') {
+            $suggestions = ['अलग साइज़ में गणना करें', '/cal 200mm x 300mm', 'SQM रेट गणना करें', 'वज़न गणना करें', 'इंच में एरिया निकालें'];
+        } else {
+            $suggestions = ['Calculate with different size', '/cal 200mm x 300mm', 'Calculate SQM rate', 'Calculate weight', 'Find area in inches'];
+        }
+    } elseif ($hasPlate) {
+        if ($userLang === 'Bengali') {
+            $suggestions = ['মোট কতগুলো প্লেট আছে?', $hasCompany ? "$keyTerm কোম্পানির প্লেট দেখাও" : 'Flat Bed প্লেট দেখাও', 'Rotary প্লেট দেখাও', 'সবচেয়ে নতুন প্লেটটি কী?', 'প্লেট ম্যানেজমেন্ট পেজ খোলো'];
+        } elseif ($userLang === 'Hindi') {
+            $suggestions = ['कुल कितनी प्लेट हैं?', $hasCompany ? "$keyTerm कंपनी की प्लेट दिखाओ" : 'Flat Bed प्लेट दिखाओ', 'Rotary प्लेट दिखाओ', 'सबसे नई प्लेट कौन सी है?', 'प्लेट पेज खोलो'];
+        } else {
+            $suggestions = ['Total number of plates', $hasCompany ? "Show $keyTerm company plates" : 'Show Flat Bed plates', 'Show Rotary plates', 'Latest plate added', 'Open Plate Management page'];
+        }
+    } elseif ($hasPaper) {
+        if ($userLang === 'Bengali') {
+            $suggestions = ['মোট কতগুলো পেপার রোল আছে?', $hasCompany ? "$keyTerm কোম্পানির রোল দেখাও" : 'Chromo পেপার দেখাও', 'PP White স্টক দেখাও', 'মোট রানিং মিটার কত?', 'পেপার স্টক পেজ খোলো'];
+        } elseif ($userLang === 'Hindi') {
+            $suggestions = ['कुल कितने पेपर रोल हैं?', $hasCompany ? "$keyTerm कंपनी के रोल दिखाओ" : 'Chromo पेपर दिखाओ', 'PP White स्टॉक दिखाओ', 'कुल रनिंग मीटर कितना?', 'पेपर स्टॉक पेज खोलो'];
+        } else {
+            $suggestions = ['Total paper rolls in stock', $hasCompany ? "Show $keyTerm company rolls" : 'Show Chromo paper rolls', 'Show PP White stock', 'Total running meters', 'Open Paper Stock page'];
+        }
+    } elseif ($hasJob) {
+        if ($userLang === 'Bengali') {
+            $suggestions = ['পেন্ডিং জব দেখাও', 'লাইভ ফ্লোর স্ট্যাটাস দেখাও', 'আজকের ডিস্পৈচ দেখাও', 'জব প্ল্যানিং পেজ খোলো', 'প্রোডাকশন সামারি দেখাও'];
+        } elseif ($userLang === 'Hindi') {
+            $suggestions = ['पेंडिंग जॉब दिखाओ', 'लाइव फ्लोर स्टेटस दिखाओ', 'आज का डिस्पैच दिखाओ', 'जॉब प्लानिंग पेज खोलो', 'प्रोडक्शन समरी दिखाओ'];
+        } else {
+            $suggestions = ['Show pending jobs', 'Show live floor status', 'Show today\'s dispatch', 'Open Job Planning page', 'Show production summary'];
+        }
+    } elseif ($hasDispatch) {
+        if ($userLang === 'Bengali') {
+            $suggestions = ['আজকের ডিস্পৈচ দেখাও', 'পেন্ডিং ডিস্পৈচ দেখাও', 'প্যাকিং স্লিপ দেখাও', 'ডিস্পৈচ পেজ খোলো', 'আজকের প্রোডাকশন দেখাও'];
+        } elseif ($userLang === 'Hindi') {
+            $suggestions = ['आज का डिस्पैच दिखाओ', 'पेंडिंग डिस्पैच दिखाओ', 'पैकिंग स्लिप दिखाओ', 'डिस्पैच पेज खोलो', 'आज का प्रोडक्शन दिखाओ'];
+        } else {
+            $suggestions = ['Show today\'s dispatch', 'Show pending dispatches', 'Show packing slip', 'Open Dispatch page', 'Show today\'s production'];
+        }
+    } else {
+        // Generic ERP suggestions
+        if ($userLang === 'Bengali') {
+            $suggestions = ['মোট কতগুলো প্লেট আছে?', 'মোট কতগুলো পেপার রোল?', 'পেন্ডিং জব দেখাও', 'আজকের ডিস্পৈচ দেখাও', 'প্রোডাকশন সামারি দেখাও'];
+        } elseif ($userLang === 'Hindi') {
+            $suggestions = ['कुल कितनी प्लेट हैं?', 'कुल कितने पेपर रोल?', 'पेंडिंग जॉब दिखाओ', 'आज का डिस्पैच दिखाओ', 'प्रोडक्शन समरी दिखाओ'];
+        } else {
+            $suggestions = ['Total number of plates', 'Total paper rolls in stock', 'Show pending jobs', 'Show today\'s dispatch', 'Show production summary'];
+        }
+    }
+
+    return $suggestions;
+}
+
+/**
  * Get context-aware follow-up suggestion questions based on the tool used and query context.
  * Returns an array of suggestion strings the user can click to ask next.
  */
@@ -265,7 +369,7 @@ function get_follow_up_suggestions(string $toolUsed, string $prompt, string $use
                     'Rotary প্লেট কতগুলো?',
                     'Alpha Flex এর প্লেট দেখাও',
                     'সর্বশেষ প্লেটটি কী?',
-                    'প্লেট পেজ খোলো',
+                    'প্লেট পেজ খুলুন',
                 ];
             } else {
                 $suggestions = [
@@ -289,10 +393,10 @@ function get_follow_up_suggestions(string $toolUsed, string $prompt, string $use
             } elseif ($userLang === 'Bengali') {
                 $suggestions = [
                     'মোট কতগুলো প্লেট আছে?',
-                    'এই প্লেটের মিটার ক্যালকুলেট করো',
+                    'ইস প্লেটের মিটার ক্যালকুলেট করো',
                     'Chromo পেপারের প্লেট দেখাও',
                     '9 inch সিলিন্ডার প্লেট দেখাও',
-                    'প্লেট পেজ খোলো',
+                    'প্লেট পেজ খুলুন',
                 ];
             } else {
                 $suggestions = [
@@ -324,7 +428,7 @@ function get_follow_up_suggestions(string $toolUsed, string $prompt, string $use
                 'মোট কতগুলো ডাই আছে?',
                 'Rotary ডাই দেখাও',
                 'Flat Bed ডাই দেখাও',
-                'ডাই পেজ খোলো',
+                'ডাই পেজ খুলুন',
             ];
         }
     } elseif (strpos($toolUsed, 'Anilox') !== false) {
@@ -347,7 +451,7 @@ function get_follow_up_suggestions(string $toolUsed, string $prompt, string $use
                 'মোট কতগুলো এনিলক্স আছে?',
                 '400 LPI এনিলক্স দেখাও',
                 'কোন এনিলক্স স্টকে নেই?',
-                'এনিলক্স পেজ খোলো',
+                'এনিলক্স পেজ খুলুন',
             ];
         }
     } elseif (strpos($toolUsed, 'Paper') !== false || strpos($toolUsed, 'Roll') !== false) {
@@ -363,14 +467,14 @@ function get_follow_up_suggestions(string $toolUsed, string $prompt, string $use
                 'कुल कितने पेपर रोल हैं?',
                 'Chromo पेपर दिखाओ',
                 'PP White स्टॉक दिखाओ',
-                'पेपर स्टॉक पेज खोलो',
+                'पेपर स्टक पेज खोलो',
             ];
         } else {
             $suggestions = [
                 'মোট কতগুলো পেপার রোল আছে?',
                 'Chromo পেপার দেখাও',
                 'PP White স্টক দেখাও',
-                'পেপার স্টক পেজ খোলো',
+                'পেপার স্টক পেজ খুলুন',
             ];
         }
     } elseif (strpos($toolUsed, 'Dispatch') !== false) {
@@ -379,7 +483,7 @@ function get_follow_up_suggestions(string $toolUsed, string $prompt, string $use
         } elseif ($userLang === 'Hindi') {
             $suggestions = ['आज का डिस्पैच दिखाओ', 'पेंडिंग डिस्पैच दिखाओ', 'डिस्पैच पेज खोलो'];
         } else {
-            $suggestions = ['আজকের ডিসপ্যাচ দেখাও', 'পেন্ডিং ডিসপ্যাচ দেখাও', 'ডিসপ্যাচ পেজ খোলো'];
+            $suggestions = ['আজকের ডিস্পৈচ দেখাও', 'পেন্ডিং ডিস্পৈচ দেখাও', 'ডিস্পৈচ পেজ খোলুন'];
         }
     } elseif (strpos($toolUsed, 'Dashboard') !== false || strpos($toolUsed, 'KPI') !== false) {
         if ($userLang === 'English') {
@@ -387,7 +491,7 @@ function get_follow_up_suggestions(string $toolUsed, string $prompt, string $use
         } elseif ($userLang === 'Hindi') {
             $suggestions = ['प्रोडक्शन समरी दिखाओ', 'आज का डिस्पैच दिखाओ', 'पेंडिंग जॉब दिखाओ'];
         } else {
-            $suggestions = ['প্রোডাকশন সামারি দেখাও', 'আজকের ডিসপ্যাচ দেখাও', 'পেন্ডিং জব দেখাও'];
+            $suggestions = ['প্রোডাকশন সামারি দেখাও', 'আজকের ডিস্পৈচ দেখাও', 'পেন্ডিং জব দেখাও'];
         }
     } elseif (strpos($toolUsed, 'Job') !== false || strpos($toolUsed, 'Planning') !== false) {
         if ($userLang === 'English') {
@@ -403,11 +507,62 @@ function get_follow_up_suggestions(string $toolUsed, string $prompt, string $use
 }
 
 /**
- * Call external LLM API (Google Gemini, OpenAI, OpenRouter, OpenCode, Local LLM)
+ * Call external LLM API (Google Gemini, OpenAI, OpenRouter, OpenCode, Local LLM) with fallback support
  */
 function call_llm_api(string $prompt, array $config): ?string
 {
-    $provider = strtolower($config['default_provider'] ?? 'openrouter');
+    // Try primary provider first
+    $primaryProvider = strtolower($config['default_provider'] ?? 'openrouter');
+    $result = call_llm_api_provider($prompt, $config, $primaryProvider);
+    
+    // If primary succeeded, return it
+    if ($result !== null && strpos($result, '[API_ERROR]') !== 0) {
+        return $result;
+    }
+    
+    // Fallback: if enabled, loop through ALL active custom endpoints
+    $fallbackEnabled = !empty($config['fallback_enabled']) && $config['fallback_enabled'] === 1;
+    if (!$fallbackEnabled) {
+        return $result;
+    }
+    
+    $endpointsJson = $config['ai_custom_endpoints'] ?? '[]';
+    $endpoints = json_decode($endpointsJson, true) ?: [];
+    
+    foreach ($endpoints as $ep) {
+        if (empty($ep['active'])) continue;
+        
+        $label = $ep['label'] ?? '';
+        $url = $ep['url'] ?? '';
+        $apiKey = $ep['api_key'] ?? '';
+        $epModel = $ep['model'] ?? 'gpt-4o-mini';
+        
+        if (empty($url)) continue;
+        
+        // Build a model string in custom format
+        $customModelStr = 'custom:' . $label . ':' . $url . ':' . $epModel;
+        
+        // Temporarily override config for this endpoint
+        $epConfig = $config;
+        $epConfig['default_provider'] = 'custom';
+        $epConfig['model_name'] = $customModelStr;
+        
+        $epResult = call_llm_api_provider($prompt, $epConfig, 'custom');
+        
+        if ($epResult !== null && strpos($epResult, '[API_ERROR]') !== 0) {
+            return $epResult . "\n\n*Note: Response via fallback \"" . $label . '"*';
+        }
+    }
+    
+    // All fallbacks failed, return primary error
+    return $result;
+}
+
+/**
+ * Call external LLM API for a specific provider
+ */
+function call_llm_api_provider(string $prompt, array $config, string $provider): ?string
+{
     $model = $config['model_name'] ?? 'openrouter/free';
     $temperature = (float) ($config['temperature'] ?? 0.2);
     $maxTokens = (int) ($config['max_tokens'] ?? 1500);
@@ -444,7 +599,7 @@ function call_llm_api(string $prompt, array $config): ?string
             CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode($payload),
-            CURLOPT_TIMEOUT => 30,
+            CURLOPT_TIMEOUT => 90,
             CURLOPT_SSL_VERIFYPEER => true
         ]);
 
@@ -453,8 +608,13 @@ function call_llm_api(string $prompt, array $config): ?string
         curl_close($ch);
 
         if ($error || !$response) {
-            return "[API_ERROR] Connection failed: " . ($error ?: 'empty response');
+            return "[API_ERROR] Connection failed ($provider): " . ($error ?: 'empty response');
         }
+
+        // Strip SSE streaming suffixes that some proxies append (e.g. "data: [DONE]")
+        $response = preg_replace('/\R?data:\s*\[DONE\]\s*$/', '', $response);
+        $response = preg_replace('/\R?data:\s*.+$/', '', $response);
+
         $result = json_decode($response, true);
         if (isset($result['error'])) {
             $msg = is_array($result['error']) ? ($result['error']['message'] ?? json_encode($result['error'])) : $result['error'];
@@ -489,6 +649,28 @@ function call_llm_api(string $prompt, array $config): ?string
         $url = !empty($config['local_api_endpoint']) ? $config['local_api_endpoint'] : 'http://localhost:11434/v1/chat/completions';
         $apiKey = $config['openai_api_key'] ?? '';
         if (empty($model) || strpos($model, 'gemini') !== false) $model = 'llama3';
+    } elseif ($provider === 'custom') {
+        // Custom API Endpoint — parse model string "custom:label:url:model"
+        $apiKey = '';
+        $customUrl = '';
+        $customModel = '';
+        if (preg_match('/^custom:(.+?):(.+?):(.+)$/', $model, $m)) {
+            $customLabel = $m[1];
+            $customUrl = $m[2];
+            $customModel = $m[3];
+            // Look up API key from saved endpoints
+            $endpointsJson = $config['ai_custom_endpoints'] ?? '[]';
+            $endpoints = json_decode($endpointsJson, true) ?: [];
+            foreach ($endpoints as $ep) {
+                if (($ep['label'] ?? '') === $customLabel) {
+                    $apiKey = $ep['api_key'] ?? '';
+                    break;
+                }
+            }
+        }
+        $url = $customUrl;
+        $model = $customModel ?: 'gpt-4o-mini';
+        if (empty($url)) return null;
     }
 
     if (empty($url)) return null;
@@ -512,7 +694,7 @@ function call_llm_api(string $prompt, array $config): ?string
         CURLOPT_HTTPHEADER => $headers,
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => json_encode($payload),
-        CURLOPT_TIMEOUT => 30,
+        CURLOPT_TIMEOUT => 90,
         CURLOPT_SSL_VERIFYPEER => false
     ]);
 
@@ -523,13 +705,44 @@ function call_llm_api(string $prompt, array $config): ?string
     if ($error || !$response) {
         return "[API_ERROR] Connection failed ($provider): " . ($error ?: 'empty response');
     }
+
+    // Strip SSE streaming suffixes that some proxies append (e.g. "data: [DONE]")
+    $response = preg_replace('/\R?data:\s*\[DONE\]\s*$/', '', $response);
+    $response = preg_replace('/\R?data:\s*.+$/', '', $response);
+
     $result = json_decode($response, true);
     if (isset($result['error'])) {
         $msg = is_array($result['error']) ? ($result['error']['message'] ?? json_encode($result['error'])) : $result['error'];
         return "[API_ERROR] API Error: " . $msg;
     }
     if (isset($result['choices'][0]['message']['content'])) {
-        return trim($result['choices'][0]['message']['content']);
+        $content = trim($result['choices'][0]['message']['content']);
+        if ($content !== '') {
+            return $content;
+        }
+        // NOTE: reasoning_content is the model's internal chain-of-thought
+        // and MUST NOT be returned as the user-facing response.
+        // When content is empty, return empty so caller handles it gracefully.
+    }
+
+    // Also check if response has choices but in a different format
+    if (isset($result['choices'][0]['message'])) {
+        $msg = $result['choices'][0]['message'];
+        if (is_string($msg)) return trim($msg);
+        // Prefer 'content' field; never return reasoning_content as user-facing text
+        if (is_array($msg)) {
+            if (isset($msg['content']) && is_string($msg['content']) && trim($msg['content']) !== '') {
+                return trim($msg['content']);
+            }
+            $text = reset($msg);
+            if (is_string($text) && trim($text) !== '') {
+                // Guard against reasoning_content being the first array element
+                if (key($msg) === 'reasoning_content') {
+                    return "[API_ERROR] Model returned only reasoning content, no response.";
+                }
+                return trim($text);
+            }
+        }
     }
 
     return "[API_ERROR] Unexpected API response format.";
@@ -580,12 +793,15 @@ function check_navigation_intent(string $prompt): ?array
 // Navigation Response Check
 $navTarget = check_navigation_intent($prompt);
 if ($navTarget !== null) {
+    $navAnswer = "🚀 **Navigation Command Received:**\n\nOpening **" . htmlspecialchars($navTarget['name']) . "** page for you.\n\n👉 [Click here if page does not auto-redirect](" . htmlspecialchars($navTarget['url']) . ")";
+    $suggestions = generate_erp_suggestions($prompt, $navAnswer, 'ERP Navigation Tool', $userLang);
     echo json_encode([
         'ok' => true,
-        'answer' => "🚀 **Navigation Command Received:**\n\nOpening **" . htmlspecialchars($navTarget['name']) . "** page for you.\n\n👉 [Click here if page does not auto-redirect](" . htmlspecialchars($navTarget['url']) . ")",
+        'answer' => $navAnswer,
         'provider' => 'ERP AI Navigation Engine',
         'tool_used' => 'ERP Navigation Tool',
-        'nav_url' => $navTarget['url']
+        'nav_url' => $navTarget['url'],
+        'suggestions' => $suggestions
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
@@ -674,8 +890,8 @@ if ($isGreeting) {
             $greeting = "👋 **{$timeGreet[2]}, {$userName}!**\n\n"
                 . "मैं आपका **ERP AI असिस्टेंट** हूँ। मैं इन विषयों में आपकी मदद कर सकता हूँ:\n\n"
                 . "📦 **पेपर स्टॉक** — किसी भी कंपनी के रोल, रनिंग मीटर, SQM जानें\n"
-                . "🧮 **लेबल कैलकुलेटर** — रनिंग मीटर, इम्प्रेशन और कॉस्टिंग गणना\n"
-                . "📋 **जॉब प्लानिंग** — प्लानिंग बोर्ड और डिपार्टमेंट स्टेटस\n"
+                . "🧮 **लेबल कैलकुलेटर** — रनिंग मीटर, इम्प्रेशन ओ लागत गणना\n"
+                . "📋 **जॉब प्लानिंग** — प्लानिंग बोर्ड ओ डिपार्टमेंट स्टेटस\n"
                 . "📐 **यूनिट कनवर्ज़न** — SQM ↔ SQ Inch रेट बदलें\n\n"
                 . "💡 नीचे **Quick Action चिप्स** पर क्लिक करें या अपना सवाल टाइप करें!";
         } else {
@@ -689,12 +905,14 @@ if ($isGreeting) {
         }
     }
 
+    $suggestions = generate_erp_suggestions($prompt, $greeting, 'Greeting & Help', $userLang);
     echo json_encode([
         'ok' => true,
         'answer' => $greeting,
         'provider' => 'ERP AI Assistant',
         'tool_used' => 'Greeting & Help',
-        'user_lang' => $userLang
+        'user_lang' => $userLang,
+        'suggestions' => $suggestions
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
@@ -705,6 +923,56 @@ $pTrimmed = trim(mb_strtolower($prompt, 'UTF-8'));
 $userLang = detect_language($prompt); // Define userLang for global scope
 $baseNavUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
 $commandType = null; // Tracks special command: 'plate', 'paperstock', 'quoted'
+
+// ??? Slash Commands Helper (/) � show all available commands ???
+$pTrimmedSingle = trim(mb_strtolower($prompt, 'UTF-8'));
+if ($pTrimmedSingle === '/' || $pTrimmedSingle === '/help' || $pTrimmedSingle === 'help' || $pTrimmedSingle === 'commands') {
+    if ($userLang === 'Bengali') {
+        $answer = "🔣 **স্ল্যাশ কমান্ড সমূহ:**\n\n"
+            . "🧮 **`/cal <query>`** — যেকোনো বাহ্যিক গণনা (লেবেল, অংক, ইউনিট রূপান্তর)\n"
+            . "🔒 **`/erp <query>`** — শুধু ERP ডাটাবেস ও নলেজ বেস থেকে উত্তর\n"
+            . "🖼️ **`/plate <query>`** — প্লেট ডাটা প্রাধান্য দিয়ে খুঁজুন\n"
+            . "📦 **`/paper <query>`** — পেপার স্টক প্রাধান্য দিয়ে খুঁজুন\n"
+            . "✅ **`/clear`** — প্রায়োরিটি মোড রিসেট\n\n"
+            . "**উদাহরণ:**\n"
+            . "🧮 `/cal 100mm x 150mm`\n"
+            . "🔒 `/erp মোট কতগুলো প্লেট আছে?`\n"
+            . "🖼️ `/plate Chromo কোম্পানির প্লেট`\n"
+            . "📦 `/paper Krishna কোম্পানির রোল`\n\n"
+            . "👉 কপি করে ব্যবহার করুন!";
+        $suggestions = ['/cal 100mm x 150mm', '/erp মোট কতগুলো প্লেট আছে?', '/plate Chromo প্লেট', '/paper Krishna রোল', '/clear'];
+    } elseif ($userLang === 'Hindi') {
+        $answer = "🔣 **स्लैश कमांड्स:**\n\n"
+            . "🧮 **`/cal <query>`** — कोई भी बाह्य गणना (लेबल, गणित, यूनिट रूपांतरण)\n"
+            . "🔒 **`/erp <query>`** — केवल ERP डेटाबेस और नॉलेज बेस से उत्तर\n"
+            . "🖼️ **`/plate <query>`** — प्लेट डेटा प्राथमिकता से खोजें\n"
+            . "📦 **`/paper <query>`** — पेपर स्टॉक प्राथमिकता से खोजें\n"
+            . "✅ **`/clear`** — प्राथमिकता मोड रीसेट\n\n"
+            . "**उदाहरण:**\n"
+            . "🧮 `/cal 100mm x 150mm`\n"
+            . "🔒 `/erp कुल कितनी प्लेट हैं?`\n"
+            . "🖼️ `/plate Chromo पेपर प्लेट`\n"
+            . "📦 `/paper Krishna कंपनी के रोल`\n\n"
+            . "👉 कॉपी करके उपयोग करें!";
+        $suggestions = ['/cal 100mm x 150mm', '/erp कुल कितनी प्लेट हैं?', '/plate Chromo प्लेट', '/paper Krishna रोल', '/clear'];
+    } else {
+        $answer = "🔣 **Available Slash Commands:**\n\n"
+            . "🧮 **`/cal <query>`** — Any external calculation (label, math, unit conversion)\n"
+            . "🔒 **`/erp <query>`** — Answer only from ERP database & Knowledge Base\n"
+            . "🖼️ **`/plate <query>`** — Search with Plate data priority\n"
+            . "📦 **`/paper <query>`** — Search with Paper Stock data priority\n"
+            . "✅ **`/clear`** — Reset priority mode\n\n"
+            . "**Examples:**\n"
+            . "🧮 `/cal 100mm x 150mm`\n"
+            . "🔒 `/erp Total number of plates`\n"
+            . "🖼️ `/plate Chromo paper plates`\n"
+            . "📦 `/paper Krishna company rolls`\n\n"
+            . "👉 Feel free to copy and use any command above!";
+        $suggestions = ['/cal 100mm x 150mm', '/erp Total number of plates', '/plate Chromo plates', '/paper Krishna rolls', '/clear'];
+    }
+    echo json_encode(['ok' => true, 'answer' => $answer, 'provider' => 'ERP AI Priority Command', 'tool_used' => 'Slash Commands Help', 'user_lang' => $userLang, 'suggestions' => $suggestions], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
 
 // /plate command
 if (strpos($pTrimmed, '/plate') === 0 || $pTrimmed === 'plate' || $pTrimmed === 'প্লেট' || strpos($pTrimmed, 'प्लेट') !== false) {
@@ -721,8 +989,8 @@ if (strpos($pTrimmed, '/plate') === 0 || $pTrimmed === 'plate' || $pTrimmed === 
             $answer = "🎯 **প্লেট ম্যানেজমেন্ট পেজে অগ্রাধিকার দেওয়া হচ্ছে!**\n\n👉 [প্লেট ম্যানেজমেন্ট খুলুন]($navUrl)\n\n**📌 এখন থেকে সব প্রশ্নে প্লেট ডাটা আগে খুঁজবে।**\n\n**আপনি যা জিজ্ঞাসা করতে পারেন:**\n• মোট কতগুলো প্লেট আছে?\n• Chromo পেপারের প্লেট কতগুলো?\n• Flat Bed বা Rotary প্লেট কত?\n• Alpha Flex / SFL / Pidilite — কোন কোম্পানির প্লেট?\n• 9 inch সিলিন্ডার প্লেট দেখাও\n• সবচেয়ে নতুন প্লেটটি কী?\n• CMYK কালার স্পেসিফিকেশন দেখাও";
             $suggestions = ['মোট কতগুলো প্লেট আছে?', 'Chromo পেপারের প্লেট কত?', 'Flat Bed প্লেট দেখাও', 'Rotary প্লেট দেখাও', 'Alpha Flex এর প্লেট দেখাও', '9 inch সিলিন্ডার প্লেট দেখাও', 'সবচেয়ে নতুন প্লেটটি কী?'];
         } elseif ($userLang === 'Hindi') {
-            $answer = "🎯 **प्लेट मैनेजमेंट पेज को प्राथमिकता दी जा रही है!**\n\n👉 [प्लेट मैनेजमेंट खोलें]($navUrl)\n\n**📌 अब से सभी सवालों में प्लेट डेटा पहले खोजा जाएगा।**\n\n**आप ये पूछ सकते हैं:**\n• कुल कितनी प्लेट हैं?\n• Chromo पेपर की प्लेट कितनी?\n• Flat Bed या Rotary प्लेट कितनी?\n• Alpha Flex / SFL / Pidilite — किस कंपनी की प्लेट?\n• 9 inch सिलेंडर प्लेट दिखाओ\n• सबसे नई प्लेट कौन सी है?\n• CMYK कलर स्पेसिफिकेशन दिखाओ";
-            $suggestions = ['कुल कितनी प्लेट हैं?', 'Chromo पेपर की प्लेट कितनी?', 'Flat Bed प्लेट दिखाओ', 'Rotary प्लेट दिखाओ', 'Alpha Flex की प्लेट दिखाओ', '9 inch सिलेंडर प्लेट दिखाओ', 'सबसे नई प्लेट कौन सी है?'];
+            $answer = "🎯 **प्लेट मैनेजमेंट पेज को प्राथमिकता दी जा रही है!**\n\n👉 [प्लेट मैनेजमेंट खोलें]($navUrl)\n\n**📌 अब से सभी सवालों में प्लेट डेटा पहले खोजा जाएगा।**\n\n**आप ये पूछ सकते हैं:**\n• कुल कितनी प्लेट हैं?\n• Chromo पेपर की प्लेट कितनी?\n• Flat Bed बा Rotary प्लेट कितनी?\n• Alpha Flex / SFL / Pidilite — किस कंपनी की प्लेट?\n• 9 inch सिलेंडर प्लेट दिखाओ\n• सबसे नई प्लेट कौन सी है?\n• CMYK कलर स्पेसिफिकेशन दिखाओ";
+            $suggestions = ['कुल कितनी प्लेट हैं?', 'Chromo पेपर की प्लेट कितनी?', 'Flat Bed प्लेट देखाओ', 'Rotary प्लेट देखाओ', 'Alpha Flex की प्लेट देखाओ', '9 inch सिलेंडर प्लेट देखाओ', 'सबसे नई प्लेट कौन सी है?'];
         } else {
             $answer = "🎯 **Prioritizing Plate Management Page!**\n\n👉 [Open Plate Management]($navUrl)\n\n**📌 All your queries will now search Plate data first.**\n\n**You can ask about:**\n• Total number of plates\n• Plates by paper type (Chromo, Thermal, etc.)\n• Flat Bed vs Rotary plate count\n• Plates by company (Alpha Flex, SFL, Pidilite)\n• Cylinder size filter (9 inch, 12 inch, etc.)\n• Latest / newest plate added\n• CMYK color specifications for any plate";
             $suggestions = ['Total number of plates', 'Chromo paper plates count', 'Show Flat Bed plates', 'Show Rotary plates', 'Alpha Flex company plates', '9 inch cylinder plates', 'Latest plate added'];
@@ -756,8 +1024,8 @@ if (strpos($pTrimmed, '/paperstock') === 0 || strpos($pTrimmed, '/paper stock') 
             $answer = "🎯 **পেপার স্টক পেজে অগ্রাধিকার দেওয়া হচ্ছে!**\n\n👉 [পেপার স্টক খুলুন]($navUrl)\n\n**📌 এখন থেকে সব প্রশ্নে পেপার স্টক ডাটা আগে খুঁজবে।**\n\n**আপনি যা জিজ্ঞাসা করতে পারেন:**\n• মোট কতগুলো পেপার রোল আছে?\n• Chromo / PP White / Thermal / Maplitho — কোন টাইপের কত?\n• Krishna / Austin / Navkar / NRGI — কোন কোম্পানির কত?\n• মোট রানিং মিটার কত?\n• মোট SQM কত?\n• কোন রোল Slitting-এ আছে?\n• Job Assign স্ট্যাটাসে কতটা আছে?\n• 1500mm চওড়ার রোল দেখাও";
             $suggestions = ['মোট কতগুলো পেপার রোল?', 'Chromo পেপার কত?', 'Krishna কোম্পানির রোল দেখাও', 'মোট রানিং মিটার কত?', 'PP White স্টক কত?', 'Slitting স্ট্যাটাসে কতটা?', '1500mm চওড়ার রোল দেখাও'];
         } elseif ($userLang === 'Hindi') {
-            $answer = "🎯 **पेपर स्टॉक पेज को प्राथमिकता दी जा रही है!**\n\n👉 [पेपर स्टॉक खोलें]($navUrl)\n\n**📌 अब से सभी सवालों में पेपर स्टॉक डेटा पहले खोजा जाएगा।**\n\n**आप ये पूछ सकते हैं:**\n• कुल कितने पेपर रोल हैं?\n• Chromo / PP White / Thermal / Maplitho — किस टाइप के कितने?\n• Krishna / Austin / Navkar / NRGI — किस कंपनी के कितने?\n• कुल रनिंग मीटर कितना?\n• कुल SQM कितना?\n• कौन से रोल Slitting में हैं?\n• Job Assign स्टेटस में कितने हैं?\n• 1500mm चौड़ाई वाले रोल दिखाओ";
-            $suggestions = ['कुल कितने पेपर रोल?', 'Chromo पेपर कितने?', 'Krishna कंपनी के रोल दिखाओ', 'कुल रनिंग मीटर कितना?', 'PP White स्टॉक कितना?', 'Slitting स्टेटस में कितने?', '1500mm चौड़ाई वाले रोल दिखाओ'];
+            $answer = "🎯 **पेपर स्टॉक पेज को प्राथमिकता दी जा रही है!**\n\n👉 [पेपर स्टॉक खोलें]($navUrl)\n\n**📌 अब से सभी सवालों में पेपर स्टॉक डेटा पहले खोजा जाएगा।**\n\n**आप ये पूछ सकते हैं:**\n• कुल कितने पेपर रोल हैं?\n• Chromo / PP White / Thermal / Maplitho — किस टाइप के कितने?\n• Krishna / Austin / Navkar / NRGI — किस कंपनी के कितने?\n• कुल रनिंग मीटर कितना?\n• कुल SQM कितना?\n• कौन से रोल Slitting में हैं?\n• Job Assign स्टेटस में कितने हैं?\n• 1500mm चौड़ाई वाले रोल देखाओ";
+            $suggestions = ['कुल कितने पेपर रोल?', 'Chromo पेपर कितने?', 'Krishna कंपनी के रोल देखाओ', 'कुल रनिंग मीटर कितना?', 'PP White स्टॉक कितना?', 'Slitting स्टेटस में कितने?', '1500mm चौड़ाई वाले रोल देखाओ'];
         } else {
             $answer = "🎯 **Prioritizing Paper Stock Page!**\n\n👉 [Open Paper Stock]($navUrl)\n\n**📌 All your queries will now search Paper Stock data first.**\n\n**You can ask about:**\n• Total roll count in stock\n• Rolls by paper type (Chromo, PP White, Thermal, Maplitho)\n• Rolls by company (Krishna, Austin, Navkar, NRGI)\n• Total running meters / total SQM\n• Rolls currently in Slitting / Job Assign status\n• Rolls by width (e.g. 1500mm wide rolls)\n• Rolls received this month / this week\n• Purchase rate / cost analysis";
             $suggestions = ['Total roll count', 'Chromo paper rolls', 'Krishna company rolls', 'Total running meters', 'PP White stock count', 'Slitting status rolls', '1500mm width rolls'];
@@ -770,17 +1038,107 @@ if (strpos($pTrimmed, '/paperstock') === 0 || strpos($pTrimmed, '/paper stock') 
     $prompt = $subQuery;
     $p = mb_strtolower($prompt, 'UTF-8');
 }
+// /cal command — External Calculation Mode: force calculation engine
+if (preg_match('/^\/cal\s*/iu', $pTrimmed)) {
+    $subQuery = preg_replace('/^\/cal\s*/iu', '', $prompt);
+    $subQuery = trim($subQuery);
+    if ($subQuery === '') {
+        if ($userLang === 'Bengali') {
+            $answer = "🧮 **/cal — বাহ্যিক গণনা মোড**\n\n"
+                . "`/cal` কমান্ড দিয়ে আপনি যেকোনো বাহ্যিক গণনা করতে পারবেন:\n\n"
+                . "• **লেবেল ক্যালকুলেশন:** যেমন `/cal 100mm x 150mm`\n"
+                . "• **সরল অংক:** যেমন `/cal 500*3` বা `/cal (2500+500)/2`\n"
+                . "• **ইউনিট রূপান্তর:** যেমন `/cal 100 sqm to sq inch`\n"
+                . "• **ক্ষেত্রফল:** যেমন `/cal 100mm x 150mm to sq inch`\n\n"
+                . "👉 **যা খুশি টাইপ করুন — আমিই বুঝে নেব!**";
+        } elseif ($userLang === 'Hindi') {
+            $answer = "🧮 **/cal — बाह्य गणना मोड**\n\n"
+                . "`/cal` कमांड से आप कोई भी बाह्य गणना कर सकते हैं:\n\n"
+                . "• **लेबल कैलकुलेशन:** जैसे `/cal 100mm x 150mm`\n"
+                . "• **सरल गणित:** जैसे `/cal 500*3` या `/cal (2500+500)/2`\n"
+                . "• **यूनिट रूपांतरण:** जैसे `/cal 100 sqm to sq inch`\n"
+                . "• **क्षेत्रफल:** जैसे `/cal 100mm x 150mm to sq inch`\n\n"
+                . "👉 **जो चाहे टाइप करें — मैं समझ लूंगा!**";
+        } else {
+            $answer = "🧮 **/cal — External Calculation Mode**\n\n"
+                . "Use `/cal` command to perform any external calculation:\n\n"
+                . "• **Label Calculation:** e.g. `/cal 100mm x 150mm`\n"
+                . "• **Simple Math:** e.g. `/cal 500*3` or `/cal (2500+500)/2`\n"
+                . "• **Unit Conversion:** e.g. `/cal 100 sqm to sq inch`\n"
+                . "• **Area:** e.g. `/cal 100mm x 150mm to sq inch`\n\n"
+                . "👉 **Just type what you need — I'll figure it out!**";
+        }
+        $calSuggestions = generate_erp_suggestions($prompt, $answer, '/cal Command', $userLang);
+        echo json_encode(['ok' => true, 'answer' => $answer, 'provider' => 'ERP AI', 'tool_used' => '/cal Command', 'user_lang' => $userLang, 'suggestions' => $calSuggestions, 'command_type' => 'cal'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+    // /cal <query> — strip prefix, use the remaining query for calculation
+    $prompt = $subQuery;
+    $p = mb_strtolower($prompt, 'UTF-8');
+}
+// /erp command — ERP-only mode: force KB + ERP data only, skip external LLM
+$erpOnlyMode = false;
+if (preg_match('/^\/erp\s*/iu', $pTrimmed)) {
+    $subQuery = preg_replace('/^\/erp\s*/iu', '', $prompt);
+    $subQuery = trim($subQuery);
+    if ($subQuery === '') {
+        if ($userLang === 'Bengali') {
+            $answer = "🔒 **ERP-অনলি মোড**\n\n"
+                . "আপনি এখন /erp **ERP-অনলি মোডে** আছেন। আমি **শুধু ERP ডাটাবেস এবং নলেজ বেস** থেকে উত্তর দেব।\n\n"
+                . "**আপনি যা জিজ্ঞাসা করতে পারেন:**\n"
+                . "• 📦 পেপার স্টক — রোল, কোম্পানি, টাইপ\n"
+                . "• 🏭 প্রোডাকশন — জব, প্ল্যানিং, মেশিন\n"
+                . "• 📋 প্লেট — প্লেট ডাটা, কোম্পানি, টাইপ\n"
+                . "• 📄 ERP নলেজ বেস — ট্রেইনড প্রশ্ন\n\n"
+                . "👉 যেমন: **\"/erp মোট কতগুলো প্লেট আছে?\"**\n"
+                . "👉 বা: **\"/erp Chromo পেপারের কত রোল?\"**";
+            $suggestions = ['/erp মোট কতগুলো প্লেট আছে?', '/erp Chromo পেপারের রোল', '/erp Krishna কোম্পানির রোল'];
+        } elseif ($userLang === 'Hindi') {
+            $answer = "🔒 **ERP-ओनली मोड**\n\n"
+                . "आप /erp **ERP-ओनली मोड** में हैं। मैं **केवल ERP डेटाबेस और नॉलेज बेस** से उत्तर दूंगा।\n\n"
+                . "**आप ये पूछ सकते हैं:**\n"
+                . "• 📦 पेपर स्टॉक — रोल, कंपनी, टाइप\n"
+                . "• 🏭 प्रोडक्शन — जॉब, प्लानिंग, मशीन\n"
+                . "• 📋 प्लेट — प्लेट डेटा, कंपनी, टाइप\n"
+                . "• 📄 ERP नॉलेज बेस — ट्रेंड प्रश्न\n\n"
+                . "👉 जैसे: **\"/erp कुल कितनी प्लेट हैं?\"**\n"
+                . "👉 या: **\"/erp Chromo पेपर के कितने रोल?\"**";
+            $suggestions = ['/erp कुल कितनी प्लेट हैं?', '/erp Chromo पेपर के रोल', '/erp Krishna कंपनी के रोल'];
+        } else {
+            $answer = "🔒 **ERP-Only Mode**\n\n"
+                . "You are in /erp **ERP-Only Mode**. I will answer **only from ERP database and Knowledge Base**.\n\n"
+                . "**You can ask about:**\n"
+                . "• 📦 Paper Stock — rolls, companies, types\n"
+                . "• 🏭 Production — jobs, planning, machines\n"
+                . "• 📋 Plates — plate data, companies, types\n"
+                . "• 📄 ERP Knowledge Base — trained Q&A\n\n"
+                . "👉 Example: **\"/erp Total number of plates\"**\n"
+                . "👉 Or: **\"/erp Chromo paper roll count\"**";
+            $suggestions = ['/erp Total number of plates', '/erp Chromo paper rolls', '/erp Krishna company rolls'];
+        }
+        echo json_encode(['ok' => true, 'answer' => $answer, 'provider' => 'ERP AI Priority Command', 'tool_used' => 'ERP-Only Mode', 'user_lang' => $userLang, 'suggestions' => $suggestions, 'command_type' => 'erp'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+    // /erp <query> — strip prefix, set ERP-only mode, fall through
+    $erpOnlyMode = true;
+    $prompt = $subQuery;
+    $p = mb_strtolower($prompt, 'UTF-8');
+}
+
 // Clear priority mode
 if (strpos($pTrimmed, '/clear') === 0 || $pTrimmed === 'clear priority' || $pTrimmed === 'reset' || $pTrimmed === 'normal' || strpos($pTrimmed, 'নরমাল') !== false || strpos($pTrimmed, 'सामान्य') !== false) {
     unset($_SESSION['ai_priority_mode']);
 
+    $clearAnswer = $userLang === 'Bengali' ? "✅ **প্রায়োরিটি মোড রিসেট করা হয়েছে।** এখন সব ডাটা সমান অগ্রাধিকার পাবে।"
+        : ($userLang === 'Hindi' ? "✅ **प्राथमिकता मोड रीसेट कर दिया गया है।** अब सभी डेटा समान प्राथमिकता पर है।"
+            : "✅ **Priority mode reset.** All data sources now have equal priority.");
+    $clearSuggestions = generate_erp_suggestions($prompt, $clearAnswer, 'Priority Reset', $userLang);
     echo json_encode([
         'ok' => true,
-        'answer' => $userLang === 'Bengali' ? "✅ **প্রায়োরিটি মোড রিসেট করা হয়েছে।** এখন সব ডাটা সমান অগ্রাধিকার পাবে।"
-            : ($userLang === 'Hindi' ? "✅ **प्राथमिकता मोड रीसेट कर दिया गया है।** अब सभी डेटा समान प्राथमिकता पर है।"
-                : "✅ **Priority mode reset.** All data sources now have equal priority."),
+        'answer' => $clearAnswer,
         'provider' => 'ERP AI Priority Command',
-        'tool_used' => 'Priority Reset'
+        'tool_used' => 'Priority Reset',
+        'suggestions' => $clearSuggestions
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
@@ -789,7 +1147,7 @@ if (strpos($pTrimmed, '/clear') === 0 || $pTrimmed === 'clear priority' || $pTri
 // ─── Bare Quoted Query Handler ("blue 500" etc.) ───
 // If user types just a quoted string like "blue 500" without /plate or /paperstock prefix,
 // search broadly (jobs, plates, paper stock) and ask user what they want to see.
-if (!isset($_SESSION['ai_priority_mode']) && preg_match('/^["\x{201C}\x{201D}]([^"\x{201C}\x{201D}]+)["\x{201C}\x{201D}]$/u', trim($prompt), $qm)) {
+if (preg_match('/^["\x{201C}\x{201D}]([^"\x{201C}\x{201D}]+)["\x{201C}\x{201D}]$/u', trim($prompt), $qm)) {
     $commandType = 'quoted';
     $searchTerm = trim($qm[1]);
     $searchLower = mb_strtolower($searchTerm, 'UTF-8');
@@ -836,19 +1194,55 @@ if (!isset($_SESSION['ai_priority_mode']) && preg_match('/^["\x{201C}\x{201D}]([
 
     $foundAreas = array_keys($results);
 
-    if (empty($foundAreas)) {
-        if ($userLang === 'Bengali') {
-            $answer = "🔍 **\"$searchTerm\" — কোথাও পাওয়া যায়নি।**\n\nএই টার্মটি ERP-তে কোনো জব, প্লেট বা পেপার স্টকে সংযুক্ত নয়।\n\n**আপনি কি কিছু অন্য নামে খুঁজছেন?**";
-            $suggestions = ['অন্য কোনো নামে খুঁজুন', 'প্লেট ম্যানেজমেন্ট দেখুন', 'পেপার স্টক দেখুন'];
-        } elseif ($userLang === 'Hindi') {
-            $answer = "🔍 **\"$searchTerm\" — कहीं नहीं मिला।**\n\nयह टर्म ERP में किसी जॉब, प्लेट या पेपर स्टॉक से जुड़ा नहीं है।\n\n**क्या आप किसी अन्य नाम से खोज रहे हैं?**";
-            $suggestions = ['किसी अन्य नाम से खोजें', 'प्लेट मैनेजमेंट देखें', 'पेपर स्टॉक देखें'];
-        } else {
-            $answer = "🔍 **\"$searchTerm\" — not found anywhere in ERP.**\n\nThis term is not linked to any job, plate, or paper stock record.\n\n**Would you like to search with a different name?**";
-            $suggestions = ['Search with different name', 'View Plate Management', 'View Paper Stock'];
+    // If nothing found, try splitting numbers from letters (e.g. "blue500" -> "blue 500")
+    if (empty($foundAreas) && preg_match('/[a-zA-Z]\d|\d[a-zA-Z]/', $searchTerm)) {
+        $splitTerm = preg_replace('/([a-zA-Z])(\d)/', '$1 $2', $searchTerm);
+        $splitTerm = preg_replace('/(\d)([a-zA-Z])/', '$1 $2', $splitTerm);
+        $splitLower = mb_strtolower($splitTerm, 'UTF-8');
+
+        // Re-run searches with split term
+        $jobHits = [];
+        $jStmt = $db->prepare("SELECT id, job_no, job_name, status, machine, priority FROM planning WHERE job_name LIKE ? OR job_no LIKE ? ORDER BY id DESC LIMIT 5");
+        if ($jStmt) {
+            $jLike = '%' . $splitTerm . '%';
+            $jStmt->bind_param('ss', $jLike, $jLike);
+            $jStmt->execute();
+            $jobHits = $jStmt->get_result()->fetch_all(MYSQLI_ASSOC) ?? [];
         }
-        echo json_encode(['ok' => true, 'answer' => $answer, 'provider' => 'ERP AI', 'tool_used' => 'Bare Quoted Search', 'user_lang' => $userLang, 'suggestions' => $suggestions], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        exit;
+        if (!empty($jobHits)) $results['jobs'] = $jobHits;
+
+        $plateHits = [];
+        $pStmt = $db->prepare("SELECT id, sl_no, name, plate, paper_type, cylinder, make_by, die FROM master_plate_data WHERE name LIKE ? OR plate LIKE ? OR sl_no LIKE ? OR paper_type LIKE ? OR make_by LIKE ? OR die LIKE ? ORDER BY id DESC LIMIT 5");
+        if ($pStmt) {
+            $pLike = '%' . $splitTerm . '%';
+            $pStmt->bind_param('ssssss', $pLike, $pLike, $pLike, $pLike, $pLike, $pLike);
+            $pStmt->execute();
+            $plateHits = $pStmt->get_result()->fetch_all(MYSQLI_ASSOC) ?? [];
+        }
+        if (!empty($plateHits)) $results['plates'] = $plateHits;
+
+        $stockHits = [];
+        $sStmt = $db->prepare("SELECT id, roll_no, paper_type, company, width_mm, length_mtr, status FROM paper_stock WHERE roll_no LIKE ? OR paper_type LIKE ? OR company LIKE ? OR job_name LIKE ? OR remarks LIKE ? ORDER BY id DESC LIMIT 5");
+        if ($sStmt) {
+            $sLike = '%' . $splitTerm . '%';
+            $sStmt->bind_param('sssss', $sLike, $sLike, $sLike, $sLike, $sLike);
+            $sStmt->execute();
+            $stockHits = $sStmt->get_result()->fetch_all(MYSQLI_ASSOC) ?? [];
+        }
+        if (!empty($stockHits)) $results['stock'] = $stockHits;
+
+        $foundAreas = array_keys($results);
+        if (!empty($foundAreas)) {
+            $searchTerm = $splitTerm;
+        }
+    }
+
+    if (empty($foundAreas)) {
+        // No ERP data found — don't block, fall through to normal processing
+        // (KB lookup, calculator, LLM, etc.)
+        $prompt = $searchTerm;
+        $p = mb_strtolower($prompt, 'UTF-8');
+        $commandType = null;
     }
 
     if (count($foundAreas) === 1) {
@@ -891,8 +1285,79 @@ if (!isset($_SESSION['ai_priority_mode']) && preg_match('/^["\x{201C}\x{201D}]([
             $answer = "🔍 **\"$searchTerm\" — found in multiple areas:**\n\n$areaStr\n\n**What would you like to see?**\n• Job / Production details — say \"job\"\n• Plate details — say \"plate\"\n• Paper Stock details — say \"paper\"";
             $suggestions = ['Show Job details', 'Show Plate details', 'Show Paper Stock details'];
         }
+        // Save search term in session so follow-up area selector (e.g. "plate") can use it
+        $_SESSION['ai_ambiguous_search'] = ['term' => $searchTerm, 'areas' => $foundAreas];
         echo json_encode(['ok' => true, 'answer' => $answer, 'provider' => 'ERP AI', 'tool_used' => 'Ambiguous Quoted Search', 'user_lang' => $userLang, 'suggestions' => $suggestions], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         exit;
+    }
+}
+
+// ─── Ambiguous Search Follow-up Handler ───
+// When user previously got multi-area results and now sends a simple area selector
+// like "plate", "job", "paper", or "Show Plate details", redirect to the saved search term.
+if (isset($_SESSION['ai_ambiguous_search']) && !empty($foundAreas ?? [])) {
+    // User clicked a suggestion chip or typed an area name — clear the stored context
+    unset($_SESSION['ai_ambiguous_search']);
+} elseif (isset($_SESSION['ai_ambiguous_search']) && preg_match('/^(show\s+)?(job|plate|paper|stock|paper\s*stock|জব|প্লেট|পেপার|प्लेट|जॉब|पेपर)\b/i', trim($prompt), $areaMatch)) {
+    $savedSearch = $_SESSION['ai_ambiguous_search'];
+    unset($_SESSION['ai_ambiguous_search']);
+    $areaKey = strtolower($areaMatch[2]);
+    // Map area keyword to priority mode
+    if ($areaKey === 'plate' || $areaKey === 'প্লেট' || $areaKey === 'प्लेट') {
+        $_SESSION['ai_priority_mode'] = 'plate';
+    } elseif ($areaKey === 'job' || $areaKey === 'জব' || $areaKey === 'जॉब') {
+        $_SESSION['ai_priority_mode'] = 'job';
+    } elseif ($areaKey === 'paper' || $areaKey === 'stock' || $areaKey === 'paper stock' || $areaKey === 'পেপার' || $areaKey === 'पेपर') {
+        $_SESSION['ai_priority_mode'] = 'paperstock';
+    }
+    // Override prompt with saved search term so the correct handler runs
+    $prompt = $savedSearch['term'];
+    $p = mb_strtolower($prompt, 'UTF-8');
+}
+
+// ─── Inline Quoted Term Handler ("product name" in any prompt) ───
+// If the prompt contains quoted text anywhere (e.g. "blue500" price), extract it as a
+// product/item name, set ERP-only mode, and search Knowledge Base for that term first.
+if (!$erpOnlyMode && preg_match('/["\x{201C}\x{201D}]([^"\x{201C}\x{201D}]+)["\x{201C}\x{201D}]/u', $prompt, $iqm)) {
+    $quotedTerm = trim($iqm[1]);
+    if ($quotedTerm !== '') {
+        // Set ERP-only mode — only search KB + ERP database, skip external LLM
+        $erpOnlyMode = true;
+
+        // Direct KB lookup for the quoted term
+        $kbResult = check_knowledge_base($db, $quotedTerm);
+        if ($kbResult !== null) {
+            $kbAnswer = $kbResult['answer'];
+            $kbCategory = $kbResult['category'];
+            echo json_encode([
+                'ok' => true,
+                'answer' => "🏷️ **Product/Item: \"{$quotedTerm}\"**\n\n{$kbAnswer}",
+                'provider' => 'ERP AI (Product KB)',
+                'tool_used' => 'Quoted Product Lookup',
+                'user_lang' => $userLang,
+                'kb_match_id' => (int) $kbResult['id']
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+
+        // Also try searching the KB with the original prompt (user may have added context words)
+        $kbResultWithContext = check_knowledge_base($db, $prompt);
+        if ($kbResultWithContext !== null) {
+            $kbAnswer = $kbResultWithContext['answer'];
+            $kbCategory = $kbResultWithContext['category'];
+            echo json_encode([
+                'ok' => true,
+                'answer' => "🏷️ **Product/Item: \"{$quotedTerm}\"**\n\n{$kbAnswer}",
+                'provider' => 'ERP AI (Product KB)',
+                'tool_used' => 'Quoted Product Lookup',
+                'user_lang' => $userLang,
+                'kb_match_id' => (int) $kbResultWithContext['id']
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+
+        // If KB has no match, fall through to normal ERP-only processing
+        // The $erpOnlyMode flag will skip external LLM later
     }
 }
 
@@ -919,7 +1384,7 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array
 
     $promptLower = mb_strtolower(trim($prompt), 'UTF-8');
     preg_match_all('/[\x{0980}-\x{09FF}\x{0900}-\x{097F}\w]+/u', $promptLower, $promptMatches);
-    $kbStopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'show', 'details', 'this', 'the', 'a', 'an', 'what', 'where', 'how', 'when', 'who', 'list', 'get', 'for', 'about', 'with', 'from', 'ache', 'koto', 'kotogulo', 'ki', 'kon', 'jabe', 'hote', 'ar', 'er', 'diye', 'giye', 'ache', 'hobe', 'হবে', 'আছে', 'কত', 'কতগুলো', 'কি', 'কী', 'কোন', 'দিয়ে', 'গিয়ে', 'নাম', 'বলো', 'কোথায়', 'কোনটি', 'এবং', 'বা', 'এর', 'সেরা', 'টি', 'গুলো', 'গুলা', 'দাও', 'করো', 'করবে', 'কে', 'কেন', 'কবে', 'থেকে', 'তে', 'যে', 'ও', 'আর', 'হলো', 'হল', 'নাকি', 'তাই', 'যেন', 'তবে', 'সুতরাং', 'খুব', 'সবচেয়ে', 'কয়েকটি', 'বৈশিষ্ট্য', 'পৃথিবীর'];
+    $kbStopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'show', 'details', 'this', 'the', 'a', 'an', 'what', 'where', 'how', 'when', 'who', 'list', 'get', 'for', 'about', 'with', 'from', 'ache', 'koto', 'kotogulo', 'ki', 'kon', 'jabe', 'hote', 'ar', 'er', 'diye', 'giye', 'ache', 'hobe', 'হে', 'আছে', 'কত', 'কতগুলো', 'কি', 'কী', 'কোন', 'দিয়ে', 'গিয়ে', 'নাম', 'বলো', 'কোথায়', 'কোনটি', 'এবং', 'বা', 'এর', 'সেরা', 'টি', 'গুলো', 'গুলা', 'দাও', 'করো', 'করবে', 'কে', 'কেন', 'কবে', 'থেকে', 'তে', 'যে', 'ও', 'আর', 'হলো', 'হল', 'নাকি', 'তাই', 'যেন', 'তবে', 'সুতরাং', 'খুব', 'সবচেয়ে', 'কয়েকটি', 'বৈশিষ্ট্য', 'পৃথিবীর'];
 
     $promptTokens = array_filter($promptMatches[0] ?? [], function ($t) use ($kbStopwords) {
         return mb_strlen($t) >= 3 && !in_array($t, $kbStopwords, true);
@@ -1028,7 +1493,7 @@ if (strpos($p, 'inch') !== false && (strpos($p, 'sqm') !== false || strpos($p, '
             $answer = "📐 **SQ Inch থেকে SQM পেপার রেট হিসাব:**\n\n"
                 . "• **প্রতি স্কয়ার ইঞ্চি দাম:** ₹" . number_format($givenInchRate, 4) . " / SQ Inch\n"
                 . "• **১ স্কয়ার মিটার =** 1,550.0031 স্কয়ার ইঞ্চি\n"
-                . "• **হিসাবকৃত প্রতি স্কয়ার মিটার দাম:** **₹" . number_format($calcSqmRate, 2) . "** / SQM\n\n"
+                . "• **গণনা কী প্রতি স্কয়ার মিটার দাম:** **₹" . number_format($calcSqmRate, 2) . "** / SQM\n\n"
                 . "💡 **গাণিতিক নিয়ম:** `Per SQM Rate = Per SQ Inch Rate × 1550.0031` (" . number_format($givenInchRate, 4) . " × 1550.0031 = ₹" . number_format($calcSqmRate, 2) . " / SQM)\n";
         }
     } else {
@@ -1055,16 +1520,18 @@ if (strpos($p, 'inch') !== false && (strpos($p, 'sqm') !== false || strpos($p, '
                 . "• **স্কয়ার মিটার দাম (Per SQM Rate):** ₹" . number_format($sqmRate, 2) . " / SQM\n"
                 . "• **১ স্কয়ার মিটার (1 SQM):** 1,550.0031 স্কয়ার ইঞ্চি (SQ Inches)\n"
                 . "• **প্রতি স্কয়ার ইঞ্চি দাম (Per SQ Inch Cost):** **₹{$sqInchFormatted}** / SQ Inch (বা **{$sqInchPaise} পয়সা** / স্কয়ার ইঞ্চি)\n\n"
-                . "💡 **গাণিতিক নিয়ম:** `Per SQ Inch = Per SQM Rate / 1550.0031` (" . number_format($sqmRate, 2) . " ÷ 1550.0031 = ₹{$sqInchFormatted})\n";
+                . "💡 **গাণিতিক নিয়ম:** `Per SQ Inch = Per SQM Rate / 1550.0031` (" . number_format($sqmRate, 2) . " ÷ 1550.0031 = ₹{$sqInchFormatted})\n";
         }
     }
 
+    $sqmSuggestions = generate_erp_suggestions($prompt, $answer, 'SQM & SQ Inch Unit Converter', $userLang);
     echo json_encode([
         'ok' => true,
         'answer' => $answer,
         'provider' => 'ERP Industrial Unit Conversion Engine',
         'tool_used' => 'SQM & SQ Inch Unit Converter',
-        'user_lang' => $userLang
+        'user_lang' => $userLang,
+        'suggestions' => $sqmSuggestions
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
@@ -1092,6 +1559,50 @@ if (!$skipKB) {
 if (!$skipKB && preg_match('/\b\d{2,}\b/', $prompt) && preg_match('/(plate|প্লেট|प्लेट|roll|রোল|रोल|job|জব|जॉब)/iu', $p)) {
     $skipKB = true;
 }
+// Skip KB when query is mm dimension → square inch area conversion
+if (!$skipKB && preg_match('/\d+(?:\.\d+)?\s*mm\s*[xX*]\s*\d+(?:\.\d+)?\s*mm/i', $prompt) && preg_match('/sqr?\s*inch(es)?|sq\.?\s*in|square\s*inch(es)?/i', $prompt)) {
+    $skipKB = true;
+}
+
+// ─── Module Page Navigation Handler ("View Plate Management", "Open Paper Stock page", etc.) ───
+if (!$skipKB && preg_match('/^(view|open|show|go\s*to)\s+(plate|paper\s*stock|paper|stock|job|dispatch|dashboard)\s*(management|page)?\s*(page)?$/i', trim($prompt), $navM)) {
+    $navTarget = strtolower(trim($navM[2]));
+    $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+    $navUrl = '';
+    $pageTitle = '';
+
+    if ($navTarget === 'plate' || strpos($navTarget, 'plate') !== false) {
+        $navUrl = $baseUrl . '/modules/plate-tools/plate-management/index.php';
+        $pageTitle = 'Plate Management';
+    } elseif ($navTarget === 'paper stock' || $navTarget === 'paper' || $navTarget === 'stock') {
+        $navUrl = $baseUrl . '/modules/paper_stock/index.php';
+        $pageTitle = 'Paper Stock';
+    } elseif ($navTarget === 'job') {
+        $navUrl = $baseUrl . '/modules/planning/index.php';
+        $pageTitle = 'Job Planning';
+    } elseif ($navTarget === 'dispatch') {
+        $navUrl = $baseUrl . '/modules/dispatch/index.php';
+        $pageTitle = 'Dispatch';
+    } elseif ($navTarget === 'dashboard') {
+        $navUrl = $baseUrl . '/modules/dashboard/index.php';
+        $pageTitle = 'Dashboard';
+    }
+
+    if ($navUrl) {
+        if ($userLang === 'Bengali') {
+            $answer = "📂 **$pageTitle পেজে রিডিরেক্ট করা হচ্ছে...**\n\n👉 [$pageTitle খুলুন]($navUrl)";
+            $suggestions = ['প্লেট ম্যানেজমেন্ট', 'পেপার স্টক দেখুন', 'ড্যাশবোর্ডে যান'];
+        } elseif ($userLang === 'Hindi') {
+            $answer = "📂 **$pageTitle पेज पर रीडायरेक्ट हो रहा है...**\n\n👉 [$pageTitle खोलें]($navUrl)";
+            $suggestions = ['प्लेट मैनेजमेंट', 'पेपर स्टॉक देखें', 'डैशबोर्ड पर जाएं'];
+        } else {
+            $answer = "📂 **Redirecting to $pageTitle page...**\n\n👉 [Open $pageTitle]($navUrl)";
+            $suggestions = ['Show Plate Management', 'View Paper Stock', 'Go to Dashboard'];
+        }
+        echo json_encode(['ok' => true, 'answer' => $answer, 'provider' => 'ERP AI', 'tool_used' => "Navigate to $pageTitle", 'user_lang' => $userLang, 'nav_url' => $navUrl, 'suggestions' => $suggestions], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+}
 
 $knowledgeMatch = $skipKB ? null : check_knowledge_base($db, $prompt);
 if ($knowledgeMatch !== null) {
@@ -1099,13 +1610,16 @@ if ($knowledgeMatch !== null) {
     $kbAnswer = $knowledgeMatch['answer'];
     $kbCategory = $knowledgeMatch['category'];
 
+    $kbFinalAnswer = "📚 " . $kbAnswer;
+    $kbSuggestions = generate_erp_suggestions($prompt, $kbFinalAnswer, 'Admin Knowledge Base (' . $kbCategory . ')', $userLang);
     echo json_encode([
         'ok' => true,
-        'answer' => "📚 " . $kbAnswer,
+        'answer' => $kbFinalAnswer,
         'provider' => 'ERP AI Knowledge Base',
         'tool_used' => 'Admin Knowledge Base (' . $kbCategory . ')',
         'user_lang' => $userLang,
-        'kb_match_id' => (int) $knowledgeMatch['id']
+        'kb_match_id' => (int) $knowledgeMatch['id'],
+        'suggestions' => $kbSuggestions
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
@@ -1227,6 +1741,55 @@ function calculate_label_costing_math(string $prompt): array
     ];
 }
 
+// ─── Simple Arithmetic Expression Evaluator ───
+// Handles expressions like "2+2", "500*3", "(2500+500)/2", "15000*2"
+$isSimpleArithmetic = false;
+$arithmeticResult = null;
+$cleanArith = trim(preg_replace('/[+\-*\/()%\s\d.,]/', '', $prompt));
+if ($cleanArith === '' && preg_match('/^[\d+\-*\/()%\s.,]+$/', trim($prompt)) && preg_match('/[+\-*\/%]/', $prompt)) {
+    // Must have at least one operator and look like a calculation
+    $expr = str_replace(',', '', trim($prompt));
+    // Validate: only digits, basic operators, parens, spaces, dots allowed
+    if (preg_match('/^[\d+\-*\/()%. ]+$/', $expr) && preg_match('/\d/', $expr)) {
+        try {
+            $result = @eval("return $expr;");
+            if ($result !== false && !is_nan($result) && is_finite($result)) {
+                $isSimpleArithmetic = true;
+                $arithmeticResult = $result;
+            }
+        } catch (\Throwable $e) {
+            // Not a valid arithmetic expression, ignore
+        }
+    }
+}
+
+if ($isSimpleArithmetic) {
+    $resultFormatted = is_float($arithmeticResult) ? rtrim(rtrim(number_format($arithmeticResult, 6), '0'), '.') : $arithmeticResult;
+    if ($userLang === 'English') {
+        $answer = "🧮 **Calculation Result:**\n\n"
+            . "• **Expression:** `{$prompt}`\n"
+            . "• **Result:** **{$resultFormatted}**\n";
+    } elseif ($userLang === 'Hindi') {
+        $answer = "🧮 **गणना परिणाम:**\n\n"
+            . "• **व्यंजक:** `{$prompt}`\n"
+            . "• **परिणाम:** **{$resultFormatted}**\n";
+    } else {
+        $answer = "🧮 **গণনার ফলাফল:**\n\n"
+            . "• **রাশি:** `{$prompt}`\n"
+            . "• **ফলাফল:** **{$resultFormatted}**\n";
+    }
+    $calciSuggestions = generate_erp_suggestions($prompt, $answer, 'Simple Calculator', $userLang);
+    echo json_encode([
+        'ok' => true,
+        'answer' => $answer,
+        'provider' => 'ERP AI Arithmetic Engine',
+        'tool_used' => 'Simple Calculator',
+        'user_lang' => $userLang,
+        'suggestions' => $calciSuggestions
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
 $hasCompanyQuery = preg_match('/\b(krishna|austin|navkar|nrgi)\b/i', $prompt) || strpos($p, 'কৃষ্ণা') !== false || strpos($p, 'অস্টিন') !== false || strpos($p, 'নভকার') !== false || strpos($p, 'এনআরজিআই') !== false;
 $hasDbQueryIntent = preg_match('/\b(die|dies|plate|plates|stock|inventory|search|find|any|is there|kono|ache)\b/i', $prompt);
 
@@ -1237,90 +1800,139 @@ $isMathIntent = !$hasCompanyQuery && !$hasDbQueryIntent && (
     (strpos($p, 'ups') !== false && strpos($p, 'gap') !== false)
 );
 
+// ─── Simple mm² → Square Inch Area Conversion ───
+$mmAreaMatch = [];
+if (preg_match('/(\d+(?:\.\d+)?)\s*mm\s*[xX*]\s*(\d+(?:\.\d+)?)\s*mm/i', $prompt, $mmAreaMatch)) {
+    $askSqInch = preg_match('/sqr?\s*inch(es)?|sq\.?\s*in|square\s*inch(es)?/i', $prompt);
+    if ($askSqInch) {
+        $mmW = (float) $mmAreaMatch[1];
+        $mmL = (float) $mmAreaMatch[2];
+        $mm2 = $mmW * $mmL;
+        $sqInches = round($mm2 / 645.16, 4);
+        $mmWInch = round($mmW / 25.4, 3);
+        $mmLInch = round($mmL / 25.4, 3);
 
+        if ($userLang === 'English') {
+            $answer = "📐 **Millimeter to Square Inch Area Conversion:**\n\n"
+                . "• **Dimensions:** {$mmW}mm × {$mmL}mm\n"
+                . "• **In Inches:** {$mmWInch}″ × {$mmLInch}″\n"
+                . "• **Area:** **{$mm2} mm²** = **{$sqInches} sq in**\n\n"
+                . "💡 **Formula:** `({$mmW} × {$mmL}) ÷ 645.16 = {$sqInches} sq in`\n"
+                . "*(1 sq in = 25.4mm × 25.4mm = 645.16 mm²)*";
+        } elseif ($userLang === 'Hindi') {
+            $answer = "📐 **मिलीमीटर से वर्ग इंच क्षेत्रफल रूपांतरण:**\n\n"
+                . "• **आयाम:** {$mmW}mm × {$mmL}mm\n"
+                . "• **इंच में:** {$mmWInch}″ × {$mmLInch}″\n"
+                . "• **क्षेत्रफल:** **{$mm2} mm²** = **{$sqInches} वर्ग इंच**\n\n"
+                . "💡 **सूत्र:** `({$mmW} × {$mmL}) ÷ 645.16 = {$sqInches} वर्ग इंच`\n"
+                . "*(1 वर्ग इंच = 25.4mm × 25.4mm = 645.16 mm²)*";
+        } else {
+            $answer = "📐 **মিলিমিটার থেকে স্কয়ার ইঞ্চি এলাকা রূপান্তর:**\n\n"
+                . "• **মাপ:** {$mmW}mm × {$mmL}mm\n"
+                . "• **ইঞ্চিতে:** {$mmWInch}″ × {$mmLInch}″\n"
+                . "• **এলাকা:** **{$mm2} mm²** = **{$sqInches} বর্গ ইঞ্চি**\n\n"
+                . "💡 **সূত্র:** `({$mmW} × {$mmL}) ÷ 645.16 = {$sqInches} বর্গ ইঞ্চি`\n"
+                . "*(1 বর্গ ইঞ্চি = 25.4mm × 25.4mm = 645.16 mm²)*";
+        }
+
+        $mmSugg = generate_erp_suggestions($prompt, $answer, 'mm² to Square Inch Converter', $userLang);
+        echo json_encode([
+            'ok' => true,
+            'answer' => $answer,
+            'provider' => 'ERP Industrial Unit Conversion Engine',
+            'tool_used' => 'mm² to Square Inch Converter',
+            'user_lang' => $userLang,
+            'suggestions' => $mmSugg
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+}
 
 if ($isMathIntent) {
     $math = calculate_label_costing_math($prompt);
 
 
-    if ($userLang === 'English') {
-        $answer = "🧮 **Industrial Label Calculation Breakdown:**\n\n"
-            . "• **Label Specification:** {$math['width_mm']}mm X {$math['length_mm']}mm | **{$math['ups']} Ups** | **Middle Gap:** {$math['gap_mm']}mm\n"
-            . "• **Total Quantity Required:** " . number_format($math['qty']) . " Labels / Pieces\n"
-            . "• **Repeat Pitch:** {$math['repeat_pitch_mm']}mm per impression\n"
-            . "• **Total Impressions Required:** " . number_format($math['impressions']) . "\n"
-            . "• **Net Used Width:** {$math['net_used_width_mm']}mm\n"
-            . "• **Required Running Meters:** **" . number_format($math['running_meters'], 2) . " Meters**\n";
-
-        if ($math['has_roll_width']) {
-            $answer .= "\n📐 **Parent Roll & Wastage Analysis:**\n"
-                . "• **Parent Roll Width:** {$math['parent_width_mm']}mm\n"
-                . "• **Side Wastage Width:** {$math['side_waste_width_mm']}mm ({$math['side_waste_pct']}% Wastage)\n"
-                . "• **Total Paper Area (SQM):** **{$math['total_paper_sqm']} SQM**\n"
-                . "• **Total Weight (Est. 80 GSM):** **{$math['total_weight_kg']} KG**\n";
-        }
-        if ($math['has_rate']) {
-            $answer .= "\n💰 **Costing Breakdown:**\n"
-                . "• **Total Paper Cost:** **₹" . number_format($math['total_paper_cost'], 2) . "**\n"
-                . "• **Cost per Label:** **₹{$math['cost_per_label']}** / label\n";
-        }
-        if (!$math['has_roll_width'] || !$math['has_rate']) {
-            $answer .= "\n💡 **Need Total Cost, SQM & Wastage Calculation?**\n"
-                . "Please reply with your missing inputs:\n"
-                . (!$math['has_roll_width'] ? "1. 📏 **Parent Roll Width (mm):** (e.g. `on 250mm roll`)\n" : "")
-                . (!$math['has_rate'] ? "2. 💰 **Paper Price (Rate):** (e.g. `at Rs 300/kg` or `Rs 20/sqm`)\n" : "");
-        }
-    } elseif ($userLang === 'Hindi') {
-        $answer = "🧮 **औद्योगिक लेबल गणना विवरण:**\n\n"
-            . "• **लेबल विनिर्देश:** {$math['width_mm']}mm X {$math['length_mm']}mm | **{$math['ups']} Ups** | **गैप:** {$math['gap_mm']}mm\n"
-            . "• **कुल आवश्यक मात्रा:** " . number_format($math['qty']) . " पीस\n"
-            . "• **रिपीट पिच:** {$math['repeat_pitch_mm']}mm प्रति इम्प्रैशन\n"
-            . "• **आवश्यक इम्प्रैशन:** " . number_format($math['impressions']) . "\n"
-            . "• **चौड़ाई (Net Width):** {$math['net_used_width_mm']}mm\n"
-            . "• **आवश्यक रनिंग मीटर:** **" . number_format($math['running_meters'], 2) . " मीटर**\n";
-
-        if ($math['has_roll_width']) {
-            $answer .= "\n📐 **पेपर वेस्टेज:**\n"
-                . "• **मदर रोल चौड़ाई:** {$math['parent_width_mm']}mm\n"
-                . "• **साइट वेस्टेज:** {$math['side_waste_width_mm']}mm ({$math['side_waste_pct']}%)\n"
-                . "• **कुल पेपर क्षेत्रफल:** **{$math['total_paper_sqm']} SQM**\n";
-        }
-        if (!$math['has_roll_width'] || !$math['has_rate']) {
-            $answer .= "\n💡 **क्या आप कुल लागत और वेस्टेज की गणना चाहते हैं?**\n"
-                . "कृपया शेष विवरण बताएं:\n"
-                . (!$math['has_roll_width'] ? "1. 📏 **मदर रोल चौड़ाई (mm):** (उदा. `250mm roll`)\n" : "")
-                . (!$math['has_rate'] ? "2. 💰 **पेपर की कीमत (Rate):** (उदा. `₹300/kg`)\n" : "");
-        }
+    // ─── Build area/weight output ───
+    if ($math['has_roll_width']) {
+        $sqmBlock = "• **Total Paper Area:** **{$math['total_paper_sqm']} SQM** (Roll {$math['parent_width_mm']}mm)\n"
+            . "• **Net Label Area:** **{$math['net_label_sqm']} SQM** (Used {$math['net_used_width_mm']}mm)\n"
+            . "• **Side Waste:** {$math['side_waste_width_mm']}mm ({$math['side_waste_pct']}%) — **{$math['waste_sqm']} SQM**\n"
+            . "• **Est. Weight (80 GSM):** **{$math['total_weight_kg']} KG** (Waste: {$math['waste_weight_kg']} KG)";
     } else {
-        $answer = "🧮 **ইন্ডাস্ট্রিয়াল লেবেল গাণিতিক হিসাব:**\n\n"
-            . "• **লেবেল সাইজ:** {$math['width_mm']}mm X {$math['length_mm']}mm | **{$math['ups']} Ups** | **মিডল গ্যাপ:** {$math['gap_mm']}mm\n"
-            . "• **মোট কোয়ান্টিটি:** " . number_format($math['qty']) . " টি লেবেল / পিস\n"
-            . "• **রিপিট পিচ:** {$math['repeat_pitch_mm']}mm প্রতি ইমপ্রেশনে\n"
-            . "• **মোট ইমপ্রেশন প্রয়োজন:** " . number_format($math['impressions']) . " টি\n"
-            . "• **ব্যবহৃত চওড়া (Net Width):** {$math['net_used_width_mm']}mm\n"
-            . "• **প্রয়োজনীয় রানিং মিটার:** **" . number_format($math['running_meters'], 2) . " মিটার (Running Meters)**\n";
+        $sqmBlock = "• **Net Label Area:** **{$math['net_label_sqm']} SQM** (Used width {$math['net_used_width_mm']}mm)\n"
+            . "• **Est. Weight (80 GSM):** **{$math['total_weight_kg']} KG**\n"
+            . "📏 *Add parent roll width (e.g. `on 250mm roll`) for waste & total SQM*";
+    }
 
+    // ─── Build cost output ───
+    $costBlock = '';
+    if ($math['has_rate']) {
+        $costBlock = "• **Total Paper Cost:** **₹" . number_format($math['total_paper_cost'], 2) . "**\n"
+            . "• **Cost per Label:** **₹" . number_format($math['cost_per_label'], 4) . "**\n"
+            . "• **Rate per SQ Inch:** **₹{$math['price_per_sq_inch']}** / sq in\n";
         if ($math['has_roll_width']) {
-            $answer .= "\n📐 **মাদার রোল ও ওয়েস্টেজ হিসাব:**\n"
-                . "• **মাদার রোল চওড়া:** {$math['parent_width_mm']}mm\n"
-                . "• **সাইড ওয়েস্টেজ চওড়া:** {$math['side_waste_width_mm']}mm ({$math['side_waste_pct']}% ওয়েস্টেজ)\n"
-                . "• **মোট পেপার ক্ষেত্রফল (SQM):** **{$math['total_paper_sqm']} SQM**\n"
-                . "• **মোট ওজন (Est. 80 GSM):** **{$math['total_weight_kg']} KG**\n";
-        }
-        if (!$math['has_roll_width'] || !$math['has_rate']) {
-            $answer .= "\n💡 **আপনি কি মোট পেপার খরচ এবং ওয়েস্টেজ হিসাব জানতে চান?**\n"
-                . "তাহলে অনুগহ করে নিচের বাকি তথ্যগুলো টাইপ করুন:\n"
-                . (!$math['has_roll_width'] ? "১. 📏 **মাদার পেপার রোলের চওড়া (mm):** (যেমন: `250mm roll`)\n" : "")
-                . (!$math['has_rate'] ? "২. 💰 **কাগজের দাম (Rate):** (যেমন: `Rs 300/kg` বা `Rs 20/sqm`)\n" : "");
+            $costBlock .= "• **Waste Cost:** **₹" . number_format($math['waste_cost'], 2) . "**\n";
         }
     }
 
+    if ($userLang === 'English') {
+        $answer = "🧮 **Industrial Label — Full Calculation**\n\n"
+            . "**📋 Job Specs:**\n"
+            . "• **Label:** {$math['width_mm']}mm × {$math['length_mm']}mm | **{$math['ups']} Up** | Gap: {$math['gap_mm']}mm\n"
+            . "• **Qty:** " . number_format($math['qty']) . " pcs | **Impressions:** " . number_format($math['impressions']) . "\n"
+            . "• **Repeat Pitch:** {$math['repeat_pitch_mm']}mm | **Running Meters:** **" . number_format($math['running_meters'], 2) . " m**\n"
+            . "\n**📐 Area & Weight:**\n{$sqmBlock}\n";
+        if ($costBlock) {
+            $answer .= "\n**💰 Costing:**\n{$costBlock}";
+        }
+        if (!$math['has_roll_width']) {
+            $answer .= "\n💡 *For waste & total SQM, tell roll width (e.g. `on 250mm roll`)*\n";
+        }
+        if (!$math['has_rate']) {
+            $answer .= "💡 *For pricing, tell paper rate (e.g. `at Rs 300/kg`)*\n";
+        }
+    } elseif ($userLang === 'Hindi') {
+        $answer = "🧮 **औद्योगिक लेबल — पूर्ण गणना**\n\n"
+            . "**📋 जॉब विवरण:**\n"
+            . "• **लेबल:** {$math['width_mm']}mm × {$math['length_mm']}mm | **{$math['ups']} Up** | गैप: {$math['gap_mm']}mm\n"
+            . "• **मात्रा:** " . number_format($math['qty']) . " पीस | **इम्प्रेशन:** " . number_format($math['impressions']) . "\n"
+            . "• **रिपीट पिच:** {$math['repeat_pitch_mm']}mm | **रनिंग मीटर:** **" . number_format($math['running_meters'], 2) . " मीटर**\n"
+            . "\n**📐 क्षेत्रफल & वजन:**\n{$sqmBlock}\n";
+        if ($costBlock) {
+            $answer .= "\n**💰 लागत:**\n{$costBlock}";
+        }
+        if (!$math['has_roll_width']) {
+            $answer .= "\n💡 *वेस्टेज और कुल SQM के लिए रोल चौड़ाई बताएं (जैसे `250mm roll`)*\n";
+        }
+        if (!$math['has_rate']) {
+            $answer .= "💡 *मूल्य के लिए पेपर दर बताएं (जैसे `Rs 300/kg`)*\n";
+        }
+    } else {
+        $answer = "🧮 **ইন্ডাস্ট্রিয়াল লেবেল — পূর্ণ গণনা**\n\n"
+            . "**📋 জব স্পেসিফিকেশন:**\n"
+            . "• **লেবেল:** {$math['width_mm']}mm × {$math['length_mm']}mm | **{$math['ups']} Up** | গ্যাপ: {$math['gap_mm']}mm\n"
+            . "• **পরিমাণ:** " . number_format($math['qty']) . " পিস | **ইম্প্রেশন:** " . number_format($math['impressions']) . "\n"
+            . "• **রিপিট পিচ:** {$math['repeat_pitch_mm']}mm | **রানিং মিটার:** **" . number_format($math['running_meters'], 2) . " মিটার**\n"
+            . "\n**📐 এলাকা ও ওজন:**\n{$sqmBlock}\n";
+        if ($costBlock) {
+            $answer .= "\n**💰 খরচ:**\n{$costBlock}";
+        }
+        if (!$math['has_roll_width']) {
+            $answer .= "\n💡 *ওয়েস্টেজ ও মোট SQM-এর জন্য রোল চওড়া দিন (যেমন: `250mm roll`)*\n";
+        }
+        if (!$math['has_rate']) {
+            $answer .= "💡 *দামের জন্য পেপার রেট দিন (যেমন: `Rs 300/kg`)*\n";
+        }
+    }
+
+    $labelSugg = generate_erp_suggestions($prompt, $answer, 'Industrial Label Calculator', $userLang);
     echo json_encode([
         'ok' => true,
         'answer' => $answer,
         'provider' => 'ERP Industrial Label Math Engine',
         'tool_used' => 'Industrial Label Calculator',
-        'user_lang' => $userLang
+        'user_lang' => $userLang,
+        'suggestions' => $labelSugg
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
@@ -1342,7 +1954,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
     // PRIORITY: Paper Stock — search first if priority mode active
     if ($priorityMode === 'paperstock') {
-        $isOtherModuleQuery = (strpos($p, 'live') !== false || strpos($p, 'floor') !== false || strpos($p, 'plate') !== false || strpos($p, 'plate') !== false || strpos($p, 'die') !== false || strpos($p, 'anilox') !== false || strpos($p, 'job') !== false || strpos($p, 'planning') !== false || strpos($p, 'dispatch') !== false || strpos($p, 'slit') !== false || strpos($p, 'finished') !== false || strpos($p, 'packing') !== false || strpos($p, 'লাইভ') !== false || strpos($p, 'ফ্লোর') !== false || strpos($p, 'প্লেট') !== false || strpos($p, 'डाइ') !== false || strpos($p, 'জব') !== false);
+        $isOtherModuleQuery = (strpos($p, 'live') !== false || strpos($p, 'floor') !== false || strpos($p, 'plate') !== false || strpos($p, 'plate') !== false || strpos($p, 'die') !== false || strpos($p, 'anilox') !== false || strpos($p, 'job') !== false || strpos($p, 'planning') !== false || strpos($p, 'dispatch') !== false || strpos($p, 'slit') !== false || strpos($p, 'finished') !== false || strpos($p, 'packing') !== false || strpos($p, 'লাইভ') !== false || strpos($p, 'ফ্লোর') !== false || strpos($p, 'প্লেট') !== false || strpos($p, 'ডাই') !== false || strpos($p, 'জব') !== false);
         if ($isOtherModuleQuery) {
             unset($_SESSION['ai_priority_mode']);
             $priorityMode = '';
@@ -1421,6 +2033,16 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 $pDetail->execute();
                 $data = $pDetail->get_result()->fetch_all(MYSQLI_ASSOC);
 
+                // Jumbo vs slitting breakdown
+                $pDeep = $db->prepare("SELECT SUM(CASE WHEN width_mm >= 1000 THEN 1 ELSE 0 END) as jumbo_rolls, SUM(CASE WHEN width_mm < 1000 THEN 1 ELSE 0 END) as slitted_rolls FROM paper_stock WHERE {$pWhereSql}");
+                if (!empty($pParams)) {
+                    $pDeep->bind_param($pTypes, ...$pParams);
+                }
+                $pDeep->execute();
+                $pDeepData = $pDeep->get_result()->fetch_assoc();
+                $jumboRolls = (int) ($pDeepData['jumbo_rolls'] ?? 0);
+                $slittedRolls = (int) ($pDeepData['slitted_rolls'] ?? 0);
+
                 $pTitle = 'Paper Stock';
                 if ($pCompany && $pType) {
                     $pTitle = strtoupper($pCompany . ' ' . $pType);
@@ -1429,7 +2051,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 } elseif ($pType) {
                     $pTitle = strtoupper($pType) . ' Paper Stock';
                 }
-                $pDirectAnswer = "📜 **{$pTitle}** — Found **{$totalCount} rolls**:\n\n" . format_records_table($data, 'paper_stock', $userLang);
+                $pDirectAnswer = "📜 **{$pTitle}** — Found **{$totalCount} rolls**:\n\n" . format_records_table($data, 'paper_stock', $userLang, $totalCount, $jumboRolls, $slittedRolls);
                 return ['tool_used' => $toolName, 'total_count' => $totalCount, 'total_meters' => $totalMeters, 'filtered_type' => '', 'is_company_list' => false, 'direct_answer' => $pDirectAnswer, 'data' => []];
             }
         }
@@ -1437,7 +2059,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
     // PRIORITY: Printing Plates — search first if priority mode active
     if ($priorityMode === 'plate') {
-        $isOtherModuleQueryPlate = (strpos($p, 'live') !== false || strpos($p, 'floor') !== false || strpos($p, 'paper') !== false || strpos($p, 'roll') !== false || strpos($p, 'stock') !== false || strpos($p, 'anilox') !== false || strpos($p, 'dispatch') !== false || strpos($p, 'finished') !== false || strpos($p, 'packing') !== false || strpos($p, '라이브') !== false || strpos($p, '플로어') !== false || strpos($p, '페이퍼') !== false || strpos($p, '롤') !== false);
+        $isOtherModuleQueryPlate = (strpos($p, 'live') !== false || strpos($p, 'floor') !== false || strpos($p, 'paper') !== false || strpos($p, 'roll') !== false || strpos($p, 'stock') !== false || strpos($p, 'anilox') !== false || strpos($p, 'dispatch') !== false || strpos($p, 'finished') !== false || strpos($p, 'packing') !== false || strpos($p, 'ライブ') !== false || strpos($p, '플로어') !== false || strpos($p, '페이퍼') !== false || strpos($p, '롤') !== false);
         if ($isOtherModuleQueryPlate) {
             unset($_SESSION['ai_priority_mode']);
             $priorityMode = '';
@@ -1527,7 +2149,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         $paperTypeFilter = 'maplitho';
     }
 
-    $hasToolIntent = (strpos($p, 'plate') !== false || strpos($p, 'plates') !== false || strpos($p, 'die') !== false || strpos($p, 'anilox') !== false || strpos($p, 'প্লেট') !== false || strpos($p, 'ডাই') !== false || strpos($p, 'এনিলক্স') !== false || strpos($p, 'प्लेट') !== false);
+    $hasToolIntent = (strpos($p, 'plate') !== false || strpos($p, 'repeat') !== false || strpos($p, 'gap') !== false || strpos($p, 'প্লেট') !== false || strpos($p, 'प्लेट') !== false || ((strpos($p, 'print') !== false || strpos($p, 'calculat') !== false || strpos($p, 'koto') !== false || strpos($p, 'কত') !== false) && (strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'qty') !== false || strpos($p, 'quantity') !== false || strpos($p, 'qnty') !== false || strpos($p, 'pcs') !== false || preg_match('/\b(run|paper)\b/', $p))));
 
     if ((!empty($compName) || !empty($paperTypeFilter)) && !$hasToolIntent) {
         $toolName = "Paper Stock Analytics Tool (" . trim($compName . ' ' . strtoupper($paperTypeFilter)) . ")";
@@ -1591,8 +2213,8 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 . "🔢 **মোট পেপার রোল:** **" . number_format($totalRolls) . "টি রোল**\n"
                 . "📏 **মোট রানিং মিটার:** **" . number_format($totalRunningMtr, 2) . " মিটার**\n"
                 . "📐 **মোট ক্ষেত্রফল (SQM):** **" . number_format($totalSqm, 2) . " SQM**\n\n"
-                . "📜 **জাম্বো রোল (চওড়া ≥ ১০০০ মিমি):** **" . number_format($jumboCount) . "টি জাম্বো রোল**\n"
-                . "✂️ **স্লিটেড স্টক রোল (চওড়া < ১০০০ মিমি):** **" . number_format($slittedCount) . "টি রোল**\n\n"
+                . "📜 **জাম্বো রোল (চওড়াई ≥ ১০০০ মিমি):** **" . number_format($jumboCount) . "টি জাম্বো রোল**\n"
+                . "✂️ **স্লিটেড রোল (চওড়াई < ১০০০ মিমি):** **" . number_format($slittedCount) . "টি রোল**\n\n"
                 . "━━━━━━━━━━━━━━━━━━━━━━\n"
                 . "👉 [পেপার স্টক পেজ খুলুন]({$baseUrl}/modules/paper_stock/index.php)";
         }
@@ -1645,16 +2267,16 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 . "1. 📜 **मदर पेपर स्टॉक रोल:** **" . number_format($paperCount) . " रोल** (कुल **" . number_format($paperMtr, 2) . " मीटर**)\n"
                 . "2. 📦 **फिनिश्ड गुड्स पैक्ड रोल:** **" . number_format($fgCount) . " बैच / रोल** (कुल **" . number_format($fgQty) . " पीस**)\n\n"
                 . "❓ **आप किस रोल का विवरण देखना चाहते हैं?**\n"
-                . "• **\"Paper stock roll\"** टाइप करें - मदर पेपर रोल के लिए\n"
-                . "• **\"Finished goods stock\"** टाइप करें - पैक्ड फिनिश्ड रोल के लिए";
+                . "• **\"Paper stock roll dekhaw\"** टाइप करें - मदर पेपर रोल के लिए\n"
+                . "• **\"Finished goods stock dekhaw\"** टाइप करें - पैक्ड फिनिश्ड रोल के लिए";
         } else {
-            $answer = "📊 **মোট ইআরপি রোল স্টক সারসংক্ষেপ:**\n\n"
-                . "আপনার ইআরপি ডাটাবেসে ২ ধরনের রোল স্টক প্রস্তুত রয়েছে:\n\n"
-                . "১. 📜 **মাদার পেপার স্টক রোল (Paper Stock):** **" . number_format($paperCount) . "টি রোল** (সর্বমোট **" . number_format($paperMtr, 2) . " মিটার** স্টক)\n"
-                . "২. 📦 **ফিনিশড গুডস প্যাকড রোল (Finished Goods):** **" . number_format($fgCount) . "টি ব্যাচ/প্যাকড রোল** (সর্বমোট **" . number_format($fgQty) . "টি** আইটেম)\n\n"
+            $answer = "📊 **মোট ইআরপি রোল স্টক সারাংশ:**\n\n"
+                . "আপনার ইআরপি ডাটাবেসে ২ ধরনের রোল উপলব্ধ রয়েছে:\n\n"
+                . "১. 📜 **মাদার পেপার স্টক রোল:** **" . number_format($paperCount) . "টি রোল** (সর্বমোট **" . number_format($paperMtr, 2) . " মিটার**)\n"
+                . "২. 📦 **ফিনিশ্ড গুডস প্যাকড রোল:** **" . number_format($fgCount) . "টি ব্যাচ/প্যাকড রোল** (সর্বমোট **" . number_format($fgQty) . "টি**)\n\n"
                 . "❓ **আপনি কোন রোলের বিস্তারিত তালিকা দেখতে চান?**\n"
-                . "• টাইপ করুন: **\"Paper stock roll dekhaw\"** (মাদার পেপার রোলের জন্য)\n"
-                . "• টাইপ করুন: **\"Finished goods roll dekhaw\"** (প্যাকড লেবেল রোলের জন্য)";
+                . "• টাইপ করুন: **\"Paper stock roll dekhaw\"** (মদর পেপার রোলের জন্য)\n"
+                . "• টাইপ করুন: **\"Finished goods stock dekhaw\"** (প্যাকড ফিনিশ্ড রোলের জন্য)";
         }
 
         return [
@@ -1714,26 +2336,26 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 . "🏭 **उत्पादन और लाइव फ्लोर:**\n"
                 . "  - सक्रिय मास्टर जॉब्स: **" . number_format($jobsActive) . " जॉब्स**\n"
                 . "  - वर्तमान में चल रहे जॉब्स: **" . number_format($jobsRunning) . " जॉब्स**\n"
-                . "  - लंबित / कतारबद्ध जॉब्स: **" . number_format($jobsPending) . " जॉब कार्ड**\n"
+                . "  - पेंडिंग / किउड डिपार्टमेंट जॉब्स: **" . number_format($jobsPending) . " जब कार्ड**\n"
                 . "  - इस महीने पूर्ण जॉब्स: **" . number_format($jobsCompletedMonth) . " जॉब्स**\n\n"
                 . "💼 **बिक्री और अनुमान:**\n"
                 . "  - सक्रिय बिक्री के आदेश: **" . number_format($ordersActive) . " ऑर्डर**\n"
                 . "  - सक्रिय लागत अनुमान: **" . number_format($estimatesActive) . " अनुमान** (इस महीने का मूल्य: **₹" . number_format($estimatesVal, 2) . "**)\n\n"
-                . "👉 [एक्जीक्यूटिव डैशबोर्ड पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/dashboard/index.php)";
+                . "👉 [एक्जीक्यूटिव डैशबोर्ड पेज खोलें]({$baseUrl}/modules/dashboard/index.php)";
         } else {
             $answer = "📊 **ইআরপি এক্সিকিউটিভ ড্যাশবোর্ড ও লাইভ কেপিআই ওভারভিউ:**\n\n"
                 . "আপনার ইআরপি ড্যাশবোর্ড থেকে রিয়েল-টাইম রানিং ডাটা সম্বলিত ওভারভিউ:\n\n"
-                . "📜 **পেপার রোল ইনভেন্টরি স্টক:**\n"
-                . "  - সর্বমোট রেডি পেপার রোল: **" . number_format($stockCount) . "টি রোল** (" . number_format($stockMtr, 2) . " মিটার স্টক)\n"
-                . "  - লো স্টক অ্যালার্ট (<৫০০মি.): **" . number_format($lowStock) . "টি রোল**\n\n"
-                . "🏭 **প্রডাকশন ও লাইভ ফ্লোর প্রোগ্রেস:**\n"
-                . "  - সচল মাস্টার প্রডাকশন জব: **" . number_format($jobsActive) . "টি জব**\n"
-                . "  - বর্তমানে রানিং প্রডাকশন জব: **" . number_format($jobsRunning) . "টি জব**\n"
-                . "  - পেন্ডিং / কিউড ডিপার্টমেন্ট জব: **" . number_format($jobsPending) . "টি জব কার্ড**\n"
-                . "  - চলতি মাসে সম্পন্ন প্রডাকশন জব: **" . number_format($jobsCompletedMonth) . "টি জব**\n\n"
-                . "💼 **সেলস অর্ডার ও কস্টিং এস্টিমেট:**\n"
-                . "  - সচল রানিং সেলস অর্ডার: **" . number_format($ordersActive) . "টি অর্ডার**\n"
-                . "  - সচল কস্টিং এস্টিমেট: **" . number_format($estimatesActive) . "টি এস্টিমেট** (চলতি মাসের মোট ভ্যালু: **₹" . number_format($estimatesVal, 2) . "**)\n\n"
+                . "📜 **পেপার রোল ইনভেন্টরি:**\n"
+                . "  - কুল উপলব্ধ রোল: **" . number_format($stockCount) . " রোল** (" . number_format($stockMtr, 2) . " মিটার)\n"
+                . "  - কম স্টক অলর্ট (<৫০০মি.): **" . number_format($lowStock) . " রোল**\n\n"
+                . "🏭 **উত্পাদন ও লাইভ ফ্লোর:**\n"
+                . "  - সক্রিয় মাস্টার জব: **" . number_format($jobsActive) . " জব**\n"
+                . "  - বর্তমানে চল রহে জব: **" . number_format($jobsRunning) . " জব**\n"
+                . "  - পেন্ডিং / কিউড ডিপার্টমেন্ট জব: **" . number_format($jobsPending) . " জব কার্ড**\n"
+                . "  - চলতি মাসে সম্পন্ন জব: **" . number_format($jobsCompletedMonth) . " জব**\n\n"
+                . "💼 **বিক্রী ও অনুমান:**\n"
+                . "  - সক্রিয় বিক্রী আদেশ: **" . number_format($ordersActive) . " টি অর্ডার**\n"
+                . "  - সক্রিয় লাগত অনুমান: **" . number_format($estimatesActive) . " টি এস্টিমেট** (চলতি মাসের মোট ভ্যালু: **₹" . number_format($estimatesVal, 2) . "**)\n\n"
                 . "👉 [ড্যাশবোর্ড পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/dashboard/index.php)";
         }
 
@@ -1752,7 +2374,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             'nav_url' => $navUrl,
             'data' => []
         ];
-    } elseif (strpos($p, 'dispatch') !== false || strpos($p, 'dispatched') !== false || strpos($p, 'ready queue') !== false || strpos($p, 'ready stock') !== false || strpos($p, 'challan') !== false || strpos($p, 'sales person') !== false || strpos($p, 'ডিসপ্যাচ') !== false || strpos($p, 'রেডি') !== false) {
+    } elseif (strpos($p, 'dispatch') !== false || strpos($p, 'dispatched') !== false || strpos($p, 'ready queue') !== false || strpos($p, 'ready stock') !== false || strpos($p, 'challan') !== false || strpos($p, 'sales person') !== false || strpos($p, 'ডিস্পैচ') !== false || strpos($p, 'রেডি') !== false) {
         $toolName = 'Dispatch & Ready Queue Master Tool';
 
         // Ready Queue (Finished Goods ready to ship)
@@ -1765,12 +2387,13 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         }
 
         // Dispatches Stats
-        $dStatRes = $db->query("SELECT 
-            COUNT(*) as total_dispatches,
-            IFNULL(SUM(dispatch_qty),0) as total_dispatched_qty,
-            IFNULL(SUM(transport_cost),0) as total_transport_cost,
-            SUM(CASE WHEN LOWER(COALESCE(delivery_status,'')) IN ('pending','in transit','in_transit') THEN 1 ELSE 0 END) as pending_transit,
-            SUM(CASE WHEN LOWER(COALESCE(delivery_status,'')) = 'delivered' THEN 1 ELSE 0 END) as delivered_cnt
+        $dStatRes = $db->query("
+            SELECT 
+                COUNT(*) as total_dispatches,
+                IFNULL(SUM(dispatch_qty),0) as total_dispatched_qty,
+                IFNULL(SUM(transport_cost),0) as total_transport_cost,
+                SUM(CASE WHEN LOWER(COALESCE(delivery_status,'')) IN ('pending','in transit','in_transit') THEN 1 ELSE 0 END) as pending_transit,
+                SUM(CASE WHEN LOWER(COALESCE(delivery_status,'')) = 'delivered' THEN 1 ELSE 0 END) as delivered_cnt
             FROM dispatch_entries
         ")->fetch_assoc();
 
@@ -1805,43 +2428,44 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             $answer .= "👉 [Click here to open Dispatch Workspace]({$baseUrl}/modules/dispatch/index.php)";
         } elseif ($userLang === 'Hindi') {
             $answer = "🚚 **डिस्पैच और रेडी क्यू 3-टैब संचालन सारांश:**\n\n"
-                . "📦 **1. रेडी क्यू (डिस्पैच के लिए तैयार - सेल टीम के लिए):**\n"
-                . "  - रेडी स्टॉक आइटम: **" . number_format($totalReadyItems) . " आइटम**\n"
-                . "  - भेजने के लिए कुल उपलब्ध मात्रा: **" . number_format($totalReadyQty) . " पीस**\n\n"
-                . "🚚 **2. लाइव डिस्पैच विवरण:**\n"
+                . "📦 **1. रेडी क्यू (डिस्पैच के लिए तैयार — सेल टीम के लिए):**\n"
+                . "  - रेडी फिनिश्ड स्टॉक आइटम: **" . number_format($totalReadyItems) . " आइटम**\n"
+                . "  - तैयार उपलब्ध मात्रा: **" . number_format($totalReadyQty) . " पीस**\n\n"
+                . "🚚 **2. लाइव डिस्पैच अप्रियान्त्रिक सारांश:**\n"
                 . "  - कुल डिस्पैच रिकॉर्ड: **" . number_format($totalDispatches) . " डिस्पैच**\n"
-                . "  - कुल भेजी गई मात्रा: **" . number_format($totalDispatchedQty) . " पीस**\n"
-                . "  - पेंडिंग / इन-ट्रांजिट: **" . number_format($pendingTransit) . " शिपमेंट**\n"
+                . "  - कुल डिस्पैचड मात्रा: **" . number_format($totalDispatchedQty) . " पीस**\n"
+                . "  - पेंडिंग डेलिभरी / इन-ट्रांजिट: **" . number_format($pendingTransit) . " शिपमेंट**\n"
+                . "  - सफल डेलिभरड: **" . number_format($deliveredCnt) . " शिपमेंट**\n"
                 . "  - कुल ट्रांसपोर्ट लागत: **₹" . number_format($totalTransportCost, 2) . "**\n\n"
                 . "📋 **रेडी स्टॉक सूची (डिस्पैच के लिए तैयार):**\n\n";
 
             foreach ($readyRows as $idx => $r) {
                 $answer .= "• **आइटम " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Ready Product') . "`** (ID: **{$r['id']}**)\n"
                     . "  - 📐 **साइज़:** **" . ($r['size'] ?: 'N/A') . "**\n"
-                    . "  - 🔢 **रेडी डिस्पैच स्टॉक:** **" . number_format((float) $r['ready_qty']) . " " . ($r['unit'] ?: 'PCS') . "**\n\n";
+                    . "  - 📦 **रेडी डिस्पैच स्टॉक:** **" . number_format((float) $r['ready_qty']) . " " . ($r['unit'] ?: 'PCS') . "**\n\n";
             }
 
-            $answer .= "👉 [डिस्पैच पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/dispatch/index.php)";
+            $answer .= "👉 [डिस्पैच पेज खोलें]({$baseUrl}/modules/dispatch/index.php)";
         } else {
-            $answer = "🚚 **ডিসপ্যাচ ও রেডি কিউ ৩-ট্যাব অপারেশনাল সামারি:**\n\n"
-                . "📦 **১. রেডি কিউ (ডিসপ্যাচের জন্য প্রস্তুত স্টক - সেলস টিম ও অপারেটরদের জন্য):**\n"
-                . "  - ওয়্যারহাউসে রেডি স্টক আইটেম: **" . number_format($totalReadyItems) . "টি ব্যাচ/আইটেম**\n"
-                . "  - ডিসপ্যাচ বা ডেলিভারি দেওয়ার মতো মোট কোয়ান্টিটি: **" . number_format($totalReadyQty) . "টি পিস/লেবেল**\n\n"
-                . "🚚 **২. লাইভ ডিসপ্যাচ অপারেশন সামারি:**\n"
-                . "  - সর্বমোট ডিসপ্যাচ রেকর্ড: **" . number_format($totalDispatches) . "টি শিপমেন্ট**\n"
-                . "  - সর্বমোট ডিসপ্যাচড কোয়ান্টিটি: **" . number_format($totalDispatchedQty) . "টি পিস**\n"
-                . "  - পেন্ডিং ডেলিভারি / ইন-ট্রানজিট: **" . number_format($pendingTransit) . "টি শিপমেন্ট**\n"
-                . "  - সফলভাবে ডেলিভারড: **" . number_format($deliveredCnt) . "টি শিপমেন্ট**\n"
-                . "  - সর্বমোট ট্রান্সপোর্ট খরচ: **₹" . number_format($totalTransportCost, 2) . "**\n\n"
-                . "📋 **রেডি স্টক আইটেম তালিকা (ডেলিভারির জন্য প্রস্তুত):**\n\n";
+            $answer = "🚚 **ডিস্পৈচ ও রেডি কিউ ৩-ট্যাব অপারেশনাল সামারি:**\n\n"
+                . "📦 **১. রেডি কিউ (ডিস্পৈচের জন্য প্রস্তুত স্টক - সেলস টিম ও অপারেটরদের জন্য):**\n"
+                . "  - রেডি ফিনিশ্ড স্টক আইটেম: **" . number_format($totalReadyItems) . " আইটেম**\n"
+                . "  - তৈয়ার উপলব্ধ মাত্রা: **" . number_format($totalReadyQty) . " পিস**\n\n"
+                . "🚚 **২. লাইভ ডিস্পৈচ অপারেশন সামারি:**\n"
+                . "  - কুল ডিস্পৈচ রিকোর্ড: **" . number_format($totalDispatches) . " ডিস্পৈচ**\n"
+                . "  - কুল ডিস্পৈচড মাত্রা: **" . number_format($totalDispatchedQty) . " পিস**\n"
+                . "  - পেন্ডিং ডেলিভারি / ইন-ট্রানজিট: **" . number_format($pendingTransit) . " শিপমেন্ট**\n"
+                . "  - সফল ডেলিভারড: **" . number_format($deliveredCnt) . " শিপমেন্ট**\n"
+                . "  - কুল ট্রান্সপোর্ট লাগত: **₹" . number_format($totalTransportCost, 2) . "**\n\n"
+                . "📋 **রেডি স্টক আইটেম তালিকা (ডিস্পৈচের জন্য প্রস্তুত):**\n\n";
 
             foreach ($readyRows as $idx => $r) {
                 $answer .= "• **আইটেম " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Ready Product') . "`** (ID: **{$r['id']}** | ব্যাচ: `" . ($r['batch_no'] ?: 'N/A') . "`)\n"
-                    . "  - 📐 **সাইজ ও স্পেক:** **" . ($r['size'] ?: 'N/A') . "**\n"
-                    . "  - 📦 **রেডি ডিসপ্যাচ কোয়ান্টিটি:** **" . number_format((float) $r['ready_qty']) . " " . ($r['unit'] ?: 'PCS') . "**\n\n";
+                    . "  - 📐 **সাইজ:** **" . ($r['size'] ?: 'N/A') . "**\n"
+                    . "  - 📦 **রেডি ডিস্পৈচ স্টক:** **" . number_format((float) $r['ready_qty']) . " " . ($r['unit'] ?: 'PCS') . "**\n\n";
             }
 
-            $answer .= "👉 [ডিসপ্যাচ পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/dispatch/index.php)";
+            $answer .= "👉 [ডিস্পৈচ পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/dispatch/index.php)";
         }
 
         $navUrl = null;
@@ -1863,11 +2487,12 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
         $toolName = 'Finished Goods Stock Master Tool';
 
-        $sum = $db->query("SELECT 
-            COUNT(*) as total_items,
-            IFNULL(SUM(quantity),0) as total_qty,
-            IFNULL(SUM(dispatch_qty_total),0) as total_dispatch,
-            IFNULL(SUM(COALESCE(closing_stock, quantity - dispatch_qty_total)),0) as total_closing
+        $sum = $db->query("
+            SELECT 
+                COUNT(*) as total_items,
+                IFNULL(SUM(quantity),0) as total_qty,
+                IFNULL(SUM(dispatch_qty_total),0) as total_dispatch,
+                IFNULL(SUM(COALESCE(closing_stock, quantity - dispatch_qty_total)),0) as total_closing
             FROM finished_goods_stock
         ")->fetch_assoc();
 
@@ -1924,17 +2549,17 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 $answer .= "• **आइटम " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Finished Product') . "`** (ID: **{$r['id']}**)\n"
                     . "  - 📐 **साइज़:** **" . ($r['size'] ?: 'N/A') . "**\n"
                     . "  - 🔢 **पैक्ड मात्रा:** **" . number_format((float) $r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
-                    . "  - 🚚 **उपलब्ध स्टॉक:** **" . number_format((float) $r['available_closing']) . " पीस**\n"
-                    . "  - 🏷️ **बैच नंबर:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
+                    . "  - 🚚 **डिस्पैचड:** **" . number_format((float) $r['dispatch_qty_total']) . " PCS** | उपलब्ध क्लोजिंग स्टॉक: **" . number_format((float) $r['available_closing']) . " PCS**\n"
+                    . "  - 🏷️ **बैच / जब नंबर:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
             }
 
-            $answer .= "👉 [फिनिश्ड गुड्स पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/inventory/finished/index.php)";
+            $answer .= "👉 [फिनिश्ड गुड्स पेज खोलें]({$baseUrl}/modules/inventory/finished/index.php)";
         } else {
             $answer = "📦 **ফিনিশড গুডস ও প্যাকড লেবেল স্টক — লাইভ ইনভেন্টরি সামারি:**\n\n"
                 . "📊 **ইনভেন্টরি সামারি ম্যাট্রিক্স:**\n"
                 . "  - সর্বমোট ফিনিশড প্রোডাক্ট/ব্যাচ: **" . number_format($totalItems) . "টি আইটেম**\n"
-                . "  - সর্বমোট প্যাকড কোয়ান্টিটি: **" . number_format($totalQty) . "টি পিস/লেবেল**\n"
-                . "  - সর্বমোট ডিসপ্যাচড কোয়ান্টিটি: **" . number_format($totalDispatch) . "টি পিস**\n"
+                . "  - সর্বমোট প্যাকড কোয়ান্টিটি: **" . number_format($totalQty) . "টি পিস/লেবেল**\n"
+                . "  - সর্বমোট ডিস্পৈচড কোয়ান্টিটি: **" . number_format($totalDispatch) . "টি পিস**\n"
                 . "  - সর্বমোট উপলব্ধ ক্লোজিং স্টক: **" . number_format($totalClosing) . "টি পিস**\n\n"
                 . "📦 **মাস্টার ফিনিশড স্টক গ্রিড:**\n\n";
 
@@ -1942,7 +2567,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 $answer .= "• **আইটেম " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Finished Product') . "`** (ID: **{$r['id']}** | ক্যাটাগরি: **" . strtoupper($r['category']) . "**)\n"
                     . "  - 📐 **সাইজ ও স্পেক:** **" . ($r['size'] ?: 'N/A') . "**\n"
                     . "  - 🔢 **প্যাকড কোয়ান্টিটি:** **" . number_format((float) $r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
-                    . "  - 🚚 **ডিসপ্যাচড:** **" . number_format((float) $r['dispatch_qty_total']) . "টি পিস** | উপলব্ধ ক্লোজিং স্টক: **" . number_format((float) $r['available_closing']) . "টি পিস**\n"
+                    . "  - 🚚 **ডিস্পৈচড:** **" . number_format((float) $r['dispatch_qty_total']) . "টি পিস** | উপলব্ধ ক্লোজিং স্টক: **" . number_format((float) $r['available_closing']) . "টি পিস**\n"
                     . "  - 🏷️ **ব্যাচ / জব নম্বর:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
             }
 
@@ -2007,6 +2632,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     . "  - 🆔 **उपयोगकर्ता आईडी (User ID):** **`#" . $currUser['id'] . "`**\n"
                     . "  - 👤 **नाम:** **" . $currUser['name'] . "**\n"
                     . "  - 🛡️ **रोल:** **" . strtoupper($currUser['role']) . "**\n"
+                    . "  - 📧 **ईमेल:** `" . $currUser['email'] . "`\n"
                     . "  - ⏰ **अंतिम गतिविधि समय:** `" . $currUser['updated_at'] . "`\n\n";
             }
 
@@ -2017,12 +2643,12 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     . "  - ⏰ **अंतिम गतिविधि:** `" . $u['updated_at'] . "`\n\n";
             }
 
-            $answer .= "👉 [उपयोगकर्ता प्रबंधन पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/hr_management/users/index.php)";
+            $answer .= "👉 [उपयोगकर्ता प्रबंधन पेज खोलें]({$baseUrl}/modules/hr_management/users/index.php)";
         } else {
             $answer = "👤 **সিস্টেম ইউজার ও অ্যাক্টিভ লগইন সেশন সামারি:**\n\n";
 
             if ($currUser) {
-                $answer .= "🔑 **বর্তমানে সক্রিয় লগইন সেশন ইউজার:**\n"
+                $answer .= "🔑 **বর্তমানে সক্রিয় লগইন সেশন ইউজার:**\n"
                     . "  - 🆔 **ইউজার আইডেন্টিটি (User ID):** **`#" . $currUser['id'] . "`**\n"
                     . "  - 👤 **নাম (Name):** **" . $currUser['name'] . "**\n"
                     . "  - 🛡️ **রোল (Role):** **" . strtoupper($currUser['role']) . "**\n"
@@ -2091,7 +2717,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             $answer .= "👉 [Click here to open Mixed Item Inventory Page]({$baseUrl}/modules/inventory/mixed-item/index.php)";
         } elseif ($userLang === 'Hindi') {
             $answer = "🔀 **मिक्सड आइटम और एक्स्ट्रा प्रोडक्शन पूल — लाइव इन्वेंटरी सारांश:**\n\n"
-                . "📊 **पूल सारांश:**\n"
+                . "📊 **पूल मेट्रिक्स सारांश:**\n"
                 . "  - कुल एक्स्ट्रा पूल बैच: **" . number_format($totalItems) . " आइटम**\n"
                 . "  - कुल एक्स्ट्रा स्टॉक मात्रा: **" . number_format($totalExtraQty) . " पीस**\n"
                 . "  - पेंडिंग हैंडओवर असाइनमेंट: **" . number_format($pendingAssign) . " असाइनमेंट**\n\n"
@@ -2104,19 +2730,19 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     . "  - 🏷️ **बैच नंबर:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
             }
 
-            $answer .= "👉 [मिक्सड आइटम पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/inventory/mixed-item/index.php)";
+            $answer .= "👉 [मिक्सड आइटम पेज खोलें]({$baseUrl}/modules/inventory/mixed-item/index.php)";
         } else {
-            $answer = "🔀 **মিক্সড আইটেম ও এক্সট্রা প্রোডাকশন পুল — লাইভ ইনভেন্টরি সামারি:**\n\n"
-                . "📊 **পূল ম্যাট্রিক্স সামারি:**\n"
-                . "  - সর্বমোট এক্সট্রা পুল ব্যাচ: **" . number_format($totalItems) . "টি আইটেম**\n"
-                . "  - সর্বমোট এক্সট্রা স্টক কোয়ান্টিটি: **" . number_format($totalExtraQty) . "টি পিস/লেবেল**\n"
-                . "  - পেন্ডিং হ্যান্ডওভার অ্যাসাইনমেন্ট: **" . number_format($pendingAssign) . "টি অ্যাসাইনমেন্ট** (টার্গেট: প্যাকিং / প্ল্যানিং / রিপ্যাক)\n\n"
-                . "🔀 **অ্যাক্টিভ মিক্সড এক্সট্রা আইটেম গ্রিড:**\n\n";
+            $answer = "🔀 **মিক্সড আইটেম ও এক্স্ট্রা প্রোডাকশন পুল — লাইভ ইনভেন্টরি সামারি:**\n\n"
+                . "📊 **পূল ম্যাট্রিক্স সারাংশ:**\n"
+                . "  - সর্বমোট এক্স্ট্রা পুল ব্যাচ: **" . number_format($totalItems) . "টি আইটেম**\n"
+                . "  - সর্বমোট এক্স্ট্রা স্টক কোয়ান্টিটি: **" . number_format($totalExtraQty) . "টি পিস/লেবেল**\n"
+                . "  - পেন্ডিং হৈন্ডওভার অসাইনমেন্ট: **" . number_format($pendingAssign) . "টি অসাইনমেন্ট**\n\n"
+                . "🔀 **অ্যাক্টিভ মিক্সড এক্স্ট্রা আইটেম গ্রিড:**\n\n";
 
             foreach ($rows as $idx => $r) {
                 $answer .= "• **এক্সট্রা আইটেম " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Mixed Item') . "`** (ID: **{$r['id']}** | ক্যাটাগরি: **" . strtoupper($r['category']) . "**)\n"
                     . "  - 📐 **সাইজ ও স্পেক:** **" . ($r['size'] ?: 'N/A') . "**\n"
-                    . "  - 🔢 **এক্সট্রা কোয়ান্টিটি:** **" . number_format((float) $r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
+                    . "  - 🔢 **এক্স্ট্রা কোয়ান্টিটি:** **" . number_format((float) $r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
                     . "  - 🏷️ **ব্যাচ / জব নম্বর:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
             }
 
@@ -2151,7 +2777,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         $pWords = preg_split('/\s+/', strtolower($prompt));
         $terms = [];
         foreach ($pWords as $w) {
-            $wClean = trim(preg_replace('/[^a-z0-9\/]/', '', $w));
+            $wClean = trim(preg_replace('/[^a-z0-9]/', '', $w));
             if ($wClean !== '' && !in_array($wClean, $liveStopwords, true) && strlen($wClean) >= 2) {
                 $terms[] = $wClean;
             }
@@ -2219,7 +2845,6 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     continue;
                 }
 
-                $completed = [];
                 $current = null;
                 $upcoming = [];
 
@@ -2229,33 +2854,17 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     $timeTs = (!empty($d['created_at']) && $d['created_at'] !== '0000-00-00 00:00:00') ? strtotime($d['created_at']) : false;
                     $timeStr = ($timeTs && $timeTs > 0) ? date('d M Y, h:i A', $timeTs) : 'Recent';
 
-                    if ($st === 'completed' || $st === 'finished production' || $st === 'packing done') {
-                        $completed[] = "✅ **{$deptName}** (`{$d['job_no']}`): Finished at {$timeStr}";
-                    } elseif ($current === null) {
+                    if ($current === null && !in_array($st, ['completed', 'finished production', 'packing done'], true)) {
                         $current = "⚡ **CURRENT DEPARTMENT:** `{$deptName}` (`{$d['job_no']}`) | Status: **{$d['status']}** (Entry Time: `{$timeStr}`)";
                     } else {
-                        $upcoming[] = "⏩ **NEXT:** `{$deptName}` (`{$d['job_no']}`) | Status: `{$d['status']}`";
+                        $upcoming[] = "`{$deptName}`";
                     }
                 }
 
-                $hasPacking = false;
-                foreach ($depts as $d) {
-                    if (strpos(strtolower($d['department']), 'pack') !== false) {
-                        $hasPacking = true;
-                        break;
-                    }
-                }
-                if (!$hasPacking) {
-                    $upcoming[] = "⏩ **NEXT:** `Packing & Packaging` (Pending release)";
-                }
-                $upcoming[] = "🏁 **FINAL:** `Finished Production Stock & Dispatch`";
+                $upcoming[] = "`पैकिंग`";
+                $upcoming[] = "`फिनिश्ड गुड्स स्टॉक`";
 
                 $answer .= "  - " . ($current ?: "⚡ **CURRENT DEPARTMENT:** `Department Assignment in Progress`") . "\n";
-
-                if (!empty($completed)) {
-                    $answer .= "  - 🟢 **Completed Stages:** " . implode(' ➔ ', array_slice($completed, 0, 3)) . "\n";
-                }
-
                 $answer .= "  - ⏩ **Next Pipeline:** " . implode(' ➔ ', array_slice($upcoming, 0, 3)) . "\n";
                 $remCount = count($upcoming);
                 $answer .= "  - 📊 **Remaining Steps to Finished Production:** **`{$remCount} Departments / Stages left`**\n\n";
@@ -2263,7 +2872,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
             $answer .= "👉 [Click here to open full Live Production Floor page]({$baseUrl}/modules/live/index.php)";
         } elseif ($userLang === 'Hindi') {
-            $answer = "🏭 **लाइव प्रोडक्शन फ्लोर — जॉब जर्नी और विभागीय स्थिति सारांश:**\n\n"
+            $answer = "🏭 **लाइव प्रोडक्शन फ्लोर — जॉब जर्नी ओ विभागीय स्थिति सारांश:**\n\n"
                 . "कुल **{$totalCount} मास्टर जॉब्स** विभिन्न विभागों से होकर गुजर रहे हैं:\n\n";
 
             foreach ($grouped as $job) {
@@ -2272,7 +2881,8 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 $depts = $job['departments'];
                 if (empty($depts)) {
                     $answer .= "  - ⏳ **वर्तमान चरण:** `प्लानिंग स्टेज`\n"
-                        . "  - 📊 **शेष विभाग (Remaining):** `4 विभाग बाकी हैं` (जंबो ➔ प्रिंटिंग ➔ स्लिटिंग ➔ पैकिंग ➔ फिनिश्ड)\n\n";
+                        . "  - 📊 **शेष विभाग (Remaining):** `4 विभाग बाकी हैं` (जंबो ➔ प्रिंटिंग ➔ स्लिटिंग ➔ पैकिंग ➔ फिनिश्ड)\n"
+                        . "  - 📊 **बाकी डिपार्टमेंट:** `4 विभाग बाकी हैं`\n\n";
                     continue;
                 }
 
@@ -2286,7 +2896,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     $timeStr = ($timeTs && $timeTs > 0) ? date('d M Y, h:i A', $timeTs) : 'Recent';
 
                     if ($current === null && !in_array($st, ['completed', 'finished production', 'packing done'], true)) {
-                        $current = "⚡ **वर्तमान विभाग:** `{$deptName}` (`{$d['job_no']}`) | स्थिति: **{$d['status']}** (समय: `{$timeStr}`)";
+                        $current = "⚡ **वर्तमान विभाग:** `{$deptName}` (`{$d['job_no']}`) | स्थिति: **{$d['status']}** (एन्ट्री समय: `{$timeStr}`)";
                     } else {
                         $upcoming[] = "`{$deptName}`";
                     }
@@ -2295,29 +2905,28 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 $upcoming[] = "`पैकिंग`";
                 $upcoming[] = "`फिनिश्ड गुड्स स्टॉक`";
 
-                $answer .= "  - " . ($current ?: "⚡ **वर्तमान विभाग:** `प्रक्रिया जारी`") . "\n";
-                $answer .= "  - ⏩ **आगे का रास्ता (Next):** " . implode(' ➔ ', array_slice($upcoming, 0, 3)) . "\n";
+                $answer .= "  - " . ($current ?: "⚡ **वर्तमान विभाग:** `Department Assignment in Progress`") . "\n";
+                $answer .= "  - ⏩ **Next Pipeline:** " . implode(' ➔ ', array_slice($upcoming, 0, 3)) . "\n";
                 $remCount = count($upcoming);
-                $answer .= "  - 📊 **फिनिश्ड प्रोडक्शन तक शेष विभाग:** **`{$remCount} विभाग पार करने बाकी हैं`**\n\n";
+                $answer .= "  - 📊 **फिनिश्ड प्रोडक्शन तक शेष डिपार्टमेंट:** **`{$remCount} विभाग बाकी हैं`**\n\n";
             }
 
-            $answer .= "👉 [लाइव प्रोडक्शन फ्लोर पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/live/index.php)";
+            $answer .= "👉 [लाइव प्रोडक्शन फ्लोर पेज खोलें]({$baseUrl}/modules/live/index.php)";
         } else {
-            $answer = "🏭 **লাইভ প্রডাকশন ফ্লোর — জব জার্নি ও ডিপার্টমেন্টাল সামারি:**\n\n"
-                . "আপনার লাইভ প্রডাকশন ফ্লোরে মোট **{$totalCount}টি মাস্টার জব** বিভিন্ন ডিপার্টমেন্ট অতিক্রম করছে:\n\n";
+            $answer = "🏭 **Live Production Floor — Job Journey & Multi-Department Pipeline Summary:**\n\n"
+                . "Found **{$totalCount} Master Jobs** moving across production departments:\n\n";
 
             foreach ($grouped as $job) {
-                $answer .= "📋 **মাস্টার জব: `{$job['planning_no']}`** | **{$job['job_name']}** (প্রায়োরিটি: `{$job['priority']}`)\n";
+                $answer .= "📋 **Master Job: `{$job['planning_no']}`** | **{$job['job_name']}** (Priority: `{$job['priority']}`)\n";
 
                 $depts = $job['departments'];
                 if (empty($depts)) {
-                    $answer .= "  - ⏳ **বর্তমান স্টেজ:** `প্ল্যানিং স্টেজ` (ডিপার্টমেন্টে ছাড়ার অপেক্ষায়)\n"
-                        . "  - ⏩ **পরবর্তী ডিপার্টমেন্টসমূহ:** জাম্বো স্লিটিং ➔ ফ্লেক্সো প্রিন্টিং ➔ লেবেল স্লিটিং ➔ প্যাকিং ➔ ফিনিশড স্টক\n"
-                        . "  - 📊 **বাকি ডিপার্টমেন্ট:** `৪টি ডিপার্টমেন্ট ক্রস করতে হবে`\n\n";
+                    $answer .= "  - ⏳ **Current Stage:** `Planning Stage` (Queued for departmental assignment)\n"
+                        . "  - ⏩ **Next Pipeline:** Jumbo Slitting ➔ Flexo Printing ➔ Label Slitting ➔ Packing ➔ Finished Goods\n"
+                        . "  - 📊 **Remaining Departments to Cross:** `4 Departments left`\n\n";
                     continue;
                 }
 
-                $completed = [];
                 $current = null;
                 $upcoming = [];
 
@@ -2327,39 +2936,23 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     $timeTs = (!empty($d['created_at']) && $d['created_at'] !== '0000-00-00 00:00:00') ? strtotime($d['created_at']) : false;
                     $timeStr = ($timeTs && $timeTs > 0) ? date('d M Y, h:i A', $timeTs) : 'Recent';
 
-                    if ($st === 'completed' || $st === 'finished production' || $st === 'packing done') {
-                        $completed[] = "✅ **{$deptName}** (`{$d['job_no']}`): Finished at {$timeStr}";
-                    } elseif ($current === null) {
-                        $current = "⚡ **বর্তমান ডিপার্টমেন্ট (NOW):** `{$deptName}` (`{$d['job_no']}`) | স্ট্যাটাস: **{$d['status']}** (এন্ট্রি সময়: `{$timeStr}`)";
+                    if ($current === null && !in_array($st, ['completed', 'finished production', 'packing done'], true)) {
+                        $current = "⚡ **CURRENT DEPARTMENT:** `{$deptName}` (`{$d['job_no']}`) | Status: **{$d['status']}** (Entry Time: `{$timeStr}`)";
                     } else {
-                        $upcoming[] = "`{$deptName}` (`{$d['job_no']}`)";
+                        $upcoming[] = "`{$deptName}`";
                     }
                 }
 
-                $hasPacking = false;
-                foreach ($depts as $d) {
-                    if (strpos(strtolower($d['department']), 'pack') !== false) {
-                        $hasPacking = true;
-                        break;
-                    }
-                }
-                if (!$hasPacking) {
-                    $upcoming[] = "`প্যাকিং ও প্যাকেজিং`";
-                }
-                $upcoming[] = "`ফিনিশড প্রডাকশন স্টক ও ডিসপ্যাচ`";
+                $upcoming[] = "`पैकिंग`";
+                $upcoming[] = "`फिनिश्ड गुड्स स्टॉक`";
 
-                $answer .= "  - " . ($current ?: "⚡ **বর্তমান ডিপার্টমেন্ট (NOW):** `ডিপার্টমেন্টে এন্ট্রি প্রসেসিং`") . "\n";
-
-                if (!empty($completed)) {
-                    $answer .= "  - 🟢 **সম্পন্ন ডিপার্টমেন্ট:** " . implode(' ➔ ', array_slice($completed, 0, 3)) . "\n";
-                }
-
-                $answer .= "  - ⏩ **পরবর্তী ডিপার্টমেন্টসমূহ (NEXT):** " . implode(' ➔ ', array_slice($upcoming, 0, 3)) . "\n";
+                $answer .= "  - " . ($current ?: "⚡ **CURRENT DEPARTMENT:** `Department Assignment in Progress`") . "\n";
+                $answer .= "  - ⏩ **Next Pipeline:** " . implode(' ➔ ', array_slice($upcoming, 0, 3)) . "\n";
                 $remCount = count($upcoming);
-                $answer .= "  - 📊 **ফিনিশড প্রডাকশন হতে বাকি ডিপার্টমেন্ট:** **`আর {$remCount}টি ডিপার্টমেন্ট অতিক্রম করতে হবে`**\n\n";
+                $answer .= "  - 📊 **Remaining Steps to Finished Production:** **`{$remCount} Departments / Stages left`**\n\n";
             }
 
-            $answer .= "👉 [লাইভ প্রডাকশন ফ্লোর পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/live/index.php)";
+            $answer .= "👉 [Click here to open full Live Production Floor page]({$baseUrl}/modules/live/index.php)";
         }
 
         $navUrl = null;
@@ -2440,15 +3033,15 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         $toolName = 'Printing Plates Master Tool';
         $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_plate_data");
         $totalCount = $cntRes ? (int) ($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
-
-        $isCalcQuery = (strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'qty') !== false || strpos($p, 'quantity') !== false || strpos($p, 'qnty') !== false || strpos($p, 'pcs') !== false || strpos($p, 'run') !== false || strpos($p, 'print') !== false || strpos($p, 'calculat') !== false || strpos($p, 'koto') !== false);
+        // Detect if query is asking for plate calculation (meters ↔ quantity)
+        $isCalcQuery = (strpos($p, 'calculat') !== false || strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'qty') !== false || strpos($p, 'quantity') !== false || strpos($p, 'qnty') !== false || strpos($p, 'pcs') !== false || preg_match('/\b(run|paper)\b/', $p));
 
         // --- Count-Only Intent Handler ---
         if (is_count_intent($prompt) && !$isCalcQuery) {
 
             $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
 
-            // Fetch breakdown stats for richer response
+            // Fetch breakdown stats
             $dieBreak = $db->query("SELECT die, COUNT(*) as cnt FROM master_plate_data WHERE die IS NOT NULL AND die != '' GROUP BY die ORDER BY cnt DESC");
             $dieStats = $dieBreak ? $dieBreak->fetch_all(MYSQLI_ASSOC) : [];
             $makerBreak = $db->query("SELECT make_by, COUNT(*) as cnt FROM master_plate_data WHERE make_by IS NOT NULL AND make_by != '' GROUP BY make_by ORDER BY cnt DESC LIMIT 5");
@@ -2502,9 +3095,9 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     $directAnswer .= "\n";
                 }
                 if ($latest) {
-                    $directAnswer .= "🆕 **সর্বশেষ যুক্ত প্লেট:** `{$latest['name']}` (SL: {$latest['sl_no']})";
+                    $directAnswer .= "🆕 **সর্বশেষ প্লেট:** `{$latest['name']}` (SL: {$latest['sl_no']})";
                     if (!empty($latest['date_received']) && $latest['date_received'] !== 'NA') {
-                        $directAnswer .= " — তারিখ: {$latest['date_received']}";
+                        $directAnswer .= " — প্রাপ্ত: {$latest['date_received']}";
                     }
                     $directAnswer .= "\n\n";
                 }
@@ -2750,13 +3343,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
             if (preg_match('/([\d,]+)\s*(meters|meter|mtr|m)\b/i', $prompt, $m)) {
                 $paperMeters = (float) str_replace(',', '', $m[1]);
-            } elseif (preg_match('/(run|length|roll|paper)\s*(of|about|with)?\s*([\d,]+)/i', $prompt, $m)) {
-                $paperMeters = (float) str_replace(',', '', $m[3]);
-            }
-
-            if (preg_match('/([\d,]+)\s*(qty|quantity|qnty|pcs|pices|pieces|labels|required)\b/i', $prompt, $m)) {
-                $targetQty = (float) str_replace(',', '', $m[1]);
-            } elseif (preg_match('/(print|producing|make|quantity|qty|qnty)\s*(of|about)?\s*([\d,]+)/i', $prompt, $m)) {
+            } elseif (preg_match('/(run|length|roll|paper|quantity|qty|qnty|pcs|pices|pieces|labels|required)\s*(of|about|with)?\s*([\d,]+)/i', $prompt, $m)) {
                 $targetQty = (float) str_replace(',', '', $m[3]);
             }
 
@@ -2827,19 +3414,19 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                         . "📦 **कुल उत्पादन मात्रा:** **" . number_format($totalQty) . " पीस / लेबल**\n\n";
                 }
 
-                $answer .= "👉 [प्लेट प्रबंधन पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
+                $answer .= "👉 [प्लेट प्रबंधन पेज खोलें]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
             } else {
-                $answer = "📐 **ফ্লেক্সো প্রিন্টিং ও প্লেট প্রডাকশন ক্যালকুলেটর:**\n\n"
+                $answer = "📐 **ফ্লেক্সো প্রিন্টিং ও প্লেট উত্পাদন ক্যালকুলেটর:**\n\n"
                     . "📋 **জব / প্লেটের নাম:** `{$name}` (SL No: **{$plate['sl_no']}** | ID: **{$plate['id']}**)\n"
-                    . "⚙️ **প্লেট স্পেসিফিকেশন:** আফস (Ups): **{$ups}** | রিপিট ভ্যালু: **{$repeatVal}mm** | সাইজ: **{$plate['size']}**\n\n";
+                    . "⚙️ **প্লেট বিবরণ:** আফস (Ups): **{$ups}** | রিপিট ভ্যালু: **{$repeatVal}mm** | সাইজ: **{$plate['size']}**\n\n";
 
                 if ($targetQty !== null && $targetQty > 0) {
                     $revs = $targetQty / $ups;
                     $rawMeters = ($revs * $repeatVal) / 1000.0;
                     $wastageMeters = $rawMeters * 1.05;
                     $answer .= "🎯 **টার্গেট কোয়ান্টিটি (Target Quantity):** **" . number_format($targetQty) . "টি**\n"
-                        . "📏 **প্রয়োজনীয় নেট পেপার:** **" . number_format($rawMeters, 2) . " মিটার**\n"
-                        . "🛡️ **সর্বমোট পেপার (৫% সেটআপ ওয়েস্টেজসহ):** **" . number_format($wastageMeters, 2) . " মিটার**\n\n";
+                        . "📏 **আবশ্যক কাগজ (Net Paper Needed):** **" . number_format($rawMeters, 2) . " মিটার**\n"
+                        . "🛡️ **কুল কাগজ (5% ওয়েস্টেজ সহিত):** **" . number_format($wastageMeters, 2) . " মিটার**\n\n";
                 }
 
                 if ($paperMeters !== null && $paperMeters > 0) {
@@ -2847,7 +3434,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     $revs = $totalMM / $repeatVal;
                     $totalQty = floor($revs * $ups);
                     $answer .= "📜 **পেপার রোলের দৈর্ঘ্য (Paper Roll Length):** **" . number_format($paperMeters, 2) . " মিটার**\n"
-                        . "📦 **প্রত্যাশিত মোট প্রডাকশন কোয়ান্টিটি:** **" . number_format($totalQty) . "টি লেবেল/পিস**\n\n";
+                        . "📦 **কুল উত্পাদন মাত্রা:** **" . number_format($totalQty) . "টি লেবেল/পিস**\n\n";
                 }
 
                 $answer .= "👉 [প্লেট ম্যানেজমেন্ট পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
@@ -2874,7 +3461,8 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         if (empty($data) && !empty($searchNums)) {
             $num = $searchNums[0];
             $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE sl_no = ? OR id = ? OR plate = ? ORDER BY id DESC LIMIT 5");
-            $stmt->bind_param('sss', $num, $num, $num);
+            $like = '%' . $num . '%';
+            $stmt->bind_param('sss', $like, $num, $num);
             $stmt->execute();
             $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         }
@@ -2887,11 +3475,11 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     . "I searched your ERP Master Plate database, but no plate record matching **\"{$searchTermDisplay}\"** was found.\n\n"
                     . "💡 **Tip:** Please verify if the plate name or SL No is spelled correctly.";
             } elseif ($userLang === 'Hindi') {
-                $directAnswer = "❌ **\"{$searchTermDisplay}\" नाम की कोई प्रिंटिंग प्लेट नहीं मिली**\n\n"
-                    . "आपके ईआरपी डेटाबेस में **\"{$searchTermDisplay}\"** नाम की कोई प्लेट उपलब्ध नहीं है।";
+                $directAnswer = "❌ **\"{$searchTermDisplay}\" नाम का कोई प्लेट नहीं मिला**\n\n"
+                    . "आपके ईआरपी डेटाबेस में **\"{$searchTermDisplay}\"** का कोई रिकॉर्ड उपलब्ध नहीं है।";
             } else {
-                $directAnswer = "❌ **\"{$searchTermDisplay}\" নামে কোনো প্রিন্টিং প্লেট পাওয়া যায়নি**\n\n"
-                    . "আপনার ইআরপি মাস্টার ডাটাবেসে **\"{$searchTermDisplay}\"** নামে কোনো প্লেটের রেকর্ড নিবন্ধিত নেই।";
+                $directAnswer = "❌ **\"{$searchTermDisplay}\" নামে কোনো প্লেট পাওয়া যায়নি**\n\n"
+                    . "আপনার ইআরপি মাস্টার ডাটাবেসে **\"{$searchTermDisplay}\"** নামে কোনো প্লেট রেকর্ড নিবন্ধিত নেই।";
             }
 
             return [
@@ -2935,7 +3523,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 if (!empty($typeStats)) {
                     $directAnswer .= "⚙️ **डाई प्रकार:**\n";
                     foreach ($typeStats as $ts) {
-                        $directAnswer .= "   ▸ **{$ts['die_type']}** — {$ts['cnt']} डाई\n";
+                        $directAnswer .= "   ▸ **" . ($ts['die_type'] ?: 'अन्य') . "** — {$ts['cnt']} डाई\n";
                     }
                     $directAnswer .= "\n";
                 }
@@ -2958,7 +3546,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 if (!empty($typeStats)) {
                     $directAnswer .= "⚙️ **ডাই ধরণ (Die Type):**\n";
                     foreach ($typeStats as $ts) {
-                        $directAnswer .= "   ▸ **{$ts['die_type']}** — {$ts['cnt']}টি ডাই\n";
+                        $directAnswer .= "   ▸ **" . ($ts['die_type'] ?: 'অন্যান্য') . "** — {$ts['cnt']}টি ডাই\n";
                     }
                     $directAnswer .= "\n";
                 }
@@ -2970,7 +3558,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     $directAnswer .= "\n";
                 }
                 if ($latest) {
-                    $directAnswer .= "🆕 **সর্বশেষ ডাই:** `{$latest['barcode_size']}` (SL: {$latest['sl_no']}) — ক্যাটাগরি: {$latest['used_for']}\n\n";
+                    $directAnswer .= "🆕 **সর্বশেষ ডাই:** `{$latest['barcode_size']}` (SL: {$latest['sl_no']}) — শ্রেণী: {$latest['used_for']}\n\n";
                 }
                 $directAnswer .= "━━━━━━━━━━━━━━━━━━━━━━\n"
                     . "👉 [বারকোড ডাই ম্যানেজমেন্ট পেজ খুলুন]({$baseUrl}/modules/plate-tools/die-management/barcode/index.php)";
@@ -2981,7 +3569,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 if (!empty($typeStats)) {
                     $directAnswer .= "⚙️ **By Die Type:**\n";
                     foreach ($typeStats as $ts) {
-                        $directAnswer .= "   ▸ **{$ts['die_type']}** — {$ts['cnt']} dies\n";
+                        $directAnswer .= "   ▸ **" . ($ts['die_type'] ?: 'Other') . "** — {$ts['cnt']} dies\n";
                     }
                     $directAnswer .= "\n";
                 }
@@ -3079,7 +3667,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                         . "  - 📐 **Barcode Size:** **" . ($row['barcode_size'] ?: 'N/A') . "**\n"
                         . "  - 🔢 **Ups (Roll / Die):** Roll Ups: **" . ($row['ups_in_roll'] ?: '1') . "** | Die Ups: **" . ($row['up_in_die'] ?: '1') . "**\n"
                         . "  - 📏 **Repeat Size:** **" . ($row['repeat_size'] ?: 'N/A') . "** | **Label Gap:** **" . ($row['label_gap'] ?: 'N/A') . "**\n"
-                        . "  - ⚙️ **Die Type & Cylinder:** **" . ($row['die_type'] ?: 'Rotary') . "** | Cylinder: **" . ($row['cylender'] ?: 'N/A') . "**\n"
+                        . "  - ⚙️ **Die Type & Cylinder:** **" . ($row['die_type'] ?: 'Rotary') . "** | Cylinder: **" . ($row['cylinder'] ?: 'N/A') . "**\n"
                         . "  - 📄 **Paper Size & Core:** Paper Size: **" . ($row['paper_size'] ?: 'N/A') . "** | Core: **" . ($row['core'] ?: 'N/A') . "**\n"
                         . "  - 📦 **Pieces per Roll:** **" . ($row['pices_per_roll'] ?: 'N/A') . "** | Category: **" . ($row['used_for'] ?: 'Barcode') . "**\n\n";
                 }
@@ -3091,19 +3679,21 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                         . "  - 📐 **बारकोड आकार:** **" . ($row['barcode_size'] ?: 'N/A') . "**\n"
                         . "  - 🔢 **अप्स (Roll / Die):** रोल अप्स: **" . ($row['ups_in_roll'] ?: '1') . "** | डाई अप्स: **" . ($row['up_in_die'] ?: '1') . "**\n"
                         . "  - 📏 **रिपीट साइज:** **" . ($row['repeat_size'] ?: 'N/A') . "** | **लेबल गैप:** **" . ($row['label_gap'] ?: 'N/A') . "**\n"
-                        . "  - ⚙️ **डाई प्रकार व सिलेंडर:** **" . ($row['die_type'] ?: 'Rotary') . "** | सिलेंडर: **" . ($row['cylender'] ?: 'N/A') . "**\n\n";
+                        . "  - ⚙️ **डाई प्रकार ओ सिलेंडर:** **" . ($row['die_type'] ?: 'Rotary') . "** | सिलेंडर: **" . ($row['cylinder'] ?: 'N/A') . "**\n"
+                        . "  - 📄 **पेपर साइज ओ कोर:** पेपर साइज: **" . ($row['paper_size'] ?: 'N/A') . "** | कोर: **" . ($row['core'] ?: 'N/A') . "**\n"
+                        . "  - 📦 **पिस प्रति रोल:** **" . ($row['pices_per_roll'] ?: 'N/A') . "** | क्याटागरी: **" . ($row['used_for'] ?: 'Barcode') . "**\n\n";
                 }
-                $answer .= "👉 [बारकोड डाई प्रबंधन पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/plate-tools/die-management/barcode/index.php)";
+                $answer .= "👉 [बारकोड डाई प्रबंधन पेज खोलें]({$baseUrl}/modules/plate-tools/die-management/barcode/index.php)";
             } else {
                 $answer = "📏 **বারকোড ডাই ম্যানেজমেন্ট ও টূলিং মাস্টার স্পেসিফিকেশন:**\n\nআপনার ইআরপি ডাটাবেসে **" . count($data) . "টি ম্যাচিং ডাই রেকর্ড** পাওয়া গেছে:\n\n";
                 foreach ($data as $idx => $row) {
                     $answer .= "• **ডাই " . ($idx + 1) . ": `" . ($row['barcode_size'] ?: 'Barcode Die') . "`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
-                        . "  - 📐 **বারকোড সাইজ:** **" . ($row['barcode_size'] ?: 'N/A') . "**\n"
+                        . "  - 📐 **বারকোড আকার:** **" . ($row['barcode_size'] ?: 'N/A') . "**\n"
                         . "  - 🔢 **আফস (Roll / Die):** রোল আফস: **" . ($row['ups_in_roll'] ?: '1') . "** | ডাই আফস: **" . ($row['up_in_die'] ?: '1') . "**\n"
                         . "  - 📏 **রিপিট সাইজ:** **" . ($row['repeat_size'] ?: 'N/A') . "** | **লেবেল গ্যাপ:** **" . ($row['label_gap'] ?: 'N/A') . "**\n"
-                        . "  - ⚙️ **ডাই টাইপ ও সিলিন্ডার:** **" . ($row['die_type'] ?: 'Rotary') . "** | সিলিন্ডার: **" . ($row['cylender'] ?: 'N/A') . "**\n"
+                        . "  - ⚙️ **ডাই টাইপ ও সিলিন্ডার:** **" . ($row['die_type'] ?: 'Rotary') . "** | সিলিন্ডার: **" . ($row['cylinder'] ?: 'N/A') . "**\n"
                         . "  - 📄 **পেপার সাইজ ও কোর:** পেপার সাইজ: **" . ($row['paper_size'] ?: 'N/A') . "** | কোর: **" . ($row['core'] ?: 'N/A') . "**\n"
-                        . "  - 📦 **পিস পার রোল:** **" . ($row['pices_per_roll'] ?: 'N/A') . "** | ক্যাটাগরি: **" . ($row['used_for'] ?: 'Barcode') . "**\n\n";
+                        . "  - 📦 **পিস প্রতি রোল:** **" . ($row['pices_per_roll'] ?: 'N/A') . "** | ক্যাটাগরি: **" . ($row['used_for'] ?: 'Barcode') . "**\n\n";
                 }
                 $answer .= "👉 [বারকোড ডাই ম্যানেজমেন্ট পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/plate-tools/die-management/barcode/index.php)";
             }
@@ -3202,7 +3792,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         $terms = [];
         foreach ($pWords as $w) {
             $wClean = trim(preg_replace('/[^a-z0-9]/', '', $w));
-            if ($wClean !== '' && !in_array($wClean, $stopwords, true)) {
+            if ($wClean !== '' && !in_array($wClean, $stopwords, true) && strlen($wClean) >= 2) {
                 $terms[] = $wClean;
             }
         }
@@ -3269,21 +3859,21 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 }
                 $answer .= "👉 [Click here to open Anilox Management Page]({$baseUrl}/modules/plate-tools/anilox-management/index.php)";
             } elseif ($userLang === 'Hindi') {
-                $answer = "🌀 **एनिलॉक्स प्रबंधन और इन्वेंटरी स्टॉक विवरण:**\n\nआपके ईआरपी डेटाबेस में **" . count($data) . " मैचिंग एनिलॉक्स रोल रिकॉर्ड** मिले हैं:\n\n";
+                $answer = "🌀 **एनिलॉक्स रोल — स्टॉक डैशबोर्ड**\n\nआपके ईआरपी डेटाबेस में **" . count($data) . " मैचिंग एनिलॉक्स रोल रिकॉर्ड** मिले हैं:\n\n";
                 foreach ($data as $idx => $row) {
                     $answer .= "• **एनिलॉक्स " . ($idx + 1) . ": `" . ($row['anilox_lpi'] ?: 'Anilox') . " LPI`** (SL No: **{$row['sl_no']}**)\n"
                         . "  - 🌀 **एनिलॉक्स एलपीआई (LPI):** **" . ($row['anilox_lpi'] ?: 'N/A') . " LPI**\n"
-                        . "  - 🧪 **एनिलॉक्स वॉल्यूम (BCM):** **" . ($row['anilox_bmc'] ?: 'N/A') . " BCM**\n"
+                        . "  - 🧪 **एनिलॉक्स वॉल्यूम (BCM / BMC):** **" . ($row['anilox_bmc'] ?: 'N/A') . " BCM**\n"
                         . "  - 📦 **उपलब्ध स्टॉक मात्रा:** **" . ($row['stock_qty'] ?: '0') . " रोल**\n\n";
                 }
-                $answer .= "👉 [एनिलॉक्स प्रबंधन पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/plate-tools/anilox-management/index.php)";
+                $answer .= "👉 [एनिलॉक्स प्रबंधन पेज खोलें]({$baseUrl}/modules/plate-tools/anilox-management/index.php)";
             } else {
-                $answer = "🌀 **এনিলক্স ম্যানেজমেন্ট ও ইনভেন্টরি স্টক স্পেসিফিকেশন:**\n\nআপনার ইআরপি ডাটাবেসে **" . count($data) . "টি ম্যাচিং এনিলক্স রোল রেকর্ড** পাওয়া গেছে:\n\n";
+                $answer = "🌀 **এনিলক্স রোল — স্টক ড্যাশবোর্ড**\n\nআপনার ইআরপি ডাটাবেসে **" . count($data) . "টি ম্যাচিং এনিলক্স রোল রেকর্ড** পাওয়া গেছে:\n\n";
                 foreach ($data as $idx => $row) {
                     $answer .= "• **এনিলক্স " . ($idx + 1) . ": `" . ($row['anilox_lpi'] ?: 'Anilox') . " LPI`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
                         . "  - 🌀 **এনিলক্স এলপিআই (LPI):** **" . ($row['anilox_lpi'] ?: 'N/A') . " LPI**\n"
                         . "  - 🧪 **এনিলক্স ভলিউম (BCM / BMC):** **" . ($row['anilox_bmc'] ?: 'N/A') . " BCM**\n"
-                        . "  - 📦 **উপলব্ধ স্টক কোয়ান্টিটি:** **" . ($row['stock_qty'] ?: '0') . "টি রোল**\n\n";
+                        . "  - 📦 **উপলব্ধ স্টক মাত্রা:** **" . ($row['stock_qty'] ?: '0') . " রোল**\n\n";
                 }
                 $answer .= "👉 [এনিলক্স ম্যানেজমেন্ট পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/plate-tools/anilox-management/index.php)";
             }
@@ -3493,7 +4083,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 $answer .= "\n";
             }
 
-            $answer .= "👉 [पेपर स्टॉक पेज खोलने के लिए यहाँ क्लिक करें]({$baseUrl}/modules/paper_stock/index.php)";
+            $answer .= "👉 [पेपर स्टक पेज खोलें]({$baseUrl}/modules/paper_stock/index.php)";
         } else {
             $answer = "📜 **{$titleHeading} — সম্পূর্ণ টেকনিক্যাল ইনভেন্টরি সামারি:**\n\n"
                 . "📊 **সর্বমোট ইনভেন্টরি ম্যাট্রিক্স:**\n"
@@ -3501,8 +4091,8 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 . "  - সর্বমোট রানিং দৈর্ঘ্য: **" . number_format($totalMeters, 2) . " মিটার**\n"
                 . "  - সর্বমোট সারফেস এরিয়া (SQM): **" . number_format($totalSqm, 2) . " SQM**\n"
                 . "  - সর্বশেষ এন্ট্রি তারিখ: `" . $latestEntryDate . "`\n\n"
-                . "🏭 **জম্বো রোল বনাম স্লিসিং ব্রেকডাউন:**\n"
-                . "  - 📜 **জম্বো প্যারেন্ট রোল (≥১০০০মিমি):** **" . number_format($jumboRolls) . "টি রোল** (" . number_format($jumboMtr, 2) . " মিটার)\n"
+                . "🏭 **জম্বো রোল বনাম স্লিটিং ব্রেকডাউন:**\n"
+                . "  - 📜 **জম্বো পৈরেন্ট রোল (≥১০০০মিমি):** **" . number_format($jumboRolls) . "টি রোল** (" . number_format($jumboMtr, 2) . " মিটার)\n"
                 . "  - ✂️ **স্লিটেড স্টক রোল (<১০০০মিমি):** **" . number_format($slittedRolls) . "টি রোল** (" . number_format($slittedMtr, 2) . " মিটার)\n\n";
 
             if (!empty($companyList) && count($companyList) > 1) {
@@ -3513,7 +4103,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 $answer .= "\n";
             }
 
-            $answer .= "📦 **মাস্টার রোল গ্রিড (স্যাম্পল " . count($data) . "টি রোল):**\n\n";
+            $answer .= "📦 **মাস্টার রোল গ্রিড (স্যাম্পল " . count($data) . " রোল):**\n\n";
 
             foreach ($data as $idx => $r) {
                 $answer .= "• **রোল " . ($idx + 1) . ": `" . ($r['roll_no'] ?: 'Roll #' . $r['id']) . "`** (ID: **{$r['id']}** | স্ট্যাটাস: **{$r['status']}**)\n"
@@ -3546,7 +4136,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         $toolName = 'ERP Jobs & Planning Tool';
 
         // Extract search term from prompt
-        $jobStopwords = ['can', 'you', 'of', 'give', 'me', 'the', 'detail', 'details', 'about', 'job', 'jobs', 'name', 'named', 'by', 'how', 'many', 'we', 'have', 'is', 'are', 'in', 'show', 'tell', 'list', 'find', 'search', 'for', 'a', 'an', 'what', 'which', 'please'];
+        $jobStopwords = ['can', 'you', 'of', 'give', 'me', 'the', 'detail', 'details', 'about', 'job', 'jobs', 'name', 'named', 'by', 'how', 'many', 'we', 'have', 'is', 'are', 'in', 'show', 'tell', 'list', 'find', 'search', 'for', 'a', 'an', 'what', 'which', 'please', 'pls', 'lookup', 'display', 'and', 'or', 'about', 'with', 'this', 'that', 'get', 'fetch', 'on', 'at', 'from', 'a', 'an', 'ki', 'kya', 'hai', 'ami', 'tumi', 'do', 'we', 'have', 'any', 'my'];
         $pWords = preg_split('/\s+/', strtolower($prompt));
         $terms = [];
         foreach ($pWords as $w) {
@@ -3586,7 +4176,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     if ($userLang === 'English') {
                         $answer = "📊 **Printing Plates Master Tool — Technical Specifications:**\n\nFound **{$sampleCount} matching plate record(s)** in your ERP database:\n\n";
                         foreach ($plateData as $idx => $row) {
-                            $answer .= "• **Plate " . ($idx + 1) . ": `{$row['name']}`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
+                            $answer .= "• **Plate " . ($idx + 1) . ": `" . ($row['name'] ?: 'Barcode Die') . "`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
                                 . "  - 📏 **Repeat Value:** **" . ($row['repeat_value'] ?: 'N/A') . "**\n"
                                 . "  - 📐 **Gap (Horizontal / Vertical):** **Gap H: " . ($row['gap_h'] ?: '0') . "** | **Gap V: " . ($row['gap_v'] ?: '0') . "**\n"
                                 . "  - 📐 **Plate Size:** **" . ($row['size'] ?: 'N/A') . "** | **Ups:** **" . ($row['ups'] ?: '1') . "**\n"
@@ -3597,7 +4187,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     } else {
                         $answer = "📊 **প্রিন্টিং প্লেটের বিস্তারিত টেকনিক্যাল স্পেসিফিকেশন:**\n\nআপনার ইআরপি ডাটাবেসে **{$sampleCount}টি ম্যাচিং প্লেট** পাওয়া গেছে:\n\n";
                         foreach ($plateData as $idx => $row) {
-                            $answer .= "• **প্লেট " . ($idx + 1) . ": `{$row['name']}`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
+                            $answer .= "• **প্লেট " . ($idx + 1) . ": `" . ($row['name'] ?: 'Barcode Die') . "`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
                                 . "  - 📏 **রিপিট ভ্যালু (Repeat Value):** **" . ($row['repeat_value'] ?: 'N/A') . "**\n"
                                 . "  - 📐 **গ্যাপ (Gap H / Gap V):** **Gap H: " . ($row['gap_h'] ?: '0') . "** | **Gap V: " . ($row['gap_v'] ?: '0') . "**\n"
                                 . "  - 📐 **প্লেট সাইজ:** **" . ($row['size'] ?: 'N/A') . "** | **আফস (Ups):** **" . ($row['ups'] ?: '1') . "**\n"
@@ -3622,25 +4212,25 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     $directAnswer = "❌ **No Job Found Matching \"{$jobSearchTerm}\"**\n\n"
                         . "I searched your ERP Planning Board and Job Cards database, but no active job matching **\"{$jobSearchTerm}\"** was found.\n\n"
                         . "💡 **Tip:** Please check if the job name or Job Card number is spelled correctly.";
-                } elseif ($userLang === 'Hindi') {
-                    $directAnswer = "❌ **\"{$jobSearchTerm}\" नाम का कोई जॉब नहीं मिला**\n\n"
-                        . "आपके ईआरपी डेटाबेस में **\"{$jobSearchTerm}\"** नाम का कोई जॉब या जॉब कार्ड दर्ज नहीं है।\n\n"
-                        . "💡 **टिप:** कृपया जांचें कि जॉब का नाम या जॉब नंबर सही है या नहीं।";
-                } else {
-                    $directAnswer = "❌ **\"{$jobSearchTerm}\" নামে কোনো জব পাওয়া যায়নি**\n\n"
-                        . "আপনার ইআরপি ডাটাবেসে **\"{$jobSearchTerm}\"** নামে কোনো সচল জব বা জব কার্ড নিবন্ধিত নেই।\n\n"
-                        . "💡 **পরামর্শ:** অনুগ্রহ করে জব এর নাম বা জব কার্ড নম্বরটি সঠিক রয়েছে কিনা চেক করুন।";
-                }
+            } elseif ($userLang === 'Hindi') {
+                $directAnswer = "❌ **\"{$jobSearchTerm}\" नाम का कोई जॉब नहीं मिला**\n\n"
+                    . "आपके ईआरपी डेटाबेस में **\"{$jobSearchTerm}\"** का कोई जॉब या जॉब कार्ड दर्ज नहीं है।\n\n"
+                    . "💡 **टिप:** कृपया जांचें कि जॉब का नाम या जॉब कार्ड नंबर सही है या नहीं।";
+            } else {
+                $directAnswer = "❌ **\"{$jobSearchTerm}\" নামে কোনো জব পাওয়া যায়নি**\n\n"
+                    . "আপনার ইআরপি ডাটাবেসে **\"{$jobSearchTerm}\"** নামে কোনো সচল জব বা জব কার্ড নিবন্ধিত নেই।\n\n"
+                    . "💡 **পরামর্শ:** অনুগ্রহ করে জব এর নাম বা জব কার্ড নম্বরটি সঠিক রয়েছে কিনা চেক করুন।";
+            }
 
-                return [
-                    'tool_used' => $toolName,
-                    'total_count' => 0,
-                    'total_meters' => 0,
-                    'filtered_type' => '',
-                    'is_company_list' => false,
-                    'direct_answer' => $directAnswer,
-                    'data' => []
-                ];
+            return [
+                'tool_used' => $toolName,
+                'total_count' => 0,
+                'total_meters' => 0,
+                'filtered_type' => '',
+                'is_company_list' => false,
+                'direct_answer' => $directAnswer,
+                'data' => []
+            ];
             }
         } else {
             $cntRes = $db->query("SELECT COUNT(*) as cnt FROM jobs");
@@ -3672,7 +4262,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 if ($userLang === 'English') {
                     $answer = "📊 **Printing Plates Master Tool — Technical Specifications:**\n\nFound **{$sampleCount} matching plate record(s)** in your ERP database:\n\n";
                     foreach ($plateData as $idx => $row) {
-                        $answer .= "• **Plate " . ($idx + 1) . ": `{$row['name']}`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
+                        $answer .= "• **Plate " . ($idx + 1) . ": `" . ($row['name'] ?: 'Barcode Die') . "`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
                             . "  - 📏 **Repeat Value:** **" . ($row['repeat_value'] ?: 'N/A') . "**\n"
                             . "  - 📐 **Gap (Horizontal / Vertical):** **Gap H: " . ($row['gap_h'] ?: '0') . "** | **Gap V: " . ($row['gap_v'] ?: '0') . "**\n"
                             . "  - 📐 **Plate Size:** **" . ($row['size'] ?: 'N/A') . "** | **Ups:** **" . ($row['ups'] ?: '1') . "**\n"
@@ -3683,7 +4273,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 } else {
                     $answer = "📊 **প্রিন্টিং প্লেটের বিস্তারিত টেকনিক্যাল স্পেসিফিকেশন:**\n\nআপনার ইআরপি ডাটাবেসে **{$sampleCount}টি ম্যাচিং প্লেট** পাওয়া গেছে:\n\n";
                     foreach ($plateData as $idx => $row) {
-                        $answer .= "• **প্লেট " . ($idx + 1) . ": `{$row['name']}`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
+                        $answer .= "• **প্লেট " . ($idx + 1) . ": `" . ($row['name'] ?: 'Barcode Die') . "`** (SL No: **{$row['sl_no']}** | ID: **{$row['id']}**)\n"
                             . "  - 📏 **রিপিট ভ্যালু (Repeat Value):** **" . ($row['repeat_value'] ?: 'N/A') . "**\n"
                             . "  - 📐 **গ্যাপ (Gap H / Gap V):** **Gap H: " . ($row['gap_h'] ?: '0') . "** | **Gap V: " . ($row['gap_v'] ?: '0') . "**\n"
                             . "  - 📐 **প্লেট সাইজ:** **" . ($row['size'] ?: 'N/A') . "** | **আফস (Ups):** **" . ($row['ups'] ?: '1') . "**\n"
@@ -3746,11 +4336,11 @@ if (!empty($retrieved['direct_answer'])) {
     } elseif ($userLang === 'Hindi') {
         $finalAnswer = "📊 **जॉब प्लानिंग बोर्ड और विभाग स्थिति:**\n\nप्लानिंग बोर्ड पर कुल **{$totalCount} सक्रिय जॉब** उपलब्ध हैं:\n\n";
         foreach ($dbData as $idx => $item) {
-            $finalAnswer .= "• **जॉब " . ($idx + 1) . ": {$item['job_no']}** | **{$item['job_name']}** | प्राथमिकता: **{$item['priority']}** | बोर्ड स्थिति: **{$item['status']}**\n";
+            $finalAnswer .= "• **Job " . ($idx + 1) . ": {$item['job_no']}** | **{$item['job_name']}** | प्राथमिकता: **{$item['priority']}** | बोर्ड स्थिति: **{$item['status']}**\n";
             if (!empty($item['departments'])) {
                 $finalAnswer .= "  - 🏭 **विभागीय स्थिति (Department Progress):**\n";
                 foreach ($item['departments'] as $d) {
-                    $finalAnswer .= "    ▸ **" . strtoupper(str_replace('_', ' ', $d['department'])) . "** (जॉब कार्ड: `{$d['job_no']}`): **{$d['status']}**\n";
+                    $finalAnswer .= "    ▸ **" . strtoupper(str_replace('_', ' ', $d['department'])) . "** (Job Card: `{$d['job_no']}`): **{$d['status']}**\n";
                 }
             }
             $finalAnswer .= "\n";
@@ -3759,7 +4349,7 @@ if (!empty($retrieved['direct_answer'])) {
         // Bengali
         $finalAnswer = "📊 **প্ল্যানিং বোর্ড এবং ডিপার্টমেন্টভিত্তিক জব স্ট্যাটাস:**\n\nআপনার ইআরপি প্ল্যানিং বোর্ডে মোট **{$totalCount}টি জব** প্রস্তুত রয়েছে:\n\n";
         foreach ($dbData as $idx => $item) {
-            $finalAnswer .= "• **জব " . ($idx + 1) . ": {$item['job_no']}** | **{$item['job_name']}** | প্রায়োরিটি: **{$item['priority']}** | বোর্ড স্ট্যাটাস: **{$item['status']}**\n";
+            $finalAnswer .= "• **জব " . ($idx + 1) . ": {$item['job_no']}** | **{$item['job_name']}** | প্রাথমিকতা: **{$item['priority']}** | বোর্ড স্ট্যাটাস: **{$item['status']}**\n";
             if (!empty($item['departments'])) {
                 $finalAnswer .= "  - 🏭 **ডিপার্টমেন্টভিত্তিক প্রোগ্রেস (Department Status):**\n";
                 foreach ($item['departments'] as $d) {
@@ -3772,28 +4362,37 @@ if (!empty($retrieved['direct_answer'])) {
         }
     }
 } elseif ($toolUsed === 'Unmatched Query Assistant') {
-    $llmAnswer = call_llm_api($prompt, $config);
-    if ($llmAnswer !== null) {
-        if (strpos($llmAnswer, '[API_ERROR]') === 0) {
-            $finalAnswer = "⚠️ **AI Provider Error**\n\n" . str_replace('[API_ERROR] ', '', $llmAnswer) . "\n\n💡 *Hint: Did you click 'Save Settings' after entering your API Key?*";
-            $toolUsed = 'Configuration Error';
-        } else {
-            $finalAnswer = $llmAnswer;
-            $toolUsed = '';
-        }
+    // ERP-Only Mode: skip external LLM, go straight to no-knowledge message
+    if ($erpOnlyMode) {
+        $llmAnswer = null;
+    } else {
+        $llmAnswer = call_llm_api($prompt, $config);
+    }
+    if ($llmAnswer !== null && strpos($llmAnswer, '[API_ERROR]') !== 0) {
+        $finalAnswer = $llmAnswer;
+        $toolUsed = '';
     } else {
         if ($userLang === 'English') {
-            $finalAnswer = "ℹ️ **Information Not Found in Trained Knowledge Base**\n\n"
-                . "I couldn't find a trained match for your query: **\"" . htmlspecialchars($prompt) . "\"**.\n\n"
-                . "💡 **Admin Tip:** You can train the AI in **Settings → AI Agent → Knowledge Base** by clicking **\"+ Add New Entry\"** and entering keywords.";
+            $finalAnswer = "🤔 **I don't have knowledge regarding this topic.**\n\n"
+                . "I searched my trained knowledge base and ERP data, but couldn't find an answer to: **\"" . htmlspecialchars($prompt) . "\"**.\n\n"
+                . (isAdmin()
+                    ? "💡 **Admin Tip:** You can train me in **Settings → AI Agent → Knowledge Base** by clicking **\"+ Add New Entry\"** with keywords and an answer.\n\n"
+                    : "")
+                . "👨‍💼 **For help, please contact your ERP Administrator.**";
         } elseif ($userLang === 'Hindi') {
-            $finalAnswer = "ℹ️ **ज्ञान आधार में जानकारी नहीं मिली**\n\n"
-                . "आपकी क्वेरी **\"" . htmlspecialchars($prompt) . "\"** का उत्तर अभी सेव नहीं है।\n\n"
-                . "💡 **एडमिन टिप:** **Settings → AI Agent → Knowledge Base** में जाकर **\"+ Add New Entry\"** पर उत्तर जोड़ें!";
+            $finalAnswer = "🤔 **मुझे इस विषय के बारे में कोई जानकारी नहीं है।**\n\n"
+                . "मैंने अपने ट्रेन्ड नॉलेज बेस और ईआरपी डेटा में खोजा, लेकिन आपकी क्वेरी: **\"" . htmlspecialchars($prompt) . "\"** का उत्तर नहीं मिला।\n\n"
+                . (isAdmin()
+                    ? "💡 **एडमिन टिप:** आप **Settings → AI Agent → Knowledge Base** में जाकर **\"+ Add New Entry\"** से मुझे ट्रेन कर सकते हैं।\n\n"
+                    : "")
+                . "👨‍💼 **कृपया सहायता के लिए अपने ERP एडमिनिस्ट्रेटर से संपर्क करें।**";
         } else {
-            $finalAnswer = "ℹ️ **ট্রেইনড নলেজ বেসে উত্তরটি পাওয়া যায়নি**\n\n"
-                . "আপনার প্রশ্ন **\"" . htmlspecialchars($prompt) . "\"** এর উত্তর এখনো সেভ করা হয়নি।\n\n"
-                . "💡 **এডমিন পরামর্শ:** **Settings → AI Agent → Knowledge Base** এ গিয়ে **\"+ Add New Entry\"** এ উত্তর যুক্ত করুন!";
+            $finalAnswer = "🤔 **এই বিষয়ে আমার কোনো জ্ঞান নেই।**\n\n"
+                . "আমি আমার ট্রেইনড নলেজ বেস এবং ইআরপি ডেটাতে খুঁজেছি, কিন্তু আপনার প্রশ্ন: **\"" . htmlspecialchars($prompt) . "\"** এর উত্তর পাইনি।\n\n"
+                . (isAdmin()
+                    ? "💡 **এডমিন পরামর্শ:** আপনি **Settings → AI Agent → Knowledge Base** এ গিয়ে **\"+ Add New Entry\"** ক্লিক করে কীওয়ার্ড ও উত্তর যোগ করে আমাকে ট্রেইন করতে পারেন।\n\n"
+                    : "")
+                . "👨‍💼 **সাহায্যের জন্য আপনার ERP অ্যাডমিনিস্ট্রেটরের সাথে যোগাযোগ করুন।**";
         }
     }
 } else {

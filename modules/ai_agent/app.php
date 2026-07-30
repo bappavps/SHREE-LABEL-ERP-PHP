@@ -615,7 +615,9 @@ foreach ($quickChips as $c) {
       display: none;
     }
     .msg-group.assistant:hover .btn-copy-msg,
-    .msg-group.assistant:active .btn-copy-msg { display: flex; }
+    .msg-group.assistant:active .btn-copy-msg,
+    .msg-group.user:hover .btn-copy-msg,
+    .msg-group.user:active .btn-copy-msg { display: flex; }
     .btn-copy-msg:active { color: var(--accent); transform: scale(1.2); }
     .btn-copy-msg.copied { color: #22c55e; }
 
@@ -760,8 +762,116 @@ foreach ($quickChips as $c) {
       max-height: 100px;
       line-height: 1.4;
       font-family: inherit;
+      white-space: pre-wrap;
+      overflow-y: auto;
+      word-break: break-word;
     }
-    .chat-input::placeholder { color: var(--text-dim); }
+    .chat-input:empty::before {
+      content: attr(data-placeholder);
+      color: var(--text-dim);
+      pointer-events: none;
+    }
+    .chat-input .cmd-highlight {
+      color: #ef4444;
+      font-weight: 600;
+    }
+    .chat-input .cmd-highlight-done {
+      color: #ef4444;
+      font-weight: 600;
+    }
+    .chat-input .cmd-highlight + .cmd-highlight-done {
+      margin-left: 0;
+    }
+    /* Quote highlight in input — product/item names (bold + accent color) */
+    .chat-input .cmd-quote-hl {
+      color: #f59e0b;
+      font-weight: 800;
+      text-shadow: 0 0 8px rgba(245, 158, 11, 0.25);
+    }
+    .chat-input .cmd-quote-hl .qp {
+      color: #f59e0b;
+      opacity: 0.5;
+      font-weight: 400;
+    }
+    .chat-input .cmd-quote-hl.done {
+      color: #10b981;
+      font-weight: 800;
+    }
+    .chat-input .cmd-quote-hl.done .qp {
+      color: #10b981;
+      opacity: 0.4;
+      font-weight: 400;
+    }
+
+    /* Quote highlight for product/item names in user messages */
+    .msg-bubble .quote-highlight {
+      display: inline-block;
+      background: rgba(245, 158, 11, 0.15);
+      color: #f59e0b;
+      font-weight: 800;
+      padding: 1px 8px;
+      border-radius: 4px;
+      font-size: 0.85em;
+    }
+    [data-theme="light"] .msg-bubble .quote-highlight {
+      background: rgba(245, 158, 11, 0.1);
+      color: #d97706;
+    }
+
+    /* Command Suggestions Dropup */
+    .cmd-suggestions {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 0;
+      right: 0;
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
+      border-radius: 16px;
+      padding: 6px;
+      display: none;
+      z-index: 100;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: 0 -8px 32px rgba(0,0,0,0.4);
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .cmd-suggestions.visible { display: block; }
+    .cmd-suggestion-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.15s;
+      color: var(--text-primary);
+    }
+    .cmd-suggestion-item:hover, .cmd-suggestion-item.active {
+      background: var(--accent-soft);
+    }
+    .cmd-suggestion-item .cmd-key {
+      font-weight: 700;
+      color: #ef4444;
+      font-size: 15px;
+      min-width: 70px;
+    }
+    .cmd-suggestion-item .cmd-desc {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+    .cmd-suggestion-item .cmd-key-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+      font-weight: 700;
+      font-size: 12px;
+      padding: 2px 10px;
+      border-radius: 6px;
+      min-width: 70px;
+    }
 
     .input-actions {
       display: flex;
@@ -953,7 +1063,7 @@ foreach ($quickChips as $c) {
         <div class="typing-dot"></div>
         <div class="typing-dot"></div>
       </div>
-      <span class="typing-label">Thinking...</span>
+      <span class="typing-label" id="typingLabel">Thinking...</span>
     </div>
   </main>
 
@@ -965,11 +1075,34 @@ foreach ($quickChips as $c) {
 
   <!-- Input Footer -->
   <footer class="app-footer">
-    <div class="input-container">
+    <div class="input-container" style="position:relative;">
+      <!-- Command Suggestions Dropup -->
+      <div class="cmd-suggestions" id="cmdSuggestions">
+        <div class="cmd-suggestion-item" data-cmd="/cal">
+          <span class="cmd-key-badge">/cal</span>
+          <span class="cmd-desc">External Calculations (label, math, units)</span>
+        </div>
+        <div class="cmd-suggestion-item" data-cmd="/erp">
+          <span class="cmd-key-badge">/erp</span>
+          <span class="cmd-desc">ERP-Only Mode — Ask about ERP data only</span>
+        </div>
+        <div class="cmd-suggestion-item" data-cmd="/paperstock">
+          <span class="cmd-key-badge">/paperstock</span>
+          <span class="cmd-desc">Paper Stock Priority Mode</span>
+        </div>
+        <div class="cmd-suggestion-item" data-cmd="/plate">
+          <span class="cmd-key-badge">/plate</span>
+          <span class="cmd-desc">Plate Priority Mode</span>
+        </div>
+        <div class="cmd-suggestion-item" data-cmd="/clear">
+          <span class="cmd-key-badge">/clear</span>
+          <span class="cmd-desc">Clear all priority modes</span>
+        </div>
+      </div>
       <button class="btn-input btn-mic" id="micBtn" title="Speak to AI Agent">
         <i class="bi bi-mic-fill" id="micIcon"></i>
       </button>
-      <textarea class="chat-input" id="chatInput" placeholder="Ask about stock, orders or speak..." rows="1" autocomplete="off"></textarea>
+      <div class="chat-input" id="chatInput" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Ask about stock, orders or speak..."></div>
       <div class="input-actions">
         <button class="btn-input btn-send" id="sendBtn" title="Send" disabled>
           <i class="bi bi-send-fill"></i>
@@ -1012,6 +1145,13 @@ foreach ($quickChips as $c) {
       });
     }
 
+    // Auto-refresh when PWA app is reopened from BFCache (e.g. after being backgrounded)
+    window.addEventListener('pageshow', (e) => {
+      if (e.persisted) {
+        location.reload();
+      }
+    });
+
     const chatStream = document.getElementById('chatStream');
     const chatInput = document.getElementById('chatInput');
     const sendBtn = document.getElementById('sendBtn');
@@ -1027,13 +1167,121 @@ foreach ($quickChips as $c) {
     const charCount = document.getElementById('charCount');
     const welcomeHero = document.getElementById('welcomeHero');
 
-    // Auto-resize textarea
-    chatInput.addEventListener('input', () => {
-      chatInput.style.height = 'auto';
-      chatInput.style.height = Math.min(chatInput.scrollHeight, 100) + 'px';
-      const len = chatInput.value.length;
-      sendBtn.disabled = len === 0;
-      charCount.textContent = len > 0 ? len + '/500' : '';
+    // Command definitions for suggestions & highlighting
+    const CMD_LIST = [
+      { cmd: '/cal', desc: 'External Calculations (label, math, units)' },
+      { cmd: '/erp', desc: 'ERP-Only Mode — Ask about ERP data only' },
+      { cmd: '/paperstock', desc: 'Paper Stock Priority Mode' },
+      { cmd: '/plate', desc: 'Plate Priority Mode' },
+      { cmd: '/clear', desc: 'Clear all priority modes' },
+    ];
+    const CMD_NAMES = CMD_LIST.map(c => c.cmd);
+
+    function getChatText() { return chatInput.innerText || chatInput.textContent || ''; }
+    function setChatText(t) { chatInput.innerHTML = ''; chatInput.appendChild(document.createTextNode(t)); }
+    function getChatCursorPos() {
+      const sel = window.getSelection();
+      if (sel.rangeCount === 0) return 0;
+      const r = sel.getRangeAt(0);
+      const pre = document.createRange();
+      pre.selectNodeContents(chatInput);
+      pre.setEnd(r.startContainer, r.startOffset);
+      return pre.toString().length;
+    }
+
+    // Highlight slash commands & show suggestions dropup
+    function processChatInput() {
+      const text = getChatText();
+      // Update send button
+      sendBtn.disabled = text.trim().length === 0;
+      charCount.textContent = text.length > 0 ? text.length + '/500' : '';
+
+      // Show suggestions when user types "/" at start of input or after space
+      const showSuggestions = text.startsWith('/') && !text.includes(' ');
+      const sug = document.getElementById('cmdSuggestions');
+      if (showSuggestions) {
+        const partial = text.toLowerCase();
+        sug.querySelectorAll('.cmd-suggestion-item').forEach(el => {
+          const cmd = el.dataset.cmd;
+          el.style.display = cmd.startsWith(partial) ? 'flex' : 'none';
+        });
+        sug.classList.add('visible');
+      } else {
+        sug.classList.remove('visible');
+      }
+
+      // Build highlighted HTML
+      let html = '';
+      let cmdHighlighted = false;
+
+      // Step 1: Check for command prefix
+      for (const cmd of CMD_NAMES) {
+        if (text.startsWith(cmd + ' ') || text === cmd) {
+          const rest = text.substring(cmd.length);
+          html = '<span class="cmd-highlight">' + cmd + '</span>' + (rest ? '<span>' + escHtml(rest) + '</span>' : '');
+          cmdHighlighted = true;
+          break;
+        }
+      }
+      if (!cmdHighlighted) {
+        html = escHtml(text);
+      }
+
+      // Step 2: Highlight quoted text (product/item names) in the input
+      // Use single-pass regex (no do-while loop to avoid infinite re-matching)
+      // Replace straight quotes &quot;...&quot; first
+      html = html.replace(/&quot;(.+?)&quot;/g, function(m, inner) {
+        // Check if space follows the closing quote (completed phrase)
+        var idx = arguments[arguments.length - 2] + m.length;
+        var nextChar = html[idx] || '';
+        var doneClass = (nextChar === ' ' || nextChar === '\t' || nextChar === '\n' || nextChar === '') ? ' done' : '';
+        return '<span class="cmd-quote-hl' + doneClass + '"><span class="qp">&quot;</span>' + inner + '<span class="qp">&quot;</span></span>';
+      });
+      // Replace curly quotes \u201C...\u201D
+      html = html.replace(/[\u201C\u201D](.+?)[\u201C\u201D]/g, function(m, inner) {
+        var idx = arguments[arguments.length - 2] + m.length;
+        var nextChar = html[idx] || '';
+        var doneClass = (nextChar === ' ' || nextChar === '\t' || nextChar === '\n' || nextChar === '') ? ' done' : '';
+        return '<span class="cmd-quote-hl' + doneClass + '"><span class="qp">\u201C</span>' + inner + '<span class="qp">\u201D</span></span>';
+      });
+
+      if (html !== chatInput.innerHTML) {
+        chatInput.innerHTML = html;
+        placeCursorAtEnd();
+      }
+    }
+
+    function escHtml(t) {
+      return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function placeCursorAtEnd() {
+      const sel = window.getSelection();
+      const r = document.createRange();
+      r.selectNodeContents(chatInput);
+      r.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+
+    // Input event: auto-resize + command processing
+    chatInput.addEventListener('input', processChatInput);
+
+    // Focus event: show suggestions if starts with /
+    chatInput.addEventListener('focus', () => {
+      if (getChatText().startsWith('/')) processChatInput();
+    });
+
+    // Click on suggestion items
+    document.getElementById('cmdSuggestions').addEventListener('click', (e) => {
+      const item = e.target.closest('.cmd-suggestion-item');
+      if (!item) return;
+      const cmd = item.dataset.cmd;
+      setChatText(cmd + ' ');
+      document.getElementById('cmdSuggestions').classList.remove('visible');
+      processChatInput();
+      chatInput.focus();
+      placeCursorAtEnd();
     });
 
     // Chips toggle
@@ -1045,8 +1293,8 @@ foreach ($quickChips as $c) {
     // Quick chips click
     document.querySelectorAll('.chip-item').forEach(chip => {
       chip.addEventListener('click', () => {
-        chatInput.value = chip.getAttribute('data-prompt');
-        chatInput.dispatchEvent(new Event('input'));
+        setChatText(chip.getAttribute('data-prompt'));
+        processChatInput();
         sendQuery();
         chipsSection.classList.remove('open');
         chipsToggle.classList.remove('active');
@@ -1056,21 +1304,23 @@ foreach ($quickChips as $c) {
     // Quick action cards
     document.querySelectorAll('.quick-action-card').forEach(card => {
       card.addEventListener('click', () => {
-        chatInput.value = card.getAttribute('data-prompt');
-        chatInput.dispatchEvent(new Event('input'));
+        setChatText(card.getAttribute('data-prompt'));
+        processChatInput();
         sendQuery();
       });
     });
 
-    // Clear Chat
-    clearBtn.addEventListener('click', () => {
-      if (navigator.vibrate) navigator.vibrate(20);
-      const welcomeHTML = welcomeHero ? welcomeHero.outerHTML : '';
-      chatStream.innerHTML = '';
-      if (welcomeHTML) chatStream.innerHTML = welcomeHTML;
-      chatStream.appendChild(typingBox);
-      newMsgCount = 0;
-      fabBadge.classList.remove('visible');
+    // AI Suggestion chips click (event delegation for dynamically added chips)
+    chatStream.addEventListener('click', (e) => {
+      const chip = e.target.closest('.ai-suggestion-chip');
+      if (chip) {
+        const p = chip.getAttribute('data-prompt');
+        if (p) {
+          setChatText(p);
+          processChatInput();
+          sendQuery();
+        }
+      }
     });
 
     // Scroll to bottom
@@ -1105,16 +1355,19 @@ foreach ($quickChips as $c) {
     updateOnlineStatus();
 
     async function sendQuery() {
-      const prompt = chatInput.value.trim();
+      const prompt = getChatText().trim();
       if (!prompt) return;
 
-      chatInput.value = '';
-      chatInput.style.height = 'auto';
-      chatInput.dispatchEvent(new Event('input'));
+      setChatText('');
       sendBtn.disabled = true;
+      document.getElementById('cmdSuggestions').classList.remove('visible');
 
       if (welcomeHero) welcomeHero.remove();
       appendUserMsg(prompt);
+      // Move typing indicator right after the user's message
+      const userGroups = chatStream.querySelectorAll('.msg-group.user');
+      const lastUser = userGroups[userGroups.length - 1];
+      if (lastUser) lastUser.insertAdjacentElement('afterend', typingBox);
       showTyping(true);
       if (navigator.vibrate) navigator.vibrate(15);
 
@@ -1160,7 +1413,7 @@ foreach ($quickChips as $c) {
         micBtn.classList.add('listening');
         if (micIcon) micIcon.className = 'bi bi-mic-fill ai-pulse';
         if (voiceStatusText) voiceStatusText.textContent = '🎙️ Listening... Speak now';
-        chatInput.placeholder = 'Listening...';
+        chatInput.dataset.placeholder = 'Listening...';
         if (navigator.vibrate) navigator.vibrate(20);
       };
 
@@ -1169,8 +1422,8 @@ foreach ($quickChips as $c) {
         for (let i = e.resultIndex; i < e.results.length; i++) {
           transcript += e.results[i][0].transcript;
         }
-        chatInput.value = transcript;
-        chatInput.dispatchEvent(new Event('input'));
+        setChatText(transcript);
+        processChatInput();
       };
 
       recognition.onerror = (e) => {
@@ -1189,7 +1442,7 @@ foreach ($quickChips as $c) {
         micBtn.classList.remove('listening');
         if (micIcon) micIcon.className = 'bi bi-mic-fill';
         if (voiceStatusText) voiceStatusText.textContent = '';
-        chatInput.placeholder = 'Ask about stock, orders or speak...';
+        chatInput.dataset.placeholder = 'Ask about stock, orders or speak...';
       }
 
       micBtn.addEventListener('click', () => {
@@ -1221,6 +1474,9 @@ foreach ($quickChips as $c) {
         const saved = localStorage.getItem('erp_pwa_chat_history');
         if (saved && saved.trim() !== '') {
           chatStream.innerHTML = saved;
+          // Ensure typing label has id (old saved data might lack it)
+          const label = chatStream.querySelector('.typing-label');
+          if (label && !label.id) label.id = 'typingLabel';
           if (!document.getElementById('typingBox')) {
             chatStream.appendChild(typingBox);
           }
@@ -1230,28 +1486,27 @@ foreach ($quickChips as $c) {
     }
     loadHistory();
 
-    // Clear Chat
+    // Clear Chat — clears history and auto-refresh
     clearBtn.addEventListener('click', () => {
       if (navigator.vibrate) navigator.vibrate(20);
       try { localStorage.removeItem('erp_pwa_chat_history'); } catch (e) {}
-      const welcomeHTML = welcomeHero ? welcomeHero.outerHTML : '';
-      chatStream.innerHTML = '';
-      if (welcomeHTML) chatStream.innerHTML = welcomeHTML;
-      chatStream.appendChild(typingBox);
-      newMsgCount = 0;
-      fabBadge.classList.remove('visible');
+      try { sessionStorage.setItem('erp_chat_cleared', '1'); } catch (e) {}
+      location.reload();
     });
 
     function appendUserMsg(text) {
       const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      // Just escape HTML — no quote highlighting in sent messages (input box only)
+      const highlighted = escapeHtml(text);
       const html = `
         <div class="msg-group user">
           <div class="msg-row">
             <div class="msg-avatar"><i class="bi bi-person-fill"></i></div>
             <div class="msg-content">
-              <div class="msg-bubble">${escapeHtml(text)}</div>
+              <div class="msg-bubble">${highlighted}</div>
               <div class="msg-footer">
                 <span class="msg-meta">You · ${time}</span>
+                <button class="btn-copy-msg" onclick="copyMsg(this)" title="Copy"><i class="bi bi-clipboard"></i></button>
               </div>
             </div>
           </div>
@@ -1339,7 +1594,35 @@ foreach ($quickChips as $c) {
 
     function showTyping(show) {
       typingBox.classList.toggle('visible', show);
-      if (show) scrollToBottom();
+      if (show) {
+        // Cycle through animated status messages
+        const statuses = ['Thinking', 'Processing', 'Searching', 'Analyzing', 'Fetching data', 'Targeting', 'Computing', 'Loading'];
+        let idx = 0;
+        let label = document.getElementById('typingLabel');
+        // Ensure label exists (old localStorage data might lack id)
+        if (!label) {
+          const span = typingBox.querySelector('.typing-label');
+          if (span) { span.id = 'typingLabel'; label = span; }
+        }
+        let dots = 0;
+        if (window._typingInterval) clearInterval(window._typingInterval);
+        window._typingInterval = setInterval(() => {
+          if (!label) { clearInterval(window._typingInterval); return; }
+          dots = (dots + 1) % 4;
+          label.textContent = statuses[idx] + '.'.repeat(dots > 0 ? dots : 3);
+          if (dots === 0) {
+            idx = (idx + 1) % statuses.length;
+          }
+        }, 400);
+        scrollToBottom();
+      } else {
+        if (window._typingInterval) {
+          clearInterval(window._typingInterval);
+          window._typingInterval = null;
+        }
+        const label = document.getElementById('typingLabel') || typingBox.querySelector('.typing-label');
+        if (label) label.textContent = 'Thinking...';
+      }
     }
 
     function scrollToBottom() {

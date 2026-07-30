@@ -37,30 +37,50 @@
     var contentDiv = document.createElement('div');
     contentDiv.className = 'ai-msg-content';
 
-    var html = '';
+    var bubbleHtml = '';
     if (toolUsed && sender === 'assistant') {
-      html += '<div class="ai-tool-call-tag"><i class="bi bi-lightning-charge-fill"></i> Executed ERP Tool: ' + escapeHtml(toolUsed) + '</div>';
+      bubbleHtml += '<div class="ai-tool-call-tag"><i class="bi bi-lightning-charge-fill"></i> Executed ERP Tool: ' + escapeHtml(toolUsed) + '</div>';
     }
 
-    if (text === '<div class="ai-thinking-indicator"><i class="bi bi-three-dots ai-pulse"></i> <em>AI is thinking...</em></div>') {
-      html += text;
+    // Render thinking indicator HTML directly (don't escape)
+    if (text.indexOf('ai-thinking-indicator') !== -1) {
+      bubbleHtml += text;
     } else {
-      html += formatMarkdown(text);
+      var formatted = formatMarkdown(text);
+      bubbleHtml += formatted;
     }
 
     // Suggestions chips rendering
     if (sender === 'assistant' && suggestions && suggestions.length > 0) {
-      html += '<div class="ai-suggestion-box">';
-      html += '<div class="ai-suggestion-title"><i class="bi bi-lightbulb-fill" style="color:#f59e0b"></i> Suggested Questions:</div>';
-      html += '<div class="ai-suggestion-chips">';
+      bubbleHtml += '<div class="ai-suggestion-box">';
+      bubbleHtml += '<div class="ai-suggestion-title"><i class="bi bi-lightbulb-fill" style="color:#f59e0b"></i> Suggested Questions:</div>';
+      bubbleHtml += '<div class="ai-suggestion-chips">';
       for (var s = 0; s < suggestions.length; s++) {
         var sug = suggestions[s];
-        html += '<button type="button" class="ai-suggestion-chip" data-prompt="' + escapeHtml(sug) + '"><i class="bi bi-chat-left-text"></i> ' + escapeHtml(sug) + '</button>';
+        bubbleHtml += '<button type="button" class="ai-suggestion-chip" data-prompt="' + escapeHtml(sug) + '"><i class="bi bi-chat-left-text"></i> ' + escapeHtml(sug) + '</button>';
       }
-      html += '</div></div>';
+      bubbleHtml += '</div></div>';
     }
 
-    contentDiv.innerHTML = html;
+    var allHtml = '';
+
+    // Add footer with meta + copy (skip thinking indicator)
+    if (text.indexOf('ai-thinking-indicator') !== -1) {
+      allHtml = bubbleHtml;
+    } else {
+      allHtml = '<div class="ai-msg-bubble">' + bubbleHtml + '</div>';
+
+      var now = new Date();
+      var timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      var label = sender === 'user' ? 'You' : 'AI Copilot';
+
+      allHtml += '<div class="ai-msg-footer">';
+      allHtml += '<span class="msg-meta">' + label + ' \u00B7 ' + timeStr + '</span>';
+      allHtml += '<button class="ai-btn-copy-msg" title="Copy"><i class="bi bi-clipboard"></i></button>';
+      allHtml += '</div>';
+    }
+
+    contentDiv.innerHTML = allHtml;
 
     msgDiv.appendChild(avatarDiv);
     msgDiv.appendChild(contentDiv);
@@ -69,7 +89,7 @@
     chatBody.scrollTop = chatBody.scrollHeight;
   }
 
-  // Event delegation on chatBody for suggestion chips
+  // Event delegation on chatBody for suggestion chips & copy buttons
   if (chatBody) {
     chatBody.addEventListener('click', function(e) {
       var chip = e.target.closest('.ai-suggestion-chip');
@@ -77,7 +97,22 @@
         var p = chip.getAttribute('data-prompt');
         if (p && !state.isProcessing) {
           handleSend(p);
+          return;
         }
+      }
+      var copyBtn = e.target.closest('.ai-btn-copy-msg');
+      if (copyBtn) {
+        e.stopPropagation();
+        var bubbleEl = copyBtn.closest('.ai-msg-content').querySelector('.ai-msg-bubble');
+        var text = bubbleEl.innerText || bubbleEl.textContent;
+        navigator.clipboard.writeText(text).then(function() {
+          copyBtn.innerHTML = '<i class="bi bi-check-lg"></i>';
+          copyBtn.classList.add('copied');
+          setTimeout(function() {
+            copyBtn.innerHTML = '<i class="bi bi-clipboard"></i>';
+            copyBtn.classList.remove('copied');
+          }, 1500);
+        });
       }
     });
   }
@@ -161,18 +196,30 @@
   }
 
   function handleSend(promptText) {
-    var query = promptText || (chatInput ? chatInput.value.trim() : '');
+    var query = promptText || (chatInput ? (chatInput.innerText || chatInput.textContent || '').trim() : '');
     if (!query || state.isProcessing) return;
 
-    if (chatInput) chatInput.value = '';
+    if (chatInput) chatInput.innerHTML = '';
     state.isProcessing = true;
     state.totalQueries++;
     if (totalQueriesEl) totalQueriesEl.innerText = state.totalQueries;
 
     appendMessage(query, 'user');
 
-    // Add Typing Indicator
-    appendMessage('<div class="ai-thinking-indicator"><i class="bi bi-three-dots ai-pulse"></i> <em>AI is thinking...</em></div>', 'assistant');
+    // Add Typing Indicator with animated cycling status
+    appendMessage('<div class="ai-thinking-indicator" id="aiThinkingIndicator"><i class="bi bi-three-dots ai-pulse"></i> <em class="ai-thinking-text">Thinking</em></div>', 'assistant');
+    // Start cycling status messages
+    const statuses = ['Thinking', 'Processing', 'Searching', 'Analyzing', 'Fetching', 'Targeting', 'Computing'];
+    let sIdx = 0, dCount = 0;
+    if (window._floatTypingInterval) clearInterval(window._floatTypingInterval);
+    window._floatTypingInterval = setInterval(() => {
+      const el = document.querySelector('.ai-thinking-text');
+      if (el) {
+        dCount = (dCount + 1) % 4;
+        el.textContent = statuses[sIdx] + '.'.repeat(dCount > 0 ? dCount : 3);
+        if (dCount === 0) sIdx = (sIdx + 1) % statuses.length;
+      }
+    }, 400);
 
     var body = new FormData();
     body.set('action', 'query');
@@ -188,6 +235,7 @@
       .then(function (res) { return res.json(); })
       .then(function (res) {
         // Remove Typing Indicator
+        if (window._floatTypingInterval) { clearInterval(window._floatTypingInterval); window._floatTypingInterval = null; }
         var msgs = chatBody ? chatBody.querySelectorAll('.ai-msg.assistant') : [];
         if (msgs.length > 0) {
           var lastMsg = msgs[msgs.length - 1];
@@ -226,6 +274,7 @@
 
       })
       .catch(function (err) {
+        if (window._floatTypingInterval) { clearInterval(window._floatTypingInterval); window._floatTypingInterval = null; }
         var msgs = chatBody ? chatBody.querySelectorAll('.ai-msg.assistant') : [];
         if (msgs.length > 0) {
           var lastMsg = msgs[msgs.length - 1];
@@ -244,7 +293,35 @@
   }
   if (chatInput) {
     chatInput.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') handleSend();
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSend();
+      }
+    });
+    // Slash command suggestions
+    chatInput.addEventListener('input', function () {
+      var val = chatInput.innerText || chatInput.textContent || '';
+      var sugBox = document.getElementById('aiCmdSuggestions');
+      if (!sugBox) return;
+      if (val.startsWith('/') && val.indexOf(' ') === -1) {
+        sugBox.style.display = 'block';
+        sugBox.querySelectorAll('.ai-cmd-item').forEach(function(el) {
+          el.style.display = el.getAttribute('data-cmd').indexOf(val.toLowerCase()) === 0 ? 'flex' : 'none';
+        });
+      } else {
+        sugBox.style.display = 'none';
+      }
+    });
+    // Click on suggestion
+    document.addEventListener('click', function (e) {
+      var item = e.target.closest('.ai-cmd-item');
+      if (!item) return;
+      var cmd = item.getAttribute('data-cmd');
+      chatInput.innerHTML = '';
+      chatInput.appendChild(document.createTextNode(cmd + ' '));
+      var sugBox = document.getElementById('aiCmdSuggestions');
+      if (sugBox) sugBox.style.display = 'none';
+      chatInput.focus();
     });
   }
 
@@ -287,7 +364,7 @@
         micBtn.style.borderColor = '#ef4444';
       }
       if (micIcon) micIcon.className = 'bi bi-mic-fill ai-pulse';
-      if (chatInput) chatInput.placeholder = '🎙️ Listening... Speak now';
+      if (chatInput) chatInput.dataset.placeholder = '🎙️ Listening... Speak now';
     };
 
     recognition.onresult = function(event) {
@@ -295,13 +372,16 @@
       for (var i = event.resultIndex; i < event.results.length; i++) {
         transcript += event.results[i][0].transcript;
       }
-      if (chatInput) chatInput.value = transcript;
+      if (chatInput) {
+        chatInput.innerHTML = '';
+        chatInput.appendChild(document.createTextNode(transcript));
+      }
     };
 
     recognition.onerror = function(event) {
       console.warn('Speech recognition error:', event.error);
       stopListening();
-      if (chatInput) chatInput.placeholder = 'Voice error: ' + event.error + '. Try typing.';
+      if (chatInput) chatInput.dataset.placeholder = 'Voice error: ' + event.error + '. Try typing.';
     };
 
     recognition.onend = function() {
@@ -316,7 +396,7 @@
         micBtn.style.borderColor = 'rgba(255,255,255,0.15)';
       }
       if (micIcon) micIcon.className = 'bi bi-mic-fill';
-      if (chatInput) chatInput.placeholder = 'Type query or click mic to speak...';
+      if (chatInput) chatInput.dataset.placeholder = 'Type query or click mic to speak...';
     }
 
     micBtn.addEventListener('click', function() {

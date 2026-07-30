@@ -883,6 +883,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       'ai_agent_temperature' => (float) ($_POST['ai_agent_temperature'] ?? 0.2),
       'ai_agent_max_tokens' => (int) ($_POST['ai_agent_max_tokens'] ?? 1500),
       'ai_agent_enabled' => isset($_POST['ai_agent_enabled']) ? 1 : 0,
+      'ai_fallback_enabled' => isset($_POST['ai_fallback_enabled']) ? 1 : 0,
     ];
     if (saveAppSettings($newAiSettings)) {
       setFlash('success', 'AI Agent settings saved successfully.');

@@ -81,6 +81,20 @@ switch ($action) {
     case 'test_provider':
         testProvider();
         break;
+    case 'save_endpoint':
+        if (!validateCsrf($csrfToken, $expectedToken)) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'Invalid CSRF token.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        saveCustomEndpoint();
+        break;
+    case 'test_single_endpoint':
+        testSingleEndpoint();
+        break;
+    case 'test_fallback_chain':
+        testFallbackChain();
+        break;
     default:
         http_response_code(400);
         echo json_encode(['ok' => false, 'error' => 'Invalid action.'], JSON_UNESCAPED_UNICODE);
@@ -226,7 +240,7 @@ function testProvider()
             CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
             CURLOPT_POSTFIELDS => $payload,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 15,
+            CURLOPT_TIMEOUT => 90,
             CURLOPT_SSL_VERIFYPEER => true,
         ]);
         $response = curl_exec($ch);
@@ -264,7 +278,7 @@ function testProvider()
             ],
             CURLOPT_POSTFIELDS => $payload,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 15,
+            CURLOPT_TIMEOUT => 90,
             CURLOPT_SSL_VERIFYPEER => true,
         ]);
         $response = curl_exec($ch);
@@ -304,7 +318,7 @@ function testProvider()
             ],
             CURLOPT_POSTFIELDS => $payload,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 15,
+            CURLOPT_TIMEOUT => 90,
             CURLOPT_SSL_VERIFYPEER => true,
         ]);
         $response = curl_exec($ch);
@@ -340,7 +354,7 @@ function testProvider()
             CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
             CURLOPT_POSTFIELDS => $payload,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 15,
+            CURLOPT_TIMEOUT => 90,
             CURLOPT_SSL_VERIFYPEER => false,
         ]);
         $response = curl_exec($ch);
@@ -357,7 +371,224 @@ function testProvider()
         } else {
             echo json_encode(['ok' => false, 'error' => 'Local LLM returned HTTP ' . $httpCode], JSON_UNESCAPED_UNICODE);
         }
+    } elseif ($provider === 'custom') {
+        // Custom API Endpoint
+        $customUrl = trim($_POST['custom_url'] ?? '');
+        if ($customUrl === '') {
+            echo json_encode(['ok' => false, 'error' => 'Custom API endpoint URL is required.'], JSON_UNESCAPED_UNICODE);
+            return;
+        }
+        if ($model === 'gemini-2.0-flash' || $model === '') $model = 'gpt-4o-mini';
+        $payload = json_encode([
+            'model' => $model,
+            'messages' => [['role' => 'user', 'content' => $testPrompt]],
+            'max_tokens' => 20,
+        ]);
+        $ch = curl_init($customUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $apiKey,
+            ],
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 90,
+            CURLOPT_SSL_VERIFYPEER => false,
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr = curl_error($ch);
+        curl_close($ch);
+
+        if ($curlErr) {
+            echo json_encode(['ok' => false, 'error' => 'Network error: ' . $curlErr], JSON_UNESCAPED_UNICODE);
+            return;
+        }
+        $data = json_decode($response, true);
+        if ($httpCode >= 200 && $httpCode < 300 && !isset($data['error'])) {
+            echo json_encode(['ok' => true, 'message' => 'Custom API connected successfully! (HTTP ' . $httpCode . ')'], JSON_UNESCAPED_UNICODE);
+        } else {
+            $errMsg = $data['error']['message'] ?? ('HTTP ' . $httpCode);
+            echo json_encode(['ok' => false, 'error' => 'Custom API error: ' . $errMsg], JSON_UNESCAPED_UNICODE);
+        }
     } else {
         echo json_encode(['ok' => false, 'error' => 'Unknown provider: ' . $provider], JSON_UNESCAPED_UNICODE);
     }
+}
+
+function saveCustomEndpoint()
+{
+    $label = trim($_POST['label'] ?? '');
+    $url = trim($_POST['url'] ?? '');
+    $apiKey = trim($_POST['api_key'] ?? '');
+    $model = trim($_POST['model'] ?? 'gpt-4o-mini');
+    $active = !empty($_POST['active']) ? 1 : 0;
+
+    if ($label === '' || $url === '') {
+        echo json_encode(['ok' => false, 'error' => 'Label and URL are required.'], JSON_UNESCAPED_UNICODE);
+        return;
+    }
+
+    $settings = getAppSettings();
+    $endpoints = $settings['ai_custom_endpoints'] ?? [];
+
+    // Check if endpoint with same label exists — update it
+    $found = false;
+    foreach ($endpoints as $i => $ep) {
+        if (($ep['label'] ?? '') === $label) {
+            $endpoints[$i]['url'] = $url;
+            $endpoints[$i]['api_key'] = $apiKey;
+            $endpoints[$i]['model'] = $model;
+            $endpoints[$i]['active'] = $active;
+            $found = true;
+            break;
+        }
+    }
+
+    if (!$found) {
+        $endpoints[] = [
+            'label' => $label,
+            'url' => $url,
+            'api_key' => $apiKey,
+            'model' => $model,
+            'active' => $active,
+        ];
+    }
+
+    $settings['ai_custom_endpoints'] = $endpoints;
+    saveAppSettings($settings);
+
+    echo json_encode(['ok' => true, 'message' => 'Endpoint "' . $label . '" saved.'], JSON_UNESCAPED_UNICODE);
+}
+
+function testSingleEndpoint()
+{
+    $label = trim($_POST['label'] ?? '');
+    $url = trim($_POST['url'] ?? '');
+    $apiKey = trim($_POST['api_key'] ?? '');
+    $model = trim($_POST['model'] ?? 'gpt-4o-mini');
+
+    if ($url === '') {
+        echo json_encode(['ok' => false, 'error' => 'API URL is required.'], JSON_UNESCAPED_UNICODE);
+        return;
+    }
+
+    $testPrompt = 'Say "hello" in exactly one word.';
+    $payload = json_encode([
+        'model' => $model,
+        'messages' => [['role' => 'user', 'content' => $testPrompt]],
+        'max_tokens' => 20,
+    ]);
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . $apiKey,
+        ],
+        CURLOPT_POSTFIELDS => $payload,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 90,
+        CURLOPT_SSL_VERIFYPEER => false,
+    ]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
+    curl_close($ch);
+
+    if ($curlErr) {
+        echo json_encode(['ok' => false, 'error' => 'Network error: ' . $curlErr], JSON_UNESCAPED_UNICODE);
+        return;
+    }
+
+    $data = json_decode($response, true);
+    if ($httpCode >= 200 && $httpCode < 300 && !isset($data['error'])) {
+        echo json_encode(['ok' => true, 'message' => 'API "' . $label . '" connected! (HTTP ' . $httpCode . ')'], JSON_UNESCAPED_UNICODE);
+    } else {
+        $errMsg = $data['error']['message'] ?? ('HTTP ' . $httpCode);
+        echo json_encode(['ok' => false, 'error' => 'API error: ' . $errMsg], JSON_UNESCAPED_UNICODE);
+    }
+}
+
+function testFallbackChain()
+{
+    $settings = getAppSettings();
+    $endpoints = $settings['ai_custom_endpoints'] ?? [];
+    $activeEndpoints = [];
+    foreach ($endpoints as $ep) {
+        if (!empty($ep['active'])) {
+            $activeEndpoints[] = $ep;
+        }
+    }
+
+    $testPrompt = 'Say "ok" in exactly one word.';
+    $details = [];
+
+    // Test each active endpoint
+    foreach ($activeEndpoints as $ep) {
+        $label = $ep['label'] ?? 'Unnamed';
+        $url = $ep['url'] ?? '';
+        $apiKey = $ep['api_key'] ?? '';
+        $model = $ep['model'] ?? 'gpt-4o-mini';
+
+        if (empty($url)) {
+            $details[] = ['label' => $label, 'status' => 'skip', 'info' => 'No URL'];
+            continue;
+        }
+
+        $payload = json_encode([
+            'model' => $model,
+            'messages' => [['role' => 'user', 'content' => $testPrompt]],
+            'max_tokens' => 10,
+        ]);
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $apiKey,
+            ],
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_SSL_VERIFYPEER => false,
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr = curl_error($ch);
+        curl_close($ch);
+
+        if ($curlErr) {
+            $details[] = ['label' => $label, 'status' => 'fail', 'info' => 'Network error: ' . $curlErr];
+        } elseif ($httpCode >= 200 && $httpCode < 300) {
+            $data = json_decode($response, true);
+            if (!isset($data['error'])) {
+                $details[] = ['label' => $label, 'status' => 'ok', 'info' => 'HTTP ' . $httpCode . ' — Connected'];
+            } else {
+                $errMsg = $data['error']['message'] ?? 'Unknown error';
+                $details[] = ['label' => $label, 'status' => 'fail', 'info' => 'API error: ' . $errMsg];
+            }
+        } else {
+            $details[] = ['label' => $label, 'status' => 'fail', 'info' => 'HTTP ' . $httpCode];
+        }
+    }
+
+    if (empty($activeEndpoints)) {
+        echo json_encode(['ok' => false, 'error' => 'No active endpoints to test. Add endpoints and mark them Active.'], JSON_UNESCAPED_UNICODE);
+        return;
+    }
+
+    $successCount = 0;
+    foreach ($details as $d) {
+        if ($d['status'] === 'ok') $successCount++;
+    }
+
+    echo json_encode([
+        'ok' => true,
+        'message' => $successCount . '/' . count($activeEndpoints) . ' active endpoints connected successfully.',
+        'details' => $details,
+    ], JSON_UNESCAPED_UNICODE);
 }
