@@ -196,10 +196,10 @@
   }
 
   function handleSend(promptText) {
-    var query = promptText || (chatInput ? (chatInput.innerText || chatInput.textContent || '').trim() : '');
+    var query = promptText || (chatInput ? (chatInput.value || chatInput.innerText || chatInput.textContent || '').trim() : '');
     if (!query || state.isProcessing) return;
 
-    if (chatInput) chatInput.innerHTML = '';
+    if (chatInput) chatInput.value = '';
     state.isProcessing = true;
     state.totalQueries++;
     if (totalQueriesEl) totalQueriesEl.innerText = state.totalQueries;
@@ -300,7 +300,7 @@
     });
     // Slash command suggestions
     chatInput.addEventListener('input', function () {
-      var val = chatInput.innerText || chatInput.textContent || '';
+      var val = chatInput.value || chatInput.innerText || chatInput.textContent || '';
       var sugBox = document.getElementById('aiCmdSuggestions');
       if (!sugBox) return;
       if (val.startsWith('/') && val.indexOf(' ') === -1) {

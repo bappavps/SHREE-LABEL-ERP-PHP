@@ -1000,6 +1000,7 @@ if (strpos($pTrimmed, '/plate') === 0 || $pTrimmed === 'plate' || $pTrimmed === 
     }
 
     // /plate <query> → rewrite prompt, fall through to normal processing (priority mode searches plate first)
+    $erpOnlyMode = true;
     $prompt = $subQuery;
     $p = mb_strtolower($prompt, 'UTF-8');
 }
@@ -1019,24 +1020,16 @@ if (strpos($pTrimmed, '/paperstock') === 0 || strpos($pTrimmed, '/paper stock') 
     $subQuery = trim(trim($subQuery), '"');
 
     if ($subQuery === '') {
-        $navUrl = $baseNavUrl . '/modules/paper_stock/index.php';
-        if ($userLang === 'Bengali') {
-            $answer = "🎯 **পেপার স্টক পেজে অগ্রাধিকার দেওয়া হচ্ছে!**\n\n👉 [পেপার স্টক খুলুন]($navUrl)\n\n**📌 এখন থেকে সব প্রশ্নে পেপার স্টক ডাটা আগে খুঁজবে।**\n\n**আপনি যা জিজ্ঞাসা করতে পারেন:**\n• মোট কতগুলো পেপার রোল আছে?\n• Chromo / PP White / Thermal / Maplitho — কোন টাইপের কত?\n• Krishna / Austin / Navkar / NRGI — কোন কোম্পানির কত?\n• মোট রানিং মিটার কত?\n• মোট SQM কত?\n• কোন রোল Slitting-এ আছে?\n• Job Assign স্ট্যাটাসে কতটা আছে?\n• 1500mm চওড়ার রোল দেখাও";
-            $suggestions = ['মোট কতগুলো পেপার রোল?', 'Chromo পেপার কত?', 'Krishna কোম্পানির রোল দেখাও', 'মোট রানিং মিটার কত?', 'PP White স্টক কত?', 'Slitting স্ট্যাটাসে কতটা?', '1500mm চওড়ার রোল দেখাও'];
-        } elseif ($userLang === 'Hindi') {
-            $answer = "🎯 **पेपर स्टॉक पेज को प्राथमिकता दी जा रही है!**\n\n👉 [पेपर स्टॉक खोलें]($navUrl)\n\n**📌 अब से सभी सवालों में पेपर स्टॉक डेटा पहले खोजा जाएगा।**\n\n**आप ये पूछ सकते हैं:**\n• कुल कितने पेपर रोल हैं?\n• Chromo / PP White / Thermal / Maplitho — किस टाइप के कितने?\n• Krishna / Austin / Navkar / NRGI — किस कंपनी के कितने?\n• कुल रनिंग मीटर कितना?\n• कुल SQM कितना?\n• कौन से रोल Slitting में हैं?\n• Job Assign स्टेटस में कितने हैं?\n• 1500mm चौड़ाई वाले रोल देखाओ";
-            $suggestions = ['कुल कितने पेपर रोल?', 'Chromo पेपर कितने?', 'Krishna कंपनी के रोल देखाओ', 'कुल रनिंग मीटर कितना?', 'PP White स्टॉक कितना?', 'Slitting स्टेटस में कितने?', '1500mm चौड़ाई वाले रोल देखाओ'];
-        } else {
-            $answer = "🎯 **Prioritizing Paper Stock Page!**\n\n👉 [Open Paper Stock]($navUrl)\n\n**📌 All your queries will now search Paper Stock data first.**\n\n**You can ask about:**\n• Total roll count in stock\n• Rolls by paper type (Chromo, PP White, Thermal, Maplitho)\n• Rolls by company (Krishna, Austin, Navkar, NRGI)\n• Total running meters / total SQM\n• Rolls currently in Slitting / Job Assign status\n• Rolls by width (e.g. 1500mm wide rolls)\n• Rolls received this month / this week\n• Purchase rate / cost analysis";
-            $suggestions = ['Total roll count', 'Chromo paper rolls', 'Krishna company rolls', 'Total running meters', 'PP White stock count', 'Slitting status rolls', '1500mm width rolls'];
-        }
-        echo json_encode(['ok' => true, 'answer' => $answer, 'provider' => 'ERP AI Priority Command', 'tool_used' => 'Paper Stock Priority Command', 'user_lang' => $userLang, 'nav_url' => $navUrl, 'suggestions' => $suggestions, 'command_type' => 'paperstock'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        exit;
+        // No specific query → show full stock summary
+        $erpOnlyMode = true;
+        $p = 'total paper rolls';
+        $prompt = 'Show total paper rolls';
+    } else {
+        // /paperstock <query> → rewrite prompt, fall through to normal processing
+        $erpOnlyMode = true;
+        $prompt = $subQuery;
+        $p = mb_strtolower($prompt, 'UTF-8');
     }
-
-    // /paperstock <query> → rewrite prompt, fall through to normal processing (priority mode searches paper_stock first)
-    $prompt = $subQuery;
-    $p = mb_strtolower($prompt, 'UTF-8');
 }
 // /cal command — External Calculation Mode: force calculation engine
 if (preg_match('/^\/cal\s*/iu', $pTrimmed)) {
@@ -1078,6 +1071,7 @@ if (preg_match('/^\/cal\s*/iu', $pTrimmed)) {
 }
 // /erp command — ERP-only mode: force KB + ERP data only, skip external LLM
 $erpOnlyMode = false;
+$skipNormalDb = false; // TRUE = normal query (no / prefix) → skip KB+DB, go directly to LLM
 if (preg_match('/^\/erp\s*/iu', $pTrimmed)) {
     $subQuery = preg_replace('/^\/erp\s*/iu', '', $prompt);
     $subQuery = trim($subQuery);
@@ -1147,7 +1141,8 @@ if (strpos($pTrimmed, '/clear') === 0 || $pTrimmed === 'clear priority' || $pTri
 // ─── Bare Quoted Query Handler ("blue 500" etc.) ───
 // If user types just a quoted string like "blue 500" without /plate or /paperstock prefix,
 // search broadly (jobs, plates, paper stock) and ask user what they want to see.
-if (preg_match('/^["\x{201C}\x{201D}]([^"\x{201C}\x{201D}]+)["\x{201C}\x{201D}]$/u', trim($prompt), $qm)) {
+// NOTE: Without / prefix, quoted terms are treated as normal queries (skip to LLM).
+if (strpos($pTrimmed, '/') === 0 && preg_match('/^["\x{201C}\x{201D}]([^"\x{201C}\x{201D}]+)["\x{201C}\x{201D}]$/u', trim($prompt), $qm)) {
     $commandType = 'quoted';
     $searchTerm = trim($qm[1]);
     $searchLower = mb_strtolower($searchTerm, 'UTF-8');
@@ -1181,10 +1176,10 @@ if (preg_match('/^["\x{201C}\x{201D}]([^"\x{201C}\x{201D}]+)["\x{201C}\x{201D}]$
 
     // 3. Search Paper Stock
     $stockHits = [];
-    $sStmt = $db->prepare("SELECT id, roll_no, paper_type, company, width_mm, length_mtr, status FROM paper_stock WHERE roll_no LIKE ? OR paper_type LIKE ? OR company LIKE ? OR job_name LIKE ? OR remarks LIKE ? ORDER BY id DESC LIMIT 5");
+    $sStmt = $db->prepare("SELECT id, roll_no, paper_type, company, width_mm, length_mtr, status FROM paper_stock WHERE roll_no LIKE ? OR paper_type LIKE ? OR company LIKE ? OR job_name LIKE ? OR remarks LIKE ? OR lot_batch_no LIKE ? OR company_roll_no LIKE ? ORDER BY id DESC LIMIT 5");
     if ($sStmt) {
         $sLike = '%' . $searchTerm . '%';
-        $sStmt->bind_param('sssss', $sLike, $sLike, $sLike, $sLike, $sLike);
+        $sStmt->bind_param('sssssss', $sLike, $sLike, $sLike, $sLike, $sLike, $sLike, $sLike);
         $sStmt->execute();
         $stockHits = $sStmt->get_result()->fetch_all(MYSQLI_ASSOC) ?? [];
     }
@@ -1222,10 +1217,10 @@ if (preg_match('/^["\x{201C}\x{201D}]([^"\x{201C}\x{201D}]+)["\x{201C}\x{201D}]$
         if (!empty($plateHits)) $results['plates'] = $plateHits;
 
         $stockHits = [];
-        $sStmt = $db->prepare("SELECT id, roll_no, paper_type, company, width_mm, length_mtr, status FROM paper_stock WHERE roll_no LIKE ? OR paper_type LIKE ? OR company LIKE ? OR job_name LIKE ? OR remarks LIKE ? ORDER BY id DESC LIMIT 5");
+        $sStmt = $db->prepare("SELECT id, roll_no, paper_type, company, width_mm, length_mtr, status FROM paper_stock WHERE roll_no LIKE ? OR paper_type LIKE ? OR company LIKE ? OR job_name LIKE ? OR remarks LIKE ? OR lot_batch_no LIKE ? OR company_roll_no LIKE ? ORDER BY id DESC LIMIT 5");
         if ($sStmt) {
             $sLike = '%' . $splitTerm . '%';
-            $sStmt->bind_param('sssss', $sLike, $sLike, $sLike, $sLike, $sLike);
+            $sStmt->bind_param('sssssss', $sLike, $sLike, $sLike, $sLike, $sLike, $sLike, $sLike);
             $sStmt->execute();
             $stockHits = $sStmt->get_result()->fetch_all(MYSQLI_ASSOC) ?? [];
         }
@@ -1315,10 +1310,18 @@ if (isset($_SESSION['ai_ambiguous_search']) && !empty($foundAreas ?? [])) {
     $p = mb_strtolower($prompt, 'UTF-8');
 }
 
+// ─── Normal Mode Detection: No /command prefix → skip KB+DB, go directly to LLM ───
+// If user typed a query without any / prefix, it is a "normal" query that should
+// bypass the Knowledge Base and ERP database entirely and go straight to the external LLM.
+if (!$commandType && !$erpOnlyMode && strpos($pTrimmed, '/') !== 0) {
+    $skipNormalDb = true;
+}
+
 // ─── Inline Quoted Term Handler ("product name" in any prompt) ───
 // If the prompt contains quoted text anywhere (e.g. "blue500" price), extract it as a
 // product/item name, set ERP-only mode, and search Knowledge Base for that term first.
-if (!$erpOnlyMode && preg_match('/["\x{201C}\x{201D}]([^"\x{201C}\x{201D}]+)["\x{201C}\x{201D}]/u', $prompt, $iqm)) {
+// NOTE: In normal mode ($skipNormalDb), quoted terms also skip KB+DB and go to LLM.
+if (!$skipNormalDb && !$erpOnlyMode && preg_match('/["\x{201C}\x{201D}]([^"\x{201C}\x{201D}]+)["\x{201C}\x{201D}]/u', $prompt, $iqm)) {
     $quotedTerm = trim($iqm[1]);
     if ($quotedTerm !== '') {
         // Set ERP-only mode — only search KB + ERP database, skip external LLM
@@ -1538,7 +1541,7 @@ if (strpos($p, 'inch') !== false && (strpos($p, 'sqm') !== false || strpos($p, '
 
 
 // ─── KB Skip-Logic: Queries with specific data entities bypass KB, go straight to ERP search ───
-$kbSkipPatterns = ['how many', 'কত', 'কতগুলো', 'কতটা', 'kitne', 'kitna', 'total count', 'total rolls', 'total paper', 'stock count', 'roll count', 'paper count', 'summary', 'সারসংক্ষেপ', 'সমষ্টি', 'सारांश', 'कुल गिनती', 'date', 'time', 'ajke', 'kon date', 'today', 'tarikh', 'তারিখ', 'আজকে', 'সময়', 'somoy', 'hello', 'hi ', 'kemon acho'];
+$kbSkipPatterns = ['how many', 'কত', 'কতগুলো', 'কতটা', 'kitne', 'kitna', 'total count', 'total rolls', 'total paper', 'stock count', 'roll count', 'paper count', 'summary', 'সারসংক্ষেপ', 'সমষ্টি', 'सारांश', 'कुल गिनती', 'date', 'time', 'ajke', 'kon date', 'today', 'tarikh', 'তারিখ', 'আজকে', 'সময়', 'somoy', 'hello', 'hi ', 'kemon acho', 'purchase rate', 'দাম', 'দামি', 'রেট', 'মূল্য', 'rate', 'price', 'costly', 'expensive', 'দাম কত', 'সবচেয়ে দামি', 'গড় rate', 'avg rate', 'दाम', 'रेट', 'कीमत', 'lot batch', 'lot no', 'batch no', 'লট', 'ব্যাচ', 'company roll', 'pdf', 'excel', 'csv', 'export', 'report', 'print', 'প্রিন্ট', 'এক্সপোর্ট', 'রিপোর্ট', 'download', 'ডাউনলোড'];
 $kbSkipEntities = ['krishna', 'austin', 'nrgi', 'navkar', 'abhinav', 'nitin', 'avery', 'chromo', 'thermal', 'pp white', 'pp-clear', 'maplitho', 'metallic', 'plastic', 'flexo', 'creative', 'pidilite', 'sfl'];
 $skipKB = false;
 foreach ($kbSkipPatterns as $pat) {
@@ -1604,7 +1607,7 @@ if (!$skipKB && preg_match('/^(view|open|show|go\s*to)\s+(plate|paper\s*stock|pa
     }
 }
 
-$knowledgeMatch = $skipKB ? null : check_knowledge_base($db, $prompt);
+$knowledgeMatch = ($skipKB || $skipNormalDb) ? null : check_knowledge_base($db, $prompt);
 if ($knowledgeMatch !== null) {
 
     $kbAnswer = $knowledgeMatch['answer'];
@@ -1743,8 +1746,10 @@ function calculate_label_costing_math(string $prompt): array
 
 // ─── Simple Arithmetic Expression Evaluator ───
 // Handles expressions like "2+2", "500*3", "(2500+500)/2", "15000*2"
+// NOTE: In normal mode ($skipNormalDb), arithmetic is handled by the external LLM instead.
 $isSimpleArithmetic = false;
 $arithmeticResult = null;
+if (!$skipNormalDb) {
 $cleanArith = trim(preg_replace('/[+\-*\/()%\s\d.,]/', '', $prompt));
 if ($cleanArith === '' && preg_match('/^[\d+\-*\/()%\s.,]+$/', trim($prompt)) && preg_match('/[+\-*\/%]/', $prompt)) {
     // Must have at least one operator and look like a calculation
@@ -1790,6 +1795,8 @@ if ($isSimpleArithmetic) {
     exit;
 }
 
+} // end of !$skipNormalDb guard for arithmetic evaluator
+
 $hasCompanyQuery = preg_match('/\b(krishna|austin|navkar|nrgi)\b/i', $prompt) || strpos($p, 'কৃষ্ণা') !== false || strpos($p, 'অস্টিন') !== false || strpos($p, 'নভকার') !== false || strpos($p, 'এনআরজিআই') !== false;
 $hasDbQueryIntent = preg_match('/\b(die|dies|plate|plates|stock|inventory|search|find|any|is there|kono|ache)\b/i', $prompt);
 
@@ -1801,8 +1808,9 @@ $isMathIntent = !$hasCompanyQuery && !$hasDbQueryIntent && (
 );
 
 // ─── Simple mm² → Square Inch Area Conversion ───
+// NOTE: In normal mode ($skipNormalDb), unit conversion is handled by the external LLM instead.
 $mmAreaMatch = [];
-if (preg_match('/(\d+(?:\.\d+)?)\s*mm\s*[xX*]\s*(\d+(?:\.\d+)?)\s*mm/i', $prompt, $mmAreaMatch)) {
+if (!$skipNormalDb && preg_match('/(\d+(?:\.\d+)?)\s*mm\s*[xX*]\s*(\d+(?:\.\d+)?)\s*mm/i', $prompt, $mmAreaMatch)) {
     $askSqInch = preg_match('/sqr?\s*inch(es)?|sq\.?\s*in|square\s*inch(es)?/i', $prompt);
     if ($askSqInch) {
         $mmW = (float) $mmAreaMatch[1];
@@ -1848,7 +1856,7 @@ if (preg_match('/(\d+(?:\.\d+)?)\s*mm\s*[xX*]\s*(\d+(?:\.\d+)?)\s*mm/i', $prompt
     }
 }
 
-if ($isMathIntent) {
+if ($isMathIntent && !$skipNormalDb) {
     $math = calculate_label_costing_math($prompt);
 
 
@@ -1959,7 +1967,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             unset($_SESSION['ai_priority_mode']);
             $priorityMode = '';
         }
-        $isPaperQuery = !$isOtherModuleQuery && (strpos($p, 'paper') !== false || strpos($p, 'roll') !== false || strpos($p, 'slc/') !== false || strpos($p, 'chromo') !== false || strpos($p, 'thermal') !== false || strpos($p, 'stock') !== false || strpos($p, 'maplitho') !== false || strpos($p, 'pp') !== false || strpos($p, 'white') !== false || strpos($p, 'jumbo') !== false || strpos($p, 'avery') !== false || strpos($p, 'krishna') !== false || strpos($p, 'austin') !== false || strpos($p, 'navkar') !== false || strpos($p, 'nrgi') !== false || strpos($p, 'company') !== false || strpos($p, 'কোম্পানি') !== false || strpos($p, 'স্টক') !== false || strpos($p, 'রোল') !== false || strpos($p, 'কত') !== false || strpos($p, 'how many') !== false || strpos($p, 'total') !== false || strpos($p, 'summary') !== false || strpos($p, 'breakdown') !== false || strpos($p, 'metro') !== false || strpos($p, 'sqm') !== false || strpos($p, 'running') !== false || strpos($p, 'status') !== false);
+        $isPaperQuery = !$isOtherModuleQuery && (strpos($p, 'paper') !== false || strpos($p, 'roll') !== false || strpos($p, 'slc/') !== false || strpos($p, 'chromo') !== false || strpos($p, 'thermal') !== false || strpos($p, 'stock') !== false || strpos($p, 'maplitho') !== false || strpos($p, 'pp') !== false || strpos($p, 'white') !== false || strpos($p, 'jumbo') !== false || strpos($p, 'avery') !== false || strpos($p, 'krishna') !== false || strpos($p, 'austin') !== false || strpos($p, 'navkar') !== false || strpos($p, 'nrgi') !== false || strpos($p, 'company') !== false || strpos($p, 'কোম্পানি') !== false || strpos($p, 'স্টক') !== false || strpos($p, 'রোল') !== false || strpos($p, 'কত') !== false || strpos($p, 'how many') !== false || strpos($p, 'total') !== false || strpos($p, 'summary') !== false || strpos($p, 'breakdown') !== false || strpos($p, 'metro') !== false || strpos($p, 'sqm') !== false || strpos($p, 'running') !== false || strpos($p, 'status') !== false || strpos($p, 'lot') !== false || strpos($p, 'batch') !== false || strpos($p, 'লট') !== false || strpos($p, 'ব্যাচ') !== false || strpos($p, 'rate') !== false || strpos($p, 'price') !== false || strpos($p, 'দাম') !== false || strpos($p, 'দামি') !== false || strpos($p, 'costly') !== false || strpos($p, 'expensive') !== false || strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || strpos($p, 'print') !== false || strpos($p, 'প্রিন্ট') !== false || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false);
         if ($isPaperQuery) {
             $pToolName = 'Paper Stock Master Tool (Priority)';
             $pWhere = ["LOWER(COALESCE(status,'')) NOT IN ('consumed','disposed','scrap')"];
@@ -1969,10 +1977,12 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             $pCompany = null;
             $pType = null;
             $pWidth = null;
+            $pLotBatch = null;
+            $pCompanyRollNo = null;
             if (preg_match('/(slc\/\d{4}\/\d+|\d{4})/i', $prompt, $m)) {
                 $pRollNo = $m[1];
             }
-            foreach (['nrgi', 'krishna', 'austin', 'navkar', 'abhinav', 'raj paper', 'mangalam', 'paper n more', 'narsing das', 'avery', 'nitin'] as $c) {
+            foreach (['nrgi', 'krishna', 'austin', 'navkar', 'abhinav', 'raj paper', 'mangalam', 'paper n more', 'narsing das', 'avery', 'nitin', 'flexo'] as $c) {
                 if (strpos($p, $c) !== false) {
                     $pCompany = $c;
                     break;
@@ -1986,6 +1996,28 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             }
             if (preg_match('/(\d{3,4})\s*mm/i', $prompt, $m)) {
                 $pWidth = (float) $m[1];
+            }
+            // 5. Lot/Batch No match (e.g. "LB-2025-001", "lot 123", "batch ABC")
+            if (preg_match('/(?:lot\s*(?:batch)?\s*(?:no\.?)?\s*|batch\s*(?:no\.?)?\s*|লট\s*(?:ব্যাচ)?\s*(?:নম্বর|নং)?\s*)([A-Za-z0-9\-\/]+)/iu', $prompt, $m)) {
+                $pLotBatch = trim($m[1]);
+            } elseif (preg_match('/\b(LB-[A-Za-z0-9\-]+)\b/i', $prompt, $m)) {
+                $pLotBatch = trim($m[1]);
+            }
+            // 6. Company Roll No match (e.g. "CR-12345", "company roll no CR-12345")
+            if (preg_match('/(?:company\s*roll\s*(?:no\.?)?\s*|কোম্পানি\s*রোল\s*(?:নম্বর|নং)?\s*)([A-Za-z0-9\-\/]+)/iu', $prompt, $m)) {
+                $pCompanyRollNo = trim($m[1]);
+            } elseif (preg_match('/\b(CR-[A-Za-z0-9\-]+)\b/i', $prompt, $m)) {
+                $pCompanyRollNo = trim($m[1]);
+            }
+            // 7. SQM Area Filter match (e.g. "sqr mtr 1000 ar niche", "1000 sqm ar upore")
+            $pSqmFilter = null;
+            $pSqmOp = null;
+            if (preg_match('/(?:sqr?\s*mtr|sqm|square\s*meter)\s*(\d+(?:\.\d+)?)\s*(ar niche|er niche|niche|ar kom|er kom|kom|below|under|less|<|ar upore|er upore|upore|ar beshi|er beshi|beshi|above|more|>)/i', $prompt, $m) || 
+                preg_match('/(\d+(?:\.\d+)?)\s*(?:sqr?\s*mtr|sqm|square\s*meter)\s*(ar niche|er niche|niche|ar kom|er kom|kom|below|under|less|<|ar upore|er upore|upore|ar beshi|er beshi|beshi|above|more|>)/i', $prompt, $m)) {
+                $val = (float)$m[1];
+                $opStr = strtolower(trim($m[2]));
+                $pSqmOp = (preg_match('/niche|kom|below|under|less|</i', $opStr)) ? '<=' : '>=';
+                $pSqmFilter = $val;
             }
             if ($pRollNo) {
                 $pWhere[] = "(roll_no LIKE ? OR id = ?)";
@@ -2014,7 +2046,224 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 $pParams[] = $pWidth;
                 $pTypes .= 'd';
             }
+            if ($pLotBatch) {
+                $pWhere[] = "lot_batch_no LIKE ?";
+                $pParams[] = '%' . $pLotBatch . '%';
+                $pTypes .= 's';
+            }
+            if ($pCompanyRollNo) {
+                $pWhere[] = "company_roll_no LIKE ?";
+                $pParams[] = '%' . $pCompanyRollNo . '%';
+                $pTypes .= 's';
+            }
+            if ($pSqmFilter !== null) {
+                $pWhere[] = "ROUND((width_mm/1000.0)*length_mtr, 2) {$pSqmOp} ?";
+                $pParams[] = $pSqmFilter;
+                $pTypes .= 'd';
+            }
             $pWhereSql = implode(' AND ', $pWhere);
+
+            // ─── Export/Report Sub-Handler ───
+            $isExportQuery = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || strpos($p, 'print') !== false || strpos($p, 'প্রিন্ট') !== false || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false);
+            if ($isExportQuery) {
+                $fTitle = 'Paper Stock Report';
+                if ($pLotBatch) $fTitle = 'Lot/Batch: ' . strtoupper($pLotBatch) . ' Report';
+                elseif ($pCompanyRollNo) $fTitle = 'Company Roll: ' . strtoupper($pCompanyRollNo) . ' Report';
+                elseif ($pCompany && $pType) $fTitle = strtoupper($pCompany . ' ' . $pType) . ' Report';
+                elseif ($pCompany) $fTitle = strtoupper($pCompany) . ' Paper Report';
+                elseif ($pType) $fTitle = strtoupper($pType) . ' Paper Report';
+
+                $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+                $queryParams = [];
+                if ($pCompany) $queryParams[] = 'company=' . urlencode($pCompany);
+                if ($pType) {
+                    if ($pType === 'pp white' || $pType === 'pp-white') $queryParams[] = 'type=PP-WHITE';
+                    elseif ($pType === 'pp clear' || $pType === 'pp-clear') $queryParams[] = 'type=PP-CLEAR';
+                    else $queryParams[] = 'type=' . urlencode($pType);
+                }
+                if ($pLotBatch) $queryParams[] = 'lot_no=' . urlencode($pLotBatch);
+                $queryStr = !empty($queryParams) ? '&' . implode('&', $queryParams) : '';
+
+                $pdfUrl = "{$baseUrl}/modules/paper_stock/export.php?format=pdf{$queryStr}";
+                $csvUrl = "{$baseUrl}/modules/paper_stock/export.php?format=csv{$queryStr}";
+
+                $answer = "📊 **{$fTitle} — Export Ready:**\n\n";
+                if ($userLang === 'Bengali') {
+                    $answer .= "আপনার রিপোর্ট তৈরি হয়ে গেছে। নিচের রঙিন বাটনগুলোতে ক্লিক করে PDF বা Excel (CSV) ফাইল ডাউনলোড করুন:\n\n";
+                } elseif ($userLang === 'Hindi') {
+                    $answer .= "आपकी रिपोर्ट तैयार है। PDF या Excel (CSV) फाइल डाउनलोड करने के लिए नीचे दिए गए बटन पर क्लिक करें:\n\n";
+                } else {
+                    $answer .= "Your report is ready. Click the buttons below to download the PDF or Excel (CSV) file:\n\n";
+                }
+
+                $answer .= '<div style="display: flex; gap: 15px; margin-top: 15px; flex-wrap: wrap;">' . "\n";
+                $answer .= '    <a href="' . $pdfUrl . '" target="_blank" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.4); border: 1px solid #b91c1c; font-size: 14px; min-width: 200px;">' . "\n";
+                $answer .= '        📄 Download PDF Report' . "\n";
+                $answer .= '    </a>' . "\n";
+                $answer .= '    <a href="' . $csvUrl . '" target="_blank" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #22c55e, #16a34a); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(34, 197, 94, 0.4); border: 1px solid #15803d; font-size: 14px; min-width: 200px;">' . "\n";
+                $answer .= '        📊 Download Excel (CSV)' . "\n";
+                $answer .= '    </a>' . "\n";
+                $answer .= '</div>';
+
+                return ['tool_used' => 'Paper Stock Export Tool (Priority)', 'total_count' => 0, 'total_meters' => 0, 'filtered_type' => '', 'is_company_list' => false, 'direct_answer' => $answer, 'data' => []];
+            }
+
+            // ─── Financial Sub-Handler: purchase rate / price / দাম queries ───
+            $isFinancialQuery = (strpos($p, 'rate') !== false || strpos($p, 'price') !== false || strpos($p, 'দাম') !== false || strpos($p, 'দামি') !== false || strpos($p, 'costly') !== false || strpos($p, 'expensive') !== false || strpos($p, 'মূল্য') !== false || strpos($p, 'রেট') !== false || strpos($p, 'दाम') !== false || strpos($p, 'रेट') !== false || strpos($p, 'कीमत') !== false || strpos($p, 'avg') !== false || strpos($p, 'average') !== false || strpos($p, 'গড়') !== false);
+            if ($isFinancialQuery) {
+                // Determine if asking for most expensive
+                $isMostExpensive = (strpos($p, 'সবচেয়ে দামি') !== false || strpos($p, 'সবচেয়ে বেশি') !== false || strpos($p, 'most expensive') !== false || strpos($p, 'highest rate') !== false || strpos($p, 'costly') !== false || strpos($p, 'max price') !== false || strpos($p, 'সর্বোচ্চ') !== false);
+                $isAverage = (strpos($p, 'avg') !== false || strpos($p, 'average') !== false || strpos($p, 'গড়') !== false || strpos($p, 'औसत') !== false);
+
+                // Build filter for financial query (reuse company/type filters)
+                $fWhere = ["purchase_rate IS NOT NULL", "purchase_rate > 0"];
+                $fParams = [];
+                $fTypes = '';
+                if ($pCompany) {
+                    $fWhere[] = "company LIKE ?";
+                    $fParams[] = '%' . $pCompany . '%';
+                    $fTypes .= 's';
+                }
+                if ($pType) {
+                    if ($pType === 'pp white' || $pType === 'pp-white') {
+                        $fWhere[] = "(paper_type LIKE '%pp-white%' OR paper_type LIKE '%pp white%' OR paper_type LIKE '%pp_white%')";
+                    } elseif ($pType === 'pp clear' || $pType === 'pp-clear') {
+                        $fWhere[] = "(paper_type LIKE '%pp-clear%' OR paper_type LIKE '%pp clear%' OR paper_type LIKE '%pp_clear%')";
+                    } else {
+                        $fWhere[] = "paper_type LIKE ?";
+                        $fParams[] = '%' . $pType . '%';
+                        $fTypes .= 's';
+                    }
+                }
+                $fWhereSql = implode(' AND ', $fWhere);
+
+                // Get latest roll's purchase rate
+                $latestSql = "SELECT id, roll_no, company, paper_type, width_mm, length_mtr, purchase_rate, date_received, status FROM paper_stock WHERE {$fWhereSql} ORDER BY id DESC LIMIT 1";
+                $latestStmt = $db->prepare($latestSql);
+                if (!empty($fParams)) $latestStmt->bind_param($fTypes, ...$fParams);
+                $latestStmt->execute();
+                $latestRoll = $latestStmt->get_result()->fetch_assoc();
+
+                // Get aggregate stats
+                $aggSql = "SELECT COUNT(*) as cnt, ROUND(AVG(purchase_rate),2) as avg_rate, ROUND(MIN(purchase_rate),2) as min_rate, ROUND(MAX(purchase_rate),2) as max_rate FROM paper_stock WHERE {$fWhereSql}";
+                $aggStmt = $db->prepare($aggSql);
+                if (!empty($fParams)) $aggStmt->bind_param($fTypes, ...$fParams);
+                $aggStmt->execute();
+                $aggData = $aggStmt->get_result()->fetch_assoc();
+
+                // Get most expensive roll if asked
+                $expensiveRoll = null;
+                if ($isMostExpensive) {
+                    $expSql = "SELECT id, roll_no, company, paper_type, width_mm, length_mtr, purchase_rate, date_received, status FROM paper_stock WHERE {$fWhereSql} ORDER BY purchase_rate DESC LIMIT 1";
+                    $expStmt = $db->prepare($expSql);
+                    if (!empty($fParams)) $expStmt->bind_param($fTypes, ...$fParams);
+                    $expStmt->execute();
+                    $expensiveRoll = $expStmt->get_result()->fetch_assoc();
+                }
+
+                // Get top 5 recent rolls with rates
+                $recentSql = "SELECT id, roll_no, company, paper_type, width_mm, purchase_rate, date_received FROM paper_stock WHERE {$fWhereSql} ORDER BY id DESC LIMIT 5";
+                $recentStmt = $db->prepare($recentSql);
+                if (!empty($fParams)) $recentStmt->bind_param($fTypes, ...$fParams);
+                $recentStmt->execute();
+                $recentRolls = $recentStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+                if ($latestRoll || ($aggData && (int)$aggData['cnt'] > 0)) {
+                    $fTitle = 'Paper Stock';
+                    if ($pCompany && $pType) $fTitle = strtoupper($pCompany . ' ' . $pType);
+                    elseif ($pCompany) $fTitle = strtoupper($pCompany);
+                    elseif ($pType) $fTitle = strtoupper($pType);
+
+                    $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+                    if ($userLang === 'Bengali') {
+                        $fAnswer = "💰 **{$fTitle} — Purchase Rate তথ্য:**\n\n";
+                        if ($latestRoll) {
+                            $fAnswer .= "📦 **সর্বশেষ রোলের Purchase Rate:**\n"
+                                . "  - রোল নং: `{$latestRoll['roll_no']}`\n"
+                                . "  - কোম্পানি: **" . ($latestRoll['company'] ?: 'N/A') . "**\n"
+                                . "  - পেপার টাইপ: **" . ($latestRoll['paper_type'] ?: 'N/A') . "**\n"
+                                . "  - প্রস্থ: **" . ($latestRoll['width_mm'] ?: '0') . "mm**\n"
+                                . "  - 💵 **Purchase Rate: ₹" . number_format((float)$latestRoll['purchase_rate'], 2) . "**\n"
+                                . "  - তারিখ: `" . ($latestRoll['date_received'] ?: 'N/A') . "`\n\n";
+                        }
+                        if ($aggData && (int)$aggData['cnt'] > 0) {
+                            $fAnswer .= "📊 **Rate সামারি** (মোট " . number_format((int)$aggData['cnt']) . " রোল):\n"
+                                . "  - গড় Rate: **₹" . number_format((float)$aggData['avg_rate'], 2) . "**\n"
+                                . "  - সর্বনিম্ন Rate: **₹" . number_format((float)$aggData['min_rate'], 2) . "**\n"
+                                . "  - সর্বোচ্চ Rate: **₹" . number_format((float)$aggData['max_rate'], 2) . "**\n\n";
+                        }
+                        if ($expensiveRoll) {
+                            $fAnswer .= "🏆 **সবচেয়ে দামি রোল:**\n"
+                                . "  - রোল নং: `{$expensiveRoll['roll_no']}` | 💵 **₹" . number_format((float)$expensiveRoll['purchase_rate'], 2) . "**\n"
+                                . "  - কোম্পানি: **" . ($expensiveRoll['company'] ?: 'N/A') . "** | টাইপ: **" . ($expensiveRoll['paper_type'] ?: 'N/A') . "**\n\n";
+                        }
+                        if (!empty($recentRolls)) {
+                            $fAnswer .= "📋 **সাম্প্রতিক রোলের Rate:**\n";
+                            $fAnswer .= "| # | রোল নং | কোম্পানি | টাইপ | Rate |\n";
+                            $fAnswer .= "|--:|--------|----------|------|------|\n";
+                            foreach ($recentRolls as $ri => $rr) {
+                                $fAnswer .= "| " . ($ri + 1) . " | `" . ($rr['roll_no'] ?: '-') . "` | " . ($rr['company'] ?: '-') . " | " . ($rr['paper_type'] ?: '-') . " | ₹" . number_format((float)$rr['purchase_rate'], 2) . " |\n";
+                            }
+                            $fAnswer .= "\n";
+                        }
+                        $fAnswer .= "👉 [পেপার স্টক পেজ খুলুন]({$baseUrl}/modules/paper_stock/index.php)";
+                    } elseif ($userLang === 'Hindi') {
+                        $fAnswer = "💰 **{$fTitle} — Purchase Rate जानकारी:**\n\n";
+                        if ($latestRoll) {
+                            $fAnswer .= "📦 **नवीनतम रोल का Purchase Rate:**\n"
+                                . "  - रोल नं.: `{$latestRoll['roll_no']}`\n"
+                                . "  - कंपनी: **" . ($latestRoll['company'] ?: 'N/A') . "**\n"
+                                . "  - पेपर टाइप: **" . ($latestRoll['paper_type'] ?: 'N/A') . "**\n"
+                                . "  - चौड़ाई: **" . ($latestRoll['width_mm'] ?: '0') . "mm**\n"
+                                . "  - 💵 **Purchase Rate: ₹" . number_format((float)$latestRoll['purchase_rate'], 2) . "**\n"
+                                . "  - तारीख: `" . ($latestRoll['date_received'] ?: 'N/A') . "`\n\n";
+                        }
+                        if ($aggData && (int)$aggData['cnt'] > 0) {
+                            $fAnswer .= "📊 **Rate सारांश** (कुल " . number_format((int)$aggData['cnt']) . " रोल):\n"
+                                . "  - औसत Rate: **₹" . number_format((float)$aggData['avg_rate'], 2) . "**\n"
+                                . "  - न्यूनतम Rate: **₹" . number_format((float)$aggData['min_rate'], 2) . "**\n"
+                                . "  - अधिकतम Rate: **₹" . number_format((float)$aggData['max_rate'], 2) . "**\n\n";
+                        }
+                        $fAnswer .= "👉 [पेपर स्टक पेज खोलें]({$baseUrl}/modules/paper_stock/index.php)";
+                    } else {
+                        $fAnswer = "💰 **{$fTitle} — Purchase Rate Information:**\n\n";
+                        if ($latestRoll) {
+                            $fAnswer .= "📦 **Latest Roll Purchase Rate:**\n"
+                                . "  - Roll No: `{$latestRoll['roll_no']}`\n"
+                                . "  - Company: **" . ($latestRoll['company'] ?: 'N/A') . "**\n"
+                                . "  - Paper Type: **" . ($latestRoll['paper_type'] ?: 'N/A') . "**\n"
+                                . "  - Width: **" . ($latestRoll['width_mm'] ?: '0') . "mm**\n"
+                                . "  - 💵 **Purchase Rate: ₹" . number_format((float)$latestRoll['purchase_rate'], 2) . "**\n"
+                                . "  - Date: `" . ($latestRoll['date_received'] ?: 'N/A') . "`\n\n";
+                        }
+                        if ($aggData && (int)$aggData['cnt'] > 0) {
+                            $fAnswer .= "📊 **Rate Summary** (" . number_format((int)$aggData['cnt']) . " rolls with rate):\n"
+                                . "  - Average Rate: **₹" . number_format((float)$aggData['avg_rate'], 2) . "**\n"
+                                . "  - Minimum Rate: **₹" . number_format((float)$aggData['min_rate'], 2) . "**\n"
+                                . "  - Maximum Rate: **₹" . number_format((float)$aggData['max_rate'], 2) . "**\n\n";
+                        }
+                        if ($expensiveRoll) {
+                            $fAnswer .= "🏆 **Most Expensive Roll:**\n"
+                                . "  - Roll No: `{$expensiveRoll['roll_no']}` | 💵 **₹" . number_format((float)$expensiveRoll['purchase_rate'], 2) . "**\n"
+                                . "  - Company: **" . ($expensiveRoll['company'] ?: 'N/A') . "** | Type: **" . ($expensiveRoll['paper_type'] ?: 'N/A') . "**\n\n";
+                        }
+                        if (!empty($recentRolls)) {
+                            $fAnswer .= "📋 **Recent Rolls with Rates:**\n";
+                            $fAnswer .= "| # | Roll No | Company | Type | Rate |\n";
+                            $fAnswer .= "|--:|---------|---------|------|------|\n";
+                            foreach ($recentRolls as $ri => $rr) {
+                                $fAnswer .= "| " . ($ri + 1) . " | `" . ($rr['roll_no'] ?: '-') . "` | " . ($rr['company'] ?: '-') . " | " . ($rr['paper_type'] ?: '-') . " | ₹" . number_format((float)$rr['purchase_rate'], 2) . " |\n";
+                            }
+                            $fAnswer .= "\n";
+                        }
+                        $fAnswer .= "👉 [Open Paper Stock Page]({$baseUrl}/modules/paper_stock/index.php)";
+                    }
+
+                    return ['tool_used' => 'Paper Stock Financial Tool (Priority)', 'total_count' => (int)($aggData['cnt'] ?? 0), 'total_meters' => 0, 'filtered_type' => '', 'is_company_list' => false, 'direct_answer' => $fAnswer, 'data' => []];
+                }
+            }
+
             $pSum = $db->prepare("SELECT COUNT(*) as rc, IFNULL(SUM(length_mtr),0) as tm, IFNULL(SUM((width_mm/1000.0)*length_mtr),0) as tsq FROM paper_stock WHERE {$pWhereSql}");
             if (!empty($pParams)) {
                 $pSum->bind_param($pTypes, ...$pParams);
@@ -2044,7 +2293,11 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 $slittedRolls = (int) ($pDeepData['slitted_rolls'] ?? 0);
 
                 $pTitle = 'Paper Stock';
-                if ($pCompany && $pType) {
+                if ($pLotBatch) {
+                    $pTitle = 'Lot/Batch: ' . strtoupper($pLotBatch);
+                } elseif ($pCompanyRollNo) {
+                    $pTitle = 'Company Roll: ' . strtoupper($pCompanyRollNo);
+                } elseif ($pCompany && $pType) {
                     $pTitle = strtoupper($pCompany . ' ' . $pType);
                 } elseif ($pCompany) {
                     $pTitle = strtoupper($pCompany) . ' Paper Stock';
@@ -3895,7 +4148,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             ];
         }
 
-    } elseif (strpos($p, 'paper') !== false || strpos($p, 'roll') !== false || strpos($p, 'slc/') !== false || strpos($p, 'chromo') !== false || strpos($p, 'thermal') !== false || strpos($p, 'stock') !== false || strpos($p, 'maplitho') !== false || strpos($p, 'pp') !== false || strpos($p, 'white') !== false || strpos($p, 'jumbo') !== false || strpos($p, 'slitting') !== false || strpos($p, 'avery') !== false || strpos($p, 'krishna') !== false || strpos($p, 'austin') !== false || strpos($p, 'navkar') !== false || strpos($p, 'nrgi') !== false) {
+    } elseif (strpos($p, 'paper') !== false || strpos($p, 'roll') !== false || strpos($p, 'slc/') !== false || strpos($p, 'chromo') !== false || strpos($p, 'thermal') !== false || strpos($p, 'stock') !== false || strpos($p, 'maplitho') !== false || strpos($p, 'pp') !== false || strpos($p, 'white') !== false || strpos($p, 'jumbo') !== false || strpos($p, 'slitting') !== false || strpos($p, 'avery') !== false || strpos($p, 'krishna') !== false || strpos($p, 'austin') !== false || strpos($p, 'navkar') !== false || strpos($p, 'nrgi') !== false || strpos($p, 'lot') !== false || strpos($p, 'batch') !== false || strpos($p, 'লট') !== false || strpos($p, 'ব্যাচ') !== false || strpos($p, 'rate') !== false || strpos($p, 'price') !== false || strpos($p, 'দাম') !== false || strpos($p, 'দামি') !== false || strpos($p, 'costly') !== false || strpos($p, 'expensive') !== false || strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || strpos($p, 'print') !== false || strpos($p, 'প্রিন্ট') !== false || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false) {
 
         $toolName = 'Paper Stock Master Tool';
 
@@ -3906,7 +4159,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         }
 
         // 2. Company match
-        $companies = ['nrgi', 'krishna', 'austin', 'navkar', 'abhinav', 'raj paper', 'mangalam', 'paper n more', 'narsing das', 'avery', 'nitin'];
+        $companies = ['nrgi', 'krishna', 'austin', 'navkar', 'abhinav', 'raj paper', 'mangalam', 'paper n more', 'narsing das', 'avery', 'nitin', 'flexo'];
         $matchedCompany = null;
         foreach ($companies as $comp) {
             if (strpos($p, $comp) !== false) {
@@ -3968,7 +4221,259 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             $typesStr .= 'd';
         }
 
+        // 5. Lot/Batch No match (e.g. "LB-2025-001", "lot 123", "batch ABC")
+        $lotBatchMatch = null;
+        if (preg_match('/(?:lot\s*(?:batch)?\s*(?:no\.?)?\s*|batch\s*(?:no\.?)?\s*|লট\s*(?:ব্যাচ)?\s*(?:নম্বর|নং)?\s*)([A-Za-z0-9\-\/]+)/iu', $prompt, $m)) {
+            $lotBatchMatch = trim($m[1]);
+        } elseif (preg_match('/\b(LB-[A-Za-z0-9\-]+)\b/i', $prompt, $m)) {
+            $lotBatchMatch = trim($m[1]);
+        }
+        if ($lotBatchMatch) {
+            $where[] = "lot_batch_no LIKE ?";
+            $params[] = '%' . $lotBatchMatch . '%';
+            $typesStr .= 's';
+        }
+
+        // 6. Company Roll No match (e.g. "CR-12345", "company roll no CR-12345")
+        $companyRollMatch = null;
+        if (preg_match('/(?:company\s*roll\s*(?:no\.?)?\s*|কোম্পানি\s*রোল\s*(?:নম্বর|নং)?\s*)([A-Za-z0-9\-\/]+)/iu', $prompt, $m)) {
+            $companyRollMatch = trim($m[1]);
+        } elseif (preg_match('/\b(CR-[A-Za-z0-9\-]+)\b/i', $prompt, $m)) {
+            $companyRollMatch = trim($m[1]);
+        }
+
+        // 7. SQM Area Filter match
+        $sqmFilter = null;
+        $sqmOp = null;
+        if (preg_match('/(?:sqr?\s*mtr|sqm|square\s*meter)\s*(\d+(?:\.\d+)?)\s*(ar niche|er niche|niche|ar kom|er kom|kom|below|under|less|<|ar upore|er upore|upore|ar beshi|er beshi|beshi|above|more|>)/i', $prompt, $m) || 
+            preg_match('/(\d+(?:\.\d+)?)\s*(?:sqr?\s*mtr|sqm|square\s*meter)\s*(ar niche|er niche|niche|ar kom|er kom|kom|below|under|less|<|ar upore|er upore|upore|ar beshi|er beshi|beshi|above|more|>)/i', $prompt, $m)) {
+            $val = (float)$m[1];
+            $opStr = strtolower(trim($m[2]));
+            $sqmOp = (preg_match('/niche|kom|below|under|less|</i', $opStr)) ? '<=' : '>=';
+            $sqmFilter = $val;
+        }
+        if ($companyRollMatch) {
+            $where[] = "company_roll_no LIKE ?";
+            $params[] = '%' . $companyRollMatch . '%';
+            $typesStr .= 's';
+        }
+
+        if ($sqmFilter !== null) {
+            $where[] = "ROUND((width_mm/1000.0)*length_mtr, 2) {$sqmOp} ?";
+            $params[] = $sqmFilter;
+            $typesStr .= 'd';
+        }
+
         $whereSql = implode(' AND ', $where);
+
+        // ─── Export/Report Sub-Handler ───
+        $isExportQuery = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || strpos($p, 'print') !== false || strpos($p, 'প্রিন্ট') !== false || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false);
+        if ($isExportQuery) {
+            $fTitle = 'Paper Stock Report';
+            if ($lotBatchMatch) $fTitle = 'Lot/Batch: ' . strtoupper($lotBatchMatch) . ' Report';
+            elseif ($companyRollMatch) $fTitle = 'Company Roll: ' . strtoupper($companyRollMatch) . ' Report';
+            elseif ($matchedCompany && $matchedType) $fTitle = strtoupper($matchedCompany . ' ' . $matchedType) . ' Report';
+            elseif ($matchedCompany) $fTitle = strtoupper($matchedCompany) . ' Paper Report';
+            elseif ($matchedType) $fTitle = strtoupper($matchedType) . ' Paper Report';
+            elseif ($rollNoMatch) $fTitle = 'Roll ' . strtoupper($rollNoMatch) . ' Report';
+
+            $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+            $queryParams = [];
+            if ($matchedCompany) $queryParams[] = 'company=' . urlencode($matchedCompany);
+            if ($matchedType) {
+                if ($matchedType === 'pp white' || $matchedType === 'pp-white') $queryParams[] = 'type=PP-WHITE';
+                elseif ($matchedType === 'pp clear' || $matchedType === 'pp-clear') $queryParams[] = 'type=PP-CLEAR';
+                else $queryParams[] = 'type=' . urlencode($matchedType);
+            }
+            if ($lotBatchMatch) $queryParams[] = 'lot_no=' . urlencode($lotBatchMatch);
+            if ($rollNoMatch) $queryParams[] = 'roll_no=' . urlencode($rollNoMatch);
+            $queryStr = !empty($queryParams) ? '&' . implode('&', $queryParams) : '';
+
+            $pdfUrl = "{$baseUrl}/modules/paper_stock/export.php?format=pdf{$queryStr}";
+            $csvUrl = "{$baseUrl}/modules/paper_stock/export.php?format=csv{$queryStr}";
+
+            $answer = "📊 **{$fTitle} — Export Ready:**\n\n";
+            if ($userLang === 'Bengali') {
+                $answer .= "আপনার রিপোর্ট তৈরি হয়ে গেছে। নিচের রঙিন বাটনগুলোতে ক্লিক করে PDF বা Excel (CSV) ফাইল ডাউনলোড করুন:\n\n";
+            } elseif ($userLang === 'Hindi') {
+                $answer .= "आपकी रिपोर्ट तैयार है। PDF या Excel (CSV) फाइल डाउनलोड करने के लिए नीचे दिए गए बटन पर क्लिक करें:\n\n";
+            } else {
+                $answer .= "Your report is ready. Click the buttons below to download the PDF or Excel (CSV) file:\n\n";
+            }
+
+            $answer .= '<div style="display: flex; gap: 15px; margin-top: 15px; flex-wrap: wrap;">' . "\n";
+            $answer .= '    <a href="' . $pdfUrl . '" target="_blank" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.4); border: 1px solid #b91c1c; font-size: 14px; min-width: 200px;">' . "\n";
+            $answer .= '        📄 Download PDF Report' . "\n";
+            $answer .= '    </a>' . "\n";
+            $answer .= '    <a href="' . $csvUrl . '" target="_blank" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #22c55e, #16a34a); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(34, 197, 94, 0.4); border: 1px solid #15803d; font-size: 14px; min-width: 200px;">' . "\n";
+            $answer .= '        📊 Download Excel (CSV)' . "\n";
+            $answer .= '    </a>' . "\n";
+            $answer .= '</div>';
+
+            return ['tool_used' => 'Paper Stock Export Tool', 'total_count' => 0, 'total_meters' => 0, 'filtered_type' => '', 'is_company_list' => false, 'direct_answer' => $answer, 'data' => []];
+        }
+
+        // ─── Financial Sub-Handler: purchase rate / price / দাম queries ───
+        $isFinancialQuery = (strpos($p, 'rate') !== false || strpos($p, 'price') !== false || strpos($p, 'দাম') !== false || strpos($p, 'দামি') !== false || strpos($p, 'costly') !== false || strpos($p, 'expensive') !== false || strpos($p, 'মূল্য') !== false || strpos($p, 'রেট') !== false || strpos($p, 'दाम') !== false || strpos($p, 'रेट') !== false || strpos($p, 'कीमत') !== false || strpos($p, 'avg') !== false || strpos($p, 'average') !== false || strpos($p, 'গড়') !== false);
+        if ($isFinancialQuery) {
+            $isMostExpensive = (strpos($p, 'সবচেয়ে দামি') !== false || strpos($p, 'সবচেয়ে বেশি') !== false || strpos($p, 'most expensive') !== false || strpos($p, 'highest rate') !== false || strpos($p, 'costly') !== false || strpos($p, 'max price') !== false || strpos($p, 'সর্বোচ্চ') !== false);
+
+            $fWhere = ["purchase_rate IS NOT NULL", "purchase_rate > 0"];
+            $fParams = [];
+            $fTypes = '';
+            if ($matchedCompany) {
+                $fWhere[] = "company LIKE ?";
+                $fParams[] = '%' . $matchedCompany . '%';
+                $fTypes .= 's';
+            }
+            if ($matchedType) {
+                if ($matchedType === 'pp white' || $matchedType === 'pp-white') {
+                    $fWhere[] = "(paper_type LIKE '%pp-white%' OR paper_type LIKE '%pp white%' OR paper_type LIKE '%pp_white%')";
+                } elseif ($matchedType === 'pp clear' || $matchedType === 'pp-clear') {
+                    $fWhere[] = "(paper_type LIKE '%pp-clear%' OR paper_type LIKE '%pp clear%' OR paper_type LIKE '%pp_clear%')";
+                } else {
+                    $fWhere[] = "paper_type LIKE ?";
+                    $fParams[] = '%' . $matchedType . '%';
+                    $fTypes .= 's';
+                }
+            }
+            $fWhereSql = implode(' AND ', $fWhere);
+
+            $latestSql = "SELECT id, roll_no, company, paper_type, width_mm, length_mtr, purchase_rate, date_received, status FROM paper_stock WHERE {$fWhereSql} ORDER BY id DESC LIMIT 1";
+            $latestStmt = $db->prepare($latestSql);
+            if (!empty($fParams)) $latestStmt->bind_param($fTypes, ...$fParams);
+            $latestStmt->execute();
+            $latestRoll = $latestStmt->get_result()->fetch_assoc();
+
+            $aggSql = "SELECT COUNT(*) as cnt, ROUND(AVG(purchase_rate),2) as avg_rate, ROUND(MIN(purchase_rate),2) as min_rate, ROUND(MAX(purchase_rate),2) as max_rate FROM paper_stock WHERE {$fWhereSql}";
+            $aggStmt = $db->prepare($aggSql);
+            if (!empty($fParams)) $aggStmt->bind_param($fTypes, ...$fParams);
+            $aggStmt->execute();
+            $aggData = $aggStmt->get_result()->fetch_assoc();
+
+            $expensiveRoll = null;
+            if ($isMostExpensive) {
+                $expSql = "SELECT id, roll_no, company, paper_type, width_mm, length_mtr, purchase_rate, date_received, status FROM paper_stock WHERE {$fWhereSql} ORDER BY purchase_rate DESC LIMIT 1";
+                $expStmt = $db->prepare($expSql);
+                if (!empty($fParams)) $expStmt->bind_param($fTypes, ...$fParams);
+                $expStmt->execute();
+                $expensiveRoll = $expStmt->get_result()->fetch_assoc();
+            }
+
+            $recentSql = "SELECT id, roll_no, company, paper_type, width_mm, purchase_rate, date_received FROM paper_stock WHERE {$fWhereSql} ORDER BY id DESC LIMIT 5";
+            $recentStmt = $db->prepare($recentSql);
+            if (!empty($fParams)) $recentStmt->bind_param($fTypes, ...$fParams);
+            $recentStmt->execute();
+            $recentRolls = $recentStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+            if ($latestRoll || ($aggData && (int)$aggData['cnt'] > 0)) {
+                $fTitle = 'Paper Stock';
+                if ($matchedCompany && $matchedType) $fTitle = strtoupper($matchedCompany . ' ' . $matchedType);
+                elseif ($matchedCompany) $fTitle = strtoupper($matchedCompany);
+                elseif ($matchedType) $fTitle = strtoupper($matchedType);
+
+                $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+                if ($userLang === 'Bengali') {
+                    $fAnswer = "💰 **{$fTitle} — Purchase Rate তথ্য:**\n\n";
+                    if ($latestRoll) {
+                        $fAnswer .= "📦 **সর্বশেষ রোলের Purchase Rate:**\n"
+                            . "  - রোল নং: `{$latestRoll['roll_no']}`\n"
+                            . "  - কোম্পানি: **" . ($latestRoll['company'] ?: 'N/A') . "**\n"
+                            . "  - পেপার টাইপ: **" . ($latestRoll['paper_type'] ?: 'N/A') . "**\n"
+                            . "  - প্রস্থ: **" . ($latestRoll['width_mm'] ?: '0') . "mm**\n"
+                            . "  - 💵 **Purchase Rate: ₹" . number_format((float)$latestRoll['purchase_rate'], 2) . "**\n"
+                            . "  - তারিখ: `" . ($latestRoll['date_received'] ?: 'N/A') . "`\n\n";
+                    }
+                    if ($aggData && (int)$aggData['cnt'] > 0) {
+                        $fAnswer .= "📊 **Rate সামারি** (মোট " . number_format((int)$aggData['cnt']) . " রোল):\n"
+                            . "  - গড় Rate: **₹" . number_format((float)$aggData['avg_rate'], 2) . "**\n"
+                            . "  - সর্বনিম্ন Rate: **₹" . number_format((float)$aggData['min_rate'], 2) . "**\n"
+                            . "  - সর্বোচ্চ Rate: **₹" . number_format((float)$aggData['max_rate'], 2) . "**\n\n";
+                    }
+                    if ($expensiveRoll) {
+                        $fAnswer .= "🏆 **সবচেয়ে দামি রোল:**\n"
+                            . "  - রোল নং: `{$expensiveRoll['roll_no']}` | 💵 **₹" . number_format((float)$expensiveRoll['purchase_rate'], 2) . "**\n"
+                            . "  - কোম্পানি: **" . ($expensiveRoll['company'] ?: 'N/A') . "** | টাইপ: **" . ($expensiveRoll['paper_type'] ?: 'N/A') . "**\n\n";
+                    }
+                    if (!empty($recentRolls)) {
+                        $fAnswer .= "📋 **সাম্প্রতিক রোলের Rate:**\n";
+                        $fAnswer .= "| # | রোল নং | কোম্পানি | টাইপ | Rate |\n";
+                        $fAnswer .= "|--:|--------|----------|------|------|\n";
+                        foreach ($recentRolls as $ri => $rr) {
+                            $fAnswer .= "| " . ($ri + 1) . " | `" . ($rr['roll_no'] ?: '-') . "` | " . ($rr['company'] ?: '-') . " | " . ($rr['paper_type'] ?: '-') . " | ₹" . number_format((float)$rr['purchase_rate'], 2) . " |\n";
+                        }
+                        $fAnswer .= "\n";
+                    }
+                    $fAnswer .= "👉 [পেপার স্টক পেজ খুলুন]({$baseUrl}/modules/paper_stock/index.php)";
+                } elseif ($userLang === 'Hindi') {
+                    $fAnswer = "💰 **{$fTitle} — Purchase Rate जानकारी:**\n\n";
+                    if ($latestRoll) {
+                        $fAnswer .= "📦 **नवीनतम रोल का Purchase Rate:**\n"
+                            . "  - रोल नं.: `{$latestRoll['roll_no']}`\n"
+                            . "  - कंपनी: **" . ($latestRoll['company'] ?: 'N/A') . "**\n"
+                            . "  - पेपर टाइप: **" . ($latestRoll['paper_type'] ?: 'N/A') . "**\n"
+                            . "  - चौड़ाई: **" . ($latestRoll['width_mm'] ?: '0') . "mm**\n"
+                            . "  - 💵 **Purchase Rate: ₹" . number_format((float)$latestRoll['purchase_rate'], 2) . "**\n"
+                            . "  - तारीख: `" . ($latestRoll['date_received'] ?: 'N/A') . "`\n\n";
+                    }
+                    if ($aggData && (int)$aggData['cnt'] > 0) {
+                        $fAnswer .= "📊 **Rate सारांश** (कुल " . number_format((int)$aggData['cnt']) . " रोल):\n"
+                            . "  - औसत Rate: **₹" . number_format((float)$aggData['avg_rate'], 2) . "**\n"
+                            . "  - न्यूनतम Rate: **₹" . number_format((float)$aggData['min_rate'], 2) . "**\n"
+                            . "  - अधिकतम Rate: **₹" . number_format((float)$aggData['max_rate'], 2) . "**\n\n";
+                    }
+                    $fAnswer .= "👉 [पेपर स्टक पेज खोलें]({$baseUrl}/modules/paper_stock/index.php)";
+                } else {
+                    $fAnswer = "💰 **{$fTitle} — Purchase Rate Information:**\n\n";
+                    if ($latestRoll) {
+                        $fAnswer .= "📦 **Latest Roll Purchase Rate:**\n"
+                            . "  - Roll No: `{$latestRoll['roll_no']}`\n"
+                            . "  - Company: **" . ($latestRoll['company'] ?: 'N/A') . "**\n"
+                            . "  - Paper Type: **" . ($latestRoll['paper_type'] ?: 'N/A') . "**\n"
+                            . "  - Width: **" . ($latestRoll['width_mm'] ?: '0') . "mm**\n"
+                            . "  - 💵 **Purchase Rate: ₹" . number_format((float)$latestRoll['purchase_rate'], 2) . "**\n"
+                            . "  - Date: `" . ($latestRoll['date_received'] ?: 'N/A') . "`\n\n";
+                    }
+                    if ($aggData && (int)$aggData['cnt'] > 0) {
+                        $fAnswer .= "📊 **Rate Summary** (" . number_format((int)$aggData['cnt']) . " rolls with rate):\n"
+                            . "  - Average Rate: **₹" . number_format((float)$aggData['avg_rate'], 2) . "**\n"
+                            . "  - Minimum Rate: **₹" . number_format((float)$aggData['min_rate'], 2) . "**\n"
+                            . "  - Maximum Rate: **₹" . number_format((float)$aggData['max_rate'], 2) . "**\n\n";
+                    }
+                    if ($expensiveRoll) {
+                        $fAnswer .= "🏆 **Most Expensive Roll:**\n"
+                            . "  - Roll No: `{$expensiveRoll['roll_no']}` | 💵 **₹" . number_format((float)$expensiveRoll['purchase_rate'], 2) . "**\n"
+                            . "  - Company: **" . ($expensiveRoll['company'] ?: 'N/A') . "** | Type: **" . ($expensiveRoll['paper_type'] ?: 'N/A') . "**\n\n";
+                    }
+                    if (!empty($recentRolls)) {
+                        $fAnswer .= "📋 **Recent Rolls with Rates:**\n";
+                        $fAnswer .= "| # | Roll No | Company | Type | Rate |\n";
+                        $fAnswer .= "|--:|---------|---------|------|------|\n";
+                        foreach ($recentRolls as $ri => $rr) {
+                            $fAnswer .= "| " . ($ri + 1) . " | `" . ($rr['roll_no'] ?: '-') . "` | " . ($rr['company'] ?: '-') . " | " . ($rr['paper_type'] ?: '-') . " | ₹" . number_format((float)$rr['purchase_rate'], 2) . " |\n";
+                        }
+                        $fAnswer .= "\n";
+                    }
+                    $fAnswer .= "👉 [Open Paper Stock Page]({$baseUrl}/modules/paper_stock/index.php)";
+                }
+
+                $navUrl = null;
+                if (strpos($p, 'open') !== false || strpos($p, 'page') !== false || strpos($p, 'go to') !== false || strpos($p, 'khul') !== false || strpos($p, 'khol') !== false) {
+                    $navUrl = $baseUrl . '/modules/paper_stock/index.php';
+                }
+                return [
+                    'tool_used' => 'Paper Stock Financial Tool',
+                    'total_count' => (int)($aggData['cnt'] ?? 0),
+                    'total_meters' => 0,
+                    'filtered_type' => '',
+                    'is_company_list' => false,
+                    'direct_answer' => $fAnswer,
+                    'nav_url' => $navUrl,
+                    'data' => []
+                ];
+            }
+        }
 
         $summarySql = "SELECT COUNT(*) as roll_count, IFNULL(SUM(length_mtr),0) as total_mtr, IFNULL(SUM((width_mm/1000.0)*length_mtr),0) as total_sqm FROM paper_stock WHERE {$whereSql}";
         $stmt = $db->prepare($summarySql);
@@ -4024,7 +4529,11 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
 
         $titleHeading = 'Paper Roll Stock Summary';
-        if ($matchedCompany && $matchedType) {
+        if ($lotBatchMatch) {
+            $titleHeading = 'Lot/Batch: ' . strtoupper($lotBatchMatch);
+        } elseif ($companyRollMatch) {
+            $titleHeading = 'Company Roll: ' . strtoupper($companyRollMatch);
+        } elseif ($matchedCompany && $matchedType) {
             $titleHeading = strtoupper($matchedCompany . ' ' . $matchedType);
         } elseif ($matchedCompany) {
             $titleHeading = strtoupper($matchedCompany) . ' Paper Stock';
@@ -4307,7 +4816,12 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
 
 $userLang = detect_language($prompt);
-$retrieved = fetch_erp_data_by_intent($db, $prompt, $userLang);
+// Normal mode: skip ERP database entirely, go straight to LLM
+if ($skipNormalDb) {
+    $retrieved = ['tool_used' => 'Unmatched Query Assistant', 'total_count' => 0, 'total_meters' => 0, 'filtered_type' => '', 'is_company_list' => false, 'data' => []];
+} else {
+    $retrieved = fetch_erp_data_by_intent($db, $prompt, $userLang);
+}
 $toolUsed = $retrieved['tool_used'];
 $totalCount = $retrieved['total_count'];
 $totalMeters = $retrieved['total_meters'];
@@ -4362,6 +4876,7 @@ if (!empty($retrieved['direct_answer'])) {
         }
     }
 } elseif ($toolUsed === 'Unmatched Query Assistant') {
+    // Normal Mode: query external LLM (KB and ERP database were not touched)
     // ERP-Only Mode: skip external LLM, go straight to no-knowledge message
     if ($erpOnlyMode) {
         $llmAnswer = null;
@@ -4374,25 +4889,34 @@ if (!empty($retrieved['direct_answer'])) {
     } else {
         if ($userLang === 'English') {
             $finalAnswer = "🤔 **I don't have knowledge regarding this topic.**\n\n"
-                . "I searched my trained knowledge base and ERP data, but couldn't find an answer to: **\"" . htmlspecialchars($prompt) . "\"**.\n\n"
-                . (isAdmin()
-                    ? "💡 **Admin Tip:** You can train me in **Settings → AI Agent → Knowledge Base** by clicking **\"+ Add New Entry\"** with keywords and an answer.\n\n"
-                    : "")
-                . "👨‍💼 **For help, please contact your ERP Administrator.**";
+                . ($skipNormalDb
+                    ? "I checked my external knowledge source but couldn't find an answer to: **\"" . htmlspecialchars($prompt) . "\"**."
+                    : "I searched my trained knowledge base and ERP data, but couldn't find an answer to: **\"" . htmlspecialchars($prompt) . "\"**.")
+                . ($skipNormalDb ? '' : "\n\n"
+                    . (isAdmin()
+                        ? "💡 **Admin Tip:** You can train me in **Settings → AI Agent → Knowledge Base** by clicking **\"+ Add New Entry\"** with keywords and an answer.\n\n"
+                        : "")
+                    . "👨‍💼 **For help, please contact your ERP Administrator.**");
         } elseif ($userLang === 'Hindi') {
             $finalAnswer = "🤔 **मुझे इस विषय के बारे में कोई जानकारी नहीं है।**\n\n"
-                . "मैंने अपने ट्रेन्ड नॉलेज बेस और ईआरपी डेटा में खोजा, लेकिन आपकी क्वेरी: **\"" . htmlspecialchars($prompt) . "\"** का उत्तर नहीं मिला।\n\n"
-                . (isAdmin()
-                    ? "💡 **एडमिन टिप:** आप **Settings → AI Agent → Knowledge Base** में जाकर **\"+ Add New Entry\"** से मुझे ट्रेन कर सकते हैं।\n\n"
-                    : "")
-                . "👨‍💼 **कृपया सहायता के लिए अपने ERP एडमिनिस्ट्रेटर से संपर्क करें।**";
+                . ($skipNormalDb
+                    ? "मैंने अपने बाहरी ज्ञान स्रोत की जाँच की लेकिन आपकी क्वेरी: **\"" . htmlspecialchars($prompt) . "\"** का उत्तर नहीं मिला।"
+                    : "मैंने अपने ट्रेन्ड नॉलेज बेस और ईआरपी डेटा में खोजा, लेकिन आपकी क्वेरी: **\"" . htmlspecialchars($prompt) . "\"** का उत्तर नहीं मिला।")
+                . ($skipNormalDb ? '' : "\n\n"
+                    . (isAdmin()
+                        ? "💡 **एडमिन टिप:** आप **Settings → AI Agent → Knowledge Base** में जाकर **\"+ Add New Entry\"** से मुझे ट्रेन कर सकते हैं।\n\n"
+                        : "")
+                    . "👨‍💼 **कृपया सहायता के लिए अपने ERP एडमिनिस्ट्रेटर से संपर्क करें।**");
         } else {
             $finalAnswer = "🤔 **এই বিষয়ে আমার কোনো জ্ঞান নেই।**\n\n"
-                . "আমি আমার ট্রেইনড নলেজ বেস এবং ইআরপি ডেটাতে খুঁজেছি, কিন্তু আপনার প্রশ্ন: **\"" . htmlspecialchars($prompt) . "\"** এর উত্তর পাইনি।\n\n"
-                . (isAdmin()
-                    ? "💡 **এডমিন পরামর্শ:** আপনি **Settings → AI Agent → Knowledge Base** এ গিয়ে **\"+ Add New Entry\"** ক্লিক করে কীওয়ার্ড ও উত্তর যোগ করে আমাকে ট্রেইন করতে পারেন।\n\n"
-                    : "")
-                . "👨‍💼 **সাহায্যের জন্য আপনার ERP অ্যাডমিনিস্ট্রেটরের সাথে যোগাযোগ করুন।**";
+                . ($skipNormalDb
+                    ? "আমি আমার বাহ্যিক জ্ঞান উৎস চেক করেছি কিন্তু আপনার প্রশ্ন: **\"" . htmlspecialchars($prompt) . "\"** এর উত্তর পাইনি।"
+                    : "আমি আমার ট্রেইনড নলেজ বেস এবং ইআরপি ডেটাতে খুঁজেছি, কিন্তু আপনার প্রশ্ন: **\"" . htmlspecialchars($prompt) . "\"** এর উত্তর পাইনি।")
+                . ($skipNormalDb ? '' : "\n\n"
+                    . (isAdmin()
+                        ? "💡 **এডমিন পরামর্শ:** আপনি **Settings → AI Agent → Knowledge Base** এ গিয়ে **\"+ Add New Entry\"** ক্লিক করে কীওয়ার্ড ও উত্তর যোগ করে আমাকে ট্রেইন করতে পারেন।\n\n"
+                        : "")
+                    . "👨‍💼 **সাহায্যের জন্য আপনার ERP অ্যাডমিনিস্ট্রেটরের সাথে যোগাযোগ করুন।**");
         }
     }
 } else {

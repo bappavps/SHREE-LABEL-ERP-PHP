@@ -27,14 +27,24 @@
     "sidebar_active_text": "#bbf7d0",
     "image_library": [],
     "ai_agent_provider": "openai",
-    "ai_agent_model": "auto",
+    "ai_agent_model": "9ROUTER-COMBO",
     "gemini_api_key": "",
-    "openai_api_key": "",
-    "openai_api_url": "http://localhost:3001/v1/chat/completions",
-        "openrouter_api_key": "",
+    "openai_api_key": "sk-e62bedb0c5c6e96c-vi4tyh-030696bb",
+    "openai_api_url": "https://ninerouter-4qb5.onrender.com/v1/chat/completions",
+    "openrouter_api_key": "",
     "openrouter_ai_url": "https://openrouter.ai/api/v1/chat/completions",
     "local_ai_url": "http://localhost:11434/v1/chat/completions",
     "ai_agent_temperature": 0.6,
     "ai_agent_max_tokens": 1500,
-    "ai_agent_enabled": 1
+    "ai_agent_enabled": 1,
+    "ai_fallback_enabled": 0,
+    "ai_custom_endpoints": [
+        {
+            "label": "freellm",
+            "url": "http://localhost:3001/v1/chat/completions",
+            "api_key": "freellmapi-25a0774c762a510cf97882963b52e05ad0a15e41eceb76f1",
+            "model": "auto",
+            "active": 1
+        }
+    ]
 }

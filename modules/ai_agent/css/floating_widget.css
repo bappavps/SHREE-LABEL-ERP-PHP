@@ -61,6 +61,7 @@
     flex-direction: column;
     overflow: hidden;
     animation: popupSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    font-family: 'Plus Jakarta Sans', 'Hind Siliguri', sans-serif;
 }
 
 #aiFloatingPopupCard.active {
