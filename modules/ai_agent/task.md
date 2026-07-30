@@ -1,0 +1,8 @@
+- [x] Complete the Plate Handler extraction logic for job/item names, explicit calculations (`কত মিটার`), and export intents.
+- [x] Test the mathematical formulas within the AI Handler matching standard flexo rules (`labels = (meters * 1000) / repeat * ups`).
+- [x] Enhance the `is_count_intent` and dashboard fallback functionalities to work alongside the math engine.
+- [x] Inject the finalized `Plate Management Handler` code into `api.php` replacing the old fallback blocks.
+- [x] Verify API responses for Export functionality rendering colorful UI buttons instead of plain text.
+- [x] Ensure 0-record responses gracefully respond with "Not Found" rather than failing silently.
+- [x] Add "Date Received" to display "Last Job" timing.
+- [x] Finalize `PLATE_MANAGEMENT_KNOWLEDGE.md` to reflect new capabilities.

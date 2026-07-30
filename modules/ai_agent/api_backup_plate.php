@@ -2325,307 +2325,54 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         }
         $isPlateQuery = !$isOtherModuleQueryPlate && ($commandType === 'plate' || strpos($p, 'plate') !== false || strpos($p, 'repeat') !== false || strpos($p, 'gap') !== false || strpos($p, 'প্লেট') !== false || strpos($p, 'प्लेट') !== false || strpos($p, 'die') !== false || strpos($p, 'cylinder') !== false || strpos($p, 'সিলিন্ডার') !== false || strpos($p, 'রিপিট') !== false || strpos($p, 'দাঁত') !== false || strpos($p, 'teeth') !== false || strpos($p, 'ups') !== false || strpos($p, 'how many') !== false || strpos($p, 'total') !== false || strpos($p, 'count') !== false || strpos($p, 'কত') !== false || strpos($p, 'কতগুলো') !== false || strpos($p, 'kitne') !== false || ((strpos($p, 'print') !== false || strpos($p, 'calculat') !== false || strpos($p, 'koto') !== false || strpos($p, 'কত') !== false || strpos($p, 'কয়টি') !== false || strpos($p, 'পাবো') !== false || strpos($p, 'কী') !== false || strpos($p, 'কি') !== false) && (strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'মিটার') !== false || strpos($p, 'qty') !== false || strpos($p, 'quantity') !== false || strpos($p, 'qnty') !== false || strpos($p, 'pcs') !== false || strpos($p, 'label') !== false || strpos($p, 'লেবেল') !== false || preg_match('/\b(run|paper)\b/', $p))));
         if ($isPlateQuery) {
-    $prompt = html_entity_decode(stripslashes($prompt), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    $toolName = 'Printing Plates Master Tool';
-    
-    // Check if it's a count/dashboard request
-    $isCountIntent = (strpos($p, 'how many') !== false || strpos($p, 'total') !== false || strpos($p, 'count') !== false || strpos($p, 'কতগুলো') !== false || strpos($p, 'kitne') !== false || strpos($p, 'summary') !== false || strpos($p, 'dashboard') !== false || strpos($p, 'কত') !== false || strpos($p, 'koto') !== false || strpos($p, 'সব') !== false || strpos($p, 'সকল') !== false || strpos($p, 'all') !== false) && !preg_match('/\b(run|paper|meter|mtr|qty|quantity|pcs)\b/i', $p);
-    
-    // Extract Plate No FLEXIBLY & STRICTLY:
-    // 1. P-101, PLATE-101, SL-101
-    // 2. plate 925, plate no 925, plate number 925, sl 925, sl no 925
-    // 3. 925 number plate, 925 no plate, 925 plate, 925 নম্বর প্লেট
-    // 4. /plate 925
-    $plateNoMatch = null;
-    if (preg_match('/\b(P-\d+|PLATE-\d+|SL-\d+)\b/i', $prompt, $m)) {
-        $plateNoMatch = trim($m[1]);
-    } elseif (preg_match('/(?:plate|প্লেট|প্লট|sl|এসএল)\s*(?:no|number|numb|nber|num|নম্বর|নং|আইডি|id)?\s*#?\s*(\d+)/i', $prompt, $m)) {
-        $plateNoMatch = trim($m[1]);
-    } elseif (preg_match('/(\d+)\s*(?:no|number|numb|nber|num|নম্বর|নং|আইডি|id)?\s*#?\s*(?:plate|প্লেট|প্লট)\b/i', $prompt, $m)) {
-        $plateNoMatch = trim($m[1]);
-    } elseif (preg_match('/^\/plate\s+(\d+)\b/i', trim($prompt), $m)) {
-        $plateNoMatch = trim($m[1]);
-    }
+            $pToolName = 'Printing Plates Master Tool (Priority)';
+            $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_plate_data");
+            $pTotalCount = $cntRes ? (int) ($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
+            if ($pTotalCount > 0) {
+                $toolName = $pToolName;
+                $totalCount = $pTotalCount;
+                $pStopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'plate', 'plates', 'list', 'show', 'details', 'detail', 'this', 'the', 'a', 'an', 'job', 'jobs', 'for', 'about', 'get', 'search', 'find', 'there', 'any', 'named', 'by', 'name', 'of', 'with', 'are', 'do', 'have', 'exist', 'does', 'repeat', 'gap', 'gaph', 'gapv', 'size', 'ups', 'cylinder', 'paper', 'die', 'core', 'rewinding', 'value', 'color', 'colors', 'spec', 'special', 'what', 'how', 'give', 'if', 'run', 'running', 'much', 'many', 'quantity', 'qty', 'meter', 'meters', 'mtr', 'will', 'be', 'produced', 'print', 'printing', 'require', 'required', 'need', 'needed', 'or', 'and', 'calculate', 'calculating', 'calc', 'length', 'roll', 'pcs', 'pieces', 'labels', 'koto', 'kotogulo', 'hobe', 'lagbe', 'korle', 'korte', 'asob', 'ar', 'er', 'diye', 'giye', 'ache', 'hobe', 'হবে', 'আছে', 'কত', 'কতগুলো', 'কি', 'কী', 'কোন'];
+                $pWords = preg_split('/\s+/', strtolower($prompt));
+                $pTerms = [];
+                foreach ($pWords as $w) {
+                    $wC = trim(preg_replace('/[^a-z0-9]/', '', $w));
+                    if ($wC !== '' && !in_array($wC, $pStopwords, true) && strlen($wC) >= 2) {
+                        if (is_numeric($wC) && (float) $wC >= 100 && !preg_match('/(ml|mm|cm|inc|inch)/i', $w)) {
+                            continue;
+                        }
+                        $pTerms[] = $wC;
+                    }
+                }
+                $pSearchTerm = implode('%', $pTerms);
+                if (!empty($searchNums)) {
+                    foreach ($searchNums as $num) {
+                        $pStmt = $db->prepare("SELECT * FROM master_plate_data WHERE sl_no = ? OR id = ? OR plate = ? ORDER BY id DESC LIMIT 5");
+                        $pStmt->bind_param('sss', $num, $num, $num);
+                        $pStmt->execute();
+                        $pData = $pStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+                        if (!empty($pData)) {
+                            $data = $pData;
+                            break;
+                        }
+                    }
+                }
+                if (empty($data) && !empty($pTerms)) {
+                    $pLike = '%' . $pSearchTerm . '%';
+                    $pStmt2 = $db->prepare("SELECT * FROM master_plate_data WHERE name LIKE ? OR paper_type LIKE ? OR make_by LIKE ? OR die LIKE ? OR plate LIKE ? OR sl_no = ? OR id = ? ORDER BY id DESC LIMIT 10");
+                    $pStmt2->bind_param('sssssss', $pLike, $pLike, $pLike, $pLike, $pLike, $pSearchTerm, $pSearchTerm);
+                    $pStmt2->execute();
+                    $data = $pStmt2->get_result()->fetch_all(MYSQLI_ASSOC);
+                }
+                if (empty($data)) {
+                    $pFallback = $db->query("SELECT * FROM master_plate_data ORDER BY id DESC LIMIT 15");
+                    $data = $pFallback ? $pFallback->fetch_all(MYSQLI_ASSOC) : [];
+                }
+                if (!empty($data)) {
 
-    // Extract Cylinder
-    $cylinderMatch = null;
-    if (preg_match('/(\d+(?:\.\d+)?)\s*(?:cylinder|সিলিন্ডার|t|teeth|teth)/i', $prompt, $m)) {
-        $cylinderMatch = trim($m[1]);
-    }
-
-    // Extract Repeat
-    $repeatMatch = null;
-    if (preg_match('/(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:repeat|রিপিট)/i', $prompt, $m) || preg_match('/(?:repeat|রিপিট)\s*(\d+(?:\.\d+)?)/i', $prompt, $m)) {
-        $repeatMatch = trim($m[1]);
-    }
-
-    // Extract Target Meters & Labels for Math
-    $targetMeters = null;
-    if (preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:meter|meters|mtr|m|মিটার|মিটারে)/i', $prompt, $m)) {
-        $targetMeters = (float)str_replace(',', '', $m[1]);
-    }
-    
-    $targetLabels = null;
-    if (preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(lakh|লাখ|k|thousand|হাজার)?\s*(?:label|labels|pcs|piece|pieces|piss|qnty|qnt|qty|quantity|পিস|লেবেল)/i', $prompt, $m) || preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:lakh|k|thousand)/i', $prompt, $m)) {
-        $val = (float)str_replace(',', '', $m[1]);
-        $mult = strtolower(trim($m[2] ?? ''));
-        if ($mult === 'lakh' || $mult === 'লাখ') $val *= 100000;
-        elseif ($mult === 'k' || $mult === 'thousand' || $mult === 'হাজার') $val *= 1000;
-        $targetLabels = $val;
-    }
-
-    // Export query
-    $isExportQuery = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || strpos($p, 'print') !== false && !strpos($p, 'koto') && !strpos($p, 'কত'));
-    
-    // Find search terms loosely
-    $pStopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'plate', 'plates', 'list', 'show', 'details', 'detail', 'this', 'the', 'a', 'an', 'job', 'jobs', 'for', 'about', 'get', 'search', 'find', 'there', 'any', 'named', 'by', 'name', 'of', 'with', 'are', 'do', 'have', 'exist', 'does', 'repeat', 'gap', 'gaph', 'gapv', 'size', 'ups', 'cylinder', 'paper', 'die', 'core', 'rewinding', 'value', 'color', 'colors', 'spec', 'special', 'what', 'how', 'give', 'if', 'run', 'running', 'much', 'many', 'quantity', 'qty', 'meter', 'meters', 'mtr', 'will', 'be', 'produced', 'print', 'printing', 'require', 'required', 'need', 'needed', 'or', 'and', 'calculate', 'calculating', 'calc', 'length', 'roll', 'pcs', 'pieces', 'labels', 'koto', 'kotogulo', 'hobe', 'lagbe', 'korle', 'korte', 'asob', 'ar', 'er', 'diye', 'giye', 'ache', 'hobe', 'হবে', 'আছে', 'কত', 'কতগুলো', 'কি', 'কী', 'কোন', 'pdf', 'excel', 'export', 'download', 'sir', 'amra', 'ai', 'ta', 'korechi', 'kore', 'chi', 'hoyechhe', 'kobe', 'last', 'naki', 'ache', 'এর', 'ডিটেলস', 'দেখাও', 'dikhao', 'dekhaw', 'konta', 'কোনটা', 'dekhaben', 'janaben', 'jante', 'chai', 'লেবেলের', 'লেবেল', 'label', 'labels', 'প্লেট', 'প্লেটের', 'প্লট', 'প্লটের', 'qnty', 'qnt', 'quantity', 'quantities', 'piss', 'piece', 'pieces', 'পেপারে', 'পেপার', 'মিটার', 'মিটারে', 'প্রিন্টিং', 'প্রিন্ট', 'total', 'count', 'summary', 'dashboard', 'all', 'সব', 'সকল', 'din', 'দিন', 'দাও', 'dao', 'do', 'deu', 'dene', 'dena', 'dikhabe', 'send', 'পাঠাও', 'pathao', 'pathaben', 'no', 'number', 'num', 'nber', 'numb', 'id', 'নম্বর', 'নং', 'আইডি'];
-    
-    $jobSearchExplicit = null;
-    if (preg_match('/["“”]([^"“”]+)["“”]|\'([^\']+)\'/u', $prompt, $m)) {
-        $jobSearchExplicit = trim($m[1] ?: $m[2]);
-    }
-
-    $pWords = preg_split('/\s+/', mb_strtolower($prompt, 'UTF-8'));
-    $pTerms = [];
-    foreach ($pWords as $w) {
-        $wC = trim(preg_replace('/[^\p{L}\p{N}\p{M}]/u', '', $w));
-        if ($wC !== '' && !in_array($wC, $pStopwords, true) && mb_strlen($wC, 'UTF-8') >= 2) {
-            if (is_numeric($wC)) {
-                if ((string)$wC === (string)$repeatMatch || (string)$wC === (string)$cylinderMatch || (string)$wC === (string)$targetMeters || (string)$wC === (string)$targetLabels || (string)$wC === (string)$plateNoMatch) {
-                    continue;
+                    $pDirectAnswer = "📐 **Printing Plates** — Found **{$totalCount} plates**:\n\n" . format_records_table($data, 'plate', $userLang);
+                    return ['tool_used' => $toolName, 'total_count' => $totalCount, 'total_meters' => 0, 'filtered_type' => '', 'is_company_list' => false, 'direct_answer' => $pDirectAnswer, 'data' => []];
                 }
             }
-            $pTerms[] = $wC;
-        }
-    }
-    
-    $jobSearchRaw = $jobSearchExplicit ?: implode(' ', $pTerms);
-    $jobSearchTerm = trim($jobSearchRaw);
-
-    $where = ["1=1"];
-    $params = [];
-    $typesStr = '';
-
-    if ($plateNoMatch) {
-        $where[] = "(plate = ? OR sl_no = ? OR id = ?)";
-        $params[] = $plateNoMatch;
-        $params[] = $plateNoMatch;
-        $params[] = $plateNoMatch;
-        $typesStr .= 'sss';
-    }
-    
-    if ($cylinderMatch) {
-        $where[] = "cylinder LIKE ?";
-        $params[] = '%' . $cylinderMatch . '%';
-        $typesStr .= 's';
-    }
-    
-    if ($repeatMatch) {
-        $where[] = "repeat_value LIKE ?";
-        $params[] = '%' . $repeatMatch . '%';
-        $typesStr .= 's';
-    }
-    
-    // Add job search terms (LOOSE AND MATCHING across words if multiple words)
-    if ($jobSearchTerm && !$plateNoMatch) {
-        if ($jobSearchExplicit) {
-            $expWords = array_filter(preg_split('/\s+|-/', $jobSearchExplicit));
-            if (count($expWords) > 1) {
-                foreach ($expWords as $ew) {
-                    $where[] = "(name LIKE ? OR paper_type LIKE ? OR make_by LIKE ? OR die LIKE ?)";
-                    $l = '%' . $ew . '%';
-                    $params[] = $l; $params[] = $l; $params[] = $l; $params[] = $l;
-                    $typesStr .= 'ssss';
-                }
-            } else {
-                $where[] = "(name LIKE ? OR paper_type LIKE ? OR make_by LIKE ? OR die LIKE ?)";
-                $l = '%' . $jobSearchExplicit . '%';
-                $params[] = $l; $params[] = $l; $params[] = $l; $params[] = $l;
-                $typesStr .= 'ssss';
-            }
-        } else {
-            foreach ($pTerms as $term) {
-                $where[] = "(name LIKE ? OR paper_type LIKE ? OR make_by LIKE ? OR die LIKE ?)";
-                $l = '%' . $term . '%';
-                $params[] = $l; $params[] = $l; $params[] = $l; $params[] = $l;
-                $typesStr .= 'ssss';
-            }
-        }
-    }
-
-    $whereSql = implode(' AND ', $where);
-    $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
-
-    if ($isCountIntent && !$plateNoMatch && !$jobSearchTerm && !$cylinderMatch) {
-        // Dashboard mode
-        $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_plate_data");
-        $totalCount = $cntRes ? (int) ($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
-        $dieBreak = $db->query("SELECT die, COUNT(*) as cnt FROM master_plate_data WHERE die IS NOT NULL AND die != '' GROUP BY die ORDER BY cnt DESC LIMIT 5");
-        $dieStats = $dieBreak ? $dieBreak->fetch_all(MYSQLI_ASSOC) : [];
-        $makerBreak = $db->query("SELECT make_by, COUNT(*) as cnt FROM master_plate_data WHERE make_by IS NOT NULL AND make_by != '' GROUP BY make_by ORDER BY cnt DESC LIMIT 5");
-        $makerStats = $makerBreak ? $makerBreak->fetch_all(MYSQLI_ASSOC) : [];
-        
-        if ($userLang === 'Bengali') {
-            $answer = "📊 **প্রিন্টিং প্লেট ড্যাশবোর্ড**\n━━━━━━━━━━━━━━━━━━━━━━\n🔢 **মোট প্লেট:** **{$totalCount}টি**\n\n";
-            if (!empty($dieStats)) {
-                $answer .= "📐 **ধরণ (Die Type):**\n";
-                foreach ($dieStats as $ds) $answer .= " ▸ **" . ($ds['die'] ?: 'অন্যান্য') . "** — {$ds['cnt']}টি\n";
-            }
-            if (!empty($makerStats)) {
-                $answer .= "\n🏭 **নির্মাতা (Maker):**\n";
-                foreach ($makerStats as $ms) $answer .= " ▸ **{$ms['make_by']}** — {$ms['cnt']}টি\n";
-            }
-        } elseif ($userLang === 'Hindi') {
-            $answer = "📊 **प्रिंटिंग प्लेट डैशबोर्ड**\n━━━━━━━━━━━━━━━━━━━━━━\n🔢 **कुल प्लेट:** **{$totalCount}**\n\n";
-            if (!empty($dieStats)) {
-                $answer .= "📐 **प्रकार (Die Type):**\n";
-                foreach ($dieStats as $ds) $answer .= " ▸ **" . ($ds['die'] ?: 'अन्य') . "** — {$ds['cnt']}\n";
-            }
-            if (!empty($makerStats)) {
-                $answer .= "\n🏭 **निर्माता (Maker):**\n";
-                foreach ($makerStats as $ms) $answer .= " ▸ **{$ms['make_by']}** — {$ms['cnt']}\n";
-            }
-        } else {
-            $answer = "📊 **Printing Plates Dashboard**\n━━━━━━━━━━━━━━━━━━━━━━\n🔢 **Total Plates:** **{$totalCount}**\n\n";
-            if (!empty($dieStats)) {
-                $answer .= "📐 **By Die Type:**\n";
-                foreach ($dieStats as $ds) $answer .= " ▸ **" . ($ds['die'] ?: 'Other') . "** — {$ds['cnt']} plates\n";
-            }
-            if (!empty($makerStats)) {
-                $answer .= "\n🏭 **By Maker:**\n";
-                foreach ($makerStats as $ms) $answer .= " ▸ **{$ms['make_by']}** — {$ms['cnt']} plates\n";
-            }
-        }
-        $answer .= "\n👉 [Open Plate Management Page]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
-        return ['tool_used' => $toolName, 'total_count' => $totalCount, 'total_meters' => 0, 'filtered_type' => '', 'is_company_list' => false, 'direct_answer' => $answer, 'data' => []];
-    }
-
-    if ($isExportQuery) {
-        $fTitle = 'Plate Management Report';
-        $exportQueryStr = 'mode=design';
-        if ($plateNoMatch) {
-            $fTitle = 'Plate: ' . strtoupper($plateNoMatch) . ' Report';
-            $exportQueryStr .= '&search=' . urlencode($plateNoMatch);
-        } elseif ($jobSearchTerm) {
-            $fTitle = 'Job: ' . strtoupper(implode(' ', $pTerms)) . ' Report';
-            $exportQueryStr .= '&search=' . urlencode($jobSearchTerm);
-        } elseif ($cylinderMatch) {
-            $fTitle = 'Cylinder: ' . $cylinderMatch . ' Report';
-            $exportQueryStr .= '&search=' . urlencode($cylinderMatch);
-        }
-
-        $pdfUrl = "{$baseUrl}/modules/plate-data/export.php?{$exportQueryStr}&format=pdf";
-        $csvUrl = "{$baseUrl}/modules/plate-data/export.php?{$exportQueryStr}&format=excel";
-
-        $answer = "📊 **{$fTitle} — Export Ready:**\n\n";
-        if ($userLang === 'Bengali') {
-            $answer .= "আপনার প্লেট রিপোর্ট তৈরি হয়ে গেছে। নিচের রঙিন বাটনগুলোতে ক্লিক করে PDF বা Excel ফাইল ডাউনলোড করুন:\n\n";
-        } elseif ($userLang === 'Hindi') {
-            $answer .= "आपकी प्लेट रिपोर्ट तैयार है। PDF या Excel फाइल डाउनलोड करने के लिए नीचे दिए गए बटन पर क्लिक करें:\n\n";
-        } else {
-            $answer .= "Your plate report is ready. Click the buttons below to download the PDF or Excel file:\n\n";
-        }
-
-        $answer .= '<div style="display: flex; gap: 15px; margin-top: 15px; flex-wrap: wrap;">' . "\n";
-        $answer .= '    <a href="' . $pdfUrl . '" target="_blank" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.4); border: 1px solid #b91c1c; font-size: 14px; min-width: 200px;">' . "\n";
-        $answer .= '        📄 Download PDF Report' . "\n";
-        $answer .= '    </a>' . "\n";
-        $answer .= '    <a href="' . $csvUrl . '" target="_blank" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #22c55e, #16a34a); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(34, 197, 94, 0.4); border: 1px solid #15803d; font-size: 14px; min-width: 200px;">' . "\n";
-        $answer .= '        📊 Download Excel' . "\n";
-        $answer .= '    </a>' . "\n";
-        $answer .= '</div>';
-
-        return ['tool_used' => 'Printing Plates Export Tool', 'total_count' => 0, 'total_meters' => 0, 'filtered_type' => '', 'is_company_list' => false, 'direct_answer' => $answer, 'data' => []];
-    }
-
-    $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE {$whereSql} ORDER BY id DESC LIMIT 5");
-    if (!empty($params)) $stmt->bind_param($typesStr, ...$params);
-    $stmt->execute();
-    $plateData = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-
-    if (empty($plateData) && $jobSearchTerm) {
-        $displayJob = $jobSearchTerm;
-        if ($userLang === 'Bengali') {
-            $answer = "❌ **না স্যার, আমরা \"{$displayJob}\" নামে কোনো প্লেট বা জব রেকর্ড পাইনি।**\n\nসম্ভবত এই জবটি আগে কখনো প্রিন্ট হয়নি, বা এটি অন্য কোনো নামে সেভ করা আছে।";
-        } elseif ($userLang === 'Hindi') {
-            $answer = "❌ **नहीं सर, हमें \"{$displayJob}\" नाम की कोई प्लेट या जॉब नहीं मिली।**\n\nशायद यह जॉब पहले कभी प्रिंट नहीं हुई है, या किसी अन्य नाम से सेव है।";
-        } else {
-            $answer = "❌ **No sir, we haven't found any plate for \"{$displayJob}\".**\n\nIt seems this job hasn't been printed before, or it's saved under a different name.";
-        }
-        return ['tool_used' => $toolName, 'total_count' => 0, 'total_meters' => 0, 'filtered_type' => '', 'is_company_list' => false, 'direct_answer' => $answer, 'data' => []];
-    } elseif (empty($plateData)) {
-        if ($userLang === 'Bengali') {
-            $answer = "❌ **কোনো প্লেট পাওয়া যায়নি।**\nদয়া করে সঠিক প্লেট নম্বর বা জবের নাম দিন।";
-        } elseif ($userLang === 'Hindi') {
-            $answer = "❌ **कोई प्लेट नहीं मिली।**\nकृपया सही प्लेट नंबर या जॉब का नाम दें।";
-        } else {
-            $answer = "❌ **No plates found.**\nPlease provide a valid plate number or job name.";
-        }
-        return ['tool_used' => $toolName, 'total_count' => 0, 'total_meters' => 0, 'filtered_type' => '', 'is_company_list' => false, 'direct_answer' => $answer, 'data' => []];
-    }
-
-    if (!empty($plateData)) {
-        $sampleCount = count($plateData);
-        
-        if ($userLang === 'Bengali') {
-            $answer = "📐 **Plate Management & Math Engine:**\n\nআপনার ডাটাবেসে **{$sampleCount}টি ম্যাচিং প্লেট** পাওয়া গেছে:\n\n";
-        } elseif ($userLang === 'Hindi') {
-            $answer = "📐 **Plate Management & Math Engine:**\n\nआपके डेटाबेस में **{$sampleCount} मैचिंग प्लेट** मिले हैं:\n\n";
-        } else {
-            $answer = "📐 **Plate Management & Math Engine:**\n\nFound **{$sampleCount} matching plate(s)** in your database:\n\n";
-        }
-
-        foreach ($plateData as $idx => $row) {
-            $rep = (float)($row['repeat_value'] ?: 0);
-            $ups = (float)($row['ups'] ?: 1);
-            if ($ups <= 0) $ups = 1;
-            
-            // Color logic
-            $colors = [];
-            foreach(['c','m','y','k','special_1','special_2','special_3','special_4','special_5'] as $c) {
-                if (!empty(trim((string)$row[$c]))) $colors[] = trim((string)$row[$c]);
-            }
-            $colorCount = count($colors);
-            
-            $answer .= "• **Plate " . ($idx + 1) . ": `" . ($row['name'] ?: 'Job Name') . "`** (Plate: **" . ($row['plate'] ?: 'N/A') . "** | ID: **{$row['id']}**)\n"
-                . "  - 📏 **Repeat:** **{$rep}mm** | **Ups:** **{$ups}** | ⚙️ **Cylinder:** **" . ($row['cylinder'] ?: 'N/A') . "**\n"
-                . "  - 📐 **Gaps:** **Gap H:** **" . ($row['gap_h'] ?: '0') . "mm** | **Gap V:** **" . ($row['gap_v'] ?: '0') . "mm**\n"
-                . "  - 📄 **Paper Type:** **" . ($row['paper_type'] ?: 'N/A') . "** | 🏭 **Make By:** **" . ($row['make_by'] ?: 'N/A') . "**\n"
-                . "  - 🎨 **Colors ({$colorCount}):** " . implode(', ', $colors) . "\n"
-                . "  - 📅 **Date Received / Last Job:** **" . ($row['date_received'] ?: 'Not recorded') . "**\n";
-
-            // Math Engine
-            if ($targetMeters > 0 && $rep > 0) {
-                $calcLabels = floor(($targetMeters * 1000) / $rep * $ups);
-                if ($userLang === 'Bengali') {
-                    $answer .= "  - 🧮 **Calculation:** **" . number_format($targetMeters) . " মিটার** পেপারে **" . number_format($calcLabels) . " টি লেবেল** প্রিন্ট হবে।\n";
-                } elseif ($userLang === 'Hindi') {
-                    $answer .= "  - 🧮 **Calculation:** **" . number_format($targetMeters) . " मीटर** पेपर में **" . number_format($calcLabels) . " लेबेल** प्रिंट होंगे।\n";
-                } else {
-                    $answer .= "  - 🧮 **Calculation:** A **" . number_format($targetMeters) . "m** roll will yield **" . number_format($calcLabels) . " labels**.\n";
-                }
-            }
-            if ($targetLabels > 0 && $rep > 0) {
-                $reqMeters = ceil(($targetLabels / $ups) * $rep / 1000);
-                if ($userLang === 'Bengali') {
-                    $answer .= "  - 🧮 **Calculation:** **" . number_format($targetLabels) . " টি লেবেল** প্রিন্ট করতে **" . number_format($reqMeters) . " মিটার** পেপার লাগবে।\n";
-                } elseif ($userLang === 'Hindi') {
-                    $answer .= "  - 🧮 **Calculation:** **" . number_format($targetLabels) . " लेबेल** प्रिंट करने के लिए **" . number_format($reqMeters) . " मीटर** पेपर लगेगा।\n";
-                } else {
-                    $answer .= "  - 🧮 **Calculation:** To print **" . number_format($targetLabels) . " labels**, you need **" . number_format($reqMeters) . " meters** of paper.\n";
-                }
-            }
-            if ($targetMeters == null && $targetLabels == null && $rep > 0) {
-                $teeth = round($rep / 3.175, 2);
-                $answer .= "  - ⚙️ **Gearing (1/8 CP):** ~**{$teeth} Teeth** Cylinder\n";
-            }
-            $answer .= "\n";
-        }
-        
-        $answer .= "👉 [Open Plate Management Page]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
-        
-        return ['tool_used' => $toolName, 'total_count' => count($plateData), 'total_meters' => 0, 'filtered_type' => '', 'is_company_list' => false, 'direct_answer' => $answer, 'data' => []];
-    }
         }
     }
     // ─── END PRIORITY MODE ───
@@ -3541,307 +3288,475 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         $data = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
         $totalCount = count($data);
     } elseif ($commandType === 'plate' || (strpos($p, 'plate') !== false || strpos($p, 'repeat') !== false || strpos($p, 'gap') !== false || strpos($p, 'প্লেট') !== false || strpos($p, 'प्लेट') !== false || strpos($p, 'die') !== false || strpos($p, 'cylinder') !== false || strpos($p, 'সিলিন্ডার') !== false || strpos($p, 'রিপিট') !== false || strpos($p, 'দাঁত') !== false || strpos($p, 'teeth') !== false || strpos($p, 'ups') !== false || strpos($p, 'how many') !== false || strpos($p, 'total') !== false || strpos($p, 'count') !== false || strpos($p, 'কত') !== false || strpos($p, 'কতগুলো') !== false || strpos($p, 'kitne') !== false || ((strpos($p, 'print') !== false || strpos($p, 'calculat') !== false || strpos($p, 'koto') !== false || strpos($p, 'কত') !== false || strpos($p, 'কয়টি') !== false || strpos($p, 'পাবো') !== false || strpos($p, 'কী') !== false || strpos($p, 'কি') !== false) && (strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'মিটার') !== false || strpos($p, 'qty') !== false || strpos($p, 'quantity') !== false || strpos($p, 'qnty') !== false || strpos($p, 'pcs') !== false || strpos($p, 'label') !== false || strpos($p, 'লেবেল') !== false || preg_match('/\b(run|paper)\b/', $p))))) {
-    $prompt = html_entity_decode(stripslashes($prompt), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    $toolName = 'Printing Plates Master Tool';
-    
-    // Check if it's a count/dashboard request
-    $isCountIntent = (strpos($p, 'how many') !== false || strpos($p, 'total') !== false || strpos($p, 'count') !== false || strpos($p, 'কতগুলো') !== false || strpos($p, 'kitne') !== false || strpos($p, 'summary') !== false || strpos($p, 'dashboard') !== false || strpos($p, 'কত') !== false || strpos($p, 'koto') !== false || strpos($p, 'সব') !== false || strpos($p, 'সকল') !== false || strpos($p, 'all') !== false) && !preg_match('/\b(run|paper|meter|mtr|qty|quantity|pcs)\b/i', $p);
-    
-    // Extract Plate No FLEXIBLY & STRICTLY:
-    // 1. P-101, PLATE-101, SL-101
-    // 2. plate 925, plate no 925, plate number 925, sl 925, sl no 925
-    // 3. 925 number plate, 925 no plate, 925 plate, 925 নম্বর প্লেট
-    // 4. /plate 925
-    $plateNoMatch = null;
-    if (preg_match('/\b(P-\d+|PLATE-\d+|SL-\d+)\b/i', $prompt, $m)) {
-        $plateNoMatch = trim($m[1]);
-    } elseif (preg_match('/(?:plate|প্লেট|প্লট|sl|এসএল)\s*(?:no|number|numb|nber|num|নম্বর|নং|আইডি|id)?\s*#?\s*(\d+)/i', $prompt, $m)) {
-        $plateNoMatch = trim($m[1]);
-    } elseif (preg_match('/(\d+)\s*(?:no|number|numb|nber|num|নম্বর|নং|আইডি|id)?\s*#?\s*(?:plate|প্লেট|প্লট)\b/i', $prompt, $m)) {
-        $plateNoMatch = trim($m[1]);
-    } elseif (preg_match('/^\/plate\s+(\d+)\b/i', trim($prompt), $m)) {
-        $plateNoMatch = trim($m[1]);
-    }
 
-    // Extract Cylinder
-    $cylinderMatch = null;
-    if (preg_match('/(\d+(?:\.\d+)?)\s*(?:cylinder|সিলিন্ডার|t|teeth|teth)/i', $prompt, $m)) {
-        $cylinderMatch = trim($m[1]);
-    }
-
-    // Extract Repeat
-    $repeatMatch = null;
-    if (preg_match('/(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:repeat|রিপিট)/i', $prompt, $m) || preg_match('/(?:repeat|রিপিট)\s*(\d+(?:\.\d+)?)/i', $prompt, $m)) {
-        $repeatMatch = trim($m[1]);
-    }
-
-    // Extract Target Meters & Labels for Math
-    $targetMeters = null;
-    if (preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:meter|meters|mtr|m|মিটার|মিটারে)/i', $prompt, $m)) {
-        $targetMeters = (float)str_replace(',', '', $m[1]);
-    }
-    
-    $targetLabels = null;
-    if (preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(lakh|লাখ|k|thousand|হাজার)?\s*(?:label|labels|pcs|piece|pieces|piss|qnty|qnt|qty|quantity|পিস|লেবেল)/i', $prompt, $m) || preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:lakh|k|thousand)/i', $prompt, $m)) {
-        $val = (float)str_replace(',', '', $m[1]);
-        $mult = strtolower(trim($m[2] ?? ''));
-        if ($mult === 'lakh' || $mult === 'লাখ') $val *= 100000;
-        elseif ($mult === 'k' || $mult === 'thousand' || $mult === 'হাজার') $val *= 1000;
-        $targetLabels = $val;
-    }
-
-    // Export query
-    $isExportQuery = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || strpos($p, 'print') !== false && !strpos($p, 'koto') && !strpos($p, 'কত'));
-    
-    // Find search terms loosely
-    $pStopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'plate', 'plates', 'list', 'show', 'details', 'detail', 'this', 'the', 'a', 'an', 'job', 'jobs', 'for', 'about', 'get', 'search', 'find', 'there', 'any', 'named', 'by', 'name', 'of', 'with', 'are', 'do', 'have', 'exist', 'does', 'repeat', 'gap', 'gaph', 'gapv', 'size', 'ups', 'cylinder', 'paper', 'die', 'core', 'rewinding', 'value', 'color', 'colors', 'spec', 'special', 'what', 'how', 'give', 'if', 'run', 'running', 'much', 'many', 'quantity', 'qty', 'meter', 'meters', 'mtr', 'will', 'be', 'produced', 'print', 'printing', 'require', 'required', 'need', 'needed', 'or', 'and', 'calculate', 'calculating', 'calc', 'length', 'roll', 'pcs', 'pieces', 'labels', 'koto', 'kotogulo', 'hobe', 'lagbe', 'korle', 'korte', 'asob', 'ar', 'er', 'diye', 'giye', 'ache', 'hobe', 'হবে', 'আছে', 'কত', 'কতগুলো', 'কি', 'কী', 'কোন', 'pdf', 'excel', 'export', 'download', 'sir', 'amra', 'ai', 'ta', 'korechi', 'kore', 'chi', 'hoyechhe', 'kobe', 'last', 'naki', 'ache', 'এর', 'ডিটেলস', 'দেখাও', 'dikhao', 'dekhaw', 'konta', 'কোনটা', 'dekhaben', 'janaben', 'jante', 'chai', 'লেবেলের', 'লেবেল', 'label', 'labels', 'প্লেট', 'প্লেটের', 'প্লট', 'প্লটের', 'qnty', 'qnt', 'quantity', 'quantities', 'piss', 'piece', 'pieces', 'পেপারে', 'পেপার', 'মিটার', 'মিটারে', 'প্রিন্টিং', 'প্রিন্ট', 'total', 'count', 'summary', 'dashboard', 'all', 'সব', 'সকল', 'din', 'দিন', 'দাও', 'dao', 'do', 'deu', 'dene', 'dena', 'dikhabe', 'send', 'পাঠাও', 'pathao', 'pathaben', 'no', 'number', 'num', 'nber', 'numb', 'id', 'নম্বর', 'নং', 'আইডি'];
-    
-    $jobSearchExplicit = null;
-    if (preg_match('/["“”]([^"“”]+)["“”]|\'([^\']+)\'/u', $prompt, $m)) {
-        $jobSearchExplicit = trim($m[1] ?: $m[2]);
-    }
-
-    $pWords = preg_split('/\s+/', mb_strtolower($prompt, 'UTF-8'));
-    $pTerms = [];
-    foreach ($pWords as $w) {
-        $wC = trim(preg_replace('/[^\p{L}\p{N}\p{M}]/u', '', $w));
-        if ($wC !== '' && !in_array($wC, $pStopwords, true) && mb_strlen($wC, 'UTF-8') >= 2) {
-            if (is_numeric($wC)) {
-                if ((string)$wC === (string)$repeatMatch || (string)$wC === (string)$cylinderMatch || (string)$wC === (string)$targetMeters || (string)$wC === (string)$targetLabels || (string)$wC === (string)$plateNoMatch) {
-                    continue;
-                }
-            }
-            $pTerms[] = $wC;
-        }
-    }
-    
-    $jobSearchRaw = $jobSearchExplicit ?: implode(' ', $pTerms);
-    $jobSearchTerm = trim($jobSearchRaw);
-
-    $where = ["1=1"];
-    $params = [];
-    $typesStr = '';
-
-    if ($plateNoMatch) {
-        $where[] = "(plate = ? OR sl_no = ? OR id = ?)";
-        $params[] = $plateNoMatch;
-        $params[] = $plateNoMatch;
-        $params[] = $plateNoMatch;
-        $typesStr .= 'sss';
-    }
-    
-    if ($cylinderMatch) {
-        $where[] = "cylinder LIKE ?";
-        $params[] = '%' . $cylinderMatch . '%';
-        $typesStr .= 's';
-    }
-    
-    if ($repeatMatch) {
-        $where[] = "repeat_value LIKE ?";
-        $params[] = '%' . $repeatMatch . '%';
-        $typesStr .= 's';
-    }
-    
-    // Add job search terms (LOOSE AND MATCHING across words if multiple words)
-    if ($jobSearchTerm && !$plateNoMatch) {
-        if ($jobSearchExplicit) {
-            $expWords = array_filter(preg_split('/\s+|-/', $jobSearchExplicit));
-            if (count($expWords) > 1) {
-                foreach ($expWords as $ew) {
-                    $where[] = "(name LIKE ? OR paper_type LIKE ? OR make_by LIKE ? OR die LIKE ?)";
-                    $l = '%' . $ew . '%';
-                    $params[] = $l; $params[] = $l; $params[] = $l; $params[] = $l;
-                    $typesStr .= 'ssss';
-                }
-            } else {
-                $where[] = "(name LIKE ? OR paper_type LIKE ? OR make_by LIKE ? OR die LIKE ?)";
-                $l = '%' . $jobSearchExplicit . '%';
-                $params[] = $l; $params[] = $l; $params[] = $l; $params[] = $l;
-                $typesStr .= 'ssss';
-            }
-        } else {
-            foreach ($pTerms as $term) {
-                $where[] = "(name LIKE ? OR paper_type LIKE ? OR make_by LIKE ? OR die LIKE ?)";
-                $l = '%' . $term . '%';
-                $params[] = $l; $params[] = $l; $params[] = $l; $params[] = $l;
-                $typesStr .= 'ssss';
-            }
-        }
-    }
-
-    $whereSql = implode(' AND ', $where);
-    $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
-
-    if ($isCountIntent && !$plateNoMatch && !$jobSearchTerm && !$cylinderMatch) {
-        // Dashboard mode
+        $toolName = 'Printing Plates Master Tool';
         $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_plate_data");
         $totalCount = $cntRes ? (int) ($cntRes->fetch_assoc()['cnt'] ?? 0) : 0;
-        $dieBreak = $db->query("SELECT die, COUNT(*) as cnt FROM master_plate_data WHERE die IS NOT NULL AND die != '' GROUP BY die ORDER BY cnt DESC LIMIT 5");
-        $dieStats = $dieBreak ? $dieBreak->fetch_all(MYSQLI_ASSOC) : [];
-        $makerBreak = $db->query("SELECT make_by, COUNT(*) as cnt FROM master_plate_data WHERE make_by IS NOT NULL AND make_by != '' GROUP BY make_by ORDER BY cnt DESC LIMIT 5");
-        $makerStats = $makerBreak ? $makerBreak->fetch_all(MYSQLI_ASSOC) : [];
-        
-        if ($userLang === 'Bengali') {
-            $answer = "📊 **প্রিন্টিং প্লেট ড্যাশবোর্ড**\n━━━━━━━━━━━━━━━━━━━━━━\n🔢 **মোট প্লেট:** **{$totalCount}টি**\n\n";
-            if (!empty($dieStats)) {
-                $answer .= "📐 **ধরণ (Die Type):**\n";
-                foreach ($dieStats as $ds) $answer .= " ▸ **" . ($ds['die'] ?: 'অন্যান্য') . "** — {$ds['cnt']}টি\n";
+        // Detect if query is asking for plate calculation (meters ↔ quantity)
+        $isCalcQuery = (strpos($p, 'calculat') !== false || strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'qty') !== false || strpos($p, 'quantity') !== false || strpos($p, 'qnty') !== false || strpos($p, 'pcs') !== false || preg_match('/\b(run|paper)\b/', $p));
+
+        // --- Count-Only Intent Handler ---
+        if (is_count_intent($prompt) && !$isCalcQuery) {
+
+            $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+            // Fetch breakdown stats
+            $dieBreak = $db->query("SELECT die, COUNT(*) as cnt FROM master_plate_data WHERE die IS NOT NULL AND die != '' GROUP BY die ORDER BY cnt DESC");
+            $dieStats = $dieBreak ? $dieBreak->fetch_all(MYSQLI_ASSOC) : [];
+            $makerBreak = $db->query("SELECT make_by, COUNT(*) as cnt FROM master_plate_data WHERE make_by IS NOT NULL AND make_by != '' GROUP BY make_by ORDER BY cnt DESC LIMIT 5");
+            $makerStats = $makerBreak ? $makerBreak->fetch_all(MYSQLI_ASSOC) : [];
+            $latestRes = $db->query("SELECT name, sl_no, date_received FROM master_plate_data ORDER BY id DESC LIMIT 1");
+            $latest = $latestRes ? $latestRes->fetch_assoc() : null;
+
+            if ($userLang === 'Hindi') {
+                $directAnswer = "📊 **प्रिंटिंग प्लेट — स्टॉक डैशबोर्ड**\n"
+                    . "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    . "🔢 **कुल प्लेट:** **{$totalCount}**\n\n";
+                if (!empty($dieStats)) {
+                    $directAnswer .= "📐 **प्रकार के अनुसार (Die Type):**\n";
+                    foreach ($dieStats as $ds) {
+                        $directAnswer .= "   ▸ **" . ($ds['die'] ?: 'अन्य') . "** — {$ds['cnt']} प्लेट\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if (!empty($makerStats)) {
+                    $directAnswer .= "🏭 **निर्माता / सप्लायर:**\n";
+                    foreach ($makerStats as $ms) {
+                        $directAnswer .= "   ▸ **{$ms['make_by']}** — {$ms['cnt']} प्लेट\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if ($latest) {
+                    $directAnswer .= "🆕 **सबसे हालिया प्लेट:** `{$latest['name']}` (SL: {$latest['sl_no']})";
+                    if (!empty($latest['date_received']) && $latest['date_received'] !== 'NA') {
+                        $directAnswer .= " — प्राप्त: {$latest['date_received']}";
+                    }
+                    $directAnswer .= "\n\n";
+                }
+                $directAnswer .= "━━━━━━━━━━━━━━━━━━━━━━\n"
+                    . "👉 [प्लेट प्रबंधन पेज खोलें]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
+            } elseif ($userLang === 'Bengali' || preg_match('/[\x{0980}-\x{09FF}]/u', $prompt) || preg_match('/\b(koto|kotogulo|ache)\b/i', $prompt)) {
+                $directAnswer = "📊 **প্রিন্টিং প্লেট — স্টক ড্যাশবোর্ড**\n"
+                    . "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    . "🔢 **মোট প্লেট:** **{$totalCount}টি**\n\n";
+                if (!empty($dieStats)) {
+                    $directAnswer .= "📐 **ধরণ অনুযায়ী (Die Type):**\n";
+                    foreach ($dieStats as $ds) {
+                        $directAnswer .= "   ▸ **" . ($ds['die'] ?: 'অন্যান্য') . "** — {$ds['cnt']}টি প্লেট\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if (!empty($makerStats)) {
+                    $directAnswer .= "🏭 **নির্মাতা / সাপ্লায়ার:**\n";
+                    foreach ($makerStats as $ms) {
+                        $directAnswer .= "   ▸ **{$ms['make_by']}** — {$ms['cnt']}টি প্লেট\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if ($latest) {
+                    $directAnswer .= "🆕 **সর্বশেষ প্লেট:** `{$latest['name']}` (SL: {$latest['sl_no']})";
+                    if (!empty($latest['date_received']) && $latest['date_received'] !== 'NA') {
+                        $directAnswer .= " — প্রাপ্ত: {$latest['date_received']}";
+                    }
+                    $directAnswer .= "\n\n";
+                }
+                $directAnswer .= "━━━━━━━━━━━━━━━━━━━━━━\n"
+                    . "👉 [প্লেট ম্যানেজমেন্ট পেজ খুলুন]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
+            } else {
+                $directAnswer = "📊 **Printing Plates — Stock Dashboard**\n"
+                    . "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    . "🔢 **Total Plates:** **{$totalCount}**\n\n";
+                if (!empty($dieStats)) {
+                    $directAnswer .= "📐 **By Die Type:**\n";
+                    foreach ($dieStats as $ds) {
+                        $directAnswer .= "   ▸ **" . ($ds['die'] ?: 'Other') . "** — {$ds['cnt']} plates\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if (!empty($makerStats)) {
+                    $directAnswer .= "🏭 **By Maker / Supplier:**\n";
+                    foreach ($makerStats as $ms) {
+                        $directAnswer .= "   ▸ **{$ms['make_by']}** — {$ms['cnt']} plates\n";
+                    }
+                    $directAnswer .= "\n";
+                }
+                if ($latest) {
+                    $directAnswer .= "🆕 **Latest Plate Added:** `{$latest['name']}` (SL: {$latest['sl_no']})";
+                    if (!empty($latest['date_received']) && $latest['date_received'] !== 'NA') {
+                        $directAnswer .= " — Received: {$latest['date_received']}";
+                    }
+                    $directAnswer .= "\n\n";
+                }
+                $directAnswer .= "━━━━━━━━━━━━━━━━━━━━━━\n"
+                    . "👉 [Open Plate Management Page]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
             }
-            if (!empty($makerStats)) {
-                $answer .= "\n🏭 **নির্মাতা (Maker):**\n";
-                foreach ($makerStats as $ms) $answer .= " ▸ **{$ms['make_by']}** — {$ms['cnt']}টি\n";
-            }
-        } elseif ($userLang === 'Hindi') {
-            $answer = "📊 **प्रिंटिंग प्लेट डैशबोर्ड**\n━━━━━━━━━━━━━━━━━━━━━━\n🔢 **कुल प्लेट:** **{$totalCount}**\n\n";
-            if (!empty($dieStats)) {
-                $answer .= "📐 **प्रकार (Die Type):**\n";
-                foreach ($dieStats as $ds) $answer .= " ▸ **" . ($ds['die'] ?: 'अन्य') . "** — {$ds['cnt']}\n";
-            }
-            if (!empty($makerStats)) {
-                $answer .= "\n🏭 **निर्माता (Maker):**\n";
-                foreach ($makerStats as $ms) $answer .= " ▸ **{$ms['make_by']}** — {$ms['cnt']}\n";
-            }
-        } else {
-            $answer = "📊 **Printing Plates Dashboard**\n━━━━━━━━━━━━━━━━━━━━━━\n🔢 **Total Plates:** **{$totalCount}**\n\n";
-            if (!empty($dieStats)) {
-                $answer .= "📐 **By Die Type:**\n";
-                foreach ($dieStats as $ds) $answer .= " ▸ **" . ($ds['die'] ?: 'Other') . "** — {$ds['cnt']} plates\n";
-            }
-            if (!empty($makerStats)) {
-                $answer .= "\n🏭 **By Maker:**\n";
-                foreach ($makerStats as $ms) $answer .= " ▸ **{$ms['make_by']}** — {$ms['cnt']} plates\n";
-            }
-        }
-        $answer .= "\n👉 [Open Plate Management Page]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
-        return ['tool_used' => $toolName, 'total_count' => $totalCount, 'total_meters' => 0, 'filtered_type' => '', 'is_company_list' => false, 'direct_answer' => $answer, 'data' => []];
-    }
-
-    if ($isExportQuery) {
-        $fTitle = 'Plate Management Report';
-        $exportQueryStr = 'mode=design';
-        if ($plateNoMatch) {
-            $fTitle = 'Plate: ' . strtoupper($plateNoMatch) . ' Report';
-            $exportQueryStr .= '&search=' . urlencode($plateNoMatch);
-        } elseif ($jobSearchTerm) {
-            $fTitle = 'Job: ' . strtoupper(implode(' ', $pTerms)) . ' Report';
-            $exportQueryStr .= '&search=' . urlencode($jobSearchTerm);
-        } elseif ($cylinderMatch) {
-            $fTitle = 'Cylinder: ' . $cylinderMatch . ' Report';
-            $exportQueryStr .= '&search=' . urlencode($cylinderMatch);
-        }
-
-        $pdfUrl = "{$baseUrl}/modules/plate-data/export.php?{$exportQueryStr}&format=pdf";
-        $csvUrl = "{$baseUrl}/modules/plate-data/export.php?{$exportQueryStr}&format=excel";
-
-        $answer = "📊 **{$fTitle} — Export Ready:**\n\n";
-        if ($userLang === 'Bengali') {
-            $answer .= "আপনার প্লেট রিপোর্ট তৈরি হয়ে গেছে। নিচের রঙিন বাটনগুলোতে ক্লিক করে PDF বা Excel ফাইল ডাউনলোড করুন:\n\n";
-        } elseif ($userLang === 'Hindi') {
-            $answer .= "आपकी प्लेट रिपोर्ट तैयार है। PDF या Excel फाइल डाउनलोड करने के लिए नीचे दिए गए बटन पर क्लिक करें:\n\n";
-        } else {
-            $answer .= "Your plate report is ready. Click the buttons below to download the PDF or Excel file:\n\n";
-        }
-
-        $answer .= '<div style="display: flex; gap: 15px; margin-top: 15px; flex-wrap: wrap;">' . "\n";
-        $answer .= '    <a href="' . $pdfUrl . '" target="_blank" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.4); border: 1px solid #b91c1c; font-size: 14px; min-width: 200px;">' . "\n";
-        $answer .= '        📄 Download PDF Report' . "\n";
-        $answer .= '    </a>' . "\n";
-        $answer .= '    <a href="' . $csvUrl . '" target="_blank" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #22c55e, #16a34a); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(34, 197, 94, 0.4); border: 1px solid #15803d; font-size: 14px; min-width: 200px;">' . "\n";
-        $answer .= '        📊 Download Excel' . "\n";
-        $answer .= '    </a>' . "\n";
-        $answer .= '</div>';
-
-        return ['tool_used' => 'Printing Plates Export Tool', 'total_count' => 0, 'total_meters' => 0, 'filtered_type' => '', 'is_company_list' => false, 'direct_answer' => $answer, 'data' => []];
-    }
-
-    $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE {$whereSql} ORDER BY id DESC LIMIT 5");
-    if (!empty($params)) $stmt->bind_param($typesStr, ...$params);
-    $stmt->execute();
-    $plateData = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-
-    if (empty($plateData) && $jobSearchTerm) {
-        $displayJob = $jobSearchTerm;
-        if ($userLang === 'Bengali') {
-            $answer = "❌ **না স্যার, আমরা \"{$displayJob}\" নামে কোনো প্লেট বা জব রেকর্ড পাইনি।**\n\nসম্ভবত এই জবটি আগে কখনো প্রিন্ট হয়নি, বা এটি অন্য কোনো নামে সেভ করা আছে।";
-        } elseif ($userLang === 'Hindi') {
-            $answer = "❌ **नहीं सर, हमें \"{$displayJob}\" नाम की कोई प्लेट या जॉब नहीं मिली।**\n\nशायद यह जॉब पहले कभी प्रिंट नहीं हुई है, या किसी अन्य नाम से सेव है।";
-        } else {
-            $answer = "❌ **No sir, we haven't found any plate for \"{$displayJob}\".**\n\nIt seems this job hasn't been printed before, or it's saved under a different name.";
-        }
-        return ['tool_used' => $toolName, 'total_count' => 0, 'total_meters' => 0, 'filtered_type' => '', 'is_company_list' => false, 'direct_answer' => $answer, 'data' => []];
-    } elseif (empty($plateData)) {
-        if ($userLang === 'Bengali') {
-            $answer = "❌ **কোনো প্লেট পাওয়া যায়নি।**\nদয়া করে সঠিক প্লেট নম্বর বা জবের নাম দিন।";
-        } elseif ($userLang === 'Hindi') {
-            $answer = "❌ **कोई प्लेट नहीं मिली।**\nकृपया सही प्लेट नंबर या जॉब का नाम दें।";
-        } else {
-            $answer = "❌ **No plates found.**\nPlease provide a valid plate number or job name.";
-        }
-        return ['tool_used' => $toolName, 'total_count' => 0, 'total_meters' => 0, 'filtered_type' => '', 'is_company_list' => false, 'direct_answer' => $answer, 'data' => []];
-    }
-
-    if (!empty($plateData)) {
-        $sampleCount = count($plateData);
-        
-        if ($userLang === 'Bengali') {
-            $answer = "📐 **Plate Management & Math Engine:**\n\nআপনার ডাটাবেসে **{$sampleCount}টি ম্যাচিং প্লেট** পাওয়া গেছে:\n\n";
-        } elseif ($userLang === 'Hindi') {
-            $answer = "📐 **Plate Management & Math Engine:**\n\nआपके डेटाबेस में **{$sampleCount} मैचिंग प्लेट** मिले हैं:\n\n";
-        } else {
-            $answer = "📐 **Plate Management & Math Engine:**\n\nFound **{$sampleCount} matching plate(s)** in your database:\n\n";
+            return [
+                'tool_used' => $toolName,
+                'total_count' => $totalCount,
+                'total_meters' => 0,
+                'filtered_type' => '',
+                'is_company_list' => false,
+                'direct_answer' => $directAnswer,
+                'data' => []
+            ];
         }
 
-        foreach ($plateData as $idx => $row) {
-            $rep = (float)($row['repeat_value'] ?: 0);
-            $ups = (float)($row['ups'] ?: 1);
-            if ($ups <= 0) $ups = 1;
-            
-            // Color logic
-            $colors = [];
-            foreach(['c','m','y','k','special_1','special_2','special_3','special_4','special_5'] as $c) {
-                if (!empty(trim((string)$row[$c]))) $colors[] = trim((string)$row[$c]);
-            }
-            $colorCount = count($colors);
-            
-            $answer .= "• **Plate " . ($idx + 1) . ": `" . ($row['name'] ?: 'Job Name') . "`** (Plate: **" . ($row['plate'] ?: 'N/A') . "** | ID: **{$row['id']}**)\n"
-                . "  - 📏 **Repeat:** **{$rep}mm** | **Ups:** **{$ups}** | ⚙️ **Cylinder:** **" . ($row['cylinder'] ?: 'N/A') . "**\n"
-                . "  - 📐 **Gaps:** **Gap H:** **" . ($row['gap_h'] ?: '0') . "mm** | **Gap V:** **" . ($row['gap_v'] ?: '0') . "mm**\n"
-                . "  - 📄 **Paper Type:** **" . ($row['paper_type'] ?: 'N/A') . "** | 🏭 **Make By:** **" . ($row['make_by'] ?: 'N/A') . "**\n"
-                . "  - 🎨 **Colors ({$colorCount}):** " . implode(', ', $colors) . "\n"
-                . "  - 📅 **Date Received / Last Job:** **" . ($row['date_received'] ?: 'Not recorded') . "**\n";
 
-            // Math Engine
-            if ($targetMeters > 0 && $rep > 0) {
-                $calcLabels = floor(($targetMeters * 1000) / $rep * $ups);
-                if ($userLang === 'Bengali') {
-                    $answer .= "  - 🧮 **Calculation:** **" . number_format($targetMeters) . " মিটার** পেপারে **" . number_format($calcLabels) . " টি লেবেল** প্রিন্ট হবে।\n";
-                } elseif ($userLang === 'Hindi') {
-                    $answer .= "  - 🧮 **Calculation:** **" . number_format($targetMeters) . " मीटर** पेपर में **" . number_format($calcLabels) . " लेबेल** प्रिंट होंगे।\n";
-                } else {
-                    $answer .= "  - 🧮 **Calculation:** A **" . number_format($targetMeters) . "m** roll will yield **" . number_format($calcLabels) . " labels**.\n";
+        // Extract text search words (filtering out attribute query words & calculation filler terms)
+        $stopwords = [
+            'to',
+            'qnty',
+            'can',
+            'you',
+            'tell',
+            'me',
+            'which',
+            'is',
+            'in',
+            'my',
+            'plate',
+            'plates',
+            'list',
+            'show',
+            'details',
+            'detail',
+            'this',
+            'the',
+            'a',
+            'an',
+            'job',
+            'jobs',
+            'for',
+            'about',
+            'get',
+            'search',
+            'find',
+            'there',
+            'any',
+            'named',
+            'by',
+            'name',
+            'of',
+            'with',
+            'are',
+            'do',
+            'have',
+            'exist',
+            'does',
+            'repeat',
+            'gap',
+            'gaph',
+            'gapv',
+            'size',
+            'ups',
+            'cylinder',
+            'paper',
+            'die',
+            'core',
+            'rewinding',
+            'value',
+            'color',
+            'colors',
+            'spec',
+            'special',
+            'what',
+            'how',
+            'give',
+            'if',
+            'run',
+            'running',
+            'much',
+            'many',
+            'quantity',
+            'qty',
+            'meter',
+            'meters',
+            'mtr',
+            'will',
+            'be',
+            'produced',
+            'print',
+            'printing',
+            'require',
+            'required',
+            'need',
+            'needed',
+            'or',
+            'and',
+            'calculate',
+            'calculating',
+            'calc',
+            'length',
+            'roll',
+            'pcs',
+            'pieces',
+            'labels',
+
+            'koto',
+            'kotogulo',
+            'hobe',
+            'lagbe',
+            'korle',
+            'korte',
+            'asob',
+            'ar',
+            'er',
+            'diye',
+            'giye',
+            'ache',
+            'hobe',
+            'হবে',
+            'আছে',
+            'কত',
+            'কতগুলো',
+            'কি',
+            'কী',
+            'কোন'
+        ];
+
+
+        $pWords = preg_split('/\s+/', strtolower($prompt));
+        $terms = [];
+        foreach ($pWords as $w) {
+            $wClean = trim(preg_replace('/[^a-z0-9]/', '', $w));
+            if ($wClean !== '' && !in_array($wClean, $stopwords, true) && strlen($wClean) >= 2) {
+                // Skip standalone calculation numbers (e.g. 2000, 5000, 1500) from plate name search
+                if (is_numeric($wClean) && (float) $wClean >= 100 && !preg_match('/(ml|mm|cm|inc|inch)/i', $w)) {
+                    continue;
+                }
+                $terms[] = $wClean;
+            }
+        }
+        $searchTerm = implode('%', $terms);
+        $searchTermDisplay = implode(' ', $terms);
+
+        // 1. Try search by explicit SL No / ID number first if numbers are present (e.g., Plate 1032)
+        if (!empty($searchNums)) {
+            foreach ($searchNums as $num) {
+                $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE sl_no = ? OR id = ? OR plate = ? ORDER BY id DESC LIMIT 5");
+                $stmt->bind_param('sss', $num, $num, $num);
+                $stmt->execute();
+                $resData = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+                if (!empty($resData)) {
+                    $data = $resData;
+                    break;
                 }
             }
-            if ($targetLabels > 0 && $rep > 0) {
-                $reqMeters = ceil(($targetLabels / $ups) * $rep / 1000);
-                if ($userLang === 'Bengali') {
-                    $answer .= "  - 🧮 **Calculation:** **" . number_format($targetLabels) . " টি লেবেল** প্রিন্ট করতে **" . number_format($reqMeters) . " মিটার** পেপার লাগবে।\n";
-                } elseif ($userLang === 'Hindi') {
-                    $answer .= "  - 🧮 **Calculation:** **" . number_format($targetLabels) . " लेबेल** प्रिंट करने के लिए **" . number_format($reqMeters) . " मीटर** पेपर लगेगा।\n";
+        }
+
+        if (empty($data) && !empty($terms)) {
+            // 2. Search across name, paper_type, make_by, and die
+            $like = '%' . $searchTerm . '%';
+            $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE name LIKE ? OR paper_type LIKE ? OR make_by LIKE ? OR die LIKE ? OR plate LIKE ? OR sl_no = ? OR id = ? ORDER BY id DESC LIMIT 10");
+            $stmt->bind_param('sssssss', $like, $like, $like, $like, $like, $searchTerm, $searchTerm);
+            $stmt->execute();
+            $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+            // 3. If empty, try matching individual terms
+            if (empty($data) && count($terms) > 1) {
+                $likes = array_map(function ($t) {
+                    return '%' . $t . '%';
+                }, $terms);
+                $whereParts = [];
+                foreach ($likes as $l) {
+                    $whereParts[] = "(name LIKE ? OR paper_type LIKE ? OR make_by LIKE ? OR die LIKE ?)";
+                }
+                $whereClause = implode(' AND ', $whereParts);
+                $stmt2 = $db->prepare("SELECT * FROM master_plate_data WHERE {$whereClause} ORDER BY id DESC LIMIT 10");
+                $flatParams = [];
+                $types = '';
+                foreach ($likes as $l) {
+                    $flatParams[] = $l;
+                    $flatParams[] = $l;
+                    $flatParams[] = $l;
+                    $flatParams[] = $l;
+                    $types .= 'ssss';
+                }
+                $stmt2->bind_param($types, ...$flatParams);
+                $stmt2->execute();
+                $data = $stmt2->get_result()->fetch_all(MYSQLI_ASSOC);
+            }
+        }
+
+        // Calculation Handler (Meters to Quantity OR Quantity to Meters)
+        // $isCalcQuery is defined above
+
+        if ($isCalcQuery && !empty($data)) {
+            $plate = $data[0];
+            $name = $plate['name'];
+            $ups = max(1, (int) $plate['ups']);
+            $repeatVal = (float) $plate['repeat_value'];
+
+            if ($repeatVal <= 0) {
+                if (preg_match('/x\s*([\d\.]+)/i', $plate['size'] ?? '', $m)) {
+                    $height = (float) $m[1];
+                    $gapV = (float) ($plate['gap_v'] ?? 0);
+                    $repeatVal = $height + $gapV;
                 } else {
-                    $answer .= "  - 🧮 **Calculation:** To print **" . number_format($targetLabels) . " labels**, you need **" . number_format($reqMeters) . " meters** of paper.\n";
+                    $repeatVal = 100.0;
                 }
             }
-            if ($targetMeters == null && $targetLabels == null && $rep > 0) {
-                $teeth = round($rep / 3.175, 2);
-                $answer .= "  - ⚙️ **Gearing (1/8 CP):** ~**{$teeth} Teeth** Cylinder\n";
+
+            $targetQty = null;
+            $paperMeters = null;
+
+            if (preg_match('/([\d,]+)\s*(meters|meter|mtr|m)\b/i', $prompt, $m)) {
+                $paperMeters = (float) str_replace(',', '', $m[1]);
+            } elseif (preg_match('/(run|length|roll|paper|quantity|qty|qnty|pcs|pices|pieces|labels|required)\s*(of|about|with)?\s*([\d,]+)/i', $prompt, $m)) {
+                $targetQty = (float) str_replace(',', '', $m[3]);
             }
-            $answer .= "\n";
+
+            if ($targetQty === null && $paperMeters === null && count($searchNums) >= 2) {
+                // If two numbers present (e.g. Plate 1032 with 15000 qty)
+                $numCandidate = (float) $searchNums[count($searchNums) - 1];
+                if (strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'run') !== false) {
+                    $paperMeters = $numCandidate;
+                } else {
+                    $targetQty = $numCandidate;
+                }
+            } elseif ($targetQty === null && $paperMeters === null && !empty($searchNums)) {
+                $num = (float) $searchNums[0];
+                if ($num != (float) $plate['sl_no'] && $num != (float) $plate['id']) {
+                    if (strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'run') !== false) {
+                        $paperMeters = $num;
+                    } else {
+                        $targetQty = $num;
+                    }
+                }
+            }
+
+
+            $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+            if ($userLang === 'English') {
+                $answer = "📐 **Flexo Printing & Plate Production Calculator:**\n\n"
+                    . "📋 **Job / Plate Name:** `{$name}` (SL No: **{$plate['sl_no']}** | ID: **{$plate['id']}**)\n"
+                    . "⚙️ **Plate Specifications:** Ups: **{$ups}** | Repeat Value: **{$repeatVal}mm** | Size: **{$plate['size']}**\n\n";
+
+                if ($targetQty !== null && $targetQty > 0) {
+                    $revs = $targetQty / $ups;
+                    $rawMeters = ($revs * $repeatVal) / 1000.0;
+                    $wastageMeters = $rawMeters * 1.05;
+                    $answer .= "🎯 **Target Quantity:** **" . number_format($targetQty) . " pcs**\n"
+                        . "📏 **Net Paper Length Required:** **" . number_format($rawMeters, 2) . " meters**\n"
+                        . "🛡️ **Total Paper (with 5% setup wastage):** **" . number_format($wastageMeters, 2) . " meters**\n\n";
+                }
+
+                if ($paperMeters !== null && $paperMeters > 0) {
+                    $totalMM = $paperMeters * 1000.0;
+                    $revs = $totalMM / $repeatVal;
+                    $totalQty = floor($revs * $ups);
+                    $answer .= "📜 **Paper Roll Run Length:** **" . number_format($paperMeters, 2) . " meters**\n"
+                        . "📦 **Expected Label Production Output:** **" . number_format($totalQty) . " pcs / labels**\n\n";
+                }
+
+                $answer .= "👉 [Click here to open Plate Management Page]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
+            } elseif ($userLang === 'Hindi') {
+                $answer = "📐 **फ्लेक्सो प्रिंटिंग और प्लेट उत्पादन कैलकुलेटर:**\n\n"
+                    . "📋 **जॉब / प्लेट का नाम:** `{$name}` (SL No: **{$plate['sl_no']}**)\n"
+                    . "⚙️ **प्लेट विवरण:** Ups: **{$ups}** | Repeat Value: **{$repeatVal}mm** | Size: **{$plate['size']}**\n\n";
+
+                if ($targetQty !== null && $targetQty > 0) {
+                    $revs = $targetQty / $ups;
+                    $rawMeters = ($revs * $repeatVal) / 1000.0;
+                    $wastageMeters = $rawMeters * 1.05;
+                    $answer .= "🎯 **लक्ष्य मात्रा (Target Quantity):** **" . number_format($targetQty) . " पीस**\n"
+                        . "📏 **आवश्यक कागज (Net Paper Needed):** **" . number_format($rawMeters, 2) . " मीटर**\n"
+                        . "🛡️ **कुल कागज (5% वेस्टेज सहित):** **" . number_format($wastageMeters, 2) . " मीटर**\n\n";
+                }
+
+                if ($paperMeters !== null && $paperMeters > 0) {
+                    $totalMM = $paperMeters * 1000.0;
+                    $revs = $totalMM / $repeatVal;
+                    $totalQty = floor($revs * $ups);
+                    $answer .= "📜 **पेपर रोल की लंबाई:** **" . number_format($paperMeters, 2) . " मीटर**\n"
+                        . "📦 **कुल उत्पादन मात्रा:** **" . number_format($totalQty) . " पीस / लेबल**\n\n";
+                }
+
+                $answer .= "👉 [प्लेट प्रबंधन पेज खोलें]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
+            } else {
+                $answer = "📐 **ফ্লেক্সো প্রিন্টিং ও প্লেট উত্পাদন ক্যালকুলেটর:**\n\n"
+                    . "📋 **জব / প্লেটের নাম:** `{$name}` (SL No: **{$plate['sl_no']}** | ID: **{$plate['id']}**)\n"
+                    . "⚙️ **প্লেট বিবরণ:** আফস (Ups): **{$ups}** | রিপিট ভ্যালু: **{$repeatVal}mm** | সাইজ: **{$plate['size']}**\n\n";
+
+                if ($targetQty !== null && $targetQty > 0) {
+                    $revs = $targetQty / $ups;
+                    $rawMeters = ($revs * $repeatVal) / 1000.0;
+                    $wastageMeters = $rawMeters * 1.05;
+                    $answer .= "🎯 **টার্গেট কোয়ান্টিটি (Target Quantity):** **" . number_format($targetQty) . "টি**\n"
+                        . "📏 **আবশ্যক কাগজ (Net Paper Needed):** **" . number_format($rawMeters, 2) . " মিটার**\n"
+                        . "🛡️ **কুল কাগজ (5% ওয়েস্টেজ সহিত):** **" . number_format($wastageMeters, 2) . " মিটার**\n\n";
+                }
+
+                if ($paperMeters !== null && $paperMeters > 0) {
+                    $totalMM = $paperMeters * 1000.0;
+                    $revs = $totalMM / $repeatVal;
+                    $totalQty = floor($revs * $ups);
+                    $answer .= "📜 **পেপার রোলের দৈর্ঘ্য (Paper Roll Length):** **" . number_format($paperMeters, 2) . " মিটার**\n"
+                        . "📦 **কুল উত্পাদন মাত্রা:** **" . number_format($totalQty) . "টি লেবেল/পিস**\n\n";
+                }
+
+                $answer .= "👉 [প্লেট ম্যানেজমেন্ট পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
+            }
+
+            $navUrl = null;
+            if (strpos($p, 'open') !== false || strpos($p, 'page') !== false || strpos($p, 'go to') !== false || strpos($p, 'khul') !== false || strpos($p, 'khol') !== false) {
+                $navUrl = $baseUrl . '/modules/plate-tools/plate-management/index.php';
+            }
+
+            return [
+                'tool_used' => 'Flexo Label Production Calculator Tool',
+                'total_count' => 1,
+                'total_meters' => $paperMeters ?: 0,
+                'filtered_type' => '',
+                'is_company_list' => false,
+                'direct_answer' => $answer,
+                'nav_url' => $navUrl,
+                'data' => []
+            ];
         }
-        
-        $answer .= "👉 [Open Plate Management Page]({$baseUrl}/modules/plate-tools/plate-management/index.php)";
-        
-        return ['tool_used' => $toolName, 'total_count' => count($plateData), 'total_meters' => 0, 'filtered_type' => '', 'is_company_list' => false, 'direct_answer' => $answer, 'data' => []];
-    }
+
+
+        if (empty($data) && !empty($searchNums)) {
+            $num = $searchNums[0];
+            $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE sl_no = ? OR id = ? OR plate = ? ORDER BY id DESC LIMIT 5");
+            $like = '%' . $num . '%';
+            $stmt->bind_param('sss', $like, $num, $num);
+            $stmt->execute();
+            $data = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        }
+
+        // If user searched for a specific term and 0 records were found
+        if (empty($data) && !empty($terms)) {
+
+            if ($userLang === 'English') {
+                $directAnswer = "❌ **No Printing Plate Found Matching \"{$searchTermDisplay}\"**\n\n"
+                    . "I searched your ERP Master Plate database, but no plate record matching **\"{$searchTermDisplay}\"** was found.\n\n"
+                    . "💡 **Tip:** Please verify if the plate name or SL No is spelled correctly.";
+            } elseif ($userLang === 'Hindi') {
+                $directAnswer = "❌ **\"{$searchTermDisplay}\" नाम का कोई प्लेट नहीं मिला**\n\n"
+                    . "आपके ईआरपी डेटाबेस में **\"{$searchTermDisplay}\"** का कोई रिकॉर्ड उपलब्ध नहीं है।";
+            } else {
+                $directAnswer = "❌ **\"{$searchTermDisplay}\" নামে কোনো প্লেট পাওয়া যায়নি**\n\n"
+                    . "আপনার ইআরপি মাস্টার ডাটাবেসে **\"{$searchTermDisplay}\"** নামে কোনো প্লেট রেকর্ড নিবন্ধিত নেই।";
+            }
+
+            return [
+                'tool_used' => $toolName,
+                'total_count' => 0,
+                'total_meters' => 0,
+                'filtered_type' => '',
+                'is_company_list' => false,
+                'direct_answer' => $directAnswer,
+                'data' => []
+            ];
+        }
+
+        if (empty($data)) {
+            $res = $db->query("SELECT id, sl_no, name, size, ups, paper_type, die, date_received FROM master_plate_data ORDER BY id DESC LIMIT 15");
+            $data = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
+        }
+
     } elseif (strpos($p, 'die') !== false || strpos($p, 'tooling') !== false || strpos($p, 'barcode') !== false) {
         $toolName = 'Die Tooling & Barcode Die Master Tool';
         $cntRes = $db->query("SELECT COUNT(*) as cnt FROM master_die_tooling");
