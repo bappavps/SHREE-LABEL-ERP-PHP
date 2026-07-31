@@ -611,6 +611,42 @@ $floatChips = getAiAgentQuickChips();
   // ─── Real-time quote highlighting in contenteditable input ───
   function getChatText() { return chatInput ? (chatInput.innerText || chatInput.textContent || '') : ''; }
 
+  function getChatCursorPos() {
+    var sel = window.getSelection();
+    if (sel.rangeCount === 0) return 0;
+    var r = sel.getRangeAt(0);
+    var pre = document.createRange();
+    pre.selectNodeContents(chatInput);
+    pre.setEnd(r.startContainer, r.startOffset);
+    return pre.toString().length;
+  }
+
+  function setChatCursorPos(chars) {
+    if (chars >= 0) {
+      var sel = window.getSelection();
+      var range = document.createRange();
+      var charIndex = 0, nodeStack = [chatInput], node, foundStart = false, stop = false;
+      range.setStart(chatInput, 0);
+      range.collapse(true);
+      while (!stop && (node = nodeStack.pop())) {
+        if (node.nodeType === 3) {
+          var nextCharIndex = charIndex + node.length;
+          if (!foundStart && chars >= charIndex && chars <= nextCharIndex) {
+            range.setStart(node, chars - charIndex);
+            range.setEnd(node, chars - charIndex);
+            stop = true;
+          }
+          charIndex = nextCharIndex;
+        } else {
+          var i = node.childNodes.length;
+          while (i--) nodeStack.push(node.childNodes[i]);
+        }
+      }
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }
+
   function processChatInput() {
     if (!chatInput) return;
     var text = getChatText();
@@ -632,13 +668,9 @@ $floatChips = getAiAgentQuickChips();
       return '<span class="cmd-quote-hl' + doneClass + '"><span class="qp">\u201C</span>' + inner + '<span class="qp">\u201D</span></span>';
     });
     if (html !== chatInput.innerHTML) {
+      var savedPos = getChatCursorPos();
       chatInput.innerHTML = html;
-      var range = document.createRange();
-      var sel = window.getSelection();
-      range.selectNodeContents(chatInput);
-      range.collapse(false);
-      sel.removeAllRanges();
-      sel.addRange(range);
+      setChatCursorPos(savedPos);
     }
   }
 
@@ -734,7 +766,17 @@ $floatChips = getAiAgentQuickChips();
     var item = e.target.closest('.ai-cmd-item');
     if (!item) return;
     var cmd = item.getAttribute('data-cmd');
-    if (chatInput) { chatInput.innerHTML = ''; chatInput.appendChild(document.createTextNode(cmd + ' ')); }
+    if (chatInput) { 
+      chatInput.innerHTML = ''; 
+      chatInput.appendChild(document.createTextNode(cmd + ' ')); 
+      processChatInput();
+      var range = document.createRange();
+      var sel = window.getSelection();
+      range.selectNodeContents(chatInput);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
     var sugBox = document.getElementById('aiFloatingCmdSuggestions');
     if (sugBox) sugBox.style.display = 'none';
     if (chatInput) chatInput.focus();

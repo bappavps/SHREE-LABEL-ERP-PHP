@@ -1,0 +1,15 @@
+﻿QUERY: /plate  Raneswar 1000  ai job ta ki amra print korechi?
+ANSWER: 
+≡ƒôè **Job: RANESWAR 1000 KI Report ΓÇö Export Ready:**
+
+Your plate report is ready. Click the buttons below to download the PDF or Excel file:
+
+
+    
+        ≡ƒôä Download PDF Report
+    
+    
+        ≡ƒôè Download Excel
+    
+
+--------------------------------------------------

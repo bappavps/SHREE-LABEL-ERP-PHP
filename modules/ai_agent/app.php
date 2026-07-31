@@ -1189,6 +1189,32 @@ foreach ($quickChips as $c) {
       return pre.toString().length;
     }
 
+    function setChatCursorPos(chars) {
+      if (chars >= 0) {
+        var sel = window.getSelection();
+        var range = document.createRange();
+        var charIndex = 0, nodeStack = [chatInput], node, foundStart = false, stop = false;
+        range.setStart(chatInput, 0);
+        range.collapse(true);
+        while (!stop && (node = nodeStack.pop())) {
+          if (node.nodeType === 3) {
+            var nextCharIndex = charIndex + node.length;
+            if (!foundStart && chars >= charIndex && chars <= nextCharIndex) {
+              range.setStart(node, chars - charIndex);
+              range.setEnd(node, chars - charIndex);
+              stop = true;
+            }
+            charIndex = nextCharIndex;
+          } else {
+            var i = node.childNodes.length;
+            while (i--) nodeStack.push(node.childNodes[i]);
+          }
+        }
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
+
     // Highlight slash commands & show suggestions dropup
     function processChatInput() {
       const text = getChatText();
@@ -1246,8 +1272,9 @@ foreach ($quickChips as $c) {
       });
 
       if (html !== chatInput.innerHTML) {
+        let savedPos = getChatCursorPos();
         chatInput.innerHTML = html;
-        placeCursorAtEnd();
+        setChatCursorPos(savedPos);
       }
     }
 

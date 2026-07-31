@@ -85,7 +85,7 @@ If the repeat value is given in MM, calculating the required gear/teeth (assumin
   *(e.g., 152.4 / 3.175 = 48 Teeth Cylinder)*
 
 ### 4. Total Color Count Calculation
-- **Query:** "P-105-এ মোট কত কালার স্টেশনের প্লেট লাগবে?"
+- **Query:** "Blue500-এ মোট কত কালার স্টেশনের প্লেট লাগবে?"
 - **Logic:** Count non-empty fields among `c`, `m`, `y`, `k`, `special_1`, `special_2`, `special_3`, `special_4`, `special_5`.
 
 ---

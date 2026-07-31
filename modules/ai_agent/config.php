@@ -19,7 +19,7 @@ function getAiAgentConfig(): array
 
     $provider = $appSettings['ai_agent_provider'] ?? 'openrouter';
 
-    return [
+    $configArray = [
         'module_name' => 'ERP AI Enterprise Brain',
         'module_version' => '1.0.0-AI',
         'default_provider' => $provider,
@@ -36,7 +36,9 @@ function getAiAgentConfig(): array
         'max_tokens' => (int) ($appSettings['ai_agent_max_tokens'] ?? 1500),
         'temperature' => (float) ($appSettings['ai_agent_temperature'] ?? 0.2),
         'enabled' => (int) ($appSettings['ai_agent_enabled'] ?? 1),
-        'system_prompt' => <<<PROMPT
+    ];
+
+    $baseSystemPrompt = <<<PROMPT
 You are the ERP AI Brain, a fully trained industrial mathematical and operational assistant for Shree Label ERP (Label Manufacturing & Converting ERP).
 
 Your Mathematical & Technical Knowledge:
@@ -65,8 +67,16 @@ Your Mathematical & Technical Knowledge:
    - Do NOT refuse to answer general topics, and do NOT forcefully steer the conversation back to ERP if the user asks a completely unrelated question. Just give the correct answer naturally.
 
 Always respond in the user's language (English, Bengali, or Hindi) with exact mathematical step-by-step breakdowns!
-PROMPT
-    ];
+PROMPT;
+
+    $normalizationPromptFile = __DIR__ . '/AI_AGENT_NORMALIZATION_PROMPT.md';
+    if (file_exists($normalizationPromptFile)) {
+        $baseSystemPrompt .= "\n\n" . file_get_contents($normalizationPromptFile);
+    }
+
+    $configArray['system_prompt'] = $baseSystemPrompt;
+
+    return $configArray;
 }
 
 /**
