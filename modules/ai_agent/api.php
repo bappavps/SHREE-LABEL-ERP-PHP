@@ -1802,7 +1802,7 @@ if ($isSimpleArithmetic) {
 $hasCompanyQuery = preg_match('/\b(krishna|austin|navkar|nrgi)\b/i', $prompt) || strpos($p, 'কৃষ্ণা') !== false || strpos($p, 'অস্টিন') !== false || strpos($p, 'নভকার') !== false || strpos($p, 'এনআরজিআই') !== false;
 $hasDbQueryIntent = preg_match('/\b(die|dies|plate|plates|stock|inventory|search|find|any|is there|kono|ache)\b/i', $prompt);
 
-$isMathIntent = !$hasCompanyQuery && !$hasDbQueryIntent && (
+$isMathIntent = !$hasCompanyQuery && !$hasDbQueryIntent && $commandType !== 'plate' && $commandType !== 'paperstock' && (
     preg_match('/\d+\s*mm\s*[xX*]\s*\d+\s*mm/i', $prompt) ||
     strpos($p, 'running meter') !== false ||
     strpos($p, 'running mtr') !== false ||
