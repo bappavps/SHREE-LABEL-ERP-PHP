@@ -1005,8 +1005,8 @@ if (strpos($pTrimmed, '/plate') === 0 || $pTrimmed === 'plate' || $pTrimmed === 
     $p = mb_strtolower($prompt, 'UTF-8');
 }
 
-// /paperstock or /paper command
-if (strpos($pTrimmed, '/paperstock') === 0 || strpos($pTrimmed, '/paper stock') === 0 || $pTrimmed === 'paperstock' || $pTrimmed === 'paper stock' || $pTrimmed === 'paper' || strpos($pTrimmed, 'পেপার স্টক') !== false || strpos($pTrimmed, 'পেপার') !== false || strpos($pTrimmed, 'पेपर स्टॉक') !== false || strpos($pTrimmed, 'पेपर') !== false) {
+// /paperstock or /paper command — only if a /plate command did not already claim this query
+if ($commandType === null && (strpos($pTrimmed, '/paperstock') === 0 || strpos($pTrimmed, '/paper stock') === 0 || $pTrimmed === 'paperstock' || $pTrimmed === 'paper stock' || $pTrimmed === 'paper' || strpos($pTrimmed, 'পেপার স্টক') !== false || strpos($pTrimmed, 'পেপার') !== false || strpos($pTrimmed, 'पेपर स्टॉक') !== false || strpos($pTrimmed, 'पेपर') !== false)) {
     $_SESSION['ai_priority_mode'] = 'paperstock';
     $commandType = 'paperstock';
     $subQuery = preg_replace('/^\/paper\s*stock\s*/iu', '', trim($prompt));
@@ -1948,7 +1948,7 @@ if ($isMathIntent && !$skipNormalDb) {
 // Regular DB Query Router
 function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang): array
 {
-    $p = mb_strtolower($prompt, 'UTF-8');
+    global $commandType; $p = mb_strtolower($prompt, 'UTF-8'); // $commandType set at top-level by router; needed inside this function
     $data = [];
     $totalCount = 0;
     $totalMeters = 0;
