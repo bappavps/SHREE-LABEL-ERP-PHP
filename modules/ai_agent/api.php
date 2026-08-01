@@ -2369,7 +2369,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
     // Extract Target Meters & Labels for Math
     $targetMeters = null;
-    if (preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:meter|meters|mtr|m(?!m)|\bমিটার\b|\bমিটারে\b)/i', $prompt, $m)) {
+    if (preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:meter|meters|mtr|m(?![a-zA-Z])|\bমিটার\b|\bমিটারে\b)/i', $prompt, $m)) {
         $targetMeters = (float)str_replace(',', '', $m[1]);
     }
     
