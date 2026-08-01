@@ -58,6 +58,8 @@ foreach ($quickChips as $c) {
     $cat = isset($chipMap[$key]) ? $chipMap[$key] : 'tools';
     $chipCategories[$cat]['items'][] = $c;
 }
+$promptSuggestionsPath = __DIR__ . '/../../data/prompt_suggestions.json';
+$promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents($promptSuggestionsPath) : '{}';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -971,6 +973,59 @@ foreach ($quickChips as $c) {
       .chat-container { padding: 24px 20px; max-width: 800px; margin: 0 auto; width: 100%; }
       .msg-group { max-width: 85%; }
     }
+      /* Floating Popup Menu */
+    .input-container { position: relative; } /* Anchor for popup */
+    .ai-popup-menu {
+      position: absolute;
+      bottom: calc(100% + 12px);
+      left: 10px;
+      right: 10px;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.3);
+      display: none;
+      flex-direction: column;
+      max-height: 250px;
+      overflow-y: auto;
+      z-index: 1000;
+      padding: 6px 0;
+      transform-origin: bottom center;
+      animation: popupSlideUp 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    @keyframes popupSlideUp {
+      from { opacity: 0; transform: translateY(10px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .ai-popup-menu::-webkit-scrollbar { width: 4px; }
+    .ai-popup-menu::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
+    
+    .popup-item {
+      padding: 10px 16px;
+      color: #e2e8f0;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: background 0.15s;
+    }
+    .popup-item:hover {
+      background: rgba(59, 130, 246, 0.2);
+      color: #93c5fd;
+    }
+    .popup-item i { color: #3b82f6; font-size: 15px; }
+    
+    /* Light Theme */
+    [data-theme="light"] .ai-popup-menu {
+      background: rgba(255, 255, 255, 0.95);
+      border-color: rgba(0, 0, 0, 0.1);
+      box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.1);
+    }
+    [data-theme="light"] .popup-item { color: #334155; }
+    [data-theme="light"] .popup-item:hover { background: rgba(37,99,235,0.1); color: #2563eb; }
   </style>
 </head>
 <body>
@@ -1102,6 +1157,9 @@ foreach ($quickChips as $c) {
       <button class="btn-input btn-mic" id="micBtn" title="Speak to AI Agent">
         <i class="bi bi-mic-fill" id="micIcon"></i>
       </button>
+            <!-- Floating Popup Menu -->
+      <div id="cmdSuggestionsPopup" class="ai-popup-menu"></div>
+      
       <div class="chat-input" id="chatInput" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Ask about stock, orders or speak..."></div>
       <div class="input-actions">
         <button class="btn-input btn-send" id="sendBtn" title="Send" disabled>
@@ -1154,6 +1212,46 @@ foreach ($quickChips as $c) {
 
     const chatStream = document.getElementById('chatStream');
     const chatInput = document.getElementById('chatInput');
+    const promptSuggestionsData = <?= $promptSuggestionsJson ?>;
+    const cmdSuggestionsPopup = document.getElementById('cmdSuggestionsPopup');
+
+    function renderCmdSuggestions(cmd) {
+      if (!promptSuggestionsData || !promptSuggestionsData[cmd]) {
+        cmdSuggestionsPopup.style.display = 'none';
+        return;
+      }
+      
+      const suggestions = promptSuggestionsData[cmd];
+      let html = '';
+      suggestions.forEach(text => {
+        // Highlighting the command part
+        const display = text.replace(cmd, `<strong style="color:#3b82f6">${cmd}</strong>`);
+        html += `<div class="popup-item" onclick="applySuggestion('${text}')"><i class="bi bi-magic"></i> <span>${display}</span></div>`;
+      });
+      cmdSuggestionsPopup.innerHTML = html;
+      cmdSuggestionsPopup.style.display = 'flex';
+    }
+
+    function applySuggestion(text) {
+      setChatText(text + ' ');
+      cmdSuggestionsPopup.style.display = 'none';
+            chatInput.focus();
+      if (typeof window.getSelection !== 'undefined' && typeof document.createRange !== 'undefined') {
+        var range = document.createRange();
+        range.selectNodeContents(chatInput);
+        range.collapse(false);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
+    
+    // Hide popup when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#cmdSuggestionsPopup') && !e.target.closest('#chatInput')) {
+            if (cmdSuggestionsPopup) cmdSuggestionsPopup.style.display = 'none';
+        }
+    });
     const sendBtn = document.getElementById('sendBtn');
     const clearBtn = document.getElementById('clearBtn');
     const typingBox = document.getElementById('typingBox');
@@ -1176,6 +1274,33 @@ foreach ($quickChips as $c) {
       { cmd: '/clear', desc: 'Clear all priority modes' },
     ];
     const CMD_NAMES = CMD_LIST.map(c => c.cmd);
+
+        function applyChipPrompt(promptText, autoSend) {
+      var currentText = getChatText();
+      var finalPrompt = promptText;
+      
+      // If prompt doesn't start with /, but existing text does, preserve it
+      if (!promptText.startsWith('/') && currentText.startsWith('/')) {
+        var parts = currentText.split(' ');
+        var activeCmd = parts[0];
+        if (CMD_NAMES.includes(activeCmd)) {
+          finalPrompt = activeCmd + ' ' + promptText;
+        }
+      }
+      
+      setChatText(finalPrompt + ' ');
+      processChatInput();
+      
+      if (autoSend && finalPrompt.trim().length > 0) {
+        if (typeof sendQuery === 'function') {
+            // Need small timeout to ensure DOM update
+            setTimeout(() => sendQuery(), 10);
+        }
+      } else {
+        chatInput.focus();
+        if (typeof setChatCursorPos === 'function') setChatCursorPos(finalPrompt.length + 1);
+      }
+    }
 
     function getChatText() { return chatInput.innerText || chatInput.textContent || ''; }
     function setChatText(t) { chatInput.innerHTML = ''; chatInput.appendChild(document.createTextNode(t)); }
@@ -1224,6 +1349,20 @@ foreach ($quickChips as $c) {
 
       // Show suggestions when user types "/" at start of input or after space
       const showSuggestions = text.startsWith('/') && !text.includes(' ');
+      
+      // Contextual prompt popup
+      let cmdMatch = false;
+      if (text.startsWith('/')) {
+         const parts = text.split(' ');
+         const activeCmd = parts[0];
+         if (promptSuggestionsData[activeCmd]) {
+             renderCmdSuggestions(activeCmd);
+             cmdMatch = true;
+         }
+      }
+      if (!cmdMatch) {
+         cmdSuggestionsPopup.style.display = 'none';
+      }
       const sug = document.getElementById('cmdSuggestions');
       if (showSuggestions) {
         const partial = text.toLowerCase();
@@ -1307,7 +1446,15 @@ foreach ($quickChips as $c) {
       setChatText(cmd + ' ');
       document.getElementById('cmdSuggestions').classList.remove('visible');
       processChatInput();
-      chatInput.focus();
+            chatInput.focus();
+      if (typeof window.getSelection !== 'undefined' && typeof document.createRange !== 'undefined') {
+        var range = document.createRange();
+        range.selectNodeContents(chatInput);
+        range.collapse(false);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
       placeCursorAtEnd();
     });
 
@@ -1319,22 +1466,12 @@ foreach ($quickChips as $c) {
 
     // Quick chips click
     document.querySelectorAll('.chip-item').forEach(chip => {
-      chip.addEventListener('click', () => {
-        setChatText(chip.getAttribute('data-prompt'));
-        processChatInput();
-        sendQuery();
-        chipsSection.classList.remove('open');
-        chipsToggle.classList.remove('active');
-      });
+      chip.addEventListener('click', () => { applyChipPrompt(chip.getAttribute('data-prompt'), true); chipsSection.classList.remove('open'); chipsToggle.classList.remove('active'); });
     });
 
     // Quick action cards
     document.querySelectorAll('.quick-action-card').forEach(card => {
-      card.addEventListener('click', () => {
-        setChatText(card.getAttribute('data-prompt'));
-        processChatInput();
-        sendQuery();
-      });
+      card.addEventListener('click', () => { applyChipPrompt(card.getAttribute('data-prompt'), true); });
     });
 
     // AI Suggestion chips click (event delegation for dynamically added chips)
@@ -1342,11 +1479,7 @@ foreach ($quickChips as $c) {
       const chip = e.target.closest('.ai-suggestion-chip');
       if (chip) {
         const p = chip.getAttribute('data-prompt');
-        if (p) {
-          setChatText(p);
-          processChatInput();
-          sendQuery();
-        }
+        if (p) { applyChipPrompt(p, true); }
       }
     });
 

@@ -2028,7 +2028,49 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
     $toolName = 'ERP Knowledge Engine';
     $searchNums = extract_search_numbers($prompt);
 
-    // ─── SESSION PRIORITY MODE: Search priority source FIRST ───
+    // ─── STRICT MODE ENFORCEMENT ───
+    if ($commandType === 'paperstock' || $commandType === 'plate') {
+        $pClean = trim(mb_strtolower($prompt, 'UTF-8'));
+        $pCleanHtml = htmlspecialchars($pClean);
+        
+        if ($commandType === 'paperstock') {
+            $hasPaperKeywords = (strpos($pClean, 'paper') !== false || strpos($pClean, 'roll') !== false || strpos($pClean, 'slc/') !== false || strpos($pClean, 'stock') !== false || preg_match('/(chromo|thermal|maplitho|pp white|pp clear|jumbo|avery|krishna|austin|navkar|nrgi)/i', $pClean));
+            $hasOtherKeywords = preg_match('/(operator|job|plate|die|dispatch|packing|invoice|planning|production summary)/i', $pClean);
+            
+            if (!$hasPaperKeywords && $hasOtherKeywords) {
+                return [
+                    'tool_used' => 'Context Validator',
+                    'type' => 'strict_mode_violation',
+                    'title' => '❌ Invalid Query Context',
+                    'total_count' => 0,
+                    'total_meters' => 0,
+                    'filtered_type' => '',
+                    'is_company_list' => false,
+                    'direct_answer' => "⚠️ You are in **Paper Stock Mode**, but your question seems to be about something else.\n\n👉 **To ask about this, please use `/erp {$pCleanHtml}` instead.**",
+                    'nav_url' => '',
+                    'data' => []
+                ];
+            }
+        } else if ($commandType === 'plate') {
+            $hasPlateKeywords = (strpos($pClean, 'plate') !== false || strpos($pClean, 'cylinder') !== false || strpos($pClean, 'die') !== false);
+            $hasOtherKeywords = preg_match('/(operator|dispatch|packing|invoice|planning|paper|roll|chromo|thermal)/i', $pClean);
+            
+            if (!$hasPlateKeywords && $hasOtherKeywords) {
+                return [
+                    'tool_used' => 'Context Validator',
+                    'type' => 'strict_mode_violation',
+                    'title' => '❌ Invalid Query Context',
+                    'total_count' => 0,
+                    'total_meters' => 0,
+                    'filtered_type' => '',
+                    'is_company_list' => false,
+                    'direct_answer' => "⚠️ You are in **Plate Mode**, but your question seems to be about something else.\n\n👉 **To ask about this, please use `/erp {$pCleanHtml}` instead.**",
+                    'nav_url' => '',
+                    'data' => []
+                ];
+            }
+        }
+    }    // ─── SESSION PRIORITY MODE: Search priority source FIRST ───
     $priorityMode = $_SESSION['ai_priority_mode'] ?? '';
 
     if (strpos($p, 'plate') !== false || strpos($p, 'প্লেট') !== false || strpos($p, 'प्लेट') !== false || strpos($p, 'cylinder') !== false || strpos($p, 'সিলিন্ডার') !== false || strpos($p, 'die') !== false) {

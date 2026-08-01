@@ -16,7 +16,7 @@
     "erp_gst": "",
     "logo_path": "",
     "erp_logo_path": "",
-    "flag_emoji": "\ud83c\uddee\ud83c\uddf3",
+    "flag_emoji": "🇮🇳",
     "animated_flag_path": "",
     "animated_flag_url": "",
     "login_background_image": "",
@@ -30,10 +30,10 @@
     "ai_agent_model": "9ROUTER-COMBO",
     "gemini_api_key": "",
     "openai_api_key": "",
-    "openai_api_url": "https:\/\/ninerouter-4qb5.onrender.com\/v1\/chat\/completions",
+    "openai_api_url": "https://ninerouter-4qb5.onrender.com/v1/chat/completions",
     "openrouter_api_key": "",
-    "openrouter_ai_url": "https:\/\/openrouter.ai\/api\/v1\/chat\/completions",
-    "local_ai_url": "http:\/\/localhost:11434\/v1\/chat\/completions",
+    "openrouter_ai_url": "https://openrouter.ai/api/v1/chat/completions",
+    "local_ai_url": "http://localhost:11434/v1/chat/completions",
     "ai_agent_temperature": 0.6,
     "ai_agent_max_tokens": 1500,
     "ai_agent_enabled": 1,
@@ -41,8 +41,8 @@
     "ai_custom_endpoints": [
         {
             "label": "freellmapi",
-            "url": "https:\/\/freellmapi-70n3.onrender.com\/v1\/chat\/completions",
-            "api_key": "",
+            "url": "https://freellmapi-70n3.onrender.com/v1/chat/completions",
+            "api_key": "freellmapi-6160195ba1aa8e766159dd23e9df722f66361b6ae495b65f",
             "model": "auto",
             "active": 1
         }

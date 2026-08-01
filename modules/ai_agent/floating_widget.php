@@ -24,6 +24,8 @@ $moduleBaseUrl = defined('BASE_URL') ? BASE_URL . '/modules/ai_agent' : (functio
 })();
 require_once __DIR__ . '/config.php';
 $floatChips = getAiAgentQuickChips();
+$promptSuggestionsPath = __DIR__ . '/../../data/prompt_suggestions.json';
+$promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents($promptSuggestionsPath) : '{}';
 ?>
 
 <link rel="stylesheet" href="<?= $moduleBaseUrl ?>/css/floating_widget.css?v=<?= time() ?>">
@@ -102,10 +104,11 @@ $floatChips = getAiAgentQuickChips();
 #aiFloatingChatBody .msg-bubble pre { background: rgba(0,0,0,0.35); padding: 10px 12px; border-radius: 10px; overflow-x: auto; margin: 8px 0; }
 #aiFloatingChatBody .msg-bubble pre code { background: none; padding: 0; color: #e2e8f0; font-size: 12.5px; }
 #aiFloatingChatBody .msg-bubble a { color: #38bdf8; text-decoration: none; font-weight: 600; border-bottom: 1px dashed rgba(56,189,248,0.4); }
-#aiFloatingChatBody .msg-bubble table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12px; }
-#aiFloatingChatBody .msg-bubble th, #aiFloatingChatBody .msg-bubble td { padding: 6px 8px; border: 1px solid rgba(255,255,255,0.1); text-align: left; }
-#aiFloatingChatBody .msg-bubble th { background: rgba(59,130,246,0.15); color: #93c5fd; font-weight: 700; }
-#aiFloatingChatBody .msg-bubble tr:nth-child(even) td { background: rgba(255,255,255,0.03); }
+#aiFloatingChatBody .msg-bubble table { width: 100% !important; border-collapse: collapse !important; margin: 8px 0 !important; font-size: 12px !important; background: transparent !important; color: #e2e8f0 !important; }
+#aiFloatingChatBody .msg-bubble table tr { background: transparent !important; color: inherit !important; }
+#aiFloatingChatBody .msg-bubble th, #aiFloatingChatBody .msg-bubble td { padding: 6px 8px !important; border: 1px solid rgba(255,255,255,0.15) !important; text-align: left !important; color: inherit !important; background: transparent !important; }
+#aiFloatingChatBody .msg-bubble th { background: rgba(59,130,246,0.18) !important; color: #93c5fd !important; font-weight: 700 !important; }
+#aiFloatingChatBody .msg-bubble tr:nth-child(even), #aiFloatingChatBody .msg-bubble tr:nth-child(even) td { background: rgba(255,255,255,0.04) !important; }
 #aiFloatingChatBody .msg-bubble ul, #aiFloatingChatBody .msg-bubble ol { padding-left: 18px; margin: 6px 0; }
 #aiFloatingChatBody .msg-bubble li { margin-bottom: 3px; }
 #aiFloatingChatBody .msg-bubble blockquote { border-left: 3px solid #3b82f6; padding-left: 10px; margin: 8px 0; color: #94a3b8; font-style: italic; }
@@ -165,6 +168,13 @@ $floatChips = getAiAgentQuickChips();
 #aiFloatingChatBody .msg-group.ai-cmd-paperstock .msg-bubble { border-color: #10b981; border-width: 1.5px 1.5px 1.5px 3px; }
 #aiFloatingChatBody .msg-group.ai-cmd-plate .msg-bubble { border-color: #8b5cf6; border-width: 1.5px 1.5px 1.5px 3px; }
 #aiFloatingChatBody .msg-group.ai-cmd-quoted .msg-bubble { border-color: #f59e0b; border-width: 1.5px 1.5px 1.5px 3px; }
+/* Light Theme Table Overrides */
+#aiFloatingPopupCard[data-theme="light"] #aiFloatingChatBody .msg-bubble table { color: #334155 !important; }
+#aiFloatingPopupCard[data-theme="light"] #aiFloatingChatBody .msg-bubble th, 
+#aiFloatingPopupCard[data-theme="light"] #aiFloatingChatBody .msg-bubble td { border-color: rgba(0,0,0,0.1) !important; color: inherit !important; }
+#aiFloatingPopupCard[data-theme="light"] #aiFloatingChatBody .msg-bubble th { background: rgba(37,99,235,0.06) !important; color: #1e40af !important; }
+#aiFloatingPopupCard[data-theme="light"] #aiFloatingChatBody .msg-bubble tr:nth-child(even),
+#aiFloatingPopupCard[data-theme="light"] #aiFloatingChatBody .msg-bubble tr:nth-child(even) td { background: rgba(0,0,0,0.03) !important; }
 /* Suggestion box — PWA exact */
 #aiFloatingChatBody .ai-suggestion-box {
   margin-top: 10px; padding-top: 8px;
@@ -317,6 +327,58 @@ $floatChips = getAiAgentQuickChips();
 }
 #aiFloatingPopupCard[data-theme="light"] .ai-float-chip-item:active { background: rgba(0,0,0,0.06) !important; }
 #aiFloatingPopupCard[data-theme="light"] .ai-float-chip-icon { color: #64748b !important; }
+/* Floating Popup Menu */
+.ai-popup-menu {
+  position: absolute;
+  bottom: calc(100% - 10px);
+  left: 14px;
+  right: 14px;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.3);
+  display: none;
+  flex-direction: column;
+  max-height: 250px;
+  overflow-y: auto;
+  z-index: 1000;
+  padding: 6px 0;
+  transform-origin: bottom center;
+  animation: popupSlideUp 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+@keyframes popupSlideUp {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.ai-popup-menu::-webkit-scrollbar { width: 4px; }
+.ai-popup-menu::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
+
+.ai-popup-menu .popup-item {
+  padding: 10px 16px;
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: background 0.15s;
+}
+.ai-popup-menu .popup-item:hover {
+  background: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+}
+.ai-popup-menu .popup-item i { color: #3b82f6; font-size: 14px; }
+
+/* Light Theme */
+#aiFloatingPopupCard[data-theme="light"] .ai-popup-menu {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.1);
+}
+#aiFloatingPopupCard[data-theme="light"] .ai-popup-menu .popup-item { color: #334155; }
+#aiFloatingPopupCard[data-theme="light"] .ai-popup-menu .popup-item:hover { background: rgba(37,99,235,0.1); color: #2563eb; }
 </style>
 
 <!-- Floating Trigger Button -->
@@ -432,6 +494,48 @@ $floatChips = getAiAgentQuickChips();
   var clearBtn = document.getElementById('aiFloatClearBtn');
   var chatBody = document.getElementById('aiFloatingChatBody');
   var chatInput = document.getElementById('aiFloatingChatInput');
+  var promptSuggestionsData = <?= $promptSuggestionsJson ?>;
+  var cmdSuggestionsPopup = document.getElementById('aiFloatingCmdSuggestionsPopup');
+
+  function renderFloatCmdSuggestions(cmd) {
+    if (!promptSuggestionsData || !promptSuggestionsData[cmd]) {
+      cmdSuggestionsPopup.style.display = 'none';
+      return;
+    }
+    var suggestions = promptSuggestionsData[cmd];
+    var html = '';
+    for (var i = 0; i < suggestions.length; i++) {
+      var text = suggestions[i];
+      var display = text.replace(cmd, '<strong style="color:#3b82f6">' + cmd + '</strong>');
+      html += '<div class="popup-item" onclick="_applyFloatSuggestion(\'' + text.replace(/'/g, "\\'") + '\')"><i class="bi bi-magic"></i> <span>' + display + '</span></div>';
+    }
+    cmdSuggestionsPopup.innerHTML = html;
+    cmdSuggestionsPopup.style.display = 'flex';
+  }
+
+  window._applyFloatSuggestion = function(text) {
+    if (chatInput) {
+      chatInput.innerHTML = '';
+      chatInput.appendChild(document.createTextNode(text + ' '));
+      cmdSuggestionsPopup.style.display = 'none';
+      processChatInput();
+            chatInput.focus();
+      if (typeof window.getSelection !== 'undefined' && typeof document.createRange !== 'undefined') {
+        var range = document.createRange();
+        range.selectNodeContents(chatInput);
+        range.collapse(false);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
+  };
+  
+  document.addEventListener('click', function(e) {
+      if (!e.target.closest('#aiFloatingCmdSuggestionsPopup') && !e.target.closest('#aiFloatingChatInput')) {
+          if (cmdSuggestionsPopup) cmdSuggestionsPopup.style.display = 'none';
+      }
+  });
   var sendBtn = document.getElementById('aiFloatingSendBtn');
   var micBtn = document.getElementById('aiFloatingMicBtn');
   var micIcon = document.getElementById('aiFloatingMicIcon');
@@ -647,6 +751,43 @@ $floatChips = getAiAgentQuickChips();
     }
   }
 
+    function applyChipPrompt(promptText, autoSend) {
+    var currentText = chatInput.innerText || chatInput.textContent || '';
+    var finalPrompt = promptText;
+    
+    // Command prefixes
+    var floatCmdNames = ['/cal', '/erp', '/paperstock', '/plate', '/clear'];
+    
+    // If prompt doesn't start with /, but existing text does, preserve it
+    if (!promptText.startsWith('/') && currentText.startsWith('/')) {
+      var parts = currentText.split(' ');
+      var activeCmd = parts[0];
+      if (floatCmdNames.includes(activeCmd)) {
+        finalPrompt = activeCmd + ' ' + promptText;
+      }
+    }
+    
+    if (chatInput) {
+        chatInput.innerHTML = '';
+        chatInput.appendChild(document.createTextNode(finalPrompt + ' '));
+        processChatInput();
+        
+        if (autoSend && finalPrompt.trim().length > 0) {
+            setTimeout(function() { if(typeof doSend === 'function') doSend(); }, 10);
+        } else {
+            chatInput.focus();
+            if (typeof window.getSelection !== 'undefined' && typeof document.createRange !== 'undefined') {
+              var range = document.createRange();
+              range.selectNodeContents(chatInput);
+              range.collapse(false);
+              var sel = window.getSelection();
+              sel.removeAllRanges();
+              sel.addRange(range);
+            }
+        }
+    }
+  }
+
   function processChatInput() {
     if (!chatInput) return;
     var text = getChatText();
@@ -750,7 +891,21 @@ $floatChips = getAiAgentQuickChips();
       var val = chatInput.innerText || chatInput.textContent || '';
       var sugBox = document.getElementById('aiFloatingCmdSuggestions');
       if (!sugBox) return;
-      if (val.startsWith('/') && val.indexOf(' ') === -1) {
+      // Contextual prompt popup check
+    var cmdMatch = false;
+    if (val.startsWith('/')) {
+       var parts = val.split(' ');
+       var activeCmd = parts[0];
+       if (promptSuggestionsData[activeCmd]) {
+           renderFloatCmdSuggestions(activeCmd);
+           cmdMatch = true;
+       }
+    }
+    if (!cmdMatch) {
+       cmdSuggestionsPopup.style.display = 'none';
+    }
+    
+    if (val.startsWith('/') && val.indexOf(' ') === -1) {
         sugBox.style.display = 'block';
         sugBox.querySelectorAll('.ai-cmd-item').forEach(function(el) {
           el.style.display = el.getAttribute('data-cmd').indexOf(val.toLowerCase()) === 0 ? 'flex' : 'none';
@@ -779,7 +934,15 @@ $floatChips = getAiAgentQuickChips();
     }
     var sugBox = document.getElementById('aiFloatingCmdSuggestions');
     if (sugBox) sugBox.style.display = 'none';
-    if (chatInput) chatInput.focus();
+    if (chatInput)       chatInput.focus();
+      if (typeof window.getSelection !== 'undefined' && typeof document.createRange !== 'undefined') {
+        var range = document.createRange();
+        range.selectNodeContents(chatInput);
+        range.collapse(false);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
   });
 
   // ─── Voice Input (PWA-style) ───
@@ -821,10 +984,7 @@ $floatChips = getAiAgentQuickChips();
 
   // ─── Quick Chips (from any page) ───
   document.querySelectorAll('.ai-float-chip-item').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      var prompt = btn.getAttribute('data-prompt');
-      if (prompt) doSend(prompt);
-    });
+    btn.addEventListener('click', function() { var p = btn.getAttribute('data-prompt'); if (p) { applyChipPrompt(p, false); } });
   });
 
 })();
