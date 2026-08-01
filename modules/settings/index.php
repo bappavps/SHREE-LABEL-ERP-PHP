@@ -871,21 +871,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $action = $_POST['action'] ?? '';
 
   if ($action === 'save_ai_settings') {
-    $newAiSettings = [
-      'ai_agent_provider' => $_POST['ai_agent_provider'] ?? 'openrouter',
-      'ai_agent_model' => $_POST['ai_agent_model'] ?? 'openrouter/free',
-      'gemini_api_key' => $_POST['gemini_api_key'] ?? '',
-      'openai_api_key' => $_POST['openai_api_key'] ?? '',
-      'openai_api_url' => $_POST['openai_api_url'] ?? '',
-      'openrouter_api_key' => $_POST['openrouter_api_key'] ?? '',
-      'openrouter_ai_url' => $_POST['openrouter_ai_url'] ?? '',
-      'local_ai_url' => $_POST['local_ai_url'] ?? '',
-      'ai_agent_temperature' => (float) ($_POST['ai_agent_temperature'] ?? 0.2),
-      'ai_agent_max_tokens' => (int) ($_POST['ai_agent_max_tokens'] ?? 1500),
-      'ai_agent_enabled' => isset($_POST['ai_agent_enabled']) ? 1 : 0,
-      'ai_fallback_enabled' => isset($_POST['ai_fallback_enabled']) ? 1 : 0,
-    ];
-    if (saveAppSettings($newAiSettings)) {
+    $settings['ai_agent_provider'] = $_POST['ai_agent_provider'] ?? 'openrouter';
+    $settings['ai_agent_model'] = $_POST['ai_agent_model'] ?? 'openrouter/free';
+    $settings['gemini_api_key'] = $_POST['gemini_api_key'] ?? '';
+    $settings['openai_api_key'] = $_POST['openai_api_key'] ?? '';
+    $settings['openai_api_url'] = $_POST['openai_api_url'] ?? '';
+    $settings['openrouter_api_key'] = $_POST['openrouter_api_key'] ?? '';
+    $settings['openrouter_ai_url'] = $_POST['openrouter_ai_url'] ?? '';
+    $settings['local_ai_url'] = $_POST['local_ai_url'] ?? '';
+    $settings['ai_agent_temperature'] = (float) ($_POST['ai_agent_temperature'] ?? 0.2);
+    $settings['ai_agent_max_tokens'] = (int) ($_POST['ai_agent_max_tokens'] ?? 1500);
+    $settings['ai_agent_enabled'] = isset($_POST['ai_agent_enabled']) ? 1 : 0;
+    $settings['ai_fallback_enabled'] = isset($_POST['ai_fallback_enabled']) ? 1 : 0;
+
+    if (saveAppSettings($settings)) {
       setFlash('success', 'AI Agent settings saved successfully.');
     } else {
       setFlash('error', 'Failed to save AI Agent settings.');

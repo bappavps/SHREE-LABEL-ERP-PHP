@@ -18,6 +18,7 @@ $openaiUrl = $aiSettings['openai_api_url'] ?? '';
 $localUrl = $aiSettings['local_ai_url'] ?? 'http://localhost:11434/v1/chat/completions';
 $rawEndpoints = $aiSettings['ai_custom_endpoints'] ?? '[]';
 $customEndpoints = is_array($rawEndpoints) ? $rawEndpoints : (json_decode($rawEndpoints, true) ?: []);
+$customEndpointsJson = is_string($rawEndpoints) ? $rawEndpoints : json_encode($customEndpoints);
 $aiTemp = $aiSettings['ai_agent_temperature'] ?? 0.2;
 $aiMaxTokens = $aiSettings['ai_agent_max_tokens'] ?? 1500;
 $aiEnabled = (int) ($aiSettings['ai_agent_enabled'] ?? 1);

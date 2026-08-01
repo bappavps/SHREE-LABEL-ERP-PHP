@@ -1489,16 +1489,16 @@ foreach ($quickChips as $c) {
       });
     }
 
-    // Save & Restore Chat History in localStorage
+    // Save & Restore Chat History in sessionStorage
     function saveHistory() {
       try {
-        localStorage.setItem('erp_pwa_chat_history', chatStream.innerHTML);
+        sessionStorage.setItem('erp_pwa_chat_history', chatStream.innerHTML);
       } catch (e) {}
     }
 
     function loadHistory() {
       try {
-        const saved = localStorage.getItem('erp_pwa_chat_history');
+        const saved = sessionStorage.getItem('erp_pwa_chat_history');
         if (saved && saved.trim() !== '') {
           chatStream.innerHTML = saved;
           // Ensure typing label has id (old saved data might lack it)
@@ -1516,7 +1516,7 @@ foreach ($quickChips as $c) {
     // Clear Chat — clears history and auto-refresh
     clearBtn.addEventListener('click', () => {
       if (navigator.vibrate) navigator.vibrate(20);
-      try { localStorage.removeItem('erp_pwa_chat_history'); } catch (e) {}
+      try { sessionStorage.removeItem('erp_pwa_chat_history'); } catch (e) {}
       try { sessionStorage.setItem('erp_chat_cleared', '1'); } catch (e) {}
       location.reload();
     });

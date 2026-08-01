@@ -517,44 +517,65 @@ function call_llm_api(string $prompt, array $config): ?string
     
     // If primary succeeded, return it
     if ($result !== null && strpos($result, '[API_ERROR]') !== 0) {
-        return $result;
+        return $result . "\n\n*Note: Response via Agent 1*";
     }
     
-    // Fallback: if enabled, loop through ALL active custom endpoints
-    $fallbackEnabled = !empty($config['fallback_enabled']) && $config['fallback_enabled'] === 1;
-    if (!$fallbackEnabled) {
-        return $result;
+    // Fallback: if enabled, loop through ALL available endpoints (standard + custom)
+$fallbackEnabled = !empty($config['fallback_enabled']) && $config['fallback_enabled'] === 1;
+if (!$fallbackEnabled) {
+    return $result;
+}
+
+$agentCounter = 2;
+
+// First try standard providers if they have keys and are not the primary
+$standardProviders = [
+    'openai' => !empty($config['openai_api_key']),
+    'openrouter' => !empty($config['openrouter_api_key']),
+    'gemini' => !empty($config['gemini_api_key']),
+    'local' => !empty($config['local_ai_url'])
+];
+
+foreach ($standardProviders as $prov => $isAvailable) {
+    if ($prov === $primaryProvider || !$isAvailable) continue;
+    
+    $epConfig = $config;
+    $epConfig['default_provider'] = $prov;
+    $epResult = call_llm_api_provider($prompt, $epConfig, $prov);
+    
+    if ($epResult !== null && strpos($epResult, '[API_ERROR]') !== 0) {
+        return $epResult . "\n\n*Note: Response via Agent " . $agentCounter . '*';
     }
+    $agentCounter++;
+}
+
+// Then try custom endpoints
+$endpointsJson = $config['ai_custom_endpoints'] ?? '[]';
+$endpoints = is_array($endpointsJson) ? $endpointsJson : (json_decode($endpointsJson, true) ?: []);
+
+foreach ($endpoints as $ep) {
+    if (empty($ep['active'])) continue;
     
-    $endpointsJson = $config['ai_custom_endpoints'] ?? '[]';
-    $endpoints = json_decode($endpointsJson, true) ?: [];
+    $label = $ep['label'] ?? '';
+    $url = $ep['url'] ?? '';
+    $epModel = $ep['model'] ?? 'gpt-4o-mini';
     
-    foreach ($endpoints as $ep) {
-        if (empty($ep['active'])) continue;
-        
-        $label = $ep['label'] ?? '';
-        $url = $ep['url'] ?? '';
-        $apiKey = $ep['api_key'] ?? '';
-        $epModel = $ep['model'] ?? 'gpt-4o-mini';
-        
-        if (empty($url)) continue;
-        
-        // Build a model string in custom format
-        $customModelStr = 'custom:' . $label . ':' . $url . ':' . $epModel;
-        
-        // Temporarily override config for this endpoint
-        $epConfig = $config;
-        $epConfig['default_provider'] = 'custom';
-        $epConfig['model_name'] = $customModelStr;
-        
-        $epResult = call_llm_api_provider($prompt, $epConfig, 'custom');
-        
-        if ($epResult !== null && strpos($epResult, '[API_ERROR]') !== 0) {
-            return $epResult . "\n\n*Note: Response via fallback \"" . $label . '"*';
-        }
+    if (empty($url)) continue;
+    
+    $customModelStr = 'custom|||' . $label . '|||' . $url . '|||' . $epModel;
+    
+    $epConfig = $config;
+    $epConfig['default_provider'] = 'custom';
+    $epConfig['model_name'] = $customModelStr;
+    
+    $epResult = call_llm_api_provider($prompt, $epConfig, 'custom');
+    
+    if ($epResult !== null && strpos($epResult, '[API_ERROR]') !== 0) {
+        return $epResult . "\n\n*Note: Response via Agent " . $agentCounter . '*';
     }
-    
-    // All fallbacks failed, return primary error
+    $agentCounter++;
+}
+// All fallbacks failed, return primary error
     return $result;
 }
 
@@ -566,7 +587,7 @@ function call_llm_api_provider(string $prompt, array $config, string $provider):
     $model = $config['model_name'] ?? 'openrouter/free';
     $temperature = (float) ($config['temperature'] ?? 0.2);
     $maxTokens = (int) ($config['max_tokens'] ?? 1500);
-    $systemPrompt = $config['system_prompt'] ?? "You are a helpful ERP assistant for Shree Label ERP. Be concise and accurate.";
+    $systemPrompt = $config['system_prompt'] ?? "You are a helpful ERP assistant for Shree Label ERP. Be concise and accurate.\nIMPORTANT: If the user asks a general knowledge question (e.g. about a person, place, or fact), just answer it directly and simply. Do NOT ask if they meant an ERP term, module, job, or plate. Do not try to relate general knowledge back to the ERP system.";
     $systemPrompt .= "\n\nCurrent System Time: " . date('l, d F Y, h:i A');
 
     // 1. Google Gemini Provider
@@ -653,7 +674,9 @@ function call_llm_api_provider(string $prompt, array $config, string $provider):
     if ($provider === 'openai') {
         $apiKey = $config['openai_api_key'] ?? '';
         $url = !empty($config['openai_api_url']) ? $config['openai_api_url'] : 'https://api.openai.com/v1/chat/completions';
-        if (empty($model) || strpos($model, 'gemini') !== false) $model = 'gpt-4o-mini';
+        if (empty($model) || strpos($model, 'gemini') !== false) {
+            $model = (strpos($url, 'ninerouter') !== false) ? '9ROUTER-COMBO' : 'gpt-4o-mini';
+        }
     } elseif ($provider === 'openrouter') {
         $apiKey = !empty($config['openrouter_api_key']) ? $config['openrouter_api_key'] : ($config['openai_api_key'] ?? '');
         $url = !empty($config['openrouter_ai_url']) ? $config['openrouter_ai_url'] : 'https://openrouter.ai/api/v1/chat/completions';
@@ -673,13 +696,14 @@ function call_llm_api_provider(string $prompt, array $config, string $provider):
         $apiKey = '';
         $customUrl = '';
         $customModel = '';
-        if (preg_match('/^custom:(.+?):(.+?):(.+)$/', $model, $m)) {
+        if (preg_match('/^custom\\|\\|\\|(.+?)\\|\\|\\|(.+?)\\|\\|\\|(.+)$/', $model, $m)) {
             $customLabel = $m[1];
             $customUrl = $m[2];
             $customModel = $m[3];
             // Look up API key from saved endpoints
             $endpointsJson = $config['ai_custom_endpoints'] ?? '[]';
-            $endpoints = json_decode($endpointsJson, true) ?: [];
+            $endpoints = is_array($endpointsJson) ? $endpointsJson : (json_decode($endpointsJson, true) ?: []);
+    $agentCounter = 2;
             foreach ($endpoints as $ep) {
                 if (($ep['label'] ?? '') === $customLabel) {
                     $apiKey = $ep['api_key'] ?? '';
