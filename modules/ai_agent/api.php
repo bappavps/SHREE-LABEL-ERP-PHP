@@ -2496,15 +2496,17 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
         if ($targetMeters > 0 && $rep > 0) {
             $calcLabels = floor(($targetMeters * 1000) / $rep * $ups);
-            if ($userLang === 'Bengali') $out .= "  - 🧮 **Calculation:** **" . number_format($targetMeters) . " মিটার** পেপারে **" . number_format($calcLabels) . " টি লেবেল** প্রিন্ট হবে।\n";
-            elseif ($userLang === 'Hindi') $out .= "  - 🧮 **Calculation:** **" . number_format($targetMeters) . " मीटर** पेपर में **" . number_format($calcLabels) . " लेबेल** प्रिंट होंगे।\n";
-            else $out .= "  - 🧮 **Calculation:** A **" . number_format($targetMeters) . "m** roll will yield **" . number_format($calcLabels) . " labels**.\n";
+            $out .= "\n  > 🧮 **FINAL ANSWER:**\n";
+            if ($userLang === 'Bengali') $out .= "  > **" . number_format($targetMeters) . " মিটার** পেপারে **" . number_format($calcLabels) . " টি লেবেল** প্রিন্ট হবে।\n";
+            elseif ($userLang === 'Hindi') $out .= "  > **" . number_format($targetMeters) . " मीटर** पेपर में **" . number_format($calcLabels) . " लेबेल** प्रिंट होंगे।\n";
+            else $out .= "  > A **" . number_format($targetMeters) . "m** roll will yield **" . number_format($calcLabels) . " labels**.\n";
         }
         if ($targetLabels > 0 && $rep > 0) {
             $reqMeters = ceil(($targetLabels / $ups) * $rep / 1000);
-            if ($userLang === 'Bengali') $out .= "  - 🧮 **Calculation:** **" . number_format($targetLabels) . " টি লেবেল** প্রিন্ট করতে **" . number_format($reqMeters) . " মিটার** পেপার লাগবে।\n";
-            elseif ($userLang === 'Hindi') $out .= "  - 🧮 **Calculation:** **" . number_format($targetLabels) . " लेबेल** प्रिंट करने के लिए **" . number_format($reqMeters) . " मीटर** पेपर लगेगा।\n";
-            else $out .= "  - 🧮 **Calculation:** To print **" . number_format($targetLabels) . " labels**, you need **" . number_format($reqMeters) . " meters** of paper.\n";
+            $out .= "\n  > 🧮 **FINAL ANSWER:**\n";
+            if ($userLang === 'Bengali') $out .= "  > **" . number_format($targetLabels) . " টি লেবেল** প্রিন্ট করতে **" . number_format($reqMeters) . " মিটার** পেপার লাগবে।\n";
+            elseif ($userLang === 'Hindi') $out .= "  > **" . number_format($targetLabels) . " लेबेल** प्रिंट करने के लिए **" . number_format($reqMeters) . " मीटर** पेपर लगेगा।\n";
+            else $out .= "  > To print **" . number_format($targetLabels) . " labels**, you need **" . number_format($reqMeters) . " meters** of paper.\n";
         }
         if ($targetMeters == null && $targetLabels == null && $rep > 0) {
             $teeth = round($rep / 3.175, 2);
