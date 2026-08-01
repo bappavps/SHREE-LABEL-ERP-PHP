@@ -40,8 +40,6 @@ if ($prompt === '') {
     exit;
 }
 
-
-
 /**
  * Detect Language (English / Bengali / Hindi)
  */
@@ -617,7 +615,26 @@ function call_llm_api_provider(string $prompt, array $config, string $provider):
         $response = preg_replace('/\R?data:\s*\[DONE\]\s*$/', '', $response);
         $response = preg_replace('/\R?data:\s*.+$/', '', $response);
 
-        $result = json_decode($response, true);
+            // Parse SSE if the response is a stream
+    if (strpos(trim($response), 'data: ') === 0) {
+        $fullContent = '';
+        $lines = explode("\n", $response);
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if (strpos($line, 'data: ') === 0) {
+                $jsonStr = trim(substr($line, 6));
+                if ($jsonStr === '[DONE]') continue;
+                $data = json_decode($jsonStr, true);
+                if (isset($data['choices'][0]['delta']['content'])) {
+                    $fullContent .= $data['choices'][0]['delta']['content'];
+                }
+            }
+        }
+        if ($fullContent !== '') {
+            return $fullContent;
+        }
+    }
+    $result = json_decode($response, true);
         if (isset($result['error'])) {
             $msg = is_array($result['error']) ? ($result['error']['message'] ?? json_encode($result['error'])) : $result['error'];
             return "[API_ERROR] Gemini Error: " . $msg;
@@ -712,6 +729,25 @@ function call_llm_api_provider(string $prompt, array $config, string $provider):
     $response = preg_replace('/\R?data:\s*\[DONE\]\s*$/', '', $response);
     $response = preg_replace('/\R?data:\s*.+$/', '', $response);
 
+        // Parse SSE if the response is a stream
+    if (strpos(trim($response), 'data: ') === 0) {
+        $fullContent = '';
+        $lines = explode("\n", $response);
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if (strpos($line, 'data: ') === 0) {
+                $jsonStr = trim(substr($line, 6));
+                if ($jsonStr === '[DONE]') continue;
+                $data = json_decode($jsonStr, true);
+                if (isset($data['choices'][0]['delta']['content'])) {
+                    $fullContent .= $data['choices'][0]['delta']['content'];
+                }
+            }
+        }
+        if ($fullContent !== '') {
+            return $fullContent;
+        }
+    }
     $result = json_decode($response, true);
     if (isset($result['error'])) {
         $msg = is_array($result['error']) ? ($result['error']['message'] ?? json_encode($result['error'])) : $result['error'];
@@ -925,8 +961,6 @@ $pTrimmed = trim(mb_strtolower($prompt, 'UTF-8'));
 $userLang = detect_language($prompt); // Define userLang for global scope
 $baseNavUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
 $commandType = null; // Tracks special command: 'plate', 'paperstock', 'quoted'
-$erpOnlyMode = false; // TRUE = force KB + ERP data only, skip external LLM
-$skipNormalDb = false; // TRUE = normal query (no / prefix) → skip KB+DB, go directly to LLM
 
 // ??? Slash Commands Helper (/) � show all available commands ???
 $pTrimmedSingle = trim(mb_strtolower($prompt, 'UTF-8'));
@@ -985,7 +1019,7 @@ if (strpos($pTrimmed, '/plate') === 0 || $pTrimmed === 'plate' || $pTrimmed === 
     $subQuery = preg_replace('/^\/plate\s*/iu', '', trim($prompt));
     $subQuery = preg_replace('/^প্লেট\s*/u', '', $subQuery);
     $subQuery = preg_replace('/^प्लेट\s*/u', '', $subQuery);
-    $subQuery = trim($subQuery);
+    $subQuery = trim(trim($subQuery), '"');
 
     if ($subQuery === '') {
         $navUrl = $baseNavUrl . '/modules/plate-tools/plate-management/index.php';
@@ -1021,7 +1055,7 @@ if ($commandType === null && (strpos($pTrimmed, '/paperstock') === 0 || strpos($
     $subQuery = preg_replace('/^পেপার\s*/u', '', $subQuery);
     $subQuery = preg_replace('/^पेपर\s*स्टॉक\s*/u', '', $subQuery);
     $subQuery = preg_replace('/^पेपर\s*/u', '', $subQuery);
-    $subQuery = trim($subQuery);
+    $subQuery = trim(trim($subQuery), '"');
 
     if ($subQuery === '') {
         // No specific query → show full stock summary
@@ -1074,6 +1108,8 @@ if (preg_match('/^\/cal\s*/iu', $pTrimmed)) {
     $p = mb_strtolower($prompt, 'UTF-8');
 }
 // /erp command — ERP-only mode: force KB + ERP data only, skip external LLM
+$erpOnlyMode = false;
+$skipNormalDb = false; // TRUE = normal query (no / prefix) → skip KB+DB, go directly to LLM
 if (preg_match('/^\/erp\s*/iu', $pTrimmed)) {
     $subQuery = preg_replace('/^\/erp\s*/iu', '', $prompt);
     $subQuery = trim($subQuery);
@@ -1315,9 +1351,18 @@ if (isset($_SESSION['ai_ambiguous_search']) && !empty($foundAreas ?? [])) {
 // ─── Normal Mode Detection: No /command prefix → skip KB+DB, go directly to LLM ───
 // If user typed a query without any / prefix, it is a "normal" query that should
 // bypass the Knowledge Base and ERP database entirely and go straight to the external LLM.
-if (!$commandType && !$erpOnlyMode && strpos($pTrimmed, '/') !== 0) {
-    $skipNormalDb = true;
-}
+  if (!$commandType && !$erpOnlyMode && strpos($pTrimmed, '/') !== 0) {
+      if (preg_match('/\b(p-\d+|plate-\d+|sl-\d+)\b/i', $prompt) || 
+          preg_match('/\b(plate|die|paper|cylinder|live|floor|stock|roll|job|plan|planning|dashboard)\b/i', $prompt) ||
+          strpos($p, 'প্লেট') !== false || strpos($p, 'प्लेट') !== false ||
+          strpos($p, 'পেপার') !== false || strpos($p, 'ডাই') !== false ||
+          strpos($p, 'সিলিন্ডার') !== false || strpos($p, 'রোল') !== false ||
+          strpos($p, 'জব') !== false || strpos($p, 'লাইভ') !== false) {
+          $skipNormalDb = false;
+      } else {
+          $skipNormalDb = true;
+      }
+  }
 
 // ─── Inline Quoted Term Handler ("product name" in any prompt) ───
 // If the prompt contains quoted text anywhere (e.g. "blue500" price), extract it as a
@@ -1609,7 +1654,7 @@ if (!$skipKB && preg_match('/^(view|open|show|go\s*to)\s+(plate|paper\s*stock|pa
     }
 }
 
-$knowledgeMatch = ($skipKB || $skipNormalDb) ? null : check_knowledge_base($db, $prompt);
+$knowledgeMatch = $skipKB ? null : check_knowledge_base($db, $prompt);
 if ($knowledgeMatch !== null) {
 
     $kbAnswer = $knowledgeMatch['answer'];
@@ -1802,7 +1847,7 @@ if ($isSimpleArithmetic) {
 $hasCompanyQuery = preg_match('/\b(krishna|austin|navkar|nrgi)\b/i', $prompt) || strpos($p, 'কৃষ্ণা') !== false || strpos($p, 'অস্টিন') !== false || strpos($p, 'নভকার') !== false || strpos($p, 'এনআরজিআই') !== false;
 $hasDbQueryIntent = preg_match('/\b(die|dies|plate|plates|stock|inventory|search|find|any|is there|kono|ache)\b/i', $prompt);
 
-$isMathIntent = !$hasCompanyQuery && !$hasDbQueryIntent && $commandType !== 'plate' && $commandType !== 'paperstock' && (
+$isMathIntent = !$hasCompanyQuery && !$hasDbQueryIntent && (
     preg_match('/\d+\s*mm\s*[xX*]\s*\d+\s*mm/i', $prompt) ||
     strpos($p, 'running meter') !== false ||
     strpos($p, 'running mtr') !== false ||
@@ -1962,19 +2007,18 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
     // ─── SESSION PRIORITY MODE: Search priority source FIRST ───
     $priorityMode = $_SESSION['ai_priority_mode'] ?? '';
 
-    if (strpos($p, 'plate') !== false || strpos($p, 'প্লেট') !== false || strpos($p, 'प्लेट') !== false || strpos($p, 'cylinder') !== false || strpos($p, 'সিলিন্ডার') !== false || strpos($p, 'die') !== false || strpos($p, 'koto paper lagbe') !== false || strpos($p, 'how many paper') !== false || strpos($p, 'how much paper') !== false || strpos($p, 'paper req') !== false || strpos($p, 'koto mtr') !== false || strpos($p, 'koto meter') !== false || strpos($p, 'কত পেপার') !== false || strpos($p, 'কত মিটার') !== false || (strpos($p, 'print') !== false && (strpos($p, 'koto') !== false || strpos($p, 'কত') !== false || strpos($p, 'how many') !== false || strpos($p, 'how much') !== false))) {
+    if (strpos($p, 'plate') !== false || strpos($p, 'প্লেট') !== false || strpos($p, 'प्लेट') !== false || strpos($p, 'cylinder') !== false || strpos($p, 'সিলিন্ডার') !== false || strpos($p, 'die') !== false) {
         if (($_SESSION['ai_priority_mode'] ?? '') === 'paperstock') {
-            $_SESSION['ai_priority_mode'] = 'plate';
-            $priorityMode = 'plate';
+            unset($_SESSION['ai_priority_mode']);
+            $priorityMode = '';
         }
     }
     // PRIORITY: Paper Stock — search first if priority mode active
     if ($priorityMode === 'paperstock') {
-        $isOtherModuleQuery = (strpos($p, 'live') !== false || strpos($p, 'floor') !== false || strpos($p, 'plate') !== false || strpos($p, 'die') !== false || strpos($p, 'anilox') !== false || strpos($p, 'job') !== false || strpos($p, 'planning') !== false || strpos($p, 'dispatch') !== false || strpos($p, 'slit') !== false || strpos($p, 'finished') !== false || strpos($p, 'packing') !== false || strpos($p, 'লাইভ') !== false || strpos($p, 'ফ্লোর') !== false || strpos($p, 'প্লেট') !== false || strpos($p, 'ডাই') !== false || strpos($p, 'জব') !== false || strpos($p, 'koto paper lagbe') !== false || strpos($p, 'how many paper') !== false || strpos($p, 'how much paper') !== false || strpos($p, 'paper req') !== false || strpos($p, 'koto mtr') !== false || strpos($p, 'koto meter') !== false || strpos($p, 'কত পেপার') !== false || strpos($p, 'কত মিটার') !== false || (strpos($p, 'print') !== false && (strpos($p, 'koto') !== false || strpos($p, 'কত') !== false || strpos($p, 'how many') !== false || strpos($p, 'how much') !== false)));
+        $isOtherModuleQuery = (strpos($p, 'live') !== false || strpos($p, 'floor') !== false || strpos($p, 'plate') !== false || strpos($p, 'plate') !== false || strpos($p, 'die') !== false || strpos($p, 'anilox') !== false || strpos($p, 'job') !== false || strpos($p, 'planning') !== false || strpos($p, 'dispatch') !== false || strpos($p, 'slit') !== false || strpos($p, 'finished') !== false || strpos($p, 'packing') !== false || strpos($p, 'লাইভ') !== false || strpos($p, 'ফ্লোর') !== false || strpos($p, 'প্লেট') !== false || strpos($p, 'ডাই') !== false || strpos($p, 'জব') !== false);
         if ($isOtherModuleQuery) {
             unset($_SESSION['ai_priority_mode']);
             $priorityMode = '';
-            $commandType = ''; // Clear commandType to prevent forced execution
         }
         $isPaperQuery = !$isOtherModuleQuery && ($commandType === 'paperstock' || strpos($p, 'paper') !== false || strpos($p, 'roll') !== false || strpos($p, 'slc/') !== false || strpos($p, 'chromo') !== false || strpos($p, 'thermal') !== false || strpos($p, 'stock') !== false || strpos($p, 'maplitho') !== false || strpos($p, 'pp') !== false || strpos($p, 'white') !== false || strpos($p, 'jumbo') !== false || strpos($p, 'avery') !== false || strpos($p, 'krishna') !== false || strpos($p, 'austin') !== false || strpos($p, 'navkar') !== false || strpos($p, 'nrgi') !== false || strpos($p, 'company') !== false || strpos($p, 'কোম্পানি') !== false || strpos($p, 'স্টক') !== false || strpos($p, 'রোল') !== false || strpos($p, 'কত') !== false || strpos($p, 'how many') !== false || strpos($p, 'total') !== false || strpos($p, 'summary') !== false || strpos($p, 'breakdown') !== false || strpos($p, 'metro') !== false || strpos($p, 'sqm') !== false || strpos($p, 'running') !== false || strpos($p, 'status') !== false || strpos($p, 'lot') !== false || strpos($p, 'batch') !== false || strpos($p, 'লট') !== false || strpos($p, 'ব্যাচ') !== false || strpos($p, 'rate') !== false || strpos($p, 'price') !== false || strpos($p, 'দাম') !== false || strpos($p, 'দামি') !== false || strpos($p, 'costly') !== false || strpos($p, 'expensive') !== false || strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || strpos($p, 'print') !== false || strpos($p, 'প্রিন্ট') !== false || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false);
         if ($isPaperQuery) {
@@ -2073,7 +2117,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             $pWhereSql = implode(' AND ', $pWhere);
 
             // ─── Export/Report Sub-Handler ───
-            $isExportQuery = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || (strpos($p, 'print') !== false && !strpos($p, 'koto') && !strpos($p, 'কত') && !strpos($p, 'required') && !strpos($p, 'need') && !strpos($p, 'how many') && !strpos($p, 'koyta')) || (strpos($p, 'প্রিন্ট') !== false && !strpos($p, 'কত') && !strpos($p, 'লাগবে') && !strpos($p, 'পাবো')) || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false);
+            $isExportQuery = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false || ((strpos($p, 'print') !== false || strpos($p, 'প্রিন্ট') !== false) && !strpos($p, 'koto') && !strpos($p, 'কত') && !strpos($p, 'required') && !strpos($p, 'need') && !strpos($p, 'how many')));
             if ($isExportQuery) {
                 $fTitle = 'Paper Stock Report';
                 if ($pLotBatch) $fTitle = 'Lot/Batch: ' . strtoupper($pLotBatch) . ' Report';
@@ -2321,7 +2365,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
     // PRIORITY: Printing Plates — search first if priority mode active
     if ($priorityMode === 'plate') {
-        $isOtherModuleQueryPlate = (strpos($p, 'live') !== false || strpos($p, 'floor') !== false || (strpos($p, 'paper') !== false && strpos($p, 'koto paper lagbe') === false && strpos($p, 'কত পেপার') === false && strpos($p, 'how many paper') === false && strpos($p, 'how much paper') === false && strpos($p, 'paper req') === false) || (strpos($p, 'roll') !== false && strpos($p, 'meter roll') === false && strpos($p, 'mtr roll') === false) || strpos($p, 'stock') !== false || strpos($p, 'anilox') !== false || strpos($p, 'dispatch') !== false || strpos($p, 'finished') !== false || strpos($p, 'packing') !== false || strpos($p, 'ライブ') !== false || strpos($p, '플로어') !== false || strpos($p, '페이퍼') !== false || strpos($p, '롤') !== false) && !(strpos($p, 'koto paper lagbe') !== false || strpos($p, 'how many paper') !== false || strpos($p, 'how much paper') !== false || strpos($p, 'paper req') !== false || strpos($p, 'koto mtr') !== false || strpos($p, 'koto meter') !== false || strpos($p, 'কত পেপার') !== false || strpos($p, 'কত মিটার') !== false || (strpos($p, 'print') !== false && (strpos($p, 'koto') !== false || strpos($p, 'কত') !== false || strpos($p, 'how many') !== false || strpos($p, 'how much') !== false)));
+        $isOtherModuleQueryPlate = (strpos($p, 'live') !== false || strpos($p, 'floor') !== false || strpos($p, 'paper') !== false || strpos($p, 'roll') !== false || strpos($p, 'stock') !== false || strpos($p, 'anilox') !== false || strpos($p, 'dispatch') !== false || strpos($p, 'finished') !== false || strpos($p, 'packing') !== false || strpos($p, 'ライブ') !== false || strpos($p, '플로어') !== false || strpos($p, '페이퍼') !== false || strpos($p, '롤') !== false);
         if ($isOtherModuleQueryPlate) {
             unset($_SESSION['ai_priority_mode']);
             $priorityMode = '';
@@ -2369,12 +2413,12 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
     // Extract Target Meters & Labels for Math
     $targetMeters = null;
-    if (preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:meter|meters|mtr|m(?![a-zA-Z])|\bমিটার\b|\bমিটারে\b)/i', $prompt, $m)) {
+    if (preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:meter|meters|mtr|m(?!m)|\bমিটার\b|\bমিটারে\b)/i', $prompt, $m)) {
         $targetMeters = (float)str_replace(',', '', $m[1]);
     }
     
     $targetLabels = null;
-    if (preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(lakh|লাখ|k|thousand|হাজার)?\s*(?:label|labels|pcs|piece|pieces|piss|qnty|qnt|qny|qty|quantity|পিস|লেবেল)/i', $prompt, $m) || preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:lakh|k|thousand)/i', $prompt, $m)) {
+    if (preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(lakh|লাখ|k|thousand|হাজার)?\s*(?:label|labels|pcs|piece|pieces|piss|পিস|লেবেল)/i', $prompt, $m) || preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:lakh|k|thousand)/i', $prompt, $m)) {
         $val = (float)str_replace(',', '', $m[1]);
         $mult = strtolower(trim($m[2] ?? ''));
         if ($mult === 'lakh' || $mult === 'লাখ') $val *= 100000;
@@ -2406,10 +2450,10 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
     $latestPlateIntent = (strpos($p, 'latest') !== false || strpos($p, 'newest') !== false || strpos($p, 'সবচেয়ে নতুন') !== false || strpos($p, 'সর্বশেষ') !== false);
 
     // Export query
-    $isExportQuery = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || (strpos($p, 'print') !== false && strpos($p, 'koto') === false && strpos($p, 'কত') === false && strpos($p, 'required') === false && strpos($p, 'need') === false && strpos($p, 'how many') === false && strpos($p, 'korechi') === false && strpos($p, 'hoyeche') === false && strpos($p, 'kora') === false && strpos($p, 'amra') === false && strpos($p, 'have we') === false && strpos($p, 'kita') === false && strpos($p, 'kitna') === false && strpos($p, 'lagela') === false && strpos($p, 'chahiye') === false));
+    $isExportQuery = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false || ((strpos($p, 'print') !== false || strpos($p, 'প্রিন্ট') !== false) && !strpos($p, 'koto') && !strpos($p, 'কত') && !strpos($p, 'required') && !strpos($p, 'need') && !strpos($p, 'how many')));
 
     // Find search terms loosely
-    $pStopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'plate', 'plates', 'list', 'show', 'details', 'detail', 'this', 'the', 'a', 'an', 'job', 'jobs', 'for', 'about', 'get', 'search', 'find', 'there', 'any', 'named', 'by', 'name', 'of', 'with', 'are', 'do', 'have', 'exist', 'does', 'repeat', 'gap', 'gaph', 'gapv', 'size', 'ups', 'cylinder', 'paper', 'die', 'core', 'rewinding', 'value', 'color', 'colors', 'spec', 'special', 'what', 'how', 'give', 'if', 'run', 'running', 'much', 'many', 'quantity', 'qty', 'meter', 'meters', 'mtr', 'will', 'be', 'produced', 'print', 'printing', 'require', 'required', 'need', 'needed', 'or', 'and', 'calculate', 'calculating', 'calc', 'length', 'roll', 'pcs', 'pieces', 'labels', 'koto', 'kotogulo', 'hobe', 'lagbe', 'korle', 'korte', 'asob', 'ar', 'er', 'diye', 'giye', 'ache', 'hobe', 'হবে', 'আছে', 'কত', 'কতগুলো', 'কি', 'কী', 'কোন', 'pdf', 'excel', 'export', 'download', 'sir', 'amra', 'ai', 'ta', 'korechi', 'kore', 'chi', 'hoyechhe', 'kobe', 'last', 'naki', 'ache', 'এর', 'ডিটেলস', 'দেখাও', 'dikhao', 'dekhaw', 'konta', 'কোনটা', 'dekhaben', 'janaben', 'jante', 'chai', 'লেবেলের', 'লেবেল', 'label', 'labels', 'প্লেট', 'প্লেটের', 'প্লট', 'প্লটের', 'qnty', 'qnt', 'quantity', 'quantities', 'piss', 'piece', 'pieces', 'পেপারে', 'পেপার', 'মিটার', 'মিটারে', 'প্রিন্টিং', 'প্রিন্ট', 'total', 'count', 'summary', 'dashboard', 'all', 'সব', 'সকল', 'din', 'দিন', 'দাও', 'dao', 'do', 'deu', 'dene', 'dena', 'dikhabe', 'send', 'পাঠাও', 'pathao', 'pathaben', 'no', 'number', 'num', 'nber', 'numb', 'id', 'নম্বর', 'নং', 'আইডি',
+    $pStopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'plate', 'want', 'to', 'printing', 'pitnting', 'print', 'plates', 'list', 'show', 'details', 'detail', 'this', 'the', 'a', 'an', 'job', 'jobs', 'for', 'about', 'get', 'search', 'find', 'there', 'any', 'named', 'by', 'name', 'of', 'with', 'are', 'do', 'have', 'exist', 'does', 'repeat', 'gap', 'gaph', 'gapv', 'size', 'ups', 'cylinder', 'paper', 'die', 'core', 'rewinding', 'value', 'color', 'colors', 'spec', 'special', 'what', 'how', 'give', 'if', 'run', 'running', 'much', 'many', 'quantity', 'qty', 'meter', 'meters', 'mtr', 'will', 'be', 'produced', 'print', 'printing', 'require', 'required', 'need', 'needed', 'or', 'and', 'calculate', 'calculating', 'calc', 'length', 'roll', 'pcs', 'pieces', 'labels', 'koto', 'kotogulo', 'hobe', 'lagbe', 'korle', 'korte', 'asob', 'ar', 'er', 'diye', 'giye', 'ache', 'hobe', 'হবে', 'আছে', 'কত', 'কতগুলো', 'কি', 'কী', 'কোন', 'pdf', 'excel', 'export', 'download', 'sir', 'amra', 'ai', 'ta', 'korechi', 'kore', 'chi', 'hoyechhe', 'kobe', 'last', 'naki', 'ache', 'এর', 'ডিটেলস', 'দেখাও', 'dikhao', 'dekhaw', 'konta', 'কোনটা', 'dekhaben', 'janaben', 'jante', 'chai', 'লেবেলের', 'লেবেল', 'label', 'labels', 'প্লেট', 'প্লেটের', 'প্লট', 'প্লটের', 'qnty', 'qnt', 'quantity', 'quantities', 'piss', 'piece', 'pieces', 'পেপারে', 'পেপার', 'মিটার', 'মিটারে', 'প্রিন্টিং', 'প্রিন্ট', 'total', 'count', 'summary', 'dashboard', 'all', 'সব', 'সকল', 'din', 'দিন', 'দাও', 'dao', 'do', 'deu', 'dene', 'dena', 'dikhabe', 'send', 'পাঠাও', 'pathao', 'pathaben', 'no', 'number', 'num', 'nber', 'numb', 'id', 'নম্বর', 'নং', 'আইডি',
         // Added for plate-specific query handling
         'মোট', 'সর্বমোট', 'সিলিন্ডার', 'সিলিন্ডারের', 'সিলিন্ডারটা', 'রিপিট', 'রিপিটের', 'কালার', 'কালারের', 'কয়টি', 'কয়', 'দাঁত', 'দাঁতের', 'জবে', 'জবের', 'নতুন', 'সবচেয়ে', 'সর্বশেষ', 'লেটেস্ট', 'তৈরি', 'নামে', 'জন্য', 'সাইজ', 'পেপারসাইজ', 'পেপারের', 'কোনো', 'inch', 'ইঞ্চি', 'ব্যবহার', 'হয়', 'লাগে', 'প্লেটগুলো', 'প্লেটগুলোতে', 'প্লেটটি', 'বেশি', 'লাখ', 'পিস', 'হাজার', 'হাজারে', 'করে', 'করা', 'করার', 'করতে', 'থেকে', 'এটা', 'এটি', 'ডাই', 'টাইপ', 'type', 'যে', 'যেগুলো', 'যেগুলোতে', 'খুঁজে', 'দিয়েছি', 'দিয়ে', 'এরকম', 'তোমার', 'আমার', 'konsa', 'konsi', 'kaun', 'jis', 'jinke', 'লাগবে', 'প্রয়োজন', 'প্রয়োজনীয়', 'চাই', 'চাও', 'চান', 'we', 'our', 'us', 'are', 'were', 'was', 'has', 'had', 'have', 'do', 'does', 'did', 'will', 'would', 'can', 'could', 'should', 'shall', 'may', 'might', 'must', 'shall', 'আমি', 'তুমি', 'আপনি', 'সে', 'আমরা', 'আপনরা', 'তোমরা', 'সবাই'];
     
@@ -2496,17 +2540,15 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
         if ($targetMeters > 0 && $rep > 0) {
             $calcLabels = floor(($targetMeters * 1000) / $rep * $ups);
-            $out .= "\n  > 🧮 **FINAL ANSWER:**\n";
-            if ($userLang === 'Bengali') $out .= "  > **" . number_format($targetMeters) . " মিটার** পেপারে **" . number_format($calcLabels) . " টি লেবেল** প্রিন্ট হবে।\n";
-            elseif ($userLang === 'Hindi') $out .= "  > **" . number_format($targetMeters) . " मीटर** पेपर में **" . number_format($calcLabels) . " लेबेल** प्रिंट होंगे।\n";
-            else $out .= "  > A **" . number_format($targetMeters) . "m** roll will yield **" . number_format($calcLabels) . " labels**.\n";
+            if ($userLang === 'Bengali') $out .= "  - 🧮 **Calculation:** **" . number_format($targetMeters) . " মিটার** পেপারে **" . number_format($calcLabels) . " টি লেবেল** প্রিন্ট হবে।\n";
+            elseif ($userLang === 'Hindi') $out .= "  - 🧮 **Calculation:** **" . number_format($targetMeters) . " मीटर** पेपर में **" . number_format($calcLabels) . " लेबेल** प्रिंट होंगे।\n";
+            else $out .= "  - 🧮 **Calculation:** A **" . number_format($targetMeters) . "m** roll will yield **" . number_format($calcLabels) . " labels**.\n";
         }
         if ($targetLabels > 0 && $rep > 0) {
             $reqMeters = ceil(($targetLabels / $ups) * $rep / 1000);
-            $out .= "\n  > 🧮 **FINAL ANSWER:**\n";
-            if ($userLang === 'Bengali') $out .= "  > **" . number_format($targetLabels) . " টি লেবেল** প্রিন্ট করতে **" . number_format($reqMeters) . " মিটার** পেপার লাগবে।\n";
-            elseif ($userLang === 'Hindi') $out .= "  > **" . number_format($targetLabels) . " लेबेल** प्रिंट करने के लिए **" . number_format($reqMeters) . " मीटर** पेपर लगेगा।\n";
-            else $out .= "  > To print **" . number_format($targetLabels) . " labels**, you need **" . number_format($reqMeters) . " meters** of paper.\n";
+            if ($userLang === 'Bengali') $out .= "  - 🧮 **Calculation:** **" . number_format($targetLabels) . " টি লেবেল** প্রিন্ট করতে **" . number_format($reqMeters) . " মিটার** পেপার লাগবে।\n";
+            elseif ($userLang === 'Hindi') $out .= "  - 🧮 **Calculation:** **" . number_format($targetLabels) . " लेबेल** प्रिंट करने के लिए **" . number_format($reqMeters) . " मीटर** पेपर लगेगा।\n";
+            else $out .= "  - 🧮 **Calculation:** To print **" . number_format($targetLabels) . " labels**, you need **" . number_format($reqMeters) . " meters** of paper.\n";
         }
         if ($targetMeters == null && $targetLabels == null && $rep > 0) {
             $teeth = round($rep / 3.175, 2);
@@ -2682,7 +2724,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             $fTitle = 'Plate: ' . strtoupper($plateNoMatch) . ' Report';
             $exportQueryStr .= '&search=' . urlencode($plateNoMatch);
         } elseif ($jobSearchTerm) {
-            $fTitle = 'Job: ' . strtoupper($jobSearchTerm) . ' Report';
+            $fTitle = 'Job: ' . strtoupper(implode(' ', $pTerms)) . ' Report';
             $exportQueryStr .= '&search=' . urlencode($jobSearchTerm);
         } elseif ($cylinderMatch) {
             $fTitle = 'Cylinder: ' . $cylinderMatch . ' Report';
@@ -2702,10 +2744,10 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         }
 
         $answer .= '<div style="display: flex; gap: 15px; margin-top: 15px; flex-wrap: wrap;">' . "\n";
-        $answer .= '    <a href="' . $pdfUrl . '" download style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.4); border: 1px solid #b91c1c; font-size: 14px; min-width: 200px;">' . "\n";
+        $answer .= '    <a href="' . $pdfUrl . '" target="_blank" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.4); border: 1px solid #b91c1c; font-size: 14px; min-width: 200px;">' . "\n";
         $answer .= '        📄 Download PDF Report' . "\n";
         $answer .= '    </a>' . "\n";
-        $answer .= '    <a href="' . $csvUrl . '" download style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #22c55e, #16a34a); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(34, 197, 94, 0.4); border: 1px solid #15803d; font-size: 14px; min-width: 200px;">' . "\n";
+        $answer .= '    <a href="' . $csvUrl . '" target="_blank" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #22c55e, #16a34a); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(34, 197, 94, 0.4); border: 1px solid #15803d; font-size: 14px; min-width: 200px;">' . "\n";
         $answer .= '        📊 Download Excel' . "\n";
         $answer .= '    </a>' . "\n";
         $answer .= '</div>';
@@ -3463,7 +3505,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
     if (strpos($p, 'live') !== false || strpos($p, 'life') !== false || strpos($p, 'floor') !== false || strpos($p, 'stage') !== false || strpos($p, 'next department') !== false || strpos($p, 'journey') !== false || strpos($p, 'current job') !== false || strpos($p, 'running job') !== false || strpos($p, 'লাইভ') !== false || strpos($p, 'ফ্লোর') !== false) {
         $toolName = 'Live Production Floor Pipeline Tool';
 
-        $liveStopwords = ['erp', 'ar', 'er', 'din', 'dao', 'dijiye', 'dikhaiye', 'kore', 'kor', 'koro', 'can', 'you', 'what', 'is', 'the', 'status', 'of', 'current', 'job', 'jobs', 'running', 'live', 'life', 'floor', 'show', 'tell', 'me', 'details', 'for', 'in', 'page', 'pages', 'summary', 'sumary', 'overview', 'list', 'all', 'production', 'pipeline', 'report', 'reports', 'board', 'kholo', 'khul', 'open', 'go', 'to', 'dekhao', 'dekaw', 'batao', 'give', 'bring', 'find', 'search', 'how', 'many', 'are', 'there', 'please', 'pls', 'lookup', 'display', 'and', 'or', 'about', 'with', 'this', 'that', 'get', 'fetch', 'on', 'at', 'from', 'a', 'an', 'ki', 'kya', 'hai', 'ami', 'tumi', 'do', 'we', 'have', 'any', 'my'];
+        $liveStopwords = ['can', 'you', 'what', 'is', 'the', 'status', 'of', 'current', 'job', 'jobs', 'running', 'live', 'life', 'floor', 'show', 'tell', 'me', 'details', 'for', 'in', 'page', 'pages', 'summary', 'sumary', 'overview', 'list', 'all', 'production', 'pipeline', 'report', 'reports', 'board', 'kholo', 'khul', 'open', 'go', 'to', 'dekhao', 'dekaw', 'batao', 'give', 'bring', 'find', 'search', 'how', 'many', 'are', 'there', 'please', 'pls', 'lookup', 'display', 'and', 'or', 'about', 'with', 'this', 'that', 'get', 'fetch', 'on', 'at', 'from', 'a', 'an', 'ki', 'kya', 'hai', 'ami', 'tumi', 'do', 'we', 'have', 'any', 'my'];
         $pWords = preg_split('/\s+/', strtolower($prompt));
         $terms = [];
         foreach ($pWords as $w) {
@@ -3765,7 +3807,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
     }
     
     $targetLabels = null;
-    if (preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(lakh|লাখ|k|thousand|হাজার)?\s*(?:label|labels|pcs|piece|pieces|piss|qnty|qnt|qty|quantity|পিস|লেবেল)/i', $prompt, $m) || preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:lakh|k|thousand)/i', $prompt, $m)) {
+    if (preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(lakh|লাখ|k|thousand|হাজার)?\s*(?:label|labels|pcs|piece|pieces|piss|পিস|লেবেল)/i', $prompt, $m) || preg_match('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:lakh|k|thousand)/i', $prompt, $m)) {
         $val = (float)str_replace(',', '', $m[1]);
         $mult = strtolower(trim($m[2] ?? ''));
         if ($mult === 'lakh' || $mult === 'লাখ') $val *= 100000;
@@ -3797,10 +3839,10 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
     $latestPlateIntent = (strpos($p, 'latest') !== false || strpos($p, 'newest') !== false || strpos($p, 'সবচেয়ে নতুন') !== false || strpos($p, 'সর্বশেষ') !== false);
 
     // Export query
-    $isExportQuery = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || (strpos($p, 'print') !== false && strpos($p, 'koto') === false && strpos($p, 'কত') === false && strpos($p, 'required') === false && strpos($p, 'need') === false && strpos($p, 'how many') === false && strpos($p, 'korechi') === false && strpos($p, 'hoyeche') === false && strpos($p, 'kora') === false && strpos($p, 'amra') === false && strpos($p, 'have we') === false && strpos($p, 'kita') === false && strpos($p, 'kitna') === false && strpos($p, 'lagela') === false && strpos($p, 'chahiye') === false));
+    $isExportQuery = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false || ((strpos($p, 'print') !== false || strpos($p, 'প্রিন্ট') !== false) && !strpos($p, 'koto') && !strpos($p, 'কত') && !strpos($p, 'required') && !strpos($p, 'need') && !strpos($p, 'how many')));
 
     // Find search terms loosely
-    $pStopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'plate', 'plates', 'list', 'show', 'details', 'detail', 'this', 'the', 'a', 'an', 'job', 'jobs', 'for', 'about', 'get', 'search', 'find', 'there', 'any', 'named', 'by', 'name', 'of', 'with', 'are', 'do', 'have', 'exist', 'does', 'repeat', 'gap', 'gaph', 'gapv', 'size', 'ups', 'cylinder', 'paper', 'die', 'core', 'rewinding', 'value', 'color', 'colors', 'spec', 'special', 'what', 'how', 'give', 'if', 'run', 'running', 'much', 'many', 'quantity', 'qty', 'meter', 'meters', 'mtr', 'will', 'be', 'produced', 'print', 'printing', 'require', 'required', 'need', 'needed', 'or', 'and', 'calculate', 'calculating', 'calc', 'length', 'roll', 'pcs', 'pieces', 'labels', 'koto', 'kotogulo', 'hobe', 'lagbe', 'korle', 'korte', 'asob', 'ar', 'er', 'diye', 'giye', 'ache', 'hobe', 'হবে', 'আছে', 'কত', 'কতগুলো', 'কি', 'কী', 'কোন', 'pdf', 'excel', 'export', 'download', 'sir', 'amra', 'ai', 'ta', 'korechi', 'kore', 'chi', 'hoyechhe', 'kobe', 'last', 'naki', 'ache', 'এর', 'ডিটেলস', 'দেখাও', 'dikhao', 'dekhaw', 'konta', 'কোনটা', 'dekhaben', 'janaben', 'jante', 'chai', 'লেবেলের', 'লেবেল', 'label', 'labels', 'প্লেট', 'প্লেটের', 'প্লট', 'প্লটের', 'qnty', 'qnt', 'quantity', 'quantities', 'piss', 'piece', 'pieces', 'পেপারে', 'পেপার', 'মিটার', 'মিটারে', 'প্রিন্টিং', 'প্রিন্ট', 'total', 'count', 'summary', 'dashboard', 'all', 'সব', 'সকল', 'din', 'দিন', 'দাও', 'dao', 'do', 'deu', 'dene', 'dena', 'dikhabe', 'send', 'পাঠাও', 'pathao', 'pathaben', 'no', 'number', 'num', 'nber', 'numb', 'id', 'নম্বর', 'নং', 'আইডি',
+    $pStopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'plate', 'want', 'to', 'printing', 'pitnting', 'print', 'plates', 'list', 'show', 'details', 'detail', 'this', 'the', 'a', 'an', 'job', 'jobs', 'for', 'about', 'get', 'search', 'find', 'there', 'any', 'named', 'by', 'name', 'of', 'with', 'are', 'do', 'have', 'exist', 'does', 'repeat', 'gap', 'gaph', 'gapv', 'size', 'ups', 'cylinder', 'paper', 'die', 'core', 'rewinding', 'value', 'color', 'colors', 'spec', 'special', 'what', 'how', 'give', 'if', 'run', 'running', 'much', 'many', 'quantity', 'qty', 'meter', 'meters', 'mtr', 'will', 'be', 'produced', 'print', 'printing', 'require', 'required', 'need', 'needed', 'or', 'and', 'calculate', 'calculating', 'calc', 'length', 'roll', 'pcs', 'pieces', 'labels', 'koto', 'kotogulo', 'hobe', 'lagbe', 'korle', 'korte', 'asob', 'ar', 'er', 'diye', 'giye', 'ache', 'hobe', 'হবে', 'আছে', 'কত', 'কতগুলো', 'কি', 'কী', 'কোন', 'pdf', 'excel', 'export', 'download', 'sir', 'amra', 'ai', 'ta', 'korechi', 'kore', 'chi', 'hoyechhe', 'kobe', 'last', 'naki', 'ache', 'এর', 'ডিটেলস', 'দেখাও', 'dikhao', 'dekhaw', 'konta', 'কোনটা', 'dekhaben', 'janaben', 'jante', 'chai', 'লেবেলের', 'লেবেল', 'label', 'labels', 'প্লেট', 'প্লেটের', 'প্লট', 'প্লটের', 'qnty', 'qnt', 'quantity', 'quantities', 'piss', 'piece', 'pieces', 'পেপারে', 'পেপার', 'মিটার', 'মিটারে', 'প্রিন্টিং', 'প্রিন্ট', 'total', 'count', 'summary', 'dashboard', 'all', 'সব', 'সকল', 'din', 'দিন', 'দাও', 'dao', 'do', 'deu', 'dene', 'dena', 'dikhabe', 'send', 'পাঠাও', 'pathao', 'pathaben', 'no', 'number', 'num', 'nber', 'numb', 'id', 'নম্বর', 'নং', 'আইডি',
         // Added for plate-specific query handling
         'মোট', 'সর্বমোট', 'সিলিন্ডার', 'সিলিন্ডারের', 'সিলিন্ডারটা', 'রিপিট', 'রিপিটের', 'কালার', 'কালারের', 'কয়টি', 'কয়', 'দাঁত', 'দাঁতের', 'জবে', 'জবের', 'নতুন', 'সবচেয়ে', 'সর্বশেষ', 'লেটেস্ট', 'তৈরি', 'নামে', 'জন্য', 'সাইজ', 'পেপারসাইজ', 'পেপারের', 'কোনো', 'inch', 'ইঞ্চি', 'ব্যবহার', 'হয়', 'লাগে', 'প্লেটগুলো', 'প্লেটগুলোতে', 'প্লেটটি', 'বেশি', 'লাখ', 'পিস', 'হাজার', 'হাজারে', 'করে', 'করা', 'করার', 'করতে', 'থেকে', 'এটা', 'এটি', 'ডাই', 'টাইপ', 'type', 'যে', 'যেগুলো', 'যেগুলোতে', 'খুঁজে', 'দিয়েছি', 'দিয়ে', 'এরকম', 'তোমার', 'আমার', 'konsa', 'konsi', 'kaun', 'jis', 'jinke', 'লাগবে', 'প্রয়োজন', 'প্রয়োজনীয়', 'চাই', 'চাও', 'চান', 'we', 'our', 'us', 'are', 'were', 'was', 'has', 'had', 'have', 'do', 'does', 'did', 'will', 'would', 'can', 'could', 'should', 'shall', 'may', 'might', 'must', 'shall', 'আমি', 'তুমি', 'আপনি', 'সে', 'আমরা', 'আপনরা', 'তোমরা', 'সবাই'];
     
@@ -4091,10 +4133,10 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         }
 
         $answer .= '<div style="display: flex; gap: 15px; margin-top: 15px; flex-wrap: wrap;">' . "\n";
-        $answer .= '    <a href="' . $pdfUrl . '" download style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.4); border: 1px solid #b91c1c; font-size: 14px; min-width: 200px;">' . "\n";
+        $answer .= '    <a href="' . $pdfUrl . '" target="_blank" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.4); border: 1px solid #b91c1c; font-size: 14px; min-width: 200px;">' . "\n";
         $answer .= '        📄 Download PDF Report' . "\n";
         $answer .= '    </a>' . "\n";
-        $answer .= '    <a href="' . $csvUrl . '" download style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #22c55e, #16a34a); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(34, 197, 94, 0.4); border: 1px solid #15803d; font-size: 14px; min-width: 200px;">' . "\n";
+        $answer .= '    <a href="' . $csvUrl . '" target="_blank" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #22c55e, #16a34a); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(34, 197, 94, 0.4); border: 1px solid #15803d; font-size: 14px; min-width: 200px;">' . "\n";
         $answer .= '        📊 Download Excel' . "\n";
         $answer .= '    </a>' . "\n";
         $answer .= '</div>';
@@ -4709,7 +4751,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         $whereSql = implode(' AND ', $where);
 
         // ─── Export/Report Sub-Handler ───
-        $isExportQuery = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || (strpos($p, 'print') !== false && strpos($p, 'koto') === false && strpos($p, 'কত') === false && strpos($p, 'required') === false && strpos($p, 'need') === false && strpos($p, 'how many') === false && strpos($p, 'korechi') === false && strpos($p, 'hoyeche') === false && strpos($p, 'kora') === false && strpos($p, 'amra') === false && strpos($p, 'have we') === false && strpos($p, 'kita') === false && strpos($p, 'kitna') === false && strpos($p, 'lagela') === false && strpos($p, 'chahiye') === false) || (strpos($p, 'প্রিন্ট') !== false && strpos($p, 'কত') === false && strpos($p, 'লাগবে') === false && strpos($p, 'পাবো') === false) || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false);
+        $isExportQuery = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false || ((strpos($p, 'print') !== false || strpos($p, 'প্রিন্ট') !== false) && !strpos($p, 'koto') && !strpos($p, 'কত') && !strpos($p, 'required') && !strpos($p, 'need') && !strpos($p, 'how many')));
         if ($isExportQuery) {
             $fTitle = 'Paper Stock Report';
             if ($lotBatchMatch) $fTitle = 'Lot/Batch: ' . strtoupper($lotBatchMatch) . ' Report';
@@ -4744,10 +4786,10 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             }
 
             $answer .= '<div style="display: flex; gap: 15px; margin-top: 15px; flex-wrap: wrap;">' . "\n";
-            $answer .= '    <a href="' . $pdfUrl . '" download style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.4); border: 1px solid #b91c1c; font-size: 14px; min-width: 200px;">' . "\n";
+            $answer .= '    <a href="' . $pdfUrl . '" target="_blank" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.4); border: 1px solid #b91c1c; font-size: 14px; min-width: 200px;">' . "\n";
             $answer .= '        📄 Download PDF Report' . "\n";
             $answer .= '    </a>' . "\n";
-            $answer .= '    <a href="' . $csvUrl . '" download style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #22c55e, #16a34a); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(34, 197, 94, 0.4); border: 1px solid #15803d; font-size: 14px; min-width: 200px;">' . "\n";
+            $answer .= '    <a href="' . $csvUrl . '" target="_blank" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #22c55e, #16a34a); color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 6px rgba(34, 197, 94, 0.4); border: 1px solid #15803d; font-size: 14px; min-width: 200px;">' . "\n";
             $answer .= '        📊 Download Excel (CSV)' . "\n";
             $answer .= '    </a>' . "\n";
             $answer .= '</div>';
@@ -5087,7 +5129,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         $toolName = 'ERP Jobs & Planning Tool';
 
         // Extract search term from prompt
-        $jobStopwords = ['can', 'you', 'of', 'give', 'me', 'the', 'detail', 'details', 'about', 'job', 'jobs', 'name', 'named', 'by', 'how', 'many', 'we', 'have', 'is', 'are', 'in', 'show', 'tell', 'list', 'find', 'search', 'for', 'a', 'an', 'what', 'which', 'please', 'pls', 'lookup', 'display', 'and', 'or', 'about', 'with', 'this', 'that', 'get', 'fetch', 'on', 'at', 'from', 'a', 'an', 'ki', 'kya', 'hai', 'ami', 'tumi', 'do', 'we', 'have', 'any', 'my'];
+        $jobStopwords = ['can', 'you', 'of', 'give', 'me', 'the', 'detail', 'details', 'about', 'job', 'want', 'to', 'printing', 'pitnting', 'print', 'jobs', 'name', 'named', 'by', 'how', 'many', 'we', 'have', 'is', 'are', 'in', 'show', 'tell', 'list', 'find', 'search', 'for', 'a', 'an', 'what', 'which', 'please', 'pls', 'lookup', 'display', 'and', 'or', 'about', 'with', 'this', 'that', 'get', 'fetch', 'on', 'at', 'from', 'a', 'an', 'ki', 'kya', 'hai', 'ami', 'tumi', 'do', 'we', 'have', 'any', 'my'];
         $pWords = preg_split('/\s+/', strtolower($prompt));
         $terms = [];
         foreach ($pWords as $w) {
@@ -5191,7 +5233,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         }
     } else {
         // Fallback: search master_plate_data before giving up
-        $unmatchedStopwords = ['can', 'you', 'give', 'me', 'the', 'details', 'about', 'please', 'show', 'tell', 'find', 'search', 'for', 'a', 'an', 'what', 'which', 'is', 'are', 'in', 'of', 'to', 'do', 'has', 'have'];
+        $unmatchedStopwords = ['can', 'you', 'give', 'me', 'the', 'details', 'about', 'please', 'show', 'want', 'to', 'printing', 'pitnting', 'print', 'tell', 'find', 'search', 'for', 'a', 'an', 'what', 'which', 'is', 'are', 'in', 'of', 'to', 'do', 'has', 'have'];
         $pWords = preg_split('/\s+/', strtolower($prompt));
         $terms = [];
         foreach ($pWords as $w) {
