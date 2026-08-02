@@ -727,6 +727,20 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
         </div>
       </div>
     </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+      <div style="background:#fff;padding:10px;border-radius:8px;border:1px solid #bbf7d0">
+        <strong style="color:#15803d">4. Custom Commands (Dispatch & Packing)</strong>
+        <div style="font-size:.78rem;color:#64748b;margin-top:2px"><strong>Keywords:</strong>
+          <code>dispatch, packing, ready, slip</code><br><strong>Usage:</strong> Triggers `/dispatch` mode internally.
+        </div>
+      </div>
+      <div style="background:#fff;padding:10px;border-radius:8px;border:1px solid #fbcfe8">
+        <strong style="color:#be185d">5. Custom Commands (Jobs & Planning)</strong>
+        <div style="font-size:.78rem;color:#64748b;margin-top:2px"><strong>Keywords:</strong>
+          <code>job, planning, floor, jobcard</code><br><strong>Usage:</strong> Triggers `/job` mode internally.
+        </div>
+      </div>
+    </div>
   </div>
 
 

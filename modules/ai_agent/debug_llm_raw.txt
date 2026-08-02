@@ -1,9 +1,0 @@
-RAW RESPONSE:
-data: {"id":"chatcmpl-1785585361492","object":"chat.completion.chunk","created":1785585361,"model":"qwen3-coder-next","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
-
-data: {"id":"chatcmpl-1785585361492","object":"chat.completion.chunk","created":1785585361,"model":"qwen3-coder-next","choices":[{"index":0,"delta":{"content":"Narendra Modi is the 14th and current Prime Minister of India, serving since May 26, 2014. He was re-elected for a second term in 2019 and a third term in 2024.\n\nBefore becoming Prime Minister, Modi served as the Chief Minister of Gujarat from 2001 to 2014. He is a member of the Bharatiya Janata Party (BJP) and has played a significant role in Indian politics for decades.\n\nKey initiatives under his leadership include:\n- *Make in India* (boosting manufacturing)\n- *Digital India* (expanding digital infrastructure)\n- *Swachh Bharat Abhiyan* (Clean India Mission)\n- *Ayushman Bharat* (healthcare scheme)\n- Demonetization in 2016 (a controversial currency reform)\n\nHe is the first Prime Minister born after India's independence in 1947."},"finish_reason":null}]}
-
-data: {"id":"chatcmpl-1785585361492","object":"chat.completion.chunk","created":1785585361,"model":"qwen3-coder-next","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"kiro_credits":0.008033764510779435,"kiro_credit_unit":"credit","prompt_tokens":22125,"completion_tokens":184,"total_tokens":22309}}
-
-
-RESULT:

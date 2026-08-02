@@ -12,6 +12,16 @@ if (function_exists('opcache_invalidate')) {
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../includes/functions.php';
+
+// Include Modular AI Services
+require_once __DIR__ . '/services/Logger.php';
+require_once __DIR__ . '/services/FeatureFlags.php';
+require_once __DIR__ . '/services/MemoryManager.php';
+require_once __DIR__ . '/services/ToolRouter.php';
+require_once __DIR__ . '/services/CalculationEngine.php';
+require_once __DIR__ . '/services/PromptBuilder.php';
+require_once __DIR__ . '/services/ProviderManager.php';
+require_once __DIR__ . '/services/LLMClient.php';
 require_once __DIR__ . '/config.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -30,13 +40,60 @@ $config = getAiAgentConfig();
 $action = trim($_REQUEST['action'] ?? '');
 $prompt = trim($_REQUEST['prompt'] ?? '');
 
-if ($action !== 'query') {
+if (!in_array($action, ['query', 'autocomplete'])) {
     echo json_encode(['ok' => false, 'error' => 'Invalid action']);
     exit;
 }
 
 if ($prompt === '') {
     echo json_encode(['ok' => false, 'error' => 'Empty prompt query']);
+    exit;
+}
+
+if ($action === 'autocomplete') {
+    // Autocomplete for master_plate_data
+    $searchTerm = trim($prompt);
+    if (strlen($searchTerm) < 1) {
+        echo json_encode(['ok' => true, 'suggestions' => []]);
+        exit;
+    }
+    
+    // Convert multiple spaces to a wildcard for the LIKE search
+    $plateSearch = preg_replace('/\s+/', '%', $searchTerm);
+    
+    // First, try prefix search for better relevancy
+    $stmt = $db->prepare("SELECT `name`, `size` FROM `master_plate_data` WHERE `name` LIKE ? ORDER BY `name` ASC LIMIT 10");
+    $prefixSearch = $plateSearch . '%';
+    $stmt->bind_param("s", $prefixSearch);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $results = [];
+    while ($row = $res->fetch_assoc()) {
+        $results[] = $row;
+    }
+    
+    // If not enough results, do a broad 'contains' search
+    if (count($results) < 5) {
+        $stmt2 = $db->prepare("SELECT `name`, `size` FROM `master_plate_data` WHERE `name` LIKE ? AND `name` NOT LIKE ? ORDER BY `name` ASC LIMIT 10");
+        $broadSearch = '%' . $plateSearch . '%';
+        $stmt2->bind_param("ss", $broadSearch, $prefixSearch);
+        $stmt2->execute();
+        $res2 = $stmt2->get_result();
+        while ($row = $res2->fetch_assoc()) {
+            $results[] = $row;
+        }
+        $results = array_slice($results, 0, 10);
+    }
+    
+    $suggestions = [];
+    foreach ($results as $r) {
+        $suggestions[] = [
+            'name' => $r['name'],
+            'size' => $r['size']
+        ];
+    }
+    
+    echo json_encode(['ok' => true, 'suggestions' => $suggestions], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
 
@@ -509,310 +566,6 @@ function get_follow_up_suggestions(string $toolUsed, string $prompt, string $use
 /**
  * Call external LLM API (Google Gemini, OpenAI, OpenRouter, OpenCode, Local LLM) with fallback support
  */
-function call_llm_api(string $prompt, array $config): ?string
-{
-    // Try primary provider first
-    $primaryProvider = strtolower($config['default_provider'] ?? 'openrouter');
-    $result = call_llm_api_provider($prompt, $config, $primaryProvider);
-    
-    // If primary succeeded, return it
-    if ($result !== null && strpos($result, '[API_ERROR]') !== 0) {
-        return $result . "\n\n*Note: Response via Agent 1*";
-    }
-    
-    // Fallback: if enabled, loop through ALL available endpoints (standard + custom)
-$fallbackEnabled = !empty($config['fallback_enabled']) && $config['fallback_enabled'] === 1;
-if (!$fallbackEnabled) {
-    return $result;
-}
-
-$agentCounter = 2;
-
-// First try standard providers if they have keys and are not the primary
-$standardProviders = [
-    'openai' => !empty($config['openai_api_key']),
-    'openrouter' => !empty($config['openrouter_api_key']),
-    'gemini' => !empty($config['gemini_api_key']),
-    'local' => !empty($config['local_ai_url'])
-];
-
-foreach ($standardProviders as $prov => $isAvailable) {
-    if ($prov === $primaryProvider || !$isAvailable) continue;
-    
-    $epConfig = $config;
-    $epConfig['default_provider'] = $prov;
-    $epResult = call_llm_api_provider($prompt, $epConfig, $prov);
-    
-    if ($epResult !== null && strpos($epResult, '[API_ERROR]') !== 0) {
-        return $epResult . "\n\n*Note: Response via Agent " . $agentCounter . '*';
-    }
-    $agentCounter++;
-}
-
-// Then try custom endpoints
-$endpointsJson = $config['ai_custom_endpoints'] ?? '[]';
-$endpoints = is_array($endpointsJson) ? $endpointsJson : (json_decode($endpointsJson, true) ?: []);
-
-foreach ($endpoints as $ep) {
-    if (empty($ep['active'])) continue;
-    
-    $label = $ep['label'] ?? '';
-    $url = $ep['url'] ?? '';
-    $epModel = $ep['model'] ?? 'gpt-4o-mini';
-    
-    if (empty($url)) continue;
-    
-    $customModelStr = 'custom|||' . $label . '|||' . $url . '|||' . $epModel;
-    
-    $epConfig = $config;
-    $epConfig['default_provider'] = 'custom';
-    $epConfig['model_name'] = $customModelStr;
-    
-    $epResult = call_llm_api_provider($prompt, $epConfig, 'custom');
-    
-    if ($epResult !== null && strpos($epResult, '[API_ERROR]') !== 0) {
-        return $epResult . "\n\n*Note: Response via Agent " . $agentCounter . '*';
-    }
-    $agentCounter++;
-}
-// All fallbacks failed, return primary error
-    return $result;
-}
-
-/**
- * Call external LLM API for a specific provider
- */
-function call_llm_api_provider(string $prompt, array $config, string $provider): ?string
-{
-    $model = $config['model_name'] ?? 'openrouter/free';
-    $temperature = (float) ($config['temperature'] ?? 0.2);
-    $maxTokens = (int) ($config['max_tokens'] ?? 1500);
-    $systemPrompt = $config['system_prompt'] ?? "You are a helpful ERP assistant for Shree Label ERP. Be concise and accurate.\nIMPORTANT: If the user asks a general knowledge question (e.g. about a person, place, or fact), just answer it directly and simply. Do NOT ask if they meant an ERP term, module, job, or plate. Do not try to relate general knowledge back to the ERP system.";
-    $systemPrompt .= "\n\nCurrent System Time: " . date('l, d F Y, h:i A');
-
-    // 1. Google Gemini Provider
-    if ($provider === 'gemini_pro' || $provider === 'gemini') {
-        $apiKey = $config['gemini_api_key'] ?? '';
-        if (empty($apiKey)) return null;
-
-        $targetModel = ($model && strpos($model, 'gemini') !== false) ? $model : 'gemini-2.0-flash';
-        $url = "https://generativelanguage.googleapis.com/v1beta/models/" . urlencode($targetModel) . ":generateContent?key=" . urlencode($apiKey);
-
-        $payload = [
-            "systemInstruction" => [
-                "parts" => [["text" => $systemPrompt]]
-            ],
-            "contents" => [
-                [
-                    "role" => "user",
-                    "parts" => [["text" => $prompt]]
-                ]
-            ],
-            "generationConfig" => [
-                "temperature" => $temperature,
-                "maxOutputTokens" => $maxTokens
-            ]
-        ];
-
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => json_encode($payload),
-            CURLOPT_TIMEOUT => 90,
-            CURLOPT_SSL_VERIFYPEER => true
-        ]);
-
-        $response = curl_exec($ch);
-        $error = curl_error($ch);
-        curl_close($ch);
-
-        if ($error || !$response) {
-            return "[API_ERROR] Connection failed ($provider): " . ($error ?: 'empty response');
-        }
-
-        // Strip SSE streaming suffixes that some proxies append (e.g. "data: [DONE]")
-        $response = preg_replace('/\R?data:\s*\[DONE\]\s*$/', '', $response);
-        $response = preg_replace('/\R?data:\s*.+$/', '', $response);
-
-            // Parse SSE if the response is a stream
-    if (strpos(trim($response), 'data: ') === 0) {
-        $fullContent = '';
-        $lines = explode("\n", $response);
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if (strpos($line, 'data: ') === 0) {
-                $jsonStr = trim(substr($line, 6));
-                if ($jsonStr === '[DONE]') continue;
-                $data = json_decode($jsonStr, true);
-                if (isset($data['choices'][0]['delta']['content'])) {
-                    $fullContent .= $data['choices'][0]['delta']['content'];
-                }
-            }
-        }
-        if ($fullContent !== '') {
-            return $fullContent;
-        }
-    }
-    $result = json_decode($response, true);
-        if (isset($result['error'])) {
-            $msg = is_array($result['error']) ? ($result['error']['message'] ?? json_encode($result['error'])) : $result['error'];
-            return "[API_ERROR] Gemini Error: " . $msg;
-        }
-        if (isset($result['candidates'][0]['content']['parts'][0]['text'])) {
-            return trim($result['candidates'][0]['content']['parts'][0]['text']);
-        }
-        return "[API_ERROR] Unexpected API response format.";
-    }
-
-    // 2. OpenAI / OpenRouter / OpenCode / Local LLM (OpenAI-compatible)
-    $url = '';
-    $apiKey = '';
-    $headers = ['Content-Type: application/json'];
-
-    if ($provider === 'openai') {
-        $apiKey = $config['openai_api_key'] ?? '';
-        $url = !empty($config['openai_api_url']) ? $config['openai_api_url'] : 'https://api.openai.com/v1/chat/completions';
-        if (empty($model) || strpos($model, 'gemini') !== false) {
-            $model = (strpos($url, 'ninerouter') !== false) ? '9ROUTER-COMBO' : 'gpt-4o-mini';
-        }
-    } elseif ($provider === 'openrouter') {
-        $apiKey = !empty($config['openrouter_api_key']) ? $config['openrouter_api_key'] : ($config['openai_api_key'] ?? '');
-        $url = !empty($config['openrouter_ai_url']) ? $config['openrouter_ai_url'] : 'https://openrouter.ai/api/v1/chat/completions';
-        if (empty($model)) $model = 'openrouter/free';
-        $headers[] = 'HTTP-Referer: http://localhost';
-        $headers[] = 'X-Title: Shree Label ERP AI';
-    } elseif ($provider === 'opencode') {
-        $apiKey = !empty($config['opencode_api_key']) ? $config['opencode_api_key'] : ($config['openai_api_key'] ?? '');
-        $url = !empty($config['local_api_endpoint']) ? $config['local_api_endpoint'] : 'https://api.opencode.ai/v1/chat/completions';
-        if (empty($model) || strpos($model, 'gemini') !== false) $model = 'opencode-default';
-    } elseif ($provider === 'local') {
-        $url = !empty($config['local_api_endpoint']) ? $config['local_api_endpoint'] : 'http://localhost:11434/v1/chat/completions';
-        $apiKey = $config['openai_api_key'] ?? '';
-        if (empty($model) || strpos($model, 'gemini') !== false) $model = 'llama3';
-    } elseif ($provider === 'custom') {
-        // Custom API Endpoint — parse model string "custom:label:url:model"
-        $apiKey = '';
-        $customUrl = '';
-        $customModel = '';
-        if (preg_match('/^custom\\|\\|\\|(.+?)\\|\\|\\|(.+?)\\|\\|\\|(.+)$/', $model, $m)) {
-            $customLabel = $m[1];
-            $customUrl = $m[2];
-            $customModel = $m[3];
-            // Look up API key from saved endpoints
-            $endpointsJson = $config['ai_custom_endpoints'] ?? '[]';
-            $endpoints = is_array($endpointsJson) ? $endpointsJson : (json_decode($endpointsJson, true) ?: []);
-    $agentCounter = 2;
-            foreach ($endpoints as $ep) {
-                if (($ep['label'] ?? '') === $customLabel) {
-                    $apiKey = $ep['api_key'] ?? '';
-                    break;
-                }
-            }
-        }
-        $url = $customUrl;
-        $model = $customModel ?: 'gpt-4o-mini';
-        if (empty($url)) return null;
-    }
-
-    if (empty($url)) return null;
-    if (!empty($apiKey)) {
-        $headers[] = 'Authorization: Bearer ' . $apiKey;
-    }
-
-    $payload = [
-        'model' => $model,
-        'messages' => [
-            ['role' => 'system', 'content' => $systemPrompt],
-            ['role' => 'user', 'content' => $prompt]
-        ],
-        'temperature' => $temperature,
-        'max_tokens' => $maxTokens
-    ];
-
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => $headers,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode($payload),
-        CURLOPT_TIMEOUT => 90,
-        CURLOPT_SSL_VERIFYPEER => false
-    ]);
-
-    $response = curl_exec($ch);
-    $error = curl_error($ch);
-    curl_close($ch);
-
-    if ($error || !$response) {
-        return "[API_ERROR] Connection failed ($provider): " . ($error ?: 'empty response');
-    }
-
-    // Strip SSE streaming suffixes that some proxies append (e.g. "data: [DONE]")
-    $response = preg_replace('/\R?data:\s*\[DONE\]\s*$/', '', $response);
-    $response = preg_replace('/\R?data:\s*.+$/', '', $response);
-
-        // Parse SSE if the response is a stream
-    if (strpos(trim($response), 'data: ') === 0) {
-        $fullContent = '';
-        $lines = explode("\n", $response);
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if (strpos($line, 'data: ') === 0) {
-                $jsonStr = trim(substr($line, 6));
-                if ($jsonStr === '[DONE]') continue;
-                $data = json_decode($jsonStr, true);
-                if (isset($data['choices'][0]['delta']['content'])) {
-                    $fullContent .= $data['choices'][0]['delta']['content'];
-                }
-            }
-        }
-        if ($fullContent !== '') {
-            return $fullContent;
-        }
-    }
-    $result = json_decode($response, true);
-    if (isset($result['error'])) {
-        $msg = is_array($result['error']) ? ($result['error']['message'] ?? json_encode($result['error'])) : $result['error'];
-        return "[API_ERROR] API Error: " . $msg;
-    }
-    if (isset($result['choices'][0]['message']['content'])) {
-        $content = trim($result['choices'][0]['message']['content']);
-        if ($content !== '') {
-            return $content;
-        }
-        // NOTE: reasoning_content is the model's internal chain-of-thought
-        // and MUST NOT be returned as the user-facing response.
-        // When content is empty, return empty so caller handles it gracefully.
-    }
-
-    // Also check if response has choices but in a different format
-    if (isset($result['choices'][0]['message'])) {
-        $msg = $result['choices'][0]['message'];
-        if (is_string($msg)) return trim($msg);
-        // Prefer 'content' field; never return reasoning_content as user-facing text
-        if (is_array($msg)) {
-            if (isset($msg['content']) && is_string($msg['content']) && trim($msg['content']) !== '') {
-                return trim($msg['content']);
-            }
-            $text = reset($msg);
-            if (is_string($text) && trim($text) !== '') {
-                // Guard against reasoning_content being the first array element
-                if (key($msg) === 'reasoning_content') {
-                    return "[API_ERROR] Model returned only reasoning content, no response.";
-                }
-                return trim($text);
-            }
-        }
-    }
-
-    return "[API_ERROR] Unexpected API response format.";
-}
-
-/**
- * Navigation Intent Matcher
- */
 function check_navigation_intent(string $prompt): ?array
 {
     $p = strtolower($prompt);
@@ -923,6 +676,9 @@ foreach ($greetingWords as $gw) {
 
 if ($isGreeting) {
     $userLang = detect_language($prompt);
+
+
+
     $userName = $_SESSION['user_name'] ?? $_SESSION['username'] ?? 'User';
 
     // Check for thank you
@@ -980,9 +736,73 @@ if ($isGreeting) {
 }
 
 
+// ─── Global Plate / Job Calculation Interceptor ───────────────────────────────
+$isCalcCommand = false;
+$rawCalcPrompt = trim($prompt);
+if (preg_match('/^\/(plate|job|jobcard|planning|cal|calc)\b/iu', $rawCalcPrompt, $cmdMatch)) {
+    $rawCalcPrompt = preg_replace('/^\/(plate|job|jobcard|planning|cal|calc)\s*/iu', '', $rawCalcPrompt);
+    $isCalcCommand = true;
+} elseif (preg_match('/^(plate|job|প্লেট|प्लेट)\b/iu', $rawCalcPrompt)) {
+    $isCalcCommand = true;
+}
+
+if ($isCalcCommand) {
+    $rawCalcLower = mb_strtolower($rawCalcPrompt, 'UTF-8');
+    $isPlateCalcQuery = preg_match('/(price|rate|budget|taka|tk|টাকা|cost|paisa|পয়সা|amount|দাম|মূল্য|sqr|sq\s*inch|square|taker)/i', $rawCalcLower);
+
+    if ($isPlateCalcQuery) {
+        $promptNorm = html_entity_decode(stripslashes($rawCalcPrompt), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $promptNorm = preg_replace('/[\x{201C}\x{201D}\x{201E}\x{201F}\x{00AB}\x{00BB}\x{2033}\x{2036}]/u', '"', $promptNorm);
+
+        $plateName = null;
+        if (preg_match('/"([^"]+)"/', $promptNorm, $qm)) {
+            $plateName = trim($qm[1]);
+        } else {
+            if (preg_match('/^(.+?)(?:\s+(?:ar|per|price|taka|tahole|er|korte|koto|হিসাব|এর))/i', trim($promptNorm), $fm)) {
+                $plateName = trim($fm[1]);
+            }
+        }
+
+        $perSqrInchPrice = null;
+        if (preg_match('/([\d.]+)\s*(?:taka|tk|টাকা|rs|rupee|₹)?\s*(?:per|\/|@|at)\s*(?:sqr?|square|sq)?\s*(?:inche?|ইঞ্চি)?/i', $rawCalcLower, $pm)) {
+            $perSqrInchPrice = (float)$pm[1];
+        } elseif (preg_match('/(?:per\s*(?:sqr?|square|sq)\s*(?:inche?|ইঞ্চি)?\s*(?:price|rate|দাম|রেট)?\s*(?:holo|হলো|is|=|@|at)?\s*)([\d.]+)/i', $rawCalcLower, $pm)) {
+            $perSqrInchPrice = (float)$pm[1];
+        } elseif (preg_match('/(?:rate|price|দাম|রেট)\s*(?:is|=|of|হলো|@|at)?\s*(?:taka|tk|টাকা|rs|₹)?\s*([\d.]+)/i', $rawCalcLower, $pm)) {
+            $perSqrInchPrice = (float)$pm[1];
+        } elseif (preg_match('/@\s*([\d.]+)/i', $rawCalcLower, $pm)) {
+            $perSqrInchPrice = (float)$pm[1];
+        }
+
+        $totalJobAmount = null;
+        if (preg_match('/(?:budget|total|amount|moq|tahole|তাহলে|then|for|if|jodi|order|job|print|korte)\s*(?:of|er|এর|is|=)?\s*(?:takar?|taker|টাকা|rs|rupee|₹)?\s*([\d,]+(?:\.[\d]+)?)/i', $rawCalcLower, $am)) {
+            $totalJobAmount = (float)str_replace(',', '', $am[1]);
+        } elseif (preg_match('/([\d,]+(?:\.[\d]+)?)\s*(?:takar?|taker|টাকা|rs|rupee|₹)?\s*(?:job|জব|order|budget|moq|korte|print)/i', $rawCalcLower, $am)) {
+            $totalJobAmount = (float)str_replace(',', '', $am[1]);
+        } elseif (preg_match('/([\d,]+(?:\.[\d]+)?)\s*(?:takar?|taker|tk|টাকা|rs|rupee|₹)\b/i', $rawCalcLower, $am)) {
+            // Check if this matched the price, if so ignore
+            $val = (float)str_replace(',', '', $am[1]);
+            if ($val !== $perSqrInchPrice) $totalJobAmount = $val;
+        }
+
+        if ($plateName && $perSqrInchPrice && $perSqrInchPrice > 0 && $totalJobAmount && $totalJobAmount > 0) {
+            $calcEngine = new CalculationEngine();
+            $result = $calcEngine->calculatePlateCosting($db, $plateName, $perSqrInchPrice, $totalJobAmount, $prompt);
+
+            if ($result) {
+                echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                exit;
+            }
+        }
+    }
+}
+
 // ─── Priority Command Router (/plate, /paperstock) ───
 $pTrimmed = trim(mb_strtolower($prompt, 'UTF-8'));
-$userLang = detect_language($prompt); // Define userLang for global scope
+$userLang = detect_language($prompt);
+
+
+ // Define userLang for global scope
 $baseNavUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
 $commandType = null; // Tracks special command: 'plate', 'paperstock', 'quoted'
 
@@ -1093,6 +913,49 @@ if ($commandType === null && (strpos($pTrimmed, '/paperstock') === 0 || strpos($
         $p = mb_strtolower($prompt, 'UTF-8');
     }
 }
+// /dispatch or /packing command
+if ($commandType === null && preg_match('/^\/(dispatch|packing)\b/i', $pTrimmed)) {
+    $_SESSION['ai_priority_mode'] = 'dispatch';
+    $commandType = 'dispatch';
+    $subQuery = preg_replace('/^\/(dispatch|packing)\s*/i', '', trim($prompt));
+    if ($subQuery === '') {
+        $erpOnlyMode = true;
+        $prompt = 'Show today\'s dispatch';
+        $p = mb_strtolower($prompt, 'UTF-8');
+    } else {
+        $erpOnlyMode = true;
+        $prompt = $subQuery;
+        $p = mb_strtolower($prompt, 'UTF-8');
+    }
+}
+
+
+// /job, /jobcard, /planning command
+if ($commandType === null && preg_match('/^\/(job|jobcard|planning)\b/i', $pTrimmed)) {
+    $_SESSION['ai_priority_mode'] = 'job';
+    $commandType = 'job';
+    $subQuery = preg_replace('/^\/(job|jobcard|planning)\s*/i', '', trim($prompt));
+    if ($subQuery === '') {
+        $erpOnlyMode = true;
+        $prompt = 'Show job planning board';
+        $p = mb_strtolower($prompt, 'UTF-8');
+    } else {
+        $erpOnlyMode = true;
+        $prompt = $subQuery;
+        $p = mb_strtolower($prompt, 'UTF-8');
+    }
+}
+
+// /setting or /settings command
+if ($commandType === null && preg_match('/^\/(setting|settings)\b/i', $pTrimmed)) {
+    $_SESSION['ai_priority_mode'] = 'setting';
+    $commandType = 'setting';
+    $subQuery = preg_replace('/^\/(setting|settings)\s*/i', '', trim($prompt));
+    $erpOnlyMode = true;
+    $prompt = $subQuery === '' ? 'open settings' : $subQuery;
+    $p = mb_strtolower($prompt, 'UTF-8');
+}
+
 // /cal command — External Calculation Mode: force calculation engine
 if (preg_match('/^\/cal\s*/iu', $pTrimmed)) {
     $subQuery = preg_replace('/^\/cal\s*/iu', '', $prompt);
@@ -1614,7 +1477,8 @@ if (strpos($p, 'inch') !== false && (strpos($p, 'sqm') !== false || strpos($p, '
 // ─── KB Skip-Logic: Queries with specific data entities bypass KB, go straight to ERP search ───
 $kbSkipPatterns = ['how many', 'কত', 'কতগুলো', 'কতটা', 'kitne', 'kitna', 'total count', 'total rolls', 'total paper', 'stock count', 'roll count', 'paper count', 'summary', 'সারসংক্ষেপ', 'সমষ্টি', 'सारांश', 'कुल गिनती', 'date', 'time', 'ajke', 'kon date', 'today', 'tarikh', 'তারিখ', 'আজকে', 'সময়', 'somoy', 'hello', 'hi ', 'kemon acho', 'purchase rate', 'দাম', 'দামি', 'রেট', 'মূল্য', 'rate', 'price', 'costly', 'expensive', 'দাম কত', 'সবচেয়ে দামি', 'গড় rate', 'avg rate', 'दाम', 'रेट', 'कीमत', 'lot batch', 'lot no', 'batch no', 'লট', 'ব্যাচ', 'company roll', 'pdf', 'excel', 'csv', 'export', 'report', 'print', 'প্রিন্ট', 'এক্সপোর্ট', 'রিপোর্ট', 'download', 'ডাউনলোড', 'plate', 'cylinder', 'ups', 'repeat', 'cmyk', 'die', 'প্লেট', 'সিলিন্ডার', 'प्लेट', 'lakh', 'লাখ'];
 $kbSkipEntities = ['krishna', 'austin', 'nrgi', 'navkar', 'abhinav', 'nitin', 'avery', 'chromo', 'thermal', 'pp white', 'pp-clear', 'maplitho', 'metallic', 'plastic', 'flexo', 'creative', 'pidilite', 'sfl'];
-$skipKB = (($commandType ?? '') === 'plate' || ($_SESSION['ai_priority_mode'] ?? '') === 'plate');
+$strictModes = ['plate', 'dispatch', 'job', 'paperstock'];
+$skipKB = (in_array(($commandType ?? ''), $strictModes) || in_array(($_SESSION['ai_priority_mode'] ?? ''), $strictModes));
 foreach ($kbSkipPatterns as $pat) {
     if (mb_strpos($p, $pat) !== false) {
         $skipKB = true;
@@ -1639,7 +1503,7 @@ if (!$skipKB && preg_match('/\d+(?:\.\d+)?\s*mm\s*[xX*]\s*\d+(?:\.\d+)?\s*mm/i',
 }
 
 // ─── Module Page Navigation Handler ("View Plate Management", "Open Paper Stock page", etc.) ───
-if (!$skipKB && preg_match('/^(view|open|show|go\s*to)\s+(plate|paper\s*stock|paper|stock|job|dispatch|dashboard)\s*(management|page)?\s*(page)?$/i', trim($prompt), $navM)) {
+if (!$skipKB && preg_match('/^(view|open|show|go\s*to)\s+(plate|paper\s*stock|paper|stock|job|dispatch|dashboard|setting|settings)\s*(management|page)?\s*(page)?$/i', trim($prompt), $navM)) {
     $navTarget = strtolower(trim($navM[2]));
     $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
     $navUrl = '';
@@ -1660,6 +1524,9 @@ if (!$skipKB && preg_match('/^(view|open|show|go\s*to)\s+(plate|paper\s*stock|pa
     } elseif ($navTarget === 'dashboard') {
         $navUrl = $baseUrl . '/modules/dashboard/index.php';
         $pageTitle = 'Dashboard';
+    } elseif ($navTarget === 'setting' || $navTarget === 'settings') {
+        $navUrl = $baseUrl . '/modules/settings/index.php';
+        $pageTitle = 'Settings';
     }
 
     if ($navUrl) {
@@ -2054,7 +1921,6 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         } else if ($commandType === 'plate') {
             $hasPlateKeywords = (strpos($pClean, 'plate') !== false || strpos($pClean, 'cylinder') !== false || strpos($pClean, 'die') !== false);
             $hasOtherKeywords = preg_match('/(operator|dispatch|packing|invoice|planning|paper|roll|chromo|thermal)/i', $pClean);
-            
             if (!$hasPlateKeywords && $hasOtherKeywords) {
                 return [
                     'tool_used' => 'Context Validator',
@@ -2065,6 +1931,47 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     'filtered_type' => '',
                     'is_company_list' => false,
                     'direct_answer' => "⚠️ You are in **Plate Mode**, but your question seems to be about something else.\n\n👉 **To ask about this, please use `/erp {$pCleanHtml}` instead.**",
+                    'nav_url' => '',
+                    'data' => []
+                ];
+            }
+        }
+    } else if ($commandType === 'dispatch' || $commandType === 'job') {
+        $pClean = trim(mb_strtolower($prompt, 'UTF-8'));
+        $pCleanHtml = htmlspecialchars($pClean);
+        
+        if ($commandType === 'dispatch') {
+            $hasDispatchKeywords = preg_match('/(dispatch|packing|ready|slip|delivery|challan|sales person|ডিস্পैচ|রেডি)/i', $pClean);
+            $hasOtherKeywords = preg_match('/(plate|paper|roll|job|operator|planning|invoice)/i', $pClean);
+            
+            if (!$hasDispatchKeywords && $hasOtherKeywords) {
+                return [
+                    'tool_used' => 'Context Validator',
+                    'type' => 'strict_mode_violation',
+                    'title' => '❌ Invalid Query Context',
+                    'total_count' => 0,
+                    'total_meters' => 0,
+                    'filtered_type' => '',
+                    'is_company_list' => false,
+                    'direct_answer' => "⚠️ You are in **Dispatch & Packing Mode**, but your question seems to be about something else.\n\n👉 **To ask about this, please use `/erp {$pCleanHtml}` instead.**",
+                    'nav_url' => '',
+                    'data' => []
+                ];
+            }
+        } else if ($commandType === 'job') {
+            $hasJobKeywords = preg_match('/(job|planning|floor|production|card|brc|jmb|pck|work|status)/i', $pClean);
+            $hasOtherKeywords = preg_match('/(plate|paper|roll|dispatch|invoice|packing)/i', $pClean);
+            
+            if (!$hasJobKeywords && $hasOtherKeywords) {
+                return [
+                    'tool_used' => 'Context Validator',
+                    'type' => 'strict_mode_violation',
+                    'title' => '❌ Invalid Query Context',
+                    'total_count' => 0,
+                    'total_meters' => 0,
+                    'filtered_type' => '',
+                    'is_company_list' => false,
+                    'direct_answer' => "⚠️ You are in **Job & Planning Mode**, but your question seems to be about something else.\n\n👉 **To ask about this, please use `/erp {$pCleanHtml}` instead.**",
                     'nav_url' => '',
                     'data' => []
                 ];
@@ -2086,7 +1993,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             unset($_SESSION['ai_priority_mode']);
             $priorityMode = '';
         }
-        $isPaperQuery = !$isOtherModuleQuery && ($commandType === 'paperstock' || strpos($p, 'paper') !== false || strpos($p, 'roll') !== false || strpos($p, 'slc/') !== false || strpos($p, 'chromo') !== false || strpos($p, 'thermal') !== false || strpos($p, 'stock') !== false || strpos($p, 'maplitho') !== false || strpos($p, 'pp') !== false || strpos($p, 'white') !== false || strpos($p, 'jumbo') !== false || strpos($p, 'avery') !== false || strpos($p, 'krishna') !== false || strpos($p, 'austin') !== false || strpos($p, 'navkar') !== false || strpos($p, 'nrgi') !== false || strpos($p, 'company') !== false || strpos($p, 'কোম্পানি') !== false || strpos($p, 'স্টক') !== false || strpos($p, 'রোল') !== false || strpos($p, 'কত') !== false || strpos($p, 'how many') !== false || strpos($p, 'total') !== false || strpos($p, 'summary') !== false || strpos($p, 'breakdown') !== false || strpos($p, 'metro') !== false || strpos($p, 'sqm') !== false || strpos($p, 'running') !== false || strpos($p, 'status') !== false || strpos($p, 'lot') !== false || strpos($p, 'batch') !== false || strpos($p, 'লট') !== false || strpos($p, 'ব্যাচ') !== false || strpos($p, 'rate') !== false || strpos($p, 'price') !== false || strpos($p, 'দাম') !== false || strpos($p, 'দামি') !== false || strpos($p, 'costly') !== false || strpos($p, 'expensive') !== false || strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || strpos($p, 'print') !== false || strpos($p, 'প্রিন্ট') !== false || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false);
+        $isPaperQuery = !$isOtherModuleQuery && ($commandType === 'paperstock' || strpos($p, 'paper') !== false || strpos($p, 'roll') !== false || strpos($p, 'slc/') !== false || strpos($p, 'chromo') !== false || strpos($p, 'thermal') !== false || strpos($p, 'stock') !== false || strpos($p, 'maplitho') !== false || strpos($p, 'pp') !== false || strpos($p, 'white') !== false || strpos($p, 'jumbo') !== false || strpos($p, 'avery') !== false || strpos($p, 'krishna') !== false || strpos($p, 'austin') !== false || strpos($p, 'navkar') !== false || strpos($p, 'nrgi') !== false || strpos($p, 'company') !== false || strpos($p, 'কোম্পানি') !== false || strpos($p, 'স্টক') !== false || strpos($p, 'রোল') !== false || strpos($p, 'কত') !== false || strpos($p, 'how many') !== false || strpos($p, 'total') !== false || strpos($p, 'summary') !== false || strpos($p, 'breakdown') !== false || strpos($p, 'metro') !== false || strpos($p, 'sqm') !== false || strpos($p, 'running') !== false || strpos($p, 'status') !== false || strpos($p, 'lot') !== false || strpos($p, 'batch') !== false || strpos($p, 'লট') !== false || strpos($p, 'ব্যাচ') !== false || strpos($p, 'rate') !== false || strpos($p, 'price') !== false || strpos($p, 'দাম') !== false || strpos($p, 'দামি') !== false || strpos($p, 'costly') !== false || strpos($p, 'expensive') !== false || strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || preg_match('/\bprint\b/i', $p) || strpos($p, 'প্রিন্ট') !== false || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false);
         if ($isPaperQuery) {
             $pToolName = 'Paper Stock Master Tool (Priority)';
             $pWhere = ["LOWER(COALESCE(status,'')) NOT IN ('consumed','disposed','scrap')"];
@@ -2183,7 +2090,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             $pWhereSql = implode(' AND ', $pWhere);
 
             // ─── Export/Report Sub-Handler ───
-            $isExportQuery = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false || ((strpos($p, 'print') !== false || strpos($p, 'প্রিন্ট') !== false) && !strpos($p, 'koto') && !strpos($p, 'কত') && !strpos($p, 'required') && !strpos($p, 'need') && !strpos($p, 'how many')));
+            $isExportQuery = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false || ((preg_match('/\bprint\b/i', $p) || strpos($p, 'প্রিন্ট') !== false) && !strpos($p, 'koto') && !strpos($p, 'কত') && !strpos($p, 'required') && !strpos($p, 'need') && !strpos($p, 'how many')));
             if ($isExportQuery) {
                 $fTitle = 'Paper Stock Report';
                 if ($pLotBatch) $fTitle = 'Lot/Batch: ' . strtoupper($pLotBatch) . ' Report';
@@ -3172,7 +3079,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             'nav_url' => $navUrl,
             'data' => []
         ];
-    } elseif (strpos($p, 'dispatch') !== false || strpos($p, 'dispatched') !== false || strpos($p, 'ready queue') !== false || strpos($p, 'ready stock') !== false || strpos($p, 'challan') !== false || strpos($p, 'sales person') !== false || strpos($p, 'ডিস্পैচ') !== false || strpos($p, 'রেডি') !== false) {
+    } elseif ($commandType === 'dispatch' || strpos($p, 'dispatch') !== false || strpos($p, 'dispatched') !== false || strpos($p, 'ready queue') !== false || strpos($p, 'ready stock') !== false || strpos($p, 'challan') !== false || strpos($p, 'sales person') !== false || strpos($p, 'ডিস্পैচ') !== false || strpos($p, 'রেডি') !== false) {
         $toolName = 'Dispatch & Ready Queue Master Tool';
 
         // Ready Queue (Finished Goods ready to ship)
@@ -3566,16 +3473,69 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
 
 
+    // 3.5 Operator Workload Intent Matcher
+    if (mb_strpos($p, 'operator') !== false || mb_strpos($p, 'machine man') !== false || mb_strpos($p, 'assignment') !== false || mb_strpos($p, 'অপারেটর') !== false || mb_strpos($p, 'মেশিনম্যান') !== false) {
+        $toolName = 'Operator Workload Tool';
+        
+        $sql = "SELECT j.id as job_id, j.job_no, j.job_type, j.department, j.status as job_status, 
+                       p.job_name, p.priority, 
+                       COALESCE(u.name, UPPER(REPLACE(j.department, '_', ' '))) as operator_name 
+                FROM jobs j 
+                JOIN planning p ON j.planning_id = p.id 
+                LEFT JOIN users u ON j.operator_id = u.id 
+                WHERE j.deleted_at IS NULL AND p.deleted_at IS NULL 
+                  AND j.status IN ('Pending', 'Queued', 'Running', 'Hold', 'Paused', 'In Progress')
+                ORDER BY j.department ASC, p.priority DESC, j.id ASC";
+                
+        $res = $db->query($sql);
+        $rows = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
+        
+        $totalCount = count($rows);
+        $answer = "🧑‍🔧 **Department-Wise Job Workload (Operator & Machine Man):**\n\n";
+        
+        if ($totalCount === 0) {
+            $answer .= "No pending or running jobs are currently active on the floor.\n";
+        } else {
+            $grouped = [];
+            foreach ($rows as $r) {
+                $grouped[$r['operator_name']][] = $r;
+            }
+            
+            foreach ($grouped as $opName => $jobs) {
+                $answer .= "🏭 **{$opName}** — `" . count($jobs) . " Jobs Active`\n";
+                foreach ($jobs as $j) {
+                    $statusIcon = ($j['job_status'] === 'Running') ? '🟢' : '🟡';
+                    $answer .= "  - {$statusIcon} {$j['job_type']} ({$j['department']}): **{$j['job_no']}** — {$j['job_name']}\n";
+                }
+                $answer .= "\n";
+            }
+        }
+        
+        $navUrl = (defined('BASE_URL') ? BASE_URL : '/shree-label-php') . '/modules/operators/';
+        $answer .= "👉 [Click here to open Operator Modules]({$navUrl})";
+        
+        return [
+            'tool_used' => $toolName,
+            'total_count' => $totalCount,
+            'total_meters' => 0,
+            'filtered_type' => '',
+            'is_company_list' => false,
+            'direct_answer' => $answer,
+            'nav_url' => $navUrl,
+            'data' => $rows
+        ];
+    }
+
     // 4. Live Production Floor Intent Matcher
 
-    if (strpos($p, 'live') !== false || strpos($p, 'life') !== false || strpos($p, 'floor') !== false || strpos($p, 'stage') !== false || strpos($p, 'next department') !== false || strpos($p, 'journey') !== false || strpos($p, 'current job') !== false || strpos($p, 'running job') !== false || strpos($p, 'লাইভ') !== false || strpos($p, 'ফ্লোর') !== false) {
+    if ((($commandType ?? '') === 'job' && mb_strpos($p, 'plan') === false && mb_strpos($p, 'operator') === false && mb_strpos($p, 'machine man') === false && mb_strpos($p, 'assignment') === false) || mb_strpos($p, 'live') !== false || mb_strpos($p, 'life') !== false || mb_strpos($p, 'floor') !== false || mb_strpos($p, 'stage') !== false || mb_strpos($p, 'next department') !== false || mb_strpos($p, 'journey') !== false || mb_strpos($p, 'current job') !== false || mb_strpos($p, 'running job') !== false || mb_strpos($p, 'লাইভ') !== false || mb_strpos($p, 'ফ্লোর') !== false) {
         $toolName = 'Live Production Floor Pipeline Tool';
 
         $liveStopwords = ['can', 'you', 'what', 'is', 'the', 'status', 'of', 'current', 'job', 'jobs', 'running', 'live', 'life', 'floor', 'show', 'tell', 'me', 'details', 'for', 'in', 'page', 'pages', 'summary', 'sumary', 'overview', 'list', 'all', 'production', 'pipeline', 'report', 'reports', 'board', 'kholo', 'khul', 'open', 'go', 'to', 'dekhao', 'dekaw', 'batao', 'give', 'bring', 'find', 'search', 'how', 'many', 'are', 'there', 'please', 'pls', 'lookup', 'display', 'and', 'or', 'about', 'with', 'this', 'that', 'get', 'fetch', 'on', 'at', 'from', 'a', 'an', 'ki', 'kya', 'hai', 'ami', 'tumi', 'do', 'we', 'have', 'any', 'my'];
         $pWords = preg_split('/\s+/', strtolower($prompt));
         $terms = [];
         foreach ($pWords as $w) {
-            $wClean = trim(preg_replace('/[^a-z0-9]/', '', $w));
+            $wClean = trim(preg_replace('/[^a-z0-9\-\.]/', '', $w));
             if ($wClean !== '' && !in_array($wClean, $liveStopwords, true) && strlen($wClean) >= 2) {
                 $terms[] = $wClean;
             }
@@ -4817,7 +4777,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         $whereSql = implode(' AND ', $where);
 
         // ─── Export/Report Sub-Handler ───
-        $isExportQuery = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false || ((strpos($p, 'print') !== false || strpos($p, 'প্রিন্ট') !== false) && !strpos($p, 'koto') && !strpos($p, 'কত') && !strpos($p, 'required') && !strpos($p, 'need') && !strpos($p, 'how many')));
+        $isExportQuery = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false || ((preg_match('/\bprint\b/i', $p) || strpos($p, 'প্রিন্ট') !== false) && !strpos($p, 'koto') && !strpos($p, 'কত') && !strpos($p, 'required') && !strpos($p, 'need') && !strpos($p, 'how many')));
         if ($isExportQuery) {
             $fTitle = 'Paper Stock Report';
             if ($lotBatchMatch) $fTitle = 'Lot/Batch: ' . strtoupper($lotBatchMatch) . ' Report';
@@ -5191,7 +5151,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             'nav_url' => $navUrl,
             'data' => []
         ];
-    } elseif (preg_match('/\b(job|jobs|card|cards|order|orders|flx|lsl|jmb|pck|brc|status|progress|work)\b/i', $prompt)) {
+    } elseif ($commandType === 'job' || preg_match('/\b(job|jobs|card|cards|order|orders|flx|lsl|jmb|pck|brc|status|progress|work)\b/i', $prompt)) {
         $toolName = 'ERP Jobs & Planning Tool';
 
         // Extract search term from prompt
@@ -5299,17 +5259,25 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         }
     } else {
         // Fallback: search master_plate_data before giving up
-        $unmatchedStopwords = ['can', 'you', 'give', 'me', 'the', 'details', 'about', 'please', 'show', 'want', 'to', 'printing', 'pitnting', 'print', 'tell', 'find', 'search', 'for', 'a', 'an', 'what', 'which', 'is', 'are', 'in', 'of', 'to', 'do', 'has', 'have'];
-        $pWords = preg_split('/\s+/', strtolower($prompt));
-        $terms = [];
-        foreach ($pWords as $w) {
-            $wClean = trim(preg_replace('/[^a-z0-9]/', '', $w));
-            if ($wClean !== '' && !in_array($wClean, $unmatchedStopwords, true) && strlen($wClean) >= 2) {
-                $terms[] = $wClean;
+        $searchTerm = '';
+        if (preg_match('/"([^"]+)"/', $prompt, $m) || preg_match("/'([^']+)'/", $prompt, $m)) {
+            $searchTerm = trim($m[1]);
+        } else {
+            $unmatchedStopwords = ['can', 'you', 'give', 'me', 'the', 'details', 'about', 'please', 'show', 'want', 'to', 'printing', 'pitnting', 'print', 'tell', 'find', 'search', 'for', 'a', 'an', 'what', 'which', 'is', 'are', 'in', 'of', 'to', 'do', 'has', 'have'];
+            $pWords = preg_split('/\s+/', strtolower($prompt));
+            $terms = [];
+            foreach ($pWords as $w) {
+                $wClean = trim(preg_replace('/[^a-z0-9]/', '', $w));
+                if ($wClean !== '' && !in_array($wClean, $unmatchedStopwords, true) && strlen($wClean) >= 2) {
+                    $terms[] = $wClean;
+                }
+            }
+            if (!empty($terms)) {
+                $searchTerm = implode(' ', $terms);
             }
         }
-        if (!empty($terms)) {
-            $searchTerm = implode(' ', $terms);
+
+        if ($searchTerm !== '') {
             $like = '%' . $searchTerm . '%';
             $stmt = $db->prepare("SELECT * FROM master_plate_data WHERE name LIKE ? ORDER BY id DESC LIMIT 5");
             $stmt->bind_param('s', $like);
@@ -5348,7 +5316,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     'filtered_type' => '',
                     'is_company_list' => false,
                     'direct_answer' => $answer,
-                    'data' => []
+                    'data' => $plateData
                 ];
             }
         }
@@ -5366,6 +5334,9 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
 
 $userLang = detect_language($prompt);
+
+
+
 // Normal mode: skip ERP database entirely, go straight to LLM
 if ($skipNormalDb) {
     $retrieved = ['tool_used' => 'Unmatched Query Assistant', 'total_count' => 0, 'total_meters' => 0, 'filtered_type' => '', 'is_company_list' => false, 'data' => []];
@@ -5380,8 +5351,22 @@ $isCompanyList = $retrieved['is_company_list'];
 $dbData = $retrieved['data'];
 $sampleCount = count($dbData);
 
+$hasNumbers = preg_match('/\d+/', $prompt);
+$isComplexCalcQuery = $hasNumbers && preg_match('/(koto|কত|how|calculate|calc|taka|cost|টাকা|হিসাব|hisab|amount|price|paisa|label|berobe|বেরোবে|printing|প্রিন্টিং|total|sqr|sqm|meter|gauge|\+|\*|\/|\-)/i', mb_strtolower($prompt, 'UTF-8'));
+
 if (!empty($retrieved['direct_answer'])) {
-    $finalAnswer = $retrieved['direct_answer'];
+    if ($isComplexCalcQuery && !empty($dbData) && $toolUsed === 'Printing Plates Master Tool') {
+        $llmPrompt = "User Query: " . $prompt . "\n\nERP Database Technical Output:\n" . json_encode($dbData, JSON_UNESCAPED_UNICODE) . "\n\nPlease calculate or answer the user's query mathematically step-by-step using the provided ERP data.";
+        $llmAnswer = call_llm_api($llmPrompt, $config);
+        if ($llmAnswer !== null && strpos($llmAnswer, '[API_ERROR]') !== 0) {
+            $finalAnswer = $llmAnswer;
+            $toolUsed = 'AI Mathematics Engine';
+        } else {
+            $finalAnswer = $retrieved['direct_answer'];
+        }
+    } else {
+        $finalAnswer = $retrieved['direct_answer'];
+    }
 } elseif ($toolUsed === 'Job Planning Board Tool') {
     if ($userLang === 'English') {
         $finalAnswer = "📊 **Job Planning Board & Department Statuses:**\n\nFound **{$totalCount} Active Jobs** on the Planning Board:\n\n";
@@ -5431,7 +5416,31 @@ if (!empty($retrieved['direct_answer'])) {
     if ($erpOnlyMode) {
         $llmAnswer = null;
     } else {
-        $llmAnswer = call_llm_api($prompt, $config);
+        // Initialize Services
+        $logger = new Logger();
+        $features = new FeatureFlags($config);
+        $memory = new MemoryManager($features);
+        $toolsRouter = new ToolRouter($features, $logger);
+        $promptBuilder = new PromptBuilder($memory);
+        $providerManager = new ProviderManager($config);
+        $llmClient = new LLMClient($config, $logger, $providerManager);
+
+        $systemPrompt = $config['system_prompt'] ?? "You are a helpful ERP assistant for Shree Label ERP. Be concise and accurate.";
+        $systemPrompt .= "\n\nCurrent System Time: " . date('l, d F Y, h:i A');
+
+        $messages = $promptBuilder->buildMessages($prompt, $systemPrompt);
+        $toolDefinitions = $toolsRouter->getToolDefinitions();
+
+        $llmAnswer = $llmClient->callWithFallback($prompt, $messages, $toolDefinitions);
+
+        // Intercept Tool Calls
+        $interceptedTool = $toolsRouter->interceptToolCall($llmAnswer ?? '');
+        if ($interceptedTool) {
+            if ($interceptedTool['function']['name'] === 'calculate_erp_job') {
+                $llmAnswer = $toolsRouter->executeMathTool($interceptedTool, $db, $prompt);
+                $toolUsed = 'AI Agentic Tool (Math)';
+            }
+        }
     }
     if ($llmAnswer !== null && strpos($llmAnswer, '[API_ERROR]') !== 0) {
         $finalAnswer = $llmAnswer;
@@ -5517,6 +5526,11 @@ if (!empty($retrieved['direct_answer'])) {
             }
         }
     }
+}
+
+// Update chat history using MemoryManager
+if (isset($memory) && !empty($prompt) && !empty($finalAnswer)) {
+    $memory->saveInteraction($prompt, $finalAnswer);
 }
 
 // Generate follow-up suggestion chips

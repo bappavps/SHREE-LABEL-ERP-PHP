@@ -88,6 +88,22 @@ If the repeat value is given in MM, calculating the required gear/teeth (assumin
 - **Query:** "Blue500-এ মোট কত কালার স্টেশনের প্লেট লাগবে?"
 - **Logic:** Count non-empty fields among `c`, `m`, `y`, `k`, `special_1`, `special_2`, `special_3`, `special_4`, `special_5`.
 
+### 5. Advanced Job Calculations & Disambiguation (Interactive Features)
+The AI Agent includes a powerful natural language calculator for costing and production matching.
+- **Commands & Aliases:** `/job`, `/plate`, `/cal`, `/calc`
+- **Supported Syntaxes (Flexible Formatting):**
+  - `/cal "Blue 500ml" budget 40000 rate 0.05`
+  - `/job "Alexa" per sqr inche 0.05, moq 40000.00`
+  - `if blue 500 ml price 0.05 then total 40000 tk`
+  - `koto meter hobe blue 500ml jodi rate 0.05 hoy ar order 40000 takar`
+- **Live Autocomplete Feature:**
+  - If a user types `"` or `/job "` in the chat box, an intelligent floating popup will appear.
+  - It searches `master_plate_data` in real-time.
+  - Clicking a suggestion auto-fills the exact name (e.g., `"Blue 500ml" `), ensuring 100% accuracy for calculations.
+- **Disambiguation (Multiple Matches):**
+  - If a user submits a broad search term like `blue`, the AI engine pauses the calculation and responds with a clickable list of all matching jobs (e.g., `Blue 1ltr`, `Blue 500ml`).
+  - Clicking a specific item will automatically retry the calculation for that exact job.
+
 ---
 
 ## 🤖 System Triggers & Keywords (For Developer)

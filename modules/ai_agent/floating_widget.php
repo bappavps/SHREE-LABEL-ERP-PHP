@@ -379,6 +379,47 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
 }
 #aiFloatingPopupCard[data-theme="light"] .ai-popup-menu .popup-item { color: #334155; }
 #aiFloatingPopupCard[data-theme="light"] .ai-popup-menu .popup-item:hover { background: rgba(37,99,235,0.1); color: #2563eb; }
+
+/* AutoComplete Styles Floating */
+.ai-float-autocomplete-dropdown {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    width: 250px;
+    max-height: 180px;
+    overflow-y: auto;
+    background: #2a2a35;
+    border: 1px solid #4a4a5a;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    z-index: 10000;
+    display: none;
+    margin-bottom: 5px;
+    font-size: 13px;
+    margin-left: 10px;
+}
+.ai-float-autocomplete-dropdown li.ai-autocomplete-item {
+    padding: 6px 10px;
+    cursor: pointer;
+    border-bottom: 1px solid #3a3a4a;
+    color: #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+}
+.ai-float-autocomplete-dropdown li.ai-autocomplete-item:hover {
+    background: rgba(80, 110, 250, 0.2);
+}
+.ai-float-autocomplete-dropdown li.ai-autocomplete-item:last-child {
+    border-bottom: none;
+}
+.ai-float-autocomplete-dropdown .ai-autocomplete-name {
+    font-weight: bold;
+    color: #90a0ff;
+}
+.ai-float-autocomplete-dropdown .ai-autocomplete-size {
+    font-size: 10px;
+    color: #888;
+}
 </style>
 
 <!-- Floating Trigger Button -->
@@ -445,15 +486,21 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
   </div>
 
   <div class="ai-chat-input-wrap" style="padding:8px 12px;gap:6px;display:flex;align-items:center;position:relative;background:rgba(15,23,42,0.95);border-top:1px solid rgba(255,255,255,0.06)">
+    <!-- Contextual Prompt Popup -->
+    <div id="aiFloatingCmdSuggestionsPopup" class="ai-popup-menu" style="position:absolute;bottom:calc(100% + 4px);left:8px;right:8px;background:rgba(30,41,59,0.98);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:4px;display:none;z-index:101;box-shadow:0 -4px 24px rgba(0,0,0,0.3);max-height:180px;overflow-y:auto;flex-direction:column;"></div>
     <!-- Command Suggestions Dropup -->
     <div class="ai-cmd-suggestions" id="aiFloatingCmdSuggestions" style="position:absolute;bottom:calc(100% + 4px);left:8px;right:8px;background:rgba(30,41,59,0.98);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:4px;display:none;z-index:100;box-shadow:0 -4px 24px rgba(0,0,0,0.3);max-height:180px;overflow-y:auto">
-      <div class="ai-cmd-item" data-cmd="/cal" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
-        <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/cal</span>
-        <span style="font-size:12px;color:#94a3b8">External Calculations</span>
-      </div>
       <div class="ai-cmd-item" data-cmd="/erp" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
         <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/erp</span>
         <span style="font-size:12px;color:#94a3b8">ERP-Only Mode</span>
+      </div>
+      <div class="ai-cmd-item" data-cmd="/dispatch" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
+        <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/dispatch</span>
+        <span style="font-size:12px;color:#94a3b8">Dispatch Mode</span>
+      </div>
+      <div class="ai-cmd-item" data-cmd="/job" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
+        <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/job</span>
+        <span style="font-size:12px;color:#94a3b8">Job Priority Mode</span>
       </div>
       <div class="ai-cmd-item" data-cmd="/paperstock" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
         <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/paperstock</span>
@@ -463,6 +510,10 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
         <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/plate</span>
         <span style="font-size:12px;color:#94a3b8">Plate Mode</span>
       </div>
+      <div class="ai-cmd-item" data-cmd="/cal" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
+        <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/cal</span>
+        <span style="font-size:12px;color:#94a3b8">External Calculations</span>
+      </div>
       <div class="ai-cmd-item" data-cmd="/clear" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
         <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/clear</span>
         <span style="font-size:12px;color:#94a3b8">Clear Priority</span>
@@ -471,6 +522,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     <button type="button" class="btn-input btn-mic" id="aiFloatingMicBtn" title="Speak to AI Agent" style="background:none;border:none;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer;transition:all 0.2s ease;color:#64748b;margin-right:4px">
       <i class="bi bi-mic-fill" id="aiFloatingMicIcon"></i>
     </button>
+    <ul id="aiFloatAutocompleteDropdown" class="ai-float-autocomplete-dropdown"></ul>
     <div class="ai-chat-input" id="aiFloatingChatInput" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Ask about stock, orders or speak..." style="flex:1;background:transparent;border:none;color:#fff;font-size:14px;padding:10px 0;outline:none;resize:none;max-height:100px;line-height:1.4;font-family:inherit;white-space:pre-wrap;overflow-y:auto;word-break:break-word"></div>
     <div class="input-actions" style="display:flex;align-items:center;gap:4px;padding-bottom:2px">
       <button type="button" class="btn-input btn-send" id="aiFloatingSendBtn" title="Send" style="background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;width:40px;height:40px;border:none;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer;box-shadow:0 3px 12px rgba(37,99,235,0.4);transition:all 0.2s ease" onmousedown="this.style.transform='scale(0.88)'" onmouseup="this.style.transform='scale(1)'">
@@ -756,7 +808,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     var finalPrompt = promptText;
     
     // Command prefixes
-    var floatCmdNames = ['/cal', '/erp', '/paperstock', '/plate', '/clear'];
+    var floatCmdNames = ['/erp', '/dispatch', '/job', '/paperstock', '/plate', '/cal', '/clear', '/packing', '/jobcard', '/planning'];
     
     // If prompt doesn't start with /, but existing text does, preserve it
     if (!promptText.startsWith('/') && currentText.startsWith('/')) {
@@ -888,7 +940,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
     });
     chatInput.addEventListener('input', function() {
-      var val = chatInput.innerText || chatInput.textContent || '';
+      var val = (chatInput.innerText || chatInput.textContent || '').replace(/\n/g, '');
       var sugBox = document.getElementById('aiFloatingCmdSuggestions');
       if (!sugBox) return;
       // Contextual prompt popup check
@@ -902,7 +954,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
        }
     }
     if (!cmdMatch) {
-       cmdSuggestionsPopup.style.display = 'none';
+       if (cmdSuggestionsPopup) cmdSuggestionsPopup.style.display = 'none';
     }
     
     if (val.startsWith('/') && val.indexOf(' ') === -1) {
@@ -988,4 +1040,86 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
   });
 
 })();
+
+// ==================== AUTOCOMPLETE LOGIC FLOATING ====================
+const acFloatDropdown = document.getElementById('aiFloatAutocompleteDropdown');
+let acFloatTimeout = null;
+const floatInput = document.getElementById('aiFloatingChatInput');
+
+function applyFloatAutocomplete(name) {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    const node = range.startContainer;
+    
+    const text = node.textContent;
+    const cursor = range.startOffset;
+    const lastQuote = text.lastIndexOf('"', cursor - 1);
+    
+    if (lastQuote !== -1) {
+        const before = text.substring(0, lastQuote + 1);
+        const after = text.substring(cursor);
+        node.textContent = before + name + '" ' + after;
+        
+        const newRange = document.createRange();
+        newRange.setStart(node, before.length + name.length + 2);
+        newRange.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+    }
+    
+    acFloatDropdown.style.display = 'none';
+    acFloatDropdown.innerHTML = '';
+}
+
+floatInput.addEventListener('input', function(e) {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    const node = range.startContainer;
+    
+    if (node.nodeType === 3) {
+        const text = node.textContent;
+        const cursor = range.startOffset;
+        
+        const lastQuote = text.lastIndexOf('"', cursor - 1);
+        
+        if (lastQuote !== -1) {
+            const textSinceQuote = text.substring(lastQuote + 1, cursor);
+            if (!textSinceQuote.includes('"') && textSinceQuote.length >= 1) {
+                clearTimeout(acFloatTimeout);
+                acFloatTimeout = setTimeout(() => {
+                    const baseUrl = document.getElementById('aiBaseUrl') ? document.getElementById('aiBaseUrl').value : '';
+                    fetch((baseUrl ? baseUrl + '/' : '') + 'api.php?action=autocomplete&prompt=' + encodeURIComponent(textSinceQuote))
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.ok && data.suggestions.length > 0) {
+                                acFloatDropdown.innerHTML = '';
+                                data.suggestions.forEach(item => {
+                                    const li = document.createElement('li');
+                                    li.className = 'ai-autocomplete-item';
+                                    li.innerHTML = '<span class="ai-autocomplete-name">' + item.name + '</span><span class="ai-autocomplete-size">' + item.size + '</span>';
+                                    li.onmousedown = (e) => {
+                                        e.preventDefault();
+                                        applyFloatAutocomplete(item.name);
+                                    };
+                                    acFloatDropdown.appendChild(li);
+                                });
+                                acFloatDropdown.style.display = 'block';
+                            } else {
+                                acFloatDropdown.style.display = 'none';
+                            }
+                        })
+                        .catch(err => {
+                            acFloatDropdown.style.display = 'none';
+                        });
+                }, 300);
+                return;
+            }
+        }
+    }
+    
+    acFloatDropdown.style.display = 'none';
+});
+// ============================================================
 </script>

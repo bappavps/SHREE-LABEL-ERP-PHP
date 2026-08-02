@@ -53,6 +53,23 @@
         $targetLabels = $val;
     }
 
+    // Extract Target Budget & Price per Sq Inch
+    $targetBudget = null;
+    $pricePerSqInch = null;
+
+    if (preg_match('/(\d+(?:\.\d+)?)\s*(?:taka|tk|টাকা|rs|rupee)?\s*(?:per|\/)\s*(?:sqr|sq|square|স্কয়ার)?\s*(?:inch|in|ইঞ্চি)/i', $prompt, $m)) {
+        $pricePerSqInch = (float)$m[1];
+    }
+    
+    if (preg_match_all('/(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:taka|tk|টাকা|taker|takar|টাকার)\b/i', $prompt, $m)) {
+        foreach ($m[1] as $match) {
+            $val = (float)str_replace(',', '', $match);
+            if ($val != $pricePerSqInch) {
+                $targetBudget = $val;
+            }
+        }
+    }
+
     // Extract Paper Size (paper_size / size columns) — "পেপার সাইজ 200mm", "200mm পেপার", "paper size 200mm"
     $paperSizeMatch = null;
     if (preg_match('/(\d+(?:\.\d+)?)\s*(?:mm)?\s*(?:paper\s*size|পেপার\s*সাইজ|paper|পেপার)/i', $prompt, $m) || preg_match('/(?:paper\s*size|পেপার\s*সাইজ)\s*(\d+(?:\.\d+)?)\s*mm?/i', $prompt, $m)) {
@@ -95,13 +112,13 @@
         $wC = trim(preg_replace('/[^\p{L}\p{N}\p{M}]/u', '', $w));
         if ($wC !== '' && !in_array($wC, $pStopwords, true) && mb_strlen($wC, 'UTF-8') >= 2) {
             if (is_numeric($wC)) {
-                if ((string)$wC === (string)$repeatMatch || (string)$wC === (string)$cylinderMatch || (string)$wC === (string)$targetMeters || (string)$wC === (string)$targetLabels || (string)$wC === (string)$plateNoMatch || (string)$wC === (string)$paperSizeMatch) {
+                if ((string)$wC === (string)$repeatMatch || (string)$wC === (string)$cylinderMatch || (string)$wC === (string)$targetMeters || (string)$wC === (string)$targetLabels || (string)$wC === (string)$plateNoMatch || (string)$wC === (string)$paperSizeMatch || (string)$wC === (string)$targetBudget || (string)$wC === (string)$pricePerSqInch) {
                     continue;
                 }
             }
             // Also skip words that contain a matched numeric value (e.g. "1524mm" from "152.4mm", or "1524" from "152.4")
             $skip = false;
-            foreach ([$repeatMatch, $cylinderMatch, $targetMeters, $targetLabels, $plateNoMatch, $paperSizeMatch] as $mv) {
+            foreach ([$repeatMatch, $cylinderMatch, $targetMeters, $targetLabels, $plateNoMatch, $paperSizeMatch, $targetBudget, $pricePerSqInch] as $mv) {
                 if ($mv !== null && $mv !== '') {
                     if (mb_strpos($wC, (string)$mv) !== false) { $skip = true; break; }
                     // Handle dot-stripped numbers: "1524" should match repeatMatch "152.4"
@@ -137,7 +154,7 @@
     $jobSearchTerm = trim($jobSearchRaw);
 
     // Shared plate renderer (details + math)
-    $renderPlate = function($row, $idx) use ($userLang, $targetMeters, $targetLabels) {
+    $renderPlate = function($row, $idx) use ($userLang, $targetMeters, $targetLabels, $targetBudget, $pricePerSqInch) {
         $rep = (float)($row['repeat_value'] ?? 0);
         $ups = (float)($row['ups'] ?? 1);
         if ($ups <= 0) $ups = 1;
@@ -177,7 +194,50 @@
             elseif ($userLang === 'Hindi') $out .= "  - 🧮 **Calculation:** **" . number_format($targetLabels) . " लेबेल** प्रिंट करने के लिए **" . number_format($reqMeters) . " मीटर** पेपर लगेगा।\n";
             else $out .= "  - 🧮 **Calculation:** To print **" . number_format($targetLabels) . " labels**, you need **" . number_format($reqMeters) . " meters** of paper.\n";
         }
-        if ($targetMeters == null && $targetLabels == null && $rep > 0) {
+        if ($targetBudget > 0 && $pricePerSqInch > 0 && $rep > 0 && (float)$row['paper_size'] > 0) {
+            $paperSize = (float)$row['paper_size'];
+            // 1 inch = 25.4 mm -> 1 sq inch = 645.16 sq mm
+            $sqMmPerSqInch = 645.16;
+            
+            // Area of one repeat in sq mm
+            $repeatAreaSqMm = $rep * $paperSize;
+            
+            // Area per label (including waste/gaps) in sq mm
+            $areaPerLabelSqMm = $repeatAreaSqMm / $ups;
+            
+            // Area per label in sq inches
+            $areaPerLabelSqInch = $areaPerLabelSqMm / $sqMmPerSqInch;
+            
+            // Price per label
+            $pricePerLabel = $areaPerLabelSqInch * $pricePerSqInch;
+            
+            // Total labels needed for the target budget
+            $calcLabels = ceil($targetBudget / $pricePerLabel);
+            
+            // Required running meters
+            $reqMeters = ceil(($calcLabels / $ups) * $rep / 1000);
+            
+            // Required paper in square meters
+            $reqSqMeters = $reqMeters * ($paperSize / 1000);
+
+            if ($userLang === 'Bengali') {
+                $out .= "  - 💰 **Job Calculation:** **" . number_format($targetBudget, 2) . " টাকা** বাজেটে (**" . $pricePerSqInch . " টাকা/sq inch** রেটে):\n";
+                $out .= "      ▸ **" . number_format($calcLabels) . " টি লেবেল** প্রিন্ট করতে হবে।\n";
+                $out .= "      ▸ **" . number_format($reqMeters) . " রানিং মিটার (Running Meter)** পেপার লাগবে।\n";
+                $out .= "      ▸ **" . number_format($reqSqMeters, 2) . " বর্গমিটার (Square Meter)** পেপার লাগবে।\n";
+            } elseif ($userLang === 'Hindi') {
+                $out .= "  - 💰 **Job Calculation:** **" . number_format($targetBudget, 2) . " रुपये** बजट में (**" . $pricePerSqInch . " रुपये/sq inch** रेट पर):\n";
+                $out .= "      ▸ **" . number_format($calcLabels) . " लेबेल** प्रिंट करने होंगे।\n";
+                $out .= "      ▸ **" . number_format($reqMeters) . " रनिंग मीटर (Running Meter)** पेपर लगेगा।\n";
+                $out .= "      ▸ **" . number_format($reqSqMeters, 2) . " स्क्वायर मीटर (Square Meter)** पेपर लगेगा।\n";
+            } else {
+                $out .= "  - 💰 **Job Calculation:** For a **" . number_format($targetBudget, 2) . " Tk** job (at **" . $pricePerSqInch . " Tk/sq inch**):\n";
+                $out .= "      ▸ **" . number_format($calcLabels) . " Labels** need to be printed.\n";
+                $out .= "      ▸ **" . number_format($reqMeters) . " Running Meters** of paper required.\n";
+                $out .= "      ▸ **" . number_format($reqSqMeters, 2) . " Square Meters** of paper required.\n";
+            }
+        }
+        if ($targetMeters == null && $targetLabels == null && $targetBudget == null && $rep > 0) {
             $teeth = round($rep / 3.175, 2);
             $out .= "  - ⚙️ **Gearing (1/8 CP):** ~**{$teeth} Teeth** Cylinder\n";
         }
