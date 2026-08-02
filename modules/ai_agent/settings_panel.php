@@ -684,6 +684,60 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
           </div>
         </div>
       </div>
+      <!-- AI Index Manager (Phase 2A) -->
+      <div class="ai-card" style="margin-top:24px;">
+        <h4><i class="bi bi-server"></i> AI Index Manager <span style="font-weight:400;font-size:.78rem;color:#94a3b8">(Knowledge Catalog)</span></h4>
+        <p style="font-size:.82rem;color:#64748b;margin:0 0 14px">
+          The indexer passively scans the ERP codebase and database schemas. It builds a read-only metadata catalog used for future RAG queries.
+        </p>
+        
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-bottom:14px; display:flex; gap:20px; font-size:.85rem;">
+          <div><strong>Total Files:</strong> <span id="idx_total_files">--</span></div>
+          <div><strong>Total Entities:</strong> <span id="idx_total_entities">--</span></div>
+          <div><strong>Last Scan:</strong> <span id="idx_last_scan">--</span></div>
+        </div>
+        
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="ai-btn ai-btn-outline ai-btn-sm" onclick="runIndexer('build')"><i class="bi bi-search"></i> Scan Changed Files</button>
+          <button type="button" class="ai-btn ai-btn-outline ai-btn-sm" onclick="runIndexer('rebuild')" style="color:#b91c1c; border-color:#fca5a5;"><i class="bi bi-arrow-clockwise"></i> Force Full Rebuild</button>
+        </div>
+        <div id="idx_log" style="margin-top:14px; font-size:.8rem; font-family:monospace; color:#334155;"></div>
+      </div>
+      
+      <script>
+      function fetchIndexerStatus() {
+        fetch('<?= $baseUrl ?>/modules/ai_agent/indexer/api.php?action=status')
+          .then(r => r.json())
+          .then(d => {
+            if(d.ok) {
+              document.getElementById('idx_total_files').textContent = d.total_files;
+              document.getElementById('idx_total_entities').textContent = d.total_entities;
+              document.getElementById('idx_last_scan').textContent = d.last_scan;
+            }
+          });
+      }
+      
+      function runIndexer(action) {
+        if(action === 'rebuild' && !confirm('Are you sure you want to rebuild the knowledge index?')) return;
+        
+        const log = document.getElementById('idx_log');
+        log.innerHTML = '<i>Running indexer... please wait.</i>';
+        
+        fetch('<?= $baseUrl ?>/modules/ai_agent/indexer/api.php?action=' + action)
+          .then(r => r.json())
+          .then(d => {
+            if(d.ok) {
+              log.innerHTML = `<span style="color:#15803d">✔ Scan complete.</span> Time: ${d.stats.time_ms}ms | Scanned: ${d.stats.scanned_files} | Updated: ${d.stats.indexed_files} | Skipped: ${d.stats.skipped_files}`;
+              fetchIndexerStatus();
+            } else {
+              log.innerHTML = `<span style="color:#b91c1c">✖ Error: ${d.error || 'Unknown failure'}</span>`;
+            }
+          }).catch(e => log.innerHTML = `<span style="color:#b91c1c">✖ Network Error</span>`);
+      }
+      
+      document.addEventListener('DOMContentLoaded', fetchIndexerStatus);
+      </script>
+
     </div>
   </div>
 </form>

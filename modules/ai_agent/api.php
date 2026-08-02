@@ -5416,12 +5416,17 @@ if (!empty($retrieved['direct_answer'])) {
     if ($erpOnlyMode) {
         $llmAnswer = null;
     } else {
+        require_once __DIR__ . '/services/RetrievalEngine.php';
+        require_once __DIR__ . '/services/ContextBuilder.php';
+
+        $retrievalEngine = new RetrievalEngine($db);
+
         // Initialize Services
         $logger = new Logger();
         $features = new FeatureFlags($config);
         $memory = new MemoryManager($features);
         $toolsRouter = new ToolRouter($features, $logger);
-        $promptBuilder = new PromptBuilder($memory);
+        $promptBuilder = new PromptBuilder($memory, $retrievalEngine);
         $providerManager = new ProviderManager($config);
         $llmClient = new LLMClient($config, $logger, $providerManager);
 
