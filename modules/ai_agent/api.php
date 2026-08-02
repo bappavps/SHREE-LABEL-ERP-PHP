@@ -823,19 +823,26 @@ if ($isCalcCommand) {
         }
 
         $totalJobAmount = null;
-        if (preg_match('/(?:budget|total|amount|moq|tahole|তাহলে|then|for|if|jodi|order|job|print|korte)\s*(?:of|er|এর|is|=)?\s*(?:takar?|taker|টাকা|rs|rupee|₹)?\s*([\d,]+(?:\.[\d]+)?)/i', $rawCalcLower, $am)) {
+        if (preg_match('/(?:budget|total|amount|moq|tahole|তাহলে|then|for|if|jodi|order|job|print|korte)\s*(?:of|er|এর|is|=)?\s*(?:taka\w*|taker|টাকা\w*|rs\b|rupee\b|₹)?\s*([\d,]+(?:\.[\d]+)?)/i', $rawCalcLower, $am)) {
             $totalJobAmount = (float)str_replace(',', '', $am[1]);
-        } elseif (preg_match('/([\d,]+(?:\.[\d]+)?)\s*(?:takar?|taker|টাকা|rs|rupee|₹)?\s*(?:job|জব|order|budget|moq|korte|print)/i', $rawCalcLower, $am)) {
+        } elseif (preg_match('/([\d,]+(?:\.[\d]+)?)\s*(?:taka\w*|taker|টাকা\w*|rs\b|rupee\b|₹)?\s*(?:job|জব|order|budget|moq|korte|print)/i', $rawCalcLower, $am)) {
             $totalJobAmount = (float)str_replace(',', '', $am[1]);
-        } elseif (preg_match('/([\d,]+(?:\.[\d]+)?)\s*(?:takar?|taker|tk|টাকা|rs|rupee|₹)\b/i', $rawCalcLower, $am)) {
+        } elseif (preg_match('/([\d,]+(?:\.[\d]+)?)\s*(?:taka\w*|taker|tk\b|টাকা\w*|rs\b|rupee\b|₹)/i', $rawCalcLower, $am)) {
             // Check if this matched the price, if so ignore
             $val = (float)str_replace(',', '', $am[1]);
             if ($val !== $perSqrInchPrice) $totalJobAmount = $val;
         }
 
-        if ($plateName && $perSqrInchPrice && $perSqrInchPrice > 0 && $totalJobAmount && $totalJobAmount > 0) {
+        if ($plateName && $perSqrInchPrice && $perSqrInchPrice > 0) {
             $calcEngine = new CalculationEngine();
-            $result = $calcEngine->calculatePlateCosting($db, $plateName, $perSqrInchPrice, $totalJobAmount, $prompt);
+            if ($totalJobAmount && $totalJobAmount > 0) {
+                // Full job costing (MOQ, running meters, paper) — requires a budget/amount
+                $result = $calcEngine->calculatePlateCosting($db, $plateName, $perSqrInchPrice, $totalJobAmount, $prompt);
+            } else {
+                // No total amount given — user only wants the per-label price
+                // e.g. `/job "Blue 200ml" per sqr inch price is 0.065 then how many price will be per label?`
+                $result = $calcEngine->calculatePerLabelPrice($db, $plateName, $perSqrInchPrice, $prompt);
+            }
 
             if ($result) {
                 echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
