@@ -1,1 +1,0 @@
-<?php require 'config/db.php'; $db = getDB(); $res = $db->query("SELECT paper_type, status, COUNT(id) FROM paper_stock WHERE company LIKE '%krishna%' AND paper_type LIKE '%pp-white%' GROUP BY paper_type, status"); print_r($res->fetch_all(MYSQLI_ASSOC));

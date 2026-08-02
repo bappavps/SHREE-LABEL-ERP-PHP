@@ -22,7 +22,8 @@ class LLMClient
         $result = $this->callProvider($primaryProvider, $model, $prompt, $messages, $tools);
 
         if ($result !== null && strpos($result, '[API_ERROR]') !== 0) {
-            return $result . "\n\n*Note: Response via Agent 1*";
+            $result = preg_replace('/(\n)*\**Note: Response via Agent \d+\**/i', '', $result);
+            return trim($result) . "\n\n*Note: Response via Agent 1*";
         }
 
         $fallbackEnabled = !empty($this->config['fallback_enabled']) && $this->config['fallback_enabled'] === 1;
@@ -44,7 +45,8 @@ class LLMClient
             $epResult = $this->callProvider($provId, $epModel, $prompt, $messages, $tools);
             
             if ($epResult !== null && strpos($epResult, '[API_ERROR]') !== 0) {
-                return $epResult . "\n\n*Note: Response via Agent " . $agentCounter . '*';
+                $epResult = preg_replace('/(\n)*\**Note: Response via Agent \d+\**/i', '', $epResult);
+                return trim($epResult) . "\n\n*Note: Response via Agent " . $agentCounter . '*';
             }
             
             $agentCounter++;

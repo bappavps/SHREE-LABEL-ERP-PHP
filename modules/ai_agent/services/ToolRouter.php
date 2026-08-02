@@ -21,6 +21,32 @@ class ToolRouter
             [
                 'type' => 'function',
                 'function' => [
+                    'name' => 'erp_query_tool',
+                    'description' => 'A generic tool to query live ERP data across any module (e.g., paper_stock, plate, dispatch). Use this when the user asks for stock, status, or details from the ERP.',
+                    'parameters' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'module' => [
+                                'type' => 'string',
+                                'description' => 'The target ERP module (e.g., paper_stock, plate, production, dispatch, sales)'
+                            ],
+                            'intent' => [
+                                'type' => 'string',
+                                'description' => 'The specific intent or action (e.g., company_stock, job_costing, dispatch_status)'
+                            ],
+                            'filters' => [
+                                'type' => 'object',
+                                'description' => 'Extracted entities to filter the query (e.g., {"company": "Navkar", "paper_type": "Chromo", "gsm": 128})',
+                                'additionalProperties' => true
+                            ]
+                        ],
+                        'required' => ['module', 'intent', 'filters']
+                    ]
+                ]
+            ],
+            [
+                'type' => 'function',
+                'function' => [
                     'name' => 'calculate_erp_job',
                     'description' => 'Calculate math, cost, and quantities for an ERP label job. Use this when the user asks a mathematical question or requests a calculation for a job.',
                     'parameters' => [
