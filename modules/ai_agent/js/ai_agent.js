@@ -291,39 +291,139 @@
   if (sendBtn) {
     sendBtn.addEventListener('click', function () { handleSend(); });
   }
-  if (chatInput) {
+    var autocompleteActive = false;
+    var currentFocus = -1;
+
     chatInput.addEventListener('keydown', function (e) {
+      var sugBox = document.getElementById('aiCmdSuggestions');
+      if (sugBox && sugBox.style.display === 'block') {
+        var items = sugBox.querySelectorAll('.ai-cmd-item:not([style*="display: none"])');
+        if (e.key === 'ArrowDown') {
+          currentFocus++;
+          addActive(items);
+          e.preventDefault();
+          return;
+        } else if (e.key === 'ArrowUp') {
+          currentFocus--;
+          addActive(items);
+          e.preventDefault();
+          return;
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (currentFocus > -1 && items[currentFocus]) {
+            items[currentFocus].click();
+          } else {
+            handleSend();
+          }
+          return;
+        }
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         handleSend();
       }
     });
-    // Slash command suggestions
+
+    function addActive(items) {
+      if (!items || !items.length) return false;
+      removeActive(items);
+      if (currentFocus >= items.length) currentFocus = 0;
+      if (currentFocus < 0) currentFocus = items.length - 1;
+      items[currentFocus].classList.add('active');
+      items[currentFocus].style.background = 'rgba(59,130,246,0.15)';
+    }
+
+    function removeActive(items) {
+      for (var i = 0; i < items.length; i++) {
+        items[i].classList.remove('active');
+        items[i].style.background = 'transparent';
+      }
+    }
+
+    var fetchTimer = null;
+
+    // Slash command & Autocomplete suggestions
     chatInput.addEventListener('input', function () {
       var val = chatInput.value || chatInput.innerText || chatInput.textContent || '';
       var sugBox = document.getElementById('aiCmdSuggestions');
       if (!sugBox) return;
-      if (val.startsWith('/') && val.indexOf(' ') === -1) {
+
+      var plateMatch = val.match(/^\/plate\s+"([^"]*)$/i);
+      
+      if (plateMatch) {
+        // Plate Autocomplete Mode
+        var searchTerm = plateMatch[1];
+        if (searchTerm.length >= 1) {
+          clearTimeout(fetchTimer);
+          fetchTimer = setTimeout(function() {
+            fetch(aiAgentParams.baseUrl + '/modules/ai_agent/api.php?action=autocomplete&prompt=' + encodeURIComponent(searchTerm))
+              .then(res => res.json())
+              .then(data => {
+                sugBox.innerHTML = '';
+                currentFocus = -1;
+                if (data.ok && data.suggestions && data.suggestions.length > 0) {
+                  data.suggestions.forEach(function(sug) {
+                    var div = document.createElement('div');
+                    div.className = 'ai-cmd-item';
+                    div.style = 'display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0';
+                    div.setAttribute('data-autocomplete', sug.name);
+                    div.innerHTML = '<span style="font-weight:700;color:#3b82f6;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + sug.name + '</span> <span style="font-size:11px;color:#94a3b8;margin-left:auto">' + (sug.size || '') + '</span>';
+                    sugBox.appendChild(div);
+                  });
+                  sugBox.style.display = 'block';
+                } else {
+                  sugBox.style.display = 'none';
+                }
+              });
+          }, 300);
+        } else {
+          sugBox.style.display = 'none';
+        }
+      } else if (val.startsWith('/') && val.indexOf(' ') === -1) {
+        // Basic Slash Command Mode
+        currentFocus = -1;
         sugBox.style.display = 'block';
         sugBox.querySelectorAll('.ai-cmd-item').forEach(function(el) {
+          if (!el.hasAttribute('data-cmd')) return;
           el.style.display = el.getAttribute('data-cmd').indexOf(val.toLowerCase()) === 0 ? 'flex' : 'none';
         });
       } else {
         sugBox.style.display = 'none';
       }
     });
+
     // Click on suggestion
     document.addEventListener('click', function (e) {
       var item = e.target.closest('.ai-cmd-item');
       if (!item) return;
-      var cmd = item.getAttribute('data-cmd');
-      chatInput.innerHTML = '';
-      chatInput.appendChild(document.createTextNode(cmd + ' '));
       var sugBox = document.getElementById('aiCmdSuggestions');
-      if (sugBox) sugBox.style.display = 'none';
-      chatInput.focus();
+      
+      if (item.hasAttribute('data-autocomplete')) {
+        var plateName = item.getAttribute('data-autocomplete');
+        var val = chatInput.value || chatInput.innerText || chatInput.textContent || '';
+        val = val.replace(/^\/plate\s+"([^"]*)$/i, '/plate "' + plateName + '" ');
+        chatInput.innerHTML = '';
+        chatInput.appendChild(document.createTextNode(val));
+        if (sugBox) sugBox.style.display = 'none';
+        chatInput.focus();
+        
+        // Move cursor to end
+        if (window.getSelection) {
+            var range = document.createRange();
+            var sel = window.getSelection();
+            range.selectNodeContents(chatInput);
+            range.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+      } else if (item.hasAttribute('data-cmd')) {
+        var cmd = item.getAttribute('data-cmd');
+        chatInput.innerHTML = '';
+        chatInput.appendChild(document.createTextNode(cmd + ' '));
+        if (sugBox) sugBox.style.display = 'none';
+        chatInput.focus();
+      }
     });
-  }
 
   // Quick Chips click handler
   if (chipButtons) {

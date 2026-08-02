@@ -9,6 +9,8 @@ require_once __DIR__ . '/../../includes/functions.php'; // Required for e() and 
 
 // Initialize DB
 $db = getDB();
+require_once __DIR__ . '/services/AliasResolver.php';
+$aliasResolver = new AliasResolver($db);
 
 // Only create table if it truly doesn't exist — use a single init check per session
 if (empty($_SESSION['ai_agent_knowledge_table_checked'])) {
@@ -77,6 +79,28 @@ switch ($action) {
             exit;
         }
         deleteKnowledge($db);
+        break;
+    case 'list_aliases':
+        listAliases($aliasResolver);
+        break;
+    case 'get_aliases':
+        getAliases($aliasResolver);
+        break;
+    case 'add_alias':
+        if (!validateCsrf($csrfToken, $expectedToken)) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'Invalid CSRF token.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        addAlias($aliasResolver);
+        break;
+    case 'delete_alias':
+        if (!validateCsrf($csrfToken, $expectedToken)) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'Invalid CSRF token.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        deleteAlias($aliasResolver);
         break;
     case 'test_provider':
         testProvider();
@@ -211,6 +235,49 @@ function deleteKnowledge($db)
         echo json_encode(['ok' => false, 'error' => 'Database error: ' . $db->error], JSON_UNESCAPED_UNICODE);
     }
 }
+
+/* ── Alias Functions ───────────────────────────────────────────────────── */
+
+function listAliases(AliasResolver $resolver)
+{
+    echo json_encode(['ok' => true, 'data' => $resolver->listAll()], JSON_UNESCAPED_UNICODE);
+}
+
+function getAliases(AliasResolver $resolver)
+{
+    $kbId = (int) ($_GET['kb_id'] ?? 0);
+    if ($kbId <= 0) {
+        echo json_encode(['ok' => false, 'error' => 'Invalid kb_id.'], JSON_UNESCAPED_UNICODE);
+        return;
+    }
+    $aliases = $resolver->getAliasesForKb($kbId);
+    echo json_encode(['ok' => true, 'kb_id' => $kbId, 'aliases' => $aliases], JSON_UNESCAPED_UNICODE);
+}
+
+function addAlias(AliasResolver $resolver)
+{
+    $kbId  = (int) ($_POST['kb_id']  ?? 0);
+    $alias = trim($_POST['alias'] ?? '');
+    if ($kbId <= 0 || $alias === '') {
+        echo json_encode(['ok' => false, 'error' => 'kb_id and alias are required.'], JSON_UNESCAPED_UNICODE);
+        return;
+    }
+    $ok = $resolver->addAlias($kbId, $alias);
+    echo json_encode(['ok' => $ok], JSON_UNESCAPED_UNICODE);
+}
+
+function deleteAlias(AliasResolver $resolver)
+{
+    $id = (int) ($_POST['id'] ?? 0);
+    if ($id <= 0) {
+        echo json_encode(['ok' => false, 'error' => 'Invalid id.'], JSON_UNESCAPED_UNICODE);
+        return;
+    }
+    $ok = $resolver->deleteAlias($id);
+    echo json_encode(['ok' => $ok], JSON_UNESCAPED_UNICODE);
+}
+
+/* ── Provider / Endpoint Functions ─────────────────────────────────────── */
 
 function testProvider()
 {

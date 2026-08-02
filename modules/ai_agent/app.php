@@ -1132,6 +1132,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
   <footer class="app-footer">
     <div class="input-container" style="position:relative;">
       <!-- Command Suggestions Dropup -->
+      <div class="cmd-suggestions" id="autocompleteSuggestions" style="display:none; max-height: 250px; overflow-y: auto;"></div>
       <div class="cmd-suggestions" id="cmdSuggestions">
         <div class="cmd-suggestion-item" data-cmd="/cal">
           <span class="cmd-key-badge">/cal</span>
@@ -1364,15 +1365,53 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
          cmdSuggestionsPopup.style.display = 'none';
       }
       const sug = document.getElementById('cmdSuggestions');
-      if (showSuggestions) {
-        const partial = text.toLowerCase();
-        sug.querySelectorAll('.cmd-suggestion-item').forEach(el => {
-          const cmd = el.dataset.cmd;
-          el.style.display = cmd.startsWith(partial) ? 'flex' : 'none';
-        });
-        sug.classList.add('visible');
+      // Plate Autocomplete Logic
+      const plateMatch = text.match(/^\/plate\s+"([^"]*)$/i);
+      const autoSug = document.getElementById('autocompleteSuggestions');
+      if (plateMatch) {
+         const searchTerm = plateMatch[1];
+         sug.classList.remove('visible'); // hide basic commands
+         if (searchTerm.length >= 1) {
+            clearTimeout(window.plateFetchTimer);
+            window.plateFetchTimer = setTimeout(() => {
+              fetch('api.php?action=autocomplete&prompt=' + encodeURIComponent(searchTerm))
+              .then(res => res.json())
+              .then(data => {
+                autoSug.innerHTML = '';
+                window.autocompleteCurrentFocus = -1;
+                if (data.ok && data.suggestions && data.suggestions.length > 0) {
+                  data.suggestions.forEach(s => {
+                    const div = document.createElement('div');
+                    div.className = 'cmd-suggestion-item autocomplete-item';
+                    div.setAttribute('data-autocomplete', s.name);
+                    div.innerHTML = '<span class="cmd-key-badge">' + escHtml(s.name) + '</span><span class="cmd-desc">' + escHtml(s.size||'') + '</span>';
+                    autoSug.appendChild(div);
+                  });
+                  autoSug.classList.add('visible');
+                  autoSug.style.display = 'block';
+                } else {
+                  autoSug.classList.remove('visible');
+                  autoSug.style.display = 'none';
+                }
+              }).catch(e => console.error(e));
+            }, 300);
+         } else {
+            autoSug.classList.remove('visible');
+            autoSug.style.display = 'none';
+         }
       } else {
-        sug.classList.remove('visible');
+         autoSug.classList.remove('visible');
+         autoSug.style.display = 'none';
+         if (showSuggestions) {
+           const partial = text.toLowerCase();
+           sug.querySelectorAll('.cmd-suggestion-item').forEach(el => {
+             const cmd = el.dataset.cmd;
+             el.style.display = cmd.startsWith(partial) ? 'flex' : 'none';
+           });
+           sug.classList.add('visible');
+         } else {
+           sug.classList.remove('visible');
+         }
       }
 
       // Build highlighted HTML
@@ -1446,15 +1485,20 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       setChatText(cmd + ' ');
       document.getElementById('cmdSuggestions').classList.remove('visible');
       processChatInput();
-            chatInput.focus();
-      if (typeof window.getSelection !== 'undefined' && typeof document.createRange !== 'undefined') {
-        var range = document.createRange();
-        range.selectNodeContents(chatInput);
-        range.collapse(false);
-        var sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }
+      chatInput.focus();
+      placeCursorAtEnd();
+    });
+
+    document.getElementById('autocompleteSuggestions').addEventListener('click', (e) => {
+      const item = e.target.closest('.autocomplete-item');
+      if (!item) return;
+      const plateName = item.getAttribute('data-autocomplete');
+      const val = getChatText();
+      setChatText(val.replace(/^\/plate\s+"([^"]*)$/i, '/plate "' + plateName + '" '));
+      document.getElementById('autocompleteSuggestions').classList.remove('visible');
+      document.getElementById('autocompleteSuggestions').style.display = 'none';
+      processChatInput();
+      chatInput.focus();
       placeCursorAtEnd();
     });
 
@@ -1486,8 +1530,47 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     // Scroll to bottom
     sendBtn.addEventListener('click', sendQuery);
     chatInput.addEventListener('keydown', (e) => {
+      const autoSug = document.getElementById('autocompleteSuggestions');
+      if (autoSug && autoSug.style.display === 'block') {
+        const items = autoSug.querySelectorAll('.autocomplete-item');
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          window.autocompleteCurrentFocus++;
+          addActivePwa(items);
+          return;
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          window.autocompleteCurrentFocus--;
+          addActivePwa(items);
+          return;
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (window.autocompleteCurrentFocus > -1 && items[window.autocompleteCurrentFocus]) {
+            items[window.autocompleteCurrentFocus].click();
+          } else {
+            sendQuery();
+          }
+          return;
+        }
+      }
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuery(); }
     });
+
+    function addActivePwa(items) {
+      if (!items || !items.length) return false;
+      removeActivePwa(items);
+      if (window.autocompleteCurrentFocus >= items.length) window.autocompleteCurrentFocus = 0;
+      if (window.autocompleteCurrentFocus < 0) window.autocompleteCurrentFocus = items.length - 1;
+      items[window.autocompleteCurrentFocus].classList.add('active');
+      items[window.autocompleteCurrentFocus].style.background = 'rgba(59,130,246,0.15)';
+    }
+
+    function removeActivePwa(items) {
+      for (let i = 0; i < items.length; i++) {
+        items[i].classList.remove('active');
+        items[i].style.background = 'transparent';
+      }
+    }
 
     scrollFab.addEventListener('click', () => {
       chatStream.scrollTo({ top: chatStream.scrollHeight, behavior: 'smooth' });

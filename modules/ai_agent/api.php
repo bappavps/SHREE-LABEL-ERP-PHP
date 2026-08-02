@@ -22,10 +22,27 @@ require_once __DIR__ . '/services/CalculationEngine.php';
 require_once __DIR__ . '/services/PromptBuilder.php';
 require_once __DIR__ . '/services/ProviderManager.php';
 require_once __DIR__ . '/services/LLMClient.php';
+require_once __DIR__ . '/services/AliasResolver.php';
 require_once __DIR__ . '/config.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
+ob_start(); // Buffer any accidental output (notices, blanks)
+
+set_exception_handler(function($e) {
+    ob_end_clean();
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'Internal API Error: ' . $e->getMessage()]);
+    exit;
+});
+
+set_error_handler(function($errno, $errstr, $errfile, $errline) {
+    if (error_reporting() === 0) return false;
+    ob_end_clean();
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => "PHP Warning/Notice: $errstr in $errfile on line $errline"]);
+    exit;
+});
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -39,6 +56,15 @@ $db = getDB();
 $config = getAiAgentConfig();
 $action = trim($_REQUEST['action'] ?? '');
 $prompt = trim($_REQUEST['prompt'] ?? '');
+
+// ─── Alias Resolution — MUST run first, before any handler or $p derivation ───
+// Resolves e.g. "mriganka" → "Mriganka Bhusan Debnath" so every subsequent
+// handler (greeting check, KB lookup, RetrievalEngine) sees the canonical name.
+if (!in_array($action, ['autocomplete'])) {
+    $aliasResolver = new AliasResolver($db);
+    $prompt        = $aliasResolver->resolve($prompt);
+}
+
 
 if (!in_array($action, ['query', 'autocomplete'])) {
     echo json_encode(['ok' => false, 'error' => 'Invalid action']);
@@ -736,6 +762,9 @@ if ($isGreeting) {
 }
 
 
+
+// (Alias resolution already done above at the top of the pipeline)
+
 // ─── Global Plate / Job Calculation Interceptor ───────────────────────────────
 $isCalcCommand = false;
 $rawCalcPrompt = trim($prompt);
@@ -863,7 +892,7 @@ if (strpos($pTrimmed, '/plate') === 0 || $pTrimmed === 'plate' || $pTrimmed === 
     $subQuery = preg_replace('/^\/plate\s*/iu', '', trim($prompt));
     $subQuery = preg_replace('/^প্লেট\s*/u', '', $subQuery);
     $subQuery = preg_replace('/^प्लेट\s*/u', '', $subQuery);
-    $subQuery = trim(trim($subQuery), '"');
+    $subQuery = trim($subQuery);
 
     if ($subQuery === '') {
         $navUrl = $baseNavUrl . '/modules/plate-tools/plate-management/index.php';
@@ -899,7 +928,7 @@ if ($commandType === null && (strpos($pTrimmed, '/paperstock') === 0 || strpos($
     $subQuery = preg_replace('/^পেপার\s*/u', '', $subQuery);
     $subQuery = preg_replace('/^पेपर\s*स्टॉक\s*/u', '', $subQuery);
     $subQuery = preg_replace('/^पेपर\s*/u', '', $subQuery);
-    $subQuery = trim(trim($subQuery), '"');
+    $subQuery = trim($subQuery);
 
     if ($subQuery === '') {
         // No specific query → show full stock summary
@@ -5419,7 +5448,7 @@ if (!empty($retrieved['direct_answer'])) {
         require_once __DIR__ . '/services/RetrievalEngine.php';
         require_once __DIR__ . '/services/ContextBuilder.php';
 
-        $retrievalEngine = new RetrievalEngine($db);
+        $retrievalEngine = new RetrievalEngine($db, $aliasResolver ?? null);
 
         // Initialize Services
         $logger = new Logger();
@@ -5561,4 +5590,5 @@ if (!empty($retrieved['nav_url'])) {
     $responsePayload['nav_url'] = $retrieved['nav_url'];
 }
 
+ob_end_clean(); // Ensure nothing else was printed
 echo json_encode($responsePayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

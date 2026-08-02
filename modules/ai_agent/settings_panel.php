@@ -931,6 +931,18 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
         <label for="kb_active" style="font-weight:600;color:#334155;cursor:pointer">Active</label>
       </div>
     </div>
+    <div class="ai-field" id="kb_alias_section" style="display:none">
+      <label style="display:flex;align-items:center;gap:6px">
+        <i class="bi bi-tags-fill" style="color:#8b5cf6"></i>
+        Aliases <span style="font-weight:400;color:#64748b;font-size:12px">— Alternative names that resolve to this entry</span>
+      </label>
+      <div id="kb_alias_list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px">
+        <input id="kb_alias_input" type="text" placeholder="e.g. MBD, Mriganka, মৃগাঙ্ক" style="flex:1">
+        <button class="ai-btn ai-btn-outline" type="button" onclick="kbAddAlias()" style="white-space:nowrap"><i class="bi bi-plus-lg"></i> Add</button>
+      </div>
+      <div class="hint">Separate each alias by pressing <b>Add</b>. Aliases work across KB search and semantic retrieval.</div>
+    </div>
     <div class="ai-modal-actions">
       <button class="ai-btn ai-btn-outline" onclick="kbCloseModal()">Cancel</button>
       <button class="ai-btn ai-btn-primary" onclick="kbSaveEntry()"><i class="bi bi-save"></i> Save Entry</button>
@@ -1325,6 +1337,17 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
     document.getElementById('kb_modal_title').innerHTML = data
       ? '<i class="bi bi-pencil-square"></i> Edit Knowledge Entry #' + data.id
       : '<i class="bi bi-plus-circle"></i> Add Knowledge Entry';
+
+    // Show alias section only for existing entries
+    const aliasSection = document.getElementById('kb_alias_section');
+    if (data && data.id) {
+      aliasSection.style.display = '';
+      kbLoadAliases(data.id);
+    } else {
+      aliasSection.style.display = 'none';
+      document.getElementById('kb_alias_list').innerHTML = '';
+    }
+    document.getElementById('kb_alias_input').value = '';
     document.getElementById('kb_modal').classList.add('show');
   }
 
@@ -1366,6 +1389,62 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
           if (entry) kbOpenModal(entry);
         }
       });
+  }
+
+  // ── Alias helpers ──────────────────────────────────────────────
+  function kbLoadAliases(kbId) {
+    fetch(KB_API + '?action=get_aliases&kb_id=' + kbId)
+      .then(r => r.json())
+      .then(d => {
+        const list = document.getElementById('kb_alias_list');
+        if (!d.ok) { list.innerHTML = ''; return; }
+        list.innerHTML = (d.aliases || []).map((a, idx) =>
+          `<span style="display:inline-flex;align-items:center;gap:4px;background:#ede9fe;color:#5b21b6;border-radius:20px;padding:3px 10px;font-size:13px;font-weight:600">`
+          + a
+          + `<button type="button" onclick="kbDeleteAlias(${kbId}, this, '${a.replace(/'/g, "\\'")}')"
+              style="background:none;border:none;cursor:pointer;color:#7c3aed;padding:0 0 0 4px;font-size:14px;line-height:1" title="Remove alias">×</button></span>`
+        ).join('');
+      });
+  }
+
+  function kbAddAlias() {
+    const kbId = document.getElementById('kb_edit_id').value;
+    const alias = document.getElementById('kb_alias_input').value.trim();
+    if (!kbId || !alias) return;
+    const fd = new FormData();
+    fd.append('action', 'add_alias');
+    fd.append('kb_id', kbId);
+    fd.append('alias', alias);
+    fd.append('csrf_token', AI_CSRF_TOKEN);
+    fetch(KB_API, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok) {
+          document.getElementById('kb_alias_input').value = '';
+          kbLoadAliases(kbId);
+        } else { alert(d.error || 'Failed to add alias.'); }
+      })
+      .catch(() => alert('Network error.'));
+  }
+
+  function kbDeleteAlias(kbId, btn, aliasName) {
+    if (!confirm('Remove alias "' + aliasName + '"?')) return;
+    // We need the alias row id — refetch to find it
+    fetch(KB_API + '?action=list_aliases')
+      .then(r => r.json())
+      .then(d => {
+        if (!d.ok) return;
+        const row = d.data.find(a => a.kb_id == kbId && a.alias === aliasName);
+        if (!row) { alert('Alias not found.'); return; }
+        const fd = new FormData();
+        fd.append('action', 'delete_alias');
+        fd.append('id', row.id);
+        fd.append('csrf_token', AI_CSRF_TOKEN);
+        fetch(KB_API, { method: 'POST', body: fd })
+          .then(r => r.json())
+          .then(d2 => { if (d2.ok) kbLoadAliases(kbId); else alert(d2.error || 'Failed.'); });
+      })
+      .catch(() => alert('Network error.'));
   }
 
   function kbDelete(id) {
