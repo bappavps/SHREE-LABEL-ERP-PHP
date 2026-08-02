@@ -28,9 +28,41 @@ $logoPath = trim((string)($appSettings['logo_path'] ?? ''));
 $logoUrl = $logoPath !== '' ? appUrl($logoPath) : '';
 
 $rows = [];
-$res = $db->query("SELECT * FROM {$tableName} ORDER BY CASE WHEN TRIM(COALESCE(sl_no, '')) REGEXP '^[0-9]+$' THEN CAST(TRIM(sl_no) AS UNSIGNED) ELSE 2147483647 END ASC, id ASC");
-if ($res) {
-  $rows = $res->fetch_all(MYSQLI_ASSOC);
+$orderSql = "ORDER BY CASE WHEN TRIM(COALESCE(sl_no, '')) REGEXP '^[0-9]+$' THEN CAST(TRIM(sl_no) AS UNSIGNED) ELSE 2147483647 END ASC, id ASC";
+
+// ── Optional filters (used by AI agent / URL) ─────────────────
+$whereParts = ['1=1'];
+$params = [];
+$types = '';
+
+$fSearch = trim($_GET['search'] ?? '');
+$fDie = trim($_GET['die'] ?? '');
+$fCylinder = trim($_GET['cylinder'] ?? '');
+$fRepeat = trim($_GET['repeat'] ?? '');
+$fPaperSize = trim($_GET['paper_size'] ?? '');
+
+if ($fSearch !== '') {
+    $like = '%' . $fSearch . '%';
+    $whereParts[] = "(name LIKE ? OR plate LIKE ? OR sl_no LIKE ? OR size LIKE ? OR paper_size LIKE ? OR paper_type LIKE ? OR make_by LIKE ? OR die LIKE ? OR cylinder LIKE ? OR core LIKE ? OR qty_roll LIKE ? OR rewinding LIKE ?)";
+    for ($i = 0; $i < 12; $i++) { $params[] = $like; $types .= 's'; }
+}
+if ($fDie !== '') { $whereParts[] = "die LIKE ?"; $params[] = '%' . $fDie . '%'; $types .= 's'; }
+if ($fCylinder !== '') { $whereParts[] = "cylinder LIKE ?"; $params[] = '%' . $fCylinder . '%'; $types .= 's'; }
+if ($fRepeat !== '') { $whereParts[] = "repeat_value LIKE ?"; $params[] = '%' . $fRepeat . '%'; $types .= 's'; }
+if ($fPaperSize !== '') { $whereParts[] = "(paper_size LIKE ? OR size LIKE ?)"; $params[] = '%' . $fPaperSize . '%'; $params[] = '%' . $fPaperSize . '%'; $types .= 'ss'; }
+
+if ($params) {
+    $whereSql = implode(' AND ', $whereParts);
+    $stmt = $db->prepare("SELECT * FROM {$tableName} WHERE {$whereSql} {$orderSql}");
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $rows = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
+} else {
+    $res = $db->query("SELECT * FROM {$tableName} {$orderSql}");
+    if ($res) {
+        $rows = $res->fetch_all(MYSQLI_ASSOC);
+    }
 }
 
 if ($format === 'excel') {

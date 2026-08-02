@@ -13,8 +13,32 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// Auto-login as the System Admin (user id 1) for the standalone mobile PWA.
+// Mirror a real ERP login session (role, group, tenant) so RBAC permission
+// checks (isAdmin / canAccessPath, e.g. export.php) behave identically to a
+// normal ERP login — otherwise filtered PDF/CSV export links get redirected
+// to the dashboard as "access denied".
 if (!isset($_SESSION['user_id'])) {
     $_SESSION['user_id'] = 1;
+}
+if (empty($_SESSION['role']) || empty($_SESSION['user_name'])) {
+    try {
+        $db   = getDB();
+        $stmt = $db->prepare("SELECT id, name, email, role, group_id FROM users WHERE id = 1 AND is_active = 1 LIMIT 1");
+        $stmt->execute();
+        $u = $stmt->get_result()->fetch_assoc();
+        if ($u) {
+            $_SESSION['user_id']     = (int)$u['id'];
+            $_SESSION['user_name']   = $u['name'];
+            $_SESSION['user_email']  = $u['email'];
+            $_SESSION['role']        = $u['role'];
+            $_SESSION['group_id']    = isset($u['group_id']) ? (int)$u['group_id'] : 0;
+            $_SESSION['tenant_slug'] = defined('TENANT_SLUG') ? TENANT_SLUG : 'default';
+            $_SESSION['tenant_name'] = defined('TENANT_NAME') ? TENANT_NAME : APP_NAME;
+        }
+    } catch (Throwable $e) {
+        // Fallback: minimum session (user_id only) already set above.
+    }
 }
 
 $config = getAiAgentConfig();
@@ -1584,10 +1608,50 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       }
     });
 
+    // ── In-PWA full-screen report viewer (PDF print view) ──
+    // PDF export links return an HTML print view. Opening it in a new tab is
+    // popup-blocked on mobile (async fetch loses user gesture), so we render
+    // it inside the PWA in a full-screen modal — "view report on screen".
+    function openPwaReportViewer(url) {
+      let ov = document.getElementById('pwaReportViewer');
+      if (ov) ov.remove();
+      ov = document.createElement('div');
+      ov.id = 'pwaReportViewer';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(2,6,23,.9);display:flex;flex-direction:column;';
+      const bar = document.createElement('div');
+      bar.style.cssText = 'display:flex;align-items:center;gap:10px;justify-content:space-between;padding:10px 14px;background:#0f172a;color:#fff;flex:0 0 auto;';
+      const title = document.createElement('span');
+      title.textContent = '📄 Report — Print / Save as PDF';
+      title.style.cssText = 'font-size:14px;font-weight:600;';
+      const btns = document.createElement('div');
+      btns.style.cssText = 'display:flex;gap:8px;';
+      const printBtn = document.createElement('button');
+      printBtn.textContent = '🖨 Print';
+      printBtn.style.cssText = 'background:#2563eb;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:14px;cursor:pointer;';
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = '✕ Close';
+      closeBtn.style.cssText = 'background:#ef4444;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:14px;cursor:pointer;';
+      btns.appendChild(printBtn);
+      btns.appendChild(closeBtn);
+      bar.appendChild(title);
+      bar.appendChild(btns);
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'flex:1 1 auto;min-height:0;';
+      const frame = document.createElement('iframe');
+      frame.style.cssText = 'width:100%;height:100%;border:none;background:#fff;';
+      frame.src = url;
+      wrap.appendChild(frame);
+      ov.appendChild(bar);
+      ov.appendChild(wrap);
+      document.body.appendChild(ov);
+      printBtn.addEventListener('click', () => { try { frame.contentWindow.print(); } catch (e) {} });
+      closeBtn.addEventListener('click', () => ov.remove());
+    }
+
     // ── PWA: File/Export links must NEVER navigate the PWA into the ERP ──
     // Clicking a PDF / Excel / CSV / export link downloads the file directly
-    // inside the PWA via fetch → blob. The PWA window itself never leaves
-    // the chat (no dashboard / login redirects). Fallback opens a new tab.
+    // inside the PWA via fetch → blob (or shows the PDF print view in-app).
+    // The PWA window itself never leaves the chat (no dashboard/login redirects).
     chatStream.addEventListener('click', (e) => {
       const a = e.target.closest('a');
       if (!a || !a.href) return;
@@ -1598,16 +1662,27 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       e.preventDefault();
       e.stopPropagation();
 
+      const isPdfLink = /format=pdf/i.test(h);
+
       fetch(h, { credentials: 'include' })
         .then((r) => {
           if (!r.ok) throw new Error('HTTP ' + r.status);
           const ct = (r.headers.get('Content-Type') || '').toLowerCase();
-          // If the server answered with an HTML page (e.g. auth/redirect),
-          // do NOT save it as a file — fall through to the catch handler.
-          if (ct.indexOf('text/html') !== -1) throw new Error('html-redirect');
+          // If the server answered with an HTML page: for PDF export links this
+          // is the print view → render it in-app. For everything else it is an
+          // auth/redirect page → fall through to the catch handler (never save
+          // an HTML page as a file).
+          if (ct.indexOf('text/html') !== -1) {
+            if (isPdfLink) {
+              openPwaReportViewer(h);
+              return null;
+            }
+            throw new Error('html-redirect');
+          }
           return r.blob();
         })
         .then((blob) => {
+          if (!blob) return;
           let ext = /format=pdf/i.test(h) ? 'pdf'
                  : (/format=csv|\.csv/i.test(h) ? 'csv'
                  : (/\.xlsx/i.test(h) ? 'xlsx' : 'bin'));

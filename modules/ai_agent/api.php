@@ -194,7 +194,7 @@ function extract_search_numbers(string $prompt): array
 /**
  * Format database records into a clean markdown table
  */
-function format_records_table(array $data, string $type = 'paper_stock', string $lang = 'English', ?int $totalCount = null, int $jumboRolls = 0, int $slittedRolls = 0): string
+function format_records_table(array $data, string $type = 'paper_stock', string $lang = 'English', ?int $totalCount = null, int $jumboRolls = 0, int $slittedRolls = 0, ?float $totalMeters = null, ?float $totalSqmOverride = null): string
 {
     if (empty($data))
         return '';
@@ -204,13 +204,16 @@ function format_records_table(array $data, string $type = 'paper_stock', string 
     $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
 
     if ($type === 'paper_stock') {
-        // Summary totals
+        // Summary totals — use the full filtered-set totals when provided,
+        // otherwise fall back to summing the sample rows.
         $totalMtr = 0;
         $totalSqm = 0;
         foreach ($data as $r) {
             $totalMtr += (float) ($r['length_mtr'] ?? 0);
             $totalSqm += (float) ($r['sqm'] ?? 0);
         }
+        if ($totalMeters !== null) $totalMtr = (float) $totalMeters;
+        if ($totalSqmOverride !== null) $totalSqm = (float) $totalSqmOverride;
 
         if ($lang === 'English') {
             $tbl = "| # | Roll No | Type | Company | Width | Length | SQM | Status |\n";
@@ -605,6 +608,67 @@ function get_follow_up_suggestions(string $toolUsed, string $prompt, string $use
     return $suggestions;
 }
 
+// Live Summary Handler
+function getLiveSummary(): string {
+    $db = function_exists('getDB') ? getDB() : null;
+    if (!$db) {
+        return 'Database connection failed.';
+    }
+
+    $sql = "SELECT department, status FROM jobs WHERE deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00'";
+    $res = $db->query($sql);
+    
+    $totalActive = 0;
+    $totalRunning = 0;
+    
+    // Departments
+    $jumbo = 0;
+    $flexo = 0;
+    $die = 0;
+    $packing = 0;
+    
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $s = strtolower(trim($row['status'] ?? ''));
+            $dept = strtolower(trim($row['department'] ?? ''));
+            
+            // Except finished tab jobs
+            $finishedStatuses = ['completed', 'dispatched', 'delivered', 'packing done', 'packed', 'finished production', 'finished barcode', 'finished label'];
+            if (in_array($s, $finishedStatuses, true)) {
+                continue;
+            }
+            
+            $totalActive++;
+            if ($s === 'running') {
+                $totalRunning++;
+            }
+            
+            if (strpos($dept, 'jumbo') !== false || strpos($dept, 'slit') !== false) {
+                $jumbo++;
+            } elseif (strpos($dept, 'print') !== false || strpos($dept, 'flexo') !== false) {
+                $flexo++;
+            } elseif (strpos($dept, 'die') !== false || strpos($dept, 'flat') !== false || strpos($dept, 'rotary') !== false || strpos($dept, 'barcode') !== false) {
+                $die++;
+            } elseif (strpos($dept, 'pack') !== false || strpos($dept, 'pos') !== false || strpos($dept, 'paperroll') !== false || strpos($dept, 'dispatch') !== false) {
+                $packing++;
+            } else {
+                // If it is 'planning' or something else, we can decide where to put it or just count it in total
+            }
+        }
+    }
+    
+    return sprintf(
+        "📊 **Live Production Floor Summary**\n" .
+        "Total Active Jobs: **%d** (Running: %d)\n\n" .
+        "**Machine / Department Status:**\n" .
+        "🔹 Jumbo Slitting: **%d** jobs\n" .
+        "🔹 Flexo Printing: **%d** jobs\n" .
+        "🔹 Die Cutting / Barcode: **%d** jobs\n" .
+        "🔹 Packing / POS Roll: **%d** jobs",
+        $totalActive, $totalRunning, $jumbo, $flexo, $die, $packing
+    );
+}
+
 /**
  * Call external LLM API (Google Gemini, OpenAI, OpenRouter, OpenCode, Local LLM) with fallback support
  */
@@ -640,14 +704,23 @@ function check_navigation_intent(string $prompt): ?array
         return ['name' => 'Packing Operator', 'url' => $baseUrl . '/modules/operators/packing/index.php'];
     } elseif (strpos($p, 'report') !== false) {
         return ['name' => 'Job Reports', 'url' => $baseUrl . '/modules/reports/jobs.php'];
+    }
+
+    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $fullBaseUrl = rtrim($protocol . $host . $baseUrl, '/');
+
+    if (strpos($p, 'login') !== false || strpos($p, 'logout') !== false) {
+        return ['name' => 'ERP Login', 'url' => $fullBaseUrl . '/auth/login.php'];
     } elseif (strpos($p, 'dash') !== false || strpos($p, 'home') !== false) {
-        return ['name' => 'Dashboard', 'url' => $baseUrl . '/modules/dashboard/index.php'];
+        return ['name' => 'Dashboard', 'url' => $fullBaseUrl . '/modules/dashboard/index.php'];
     }
 
     return null;
 }
 
 // Navigation Response Check
+$userLang = detect_language($prompt);
 $navTarget = check_navigation_intent($prompt);
 if ($navTarget !== null) {
     $navAnswer = "🚀 **Navigation Command Received:**\n\nOpening **" . htmlspecialchars($navTarget['name']) . "** page for you.\n\n👉 [Click here if page does not auto-redirect](" . htmlspecialchars($navTarget['url']) . ")";
@@ -856,6 +929,20 @@ if ($isCalcCommand) {
 $pTrimmed = trim(mb_strtolower($prompt, 'UTF-8'));
 $userLang = detect_language($prompt);
 
+if (strpos($p, 'live summary') !== false || strpos($p, 'dashboard live summary') !== false || strpos($p, 'live floor page summary') !== false) {
+    $summary = getLiveSummary();
+    $answer = "📊 **Live Production Floor Summary**\n" . $summary;
+    $suggestions = generate_erp_suggestions($prompt, $answer, 'Live Summary Tool', $userLang);
+    echo json_encode([
+        'ok' => true,
+        'answer' => $answer,
+        'provider' => 'Live Summary Engine',
+        'tool_used' => 'Live Summary Tool',
+        'suggestions' => $suggestions
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
 
  // Define userLang for global scope
 $baseNavUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
@@ -943,7 +1030,7 @@ if (strpos($pTrimmed, '/plate') === 0 || $pTrimmed === 'plate' || $pTrimmed === 
 }
 
 // /paperstock or /paper command — only if a /plate command did not already claim this query
-if ($commandType === null && (strpos($pTrimmed, '/paperstock') === 0 || strpos($pTrimmed, '/paper stock') === 0 || $pTrimmed === 'paperstock' || $pTrimmed === 'paper stock' || $pTrimmed === 'paper' || strpos($pTrimmed, 'পেপার স্টক') !== false || strpos($pTrimmed, 'পেপার') !== false || strpos($pTrimmed, 'पेपर स्टॉक') !== false || strpos($pTrimmed, 'पेपर') !== false)) {
+if ($commandType === null && (strpos($pTrimmed, '/paper') === 0 || strpos($pTrimmed, '/paperstock') === 0 || strpos($pTrimmed, '/paper stock') === 0 || $pTrimmed === 'paperstock' || $pTrimmed === 'paper stock' || $pTrimmed === 'paper' || strpos($pTrimmed, 'পেপার স্টক') !== false || strpos($pTrimmed, 'পেপার') !== false || strpos($pTrimmed, 'पेपर स्टॉक') !== false || strpos($pTrimmed, 'पेपर') !== false)) {
     $_SESSION['ai_priority_mode'] = 'paperstock';
     $commandType = 'paperstock';
     $subQuery = preg_replace('/^\/paper\s*stock\s*/iu', '', trim($prompt));
@@ -1536,7 +1623,7 @@ if (strpos($p, 'inch') !== false && (strpos($p, 'sqm') !== false || strpos($p, '
 
 
 // ─── KB Skip-Logic: Queries with specific data entities bypass KB, go straight to ERP search ───
-$kbSkipPatterns = ['how many', 'কত', 'কতগুলো', 'কতটা', 'kitne', 'kitna', 'total count', 'total rolls', 'total paper', 'stock count', 'roll count', 'paper count', 'summary', 'সারসংক্ষেপ', 'সমষ্টি', 'सारांश', 'कुल गिनती', 'date', 'time', 'ajke', 'kon date', 'today', 'tarikh', 'তারিখ', 'আজকে', 'সময়', 'somoy', 'hello', 'hi ', 'kemon acho', 'purchase rate', 'দাম', 'দামি', 'রেট', 'মূল্য', 'rate', 'price', 'costly', 'expensive', 'দাম কত', 'সবচেয়ে দামি', 'গড় rate', 'avg rate', 'दाम', 'रेट', 'कीमत', 'lot batch', 'lot no', 'batch no', 'লট', 'ব্যাচ', 'company roll', 'pdf', 'excel', 'csv', 'export', 'report', 'print', 'প্রিন্ট', 'এক্সপোর্ট', 'রিপোর্ট', 'download', 'ডাউনলোড', 'plate', 'cylinder', 'ups', 'repeat', 'cmyk', 'die', 'প্লেট', 'সিলিন্ডার', 'प्लेट', 'lakh', 'লাখ'];
+$kbSkipPatterns = ['how many', 'কত', 'কতগুলো', 'কতটা', 'kitne', 'kitna', 'total count', 'total rolls', 'total paper', 'stock count', 'roll count', 'paper count', 'summary', 'সারসংক্ষেপ', 'সমষ্টি', 'सारांश', 'कुल गिनती', 'date', 'time', 'ajke', 'kon date', 'today', 'tarikh', 'তারিখ', 'আজকে', 'সময়', 'somoy', 'hello', 'hi ', 'kemon acho', 'purchase rate', 'দাম', 'দামি', 'রেট', 'মূল্য', 'rate', 'price', 'costly', 'expensive', 'দাম কত', 'সবচেয়ে দামি', 'গড় rate', 'avg rate', 'दाम', 'रेट', 'कीमत', 'lot batch', 'lot no', 'batch no', 'লট', 'ব্যাচ', 'company roll', 'pdf', 'excel', 'csv', 'export', 'report', 'print', 'প্রিন্ট', 'এক্সপোর্ট', 'রিপোর্ট', 'download', 'ডাউনলোড', 'plate', 'cylinder', 'ups', 'repeat', 'cmyk', 'die', 'প্লেট', 'সিলিন্ডার', 'प्लेट', 'lakh', 'লাখ', 'mixed', 'মিক্সড', 'এক্সট্রা', 'extra pool', 'repack', 'mixed item', 'finished', 'ফিনিশড', 'প্যাকড', 'packed'];
 $kbSkipEntities = ['krishna', 'austin', 'nrgi', 'navkar', 'abhinav', 'nitin', 'avery', 'chromo', 'thermal', 'pp white', 'pp-clear', 'maplitho', 'metallic', 'plastic', 'flexo', 'creative', 'pidilite', 'sfl'];
 $strictModes = ['plate', 'dispatch', 'job', 'paperstock'];
 $skipKB = (in_array(($commandType ?? ''), $strictModes) || in_array(($_SESSION['ai_priority_mode'] ?? ''), $strictModes));
@@ -2064,6 +2151,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             $pCompany = null;
             $pType = null;
             $pWidth = null;
+            $pWidthOp = '='; // '=', '<' (below), '>' (above)
             $pLotBatch = null;
             $pCompanyRollNo = null;
             if (preg_match('/(slc\/\d{4}\/\d+|\d{4})/i', $prompt, $m)) {
@@ -2081,8 +2169,24 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     break;
                 }
             }
-            if (preg_match('/(\d{3,4})\s*mm/i', $prompt, $m)) {
+            // 4. Width match — exact (500mm), below (< 500mm) or above (> 500mm).
+            //    e.g. "below size of 500 mm width", "less than 500mm", "500 mm ar niche" → <
+            $pWidth = null;
+            if (preg_match('/(below|under|less\s*than|lesser|ar\s*niche|er\s*niche|niche|ar\s*kom|er\s*kom|ke\s*kom|এর\s*নিচে|নিচে|চেয়ে\s*কম|কম|chhoto|ছোট|<)\s*(?:size\s*(?:of)?\s*)?(\d{3,4})\s*mm/i', $prompt, $m)) {
+                $pWidth = (float) $m[2];
+                $pWidthOp = '<';
+            } elseif (preg_match('/(above|more\s*than|over|ar\s*upore|er\s*upore|upore|ar\s*beshi|er\s*beshi|beshi|এর\s*বেশি|বেশি|উপরে|চেয়ে\s*বেশি|boro|বড়|>)\s*(?:size\s*(?:of)?\s*)?(\d{3,4})\s*mm/i', $prompt, $m)) {
+                $pWidth = (float) $m[2];
+                $pWidthOp = '>';
+            } elseif (preg_match('/(\d{3,4})\s*mm\s*(below|under|less\s*than|lesser|ar\s*niche|er\s*niche|niche|ar\s*kom|er\s*kom|ke\s*kom|এর\s*নিচে|নিচে|চেয়ে\s*কম|কম|<|chhoto|ছোট)/i', $prompt, $m)) {
                 $pWidth = (float) $m[1];
+                $pWidthOp = '<';
+            } elseif (preg_match('/(\d{3,4})\s*mm\s*(above|more\s*than|over|ar\s*upore|er\s*upore|upore|ar\s*beshi|er\s*beshi|beshi|এর\s*বেশি|বেশি|উপরে|>|boro|বড়)/i', $prompt, $m)) {
+                $pWidth = (float) $m[1];
+                $pWidthOp = '>';
+            } elseif (preg_match('/(\d{3,4})\s*mm/i', $prompt, $m)) {
+                $pWidth = (float) $m[1];
+                $pWidthOp = '=';
             }
             // 5. Lot/Batch No match (e.g. "LB-2025-001", "lot 123", "batch ABC")
             if (preg_match('/(?:lot\s*(?:batch)?\s*(?:no\.?)?\s*|batch\s*(?:no\.?)?\s*|লট\s*(?:ব্যাচ)?\s*(?:নম্বর|নং)?\s*)([A-Za-z0-9\-\/]+)/iu', $prompt, $m)) {
@@ -2122,6 +2226,11 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     $pWhere[] = "(paper_type LIKE '%pp-white%' OR paper_type LIKE '%pp white%' OR paper_type LIKE '%pp_white%')";
                 } elseif ($pType === 'pp clear' || $pType === 'pp-clear') {
                     $pWhere[] = "(paper_type LIKE '%pp-clear%' OR paper_type LIKE '%pp clear%' OR paper_type LIKE '%pp_clear%')";
+                } elseif ($pType === 'thermal paper') {
+                    // "thermal paper" is used loosely for ALL thermal substrates
+                    // (THERMAL PAPER + THERMAL BOARD + THERMAL LABEL + TOP COATED),
+                    // consistent with the aggregate Analytics Dashboard count.
+                    $pWhere[] = "paper_type LIKE '%thermal%'";
                 } else {
                     $pWhere[] = "paper_type LIKE ?";
                     $pParams[] = '%' . $pType . '%';
@@ -2129,7 +2238,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 }
             }
             if ($pWidth) {
-                $pWhere[] = "width_mm = ?";
+                $pWhere[] = "width_mm {$pWidthOp} ?";
                 $pParams[] = $pWidth;
                 $pTypes .= 'd';
             }
@@ -2362,6 +2471,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 $toolName = $pToolName;
                 $totalCount = $pTotalCount;
                 $totalMeters = round((float) ($pSummary['tm'] ?? 0), 2);
+                $totalSqm = round((float) ($pSummary['tsq'] ?? 0), 2);
                 $pDetail = $db->prepare("SELECT id, roll_no, paper_type, company, width_mm, length_mtr, ROUND((width_mm/1000.0)*length_mtr, 2) as sqm, status, job_no, date_received FROM paper_stock WHERE {$pWhereSql} ORDER BY id DESC LIMIT 15");
                 if (!empty($pParams)) {
                     $pDetail->bind_param($pTypes, ...$pParams);
@@ -2391,8 +2501,21 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 } elseif ($pType) {
                     $pTitle = strtoupper($pType) . ' Paper Stock';
                 }
-                $pDirectAnswer = "📜 **{$pTitle}** — Found **{$totalCount} rolls**:\n\n" . format_records_table($data, 'paper_stock', $userLang, $totalCount, $jumboRolls, $slittedRolls);
+                $pDirectAnswer = "📜 **{$pTitle}** — Found **{$totalCount} rolls**:\n\n" . format_records_table($data, 'paper_stock', $userLang, $totalCount, $jumboRolls, $slittedRolls, $totalMeters, $totalSqm);
                 return ['tool_used' => $toolName, 'total_count' => $totalCount, 'total_meters' => $totalMeters, 'filtered_type' => '', 'is_company_list' => false, 'direct_answer' => $pDirectAnswer, 'data' => []];
+            } elseif ($pRollNo || $pCompany || $pType || $pWidth || $pLotBatch || $pCompanyRollNo || $pSqmFilter) {
+                // No rolls matched the specific filters — return a clear "no match"
+                // message instead of falling through to the aggregate Analytics
+                // Dashboard (which ignores these filters and shows unrelated totals).
+                $pTitle = 'Paper Stock';
+                if ($pLotBatch) $pTitle = 'Lot/Batch: ' . strtoupper($pLotBatch);
+                elseif ($pCompanyRollNo) $pTitle = 'Company Roll: ' . strtoupper($pCompanyRollNo);
+                elseif ($pCompany && $pType) $pTitle = strtoupper($pCompany . ' ' . $pType);
+                elseif ($pCompany) $pTitle = strtoupper($pCompany) . ' Paper Stock';
+                elseif ($pType) $pTitle = strtoupper($pType) . ' Paper Stock';
+                $pBase = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+                $pDirectAnswer = "📜 **{$pTitle}** — No matching rolls found for the given filter.\n\n👉 [Open Paper Stock Page]({$pBase}/modules/paper_stock/index.php)";
+                return ['tool_used' => $pToolName, 'total_count' => 0, 'total_meters' => 0, 'filtered_type' => '', 'is_company_list' => false, 'direct_answer' => $pDirectAnswer, 'data' => []];
             }
         }
     }
@@ -2917,7 +3040,17 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
     $hasToolIntent = (strpos($p, 'plate') !== false || strpos($p, 'repeat') !== false || strpos($p, 'gap') !== false || strpos($p, 'প্লেট') !== false || strpos($p, 'प्लेट') !== false || ((strpos($p, 'print') !== false || strpos($p, 'calculat') !== false || strpos($p, 'koto') !== false || strpos($p, 'কত') !== false) && (strpos($p, 'meter') !== false || strpos($p, 'mtr') !== false || strpos($p, 'qty') !== false || strpos($p, 'quantity') !== false || strpos($p, 'qnty') !== false || strpos($p, 'pcs') !== false || preg_match('/\b(run|paper)\b/', $p))));
 
-    if ((!empty($compName) || !empty($paperTypeFilter)) && !$hasToolIntent) {
+    // If the user explicitly asked for a downloadable file (PDF / Excel / CSV / report / print),
+    // skip the analytics dashboard so the filtered export handler below can generate the file.
+    $isExportIntent = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || strpos($p, 'এক্সপোর্ট') !== false || strpos($p, 'রিপোর্ট') !== false || strpos($p, 'download') !== false || strpos($p, 'ডাউনলোড') !== false || ((preg_match('/\bprint\b/i', $p) || strpos($p, 'প্রিন্ট') !== false) && !strpos($p, 'koto') && !strpos($p, 'কত') && !strpos($p, 'required') && !strpos($p, 'need') && !strpos($p, 'how many')));
+
+    // If the user asked for a width threshold ("below 500mm", "500mm er niche", "above 1000mm"...),
+    // skip the aggregate analytics dashboard — the detailed master-tool table below should
+    // apply the width filter instead of showing unrelated totals.
+    $hasWidthThreshold = (bool) preg_match('/(below|under|less\s*than|lesser|ar\s*niche|er\s*niche|niche|ar\s*kom|er\s*kom|ke\s*kom|এর\s*নিচে|নিচে|চেয়ে\s*কম|কম|chhoto|ছোট|above|more\s*than|over|ar\s*upore|er\s*upore|upore|ar\s*beshi|er\s*beshi|beshi|এর\s*বেশি|বেশি|উপরে|চেয়ে\s*বেশি|boro|বড়|<|>)\s*(?:size\s*(?:of)?\s*)?\d{3,4}\s*mm/i', $p)
+        || (bool) preg_match('/\d{3,4}\s*mm\s*(below|under|less\s*than|lesser|ar\s*niche|er\s*niche|niche|ar\s*kom|er\s*kom|ke\s*kom|এর\s*নিচে|নিচে|চেয়ে\s*কম|কম|<|above|more\s*than|over|ar\s*upore|er\s*upore|upore|ar\s*beshi|er\s*beshi|beshi|এর\s*বেশি|বেশি|উপরে|>|boro|বড়)/i', $p);
+
+    if ((!empty($compName) || !empty($paperTypeFilter)) && !$hasToolIntent && !$isExportIntent && !$hasWidthThreshold) {
         $toolName = "Paper Stock Analytics Tool (" . trim($compName . ' ' . strtoupper($paperTypeFilter)) . ")";
 
         $likeComp = $compName ? ('%' . $compName . '%') : '%';
@@ -3448,11 +3581,175 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             'nav_url' => $navUrl,
             'data' => []
         ];
-    } elseif (strpos($p, 'mixed') !== false || strpos($p, 'extra pool') !== false || strpos($p, 'repack') !== false || strpos($p, 'মিক্সড') !== false || strpos($p, 'এক্সট্রা') !== false) {
+} elseif (strpos($p, 'finished') !== false || strpos($p, 'fg stock') !== false || strpos($p, 'fg') !== false || strpos($p, 'packed label') !== false || strpos($p, 'packed stock') !== false || strpos($p, 'ফিনিশড') !== false || strpos($p, 'প্যাকড') !== false) {
+
+        $toolName = 'Finished Goods Stock Master Tool';
+
+        // ---- "Which tab?" category detection (drill-down from the tab menu) ----
+        $finishedCat = null;
+        $finishedCatLabel = '';
+        if (strpos($p, 'barcode') !== false) {
+            $finishedCat = 'barcode';
+            $finishedCatLabel = 'Barcode';
+        } elseif (strpos($p, 'print') !== false) {
+            $finishedCat = 'printing_label';
+            $finishedCatLabel = 'Printing Label';
+        } elseif (strpos($p, 'pos') !== false) {
+            $finishedCat = 'pos_paper_roll';
+            $finishedCatLabel = 'POS & Paper Roll';
+        } elseif (strpos($p, 'carton') !== false) {
+            $finishedCat = 'carton';
+            $finishedCatLabel = 'Carton';
+        }
+
+        $finishedCats = "'barcode','printing_label','pos_paper_roll','carton'";
+        $catWhere = $finishedCat ? " AND category = '" . $db->real_escape_string($finishedCat) . "'" : '';
+
+        $cntRes = $db->query("SELECT COUNT(*) as cnt, IFNULL(SUM(quantity),0) as total_qty FROM finished_goods_stock WHERE quantity > 0 {$catWhere}");
+        $sumRow = $cntRes ? $cntRes->fetch_assoc() : [];
+        $totalItems = (int) ($sumRow['cnt'] ?? 0);
+        $totalQty = (float) ($sumRow['total_qty'] ?? 0);
+
+        $rows = $db->query("SELECT id, category, item_name, item_code, size, quantity, unit, batch_no, date, remarks FROM finished_goods_stock WHERE quantity > 0 {$catWhere} ORDER BY id DESC LIMIT 15")->fetch_all(MYSQLI_ASSOC);
+
+        // Tab options rendered as clickable suggestion chips ("Which tab's report?")
+        $tabOptions = [
+            'Show finished goods: Barcode',
+            'Show finished goods: Printing Label',
+            'Show finished goods: POS & Paper Roll',
+            'Show finished goods: Carton',
+        ];
+
+        $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+        // Category-specific tab report (a tab was picked from the menu)
+        if ($finishedCat) {
+            if ($userLang === 'English') {
+                $answer = "📦 **Finished Goods — {$finishedCatLabel} Tab Report:**\n\n";
+                if ($totalItems === 0) {
+                    $answer .= "No **{$finishedCatLabel}** finished goods are currently in stock.\n\n";
+                } else {
+                    $answer .= "📊 **{$finishedCatLabel} Stock Metrics:**\n"
+                        . "  - Total {$finishedCatLabel} Items: **" . number_format($totalItems) . " Items**\n"
+                        . "  - Total Quantity: **" . number_format($totalQty) . " PCS**\n\n"
+                        . "📋 **{$finishedCatLabel} Stock Grid:**\n\n";
+                    foreach ($rows as $idx => $r) {
+                        $answer .= "• **Item " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Finished Product') . "`** (ID: **{$r['id']}** | Category: **" . strtoupper($r['category']) . "**)\n"
+                            . "  - 📐 **Size & Spec:** **" . ($r['size'] ?: 'N/A') . "**\n"
+                            . "  - 🔢 **Quantity:** **" . number_format((float) $r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
+                            . "  - 🏷️ **Batch / Job No:** `" . ($r['batch_no'] ?: 'N/A') . "`\n"
+                            . "  - 📅 **Date:** `" . ($r['date'] ?: 'N/A') . "`\n\n";
+                    }
+                }
+            } elseif ($userLang === 'Hindi') {
+                $answer = "📦 **फिनिश्ड गुड्स — {$finishedCatLabel} टैब रिपोर्ट:**\n\n";
+                if ($totalItems === 0) {
+                    $answer .= "कोई **{$finishedCatLabel}** फिनिश्ड गुड्स स्टॉक में उपलब्ध नहीं है।\n\n";
+                } else {
+                    $answer .= "📊 **{$finishedCatLabel} स्टॉक मेट्रिक्स:**\n"
+                        . "  - कुल {$finishedCatLabel} आइटम: **" . number_format($totalItems) . " आइटम**\n"
+                        . "  - कुल मात्रा: **" . number_format($totalQty) . " पीस**\n\n"
+                        . "📋 **{$finishedCatLabel} स्टॉक ग्रिड:**\n\n";
+                    foreach ($rows as $idx => $r) {
+                        $answer .= "• **आइटम " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Finished Product') . "`** (ID: **{$r['id']}** | Category: **" . strtoupper($r['category']) . "**)\n"
+                            . "  - 📐 **आकार & विशेषता:** **" . ($r['size'] ?: 'N/A') . "**\n"
+                            . "  - 🔢 **मात्रा:** **" . number_format((float) $r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
+                            . "  - 🏷️ **बैच / जॉब नंबर:** `" . ($r['batch_no'] ?: 'N/A') . "`\n"
+                            . "  - 📅 **तारीख:** `" . ($r['date'] ?: 'N/A') . "`\n\n";
+                    }
+                }
+            } else {
+                $answer = "📦 **ফিনিশ্ড গুডস — {$finishedCatLabel} ট্যাব রিপোর্ট:**\n\n";
+                if ($totalItems === 0) {
+                    $answer .= "কোন **{$finishedCatLabel}** ফিনিশ্ড গুডস স্টকে উপলব্ধ নেই।\n\n";
+                } else {
+                    $answer .= "📊 **{$finishedCatLabel} স্টক মেট্রিক্স:**\n"
+                        . "  - মোট {$finishedCatLabel} আইটেম: **" . number_format($totalItems) . " আইটেম**\n"
+                        . "  - মোট পরিমাণ: **" . number_format($totalQty) . " পিস**\n\n"
+                        . "📋 **{$finishedCatLabel} স্টক গ্রিড:**\n\n";
+                    foreach ($rows as $idx => $r) {
+                        $answer .= "• **আইটেম " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Finished Product') . "`** (ID: **{$r['id']}** | Category: **" . strtoupper($r['category']) . "**)\n"
+                            . "  - 📐 **আকার & স্পেক:** **" . ($r['size'] ?: 'N/A') . "**\n"
+                            . "  - 🔢 **পরিমাণ:** **" . number_format((float) $r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
+                            . "  - 🏷️ **ব্যাচ / জব নম্বর:** `" . ($r['batch_no'] ?: 'N/A') . "`\n"
+                            . "  - 📅 **তারিখ:** `" . ($r['date'] ?: 'N/A') . "`\n\n";
+                    }
+                }
+            }
+
+            $suggestions = generate_erp_suggestions($prompt, $answer, 'Finished Goods Stock Master Tool', $userLang);
+            echo json_encode([
+                'ok' => true,
+                'answer' => $answer,
+                'provider' => 'Finished Goods Stock Engine',
+                'tool_used' => 'Finished Goods Stock Master Tool',
+                'suggestions' => $suggestions
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        } else {
+            // No specific tab requested, show general summary and ask for tab
+            if ($userLang === 'English') {
+                $answer = "📦 **Finished Goods Stock — Overall Summary:**\n\n"
+                    . "📊 **Total Finished Goods in Stock:**\n"
+                    . "  - Total Items: **" . number_format($totalItems) . " Items**\n"
+                    . "  - Total Quantity: **" . number_format($totalQty) . " PCS**\n\n"
+                    . "📋 **Please select a tab to view detailed stock:**\n\n";
+            } elseif ($userLang === 'Hindi') {
+                $answer = "📦 **फिनिश्ड गुड्स स्टॉक — समग्र सारांश:**\n\n"
+                    . "📊 **स्टॉक में कुल फिनिश्ड गुड्स:**\n"
+                    . "  - कुल आइटम: **" . number_format($totalItems) . " आइटम**\n"
+                    . "  - कुल मात्रा: **" . number_format($totalQty) . " पीस**\n\n"
+                    . "📋 **कृपया विस्तृत स्टॉक देखने के लिए एक टैब चुनें:**\n\n";
+            } else {
+                $answer = "📦 **ফিনিশ্ড গুডস স্টক — সামগ্রিক সারাংশ:**\n\n"
+                    . "📊 **স্টকে মোট ফিনিশ্ড গুডস:**\n"
+                    . "  - মোট আইটেম: **" . number_format($totalItems) . " আইটেম**\n"
+                    . "  - মোট পরিমাণ: **" . number_format($totalQty) . " পিস**\n\n"
+                    . "📋 **দ্রষ্টব্য স্টক দেখতে একটি ট্যাব বেছে নিন:**\n\n";
+            }
+
+            $suggestions = $tabOptions;
+            echo json_encode([
+                'ok' => true,
+                'answer' => $answer,
+                'provider' => 'Finished Goods Stock Engine',
+                'tool_used' => 'Finished Goods Stock Master Tool',
+                'suggestions' => $suggestions
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+
+} elseif (strpos($p, 'mixed') !== false || strpos($p, 'extra') !== false || strpos($p, 'extra pool') !== false || strpos($p, 'repack') !== false || strpos($p, 'মিক্সড') !== false || strpos($p, 'এক্সট্রা') !== false) {
 
         $toolName = 'Mixed Item Inventory Master Tool';
 
-        $cntRes = $db->query("SELECT COUNT(*) as cnt, IFNULL(SUM(quantity),0) as total_extra FROM finished_goods_stock WHERE category IN ('pos_paper_roll','one_ply','two_ply','barcode','printing_roll','printing_label')");
+        // ---- "Which tab?" category detection (drill-down from the tab menu) ----
+        $mixedCat = null;
+        $mixedCatLabel = '';
+        if (strpos($p, 'pos') !== false) {
+            $mixedCat = 'pos_paper_roll';
+            $mixedCatLabel = 'POS & Paper Roll';
+        } elseif (strpos($p, '1 ply') !== false || strpos($p, 'one ply') !== false) {
+            $mixedCat = 'one_ply';
+            $mixedCatLabel = '1 Ply';
+        } elseif (strpos($p, '2 ply') !== false || strpos($p, 'two ply') !== false) {
+            $mixedCat = 'two_ply';
+            $mixedCatLabel = '2 Ply';
+        } elseif (strpos($p, 'printing label') !== false) {
+            $mixedCat = 'printing_label';
+            $mixedCatLabel = 'Printing Label';
+        } elseif (strpos($p, 'printing roll') !== false) {
+            $mixedCat = 'printing_roll';
+            $mixedCatLabel = 'Printing Roll';
+        } elseif (strpos($p, 'barcode') !== false) {
+            $mixedCat = 'barcode';
+            $mixedCatLabel = 'Barcode';
+        }
+
+        $mixedCats = "'pos_paper_roll','one_ply','two_ply','barcode','printing_roll','printing_label'";
+        $catWhere = $mixedCat ? " AND category = '" . $db->real_escape_string($mixedCat) . "'" : '';
+
+        $cntRes = $db->query("SELECT COUNT(*) as cnt, IFNULL(SUM(quantity),0) as total_extra FROM finished_goods_stock WHERE category IN ({$mixedCats}){$catWhere}");
         $sumRow = $cntRes ? $cntRes->fetch_assoc() : [];
         $totalItems = (int) ($sumRow['cnt'] ?? 0);
         $totalExtraQty = (float) ($sumRow['total_extra'] ?? 0);
@@ -3460,12 +3757,78 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
         $assignRes = $db->query("SELECT COUNT(*) as cnt FROM mixed_item_assignments WHERE status = 'pending'");
         $pendingAssign = $assignRes ? (int) ($assignRes->fetch_assoc()['cnt'] ?? 0) : 0;
 
-        $rows = $db->query("SELECT id, category, sub_type, item_name, item_code, size, quantity, unit, batch_no, date, remarks FROM finished_goods_stock WHERE category IN ('pos_paper_roll','one_ply','two_ply','barcode','printing_roll','printing_label') ORDER BY id DESC LIMIT 15")->fetch_all(MYSQLI_ASSOC);
+        $rows = $db->query("SELECT id, category, sub_type, item_name, item_code, size, quantity, unit, batch_no, date, remarks FROM finished_goods_stock WHERE category IN ({$mixedCats}){$catWhere} ORDER BY id DESC LIMIT 15")->fetch_all(MYSQLI_ASSOC);
 
+        // Tab options rendered as clickable suggestion chips ("Which tab's report?")
+        $tabOptions = [
+            'Show mixed items: POS & Paper Roll',
+            'Show mixed items: 1 Ply',
+            'Show mixed items: 2 Ply',
+            'Show mixed items: Barcode',
+            'Show mixed items: Printing Roll',
+            'Show mixed items: Printing Label',
+        ];
 
         $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
 
-        if ($userLang === 'English') {
+        // Category-specific tab report (a tab was picked from the menu)
+        if ($mixedCat) {
+            if ($userLang === 'English') {
+                $answer = "🔀 **Mixed Item — {$mixedCatLabel} Tab Report:**\n\n";
+                if ($totalItems === 0) {
+                    $answer .= "No **{$mixedCatLabel}** mixed/extra items are currently in the pool.\n\n";
+                } else {
+                    $answer .= "📊 **{$mixedCatLabel} Pool Metrics:**\n"
+                        . "  - Total {$mixedCatLabel} Items: **" . number_format($totalItems) . " Items**\n"
+                        . "  - Total Extra Quantity: **" . number_format($totalExtraQty) . " PCS / Rolls**\n\n"
+                        . "📋 **{$mixedCatLabel} Extra Items Grid:**\n\n";
+                    foreach ($rows as $idx => $r) {
+                        $answer .= "• **Item " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Mixed Item') . "`** (ID: **{$r['id']}** | Category: **" . strtoupper($r['category']) . "**)\n"
+                            . "  - 📐 **Size & Spec:** **" . ($r['size'] ?: 'N/A') . "**\n"
+                            . "  - 🔢 **Extra Quantity:** **" . number_format((float) $r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
+                            . "  - 🏷️ **Batch / Job No:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
+                    }
+                }
+                $answer .= "👉 [Open Mixed Item Inventory Page]({$baseUrl}/modules/inventory/mixed-item/index.php)\n\n"
+                    . "🔀 **Need another tab?** Pick one:";
+            } elseif ($userLang === 'Hindi') {
+                $answer = "🔀 **मिक्सड आइटम — {$mixedCatLabel} टैब रिपोर्ट:**\n\n";
+                if ($totalItems === 0) {
+                    $answer .= "इस श्रेणी में फिलहाल कोई मिक्सड/एक्स्ट्रा आइटम नहीं है।\n\n";
+                } else {
+                    $answer .= "📊 **{$mixedCatLabel} पूल मेट्रिक्स:**\n"
+                        . "  - कुल आइटम: **" . number_format($totalItems) . " आइटम**\n"
+                        . "  - कुल एक्स्ट्रा मात्रा: **" . number_format($totalExtraQty) . " पीस**\n\n"
+                        . "📋 **{$mixedCatLabel} एक्स्ट्रा आइटम ग्रिड:**\n\n";
+                    foreach ($rows as $idx => $r) {
+                        $answer .= "• **आइटम " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Mixed Item') . "`** (ID: **{$r['id']}**)\n"
+                            . "  - 📐 **साइज़:** **" . ($r['size'] ?: 'N/A') . "**\n"
+                            . "  - 🔢 **एक्स्ट्रा मात्रा:** **" . number_format((float) $r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
+                            . "  - 🏷️ **बैच नंबर:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
+                    }
+                }
+                $answer .= "👉 [मिक्सड आइटम पेज खोलें]({$baseUrl}/modules/inventory/mixed-item/index.php)\n\n"
+                    . "🔀 **किसी और टैब की रिपोर्ट चाहिए?** चुनें:";
+            } else {
+                $answer = "🔀 **মিক্সড আইটেম — {$mixedCatLabel} ট্যাব রিপোর্ট:**\n\n";
+                if ($totalItems === 0) {
+                    $answer .= "এই ক্যাটাগরিতে বর্তমানে কোনো মিক্সড/এক্সট্রা আইটেম নেই।\n\n";
+                } else {
+                    $answer .= "📊 **{$mixedCatLabel} পুল ম্যাট্রিক্স:**\n"
+                        . "  - সর্বমোট {$mixedCatLabel} আইটেম: **" . number_format($totalItems) . "টি আইটেম**\n"
+                        . "  - সর্বমোট এক্সট্রা কোয়ান্টিটি: **" . number_format($totalExtraQty) . "টি পিস/লেবেল**\n\n"
+                        . "📋 **{$mixedCatLabel} এক্সট্রা আইটেম গ্রিড:**\n\n";
+                    foreach ($rows as $idx => $r) {
+                        $answer .= "• **এক্সট্রা আইটেম " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Mixed Item') . "`** (ID: **{$r['id']}** | ক্যাটাগরি: **" . strtoupper($r['category']) . "**)\n"
+                            . "  - 📐 **সাইজ ও স্পেক:** **" . ($r['size'] ?: 'N/A') . "**\n"
+                            . "  - 🔢 **এক্সট্রা কোয়ান্টিটি:** **" . number_format((float) $r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
+                            . "  - 🏷️ **ব্যাচ / জব নম্বর:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
+                    }
+                }
+                $answer .= "👉 [মিক্সড আইটেম পেজটি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/inventory/mixed-item/index.php)\n\n"
+                    . "🔀 **অন্য কোনো ট্যাবের রিপোর্ট লাগবে?** একটি বেছে নিন:";
+            }
+        } elseif ($userLang === 'English') {
             $answer = "🔀 **Mixed Item & Extra Production Pool — Live Inventory Summary:**\n\n"
                 . "📊 **Pool Metrics Summary:**\n"
                 . "  - Total Extra Pool Batches: **" . number_format($totalItems) . " Items**\n"
@@ -3496,7 +3859,15 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     . "  - 🏷️ **बैच नंबर:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
             }
 
-            $answer .= "👉 [मिक्सड आइटम पेज खोलें]({$baseUrl}/modules/inventory/mixed-item/index.php)";
+            $answer .= "�️ **किस टैब की रिपोर्ट चाहिए?** नीचे से चुनें:\n\n"
+                . "  - 🔘 **POS & Paper Roll** — `Show mixed items: POS & Paper Roll`\n"
+                . "  - 🔘 **1 Ply** — `Show mixed items: 1 Ply`\n"
+                . "  - 🔘 **2 Ply** — `Show mixed items: 2 Ply`\n"
+                . "  - 🔘 **Barcode** — `Show mixed items: Barcode`\n"
+                . "  - 🔘 **Printing Roll** — `Show mixed items: Printing Roll`\n"
+                . "  - 🔘 **Printing Label** — `Show mixed items: Printing Label`\n\n";
+
+            $answer .= "�👉 [मिक्सड आइटम पेज खोलें]({$baseUrl}/modules/inventory/mixed-item/index.php)";
         } else {
             $answer = "🔀 **মিক্সড আইটেম ও এক্স্ট্রা প্রোডাকশন পুল — লাইভ ইনভেন্টরি সামারি:**\n\n"
                 . "📊 **পূল ম্যাট্রিক্স সারাংশ:**\n"
@@ -3512,7 +3883,15 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                     . "  - 🏷️ **ব্যাচ / জব নম্বর:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
             }
 
-            $answer .= "👉 [মিক্সড আইটেম পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/inventory/mixed-item/index.php)";
+            $answer .= "�️ **কোন ট্যাবের রিপোর্ট লাগবে?** নিচ থেকে একটি বেছে নিন:\n\n"
+                . "  - 🔘 **POS & Paper Roll** — `Show mixed items: POS & Paper Roll`\n"
+                . "  - 🔘 **1 Ply** — `Show mixed items: 1 Ply`\n"
+                . "  - 🔘 **2 Ply** — `Show mixed items: 2 Ply`\n"
+                . "  - 🔘 **Barcode** — `Show mixed items: Barcode`\n"
+                . "  - 🔘 **Printing Roll** — `Show mixed items: Printing Roll`\n"
+                . "  - 🔘 **Printing Label** — `Show mixed items: Printing Label`\n\n";
+
+            $answer .= "�👉 [মিক্সড আইটেম পেজটি সরাসরি খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/inventory/mixed-item/index.php)";
         }
 
         $navUrl = null;
@@ -3528,6 +3907,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             'is_company_list' => false,
             'direct_answer' => $answer,
             'nav_url' => $navUrl,
+            'suggestions' => $tabOptions,
             'data' => []
         ];
     }
@@ -4750,10 +5130,24 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             }
         }
 
-        // 4. Width match
+        // 4. Width match — exact, below (<) or above (>) with size threshold.
         $widthMm = null;
-        if (preg_match('/(\d{3,4})\s*mm/i', $prompt, $m)) {
+        $widthOp = '='; // '=', '<' (below), '>' (above)
+        if (preg_match('/(below|under|less\s*than|lesser|ar\s*niche|er\s*niche|niche|ar\s*kom|er\s*kom|ke\s*kom|এর\s*নিচে|নিচে|চেয়ে\s*কম|কম|chhoto|ছোট|<)\s*(?:size\s*(?:of)?\s*)?(\d{3,4})\s*mm/i', $prompt, $m)) {
+            $widthMm = (float) $m[2];
+            $widthOp = '<';
+        } elseif (preg_match('/(above|more\s*than|over|ar\s*upore|er\s*upore|upore|ar\s*beshi|er\s*beshi|beshi|এর\s*বেশি|বেশি|উপরে|চেয়ে\s*বেশি|boro|বড়|>)\s*(?:size\s*(?:of)?\s*)?(\d{3,4})\s*mm/i', $prompt, $m)) {
+            $widthMm = (float) $m[2];
+            $widthOp = '>';
+        } elseif (preg_match('/(\d{3,4})\s*mm\s*(below|under|less\s*than|lesser|ar\s*niche|er\s*niche|niche|ar\s*kom|er\s*kom|ke\s*kom|এর\s*নিচে|নিচে|চেয়ে\s*কম|কম|<|chhoto|ছোট)/i', $prompt, $m)) {
             $widthMm = (float) $m[1];
+            $widthOp = '<';
+        } elseif (preg_match('/(\d{3,4})\s*mm\s*(above|more\s*than|over|ar\s*upore|er\s*upore|upore|ar\s*beshi|er\s*beshi|beshi|এর\s*বেশি|বেশি|উপরে|>|boro|বড়)/i', $prompt, $m)) {
+            $widthMm = (float) $m[1];
+            $widthOp = '>';
+        } elseif (preg_match('/(\d{3,4})\s*mm/i', $prompt, $m)) {
+            $widthMm = (float) $m[1];
+            $widthOp = '=';
         }
 
         $where = ["LOWER(COALESCE(status,'')) NOT IN ('consumed','disposed','scrap')"];
@@ -4778,6 +5172,11 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 $where[] = "paper_type = 'PP-WHITE'";
             } elseif ($matchedType === 'pp clear' || $matchedType === 'pp-clear') {
                 $where[] = "paper_type = 'PP-CLEAR'";
+            } elseif ($matchedType === 'thermal paper') {
+                // "thermal paper" is used loosely for ALL thermal substrates
+                // (THERMAL PAPER + THERMAL BOARD + THERMAL LABEL + TOP COATED),
+                // consistent with the aggregate Analytics Dashboard count.
+                $where[] = "paper_type LIKE '%thermal%'";
             } else {
                 $where[] = "paper_type LIKE ?";
                 $params[] = '%' . $matchedType . '%';
@@ -4787,7 +5186,7 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
 
 
         if ($widthMm) {
-            $where[] = "width_mm = ?";
+            $where[] = "width_mm {$widthOp} ?";
             $params[] = $widthMm;
             $typesStr .= 'd';
         }

@@ -714,9 +714,50 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       }
     });
 
+    // ─── In-page full-screen report viewer (PDF print view) ───
+    // PDF export links return an HTML print view. Opening it in a new tab is
+    // popup-blocked on mobile (async fetch loses user gesture), so we render
+    // it in a full-screen modal right here — "view report on screen".
+    function openWidgetReportViewer(url) {
+      var ov = document.getElementById('widgetReportViewer');
+      if (ov) ov.parentNode && ov.parentNode.removeChild(ov);
+      ov = document.createElement('div');
+      ov.id = 'widgetReportViewer';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(2,6,23,.9);display:flex;flex-direction:column;';
+      var bar = document.createElement('div');
+      bar.style.cssText = 'display:flex;align-items:center;gap:10px;justify-content:space-between;padding:10px 14px;background:#0f172a;color:#fff;flex:0 0 auto;';
+      var title = document.createElement('span');
+      title.textContent = '📄 Report — Print / Save as PDF';
+      title.style.cssText = 'font-size:14px;font-weight:600;';
+      var btns = document.createElement('div');
+      btns.style.cssText = 'display:flex;gap:8px;';
+      var printBtn = document.createElement('button');
+      printBtn.textContent = '🖨 Print';
+      printBtn.style.cssText = 'background:#2563eb;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:14px;cursor:pointer;';
+      var closeBtn = document.createElement('button');
+      closeBtn.textContent = '✕ Close';
+      closeBtn.style.cssText = 'background:#ef4444;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:14px;cursor:pointer;';
+      btns.appendChild(printBtn);
+      btns.appendChild(closeBtn);
+      bar.appendChild(title);
+      bar.appendChild(btns);
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'flex:1 1 auto;min-height:0;';
+      var frame = document.createElement('iframe');
+      frame.style.cssText = 'width:100%;height:100%;border:none;background:#fff;';
+      frame.src = url;
+      wrap.appendChild(frame);
+      ov.appendChild(bar);
+      ov.appendChild(wrap);
+      document.body.appendChild(ov);
+      printBtn.onclick = function() { try { frame.contentWindow.print(); } catch (e) {} };
+      closeBtn.onclick = function() { ov.parentNode && ov.parentNode.removeChild(ov); };
+    }
+
     // ─── File/Export links must NEVER navigate the ERP chat away ───
-    // Download PDF / Excel / CSV directly via fetch → blob. Fallback opens a
-    // separate browser tab, so the current page (PWA / dashboard) is untouched.
+    // Download PDF / Excel / CSV directly via fetch → blob. PDF (print view)
+    // responses are shown in-app. Fallback opens a separate browser tab, so the
+    // current page (PWA / dashboard) is untouched.
     chatBody.addEventListener('click', function(e) {
       var a = e.target.closest('a');
       if (!a || !a.href) return;
@@ -727,14 +768,23 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       e.preventDefault();
       e.stopPropagation();
 
+      var isPdfLink = /format=pdf/i.test(h);
+
       fetch(h, { credentials: 'include' })
         .then(function(r) {
           if (!r.ok) throw new Error('HTTP ' + r.status);
           var ct = (r.headers.get('Content-Type') || '').toLowerCase();
-          if (ct.indexOf('text/html') !== -1) throw new Error('html-redirect');
+          if (ct.indexOf('text/html') !== -1) {
+            if (isPdfLink) {
+              openWidgetReportViewer(h);
+              return null;
+            }
+            throw new Error('html-redirect');
+          }
           return r.blob();
         })
         .then(function(blob) {
+          if (!blob) return;
           var ext = /format=pdf/i.test(h) ? 'pdf'
                   : (/format=csv|\.csv/i.test(h) ? 'csv'
                   : (/\.xlsx/i.test(h) ? 'xlsx' : 'bin'));

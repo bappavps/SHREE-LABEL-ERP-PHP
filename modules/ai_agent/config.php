@@ -80,31 +80,20 @@ PROMPT;
 }
 
 /**
- * 21 Quick Action Capabilities List
+ * 9 Quick Action Capabilities (verified working commands only)
+ * PWA dashboard cards + floating-widget quick chips both read from here.
  */
 function getAiAgentQuickChips(): array
 {
     return [
-        ['key' => 'label_calculator', 'label' => 'Label Math Calculator', 'icon' => 'bi-calculator', 'prompt' => 'Calculate running meters for 100mm x 50mm, 2 ups, 5mm gap, 15000 qty on 250mm roll at Rs 300/kg'],
-        ['key' => 'roll_status', 'label' => 'Roll Status', 'icon' => 'bi-journal-code', 'prompt' => 'Check roll status for recent paper stock rolls'],
-        ['key' => 'order_status', 'label' => 'Order Status', 'icon' => 'bi-card-checklist', 'prompt' => 'Show active sales orders and job card progress'],
-        ['key' => 'customer_search', 'label' => 'Customer Search', 'icon' => 'bi-people', 'prompt' => 'Show client summary and recent customer dispatches'],
-        ['key' => 'production_summary', 'label' => 'Production Summary', 'icon' => 'bi-speedometer2', 'prompt' => 'Show daily production summary and output metrics'],
-        ['key' => 'today_dispatch', 'label' => "Today's Dispatch", 'icon' => 'bi-truck', 'prompt' => "Show today's total dispatches and pending deliveries"],
-        ['key' => 'pending_jobs', 'label' => 'Pending Jobs', 'icon' => 'bi-hourglass-split', 'prompt' => 'List pending jobs across Slitting, Printing, Die-Cutting, Packing'],
-        ['key' => 'machine_running', 'label' => 'Machine Running', 'icon' => 'bi-gear-wide-connected', 'prompt' => 'Show active machine runs and department assignments'],
-        ['key' => 'operator_performance', 'label' => 'Operator Performance', 'icon' => 'bi-person-badge', 'prompt' => 'Show operator job completion and productivity summary'],
-        ['key' => 'inventory', 'label' => 'Inventory', 'icon' => 'bi-box-seam', 'prompt' => 'Show finished goods stock by category'],
-        ['key' => 'raw_material', 'label' => 'Raw Material', 'icon' => 'bi-layers', 'prompt' => 'Show paper stock, ink, core, and carton raw material stock'],
-        ['key' => 'paper_stock', 'label' => 'Paper Stock', 'icon' => 'bi-file-earmark-text', 'prompt' => 'Show available parent paper rolls and remnant stocks'],
-        ['key' => 'costing', 'label' => 'Costing', 'icon' => 'bi-currency-rupee', 'prompt' => 'Show transport cost per carton and freight analysis'],
-        ['key' => 'barcode_search', 'label' => 'Barcode Search', 'icon' => 'bi-qr-code-scan', 'prompt' => 'How to search packing items by Barcode ID?'],
-        ['key' => 'invoice', 'label' => 'Invoice', 'icon' => 'bi-receipt', 'prompt' => 'Show recent invoices and dispatch billing details'],
-        ['key' => 'purchase_order', 'label' => 'Purchase Order', 'icon' => 'bi-bag-check', 'prompt' => 'Show paper receiving and purchase orders'],
-        ['key' => 'client_balance', 'label' => 'Client Balance', 'icon' => 'bi-wallet2', 'prompt' => 'Show client dispatch totals and paid-by status'],
-        ['key' => 'job_planning', 'label' => 'Job Planning', 'icon' => 'bi-diagram-3', 'prompt' => 'Show planning queue and best paper roll matches'],
-        ['key' => 'reports', 'label' => 'Reports', 'icon' => 'bi-bar-chart-line', 'prompt' => 'Generate category-wise dispatch and inventory report'],
-        ['key' => 'ai_help', 'label' => 'AI Help', 'icon' => 'bi-robot', 'prompt' => 'What features can you help me with in ERP?'],
-        ['key' => 'erp_training', 'label' => 'ERP Training', 'icon' => 'bi-mortarboard', 'prompt' => 'Provide a step-by-step training guide for ERP operators'],
+        ['key' => 'total_roll', 'label' => 'Total Roll', 'icon' => 'bi-file-earmark-text', 'prompt' => 'Show total paper rolls'],
+        ['key' => 'total_plates', 'label' => 'Total Plates', 'icon' => 'bi-layers', 'prompt' => '/plate total plates'],
+        ['key' => 'live_page_summary', 'label' => 'Live Page Summary', 'icon' => 'bi-speedometer2', 'prompt' => '/job live floor page summary'],
+        ['key' => 'today_dispatch', 'label' => "Today's Dispatch", 'icon' => 'bi-truck', 'prompt' => '/dispatch today dispatch summary'],
+        ['key' => 'label_calculator', 'label' => 'Calculator', 'icon' => 'bi-calculator', 'prompt' => 'Calculate running meters for 100mm x 50mm, 2 ups, 5mm gap, 15000 qty on 250mm roll at Rs 300/kg'],
+        ['key' => 'live_summary', 'label' => 'Current Job Status', 'icon' => 'bi-graph-up', 'prompt' => 'Show live summary'],
+        ['key' => 'finished_goods', 'label' => 'Finished Goods', 'icon' => 'bi-box-seam', 'prompt' => '/product Show finished goods stock'],
+        ['key' => 'mixed_items', 'label' => 'Mixed Items', 'icon' => 'bi-shuffle', 'prompt' => '/product Show mixed item inventory'],
+        ['key' => 'erp_login', 'label' => 'ERP Login', 'icon' => 'bi-box-arrow-in-right', 'prompt' => 'open ERP login page', 'action' => 'erp-login'],
     ];
 }
