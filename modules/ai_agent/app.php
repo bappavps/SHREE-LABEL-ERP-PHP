@@ -1584,6 +1584,48 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       }
     });
 
+    // ── PWA: File/Export links must NEVER navigate the PWA into the ERP ──
+    // Clicking a PDF / Excel / CSV / export link downloads the file directly
+    // inside the PWA via fetch → blob. The PWA window itself never leaves
+    // the chat (no dashboard / login redirects). Fallback opens a new tab.
+    chatStream.addEventListener('click', (e) => {
+      const a = e.target.closest('a');
+      if (!a || !a.href) return;
+      const h = a.href;
+      const isFileLink = /export\.php|\.pdf($|[?#])|\.csv($|[?#])|\.xlsx?($|[?#])|format=(pdf|csv|excel)/i.test(h);
+      if (!isFileLink) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      fetch(h, { credentials: 'include' })
+        .then((r) => {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          const ct = (r.headers.get('Content-Type') || '').toLowerCase();
+          // If the server answered with an HTML page (e.g. auth/redirect),
+          // do NOT save it as a file — fall through to the catch handler.
+          if (ct.indexOf('text/html') !== -1) throw new Error('html-redirect');
+          return r.blob();
+        })
+        .then((blob) => {
+          let ext = /format=pdf/i.test(h) ? 'pdf'
+                 : (/format=csv|\.csv/i.test(h) ? 'csv'
+                 : (/\.xlsx/i.test(h) ? 'xlsx' : 'bin'));
+          const url = URL.createObjectURL(blob);
+          const dl = document.createElement('a');
+          dl.href = url;
+          dl.download = 'report-' + new Date().toISOString().slice(0, 10) + '.' + ext;
+          document.body.appendChild(dl);
+          dl.click();
+          dl.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 4000);
+        })
+        .catch(() => {
+          // Never navigate the PWA itself — open in a separate browser tab instead.
+          window.open(h, '_blank', 'noopener,noreferrer');
+        });
+    });
+
     // Scroll to bottom
     sendBtn.addEventListener('click', sendQuery);
     chatInput.addEventListener('keydown', (e) => {

@@ -713,6 +713,44 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
         if (p && !isProcessing) { doSend(p); }
       }
     });
+
+    // ─── File/Export links must NEVER navigate the ERP chat away ───
+    // Download PDF / Excel / CSV directly via fetch → blob. Fallback opens a
+    // separate browser tab, so the current page (PWA / dashboard) is untouched.
+    chatBody.addEventListener('click', function(e) {
+      var a = e.target.closest('a');
+      if (!a || !a.href) return;
+      var h = a.href;
+      var isFileLink = /export\.php|\.pdf($|[?#])|\.csv($|[?#])|\.xlsx?($|[?#])|format=(pdf|csv|excel)/i.test(h);
+      if (!isFileLink) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      fetch(h, { credentials: 'include' })
+        .then(function(r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          var ct = (r.headers.get('Content-Type') || '').toLowerCase();
+          if (ct.indexOf('text/html') !== -1) throw new Error('html-redirect');
+          return r.blob();
+        })
+        .then(function(blob) {
+          var ext = /format=pdf/i.test(h) ? 'pdf'
+                  : (/format=csv|\.csv/i.test(h) ? 'csv'
+                  : (/\.xlsx/i.test(h) ? 'xlsx' : 'bin'));
+          var url = URL.createObjectURL(blob);
+          var dl = document.createElement('a');
+          dl.href = url;
+          dl.download = 'report-' + new Date().toISOString().slice(0, 10) + '.' + ext;
+          document.body.appendChild(dl);
+          dl.click();
+          dl.remove();
+          setTimeout(function() { URL.revokeObjectURL(url); }, 4000);
+        })
+        .catch(function() {
+          window.open(h, '_blank', 'noopener,noreferrer');
+        });
+    });
   }
 
   // ─── Send query ───
