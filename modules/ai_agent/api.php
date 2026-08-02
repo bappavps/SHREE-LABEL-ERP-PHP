@@ -71,7 +71,9 @@ if (!in_array($action, ['query', 'autocomplete'])) {
     exit;
 }
 
-if ($prompt === '') {
+// An empty prompt is only rejected for regular queries — for the autocomplete
+// action an empty prompt means "browse all" (return every job/plate).
+if ($prompt === '' && $action !== 'autocomplete') {
     echo json_encode(['ok' => false, 'error' => 'Empty prompt query']);
     exit;
 }
@@ -79,36 +81,50 @@ if ($prompt === '') {
 if ($action === 'autocomplete') {
     // Autocomplete for master_plate_data
     $searchTerm = trim($prompt);
-    if (strlen($searchTerm) < 1) {
-        echo json_encode(['ok' => true, 'suggestions' => []]);
+    if ($searchTerm === '') {
+        // Browse-all mode: every job/plate, ordered exactly like Plate Management
+        $allStmt = $db->query("SELECT `name`, `size` FROM `master_plate_data` ORDER BY CASE WHEN TRIM(COALESCE(sl_no, '')) REGEXP '^[0-9]+$' THEN CAST(TRIM(sl_no) AS UNSIGNED) ELSE 2147483647 END ASC, id ASC");
+        $allSuggestions = [];
+        if ($allStmt instanceof mysqli_result) {
+            while ($row = $allStmt->fetch_assoc()) {
+                $allSuggestions[] = ['name' => $row['name'], 'size' => $row['size']];
+            }
+        }
+        echo json_encode(['ok' => true, 'suggestions' => $allSuggestions], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         exit;
     }
     
     // Convert multiple spaces to a wildcard for the LIKE search
     $plateSearch = preg_replace('/\s+/', '%', $searchTerm);
     
-    // First, try prefix search for better relevancy
-    $stmt = $db->prepare("SELECT `name`, `size` FROM `master_plate_data` WHERE `name` LIKE ? ORDER BY `name` ASC LIMIT 10");
+    // Prefix search first for better relevancy, then a broad 'contains' fallback.
+    // No LIMIT cap — a typed term shows ALL matching jobs (scrollable), exactly
+    // like the empty-quote browse-all mode.
     $prefixSearch = $plateSearch . '%';
-    $stmt->bind_param("s", $prefixSearch);
-    $stmt->execute();
-    $res = $stmt->get_result();
-    $results = [];
-    while ($row = $res->fetch_assoc()) {
-        $results[] = $row;
-    }
+    $broadSearch  = '%' . $plateSearch . '%';
     
-    // If not enough results, do a broad 'contains' search
-    if (count($results) < 5) {
-        $stmt2 = $db->prepare("SELECT `name`, `size` FROM `master_plate_data` WHERE `name` LIKE ? AND `name` NOT LIKE ? ORDER BY `name` ASC LIMIT 10");
-        $broadSearch = '%' . $plateSearch . '%';
-        $stmt2->bind_param("ss", $broadSearch, $prefixSearch);
-        $stmt2->execute();
-        $res2 = $stmt2->get_result();
-        while ($row = $res2->fetch_assoc()) {
+    $results = [];
+    $stmt = $db->prepare("SELECT `name`, `size` FROM `master_plate_data` WHERE `name` LIKE ? ORDER BY `name` ASC");
+    if ($stmt) {
+        $stmt->bind_param("s", $prefixSearch);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($row = $res->fetch_assoc()) {
             $results[] = $row;
         }
-        $results = array_slice($results, 0, 10);
+    }
+    
+    // If not enough prefix results, add broad 'contains' matches
+    if (count($results) < 5) {
+        $stmt2 = $db->prepare("SELECT `name`, `size` FROM `master_plate_data` WHERE `name` LIKE ? AND `name` NOT LIKE ? ORDER BY `name` ASC");
+        if ($stmt2) {
+            $stmt2->bind_param("ss", $broadSearch, $prefixSearch);
+            $stmt2->execute();
+            $res2 = $stmt2->get_result();
+            while ($row = $res2->fetch_assoc()) {
+                $results[] = $row;
+            }
+        }
     }
     
     $suggestions = [];
@@ -799,6 +815,9 @@ if ($isCalcCommand) {
             $perSqrInchPrice = (float)$pm[1];
         } elseif (preg_match('/(?:rate|price|দাম|রেট)\s*(?:is|=|of|হলো|@|at)?\s*(?:taka|tk|টাকা|rs|₹)?\s*([\d.]+)/i', $rawCalcLower, $pm)) {
             $perSqrInchPrice = (float)$pm[1];
+        } elseif (preg_match('/([\d.]+)\s*(?:paisa|পয়সা|paise|pice)?\s*(?:price|rate|দাম|রেট)\b/i', $rawCalcLower, $pm)) {
+            // Form: "0.05 paisa price diyechi" / "0.05 paise rate" → number comes BEFORE the price word
+            $perSqrInchPrice = (float)$pm[1];
         } elseif (preg_match('/@\s*([\d.]+)/i', $rawCalcLower, $pm)) {
             $perSqrInchPrice = (float)$pm[1];
         }
@@ -1024,7 +1043,13 @@ if (preg_match('/^\/cal\s*/iu', $pTrimmed)) {
     $p = mb_strtolower($prompt, 'UTF-8');
 }
 // /erp command — ERP-only mode: force KB + ERP data only, skip external LLM
-$erpOnlyMode = false;
+// Slash commands (/plate, /paperstock, /dispatch, /job, /setting) already set
+// $erpOnlyMode = true above. Do NOT reset it here — otherwise later handlers
+// (e.g. the Inline Quoted Term Handler) would override the slash command and
+// hijack e.g. `/plate "Blue 500" ...` into a KB "Quoted Product Lookup".
+if ($commandType === null) {
+    $erpOnlyMode = false;
+}
 $skipNormalDb = false; // TRUE = normal query (no / prefix) → skip KB+DB, go directly to LLM
 if (preg_match('/^\/erp\s*/iu', $pTrimmed)) {
     $subQuery = preg_replace('/^\/erp\s*/iu', '', $prompt);
@@ -1096,7 +1121,7 @@ if (strpos($pTrimmed, '/clear') === 0 || $pTrimmed === 'clear priority' || $pTri
 // If user types just a quoted string like "blue 500" without /plate or /paperstock prefix,
 // search broadly (jobs, plates, paper stock) and ask user what they want to see.
 // NOTE: Without / prefix, quoted terms are treated as normal queries (skip to LLM).
-if (strpos($pTrimmed, '/') === 0 && preg_match('/^["\x{201C}\x{201D}]([^"\x{201C}\x{201D}]+)["\x{201C}\x{201D}]$/u', trim($prompt), $qm)) {
+if (strpos($pTrimmed, '/') === 0 && preg_match('/^["\x{201C}\x{201D}]([^"\x{201C}\x{201D}]+)["\x{201C}\x{201D}]\s*(?:details?|detail|info|information|status|data|bistarito|bisarito|বিস্তারিত|विवरण|dekhao|show|give|about)?\s*$/iu', trim($prompt), $qm)) {
     $commandType = 'quoted';
     $searchTerm = trim($qm[1]);
     $searchLower = mb_strtolower($searchTerm, 'UTF-8');

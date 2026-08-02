@@ -389,9 +389,9 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     max-height: 180px;
     overflow-y: auto;
     background: #2a2a35;
-    border: 1px solid #4a4a5a;
+    border: 1px solid rgba(245,158,11,0.7);
     border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    box-shadow: 0 4px 12px rgba(245,158,11,0.18);
     z-index: 10000;
     display: none;
     margin-bottom: 5px;
@@ -407,22 +407,29 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     justify-content: space-between;
 }
 .ai-float-autocomplete-dropdown li.ai-autocomplete-item:hover {
-    background: rgba(80, 110, 250, 0.2);
+    background: rgba(245, 158, 11, 0.16);
 }
 .ai-float-autocomplete-dropdown li.ai-autocomplete-item:last-child {
     border-bottom: none;
 }
 .ai-float-autocomplete-dropdown .ai-autocomplete-name {
     font-weight: bold;
-    color: #90a0ff;
+    color: #fbbf24;
 }
 .ai-float-autocomplete-dropdown .ai-autocomplete-size {
     font-size: 10px;
     color: #888;
 }
+/* 3-Level Color Coding (floating widget) */
+/* Level 2 — Query suggestions (GREEN) */
+#aiFloatingCmdSuggestionsPopup .popup-item:hover { background: rgba(16,185,129,0.18); color: #6ee7b7; }
+#aiFloatingCmdSuggestionsPopup .popup-item i { color: #10b981; }
+#aiFloatingPopupCard[data-theme="light"] #aiFloatingCmdSuggestionsPopup .popup-item:hover { background: rgba(16,185,129,0.12); color: #059669; }
 </style>
 
 <!-- Floating Trigger Button -->
+<!-- Module base URL for the Level 3 entity autocomplete fetch (resolves to the real api.php) -->
+<input type="hidden" id="aiBaseUrl" value="<?= $moduleBaseUrl ?>">
 <div id="aiFloatingTriggerBtn" title="AI Agent — Click to Chat">
   <div class="ai-pulse-ring"></div>
   <i class="bi bi-robot"></i>
@@ -487,36 +494,44 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
 
   <div class="ai-chat-input-wrap" style="padding:8px 12px;gap:6px;display:flex;align-items:center;position:relative;background:rgba(15,23,42,0.95);border-top:1px solid rgba(255,255,255,0.06)">
     <!-- Contextual Prompt Popup -->
-    <div id="aiFloatingCmdSuggestionsPopup" class="ai-popup-menu" style="position:absolute;bottom:calc(100% + 4px);left:8px;right:8px;background:rgba(30,41,59,0.98);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:4px;display:none;z-index:101;box-shadow:0 -4px 24px rgba(0,0,0,0.3);max-height:180px;overflow-y:auto;flex-direction:column;"></div>
+    <div id="aiFloatingCmdSuggestionsPopup" class="ai-popup-menu" style="position:absolute;bottom:calc(100% + 4px);left:8px;right:8px;background:rgba(30,41,59,0.98);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(16,185,129,0.75);border-radius:12px;padding:4px;display:none;z-index:101;box-shadow:0 -4px 24px rgba(16,185,129,0.25);max-height:180px;overflow-y:auto;flex-direction:column;"></div>
     <!-- Command Suggestions Dropup -->
-    <div class="ai-cmd-suggestions" id="aiFloatingCmdSuggestions" style="position:absolute;bottom:calc(100% + 4px);left:8px;right:8px;background:rgba(30,41,59,0.98);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:4px;display:none;z-index:100;box-shadow:0 -4px 24px rgba(0,0,0,0.3);max-height:180px;overflow-y:auto">
-      <div class="ai-cmd-item" data-cmd="/erp" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
-        <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/erp</span>
-        <span style="font-size:12px;color:#94a3b8">ERP-Only Mode</span>
-      </div>
-      <div class="ai-cmd-item" data-cmd="/dispatch" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
-        <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/dispatch</span>
-        <span style="font-size:12px;color:#94a3b8">Dispatch Mode</span>
-      </div>
+    <div class="ai-cmd-suggestions" id="aiFloatingCmdSuggestions" style="position:absolute;bottom:calc(100% + 4px);left:8px;right:8px;background:rgba(30,41,59,0.98);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(59,130,246,0.75);border-radius:12px;padding:4px;display:none;z-index:100;box-shadow:0 -4px 24px rgba(59,130,246,0.25);max-height:180px;overflow-y:auto">
       <div class="ai-cmd-item" data-cmd="/job" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
         <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/job</span>
         <span style="font-size:12px;color:#94a3b8">Job Priority Mode</span>
-      </div>
-      <div class="ai-cmd-item" data-cmd="/paperstock" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
-        <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/paperstock</span>
-        <span style="font-size:12px;color:#94a3b8">Paper Stock Mode</span>
       </div>
       <div class="ai-cmd-item" data-cmd="/plate" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
         <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/plate</span>
         <span style="font-size:12px;color:#94a3b8">Plate Mode</span>
       </div>
-      <div class="ai-cmd-item" data-cmd="/cal" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
-        <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/cal</span>
-        <span style="font-size:12px;color:#94a3b8">External Calculations</span>
+      <div class="ai-cmd-item" data-cmd="/planning" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
+        <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/planning</span>
+        <span style="font-size:12px;color:#94a3b8">Job Planning Board</span>
       </div>
-      <div class="ai-cmd-item" data-cmd="/clear" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
-        <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/clear</span>
-        <span style="font-size:12px;color:#94a3b8">Clear Priority</span>
+      <div class="ai-cmd-item" data-cmd="/paper" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
+        <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/paper</span>
+        <span style="font-size:12px;color:#94a3b8">Paper Stock Mode</span>
+      </div>
+      <div class="ai-cmd-item" data-cmd="/product" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
+        <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/product</span>
+        <span style="font-size:12px;color:#94a3b8">Product / Item lookup</span>
+      </div>
+      <div class="ai-cmd-item" data-cmd="/client" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
+        <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/client</span>
+        <span style="font-size:12px;color:#94a3b8">Client / Party lookup</span>
+      </div>
+      <div class="ai-cmd-item" data-cmd="/dispatch" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
+        <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/dispatch</span>
+        <span style="font-size:12px;color:#94a3b8">Dispatch Mode</span>
+      </div>
+      <div class="ai-cmd-item" data-cmd="/order" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
+        <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/order</span>
+        <span style="font-size:12px;color:#94a3b8">Order lookup</span>
+      </div>
+      <div class="ai-cmd-item" data-cmd="/stock" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
+        <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/stock</span>
+        <span style="font-size:12px;color:#94a3b8">Stock lookup</span>
       </div>
     </div>
     <button type="button" class="btn-input btn-mic" id="aiFloatingMicBtn" title="Speak to AI Agent" style="background:none;border:none;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer;transition:all 0.2s ease;color:#64748b;margin-right:4px">
@@ -554,7 +569,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       cmdSuggestionsPopup.style.display = 'none';
       return;
     }
-    var suggestions = promptSuggestionsData[cmd];
+    var suggestions = (promptSuggestionsData[cmd] || []).slice(0, 3);
     var html = '';
     for (var i = 0; i < suggestions.length; i++) {
       var text = suggestions[i];
@@ -937,18 +952,23 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
   if (chatInput) {
     chatInput.addEventListener('input', processChatInput);
     chatInput.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        var ddl = document.getElementById('aiFloatAutocompleteDropdown');
+        if (ddl && ddl.style.display === 'block') return; // let the autocomplete handler pick the item
+        e.preventDefault(); doSend();
+      }
     });
     chatInput.addEventListener('input', function() {
       var val = (chatInput.innerText || chatInput.textContent || '').replace(/\n/g, '');
       var sugBox = document.getElementById('aiFloatingCmdSuggestions');
       if (!sugBox) return;
-      // Contextual prompt popup check
+      // Contextual prompt popup check (Level 2 — after command + SPACE, not inside quotes)
+    var inQuote = /^\/(job|plate|paper|product)\s+"/i.test(val);
     var cmdMatch = false;
-    if (val.startsWith('/')) {
+    if (val.startsWith('/') && !inQuote) {
        var parts = val.split(' ');
        var activeCmd = parts[0];
-       if (promptSuggestionsData[activeCmd]) {
+       if (promptSuggestionsData[activeCmd] && val.indexOf(' ') !== -1) {
            renderFloatCmdSuggestions(activeCmd);
            cmdMatch = true;
        }
@@ -1046,80 +1066,169 @@ const acFloatDropdown = document.getElementById('aiFloatAutocompleteDropdown');
 let acFloatTimeout = null;
 const floatInput = document.getElementById('aiFloatingChatInput');
 
-function applyFloatAutocomplete(name) {
+// Caret offset within the full input text (ignores the highlight <span>s that
+// processChatInput injects, since a cloned range up to the caret is used).
+function floatCaretOffset() {
     const sel = window.getSelection();
-    if (!sel.rangeCount) return;
+    if (!sel.rangeCount) return (floatInput.innerText || floatInput.textContent || '').length;
     const range = sel.getRangeAt(0);
-    const node = range.startContainer;
-    
-    const text = node.textContent;
-    const cursor = range.startOffset;
-    const lastQuote = text.lastIndexOf('"', cursor - 1);
-    
+    const clone = range.cloneRange();
+    clone.selectNodeContents(floatInput);
+    clone.setEnd(range.startContainer, range.startOffset);
+    return clone.toString().replace(/\n/g, '').length;
+}
+
+function applyFloatAutocomplete(name) {
+    // Insert the chosen entity name right after the first opening quote, auto-close
+    // the quote + add a trailing space, and place the caret right after the closing
+    // quote so the user can keep typing. Operates on the FULL innerText so it works
+    // even though the input is re-rendered with highlight <span>s.
+    const current = (floatInput.innerText || floatInput.textContent || '').replace(/\n/g, '');
+    const caret = floatCaretOffset();
+    const lastQuote = current.lastIndexOf('"');
+
     if (lastQuote !== -1) {
-        const before = text.substring(0, lastQuote + 1);
-        const after = text.substring(cursor);
-        node.textContent = before + name + '" ' + after;
-        
-        const newRange = document.createRange();
-        newRange.setStart(node, before.length + name.length + 2);
-        newRange.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(newRange);
+        const before = current.substring(0, lastQuote + 1); // e.g. '/plate "'
+        const after = current.substring(caret);             // text typed after the caret (kept)
+        const newText = before + name + '" ' + after;       // '/plate "Name" <after>'
+        floatInput.innerHTML = '';
+        floatInput.appendChild(document.createTextNode(newText));
+
+        const pos = before.length + name.length + 2;        // caret after the closing quote + space
+        if (floatInput.firstChild) {
+            const newRange = document.createRange();
+            newRange.setStart(floatInput.firstChild, Math.min(pos, floatInput.firstChild.textContent.length));
+            newRange.collapse(true);
+            const s = window.getSelection();
+            s.removeAllRanges();
+            s.addRange(newRange);
+        }
+        if (floatInput) floatInput.focus();
     }
-    
+
     acFloatDropdown.style.display = 'none';
     acFloatDropdown.innerHTML = '';
 }
 
 floatInput.addEventListener('input', function(e) {
+    // Reconstruct the FULL text before the caret. processChatInput re-renders the
+    // input with <span class="cmd-highlight">/plate</span> highlight spans, so the
+    // selection's startContainer may only be a fragment (e.g. ' "b'). A cloned range
+    // up to the caret gives the true text regardless of span splitting.
+    let fullBefore;
     const sel = window.getSelection();
-    if (!sel.rangeCount) return;
-    const range = sel.getRangeAt(0);
-    const node = range.startContainer;
-    
-    if (node.nodeType === 3) {
-        const text = node.textContent;
-        const cursor = range.startOffset;
-        
-        const lastQuote = text.lastIndexOf('"', cursor - 1);
-        
-        if (lastQuote !== -1) {
-            const textSinceQuote = text.substring(lastQuote + 1, cursor);
-            if (!textSinceQuote.includes('"') && textSinceQuote.length >= 1) {
-                clearTimeout(acFloatTimeout);
-                acFloatTimeout = setTimeout(() => {
-                    const baseUrl = document.getElementById('aiBaseUrl') ? document.getElementById('aiBaseUrl').value : '';
-                    fetch((baseUrl ? baseUrl + '/' : '') + 'api.php?action=autocomplete&prompt=' + encodeURIComponent(textSinceQuote))
-                        .then(res => res.json())
-                        .then(data => {
-                            if (data.ok && data.suggestions.length > 0) {
-                                acFloatDropdown.innerHTML = '';
-                                data.suggestions.forEach(item => {
-                                    const li = document.createElement('li');
-                                    li.className = 'ai-autocomplete-item';
-                                    li.innerHTML = '<span class="ai-autocomplete-name">' + item.name + '</span><span class="ai-autocomplete-size">' + item.size + '</span>';
-                                    li.onmousedown = (e) => {
-                                        e.preventDefault();
-                                        applyFloatAutocomplete(item.name);
-                                    };
-                                    acFloatDropdown.appendChild(li);
-                                });
-                                acFloatDropdown.style.display = 'block';
-                            } else {
-                                acFloatDropdown.style.display = 'none';
-                            }
-                        })
-                        .catch(err => {
+    if (sel && sel.rangeCount) {
+        const range = sel.getRangeAt(0);
+        const clone = range.cloneRange();
+        clone.selectNodeContents(floatInput);
+        clone.setEnd(range.startContainer, range.startOffset);
+        fullBefore = clone.toString();
+    } else {
+        fullBefore = (floatInput.innerText || floatInput.textContent || '');
+    }
+    const normalized = fullBefore.replace(/\n/g, '');
+
+    // Unclosed-quote detection: an ODD number of " means the last quote is an opening
+    // quote. Entity autocomplete triggers for /job|/plate|/paper|/product even when the
+    // user types extra words between the command and the quote
+    // (e.g. `/job how many label if "blue 500`).
+    const quoteCount = (normalized.match(/"/g) || []).length;
+    const lastQuote = normalized.lastIndexOf('"');
+    if (lastQuote !== -1 && (quoteCount % 2) === 1) {
+        const prefix = normalized.substring(0, lastQuote).trim();
+        const isEntityCmd = /^\/(job|plate|paper|product)\b/i.test(prefix);
+        const textSinceQuote = normalized.substring(lastQuote + 1);
+        if (isEntityCmd) {
+            // Hide Level 1 (commands) and Level 2 (query suggestions) popups
+            const fCmdBox = document.getElementById('aiFloatingCmdSuggestions');
+            if (fCmdBox) fCmdBox.style.display = 'none';
+            const fLevel2 = document.getElementById('aiFloatingCmdSuggestionsPopup');
+            if (fLevel2) fLevel2.style.display = 'none';
+            clearTimeout(acFloatTimeout);
+            acFloatTimeout = setTimeout(() => {
+                const baseUrl = document.getElementById('aiBaseUrl') ? document.getElementById('aiBaseUrl').value : '';
+                fetch((baseUrl ? baseUrl + '/' : '') + 'api.php?action=autocomplete&prompt=' + encodeURIComponent(textSinceQuote))
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.ok && data.suggestions.length > 0) {
+                            acFloatDropdown.innerHTML = '';
+                            // Show all matching jobs (empty or typed) so the list scrolls
+                            data.suggestions.forEach(item => {
+                                const li = document.createElement('li');
+                                li.className = 'ai-autocomplete-item';
+                                li.setAttribute('data-name', item.name);
+                                li.innerHTML = '<span class="ai-autocomplete-name">' + item.name + '</span><span class="ai-autocomplete-size">' + (item.size || '') + '</span>';
+                                li.onmousedown = (e) => {
+                                    e.preventDefault();
+                                    applyFloatAutocomplete(item.name);
+                                };
+                                acFloatDropdown.appendChild(li);
+                            });
+                            acFloatDropdown.style.display = 'block';
+                        } else {
                             acFloatDropdown.style.display = 'none';
-                        });
-                }, 300);
-                return;
-            }
+                        }
+                    })
+                    .catch(err => {
+                        acFloatDropdown.style.display = 'none';
+                    });
+            }, 200);
+            return;
         }
     }
     
     acFloatDropdown.style.display = 'none';
+});
+
+// Keyboard navigation (↑/↓/Enter) + ESC for the floating autocomplete dropdown
+floatInput.addEventListener('keydown', function(e) {
+    if (acFloatDropdown.style.display !== 'block') return;
+    const items = acFloatDropdown.querySelectorAll('li.ai-autocomplete-item');
+    if (!items.length) return;
+
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (window.acFloatFocus === undefined || window.acFloatFocus < 0) window.acFloatFocus = -1;
+        window.acFloatFocus++;
+        if (window.acFloatFocus >= items.length) window.acFloatFocus = 0;
+        floatSetActive(items);
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (window.acFloatFocus === undefined || window.acFloatFocus >= items.length) window.acFloatFocus = 0;
+        window.acFloatFocus--;
+        if (window.acFloatFocus < 0) window.acFloatFocus = items.length - 1;
+        floatSetActive(items);
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (window.acFloatFocus !== undefined && window.acFloatFocus > -1 && items[window.acFloatFocus]) {
+            applyFloatAutocomplete(items[window.acFloatFocus].getAttribute('data-name'));
+        }
+    } else if (e.key === 'Escape') {
+        e.preventDefault();
+        acFloatDropdown.style.display = 'none';
+        acFloatDropdown.innerHTML = '';
+        window.acFloatFocus = -1;
+    }
+});
+
+function floatSetActive(items) {
+    for (let i = 0; i < items.length; i++) {
+        items[i].classList.remove('active');
+        items[i].style.background = '';
+    }
+    if (window.acFloatFocus > -1 && items[window.acFloatFocus]) {
+        items[window.acFloatFocus].classList.add('active');
+        items[window.acFloatFocus].style.background = 'rgba(59,130,246,0.15)';
+    }
+}
+
+// Click outside the floating autocomplete dropdown closes it
+document.addEventListener('mousedown', function(e) {
+    if (acFloatDropdown.style.display === 'block' && !acFloatDropdown.contains(e.target) && e.target !== floatInput && !floatInput.contains(e.target)) {
+        acFloatDropdown.style.display = 'none';
+        acFloatDropdown.innerHTML = '';
+        window.acFloatFocus = -1;
+    }
 });
 // ============================================================
 </script>

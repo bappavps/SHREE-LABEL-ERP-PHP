@@ -79,7 +79,7 @@ include __DIR__ . '/../../includes/header.php';
       </div>
 
       <!-- Chat Input Area -->
-      <div class="ai-chat-input-wrap">
+      <div class="ai-chat-input-wrap" style="position:relative;">
         <input type="text" class="ai-chat-input" id="aiChatInput"
           placeholder="Type query or click mic to speak (English, Bengali, Hindi)..." autocomplete="off">
         <button type="button" class="ai-mic-btn" id="aiMicBtn"
@@ -89,6 +89,9 @@ include __DIR__ . '/../../includes/header.php';
         <button type="button" class="ai-send-btn" id="aiSendBtn">
           <i class="bi bi-send-fill"></i> Send
         </button>
+        <!-- 3-Level AI Suggestion Dropdown (commands → query examples → entities) -->
+        <div id="aiCmdSuggestions" class="ai-cmd-suggestions"
+          style="display:none;position:absolute;left:0;right:0;bottom:100%;margin-bottom:6px;z-index:1000;background:#1e293b;border:1px solid #334155;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.45);max-height:260px;overflow-y:auto;"></div>
       </div>
     </div>
 
@@ -142,6 +145,10 @@ include __DIR__ . '/../../includes/header.php';
   </div>
 </div>
 
+<script>
+  // Base URL for the standalone AI Agent chat (Level 3 entity autocomplete fetch)
+  window.aiAgentParams = { baseUrl: <?= json_encode(BASE_URL) ?> };
+</script>
 <script src="<?= BASE_URL ?>/modules/ai_agent/js/ai_agent.js?v=<?= $js_version ?>"></script>
 
 <?php include __DIR__ . '/../../includes/footer.php'; ?>

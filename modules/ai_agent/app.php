@@ -854,7 +854,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     }
     .cmd-suggestion-item .cmd-key {
       font-weight: 700;
-      color: #ef4444;
+      color: #3b82f6;
       font-size: 15px;
       min-width: 70px;
     }
@@ -866,14 +866,26 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      background: rgba(239, 68, 68, 0.15);
-      color: #ef4444;
+      background: rgba(59, 130, 246, 0.15);
+      color: #3b82f6;
       font-weight: 700;
       font-size: 12px;
       padding: 2px 10px;
       border-radius: 6px;
       min-width: 70px;
     }
+    /* ─── 3-Level Color Coding (PWA) ─── */
+    /* Level 1: Commands `/` — BLUE */
+    #cmdSuggestions { border-color: rgba(59,130,246,0.55); box-shadow: 0 -8px 32px rgba(59,130,246,0.16); }
+    /* Level 2: Query suggestions `/cmd ` — GREEN */
+    #cmdSuggestionsPopup { border-color: rgba(16,185,129,0.55); box-shadow: 0 -8px 32px rgba(16,185,129,0.16); }
+    #cmdSuggestionsPopup .popup-item:hover { background: rgba(16,185,129,0.18); color: #6ee7b7; }
+    #cmdSuggestionsPopup .popup-item i { color: #10b981; }
+    [data-theme="light"] #cmdSuggestionsPopup .popup-item:hover { background: rgba(16,185,129,0.12); color: #059669; }
+    /* Level 3: Entities `/cmd "term` — AMBER */
+    #autocompleteSuggestions { border-color: rgba(245,158,11,0.55); box-shadow: 0 -8px 32px rgba(245,158,11,0.16); }
+    #autocompleteSuggestions .cmd-suggestion-item .cmd-key-badge { background: rgba(245,158,11,0.15); color: #f59e0b; }
+    #autocompleteSuggestions .cmd-suggestion-item:hover, #autocompleteSuggestions .cmd-suggestion-item.active { background: rgba(245,158,11,0.12); }
 
     .input-actions {
       display: flex;
@@ -1134,25 +1146,41 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       <!-- Command Suggestions Dropup -->
       <div class="cmd-suggestions" id="autocompleteSuggestions" style="display:none; max-height: 250px; overflow-y: auto;"></div>
       <div class="cmd-suggestions" id="cmdSuggestions">
-        <div class="cmd-suggestion-item" data-cmd="/cal">
-          <span class="cmd-key-badge">/cal</span>
-          <span class="cmd-desc">External Calculations (label, math, units)</span>
-        </div>
-        <div class="cmd-suggestion-item" data-cmd="/erp">
-          <span class="cmd-key-badge">/erp</span>
-          <span class="cmd-desc">ERP-Only Mode — Ask about ERP data only</span>
-        </div>
-        <div class="cmd-suggestion-item" data-cmd="/paperstock">
-          <span class="cmd-key-badge">/paperstock</span>
-          <span class="cmd-desc">Paper Stock Priority Mode</span>
+        <div class="cmd-suggestion-item" data-cmd="/job">
+          <span class="cmd-key-badge">/job</span>
+          <span class="cmd-desc">Job / Planning Priority Mode</span>
         </div>
         <div class="cmd-suggestion-item" data-cmd="/plate">
           <span class="cmd-key-badge">/plate</span>
           <span class="cmd-desc">Plate Priority Mode</span>
         </div>
-        <div class="cmd-suggestion-item" data-cmd="/clear">
-          <span class="cmd-key-badge">/clear</span>
-          <span class="cmd-desc">Clear all priority modes</span>
+        <div class="cmd-suggestion-item" data-cmd="/planning">
+          <span class="cmd-key-badge">/planning</span>
+          <span class="cmd-desc">Job Planning Board</span>
+        </div>
+        <div class="cmd-suggestion-item" data-cmd="/paper">
+          <span class="cmd-key-badge">/paper</span>
+          <span class="cmd-desc">Paper Stock Priority Mode</span>
+        </div>
+        <div class="cmd-suggestion-item" data-cmd="/product">
+          <span class="cmd-key-badge">/product</span>
+          <span class="cmd-desc">Product / Item lookup</span>
+        </div>
+        <div class="cmd-suggestion-item" data-cmd="/client">
+          <span class="cmd-key-badge">/client</span>
+          <span class="cmd-desc">Client / Party lookup</span>
+        </div>
+        <div class="cmd-suggestion-item" data-cmd="/dispatch">
+          <span class="cmd-key-badge">/dispatch</span>
+          <span class="cmd-desc">Dispatch / Packing Priority Mode</span>
+        </div>
+        <div class="cmd-suggestion-item" data-cmd="/order">
+          <span class="cmd-key-badge">/order</span>
+          <span class="cmd-desc">Order lookup</span>
+        </div>
+        <div class="cmd-suggestion-item" data-cmd="/stock">
+          <span class="cmd-key-badge">/stock</span>
+          <span class="cmd-desc">Stock lookup</span>
         </div>
       </div>
       <button class="btn-input btn-mic" id="micBtn" title="Speak to AI Agent">
@@ -1222,7 +1250,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
         return;
       }
       
-      const suggestions = promptSuggestionsData[cmd];
+      const suggestions = (promptSuggestionsData[cmd] || []).slice(0, 3);
       let html = '';
       suggestions.forEach(text => {
         // Highlighting the command part
@@ -1268,11 +1296,15 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
 
     // Command definitions for suggestions & highlighting
     const CMD_LIST = [
-      { cmd: '/cal', desc: 'External Calculations (label, math, units)' },
-      { cmd: '/erp', desc: 'ERP-Only Mode — Ask about ERP data only' },
-      { cmd: '/paperstock', desc: 'Paper Stock Priority Mode' },
+      { cmd: '/job', desc: 'Job / Planning Priority Mode' },
       { cmd: '/plate', desc: 'Plate Priority Mode' },
-      { cmd: '/clear', desc: 'Clear all priority modes' },
+      { cmd: '/planning', desc: 'Job Planning Board' },
+      { cmd: '/paper', desc: 'Paper Stock Priority Mode' },
+      { cmd: '/product', desc: 'Product / Item lookup' },
+      { cmd: '/client', desc: 'Client / Party lookup' },
+      { cmd: '/dispatch', desc: 'Dispatch / Packing Priority Mode' },
+      { cmd: '/order', desc: 'Order lookup' },
+      { cmd: '/stock', desc: 'Stock lookup' },
     ];
     const CMD_NAMES = CMD_LIST.map(c => c.cmd);
 
@@ -1351,12 +1383,13 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       // Show suggestions when user types "/" at start of input or after space
       const showSuggestions = text.startsWith('/') && !text.includes(' ');
       
-      // Contextual prompt popup
+      // Level 2 — Query Suggestions: show only after the command is completed + SPACE
       let cmdMatch = false;
       if (text.startsWith('/')) {
          const parts = text.split(' ');
          const activeCmd = parts[0];
-         if (promptSuggestionsData[activeCmd]) {
+         const inQuote = /^\/(job|plate|paper|product)\s+"/i.test(text);
+         if (promptSuggestionsData[activeCmd] && text.startsWith(activeCmd + ' ') && !inQuote) {
              renderCmdSuggestions(activeCmd);
              cmdMatch = true;
          }
@@ -1365,40 +1398,41 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
          cmdSuggestionsPopup.style.display = 'none';
       }
       const sug = document.getElementById('cmdSuggestions');
-      // Plate Autocomplete Logic
-      const plateMatch = text.match(/^\/plate\s+"([^"]*)$/i);
+      // Quoted Entity Autocomplete Logic — /job, /plate, /paper, /product
+      // Triggers on an UNCLOSED opening quote (odd " count) even when extra words are
+      // typed between the command and the quote (e.g. `/job how many label if "blue 500`).
+      const quoteCount = (text.match(/"/g) || []).length;
+      const lastQuote = text.lastIndexOf('"');
+      const isEntityCmd = /^\/(job|plate|paper|product)\b/i.test(text);
       const autoSug = document.getElementById('autocompleteSuggestions');
-      if (plateMatch) {
-         const searchTerm = plateMatch[1];
-         sug.classList.remove('visible'); // hide basic commands
-         if (searchTerm.length >= 1) {
-            clearTimeout(window.plateFetchTimer);
-            window.plateFetchTimer = setTimeout(() => {
-              fetch('api.php?action=autocomplete&prompt=' + encodeURIComponent(searchTerm))
-              .then(res => res.json())
-              .then(data => {
-                autoSug.innerHTML = '';
-                window.autocompleteCurrentFocus = -1;
-                if (data.ok && data.suggestions && data.suggestions.length > 0) {
-                  data.suggestions.forEach(s => {
-                    const div = document.createElement('div');
-                    div.className = 'cmd-suggestion-item autocomplete-item';
-                    div.setAttribute('data-autocomplete', s.name);
-                    div.innerHTML = '<span class="cmd-key-badge">' + escHtml(s.name) + '</span><span class="cmd-desc">' + escHtml(s.size||'') + '</span>';
-                    autoSug.appendChild(div);
-                  });
-                  autoSug.classList.add('visible');
-                  autoSug.style.display = 'block';
-                } else {
-                  autoSug.classList.remove('visible');
-                  autoSug.style.display = 'none';
-                }
-              }).catch(e => console.error(e));
-            }, 300);
-         } else {
-            autoSug.classList.remove('visible');
-            autoSug.style.display = 'none';
-         }
+      if (isEntityCmd && lastQuote !== -1 && (quoteCount % 2) === 1) {
+         const searchTerm = text.substring(lastQuote + 1); // text after the opening quote (may be empty = browse all)
+         sug.classList.remove('visible'); // hide basic commands (Level 1)
+         cmdSuggestionsPopup.style.display = 'none'; // hide query suggestions (Level 2)
+         clearTimeout(window.plateFetchTimer);
+         window.plateFetchTimer = setTimeout(() => {
+           fetch('api.php?action=autocomplete&prompt=' + encodeURIComponent(searchTerm))
+           .then(res => res.json())
+           .then(data => {
+             autoSug.innerHTML = '';
+             window.autocompleteCurrentFocus = -1;
+             if (data.ok && data.suggestions && data.suggestions.length > 0) {
+               // Show all matching jobs (empty or typed) so the list scrolls
+               data.suggestions.forEach(s => {
+                 const div = document.createElement('div');
+                 div.className = 'cmd-suggestion-item autocomplete-item';
+                 div.setAttribute('data-autocomplete', s.name);
+                 div.innerHTML = '<span class="cmd-key-badge">' + escHtml(s.name) + '</span><span class="cmd-desc">' + escHtml(s.size||'') + '</span>';
+                 autoSug.appendChild(div);
+               });
+               autoSug.classList.add('visible');
+               autoSug.style.display = 'block';
+             } else {
+               autoSug.classList.remove('visible');
+               autoSug.style.display = 'none';
+             }
+           }).catch(e => console.error(e));
+         }, 200);
       } else {
          autoSug.classList.remove('visible');
          autoSug.style.display = 'none';
@@ -1494,12 +1528,35 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       if (!item) return;
       const plateName = item.getAttribute('data-autocomplete');
       const val = getChatText();
-      setChatText(val.replace(/^\/plate\s+"([^"]*)$/i, '/plate "' + plateName + '" '));
+      // Preserve everything before the opening quote; replace the partial typed term
+      // with the chosen name + automatic closing quote + space.
+      const qCount = (val.match(/"/g) || []).length;
+      const qPos = val.lastIndexOf('"');
+      if (qPos !== -1 && (qCount % 2) === 1) {
+        setChatText(val.substring(0, qPos + 1) + plateName + '" ');
+      }
       document.getElementById('autocompleteSuggestions').classList.remove('visible');
       document.getElementById('autocompleteSuggestions').style.display = 'none';
       processChatInput();
       chatInput.focus();
       placeCursorAtEnd();
+    });
+
+    // Click outside any suggestion dropdown closes it
+    document.addEventListener('click', (e) => {
+      if (chatInput && chatInput.contains(e.target)) return; // keep open while typing in the input
+      const autoSug = document.getElementById('autocompleteSuggestions');
+      const sug = document.getElementById('cmdSuggestions');
+      if (autoSug && autoSug.style.display === 'block' && !autoSug.contains(e.target)) {
+        autoSug.classList.remove('visible');
+        autoSug.style.display = 'none';
+      }
+      if (sug && sug.classList.contains('visible') && !sug.contains(e.target)) {
+        sug.classList.remove('visible');
+      }
+      if (cmdSuggestionsPopup && cmdSuggestionsPopup.style.display !== 'none' && !cmdSuggestionsPopup.contains(e.target)) {
+        cmdSuggestionsPopup.style.display = 'none';
+      }
     });
 
     // Chips toggle
@@ -1550,6 +1607,15 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
           } else {
             sendQuery();
           }
+          return;
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          autoSug.classList.remove('visible');
+          autoSug.style.display = 'none';
+          window.autocompleteCurrentFocus = -1;
+          if (cmdSuggestionsPopup) cmdSuggestionsPopup.style.display = 'none';
+          const sugEl = document.getElementById('cmdSuggestions');
+          if (sugEl) sugEl.classList.remove('visible');
           return;
         }
       }

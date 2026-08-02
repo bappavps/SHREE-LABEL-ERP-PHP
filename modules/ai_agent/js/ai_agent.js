@@ -316,6 +316,11 @@
             handleSend();
           }
           return;
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          sugBox.style.display = 'none';
+          currentFocus = -1;
+          return;
         }
       }
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -342,86 +347,149 @@
 
     var fetchTimer = null;
 
-    // Slash command & Autocomplete suggestions
+    // ── 3-Level AI Suggestion System (UI only — does NOT change ERP logic) ──
+    var AI_COMMANDS = [
+      { cmd: '/job', desc: 'Job / Planning Priority Mode' },
+      { cmd: '/plate', desc: 'Plate Priority Mode' },
+      { cmd: '/planning', desc: 'Job Planning Board' },
+      { cmd: '/paper', desc: 'Paper Stock Priority Mode' },
+      { cmd: '/product', desc: 'Product / Item lookup' },
+      { cmd: '/client', desc: 'Client / Party lookup' },
+      { cmd: '/dispatch', desc: 'Dispatch / Packing Priority Mode' },
+      { cmd: '/order', desc: 'Order lookup' },
+      { cmd: '/stock', desc: 'Stock lookup' }
+    ];
+    var AI_QUERY_EXAMPLES = {
+      '/job': ['/job "Blue 500ml"', '/job status of Job ID 100', '/job show latest printing jobs'],
+      '/plate': ['/plate "Blue 500ml"', '/plate show active plates', '/plate search plate for Navkar'],
+      '/planning': ['/planning open job planning board', '/planning show pending jobs', '/planning today\'s production plan'],
+      '/paper': ['/paper "Chromo"', '/paper show Chromo paper stock', '/paper rolls with width 405mm'],
+      '/product': ['/product "Blue 500ml"', '/product search product code', '/product latest finished goods'],
+      '/client': ['/client search party', '/client top clients', '/client client pending jobs'],
+      '/dispatch': ['/dispatch show today\'s dispatch', '/dispatch pending dispatches', '/dispatch packing status'],
+      '/order': ['/order latest orders', '/order order status', '/order pending orders'],
+      '/stock': ['/stock total paper stock', '/stock low stock items', '/stock current inventory']
+    };
+
+    function setChatInputValue(v) {
+      if (!chatInput) return;
+      chatInput.value = v;
+      try { chatInput.setSelectionRange(v.length, v.length); } catch (e) {}
+      chatInput.focus();
+    }
+
+    function makeSuggestionItem(dataAttr, dataVal, innerHtml) {
+      var div = document.createElement('div');
+      div.className = 'ai-cmd-item';
+      div.style = 'display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0';
+      div.setAttribute(dataAttr, dataVal);
+      div.innerHTML = innerHtml;
+      return div;
+    }
+
+    function showSuggestBox(sugBox, items) {
+      sugBox.innerHTML = '';
+      for (var i = 0; i < items.length; i++) sugBox.appendChild(items[i]);
+      currentFocus = -1;
+      sugBox.style.display = items.length ? 'block' : 'none';
+    }
+
+    // Slash command (Level 1) / query examples (Level 2) / entity autocomplete (Level 3)
     chatInput.addEventListener('input', function () {
       var val = chatInput.value || chatInput.innerText || chatInput.textContent || '';
       var sugBox = document.getElementById('aiCmdSuggestions');
       if (!sugBox) return;
 
-      var plateMatch = val.match(/^\/plate\s+"([^"]*)$/i);
-      
-      if (plateMatch) {
-        // Plate Autocomplete Mode
-        var searchTerm = plateMatch[1];
-        if (searchTerm.length >= 1) {
-          clearTimeout(fetchTimer);
-          fetchTimer = setTimeout(function() {
-            fetch(aiAgentParams.baseUrl + '/modules/ai_agent/api.php?action=autocomplete&prompt=' + encodeURIComponent(searchTerm))
-              .then(res => res.json())
-              .then(data => {
-                sugBox.innerHTML = '';
-                currentFocus = -1;
-                if (data.ok && data.suggestions && data.suggestions.length > 0) {
-                  data.suggestions.forEach(function(sug) {
-                    var div = document.createElement('div');
-                    div.className = 'ai-cmd-item';
-                    div.style = 'display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0';
-                    div.setAttribute('data-autocomplete', sug.name);
-                    div.innerHTML = '<span style="font-weight:700;color:#3b82f6;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + sug.name + '</span> <span style="font-size:11px;color:#94a3b8;margin-left:auto">' + (sug.size || '') + '</span>';
-                    sugBox.appendChild(div);
-                  });
-                  sugBox.style.display = 'block';
-                } else {
-                  sugBox.style.display = 'none';
-                }
-              });
-          }, 300);
-        } else {
-          sugBox.style.display = 'none';
-        }
-      } else if (val.startsWith('/') && val.indexOf(' ') === -1) {
-        // Basic Slash Command Mode
-        currentFocus = -1;
-        sugBox.style.display = 'block';
-        sugBox.querySelectorAll('.ai-cmd-item').forEach(function(el) {
-          if (!el.hasAttribute('data-cmd')) return;
-          el.style.display = el.getAttribute('data-cmd').indexOf(val.toLowerCase()) === 0 ? 'flex' : 'none';
-        });
-      } else {
-        sugBox.style.display = 'none';
+      // LEVEL 3 — Entity Search Mode: /job|/plate|/paper|/product ... "term
+      // Triggers on an UNCLOSED opening quote (odd " count) even when extra words are
+      // typed between the command and the quote (e.g. `/job how many label if "blue 500`).
+      var quoteCount = (val.match(/"/g) || []).length;
+      var lastQuote = val.lastIndexOf('"');
+      var isEntityCmd = /^\/(job|plate|paper|product)\b/i.test(val);
+      if (isEntityCmd && lastQuote !== -1 && (quoteCount % 2) === 1) {
+        var searchTerm = val.substring(lastQuote + 1); // text after the opening quote (may be empty = browse all)
+        clearTimeout(fetchTimer);
+        fetchTimer = setTimeout(function() {
+          fetch(aiAgentParams.baseUrl + '/modules/ai_agent/api.php?action=autocomplete&prompt=' + encodeURIComponent(searchTerm))
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+              var items = [];
+              if (data.ok && data.suggestions && data.suggestions.length > 0) {
+                // Show all matching jobs (empty or typed) so the list scrolls
+                data.suggestions.forEach(function(sug) {
+                  items.push(makeSuggestionItem('data-autocomplete', sug.name,
+                    '<span style="font-weight:700;color:#3b82f6;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escapeHtml(sug.name) + '</span> <span style="font-size:11px;color:#94a3b8;margin-left:auto">' + escapeHtml(sug.size || '') + '</span>'));
+                });
+              }
+              showSuggestBox(sugBox, items);
+            })
+            .catch(function () { sugBox.style.display = 'none'; });
+        }, 200);
+        return;
       }
+
+      // LEVEL 2 — Query Suggestions: command + SPACE (not yet inside a quote)
+      var queryMatch = val.match(/^\/(job|plate|planning|paper|product|client|dispatch|order|stock)\s+(.*)$/i);
+      if (queryMatch && queryMatch[2].indexOf('"') === -1) {
+        var qcmd = '/' + queryMatch[1].toLowerCase();
+        var examples = (AI_QUERY_EXAMPLES[qcmd] || []).slice(0, 3);
+        var qItems = [];
+        examples.forEach(function(text) {
+          qItems.push(makeSuggestionItem('data-query', text,
+            '<span style="font-weight:700;color:#10b981;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escapeHtml(text) + '</span>'));
+        });
+        showSuggestBox(sugBox, qItems);
+        return;
+      }
+
+      // LEVEL 1 — Command Suggestions while typing the command (no space yet)
+      if (val.startsWith('/') && val.indexOf(' ') === -1) {
+        var partial = val.toLowerCase();
+        var cItems = [];
+        AI_COMMANDS.forEach(function(c) {
+          if (c.cmd.toLowerCase().indexOf(partial) === 0) {
+            cItems.push(makeSuggestionItem('data-cmd', c.cmd,
+              '<span style="font-weight:700;color:#ef4444;font-size:13px;min-width:70px">' + c.cmd + '</span><span style="font-size:11px;color:#94a3b8;margin-left:auto">' + escapeHtml(c.desc) + '</span>'));
+          }
+        });
+        showSuggestBox(sugBox, cItems);
+        return;
+      }
+
+      sugBox.style.display = 'none';
     });
 
-    // Click on suggestion
+    // Click on suggestion (also closes dropdown when clicking outside)
     document.addEventListener('click', function (e) {
       var item = e.target.closest('.ai-cmd-item');
-      if (!item) return;
       var sugBox = document.getElementById('aiCmdSuggestions');
-      
+      if (!item) {
+        // Clicking outside the dropdown (and outside the chat input) closes it
+        if (sugBox && sugBox.style.display === 'block' && !sugBox.contains(e.target) && chatInput && !chatInput.contains(e.target)) {
+          sugBox.style.display = 'none';
+          currentFocus = -1;
+        }
+        return;
+      }
+
       if (item.hasAttribute('data-autocomplete')) {
+        // Level 3 — insert entity name at the opening quote, auto-close quote, cursor after it
         var plateName = item.getAttribute('data-autocomplete');
         var val = chatInput.value || chatInput.innerText || chatInput.textContent || '';
-        val = val.replace(/^\/plate\s+"([^"]*)$/i, '/plate "' + plateName + '" ');
-        chatInput.innerHTML = '';
-        chatInput.appendChild(document.createTextNode(val));
-        if (sugBox) sugBox.style.display = 'none';
-        chatInput.focus();
-        
-        // Move cursor to end
-        if (window.getSelection) {
-            var range = document.createRange();
-            var sel = window.getSelection();
-            range.selectNodeContents(chatInput);
-            range.collapse(false);
-            sel.removeAllRanges();
-            sel.addRange(range);
+        var qCount = (val.match(/"/g) || []).length;
+        var qPos = val.lastIndexOf('"');
+        if (qPos !== -1 && (qCount % 2) === 1) {
+          setChatInputValue(val.substring(0, qPos + 1) + plateName + '" ');
         }
-      } else if (item.hasAttribute('data-cmd')) {
-        var cmd = item.getAttribute('data-cmd');
-        chatInput.innerHTML = '';
-        chatInput.appendChild(document.createTextNode(cmd + ' '));
         if (sugBox) sugBox.style.display = 'none';
-        chatInput.focus();
+      } else if (item.hasAttribute('data-query')) {
+        // Level 2 — insert the example query
+        setChatInputValue(item.getAttribute('data-query') + ' ');
+        if (sugBox) sugBox.style.display = 'none';
+      } else if (item.hasAttribute('data-cmd')) {
+        // Level 1 — insert the command + space
+        setChatInputValue(item.getAttribute('data-cmd') + ' ');
+        if (sugBox) sugBox.style.display = 'none';
       }
     });
 
