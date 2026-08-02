@@ -1,0 +1,62 @@
+{
+  "/job": [
+    "/job \"Blue 500ml\"",
+    "/job status of Job ID 100",
+    "/job show latest printing jobs"
+  ],
+  "/plate": [
+    "/plate \"Blue 500ml\"",
+    "/plate show active plates",
+    "/plate search plate for Navkar"
+  ],
+  "/planning": [
+    "/planning open job planning board",
+    "/planning show pending jobs",
+    "/planning today's production plan"
+  ],
+  "/paper": [
+    "/paper \"Chromo\"",
+    "/paper show Chromo paper stock",
+    "/paper rolls with width 405mm"
+  ],
+  "/paperstock": [
+    "/paperstock show all Chromo paper stock",
+    "/paperstock find stock in main warehouse",
+    "/paperstock rolls with width 405mm"
+  ],
+  "/product": [
+    "/product \"Blue 500ml\"",
+    "/product search product code",
+    "/product latest finished goods"
+  ],
+  "/client": [
+    "/client search party",
+    "/client top clients",
+    "/client client pending jobs"
+  ],
+  "/dispatch": [
+    "/dispatch show today's dispatch",
+    "/dispatch pending dispatches",
+    "/dispatch packing status"
+  ],
+  "/order": [
+    "/order latest orders",
+    "/order order status",
+    "/order pending orders"
+  ],
+  "/stock": [
+    "/stock total paper stock",
+    "/stock low stock items",
+    "/stock current inventory"
+  ],
+  "/erp": [
+    "/erp show live production floor summary",
+    "/erp show today's dispatch report",
+    "/erp show production summary"
+  ],
+  "/cal": [
+    "/cal 100mm x 150mm",
+    "/cal 500*3",
+    "/cal (2500+500)/2"
+  ]
+}
