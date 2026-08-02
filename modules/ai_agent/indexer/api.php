@@ -37,9 +37,11 @@ if ($action === 'build' || $action === 'rebuild') {
         $db = getDB();
         
         if ($action === 'rebuild') {
+            $db->query("SET FOREIGN_KEY_CHECKS = 0");
             $db->query("TRUNCATE TABLE ai_relationships");
             $db->query("TRUNCATE TABLE ai_entity_keywords");
             $db->query("TRUNCATE TABLE ai_knowledge_entities");
+            $db->query("SET FOREIGN_KEY_CHECKS = 1");
         }
         
         $rootDir = realpath(__DIR__ . '/../../../');

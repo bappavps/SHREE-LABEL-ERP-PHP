@@ -1,6 +1,6 @@
 {
     "manifest_version": "1.0",
-    "last_indexed": "2026-08-02T13:37:59Z",
+    "last_indexed": "2026-08-02T17:38:12Z",
     "modules": [
         {
             "name": "hasColumn",
@@ -640,6 +640,50 @@
         },
         {
             "name": "detect_language",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "extract_search_numbers",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "format_records_table",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "is_count_intent",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "generate_erp_suggestions",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "get_follow_up_suggestions",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "getLiveSummary",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "check_navigation_intent",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "check_knowledge_base",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "calculate_label_costing_math",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "fetch_erp_data_by_intent",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "detect_language",
             "file": "modules/ai_agent/api_backup_plate.php"
         },
         {
@@ -855,12 +899,124 @@
             "file": "modules/ai_agent/indexer/Parsers/SqlParser.php"
         },
         {
+            "name": "validateCsrf",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "listKnowledge",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "getKnowledge",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "addKnowledge",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "editKnowledge",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "deleteKnowledge",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "listAliases",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "getAliases",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "addAlias",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "deleteAlias",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "testProvider",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "saveCustomEndpoint",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "testSingleEndpoint",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "testFallbackChain",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "AliasResolver",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::__construct",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::ensureTable",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::load",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::resolve",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::canonical",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::getAliasesForKb",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::addAlias",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::deleteAlias",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::listAll",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::clearCache",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
             "name": "CalculationEngine",
             "file": "modules/ai_agent/services/CalculationEngine.php"
         },
         {
             "name": "CalculationEngine::calculatePlateCosting",
             "file": "modules/ai_agent/services/CalculationEngine.php"
+        },
+        {
+            "name": "CalculationEngine::calculatePerLabelPrice",
+            "file": "modules/ai_agent/services/CalculationEngine.php"
+        },
+        {
+            "name": "ContextBuilder",
+            "file": "modules/ai_agent/services/ContextBuilder.php"
+        },
+        {
+            "name": "ContextBuilder::build",
+            "file": "modules/ai_agent/services/ContextBuilder.php"
         },
         {
             "name": "FeatureFlags",
@@ -947,6 +1103,18 @@
             "file": "modules/ai_agent/services/MemoryManager.php"
         },
         {
+            "name": "PromptBuilder",
+            "file": "modules/ai_agent/services/PromptBuilder.php"
+        },
+        {
+            "name": "PromptBuilder::__construct",
+            "file": "modules/ai_agent/services/PromptBuilder.php"
+        },
+        {
+            "name": "PromptBuilder::buildMessages",
+            "file": "modules/ai_agent/services/PromptBuilder.php"
+        },
+        {
             "name": "ProviderManager",
             "file": "modules/ai_agent/services/ProviderManager.php"
         },
@@ -961,6 +1129,34 @@
         {
             "name": "ProviderManager::getFallbackProviders",
             "file": "modules/ai_agent/services/ProviderManager.php"
+        },
+        {
+            "name": "RetrievalEngine",
+            "file": "modules/ai_agent/services/RetrievalEngine.php"
+        },
+        {
+            "name": "RetrievalEngine::__construct",
+            "file": "modules/ai_agent/services/RetrievalEngine.php"
+        },
+        {
+            "name": "RetrievalEngine::search",
+            "file": "modules/ai_agent/services/RetrievalEngine.php"
+        },
+        {
+            "name": "RetrievalEngine::searchKnowledgeBase",
+            "file": "modules/ai_agent/services/RetrievalEngine.php"
+        },
+        {
+            "name": "RetrievalEngine::normalizeQuery",
+            "file": "modules/ai_agent/services/RetrievalEngine.php"
+        },
+        {
+            "name": "RetrievalEngine::searchFullText",
+            "file": "modules/ai_agent/services/RetrievalEngine.php"
+        },
+        {
+            "name": "RetrievalEngine::searchLike",
+            "file": "modules/ai_agent/services/RetrievalEngine.php"
         },
         {
             "name": "ToolRouter",
@@ -981,6 +1177,14 @@
         {
             "name": "ToolRouter::executeMathTool",
             "file": "modules/ai_agent/services/ToolRouter.php"
+        },
+        {
+            "name": "probe_kb",
+            "file": "modules/ai_agent/test_alias_pipeline.php"
+        },
+        {
+            "name": "callApi",
+            "file": "modules/ai_agent/_tmp_batch_test.php"
         },
         {
             "name": "anlXmlEsc",
@@ -4085,198 +4289,6 @@
         {
             "name": "calc_total_roll_value",
             "file": "_debug_188.php"
-        },
-        {
-            "name": "detect_language",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "extract_search_numbers",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "format_records_table",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "is_count_intent",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "generate_erp_suggestions",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "get_follow_up_suggestions",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "check_navigation_intent",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "check_knowledge_base",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "calculate_label_costing_math",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "fetch_erp_data_by_intent",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "validateCsrf",
-            "file": "modules/ai_agent/knowledge_api.php"
-        },
-        {
-            "name": "listKnowledge",
-            "file": "modules/ai_agent/knowledge_api.php"
-        },
-        {
-            "name": "getKnowledge",
-            "file": "modules/ai_agent/knowledge_api.php"
-        },
-        {
-            "name": "addKnowledge",
-            "file": "modules/ai_agent/knowledge_api.php"
-        },
-        {
-            "name": "editKnowledge",
-            "file": "modules/ai_agent/knowledge_api.php"
-        },
-        {
-            "name": "deleteKnowledge",
-            "file": "modules/ai_agent/knowledge_api.php"
-        },
-        {
-            "name": "listAliases",
-            "file": "modules/ai_agent/knowledge_api.php"
-        },
-        {
-            "name": "getAliases",
-            "file": "modules/ai_agent/knowledge_api.php"
-        },
-        {
-            "name": "addAlias",
-            "file": "modules/ai_agent/knowledge_api.php"
-        },
-        {
-            "name": "deleteAlias",
-            "file": "modules/ai_agent/knowledge_api.php"
-        },
-        {
-            "name": "testProvider",
-            "file": "modules/ai_agent/knowledge_api.php"
-        },
-        {
-            "name": "saveCustomEndpoint",
-            "file": "modules/ai_agent/knowledge_api.php"
-        },
-        {
-            "name": "testSingleEndpoint",
-            "file": "modules/ai_agent/knowledge_api.php"
-        },
-        {
-            "name": "testFallbackChain",
-            "file": "modules/ai_agent/knowledge_api.php"
-        },
-        {
-            "name": "AliasResolver",
-            "file": "modules/ai_agent/services/AliasResolver.php"
-        },
-        {
-            "name": "AliasResolver::__construct",
-            "file": "modules/ai_agent/services/AliasResolver.php"
-        },
-        {
-            "name": "AliasResolver::ensureTable",
-            "file": "modules/ai_agent/services/AliasResolver.php"
-        },
-        {
-            "name": "AliasResolver::load",
-            "file": "modules/ai_agent/services/AliasResolver.php"
-        },
-        {
-            "name": "AliasResolver::resolve",
-            "file": "modules/ai_agent/services/AliasResolver.php"
-        },
-        {
-            "name": "AliasResolver::canonical",
-            "file": "modules/ai_agent/services/AliasResolver.php"
-        },
-        {
-            "name": "AliasResolver::getAliasesForKb",
-            "file": "modules/ai_agent/services/AliasResolver.php"
-        },
-        {
-            "name": "AliasResolver::addAlias",
-            "file": "modules/ai_agent/services/AliasResolver.php"
-        },
-        {
-            "name": "AliasResolver::deleteAlias",
-            "file": "modules/ai_agent/services/AliasResolver.php"
-        },
-        {
-            "name": "AliasResolver::listAll",
-            "file": "modules/ai_agent/services/AliasResolver.php"
-        },
-        {
-            "name": "AliasResolver::clearCache",
-            "file": "modules/ai_agent/services/AliasResolver.php"
-        },
-        {
-            "name": "ContextBuilder",
-            "file": "modules/ai_agent/services/ContextBuilder.php"
-        },
-        {
-            "name": "ContextBuilder::build",
-            "file": "modules/ai_agent/services/ContextBuilder.php"
-        },
-        {
-            "name": "PromptBuilder",
-            "file": "modules/ai_agent/services/PromptBuilder.php"
-        },
-        {
-            "name": "PromptBuilder::__construct",
-            "file": "modules/ai_agent/services/PromptBuilder.php"
-        },
-        {
-            "name": "PromptBuilder::buildMessages",
-            "file": "modules/ai_agent/services/PromptBuilder.php"
-        },
-        {
-            "name": "RetrievalEngine",
-            "file": "modules/ai_agent/services/RetrievalEngine.php"
-        },
-        {
-            "name": "RetrievalEngine::__construct",
-            "file": "modules/ai_agent/services/RetrievalEngine.php"
-        },
-        {
-            "name": "RetrievalEngine::search",
-            "file": "modules/ai_agent/services/RetrievalEngine.php"
-        },
-        {
-            "name": "RetrievalEngine::searchKnowledgeBase",
-            "file": "modules/ai_agent/services/RetrievalEngine.php"
-        },
-        {
-            "name": "RetrievalEngine::normalizeQuery",
-            "file": "modules/ai_agent/services/RetrievalEngine.php"
-        },
-        {
-            "name": "RetrievalEngine::searchFullText",
-            "file": "modules/ai_agent/services/RetrievalEngine.php"
-        },
-        {
-            "name": "RetrievalEngine::searchLike",
-            "file": "modules/ai_agent/services/RetrievalEngine.php"
-        },
-        {
-            "name": "probe_kb",
-            "file": "modules/ai_agent/test_alias_pipeline.php"
         }
     ],
     "services": [],
@@ -4905,6 +4917,114 @@
         }
     ],
     "workflows": [
+        {
+            "name": "Debugging Report \u2014 AI Agent 3-Level Suggestions (Floating Widget Regression)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "1. User-reported bug (active)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "Root causes found (3, all in `modules/ai_agent/floating_widget.php`)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "Fixes (all in `modules/ai_agent/floating_widget.php`)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "2. BUG#1 \u2014 standalone `index.php` regression (fixed earlier)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "3. BUG#2 \u2014 Knowledge Alias Pipeline (fixed earlier, re-verified)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "4. 3-Level Suggestion System (as implemented)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "5. Verification (real browser, logged in as admin)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "6. Files changed (main project only, no backups)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "\ud83e\udd16 AI Agent \u2014 Slash Command User Guide",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "AI \u099a\u09cd\u09af\u09be\u099f\u09c7 `/` \u09a6\u09bf\u09af\u09bc\u09c7 \u09af\u09be \u09af\u09be \u099c\u09bf\u099c\u09cd\u099e\u09c7\u09b8 \u0995\u09b0\u09be \u09af\u09be\u09af\u09bc",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "\ud83c\udfa8 \u09e9-\u09b8\u09cd\u09a4\u09b0\u09c7\u09b0 \u09b0\u0999 \u2014 \u0995\u09cb\u09a8\u099f\u09be \u0995\u0996\u09a8 \u0986\u09b8\u09c7",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "\ud83d\udccb \u098f\u0995 \u09a8\u099c\u09b0\u09c7 \u09b8\u09ac Command (Quick Reference)",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "\ud83d\udcd6 \u09aa\u09cd\u09b0\u09a4\u09bf\u099f\u09be Command-\u098f\u09b0 \u09ac\u09bf\u09b8\u09cd\u09a4\u09be\u09b0\u09bf\u09a4",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "1\ufe0f\u20e3 `/job` \u2014 Job / Planning Priority Mode",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "2\ufe0f\u20e3 `/plate` \u2014 Plate Priority Mode",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "3\ufe0f\u20e3 `/planning` \u2014 Job Planning Board",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "4\ufe0f\u20e3 `/paper` \u09ac\u09be `/paperstock` \u2014 Paper Stock Priority Mode",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "5\ufe0f\u20e3 `/product` \u2014 Product / Item Lookup",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "6\ufe0f\u20e3 `/client` \u2014 Client / Party Lookup",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "7\ufe0f\u20e3 `/dispatch` \u09ac\u09be `/packing` \u2014 Dispatch / Packing Priority Mode",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "8\ufe0f\u20e3 `/order` \u2014 Order Lookup",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "9\ufe0f\u20e3 `/stock` \u2014 Stock Lookup",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "\ud83d\udd1f `/erp` \u2014 ERP-Only Mode",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "1\ufe0f\u20e31\ufe0f\u20e3 `/cal` \u2014 External Calculation Mode",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "1\ufe0f\u20e32\ufe0f\u20e3 `/clear` \u2014 Reset Priority Mode",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "\ud83d\udca1 \u09a6\u09b0\u0995\u09be\u09b0\u09bf \u099f\u09bf\u09aa\u09b8",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
         {
             "name": "Artwork Approval Hub (ArtFlow)",
             "file": "artwork-system/README.md"
@@ -5636,114 +5756,6 @@
         {
             "name": "Active Rows by Tab (Manager View)",
             "file": "scratch/packing_pages_exact_data.md"
-        },
-        {
-            "name": "Debugging Report \u2014 AI Agent 3-Level Suggestions (Floating Widget Regression)",
-            "file": "AI_AGENT_3LEVEL_REPORT.md"
-        },
-        {
-            "name": "1. User-reported bug (active)",
-            "file": "AI_AGENT_3LEVEL_REPORT.md"
-        },
-        {
-            "name": "Root causes found (3, all in `modules/ai_agent/floating_widget.php`)",
-            "file": "AI_AGENT_3LEVEL_REPORT.md"
-        },
-        {
-            "name": "Fixes (all in `modules/ai_agent/floating_widget.php`)",
-            "file": "AI_AGENT_3LEVEL_REPORT.md"
-        },
-        {
-            "name": "2. BUG#1 \u2014 standalone `index.php` regression (fixed earlier)",
-            "file": "AI_AGENT_3LEVEL_REPORT.md"
-        },
-        {
-            "name": "3. BUG#2 \u2014 Knowledge Alias Pipeline (fixed earlier, re-verified)",
-            "file": "AI_AGENT_3LEVEL_REPORT.md"
-        },
-        {
-            "name": "4. 3-Level Suggestion System (as implemented)",
-            "file": "AI_AGENT_3LEVEL_REPORT.md"
-        },
-        {
-            "name": "5. Verification (real browser, logged in as admin)",
-            "file": "AI_AGENT_3LEVEL_REPORT.md"
-        },
-        {
-            "name": "6. Files changed (main project only, no backups)",
-            "file": "AI_AGENT_3LEVEL_REPORT.md"
-        },
-        {
-            "name": "\ud83e\udd16 AI Agent \u2014 Slash Command User Guide",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
-        },
-        {
-            "name": "AI \u099a\u09cd\u09af\u09be\u099f\u09c7 `/` \u09a6\u09bf\u09af\u09bc\u09c7 \u09af\u09be \u09af\u09be \u099c\u09bf\u099c\u09cd\u099e\u09c7\u09b8 \u0995\u09b0\u09be \u09af\u09be\u09af\u09bc",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
-        },
-        {
-            "name": "\ud83c\udfa8 \u09e9-\u09b8\u09cd\u09a4\u09b0\u09c7\u09b0 \u09b0\u0999 \u2014 \u0995\u09cb\u09a8\u099f\u09be \u0995\u0996\u09a8 \u0986\u09b8\u09c7",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
-        },
-        {
-            "name": "\ud83d\udccb \u098f\u0995 \u09a8\u099c\u09b0\u09c7 \u09b8\u09ac Command (Quick Reference)",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
-        },
-        {
-            "name": "\ud83d\udcd6 \u09aa\u09cd\u09b0\u09a4\u09bf\u099f\u09be Command-\u098f\u09b0 \u09ac\u09bf\u09b8\u09cd\u09a4\u09be\u09b0\u09bf\u09a4",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
-        },
-        {
-            "name": "1\ufe0f\u20e3 `/job` \u2014 Job / Planning Priority Mode",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
-        },
-        {
-            "name": "2\ufe0f\u20e3 `/plate` \u2014 Plate Priority Mode",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
-        },
-        {
-            "name": "3\ufe0f\u20e3 `/planning` \u2014 Job Planning Board",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
-        },
-        {
-            "name": "4\ufe0f\u20e3 `/paper` \u09ac\u09be `/paperstock` \u2014 Paper Stock Priority Mode",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
-        },
-        {
-            "name": "5\ufe0f\u20e3 `/product` \u2014 Product / Item Lookup",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
-        },
-        {
-            "name": "6\ufe0f\u20e3 `/client` \u2014 Client / Party Lookup",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
-        },
-        {
-            "name": "7\ufe0f\u20e3 `/dispatch` \u09ac\u09be `/packing` \u2014 Dispatch / Packing Priority Mode",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
-        },
-        {
-            "name": "8\ufe0f\u20e3 `/order` \u2014 Order Lookup",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
-        },
-        {
-            "name": "9\ufe0f\u20e3 `/stock` \u2014 Stock Lookup",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
-        },
-        {
-            "name": "\ud83d\udd1f `/erp` \u2014 ERP-Only Mode",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
-        },
-        {
-            "name": "1\ufe0f\u20e31\ufe0f\u20e3 `/cal` \u2014 External Calculation Mode",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
-        },
-        {
-            "name": "1\ufe0f\u20e32\ufe0f\u20e3 `/clear` \u2014 Reset Priority Mode",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
-        },
-        {
-            "name": "\ud83d\udca1 \u09a6\u09b0\u0995\u09be\u09b0\u09bf \u099f\u09bf\u09aa\u09b8",
-            "file": "AI_SLASH_COMMANDS_GUIDE.md"
         }
     ]
 }
