@@ -1,0 +1,5749 @@
+{
+    "manifest_version": "1.0",
+    "last_indexed": "2026-08-02T13:37:59Z",
+    "modules": [
+        {
+            "name": "hasColumn",
+            "file": "artwork-system/api/add-comment.php"
+        },
+        {
+            "name": "ensureCommentSchema",
+            "file": "artwork-system/api/add-comment.php"
+        },
+        {
+            "name": "shortActivityText",
+            "file": "artwork-system/api/add-comment.php"
+        },
+        {
+            "name": "prettyCommentType",
+            "file": "artwork-system/api/add-comment.php"
+        },
+        {
+            "name": "resolveErpDbName",
+            "file": "artwork-system/designer/api/save-thumb.php"
+        },
+        {
+            "name": "resolveErpDbName",
+            "file": "artwork-system/designer/api/upload-final-library.php"
+        },
+        {
+            "name": "syncLegacyFinalFiles",
+            "file": "artwork-system/designer/final-projects.php"
+        },
+        {
+            "name": "dashboardAnnotationLabel",
+            "file": "artwork-system/designer/project-details.php"
+        },
+        {
+            "name": "Db",
+            "file": "artwork-system/includes/Db.php"
+        },
+        {
+            "name": "Db::__construct",
+            "file": "artwork-system/includes/Db.php"
+        },
+        {
+            "name": "Db::ensureSchema",
+            "file": "artwork-system/includes/Db.php"
+        },
+        {
+            "name": "Db::tableExists",
+            "file": "artwork-system/includes/Db.php"
+        },
+        {
+            "name": "Db::ensureProjectColumns",
+            "file": "artwork-system/includes/Db.php"
+        },
+        {
+            "name": "Db::projectColumnExists",
+            "file": "artwork-system/includes/Db.php"
+        },
+        {
+            "name": "Db::tableColumnExists",
+            "file": "artwork-system/includes/Db.php"
+        },
+        {
+            "name": "Db::tableIndexExists",
+            "file": "artwork-system/includes/Db.php"
+        },
+        {
+            "name": "Db::ensureFinalFileServerSchema",
+            "file": "artwork-system/includes/Db.php"
+        },
+        {
+            "name": "Db::getInstance",
+            "file": "artwork-system/includes/Db.php"
+        },
+        {
+            "name": "appSessionStart",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "generateToken",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "sanitize",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "redirect",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "jsonResponse",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "ensureDefaultAuthUsers",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "setAuthSession",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "clearAuthSession",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "getAuthUser",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "requireAuthUser",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "authenticateUser",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "getCurrentDesigner",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "getFileIcon",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "formatSize",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "normalizeExtension",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "validateUploadedFile",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "parseIniSizeToBytes",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "getEffectiveFinalUploadLimitBytes",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "validateFinalPdfUpload",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "buildUploadName",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "statusLabelClass",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "statusLabelText",
+            "file": "artwork-system/includes/functions.php"
+        },
+        {
+            "name": "annotationLabel",
+            "file": "artwork-system/review.php"
+        },
+        {
+            "name": "normalizeActivityEntry",
+            "file": "artwork-system/review.php"
+        },
+        {
+            "name": "string",
+            "file": "artwork-system/review.php"
+        },
+        {
+            "name": "normalize_path",
+            "file": "build_update.php"
+        },
+        {
+            "name": "collect_setup_files",
+            "file": "build_update.php"
+        },
+        {
+            "name": "erp_env_value",
+            "file": "config/db.php"
+        },
+        {
+            "name": "erp_is_local_request",
+            "file": "config/db.php"
+        },
+        {
+            "name": "erp_normalize_base_url",
+            "file": "config/db.php"
+        },
+        {
+            "name": "erp_detect_base_url",
+            "file": "config/db.php"
+        },
+        {
+            "name": "erp_normalize_request_host",
+            "file": "config/db.php"
+        },
+        {
+            "name": "erp_normalize_request_path",
+            "file": "config/db.php"
+        },
+        {
+            "name": "erp_load_tenant_registry",
+            "file": "config/db.php"
+        },
+        {
+            "name": "erp_host_matches_tenant",
+            "file": "config/db.php"
+        },
+        {
+            "name": "erp_path_matches_tenant",
+            "file": "config/db.php"
+        },
+        {
+            "name": "erp_build_tenant_payload",
+            "file": "config/db.php"
+        },
+        {
+            "name": "erp_resolve_tenant",
+            "file": "config/db.php"
+        },
+        {
+            "name": "getDB",
+            "file": "config/db.php"
+        },
+        {
+            "name": "e",
+            "file": "github_auto_push.php"
+        },
+        {
+            "name": "out_line",
+            "file": "github_auto_push.php"
+        },
+        {
+            "name": "run_git",
+            "file": "github_auto_push.php"
+        },
+        {
+            "name": "e",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "mb_strtolower",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "mb_substr",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "redirect",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "appBaseUrl",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "appUrl",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_print_studio_system_background",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_print_studio_default_paper_stock_elements",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_print_studio_pos_roll_elements",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_print_studio_label_printing_elements",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_print_studio_durba_special_label_elements",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_print_studio_system_template_specs",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_print_studio_elements_have_builtin_marker",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_print_studio_system_thumbnail_data_uri",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_ensure_print_studio_system_templates",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_parse_multi_value_list",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_default_department_selection",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_configured_departments",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_normalize_department_key",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_department_alias_map",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_get_job_card_departments",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_canonical_department_label",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_get_machine_departments",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_normalize_department_selection",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_department_selection_list",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erp_department_selection_contains",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "planningNotificationTargets",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "planningNotificationRouteInfo",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "createDepartmentNotifications",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erpNotificationAdminChannel",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "erpNotificationUserChannel",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "planningFabricationDepartmentFromDie",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "jobsAdvanceNotificationTargets",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "planningCreateNotifications",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "setFlash",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "getFlash",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "generateCSRF",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "verifyCSRF",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "generateDocNo",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "isAdmin",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "hasRole",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "ensureRbacSchema",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "string",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "string",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "string",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "string",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "ensurePaperMasterSchema",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "getMasterPaperCompanies",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "getMasterPaperTypes",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "rbacPageCatalog",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "rbacNormalizePath",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "rbacCurrentPath",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "rbacUserAllowedPaths",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "canAccessPath",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "canAccessCurrentPage",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "hasPageAction",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "currentPageAction",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "formatDate",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "calcSQM",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "statusBadge",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "paginationBar",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "appSettingsDefaults",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "getAppSettingsPath",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "getAppSettings",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "getProductTypeImage",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "saveAppSettings",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "prefixSettingsDefaults",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "getPrefixSettings",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "buildIdYearToken",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "buildFormattedId",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "getExistingMaxSequenceForType",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "getIdPreview",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "getNextId",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "previewNextId",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "getNextJobId",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "getErpDisplayName",
+            "file": "includes/functions.php"
+        },
+        {
+            "name": "navItem",
+            "file": "includes/sidebar.php"
+        },
+        {
+            "name": "navSubItem",
+            "file": "includes/sidebar.php"
+        },
+        {
+            "name": "erp_status_context",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_status_display_label",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_status_badge_class",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_status_palette_map",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_status_palette_by_class",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_status_palette",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_status_inline_style",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_paper_stock_status_options",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_paper_stock_normalize_status",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_label_planning_status_options",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_label_planning_normalize_status",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_barcode_planning_status_options",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_barcode_planning_normalize_status",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_status_page_options",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_status_page_default",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_status_page_normalize",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_status_visual_label",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_status_visual_tone",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "erp_status_badge_style",
+            "file": "includes/status_module.php"
+        },
+        {
+            "name": "h",
+            "file": "infinityfree_preflight.php"
+        },
+        {
+            "name": "checkPathWritable",
+            "file": "infinityfree_preflight.php"
+        },
+        {
+            "name": "detect_language",
+            "file": "modules/ai_agent/api_backup_plate.php"
+        },
+        {
+            "name": "extract_search_numbers",
+            "file": "modules/ai_agent/api_backup_plate.php"
+        },
+        {
+            "name": "format_records_table",
+            "file": "modules/ai_agent/api_backup_plate.php"
+        },
+        {
+            "name": "is_count_intent",
+            "file": "modules/ai_agent/api_backup_plate.php"
+        },
+        {
+            "name": "generate_erp_suggestions",
+            "file": "modules/ai_agent/api_backup_plate.php"
+        },
+        {
+            "name": "get_follow_up_suggestions",
+            "file": "modules/ai_agent/api_backup_plate.php"
+        },
+        {
+            "name": "call_llm_api",
+            "file": "modules/ai_agent/api_backup_plate.php"
+        },
+        {
+            "name": "call_llm_api_provider",
+            "file": "modules/ai_agent/api_backup_plate.php"
+        },
+        {
+            "name": "check_navigation_intent",
+            "file": "modules/ai_agent/api_backup_plate.php"
+        },
+        {
+            "name": "check_knowledge_base",
+            "file": "modules/ai_agent/api_backup_plate.php"
+        },
+        {
+            "name": "calculate_label_costing_math",
+            "file": "modules/ai_agent/api_backup_plate.php"
+        },
+        {
+            "name": "fetch_erp_data_by_intent",
+            "file": "modules/ai_agent/api_backup_plate.php"
+        },
+        {
+            "name": "detect_language",
+            "file": "modules/ai_agent/api_test_temp.php"
+        },
+        {
+            "name": "extract_search_numbers",
+            "file": "modules/ai_agent/api_test_temp.php"
+        },
+        {
+            "name": "format_records_table",
+            "file": "modules/ai_agent/api_test_temp.php"
+        },
+        {
+            "name": "is_count_intent",
+            "file": "modules/ai_agent/api_test_temp.php"
+        },
+        {
+            "name": "generate_erp_suggestions",
+            "file": "modules/ai_agent/api_test_temp.php"
+        },
+        {
+            "name": "get_follow_up_suggestions",
+            "file": "modules/ai_agent/api_test_temp.php"
+        },
+        {
+            "name": "call_llm_api",
+            "file": "modules/ai_agent/api_test_temp.php"
+        },
+        {
+            "name": "call_llm_api_provider",
+            "file": "modules/ai_agent/api_test_temp.php"
+        },
+        {
+            "name": "check_navigation_intent",
+            "file": "modules/ai_agent/api_test_temp.php"
+        },
+        {
+            "name": "check_knowledge_base",
+            "file": "modules/ai_agent/api_test_temp.php"
+        },
+        {
+            "name": "calculate_label_costing_math",
+            "file": "modules/ai_agent/api_test_temp.php"
+        },
+        {
+            "name": "fetch_erp_data_by_intent",
+            "file": "modules/ai_agent/api_test_temp.php"
+        },
+        {
+            "name": "detect_language",
+            "file": "modules/ai_agent/api_unicode_backup.php"
+        },
+        {
+            "name": "extract_search_numbers",
+            "file": "modules/ai_agent/api_unicode_backup.php"
+        },
+        {
+            "name": "format_records_table",
+            "file": "modules/ai_agent/api_unicode_backup.php"
+        },
+        {
+            "name": "is_count_intent",
+            "file": "modules/ai_agent/api_unicode_backup.php"
+        },
+        {
+            "name": "get_follow_up_suggestions",
+            "file": "modules/ai_agent/api_unicode_backup.php"
+        },
+        {
+            "name": "call_llm_api",
+            "file": "modules/ai_agent/api_unicode_backup.php"
+        },
+        {
+            "name": "check_navigation_intent",
+            "file": "modules/ai_agent/api_unicode_backup.php"
+        },
+        {
+            "name": "check_knowledge_base",
+            "file": "modules/ai_agent/api_unicode_backup.php"
+        },
+        {
+            "name": "calculate_label_costing_math",
+            "file": "modules/ai_agent/api_unicode_backup.php"
+        },
+        {
+            "name": "fetch_erp_data_by_intent",
+            "file": "modules/ai_agent/api_unicode_backup.php"
+        },
+        {
+            "name": "getAiAgentConfig",
+            "file": "modules/ai_agent/config.php"
+        },
+        {
+            "name": "getAiAgentQuickChips",
+            "file": "modules/ai_agent/config.php"
+        },
+        {
+            "name": "KnowledgeIndexer",
+            "file": "modules/ai_agent/indexer/KnowledgeIndexer.php"
+        },
+        {
+            "name": "KnowledgeIndexer::__construct",
+            "file": "modules/ai_agent/indexer/KnowledgeIndexer.php"
+        },
+        {
+            "name": "KnowledgeIndexer::buildIndex",
+            "file": "modules/ai_agent/indexer/KnowledgeIndexer.php"
+        },
+        {
+            "name": "KnowledgeIndexer::isFileUnchanged",
+            "file": "modules/ai_agent/indexer/KnowledgeIndexer.php"
+        },
+        {
+            "name": "KnowledgeIndexer::removeFileEntities",
+            "file": "modules/ai_agent/indexer/KnowledgeIndexer.php"
+        },
+        {
+            "name": "KnowledgeIndexer::insertEntity",
+            "file": "modules/ai_agent/indexer/KnowledgeIndexer.php"
+        },
+        {
+            "name": "KnowledgeIndexer::insertKeyword",
+            "file": "modules/ai_agent/indexer/KnowledgeIndexer.php"
+        },
+        {
+            "name": "KnowledgeIndexer::cleanupDeletedFiles",
+            "file": "modules/ai_agent/indexer/KnowledgeIndexer.php"
+        },
+        {
+            "name": "KnowledgeIndexer::generateManifest",
+            "file": "modules/ai_agent/indexer/KnowledgeIndexer.php"
+        },
+        {
+            "name": "MarkdownParser",
+            "file": "modules/ai_agent/indexer/Parsers/MarkdownParser.php"
+        },
+        {
+            "name": "MarkdownParser::parse",
+            "file": "modules/ai_agent/indexer/Parsers/MarkdownParser.php"
+        },
+        {
+            "name": "PhpParser",
+            "file": "modules/ai_agent/indexer/Parsers/PhpParser.php"
+        },
+        {
+            "name": "PhpParser::parse",
+            "file": "modules/ai_agent/indexer/Parsers/PhpParser.php"
+        },
+        {
+            "name": "PhpParser::getNextString",
+            "file": "modules/ai_agent/indexer/Parsers/PhpParser.php"
+        },
+        {
+            "name": "PhpParser::buildFunctionSignature",
+            "file": "modules/ai_agent/indexer/Parsers/PhpParser.php"
+        },
+        {
+            "name": "PhpParser::findMatchingBraceLine",
+            "file": "modules/ai_agent/indexer/Parsers/PhpParser.php"
+        },
+        {
+            "name": "SqlParser",
+            "file": "modules/ai_agent/indexer/Parsers/SqlParser.php"
+        },
+        {
+            "name": "SqlParser::parse",
+            "file": "modules/ai_agent/indexer/Parsers/SqlParser.php"
+        },
+        {
+            "name": "CalculationEngine",
+            "file": "modules/ai_agent/services/CalculationEngine.php"
+        },
+        {
+            "name": "CalculationEngine::calculatePlateCosting",
+            "file": "modules/ai_agent/services/CalculationEngine.php"
+        },
+        {
+            "name": "FeatureFlags",
+            "file": "modules/ai_agent/services/FeatureFlags.php"
+        },
+        {
+            "name": "FeatureFlags::__construct",
+            "file": "modules/ai_agent/services/FeatureFlags.php"
+        },
+        {
+            "name": "FeatureFlags::isMemoryEnabled",
+            "file": "modules/ai_agent/services/FeatureFlags.php"
+        },
+        {
+            "name": "FeatureFlags::isToolCallingEnabled",
+            "file": "modules/ai_agent/services/FeatureFlags.php"
+        },
+        {
+            "name": "FeatureFlags::isLoggingEnabled",
+            "file": "modules/ai_agent/services/FeatureFlags.php"
+        },
+        {
+            "name": "FeatureFlags::isFutureRagEnabled",
+            "file": "modules/ai_agent/services/FeatureFlags.php"
+        },
+        {
+            "name": "LLMClient",
+            "file": "modules/ai_agent/services/LLMClient.php"
+        },
+        {
+            "name": "LLMClient::__construct",
+            "file": "modules/ai_agent/services/LLMClient.php"
+        },
+        {
+            "name": "LLMClient::callWithFallback",
+            "file": "modules/ai_agent/services/LLMClient.php"
+        },
+        {
+            "name": "LLMClient::callProvider",
+            "file": "modules/ai_agent/services/LLMClient.php"
+        },
+        {
+            "name": "LLMClient::executeCurl",
+            "file": "modules/ai_agent/services/LLMClient.php"
+        },
+        {
+            "name": "Logger",
+            "file": "modules/ai_agent/services/Logger.php"
+        },
+        {
+            "name": "Logger::__construct",
+            "file": "modules/ai_agent/services/Logger.php"
+        },
+        {
+            "name": "Logger::error",
+            "file": "modules/ai_agent/services/Logger.php"
+        },
+        {
+            "name": "Logger::tool",
+            "file": "modules/ai_agent/services/Logger.php"
+        },
+        {
+            "name": "Logger::info",
+            "file": "modules/ai_agent/services/Logger.php"
+        },
+        {
+            "name": "Logger::write",
+            "file": "modules/ai_agent/services/Logger.php"
+        },
+        {
+            "name": "MemoryManager",
+            "file": "modules/ai_agent/services/MemoryManager.php"
+        },
+        {
+            "name": "MemoryManager::__construct",
+            "file": "modules/ai_agent/services/MemoryManager.php"
+        },
+        {
+            "name": "MemoryManager::getHistory",
+            "file": "modules/ai_agent/services/MemoryManager.php"
+        },
+        {
+            "name": "MemoryManager::saveInteraction",
+            "file": "modules/ai_agent/services/MemoryManager.php"
+        },
+        {
+            "name": "ProviderManager",
+            "file": "modules/ai_agent/services/ProviderManager.php"
+        },
+        {
+            "name": "ProviderManager::__construct",
+            "file": "modules/ai_agent/services/ProviderManager.php"
+        },
+        {
+            "name": "ProviderManager::getPrimaryProvider",
+            "file": "modules/ai_agent/services/ProviderManager.php"
+        },
+        {
+            "name": "ProviderManager::getFallbackProviders",
+            "file": "modules/ai_agent/services/ProviderManager.php"
+        },
+        {
+            "name": "ToolRouter",
+            "file": "modules/ai_agent/services/ToolRouter.php"
+        },
+        {
+            "name": "ToolRouter::__construct",
+            "file": "modules/ai_agent/services/ToolRouter.php"
+        },
+        {
+            "name": "ToolRouter::getToolDefinitions",
+            "file": "modules/ai_agent/services/ToolRouter.php"
+        },
+        {
+            "name": "ToolRouter::interceptToolCall",
+            "file": "modules/ai_agent/services/ToolRouter.php"
+        },
+        {
+            "name": "ToolRouter::executeMathTool",
+            "file": "modules/ai_agent/services/ToolRouter.php"
+        },
+        {
+            "name": "anlXmlEsc",
+            "file": "modules/anilox-data/export.php"
+        },
+        {
+            "name": "anlCell",
+            "file": "modules/anilox-data/export.php"
+        },
+        {
+            "name": "anlNumCell",
+            "file": "modules/anilox-data/export.php"
+        },
+        {
+            "name": "anlMergeCell",
+            "file": "modules/anilox-data/export.php"
+        },
+        {
+            "name": "dieToolingRedirectUrl",
+            "file": "modules/anilox-data/index.php"
+        },
+        {
+            "name": "dieToolingNormalizeHeaderKey",
+            "file": "modules/anilox-data/index.php"
+        },
+        {
+            "name": "dieToolingAutoMapHeaders",
+            "file": "modules/anilox-data/index.php"
+        },
+        {
+            "name": "dieToolingPrepareInsert",
+            "file": "modules/anilox-data/index.php"
+        },
+        {
+            "name": "dieToolingPrepareUpdate",
+            "file": "modules/anilox-data/index.php"
+        },
+        {
+            "name": "dieToolingDisplayValue",
+            "file": "modules/anilox-data/index.php"
+        },
+        {
+            "name": "dieToolingModuleSlug",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingModuleLabel",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingTableName",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingImportColumns",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingColumns",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingColumnSqlTypes",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingColumnSynonyms",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingQuickFilters",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "ensureDieToolingSchema",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingCleanText",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingNormalizePayload",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingFormatDisplayNumber",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingRedirectUrl",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingParseCsv",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingColumnIndexFromRef",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingReadXlsxSharedStrings",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingFindSheetPath",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingXlsxCellValue",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingParseXlsx",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "dieToolingParseSpreadsheet",
+            "file": "modules/anilox-data/_common.php"
+        },
+        {
+            "name": "normalizeRollNo",
+            "file": "modules/audit/api.php"
+        },
+        {
+            "name": "generateAuditId",
+            "file": "modules/audit/api.php"
+        },
+        {
+            "name": "ensureAuditTables",
+            "file": "modules/audit/setup_tables.php"
+        },
+        {
+            "name": "cylXmlEsc",
+            "file": "modules/cylinder-data/export.php"
+        },
+        {
+            "name": "cylCell",
+            "file": "modules/cylinder-data/export.php"
+        },
+        {
+            "name": "cylNumCell",
+            "file": "modules/cylinder-data/export.php"
+        },
+        {
+            "name": "cylMergeCell",
+            "file": "modules/cylinder-data/export.php"
+        },
+        {
+            "name": "dieToolingRedirectUrl",
+            "file": "modules/cylinder-data/index.php"
+        },
+        {
+            "name": "dieToolingNormalizeHeaderKey",
+            "file": "modules/cylinder-data/index.php"
+        },
+        {
+            "name": "dieToolingAutoMapHeaders",
+            "file": "modules/cylinder-data/index.php"
+        },
+        {
+            "name": "dieToolingPrepareInsert",
+            "file": "modules/cylinder-data/index.php"
+        },
+        {
+            "name": "dieToolingPrepareUpdate",
+            "file": "modules/cylinder-data/index.php"
+        },
+        {
+            "name": "dieToolingDisplayValue",
+            "file": "modules/cylinder-data/index.php"
+        },
+        {
+            "name": "dieToolingModuleSlug",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingModuleLabel",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingTableName",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingImportColumns",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingColumns",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingColumnSqlTypes",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingColumnSynonyms",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingQuickFilters",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "ensureDieToolingSchema",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingCleanText",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingNormalizePayload",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingFormatDisplayNumber",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingRedirectUrl",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingParseCsv",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingColumnIndexFromRef",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingReadXlsxSharedStrings",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingFindSheetPath",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingXlsxCellValue",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingParseXlsx",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "dieToolingParseSpreadsheet",
+            "file": "modules/cylinder-data/_common.php"
+        },
+        {
+            "name": "periodWhere",
+            "file": "modules/dashboard/index.php"
+        },
+        {
+            "name": "safeQuery",
+            "file": "modules/dashboard/index.php"
+        },
+        {
+            "name": "safeValue",
+            "file": "modules/dashboard/index.php"
+        },
+        {
+            "name": "dtXmlEsc",
+            "file": "modules/die-tooling/export.php"
+        },
+        {
+            "name": "dtXlCell",
+            "file": "modules/die-tooling/export.php"
+        },
+        {
+            "name": "dtXlNumCell",
+            "file": "modules/die-tooling/export.php"
+        },
+        {
+            "name": "dtXlMergeCell",
+            "file": "modules/die-tooling/export.php"
+        },
+        {
+            "name": "dieToolingRedirectUrl",
+            "file": "modules/die-tooling/index.php"
+        },
+        {
+            "name": "dieToolingNormalizeHeaderKey",
+            "file": "modules/die-tooling/index.php"
+        },
+        {
+            "name": "dieToolingAutoMapHeaders",
+            "file": "modules/die-tooling/index.php"
+        },
+        {
+            "name": "dieToolingMissingRequiredLabels",
+            "file": "modules/die-tooling/index.php"
+        },
+        {
+            "name": "dieToolingRowMatchesScope",
+            "file": "modules/die-tooling/index.php"
+        },
+        {
+            "name": "dieToolingImportColumns",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingColumns",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "ensureDieToolingSchema",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingCleanText",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingNormalizePayload",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingFormatDisplayNumber",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingRedirectUrl",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingBuildUrl",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingCanonicalTypeKey",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingCanonicalTypeLabel",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingNormalizeTypeList",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingTypeMatchesAllowed",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingBuildAllowedTypeWhere",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingParseCsv",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingColumnIndexFromRef",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingReadXlsxSharedStrings",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingFindSheetPath",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingXlsxCellValue",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingParseXlsx",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "dieToolingParseSpreadsheet",
+            "file": "modules/die-tooling/_common.php"
+        },
+        {
+            "name": "ds_json",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_clean",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_has_column",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_require_dispatch_access",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_decimal",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_truthy",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_dispatch_qty_mismatches",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_assert_dispatch_qty_match",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_finished_goods_category_source_expr",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_dispatch_category_bucket_case",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_date",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_get_payload",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_ensure_tables",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_already_dispatched_qty",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_next_dispatch_id",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_get_stock_row",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_parse_remarks_extra",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_pick_extra",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_carton_ratio_for_stock",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_carton_count_for_stock",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_available_net_for_stock",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_mixed_extra_for_stock",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_parse_batch_items",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_get_item_batches",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_related_prefill_rows",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "void",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_prefill_totals_from_rows",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_recalc_carton_in_remarks",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_adjust_stock",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_upsert_dispatch_items_table",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "ds_enrich_dispatch_row",
+            "file": "modules/dispatch/api/dispatch_api.php"
+        },
+        {
+            "name": "carton_db",
+            "file": "modules/inventory/carton/functions.php"
+        },
+        {
+            "name": "carton_ensure_tables",
+            "file": "modules/inventory/carton/functions.php"
+        },
+        {
+            "name": "carton_clean_text",
+            "file": "modules/inventory/carton/functions.php"
+        },
+        {
+            "name": "carton_int",
+            "file": "modules/inventory/carton/functions.php"
+        },
+        {
+            "name": "carton_item_exists",
+            "file": "modules/inventory/carton/functions.php"
+        },
+        {
+            "name": "carton_add_stock_entry",
+            "file": "modules/inventory/carton/functions.php"
+        },
+        {
+            "name": "carton_stock_balance",
+            "file": "modules/inventory/carton/functions.php"
+        },
+        {
+            "name": "carton_period_bounds",
+            "file": "modules/inventory/carton/functions.php"
+        },
+        {
+            "name": "deduct_carton",
+            "file": "modules/inventory/carton/functions.php"
+        },
+        {
+            "name": "fg_json",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_is_admin",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_require_admin",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_can_operate_finished_stock",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_require_stock_operator",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_clean_text",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_decimal",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_parse_date",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_mixed_parse_extra",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_mixed_pick",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_mixed_extra_qty",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_barcode_display_quantity",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_period_bounds",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_get_payload",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_ensure_table",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_fetch_carton_min_rows",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_fetch_barcode_ups_map",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_decode_assoc",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_format_measure",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_first_numeric",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_parse_label_dimensions",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_fetch_printing_label_context",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_insert_row",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_resolve_row_id",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "fg_apply_deduction",
+            "file": "modules/inventory/finished/api/finished_api.php"
+        },
+        {
+            "name": "mi_json",
+            "file": "modules/inventory/mixed-item/api/mixed_item_api.php"
+        },
+        {
+            "name": "mi_clean",
+            "file": "modules/inventory/mixed-item/api/mixed_item_api.php"
+        },
+        {
+            "name": "mi_num",
+            "file": "modules/inventory/mixed-item/api/mixed_item_api.php"
+        },
+        {
+            "name": "mi_can_operate",
+            "file": "modules/inventory/mixed-item/api/mixed_item_api.php"
+        },
+        {
+            "name": "mi_require_access",
+            "file": "modules/inventory/mixed-item/api/mixed_item_api.php"
+        },
+        {
+            "name": "mi_parse_extra",
+            "file": "modules/inventory/mixed-item/api/mixed_item_api.php"
+        },
+        {
+            "name": "mi_pick",
+            "file": "modules/inventory/mixed-item/api/mixed_item_api.php"
+        },
+        {
+            "name": "mi_categories",
+            "file": "modules/inventory/mixed-item/api/mixed_item_api.php"
+        },
+        {
+            "name": "mi_decode_assoc",
+            "file": "modules/inventory/mixed-item/api/mixed_item_api.php"
+        },
+        {
+            "name": "mi_format_measure",
+            "file": "modules/inventory/mixed-item/api/mixed_item_api.php"
+        },
+        {
+            "name": "mi_parse_label_dimensions",
+            "file": "modules/inventory/mixed-item/api/mixed_item_api.php"
+        },
+        {
+            "name": "mi_fetch_printing_label_context",
+            "file": "modules/inventory/mixed-item/api/mixed_item_api.php"
+        },
+        {
+            "name": "mi_compute_extra",
+            "file": "modules/inventory/mixed-item/api/mixed_item_api.php"
+        },
+        {
+            "name": "mi_fetch_rows",
+            "file": "modules/inventory/mixed-item/api/mixed_item_api.php"
+        },
+        {
+            "name": "mi_ensure_assignment_table",
+            "file": "modules/inventory/mixed-item/api/mixed_item_api.php"
+        },
+        {
+            "name": "generateBatchNo",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "generateUniqueIdForTable",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "deriveStageJobNo",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "detectMode",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "getNextSuffix",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "getExistingChildren",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "countDirectChildren",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "normalizeMaterial",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "textContainsPosToken",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "planningContainsPosMarker",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "int",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "textContainsOnePlyToken",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "planningContainsOnePlyMarker",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "int",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "textContainsTwoPlyToken",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "planningContainsTwoPlyMarker",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "int",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "resolvePaperRollSubtype",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "shouldBypassJumboForMachine",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "resolveMachineFromDepartmentRoute",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "loadPlanningContext",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "generateUniqueStageJobNo",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "generateChildRollNo",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "perform_slitting_for_job_regenerate",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "mysqli",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "mysqli",
+            "file": "modules/inventory/slitting/api.php"
+        },
+        {
+            "name": "ensureSlittingTables",
+            "file": "modules/inventory/slitting/setup_tables.php"
+        },
+        {
+            "name": "int",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_ensure_change_request_table",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_ensure_delete_audit_table",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_collect_verified_rolls",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_apply_jumbo_roll_changes",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_float2",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_calc_sqm",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_next_numeric_roll_no",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_merge_roll_item",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_insert_inventory_log",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_merge_child_rows_by_roll",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_create_or_get_flexo_extra_jumbo_card",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_apply_flexo_operator_request",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_department_label",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_can_manual_roll_entry_for_job",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_display_job_name",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_array_merge_deep",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_decode_extra_data",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_parse_stock_qty_value",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_build_flexo_slitting_redirect_url",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_table_exists",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_validate_printing_anilox_usage",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_timer_now",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_timer_seconds_between",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_timer_accumulated_seconds",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_timer_array",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_timer_push_event",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_timer_push_segment",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_timer_close_work_segment",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_timer_close_pause_segment",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_collect_roll_nos",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_fetch_roll_map",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_attach_live_roll_data",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_normalize_stock_status",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_safe_parent_restore_status",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_join_base_url",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_notification_department_rank",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_notification_job_page_by_department",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_notification_primary_chain_job_id",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_notification_target_url",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_is_die_cutting_job",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_is_operator_media_upload_job",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_is_barcode_job",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_is_label_slitting_job",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_is_packing_job",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_is_pos_job",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_is_oneply_job",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_is_twoply_job",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_is_paperroll_family_job",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_stage_status_for_event",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_is_flatbed_like_die",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_derive_stage_job_no",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_generate_unique_stage_job_no",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_ensure_label_slitting_job",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_first_non_empty",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_pick_planning_image",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_set_planning_stage_status",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_set_planning_status_and_stage",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_set_planning_status_and_stage_for_job",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "jobs_get_chain_jobs",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "bool",
+            "file": "modules/jobs/api.php"
+        },
+        {
+            "name": "safeCountQueryDC",
+            "file": "modules/jobs/flatbed/index.php"
+        },
+        {
+            "name": "dcDisplayJobName",
+            "file": "modules/jobs/flatbed/index.php"
+        },
+        {
+            "name": "dcCanonicalStatus",
+            "file": "modules/jobs/flatbed/index.php"
+        },
+        {
+            "name": "float",
+            "file": "modules/jobs/flatbed/index.php"
+        },
+        {
+            "name": "bool",
+            "file": "modules/jobs/flatbed/index.php"
+        },
+        {
+            "name": "bool",
+            "file": "modules/jobs/flatbed/index.php"
+        },
+        {
+            "name": "bool",
+            "file": "modules/jobs/flatbed/index.php"
+        },
+        {
+            "name": "bool",
+            "file": "modules/jobs/flatbed/index.php"
+        },
+        {
+            "name": "bool",
+            "file": "modules/jobs/flatbed/index.php"
+        },
+        {
+            "name": "safeCountQuery",
+            "file": "modules/jobs/jumbo/index.php"
+        },
+        {
+            "name": "jumboDepartmentLabel",
+            "file": "modules/jobs/jumbo/index.php"
+        },
+        {
+            "name": "jumboDisplayJobName",
+            "file": "modules/jobs/jumbo/index.php"
+        },
+        {
+            "name": "jumboPlanningNormalizedKey",
+            "file": "modules/jobs/jumbo/index.php"
+        },
+        {
+            "name": "jumboPlanningExtraValue",
+            "file": "modules/jobs/jumbo/index.php"
+        },
+        {
+            "name": "jumboPlanningNumber",
+            "file": "modules/jobs/jumbo/index.php"
+        },
+        {
+            "name": "jumboPlanningWidthMm",
+            "file": "modules/jobs/jumbo/index.php"
+        },
+        {
+            "name": "jumboPlanningLengthMtr",
+            "file": "modules/jobs/jumbo/index.php"
+        },
+        {
+            "name": "jumboHydrateMissingStockRows",
+            "file": "modules/jobs/jumbo/index.php"
+        },
+        {
+            "name": "bool",
+            "file": "modules/jobs/jumbo/index.php"
+        },
+        {
+            "name": "safeCountQueryDC",
+            "file": "modules/jobs/label-slitting/index.php"
+        },
+        {
+            "name": "dcDisplayJobName",
+            "file": "modules/jobs/label-slitting/index.php"
+        },
+        {
+            "name": "jobs_printing_table_exists",
+            "file": "modules/jobs/printing/index.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/jobs/printing/index.php"
+        },
+        {
+            "name": "lmRespond",
+            "file": "modules/leave-management/api.php"
+        },
+        {
+            "name": "lmFail",
+            "file": "modules/leave-management/api.php"
+        },
+        {
+            "name": "lmEnsureSchema",
+            "file": "modules/leave-management/api.php"
+        },
+        {
+            "name": "lmCanAdmin",
+            "file": "modules/leave-management/api.php"
+        },
+        {
+            "name": "lmAllowedDepartments",
+            "file": "modules/leave-management/api.php"
+        },
+        {
+            "name": "lmNormalizedDepartment",
+            "file": "modules/leave-management/api.php"
+        },
+        {
+            "name": "lmEmployeeRecord",
+            "file": "modules/leave-management/api.php"
+        },
+        {
+            "name": "lmLeaveCode",
+            "file": "modules/leave-management/api.php"
+        },
+        {
+            "name": "lmDaysBetween",
+            "file": "modules/leave-management/api.php"
+        },
+        {
+            "name": "lmStoreVoiceFile",
+            "file": "modules/leave-management/api.php"
+        },
+        {
+            "name": "lmFetchLeave",
+            "file": "modules/leave-management/api.php"
+        },
+        {
+            "name": "masterColumnExists",
+            "file": "modules/master/index.php"
+        },
+        {
+            "name": "getMasterRecords",
+            "file": "modules/master/index.php"
+        },
+        {
+            "name": "getSupplierName",
+            "file": "modules/master/index.php"
+        },
+        {
+            "name": "getRawMaterialName",
+            "file": "modules/master/index.php"
+        },
+        {
+            "name": "getById",
+            "file": "modules/master/index.php"
+        },
+        {
+            "name": "mysqli",
+            "file": "modules/master/index.php"
+        },
+        {
+            "name": "mysqli",
+            "file": "modules/master/index.php"
+        },
+        {
+            "name": "jumboPlanningNormalizedKey",
+            "file": "modules/operators/jumbo/index.php"
+        },
+        {
+            "name": "jumboPlanningExtraValue",
+            "file": "modules/operators/jumbo/index.php"
+        },
+        {
+            "name": "jumboPlanningNumber",
+            "file": "modules/operators/jumbo/index.php"
+        },
+        {
+            "name": "jumboPlanningWidthMm",
+            "file": "modules/operators/jumbo/index.php"
+        },
+        {
+            "name": "jumboPlanningLengthMtr",
+            "file": "modules/operators/jumbo/index.php"
+        },
+        {
+            "name": "jumboHydrateMissingStockRows",
+            "file": "modules/operators/jumbo/index.php"
+        },
+        {
+            "name": "bool",
+            "file": "modules/operators/jumbo/index.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/operators/packing/index.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/operators/packing/index.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/operators/packing/index.php"
+        },
+        {
+            "name": "packing_api_respond",
+            "file": "modules/packing/api.php"
+        },
+        {
+            "name": "packing_api_can_finalize",
+            "file": "modules/packing/api.php"
+        },
+        {
+            "name": "packing_api_create_notifications",
+            "file": "modules/packing/api.php"
+        },
+        {
+            "name": "packing_api_ensure_finished_goods_table",
+            "file": "modules/packing/api.php"
+        },
+        {
+            "name": "packing_api_assigned_child_rolls",
+            "file": "modules/packing/api.php"
+        },
+        {
+            "name": "packing_api_company_short_code",
+            "file": "modules/packing/api.php"
+        },
+        {
+            "name": "packing_api_build_pos_barcode",
+            "file": "modules/packing/api.php"
+        },
+        {
+            "name": "packing_api_build_job_barcode",
+            "file": "modules/packing/api.php"
+        },
+        {
+            "name": "packing_api_resolve_barcode_metrics",
+            "file": "modules/packing/api.php"
+        },
+        {
+            "name": "packing_api_upsert_finished_goods",
+            "file": "modules/packing/api.php"
+        },
+        {
+            "name": "packing_api_ensure_carton_min_column",
+            "file": "modules/packing/api.php"
+        },
+        {
+            "name": "packing_api_fetch_carton_status_rows",
+            "file": "modules/packing/api.php"
+        },
+        {
+            "name": "int",
+            "file": "modules/packing/api.php"
+        },
+        {
+            "name": "packing_api_norm_carton_size_key",
+            "file": "modules/packing/api.php"
+        },
+        {
+            "name": "packing_api_deduct_carton_from_finished_goods",
+            "file": "modules/packing/api.php"
+        },
+        {
+            "name": "packing_api_apply_carton_usage_deduction",
+            "file": "modules/packing/api.php"
+        },
+        {
+            "name": "int",
+            "file": "modules/packing/export.php"
+        },
+        {
+            "name": "bool",
+            "file": "modules/packing/export.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/packing/index.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/packing/index.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/packing/index.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/packing/index.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/packing/index.php"
+        },
+        {
+            "name": "packing_completed_statuses",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_is_completed_status",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_effective_status_from_row",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_department_type_map",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_normalize_match_key",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_value_matches_aliases",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_planning_board_key",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_row_origin_board",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_row_to_tab",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_tab_keys",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_release_required_tabs",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_release_primary_tabs",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_is_release_ready",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_tab_label",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_department_to_tab",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_department_display_for_tab",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_active_row_priority",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_decode_json",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_find_image_url_in_value",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_extract_image_url",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_pick_value_loose",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_extract_item_dimensions",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_to_float_or_null",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_collect_metric_sources",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_extract_production_metrics",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_extract_total_roll_value",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_decode_roll_payload",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_extract_bpr_from_payload",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_extract_barcode_per_roll",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_build_default_roll_distribution",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_display_prefix",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_build_display_id",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_ensure_operator_entries_table",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_table_has_column",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_fetch_operator_entry",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_operator_entry_is_submitted",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_fetch_job_details",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_fetch_ready_rows",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "int",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "packing_fetch_history_rows",
+            "file": "modules/packing/_data.php"
+        },
+        {
+            "name": "fmtCell",
+            "file": "modules/paper_stock/export.php"
+        },
+        {
+            "name": "xmlEsc",
+            "file": "modules/paper_stock/export.php"
+        },
+        {
+            "name": "xlCell",
+            "file": "modules/paper_stock/export.php"
+        },
+        {
+            "name": "xlNumCell",
+            "file": "modules/paper_stock/export.php"
+        },
+        {
+            "name": "xlMergeCell",
+            "file": "modules/paper_stock/export.php"
+        },
+        {
+            "name": "activeFilterParams",
+            "file": "modules/paper_stock/index.php"
+        },
+        {
+            "name": "renderHiddenFilterInputs",
+            "file": "modules/paper_stock/index.php"
+        },
+        {
+            "name": "sortUrl",
+            "file": "modules/paper_stock/index.php"
+        },
+        {
+            "name": "sortIcon",
+            "file": "modules/paper_stock/index.php"
+        },
+        {
+            "name": "renderRollTree",
+            "file": "modules/paper_stock/index.php"
+        },
+        {
+            "name": "resolveLabelBackUrl",
+            "file": "modules/paper_stock/label.php"
+        },
+        {
+            "name": "barcodePlanningNumber",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningFormatNumber",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningStatusPageKey",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningStatusOptions",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningDefaultStatus",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningNormalizeStatus",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningStatusStyle",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningDisplayStatusLabel",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningIsArchivedStatus",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningStatusTransitionMap",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningAllowedNextStatuses",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningStatusChangeAllowed",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningPriorityOptions",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningTypeOptions",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningIdMeta",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningSequenceFromId",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningPreviewId",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningNextSerial",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningNextRecordId",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningCalcPair",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningFirstNumber",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningResolvePaperAndMargin",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningSuggestionBucket",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningMergeSuggestionLists",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningMasterJobRows",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "int",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningMasterRows",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningPaperStockTypes",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningMasterDistinctValues",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningFetchRows",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningExportHeaders",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningExportValues",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningExportExcel",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "barcodePlanningExportPrint",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "bool",
+            "file": "modules/planning/barcode/index.php"
+        },
+        {
+            "name": "planning_history_department_options",
+            "file": "modules/planning/history.php"
+        },
+        {
+            "name": "planning_history_department_label",
+            "file": "modules/planning/history.php"
+        },
+        {
+            "name": "planning_history_board_url",
+            "file": "modules/planning/history.php"
+        },
+        {
+            "name": "planning_history_department_where",
+            "file": "modules/planning/history.php"
+        },
+        {
+            "name": "planning_history_try_parse_date",
+            "file": "modules/planning/history.php"
+        },
+        {
+            "name": "planning_history_dispatch_date",
+            "file": "modules/planning/history.php"
+        },
+        {
+            "name": "planning_history_status_label",
+            "file": "modules/planning/history.php"
+        },
+        {
+            "name": "planning_route_department_choices",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_die_options",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_normalize_die_value",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_route_default_department_list",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_apply_die_route_rules",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_default_route_departments",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_department_options",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_department_label",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_normalize_route_departments",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_normalize_route_departments_by_die",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_normalize_lookup_key",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_value_is_blankish",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_material_suggestions",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_match_material_suggestion",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_plate_records",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_plate_autofill_payload",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_find_plate_autofill_data",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_apply_plate_defaults",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_json_response",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_seed_columns",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_get_columns",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_get_rows",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_normalize_status",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_status_transition_map",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_allowed_next_statuses",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_status_change_allowed",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_status_badge",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_status_pill_class",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_status_inline_style",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_status_style_map_data",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_board_status_badge",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_try_parse_date",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_default_dispatch_date",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_get_current_stage_status",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_extract_row_values",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_norm_header_key",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_get_any_key",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_is_safe_image_path",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_remove_image_file",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "planning_save_uploaded_image",
+            "file": "modules/planning/index.php"
+        },
+        {
+            "name": "barcodePlanningNumber",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningFormatNumber",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningStatusPageKey",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningStatusOptions",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningDefaultStatus",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningNormalizeStatus",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningStatusStyle",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "paperrollPlanningIsArchivedStatus",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "paperrollPlanningTypeOptions",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "paperrollPlanningNormalizeType",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "paperrollPlanningTypeLabel",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "paperrollPlanningDepartmentOptions",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "paperrollPlanningNormalizeDepartmentLabel",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "paperrollPlanningStatusOptionsForType",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "paperrollPlanningStatusOptionsMap",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "paperrollPlanningDepartmentFromJob",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "paperrollPlanningStatusFromPhase",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "paperrollPlanningJobStatusPhase",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "paperrollPlanningIsDisplayStatus",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "paperrollPlanningUnifiedStageLabel",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "paperrollPlanningTerminalStatusFromCandidates",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "paperrollPlanningNormalizeManualStatus",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "paperrollPlanningSelectCurrentJob",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "void",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "int",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningPriorityOptions",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningIdMeta",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningSequenceFromId",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningPreviewId",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningNextSerial",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningNextRecordId",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningCalcPair",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningFirstNumber",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningResolvePaperAndMargin",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningSuggestionBucket",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningMergeSuggestionLists",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningMasterJobRows",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "int",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningMasterRows",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningPaperStockTypes",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningMasterDistinctValues",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "paperRollConceptMasterRows",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningFetchRows",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "int",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningExportHeaders",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningExportValues",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningExportExcel",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningExportPrint",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "bool",
+            "file": "modules/planning/paperroll/index.php"
+        },
+        {
+            "name": "barcodePlanningNumber",
+            "file": "modules/planning/rotery/index.php"
+        },
+        {
+            "name": "barcodePlanningFormatNumber",
+            "file": "modules/planning/rotery/index.php"
+        },
+        {
+            "name": "barcodePlanningCalcPair",
+            "file": "modules/planning/rotery/index.php"
+        },
+        {
+            "name": "barcodePlanningNextSerial",
+            "file": "modules/planning/rotery/index.php"
+        },
+        {
+            "name": "barcodePlanningNextRecordId",
+            "file": "modules/planning/rotery/index.php"
+        },
+        {
+            "name": "barcodePlanningMaterialSuggestions",
+            "file": "modules/planning/rotery/index.php"
+        },
+        {
+            "name": "barcodePlanningCoreSuggestions",
+            "file": "modules/planning/rotery/index.php"
+        },
+        {
+            "name": "barcodePlanningFetchRows",
+            "file": "modules/planning/rotery/index.php"
+        },
+        {
+            "name": "barcodePlanningExportExcel",
+            "file": "modules/planning/rotery/index.php"
+        },
+        {
+            "name": "barcodePlanningExportPrint",
+            "file": "modules/planning/rotery/index.php"
+        },
+        {
+            "name": "pdXmlEsc",
+            "file": "modules/plate-data/export.php"
+        },
+        {
+            "name": "pdCell",
+            "file": "modules/plate-data/export.php"
+        },
+        {
+            "name": "pdNumCell",
+            "file": "modules/plate-data/export.php"
+        },
+        {
+            "name": "pdMergeCell",
+            "file": "modules/plate-data/export.php"
+        },
+        {
+            "name": "dieToolingSetImageUploadError",
+            "file": "modules/plate-data/index.php"
+        },
+        {
+            "name": "dieToolingGetImageUploadError",
+            "file": "modules/plate-data/index.php"
+        },
+        {
+            "name": "dieToolingTableExists",
+            "file": "modules/plate-data/index.php"
+        },
+        {
+            "name": "dieToolingGetPaperTypeOptions",
+            "file": "modules/plate-data/index.php"
+        },
+        {
+            "name": "dieToolingNormalizeHeaderKey",
+            "file": "modules/plate-data/index.php"
+        },
+        {
+            "name": "dieToolingExcelColumnLabel",
+            "file": "modules/plate-data/index.php"
+        },
+        {
+            "name": "dieToolingAutoMapHeaders",
+            "file": "modules/plate-data/index.php"
+        },
+        {
+            "name": "dieToolingPrepareInsert",
+            "file": "modules/plate-data/index.php"
+        },
+        {
+            "name": "dieToolingPrepareUpdate",
+            "file": "modules/plate-data/index.php"
+        },
+        {
+            "name": "dieToolingDisplayValue",
+            "file": "modules/plate-data/index.php"
+        },
+        {
+            "name": "dieToolingImageSrc",
+            "file": "modules/plate-data/index.php"
+        },
+        {
+            "name": "dieToolingNormalizeImportedDate",
+            "file": "modules/plate-data/index.php"
+        },
+        {
+            "name": "dieToolingDateForInput",
+            "file": "modules/plate-data/index.php"
+        },
+        {
+            "name": "dieToolingSavePlateImage",
+            "file": "modules/plate-data/index.php"
+        },
+        {
+            "name": "dieToolingModuleSlug",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingModuleLabel",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingTableName",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingImportColumns",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingColumns",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingColumnSqlTypes",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingColumnSynonyms",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingQuickFilters",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "ensureDieToolingSchema",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingCleanText",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingNormalizePayload",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingFormatDisplayNumber",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingRedirectUrl",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingParseCsv",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingColumnIndexFromRef",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingReadXlsxSharedStrings",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingFindSheetPath",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingXlsxCellValue",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingParseXlsx",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "dieToolingParseSpreadsheet",
+            "file": "modules/plate-data/_common.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/pos_roll/job_card.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/pos_roll/job_card.php"
+        },
+        {
+            "name": "getCardRank",
+            "file": "modules/production-manager/debug_prev_card.php"
+        },
+        {
+            "name": "isStartedStatus",
+            "file": "modules/production-manager/debug_prev_card.php"
+        },
+        {
+            "name": "pm_text",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_job_activity_score",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_department_label",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_planning_type_key",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_route_from_plan_context",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_pln_first_actionable_stage_from_chain",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "bool",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_pick_stage_job_card",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_is_pending_like_status",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_is_started_status",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_stage_rank_for_label",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_bucket_status",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_should_show_board_status",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_display_status",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_decode_json_assoc",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_status_priority_from_job",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_is_upstream_finished_for_packing",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_has_non_packing_actionable_stage",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_label_slitting_completed",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_should_apply_packing_fallback",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_route_has_packing",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "pm_barcode_completed_should_move_to_packing",
+            "file": "modules/production-manager/index.php"
+        },
+        {
+            "name": "jrNormalizeDepartment",
+            "file": "modules/reports/jobs.php"
+        },
+        {
+            "name": "jrPauseSeconds",
+            "file": "modules/reports/jobs.php"
+        },
+        {
+            "name": "jrWastagePct",
+            "file": "modules/reports/jobs.php"
+        },
+        {
+            "name": "jrFirstNonEmpty",
+            "file": "modules/reports/jobs.php"
+        },
+        {
+            "name": "int",
+            "file": "modules/reports/jobs.php"
+        },
+        {
+            "name": "rmJson",
+            "file": "modules/requisition-management/api.php"
+        },
+        {
+            "name": "rmEnsureSchema",
+            "file": "modules/requisition-management/api.php"
+        },
+        {
+            "name": "rmCanAdmin",
+            "file": "modules/requisition-management/api.php"
+        },
+        {
+            "name": "rmCanAccounts",
+            "file": "modules/requisition-management/api.php"
+        },
+        {
+            "name": "rmCurrentStockHint",
+            "file": "modules/requisition-management/api.php"
+        },
+        {
+            "name": "rmLoadItemsMap",
+            "file": "modules/requisition-management/api.php"
+        },
+        {
+            "name": "dos_statusColor",
+            "file": "modules/scan/dossier.php"
+        },
+        {
+            "name": "dos_deptLabel",
+            "file": "modules/scan/dossier.php"
+        },
+        {
+            "name": "dos_deptIcon",
+            "file": "modules/scan/dossier.php"
+        },
+        {
+            "name": "dos_fmtDate",
+            "file": "modules/scan/dossier.php"
+        },
+        {
+            "name": "dos_fmtDt",
+            "file": "modules/scan/dossier.php"
+        },
+        {
+            "name": "dos_planning_values",
+            "file": "modules/scan/dossier.php"
+        },
+        {
+            "name": "dos_find_root",
+            "file": "modules/scan/dossier.php"
+        },
+        {
+            "name": "dos_get_chain",
+            "file": "modules/scan/dossier.php"
+        },
+        {
+            "name": "dos_slitting_entries",
+            "file": "modules/scan/dossier.php"
+        },
+        {
+            "name": "dos_roll_map",
+            "file": "modules/scan/dossier.php"
+        },
+        {
+            "name": "dos_normalize_status",
+            "file": "modules/scan/dossier.php"
+        },
+        {
+            "name": "dos_is_terminal_status",
+            "file": "modules/scan/dossier.php"
+        },
+        {
+            "name": "dos_stepState",
+            "file": "modules/scan/dossier.php"
+        },
+        {
+            "name": "dos_job_is_completed",
+            "file": "modules/scan/dossier.php"
+        },
+        {
+            "name": "int",
+            "file": "modules/scan/dossier.php"
+        },
+        {
+            "name": "scan_resolve_payload",
+            "file": "modules/scan/index.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/scan/index.php"
+        },
+        {
+            "name": "getDeptPageUrl",
+            "file": "modules/scan/job.php"
+        },
+        {
+            "name": "getDeptLabel",
+            "file": "modules/scan/job.php"
+        },
+        {
+            "name": "statusColor",
+            "file": "modules/scan/job.php"
+        },
+        {
+            "name": "sc_planning_values",
+            "file": "modules/scan/job.php"
+        },
+        {
+            "name": "UniversalBackupSystem",
+            "file": "modules/settings/backup/backup_helper.php"
+        },
+        {
+            "name": "UniversalBackupSystem::getAvailableStorageOptions",
+            "file": "modules/settings/backup/backup_helper.php"
+        },
+        {
+            "name": "UniversalBackupSystem::getDefaultConfig",
+            "file": "modules/settings/backup/backup_helper.php"
+        },
+        {
+            "name": "UniversalBackupSystem::getBackupHistory",
+            "file": "modules/settings/backup/backup_helper.php"
+        },
+        {
+            "name": "UniversalBackupSystem::getLastBackupStatus",
+            "file": "modules/settings/backup/backup_helper.php"
+        },
+        {
+            "name": "UniversalBackupSystem::validateRcloneConnection",
+            "file": "modules/settings/backup/backup_helper.php"
+        },
+        {
+            "name": "UniversalBackupSystem::runManualBackup",
+            "file": "modules/settings/backup/backup_helper.php"
+        },
+        {
+            "name": "UniversalBackupSystem::getCronCommand",
+            "file": "modules/settings/backup/backup_helper.php"
+        },
+        {
+            "name": "auto_backup_app_root",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_dir",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_config_file",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_default_settings",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_clean_enabled",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_clean_frequency",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_clean_backup_time",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_clean_storage_type",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_clean_remote_name",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_clean_folder_path",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_get_settings",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_save_settings",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_get_storage_config",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_save_storage_config",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_rclone_remote_exists",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_upload_to_gdrive",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_test_rclone_conn",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_rclone_status",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_resolve_file",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_user_can_delete",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_environment_error",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_run_local",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_generate_sql",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_get_history",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_save_history",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "auto_backup_cron_command",
+            "file": "modules/settings/backup_auto/backup_auto_helper.php"
+        },
+        {
+            "name": "tenantSettingsZipPath",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "normalizeHexColor",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "isDirectImageUrl",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "tenantAssetDirectories",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "parseCsvList",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "statusWorkflowDefaults",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "sanitizeStatusWorkflowPayload",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "statusConceptDefaults",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "statusRowsFromCodes",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "collectProvisionMigrationFiles",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "loadDynamicTenantRegistry",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "saveDynamicTenantRegistry",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "fetchWebsiteImageFromUrl",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "buildDatabaseBackupSql",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "restoreDatabaseFromSql",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "addDirectoryToZip",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "restoreZipAsset",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "saveUploadedImage",
+            "file": "modules/settings/index.php"
+        },
+        {
+            "name": "importTrimBom",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importNormalizeHeader",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importFieldAliases",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importBuildHeaderMap",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importSystemFieldOptions",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importRequiredFields",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importSuggestColumnMapping",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importBuildFieldIndexMap",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importExcelColumnLabel",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importColumnIndexFromCellRef",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importReadXlsxSharedStrings",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importFindFirstWorksheetPath",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importExtractXlsxCellValue",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importParseXlsxFile",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importParseCsvFile",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importParseSpreadsheet",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importNormalizeNumber",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importNormalizeDate",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importNormalizeStatus",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importIsEmptyRow",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importFetchExistingRolls",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importPrepareAnalysis",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "importResetSessionState",
+            "file": "modules/stock-import/index.php"
+        },
+        {
+            "name": "tcNormalizeNamePHP",
+            "file": "modules/tally/import_clients.php"
+        },
+        {
+            "name": "tally_normalize_ip",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_normalize_port",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_normalize_scheme",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_settings",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_base_url",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_project_root",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_snapshot_root_dir",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_ensure_dir",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_recursive_copy_dir",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_snapshot_local_data_folder",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_save_response_snapshot",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_ping",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_ensure_cache_table",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_cache_get",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_cache_set",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_http_xml_post",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_xml_request_for",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_xml_request_for_po_register",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_first_tag",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_clean_xml",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "string",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_is_valid_xml_codepoint",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_xml_load",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_parse_invoices",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_parse_po",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_parse_clients",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "tally_fetch_type",
+            "file": "modules/tally/tally_helper.php"
+        },
+        {
+            "name": "rbac_ui_section_for_path",
+            "file": "modules/users/groups.php"
+        },
+        {
+            "name": "rbac_ui_module_blurb",
+            "file": "modules/users/groups.php"
+        },
+        {
+            "name": "rbac_ui_action_from_item",
+            "file": "modules/users/groups.php"
+        },
+        {
+            "name": "rbac_ui_action_hint",
+            "file": "modules/users/groups.php"
+        },
+        {
+            "name": "rbac_default_group_blueprints",
+            "file": "modules/users/groups.php"
+        },
+        {
+            "name": "rbac_seed_default_groups",
+            "file": "modules/users/groups.php"
+        },
+        {
+            "name": "h",
+            "file": "setup.php"
+        },
+        {
+            "name": "log_ok",
+            "file": "setup.php"
+        },
+        {
+            "name": "log_err",
+            "file": "setup.php"
+        },
+        {
+            "name": "is_local_request",
+            "file": "setup.php"
+        },
+        {
+            "name": "detect_base_url",
+            "file": "setup.php"
+        },
+        {
+            "name": "check_writable",
+            "file": "setup.php"
+        },
+        {
+            "name": "split_sql_statements",
+            "file": "setup.php"
+        },
+        {
+            "name": "run_sql_file",
+            "file": "setup.php"
+        },
+        {
+            "name": "detect_default_app_version",
+            "file": "setup.php"
+        },
+        {
+            "name": "collect_migration_sql_files",
+            "file": "setup.php"
+        },
+        {
+            "name": "append_setup_log",
+            "file": "setup.php"
+        },
+        {
+            "name": "h",
+            "file": "setup_fresh_20260405.php"
+        },
+        {
+            "name": "log_ok",
+            "file": "setup_fresh_20260405.php"
+        },
+        {
+            "name": "log_err",
+            "file": "setup_fresh_20260405.php"
+        },
+        {
+            "name": "is_local_request",
+            "file": "setup_fresh_20260405.php"
+        },
+        {
+            "name": "detect_base_url",
+            "file": "setup_fresh_20260405.php"
+        },
+        {
+            "name": "check_writable",
+            "file": "setup_fresh_20260405.php"
+        },
+        {
+            "name": "split_sql_statements",
+            "file": "setup_fresh_20260405.php"
+        },
+        {
+            "name": "run_sql_file",
+            "file": "setup_fresh_20260405.php"
+        },
+        {
+            "name": "detect_default_app_version",
+            "file": "setup_fresh_20260405.php"
+        },
+        {
+            "name": "collect_migration_sql_files",
+            "file": "setup_fresh_20260405.php"
+        },
+        {
+            "name": "append_setup_log",
+            "file": "setup_fresh_20260405.php"
+        },
+        {
+            "name": "h",
+            "file": "setup_live_fresh_20260407.php"
+        },
+        {
+            "name": "log_ok",
+            "file": "setup_live_fresh_20260407.php"
+        },
+        {
+            "name": "log_err",
+            "file": "setup_live_fresh_20260407.php"
+        },
+        {
+            "name": "detect_base_url",
+            "file": "setup_live_fresh_20260407.php"
+        },
+        {
+            "name": "check_writable",
+            "file": "setup_live_fresh_20260407.php"
+        },
+        {
+            "name": "split_sql_statements",
+            "file": "setup_live_fresh_20260407.php"
+        },
+        {
+            "name": "run_sql_file",
+            "file": "setup_live_fresh_20260407.php"
+        },
+        {
+            "name": "detect_default_app_version",
+            "file": "setup_live_fresh_20260407.php"
+        },
+        {
+            "name": "collect_migration_sql_files",
+            "file": "setup_live_fresh_20260407.php"
+        },
+        {
+            "name": "append_setup_log",
+            "file": "setup_live_fresh_20260407.php"
+        },
+        {
+            "name": "d",
+            "file": "_debug_188.php"
+        },
+        {
+            "name": "p",
+            "file": "_debug_188.php"
+        },
+        {
+            "name": "f",
+            "file": "_debug_188.php"
+        },
+        {
+            "name": "calc_total_roll_value",
+            "file": "_debug_188.php"
+        },
+        {
+            "name": "detect_language",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "extract_search_numbers",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "format_records_table",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "is_count_intent",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "generate_erp_suggestions",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "get_follow_up_suggestions",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "check_navigation_intent",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "check_knowledge_base",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "calculate_label_costing_math",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "fetch_erp_data_by_intent",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "validateCsrf",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "listKnowledge",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "getKnowledge",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "addKnowledge",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "editKnowledge",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "deleteKnowledge",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "listAliases",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "getAliases",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "addAlias",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "deleteAlias",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "testProvider",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "saveCustomEndpoint",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "testSingleEndpoint",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "testFallbackChain",
+            "file": "modules/ai_agent/knowledge_api.php"
+        },
+        {
+            "name": "AliasResolver",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::__construct",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::ensureTable",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::load",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::resolve",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::canonical",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::getAliasesForKb",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::addAlias",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::deleteAlias",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::listAll",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "AliasResolver::clearCache",
+            "file": "modules/ai_agent/services/AliasResolver.php"
+        },
+        {
+            "name": "ContextBuilder",
+            "file": "modules/ai_agent/services/ContextBuilder.php"
+        },
+        {
+            "name": "ContextBuilder::build",
+            "file": "modules/ai_agent/services/ContextBuilder.php"
+        },
+        {
+            "name": "PromptBuilder",
+            "file": "modules/ai_agent/services/PromptBuilder.php"
+        },
+        {
+            "name": "PromptBuilder::__construct",
+            "file": "modules/ai_agent/services/PromptBuilder.php"
+        },
+        {
+            "name": "PromptBuilder::buildMessages",
+            "file": "modules/ai_agent/services/PromptBuilder.php"
+        },
+        {
+            "name": "RetrievalEngine",
+            "file": "modules/ai_agent/services/RetrievalEngine.php"
+        },
+        {
+            "name": "RetrievalEngine::__construct",
+            "file": "modules/ai_agent/services/RetrievalEngine.php"
+        },
+        {
+            "name": "RetrievalEngine::search",
+            "file": "modules/ai_agent/services/RetrievalEngine.php"
+        },
+        {
+            "name": "RetrievalEngine::searchKnowledgeBase",
+            "file": "modules/ai_agent/services/RetrievalEngine.php"
+        },
+        {
+            "name": "RetrievalEngine::normalizeQuery",
+            "file": "modules/ai_agent/services/RetrievalEngine.php"
+        },
+        {
+            "name": "RetrievalEngine::searchFullText",
+            "file": "modules/ai_agent/services/RetrievalEngine.php"
+        },
+        {
+            "name": "RetrievalEngine::searchLike",
+            "file": "modules/ai_agent/services/RetrievalEngine.php"
+        },
+        {
+            "name": "probe_kb",
+            "file": "modules/ai_agent/test_alias_pipeline.php"
+        }
+    ],
+    "services": [],
+    "controllers": [],
+    "api_endpoints": [],
+    "database_tables": [
+        {
+            "name": "artwork_users",
+            "file": "artwork-system/database.sql"
+        },
+        {
+            "name": "artwork_projects",
+            "file": "artwork-system/database.sql"
+        },
+        {
+            "name": "artwork_files",
+            "file": "artwork-system/database.sql"
+        },
+        {
+            "name": "artwork_comments",
+            "file": "artwork-system/database.sql"
+        },
+        {
+            "name": "artwork_notifications",
+            "file": "artwork-system/database.sql"
+        },
+        {
+            "name": "artwork_activity_log",
+            "file": "artwork-system/database.sql"
+        },
+        {
+            "name": "users",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "user_groups",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "group_page_permissions",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "paper_stock",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "estimates",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "sales_orders",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "planning",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "jobs",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "inventory_logs",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "system_settings",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "master_suppliers",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "master_raw_materials",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "master_boms",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "master_bom_items",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "master_machines",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "master_cylinders",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "master_clients",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "master_paper_companies",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "master_paper_types",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "inventory_audits",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "audit_scanned_rolls",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "slitting_batches",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "slitting_entries",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "roll_allocations",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "job_change_requests",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "job_delete_audit",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "job_notifications",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "print_templates",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "planning_board_columns",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "above",
+            "file": "database/schema.sql"
+        },
+        {
+            "name": "users",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "user_groups",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "group_page_permissions",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "paper_stock",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "estimates",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "sales_orders",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "planning",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "jobs",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "inventory_logs",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "system_settings",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "master_suppliers",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "master_raw_materials",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "master_boms",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "master_bom_items",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "master_machines",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "master_cylinders",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "master_clients",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "inventory_audits",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "audit_scanned_rolls",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "slitting_batches",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "slitting_entries",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "job_change_requests",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "job_delete_audit",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "job_notifications",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "print_templates",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "planning_board_columns",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "above",
+            "file": "database/schema_import_20260330_clean.sql"
+        },
+        {
+            "name": "ai_agent_knowledge",
+            "file": "modules/ai_agent/ai_agent_migration.sql"
+        },
+        {
+            "name": "ai_knowledge_entities",
+            "file": "modules/ai_agent/indexer/schema.sql"
+        },
+        {
+            "name": "ai_entity_keywords",
+            "file": "modules/ai_agent/indexer/schema.sql"
+        },
+        {
+            "name": "ai_relationships",
+            "file": "modules/ai_agent/indexer/schema.sql"
+        },
+        {
+            "name": "roll_allocations",
+            "file": "pending_migrations/20260408_multi_plan_roll_allocations.sql"
+        },
+        {
+            "name": "leaves",
+            "file": "pending_migrations/20260412_leave_management.sql"
+        },
+        {
+            "name": "requisitions",
+            "file": "pending_migrations/20260412_requisition_management.sql"
+        },
+        {
+            "name": "purchase_orders",
+            "file": "pending_migrations/20260412_requisition_management.sql"
+        },
+        {
+            "name": "artwork_users",
+            "file": "pending_migrations/20260502_artwork_plugin_schema.sql"
+        },
+        {
+            "name": "artwork_projects",
+            "file": "pending_migrations/20260502_artwork_plugin_schema.sql"
+        },
+        {
+            "name": "artwork_files",
+            "file": "pending_migrations/20260502_artwork_plugin_schema.sql"
+        },
+        {
+            "name": "artwork_comments",
+            "file": "pending_migrations/20260502_artwork_plugin_schema.sql"
+        },
+        {
+            "name": "artwork_notifications",
+            "file": "pending_migrations/20260502_artwork_plugin_schema.sql"
+        },
+        {
+            "name": "artwork_activity_log",
+            "file": "pending_migrations/20260502_artwork_plugin_schema.sql"
+        },
+        {
+            "name": "artwork_final_files",
+            "file": "pending_migrations/20260503_artwork_final_file_server.sql"
+        },
+        {
+            "name": "planning",
+            "file": "pending_migrations/backup/20260401_live_sync_updates.sql"
+        },
+        {
+            "name": "jobs",
+            "file": "pending_migrations/backup/20260401_live_sync_updates.sql"
+        },
+        {
+            "name": "slitting_batches",
+            "file": "pending_migrations/backup/20260401_live_sync_updates.sql"
+        },
+        {
+            "name": "slitting_entries",
+            "file": "pending_migrations/backup/20260401_live_sync_updates.sql"
+        },
+        {
+            "name": "job_notifications",
+            "file": "pending_migrations/backup/20260401_live_sync_updates.sql"
+        },
+        {
+            "name": "job_change_requests",
+            "file": "pending_migrations/backup/20260401_live_sync_updates.sql"
+        },
+        {
+            "name": "job_delete_audit",
+            "file": "pending_migrations/backup/20260401_live_sync_updates.sql"
+        },
+        {
+            "name": "planning_board_columns",
+            "file": "pending_migrations/backup/20260401_live_sync_updates.sql"
+        },
+        {
+            "name": "estimates",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "group_page_permissions",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "inventory_audits",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "inventory_logs",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "job_change_requests",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "job_delete_audit",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "job_notifications",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "jobs",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "master_anilox_data",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "master_bom_items",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "master_boms",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "master_clients",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "master_cylinders",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "master_die_tooling",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "master_machines",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "master_paper_companies",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "master_paper_types",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "master_plate_data",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "master_raw_materials",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "master_suppliers",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "paper_stock",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "planning",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "planning_board_columns",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "print_templates",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "sales_orders",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "slitting_batches",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "slitting_entries",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "system_settings",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "user_groups",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "users",
+            "file": "pending_migrations/backup/20260405_fresh_setup_backup.sql"
+        },
+        {
+            "name": "estimates",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "group_page_permissions",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "inventory_audits",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "inventory_logs",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "job_change_requests",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "job_delete_audit",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "job_notifications",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "jobs",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "master_anilox_data",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "master_bom_items",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "master_boms",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "master_clients",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "master_cylinders",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "master_die_tooling",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "master_machines",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "master_paper_companies",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "master_paper_types",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "master_plate_data",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "master_raw_materials",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "master_suppliers",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "paper_stock",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "planning",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "planning_board_columns",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "print_templates",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "sales_orders",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "slitting_batches",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "slitting_entries",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "system_settings",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "user_groups",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "users",
+            "file": "pending_migrations/backup/20260405_full_fresh_backup.sql"
+        },
+        {
+            "name": "planning",
+            "file": "pending_migrations/FINAL_live_update_20260401.sql"
+        },
+        {
+            "name": "jobs",
+            "file": "pending_migrations/FINAL_live_update_20260401.sql"
+        },
+        {
+            "name": "slitting_batches",
+            "file": "pending_migrations/FINAL_live_update_20260401.sql"
+        },
+        {
+            "name": "slitting_entries",
+            "file": "pending_migrations/FINAL_live_update_20260401.sql"
+        },
+        {
+            "name": "job_notifications",
+            "file": "pending_migrations/FINAL_live_update_20260401.sql"
+        },
+        {
+            "name": "job_change_requests",
+            "file": "pending_migrations/FINAL_live_update_20260401.sql"
+        },
+        {
+            "name": "job_delete_audit",
+            "file": "pending_migrations/FINAL_live_update_20260401.sql"
+        },
+        {
+            "name": "planning_board_columns",
+            "file": "pending_migrations/FINAL_live_update_20260401.sql"
+        },
+        {
+            "name": "master_anilox_data",
+            "file": "pending_migrations/update_v1.7_anilox_module.sql"
+        }
+    ],
+    "workflows": [
+        {
+            "name": "Artwork Approval Hub (ArtFlow)",
+            "file": "artwork-system/README.md"
+        },
+        {
+            "name": "Features",
+            "file": "artwork-system/README.md"
+        },
+        {
+            "name": "Setup Instructions",
+            "file": "artwork-system/README.md"
+        },
+        {
+            "name": "Security Notes",
+            "file": "artwork-system/README.md"
+        },
+        {
+            "name": "Technologies Used",
+            "file": "artwork-system/README.md"
+        },
+        {
+            "name": "InfinityFree Fresh Install Guide",
+            "file": "INFINITYFREE_DEPLOY.md"
+        },
+        {
+            "name": "1) Upload",
+            "file": "INFINITYFREE_DEPLOY.md"
+        },
+        {
+            "name": "2) Create Database (InfinityFree panel)",
+            "file": "INFINITYFREE_DEPLOY.md"
+        },
+        {
+            "name": "3) Preflight Check",
+            "file": "INFINITYFREE_DEPLOY.md"
+        },
+        {
+            "name": "4) Run Installer",
+            "file": "INFINITYFREE_DEPLOY.md"
+        },
+        {
+            "name": "5) Verify",
+            "file": "INFINITYFREE_DEPLOY.md"
+        },
+        {
+            "name": "6) Hardening After Install",
+            "file": "INFINITYFREE_DEPLOY.md"
+        },
+        {
+            "name": "7) Common Issues",
+            "file": "INFINITYFREE_DEPLOY.md"
+        },
+        {
+            "name": "AI Agent Command Architecture",
+            "file": "modules/ai_agent/AI_AGENT_COMMAND_ARCHITECTURE.md"
+        },
+        {
+            "name": "Core Concept: Three-Tier Query Routing",
+            "file": "modules/ai_agent/AI_AGENT_COMMAND_ARCHITECTURE.md"
+        },
+        {
+            "name": "Key Flags",
+            "file": "modules/ai_agent/AI_AGENT_COMMAND_ARCHITECTURE.md"
+        },
+        {
+            "name": "`$skipNormalDb` (Normal Mode)",
+            "file": "modules/ai_agent/AI_AGENT_COMMAND_ARCHITECTURE.md"
+        },
+        {
+            "name": "`$erpOnlyMode` (ERP-Only / Skip LLM)",
+            "file": "modules/ai_agent/AI_AGENT_COMMAND_ARCHITECTURE.md"
+        },
+        {
+            "name": "Priority Mode Session Variable",
+            "file": "modules/ai_agent/AI_AGENT_COMMAND_ARCHITECTURE.md"
+        },
+        {
+            "name": "Guarded Code Blocks",
+            "file": "modules/ai_agent/AI_AGENT_COMMAND_ARCHITECTURE.md"
+        },
+        {
+            "name": "`/paperstock` Command Flow",
+            "file": "modules/ai_agent/AI_AGENT_COMMAND_ARCHITECTURE.md"
+        },
+        {
+            "name": "`/plate` Command Flow",
+            "file": "modules/ai_agent/AI_AGENT_COMMAND_ARCHITECTURE.md"
+        },
+        {
+            "name": "`/erp` Command Flow",
+            "file": "modules/ai_agent/AI_AGENT_COMMAND_ARCHITECTURE.md"
+        },
+        {
+            "name": "Why `/` Commands Skip External LLM",
+            "file": "modules/ai_agent/AI_AGENT_COMMAND_ARCHITECTURE.md"
+        },
+        {
+            "name": "File Location",
+            "file": "modules/ai_agent/AI_AGENT_COMMAND_ARCHITECTURE.md"
+        },
+        {
+            "name": "AI Agent Internal English Normalization Layer - System Prompt",
+            "file": "modules/ai_agent/AI_AGENT_NORMALIZATION_PROMPT.md"
+        },
+        {
+            "name": "Core Directive",
+            "file": "modules/ai_agent/AI_AGENT_NORMALIZATION_PROMPT.md"
+        },
+        {
+            "name": "\ud83d\udeab Entity Preservation (CRITICAL)",
+            "file": "modules/ai_agent/AI_AGENT_NORMALIZATION_PROMPT.md"
+        },
+        {
+            "name": "Quotation Rule",
+            "file": "modules/ai_agent/AI_AGENT_NORMALIZATION_PROMPT.md"
+        },
+        {
+            "name": "\ud83d\udd0d Entity Extraction & Search Priority",
+            "file": "modules/ai_agent/AI_AGENT_NORMALIZATION_PROMPT.md"
+        },
+        {
+            "name": "Search Priority Hierarchy",
+            "file": "modules/ai_agent/AI_AGENT_NORMALIZATION_PROMPT.md"
+        },
+        {
+            "name": "\ud83d\udd04 Processing Pipeline",
+            "file": "modules/ai_agent/AI_AGENT_NORMALIZATION_PROMPT.md"
+        },
+        {
+            "name": "\ud83d\udca1 Examples of Normalization",
+            "file": "modules/ai_agent/AI_AGENT_NORMALIZATION_PROMPT.md"
+        },
+        {
+            "name": "\u26a0\ufe0f Backend Safety Constraints",
+            "file": "modules/ai_agent/AI_AGENT_NORMALIZATION_PROMPT.md"
+        },
+        {
+            "name": "Dispatch & Packing Module \u2014 Knowledge Base Reference",
+            "file": "modules/ai_agent/DISPATCH_PACKING_KNOWLEDGE.md"
+        },
+        {
+            "name": "Module Context",
+            "file": "modules/ai_agent/DISPATCH_PACKING_KNOWLEDGE.md"
+        },
+        {
+            "name": "Keywords Triggers",
+            "file": "modules/ai_agent/DISPATCH_PACKING_KNOWLEDGE.md"
+        },
+        {
+            "name": "User Questions \u2014 Category Wise",
+            "file": "modules/ai_agent/DISPATCH_PACKING_KNOWLEDGE.md"
+        },
+        {
+            "name": "1. Delivery & Dispatch Status",
+            "file": "modules/ai_agent/DISPATCH_PACKING_KNOWLEDGE.md"
+        },
+        {
+            "name": "2. Packing Information",
+            "file": "modules/ai_agent/DISPATCH_PACKING_KNOWLEDGE.md"
+        },
+        {
+            "name": "3. Sales Person Tracking",
+            "file": "modules/ai_agent/DISPATCH_PACKING_KNOWLEDGE.md"
+        },
+        {
+            "name": "KB Training Tips",
+            "file": "modules/ai_agent/DISPATCH_PACKING_KNOWLEDGE.md"
+        },
+        {
+            "name": "Job & Planning Module \u2014 Knowledge Base Reference",
+            "file": "modules/ai_agent/JOB_PLANNING_KNOWLEDGE.md"
+        },
+        {
+            "name": "Module Context",
+            "file": "modules/ai_agent/JOB_PLANNING_KNOWLEDGE.md"
+        },
+        {
+            "name": "Keywords Triggers",
+            "file": "modules/ai_agent/JOB_PLANNING_KNOWLEDGE.md"
+        },
+        {
+            "name": "User Questions \u2014 Category Wise",
+            "file": "modules/ai_agent/JOB_PLANNING_KNOWLEDGE.md"
+        },
+        {
+            "name": "1. Production Floor Status",
+            "file": "modules/ai_agent/JOB_PLANNING_KNOWLEDGE.md"
+        },
+        {
+            "name": "2. Job Card & BRC Details",
+            "file": "modules/ai_agent/JOB_PLANNING_KNOWLEDGE.md"
+        },
+        {
+            "name": "3. Planning & Assignment",
+            "file": "modules/ai_agent/JOB_PLANNING_KNOWLEDGE.md"
+        },
+        {
+            "name": "KB Training Tips",
+            "file": "modules/ai_agent/JOB_PLANNING_KNOWLEDGE.md"
+        },
+        {
+            "name": "AI Agent Slash Commands Knowledge Base",
+            "file": "modules/ai_agent/knowledge.md"
+        },
+        {
+            "name": "1. Dispatch & Packing Mode (`/dispatch`, `/packing`)",
+            "file": "modules/ai_agent/knowledge.md"
+        },
+        {
+            "name": "2. Job & Planning Mode (`/job`, `/jobcard`, `/planning`)",
+            "file": "modules/ai_agent/knowledge.md"
+        },
+        {
+            "name": "3. Paper Stock Mode (`/paperstock`)",
+            "file": "modules/ai_agent/knowledge.md"
+        },
+        {
+            "name": "4. Plate Mode (`/plate`)",
+            "file": "modules/ai_agent/knowledge.md"
+        },
+        {
+            "name": "Settings Keyword Notice",
+            "file": "modules/ai_agent/knowledge.md"
+        },
+        {
+            "name": "Paper Stock Module \u2014 Knowledge Base Reference",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "Module Page",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "Purpose",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "Database Table: `paper_stock`",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "Column Reference",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "Status Values",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "Jumbo vs Slitted Classification",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "Available Filters (as per page)",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "User Questions \u2014 Category Wise",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "1. General Inventory Count",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "2. By Company",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "3. By Paper Type",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "4. By Width/Size",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "5. By Status",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "6. By Date",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "7. Specific Roll or Lot",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "8. Financial",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "9. Jumbo/Slitting Breakdown (Priority Mode)",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "10. Combination Queries",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "11. Export/Report",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "KB Training Tips",
+            "file": "modules/ai_agent/PAPER_STOCK_KNOWLEDGE.md"
+        },
+        {
+            "name": "AI Agent Knowledge Base: Plate Management (Design Plate Data)",
+            "file": "modules/ai_agent/PLATE_MANAGEMENT_KNOWLEDGE.md"
+        },
+        {
+            "name": "4. Search and History",
+            "file": "modules/ai_agent/PLATE_MANAGEMENT_KNOWLEDGE.md"
+        },
+        {
+            "name": "\ud83d\udccc 1. Search by Plate Number (\u09aa\u09cd\u09b2\u09c7\u099f \u09a8\u09ae\u09cd\u09ac\u09b0 \u09a6\u09bf\u09df\u09c7 \u0996\u09cb\u0981\u099c)",
+            "file": "modules/ai_agent/PLATE_MANAGEMENT_KNOWLEDGE.md"
+        },
+        {
+            "name": "\ud83d\udccc 2. Search by Design/Job Name (\u099c\u09ac \u09ac\u09be \u09a1\u09bf\u099c\u09be\u0987\u09a8\u09c7\u09b0 \u09a8\u09be\u09ae \u09a6\u09bf\u09df\u09c7 \u0996\u09cb\u0981\u099c)",
+            "file": "modules/ai_agent/PLATE_MANAGEMENT_KNOWLEDGE.md"
+        },
+        {
+            "name": "\ud83d\udccc 3. Search by Cylinder Size (\u09b8\u09bf\u09b2\u09bf\u09a8\u09cd\u09a1\u09be\u09b0 \u09b8\u09be\u0987\u099c \u09a6\u09bf\u09df\u09c7 \u0996\u09cb\u0981\u099c)",
+            "file": "modules/ai_agent/PLATE_MANAGEMENT_KNOWLEDGE.md"
+        },
+        {
+            "name": "\ud83d\udccc 4. Search by Paper Type & Size (\u09aa\u09c7\u09aa\u09be\u09b0 \u099f\u09be\u0987\u09aa \u0993 \u09b8\u09be\u0987\u099c)",
+            "file": "modules/ai_agent/PLATE_MANAGEMENT_KNOWLEDGE.md"
+        },
+        {
+            "name": "\ud83d\udccc 5. Color Information Queries (\u0995\u09be\u09b2\u09be\u09b0 \u09b8\u09ae\u09cd\u09aa\u09b0\u09cd\u0995\u09bf\u09a4 \u09aa\u09cd\u09b0\u09b6\u09cd\u09a8)",
+            "file": "modules/ai_agent/PLATE_MANAGEMENT_KNOWLEDGE.md"
+        },
+        {
+            "name": "\ud83d\udccc 6. Gap & Repeat Dimensions (\u0997\u09cd\u09af\u09be\u09aa \u098f\u09ac\u0982 \u09b0\u09bf\u09aa\u09bf\u099f)",
+            "file": "modules/ai_agent/PLATE_MANAGEMENT_KNOWLEDGE.md"
+        },
+        {
+            "name": "\ud83d\udccc 7. Combination Queries (\u09ae\u09bf\u09b6\u09cd\u09b0\u09bf\u09a4 \u09aa\u09cd\u09b0\u09b6\u09cd\u09a8)",
+            "file": "modules/ai_agent/PLATE_MANAGEMENT_KNOWLEDGE.md"
+        },
+        {
+            "name": "\ud83e\uddee Mathematical & Calculation Queries (\u0997\u09be\u09a3\u09bf\u09a4\u09bf\u0995 \u09aa\u09cd\u09b0\u09b6\u09cd\u09a8)",
+            "file": "modules/ai_agent/PLATE_MANAGEMENT_KNOWLEDGE.md"
+        },
+        {
+            "name": "1. Total Label Production Calculation (\u09ae\u09cb\u099f \u09b2\u09c7\u09ac\u09c7\u09b2 \u09aa\u09cd\u09b0\u09cb\u09a1\u09be\u0995\u09b6\u09a8)",
+            "file": "modules/ai_agent/PLATE_MANAGEMENT_KNOWLEDGE.md"
+        },
+        {
+            "name": "2. Required Running Meters Calculation (\u09aa\u09cd\u09b0\u09df\u09cb\u099c\u09a8\u09c0\u09df \u09b0\u09be\u09a8\u09bf\u0982 \u09ae\u09bf\u099f\u09be\u09b0)",
+            "file": "modules/ai_agent/PLATE_MANAGEMENT_KNOWLEDGE.md"
+        },
+        {
+            "name": "3. Cylinder Teeth / Gear Calculation",
+            "file": "modules/ai_agent/PLATE_MANAGEMENT_KNOWLEDGE.md"
+        },
+        {
+            "name": "4. Total Color Count Calculation",
+            "file": "modules/ai_agent/PLATE_MANAGEMENT_KNOWLEDGE.md"
+        },
+        {
+            "name": "5. Advanced Job Calculations & Disambiguation (Interactive Features)",
+            "file": "modules/ai_agent/PLATE_MANAGEMENT_KNOWLEDGE.md"
+        },
+        {
+            "name": "\ud83e\udd16 System Triggers & Keywords (For Developer)",
+            "file": "modules/ai_agent/PLATE_MANAGEMENT_KNOWLEDGE.md"
+        },
+        {
+            "name": "Dependency Injection",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/dependencies.md"
+        },
+        {
+            "name": "Dependencies with `yield` and `scope`",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/dependencies.md"
+        },
+        {
+            "name": "Class Dependencies",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/dependencies.md"
+        },
+        {
+            "name": "DO NOT DO THIS",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/dependencies.md"
+        },
+        {
+            "name": "Other Tools",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/other-tools.md"
+        },
+        {
+            "name": "uv",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/other-tools.md"
+        },
+        {
+            "name": "Ruff",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/other-tools.md"
+        },
+        {
+            "name": "ty",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/other-tools.md"
+        },
+        {
+            "name": "Asyncer",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/other-tools.md"
+        },
+        {
+            "name": "SQLModel for SQL databases",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/other-tools.md"
+        },
+        {
+            "name": "HTTPX",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/other-tools.md"
+        },
+        {
+            "name": "Path Operations and Routing",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/path-operations.md"
+        },
+        {
+            "name": "Including Routers",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/path-operations.md"
+        },
+        {
+            "name": "DO NOT DO THIS",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/path-operations.md"
+        },
+        {
+            "name": "Use one HTTP operation per function",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/path-operations.md"
+        },
+        {
+            "name": "DO NOT DO THIS",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/path-operations.md"
+        },
+        {
+            "name": "Pydantic",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/pydantic.md"
+        },
+        {
+            "name": "Do not use Ellipsis",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/pydantic.md"
+        },
+        {
+            "name": "DO NOT DO THIS",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/pydantic.md"
+        },
+        {
+            "name": "Do not use Pydantic RootModels",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/pydantic.md"
+        },
+        {
+            "name": "DO NOT DO THIS",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/pydantic.md"
+        },
+        {
+            "name": "Responses",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/responses.md"
+        },
+        {
+            "name": "Return Type or Response Model",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/responses.md"
+        },
+        {
+            "name": "When to use `response_model`",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/responses.md"
+        },
+        {
+            "name": "Streaming",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/streaming.md"
+        },
+        {
+            "name": "Stream JSON Lines",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/streaming.md"
+        },
+        {
+            "name": "Server-Sent Events (SSE)",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/streaming.md"
+        },
+        {
+            "name": "Stream bytes",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/streaming.md"
+        },
+        {
+            "name": "DO NOT DO THIS",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/references/streaming.md"
+        },
+        {
+            "name": "SKILL.md",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/SKILL.md"
+        },
+        {
+            "name": "FastAPI",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/SKILL.md"
+        },
+        {
+            "name": "Quick Reference",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/SKILL.md"
+        },
+        {
+            "name": "Use the `fastapi` CLI",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/SKILL.md"
+        },
+        {
+            "name": "Use `Annotated`",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/SKILL.md"
+        },
+        {
+            "name": "Do not use Ellipsis for *path operations* or Pydantic models",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/SKILL.md"
+        },
+        {
+            "name": "Return Type or Response Model",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/SKILL.md"
+        },
+        {
+            "name": "Performance",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/SKILL.md"
+        },
+        {
+            "name": "Including Routers",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/SKILL.md"
+        },
+        {
+            "name": "Serve Frontend Apps",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/SKILL.md"
+        },
+        {
+            "name": "Dependency Injection",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/SKILL.md"
+        },
+        {
+            "name": "Async vs Sync *path operations*",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/SKILL.md"
+        },
+        {
+            "name": "Streaming (JSON Lines, SSE, bytes)",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/SKILL.md"
+        },
+        {
+            "name": "Tooling",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/SKILL.md"
+        },
+        {
+            "name": "Other Libraries",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/SKILL.md"
+        },
+        {
+            "name": "Do not use Pydantic RootModels",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/SKILL.md"
+        },
+        {
+            "name": "Use one HTTP operation per function",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/fastapi/.agents/skills/fastapi/SKILL.md"
+        },
+        {
+            "name": "LICENSE.md",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/idna-3.18.dist-info/licenses/LICENSE.md"
+        },
+        {
+            "name": "LICENSE.md",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/starlette-1.3.1.dist-info/licenses/LICENSE.md"
+        },
+        {
+            "name": "LICENSE.md",
+            "file": "modules/ai_agent/python_service/venv/Lib/site-packages/uvicorn-0.52.1.dist-info/licenses/LICENSE.md"
+        },
+        {
+            "name": "task.md",
+            "file": "modules/ai_agent/task.md"
+        },
+        {
+            "name": "Complete Database Value Dump: Planning, Jobs, Packing, Inventory & Dispatch",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "1. Full Planning Table Records",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Planning ID #1 (PLN/2026/0001)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Planning ID #2 (PLN-BAR/2026/0001)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Planning ID #3 (PLN-POS/2026/0001)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Planning ID #4 (PLN-1PL/2026/0001)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Planning ID #5 (PLN-2PL/2026/0001)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "2. Full Jobs Table Records",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Job ID #1 (JMB/2026/0001 - jumbo_slitting)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Job ID #2 (FLX/2026/0001 - flexo_printing)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Job ID #3 (DCT/2026/0001 - flatbed)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Job ID #4 (LSL/2026/0001 - label_slitting)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Job ID #6 (SLT/2026/0001 - jumbo_slitting)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Job ID #7 (BRC-BAR/2026/0001 - barcode)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Job ID #8 (LSL/2026/0002 - label_slitting)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Job ID #10 (SLT/2026/0002 - jumbo_slitting)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Job ID #11 (PRL-POS/2026/0001 - paperroll)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Job ID #12 (POS-POS/2026/0001 - pos)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Job ID #14 (SLT/2026/0003 - jumbo_slitting)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Job ID #15 (PRL-1PL/2026/0001 - paperroll)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Job ID #16 (OPL-1PL/2026/0001 - oneply)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Job ID #18 (SLT/2026/0004 - jumbo_slitting)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Job ID #19 (PRL-2PL/2026/0001 - paperroll)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Job ID #20 (TPL-2PL/2026/0001 - twoply)",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "3. Full Packing Operator Entries Table",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "4. Full Finished Goods Stock Table",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "5. Full Finished Goods Dispatch Log Table",
+            "file": "scratch/full_db_values_dump.md"
+        },
+        {
+            "name": "Current System Snapshot: Packing, Finished Goods, Dispatch & Jobs",
+            "file": "scratch/packing_finished_goods_snapshot.md"
+        },
+        {
+            "name": "1. Planning Records",
+            "file": "scratch/packing_finished_goods_snapshot.md"
+        },
+        {
+            "name": "2. Jobs Table (Operator Cards Sent & Status)",
+            "file": "scratch/packing_finished_goods_snapshot.md"
+        },
+        {
+            "name": "3. Packing Operator Entries (modules/operators/packing)",
+            "file": "scratch/packing_finished_goods_snapshot.md"
+        },
+        {
+            "name": "4. Finished Goods Stock (modules/inventory/finished)",
+            "file": "scratch/packing_finished_goods_snapshot.md"
+        },
+        {
+            "name": "5. Finished Goods Dispatch Log",
+            "file": "scratch/packing_finished_goods_snapshot.md"
+        },
+        {
+            "name": "Detailed Data & Values Dump for Packing Pages",
+            "file": "scratch/packing_pages_exact_data.md"
+        },
+        {
+            "name": "1. Packing Operator Station Page Data (`modules/operators/packing/index.php`)",
+            "file": "scratch/packing_pages_exact_data.md"
+        },
+        {
+            "name": "Tab Counts (Operator View)",
+            "file": "scratch/packing_pages_exact_data.md"
+        },
+        {
+            "name": "Active Rows by Tab (Operator View)",
+            "file": "scratch/packing_pages_exact_data.md"
+        },
+        {
+            "name": "2. Manager Packing Board Page Data (`modules/packing/index.php`)",
+            "file": "scratch/packing_pages_exact_data.md"
+        },
+        {
+            "name": "Tab Counts (Manager View)",
+            "file": "scratch/packing_pages_exact_data.md"
+        },
+        {
+            "name": "Active Rows by Tab (Manager View)",
+            "file": "scratch/packing_pages_exact_data.md"
+        },
+        {
+            "name": "Debugging Report \u2014 AI Agent 3-Level Suggestions (Floating Widget Regression)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "1. User-reported bug (active)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "Root causes found (3, all in `modules/ai_agent/floating_widget.php`)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "Fixes (all in `modules/ai_agent/floating_widget.php`)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "2. BUG#1 \u2014 standalone `index.php` regression (fixed earlier)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "3. BUG#2 \u2014 Knowledge Alias Pipeline (fixed earlier, re-verified)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "4. 3-Level Suggestion System (as implemented)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "5. Verification (real browser, logged in as admin)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "6. Files changed (main project only, no backups)",
+            "file": "AI_AGENT_3LEVEL_REPORT.md"
+        },
+        {
+            "name": "\ud83e\udd16 AI Agent \u2014 Slash Command User Guide",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "AI \u099a\u09cd\u09af\u09be\u099f\u09c7 `/` \u09a6\u09bf\u09af\u09bc\u09c7 \u09af\u09be \u09af\u09be \u099c\u09bf\u099c\u09cd\u099e\u09c7\u09b8 \u0995\u09b0\u09be \u09af\u09be\u09af\u09bc",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "\ud83c\udfa8 \u09e9-\u09b8\u09cd\u09a4\u09b0\u09c7\u09b0 \u09b0\u0999 \u2014 \u0995\u09cb\u09a8\u099f\u09be \u0995\u0996\u09a8 \u0986\u09b8\u09c7",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "\ud83d\udccb \u098f\u0995 \u09a8\u099c\u09b0\u09c7 \u09b8\u09ac Command (Quick Reference)",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "\ud83d\udcd6 \u09aa\u09cd\u09b0\u09a4\u09bf\u099f\u09be Command-\u098f\u09b0 \u09ac\u09bf\u09b8\u09cd\u09a4\u09be\u09b0\u09bf\u09a4",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "1\ufe0f\u20e3 `/job` \u2014 Job / Planning Priority Mode",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "2\ufe0f\u20e3 `/plate` \u2014 Plate Priority Mode",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "3\ufe0f\u20e3 `/planning` \u2014 Job Planning Board",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "4\ufe0f\u20e3 `/paper` \u09ac\u09be `/paperstock` \u2014 Paper Stock Priority Mode",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "5\ufe0f\u20e3 `/product` \u2014 Product / Item Lookup",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "6\ufe0f\u20e3 `/client` \u2014 Client / Party Lookup",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "7\ufe0f\u20e3 `/dispatch` \u09ac\u09be `/packing` \u2014 Dispatch / Packing Priority Mode",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "8\ufe0f\u20e3 `/order` \u2014 Order Lookup",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "9\ufe0f\u20e3 `/stock` \u2014 Stock Lookup",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "\ud83d\udd1f `/erp` \u2014 ERP-Only Mode",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "1\ufe0f\u20e31\ufe0f\u20e3 `/cal` \u2014 External Calculation Mode",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "1\ufe0f\u20e32\ufe0f\u20e3 `/clear` \u2014 Reset Priority Mode",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        },
+        {
+            "name": "\ud83d\udca1 \u09a6\u09b0\u0995\u09be\u09b0\u09bf \u099f\u09bf\u09aa\u09b8",
+            "file": "AI_SLASH_COMMANDS_GUIDE.md"
+        }
+    ]
+}
