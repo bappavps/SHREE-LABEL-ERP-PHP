@@ -8,7 +8,9 @@ return [
         'logs',
         'cache',
         'tmp',
-        'uploads'
+        'uploads',
+        'venv',
+        'python_service'
     ],
     'ignore_files' => [
         'package.json',
