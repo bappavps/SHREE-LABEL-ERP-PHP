@@ -1,6 +1,6 @@
 {
     "manifest_version": "1.0",
-    "last_indexed": "2026-08-02T18:09:12Z",
+    "last_indexed": "2026-08-03T03:59:54Z",
     "modules": [
         {
             "name": "hasColumn",
@@ -640,50 +640,6 @@
         },
         {
             "name": "detect_language",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "extract_search_numbers",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "format_records_table",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "is_count_intent",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "generate_erp_suggestions",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "get_follow_up_suggestions",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "getLiveSummary",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "check_navigation_intent",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "check_knowledge_base",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "calculate_label_costing_math",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "fetch_erp_data_by_intent",
-            "file": "modules/ai_agent/api.php"
-        },
-        {
-            "name": "detect_language",
             "file": "modules/ai_agent/api_backup_plate.php"
         },
         {
@@ -999,18 +955,6 @@
             "file": "modules/ai_agent/services/AliasResolver.php"
         },
         {
-            "name": "CalculationEngine",
-            "file": "modules/ai_agent/services/CalculationEngine.php"
-        },
-        {
-            "name": "CalculationEngine::calculatePlateCosting",
-            "file": "modules/ai_agent/services/CalculationEngine.php"
-        },
-        {
-            "name": "CalculationEngine::calculatePerLabelPrice",
-            "file": "modules/ai_agent/services/CalculationEngine.php"
-        },
-        {
             "name": "ContextBuilder",
             "file": "modules/ai_agent/services/ContextBuilder.php"
         },
@@ -1157,26 +1101,6 @@
         {
             "name": "RetrievalEngine::searchLike",
             "file": "modules/ai_agent/services/RetrievalEngine.php"
-        },
-        {
-            "name": "ToolRouter",
-            "file": "modules/ai_agent/services/ToolRouter.php"
-        },
-        {
-            "name": "ToolRouter::__construct",
-            "file": "modules/ai_agent/services/ToolRouter.php"
-        },
-        {
-            "name": "ToolRouter::getToolDefinitions",
-            "file": "modules/ai_agent/services/ToolRouter.php"
-        },
-        {
-            "name": "ToolRouter::interceptToolCall",
-            "file": "modules/ai_agent/services/ToolRouter.php"
-        },
-        {
-            "name": "ToolRouter::executeMathTool",
-            "file": "modules/ai_agent/services/ToolRouter.php"
         },
         {
             "name": "probe_kb",
@@ -4289,6 +4213,86 @@
         {
             "name": "calc_total_roll_value",
             "file": "_debug_188.php"
+        },
+        {
+            "name": "detect_language",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "extract_search_numbers",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "format_records_table",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "is_count_intent",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "generate_erp_suggestions",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "get_follow_up_suggestions",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "getLiveSummary",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "check_navigation_intent",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "check_knowledge_base",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "calculate_label_costing_math",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "fetch_erp_data_by_intent",
+            "file": "modules/ai_agent/api.php"
+        },
+        {
+            "name": "PaperStockAnalyzer",
+            "file": "modules/ai_agent/PaperStockAnalyzer.php"
+        },
+        {
+            "name": "PaperStockAnalyzer::generateReport",
+            "file": "modules/ai_agent/PaperStockAnalyzer.php"
+        },
+        {
+            "name": "CalculationEngine",
+            "file": "modules/ai_agent/services/CalculationEngine.php"
+        },
+        {
+            "name": "CalculationEngine::calculateJob",
+            "file": "modules/ai_agent/services/CalculationEngine.php"
+        },
+        {
+            "name": "ToolRouter",
+            "file": "modules/ai_agent/services/ToolRouter.php"
+        },
+        {
+            "name": "ToolRouter::__construct",
+            "file": "modules/ai_agent/services/ToolRouter.php"
+        },
+        {
+            "name": "ToolRouter::getToolDefinitions",
+            "file": "modules/ai_agent/services/ToolRouter.php"
+        },
+        {
+            "name": "ToolRouter::interceptToolCall",
+            "file": "modules/ai_agent/services/ToolRouter.php"
+        },
+        {
+            "name": "ToolRouter::executeMathTool",
+            "file": "modules/ai_agent/services/ToolRouter.php"
         }
     ],
     "services": [],

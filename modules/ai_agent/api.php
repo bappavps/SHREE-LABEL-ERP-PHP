@@ -32,18 +32,28 @@ header('Content-Type: application/json; charset=utf-8');
 ob_start(); // Buffer any accidental output (notices, blanks)
 
 set_exception_handler(function ($e) {
-    ob_end_clean();
-    http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => 'Internal API Error: ' . $e->getMessage()]);
+    if (ob_get_level() > 0) ob_end_clean();
+    http_response_code(200);
+    echo json_encode([
+        'ok' => true,
+        'answer' => "⚠️ **An error occurred while processing your request.**\n\nPlease try again or rephrase your command.",
+        'provider' => 'ERP System',
+        'tool_used' => 'Error Handler'
+    ], JSON_UNESCAPED_UNICODE);
     exit;
 });
 
 set_error_handler(function ($errno, $errstr, $errfile, $errline) {
     if (error_reporting() === 0)
         return false;
-    ob_end_clean();
-    http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => "PHP Warning/Notice: $errstr in $errfile on line $errline"]);
+    if (ob_get_level() > 0) ob_end_clean();
+    http_response_code(200);
+    echo json_encode([
+        'ok' => true,
+        'answer' => "⚠️ **An internal error occurred.**\n\nPlease check your command or try again.",
+        'provider' => 'ERP System',
+        'tool_used' => 'Error Handler'
+    ], JSON_UNESCAPED_UNICODE);
     exit;
 });
 if (session_status() === PHP_SESSION_NONE) {
@@ -880,62 +890,151 @@ if (preg_match('/^\/(plate|job|jobcard|planning|cal|calc)\b/iu', $rawCalcPrompt,
 
 if ($isCalcCommand) {
     $rawCalcLower = mb_strtolower($rawCalcPrompt, 'UTF-8');
-    $isPlateCalcQuery = preg_match('/(price|rate|budget|taka|tk|টাকা|cost|paisa|পয়সা|amount|দাম|মূল্য|sqr|sq\s*inch|square|taker)/i', $rawCalcLower);
-
-    if ($isPlateCalcQuery) {
+    // Only proceed if it looks like there are numbers or quotes, indicating a specific calculation
+    if (preg_match('/\d/', $rawCalcLower) || strpos($rawCalcPrompt, '"') !== false) {
         $promptNorm = html_entity_decode(stripslashes($rawCalcPrompt), ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $promptNorm = preg_replace('/[\x{201C}\x{201D}\x{201E}\x{201F}\x{00AB}\x{00BB}\x{2033}\x{2036}]/u', '"', $promptNorm);
 
-        $plateName = null;
+        $params = [];
+        
+        // ─── Step 1: Extract Entities ──────────────────────────────────────────
+        // 1. Plate Name
         if (preg_match('/"([^"]+)"/', $promptNorm, $qm)) {
-            $plateName = trim($qm[1]);
-        } else {
-            if (preg_match('/^(.+?)(?:\s+(?:ar|per|price|taka|tahole|er|korte|koto|হিসাব|এর))/i', trim($promptNorm), $fm)) {
-                $plateName = trim($fm[1]);
-            }
+            $params['plate_name'] = trim($qm[1]);
         }
-
-        $perSqrInchPrice = null;
-        if (preg_match('/([\d.]+)\s*(?:taka|tk|টাকা|rs|rupee|₹)?\s*(?:per|\/|@|at)\s*(?:sqr?|square|sq)?\s*(?:inche?|ইঞ্চি)?/i', $rawCalcLower, $pm)) {
-            $perSqrInchPrice = (float) $pm[1];
-        } elseif (preg_match('/(?:per\s*(?:sqr?|square|sq)\s*(?:inche?|ইঞ্চি)?\s*(?:price|rate|দাম|রেট)?\s*(?:holo|হলো|is|=|@|at)?\s*)([\d.]+)/i', $rawCalcLower, $pm)) {
-            $perSqrInchPrice = (float) $pm[1];
-        } elseif (preg_match('/(?:rate|price|দাম|রেট)\s*(?:is|=|of|হলো|@|at)?\s*(?:taka|tk|টাকা|rs|₹)?\s*([\d.]+)/i', $rawCalcLower, $pm)) {
-            $perSqrInchPrice = (float) $pm[1];
-        } elseif (preg_match('/([\d.]+)\s*(?:paisa|পয়সা|paise|pice)?\s*(?:price|rate|দাম|রেট)\b/i', $rawCalcLower, $pm)) {
-            // Form: "0.05 paisa price diyechi" / "0.05 paise rate" → number comes BEFORE the price word
-            $perSqrInchPrice = (float) $pm[1];
-        } elseif (preg_match('/@\s*([\d.]+)/i', $rawCalcLower, $pm)) {
-            $perSqrInchPrice = (float) $pm[1];
+        
+        // 2. Dimensions (Width x Height)
+        if (preg_match('/([\d.]+)\s*(?:mm)?\s*[xX×]\s*([\d.]+)\s*(?:mm)?/iu', $rawCalcLower, $dm)) {
+            $params['width_mm'] = (float)$dm[1];
+            $params['height_mm'] = (float)$dm[2];
         }
-
-        $totalJobAmount = null;
-        if (preg_match('/(?:budget|total|amount|moq|tahole|তাহলে|then|for|if|jodi|order|job|print|korte)\s*(?:of|er|এর|is|=)?\s*(?:taka\w*|taker|টাকা\w*|rs\b|rupee\b|₹)?\s*([\d,]+(?:\.[\d]+)?)/i', $rawCalcLower, $am)) {
-            $totalJobAmount = (float) str_replace(',', '', $am[1]);
-        } elseif (preg_match('/([\d,]+(?:\.[\d]+)?)\s*(?:taka\w*|taker|টাকা\w*|rs\b|rupee\b|₹)?\s*(?:job|জব|order|budget|moq|korte|print)/i', $rawCalcLower, $am)) {
-            $totalJobAmount = (float) str_replace(',', '', $am[1]);
-        } elseif (preg_match('/([\d,]+(?:\.[\d]+)?)\s*(?:taka\w*|taker|tk\b|টাকা\w*|rs\b|rupee\b|₹)/i', $rawCalcLower, $am)) {
-            // Check if this matched the price, if so ignore
+        
+        // 3. Gap (Horizontal and Vertical)
+        if (preg_match('/gap\s*(?:horizontal|h)?\s*([\d.]+)\s*(?:mm)?\s*(?:gap\s*(?:vertical|v)|[xX×])\s*([\d.]+)\s*(?:mm)?/iu', $rawCalcLower, $gm)) {
+            $params['gap_h'] = (float)$gm[1];
+            $params['gap_v'] = (float)$gm[2];
+        } elseif (preg_match('/(?:gap|গ্যাপ)\s*([\d.]+)\s*(?:mm)?/iu', $rawCalcLower, $gm)) {
+            $params['gap_h'] = (float)$gm[1];
+            $params['gap_v'] = (float)$gm[1];
+        }
+        
+        // 4. Rate / Price
+        if (preg_match('/([\d.]+)\s*(?:taka|tk|rs|rupee|₹|paisa|paise|pice|টাকা|পয়সা)?\s*(?:per|\/|@|at|rate|price|cost|রেট|দাম|মূল্য)?\s*(?:sqr?|square|sq)?\s*(?:inche?|ইঞ্চি)/iu', $rawCalcLower, $pm) ||
+            preg_match('/(?:rate|price|cost|per|@|রেট|দাম|মূল্য|পয়সা)\s*(?:sqr?|square|sq)?\s*(?:inche?|ইঞ্চি)?\s*(?:is|=|of|হলো|at)?\s*(?:taka|tk|rs|₹|টাকা)?\s*([\d.]+)/iu', $rawCalcLower, $pm) ||
+            preg_match('/([\d.]+)\s*(?:paisa|paise|pice|পয়সা)/iu', $rawCalcLower, $pm)) {
+            $params['rate'] = (float) $pm[1];
+        }
+        
+        // 5. Budget / Amount
+        if (preg_match('/(?:budget|total|amount|moq|order|job|print|বাজেট|মোট)\s*(?:is|=)?\s*(?:taka\w*|tk|rs\b|rupee|inr|₹|টাকা\w*)?\s*([\d,]+(?:\.[\d]+)?)/iu', $rawCalcLower, $am) ||
+            preg_match('/([\d,]+(?:\.[\d]+)?)\s*(?:taka\w*|tk|rs\b|rupee|inr|₹|টাকা\w*)/iu', $rawCalcLower, $am)) {
             $val = (float) str_replace(',', '', $am[1]);
-            if ($val !== $perSqrInchPrice)
-                $totalJobAmount = $val;
+            if (!isset($params['rate']) || $val !== $params['rate']) {
+                $params['budget'] = $val;
+            }
+        }
+        
+        // 6. Running Meter
+        if (preg_match('/([\d,]+(?:\.[\d]+)?)\s*(?:running\s*meters?|meters?|mtr|মিটার|m\b)/iu', $rawCalcLower, $mm)) {
+            $params['running_meter'] = (float) str_replace(',', '', $mm[1]);
+        }
+        
+        // 7. Labels / Pcs
+        if (preg_match('/([\d,]+)\s*(?:labels?|pcs|pieces?|pice|pis|ta|ti|টি|টা|পিস|লেবেল)/iu', $rawCalcLower, $lm)) {
+            $params['labels'] = (int) str_replace(',', '', $lm[1]);
         }
 
-        if ($plateName && $perSqrInchPrice && $perSqrInchPrice > 0) {
-            $calcEngine = new CalculationEngine();
-            if ($totalJobAmount && $totalJobAmount > 0) {
-                // Full job costing (MOQ, running meters, paper) — requires a budget/amount
-                $result = $calcEngine->calculatePlateCosting($db, $plateName, $perSqrInchPrice, $totalJobAmount, $prompt);
+        // ─── Step 2: Determine Intent & Confidence ──────────────────────────────
+        $questionWordsPattern = '/\b(?:how\s+many|how\s+much|required|need|calculate|estimate|print|produce|generate|লাগবে|হবে|কত|কতগুলো|প্রিন্ট|উৎপাদন|চাই|ज़रूरत|कितना|कितने|प्रिंट)\b/iu';
+        $hasQuestionWord = preg_match($questionWordsPattern, $rawCalcLower);
+        $hasMeterWord = preg_match('/\b(?:meters?|mtr|মিটার|m)\b/iu', $rawCalcLower);
+        
+        $scores = [
+            'calculate_required_running_meter' => 0,
+            'calculate_labels' => 0,
+            'calculate_moq' => 0,
+            'calculate_new_job' => 0,
+            'calculate_required_paper' => 0
+        ];
+        
+        if (isset($params['labels'])) $scores['calculate_required_running_meter'] += 40;
+        if ($hasMeterWord) $scores['calculate_required_running_meter'] += 40;
+        if ($hasQuestionWord) $scores['calculate_required_running_meter'] += 20;
+
+        if (isset($params['running_meter'])) $scores['calculate_labels'] += 50;
+        if (!isset($params['labels'])) $scores['calculate_labels'] += 30;
+        if ($hasQuestionWord) $scores['calculate_labels'] += 20;
+
+        if (isset($params['rate'])) $scores['calculate_moq'] += 40;
+        if (isset($params['budget'])) $scores['calculate_moq'] += 40;
+        if ($hasQuestionWord) $scores['calculate_moq'] += 20;
+
+        if (isset($params['width_mm']) && isset($params['height_mm'])) {
+            $scores['calculate_new_job'] += 40;
+            $scores['calculate_required_paper'] += 40;
+        }
+        if (isset($params['gap_h']) || isset($params['gap_v'])) $scores['calculate_new_job'] += 40;
+        if (!isset($params['labels'])) $scores['calculate_new_job'] += 20;
+
+        if (isset($params['labels'])) $scores['calculate_required_paper'] += 40;
+        if (!isset($params['running_meter'])) $scores['calculate_required_paper'] += 20;
+
+        arsort($scores);
+        $topIntents = array_keys($scores);
+        $topScore = $scores[$topIntents[0]];
+        $runnerUpScore = $scores[$topIntents[1]];
+        
+        $intent = 'unknown';
+        if ($topScore >= 50) {
+            if (($topScore - $runnerUpScore) <= 10 && $runnerUpScore >= 50) {
+                // Ambiguous
+                echo json_encode([
+                    'ok' => true,
+                    'answer' => "🤖 **Clarification Needed:**\n\nI detected multiple possible calculations. Did you want to:\n\n"
+                        . "• **" . ucwords(str_replace('_', ' ', $topIntents[0])) . "**\n"
+                        . "• **" . ucwords(str_replace('_', ' ', $topIntents[1])) . "**\n\n"
+                        . "Please clarify your request.",
+                    'provider' => 'ERP AI Parser',
+                    'tool_used' => 'Intent Disambiguation',
+                    'suggestions' => [ucwords(str_replace('_', ' ', $topIntents[0])), ucwords(str_replace('_', ' ', $topIntents[1]))]
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                exit;
             } else {
-                // No total amount given — user only wants the per-label price
-                // e.g. `/job "Blue 200ml" per sqr inch price is 0.065 then how many price will be per label?`
-                $result = $calcEngine->calculatePerLabelPrice($db, $plateName, $perSqrInchPrice, $prompt);
+                $intent = $topIntents[0];
             }
+        }
+        
+        // Create Normalized Intent Object
+        $normalizedIntent = [
+            'intent' => $intent,
+            'entities' => $params,
+            'confidence' => $topScore
+        ];
+        
+        // Pass intent to params for backwards compatibility
+        $params['intent'] = $normalizedIntent['intent'];
+
+        $hasCalcEntity = isset($params['width_mm']) || isset($params['height_mm']) || isset($params['gap_h']) || isset($params['gap_v']) || isset($params['rate']) || isset($params['budget']) || isset($params['running_meter']) || isset($params['labels']);
+
+        if ($hasCalcEntity) {
+            $calcEngine = new CalculationEngine();
+            $result = $calcEngine->calculateJob($db, $params, $prompt);
 
             if ($result) {
                 echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                 exit;
+            } else {
+                echo json_encode([
+                    'ok' => true,
+                    'answer' => "⚠️ **Calculation Error:** Could not perform the calculation. Please ensure all required values (e.g. rate, budget, or labels) are provided.",
+                    'provider' => 'ERP AI Parser',
+                    'tool_used' => 'Calculation Engine'
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                exit;
             }
+        } elseif (isset($params['plate_name'])) {
+            // No calculation entities found, but a plate name is present.
+            // Let it fall through to Plate Details routing.
         }
     }
 }
