@@ -1828,6 +1828,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition = null;
     let isListening = false;
+    let initialVoiceText = '';
 
     if (SpeechRecognition && micBtn) {
       recognition = new SpeechRecognition();
@@ -1836,6 +1837,8 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
 
       recognition.onstart = () => {
         isListening = true;
+        initialVoiceText = getChatText().trim();
+        if (initialVoiceText && !initialVoiceText.endsWith(' ')) initialVoiceText += ' ';
         micBtn.classList.add('listening');
         if (micIcon) micIcon.className = 'bi bi-mic-fill ai-pulse';
         if (voiceStatusText) voiceStatusText.textContent = '🎙️ Listening... Speak now';
@@ -1848,7 +1851,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
         for (let i = e.resultIndex; i < e.results.length; i++) {
           transcript += e.results[i][0].transcript;
         }
-        setChatText(transcript);
+        setChatText(initialVoiceText + transcript);
         processChatInput();
       };
 

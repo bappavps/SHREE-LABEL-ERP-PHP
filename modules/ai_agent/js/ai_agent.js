@@ -523,9 +523,14 @@
     recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = true;
+    var initialVoiceText = '';
 
     recognition.onstart = function() {
       isListening = true;
+      if (chatInput) {
+          initialVoiceText = chatInput.innerText.trim();
+          if (initialVoiceText && !initialVoiceText.endsWith(' ')) initialVoiceText += ' ';
+      }
       if (micBtn) {
         micBtn.style.color = '#ef4444';
         micBtn.style.background = 'rgba(239, 68, 68, 0.2)';
@@ -542,7 +547,7 @@
       }
       if (chatInput) {
         chatInput.innerHTML = '';
-        chatInput.appendChild(document.createTextNode(transcript));
+        chatInput.appendChild(document.createTextNode(initialVoiceText + transcript));
       }
     };
 

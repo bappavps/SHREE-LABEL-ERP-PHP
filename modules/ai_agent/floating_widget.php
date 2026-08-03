@@ -1112,8 +1112,14 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     recognition.continuous = false;
     recognition.interimResults = true;
     var isListening = false;
+    var initialVoiceText = '';
+    
     recognition.onstart = function() {
       isListening = true;
+      if (chatInput) {
+          initialVoiceText = chatInput.innerText.trim();
+          if (initialVoiceText && !initialVoiceText.endsWith(' ')) initialVoiceText += ' ';
+      }
       if (micBtn) micBtn.classList.add('listening');
       if (micIcon) micIcon.className = 'bi bi-mic-fill ai-pulse';
       if (chatInput) chatInput.dataset.placeholder = '🎙️ Listening... Speak now';
@@ -1121,7 +1127,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     recognition.onresult = function(event) {
       var transcript = '';
       for (var i = event.resultIndex; i < event.results.length; i++) { transcript += event.results[i][0].transcript; }
-      if (chatInput) { chatInput.innerHTML = ''; chatInput.appendChild(document.createTextNode(transcript)); }
+      if (chatInput) { chatInput.innerHTML = ''; chatInput.appendChild(document.createTextNode(initialVoiceText + transcript)); }
     };
     recognition.onerror = function(event) {
       isListening = false;
