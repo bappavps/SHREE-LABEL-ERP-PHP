@@ -91,7 +91,22 @@
     $moreThanFourColors = (preg_match('/more than 4|>4|4\+|4\s*টির বেশি|4\s*এর বেশি|৪\s*টির বেশি|৪\s*এর বেশি/i', $p) !== 0);
 
     // Latest / newest plate intent
-    $latestPlateIntent = (strpos($p, 'latest') !== false || strpos($p, 'newest') !== false || strpos($p, 'সবচেয়ে নতুন') !== false || strpos($p, 'সর্বশেষ') !== false);
+    $latestPlateIntent = (
+        strpos($p, 'latest') !== false ||
+        strpos($p, 'newest') !== false ||
+        strpos($p, 'last added') !== false ||
+        strpos($p, 'latest added') !== false ||
+        strpos($p, 'recently added') !== false ||
+        strpos($p, 'recent plate') !== false ||
+        strpos($p, 'last plate') !== false ||
+        strpos($p, 'new plate') !== false ||
+        strpos($p, 'নতুন প্লেট') !== false ||
+        strpos($p, 'সবচেয়ে নতুন') !== false ||
+        strpos($p, 'সর্বশেষ') !== false ||
+        strpos($p, 'নতুন যোগ') !== false ||
+        strpos($p, 'नई प्लेट') !== false ||
+        strpos($p, 'नवीनतम') !== false
+    );
 
     // Export query
     $isExportQuery = (strpos($p, 'pdf') !== false || strpos($p, 'excel') !== false || strpos($p, 'csv') !== false || strpos($p, 'export') !== false || strpos($p, 'report') !== false || (strpos($p, 'print') !== false && !strpos($p, 'koto') && !strpos($p, 'কত') && !strpos($p, 'required') && !strpos($p, 'need') && !strpos($p, 'how many')));
@@ -372,7 +387,7 @@
     }
 
     // Latest / newest plate
-    if ($latestPlateIntent && !$plateNoMatch && !$jobSearchTerm && !$cylinderMatch && !$repeatMatch && !$paperSizeMatch && !$dieMatch) {
+    if ($latestPlateIntent && !$plateNoMatch && !$jobSearchExplicit && !$cylinderMatch && !$repeatMatch && !$paperSizeMatch && !$dieMatch) {
         $stmt = $db->prepare("SELECT * FROM master_plate_data ORDER BY id DESC LIMIT 1");
         $stmt->execute();
         $latestRow = $stmt->get_result()->fetch_assoc();
