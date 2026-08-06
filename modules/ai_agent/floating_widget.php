@@ -134,19 +134,26 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
 #aiFloatingChatBody .btn-copy-msg.copied { color: #22c55e; }
 /* Thinking indicator matching PWA typing-box */
 #aiFloatingChatBody .ai-thinking-indicator {
-  display: none; align-self: flex-start;
-  padding: 14px 18px; border-radius: 18px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; border-radius: 18px;
   border-bottom-left-radius: 6px;
   background: rgba(255,255,255,0.05);
   border: 1px solid rgba(255,255,255,0.08);
   margin-left: 0; margin-top: 4px;
 }
-#aiFloatingChatBody .ai-thinking-indicator.visible { display: flex; align-items: center; gap: 10px; }
-#aiFloatingChatBody .ai-thinking-text { font-size: 12px; color: #64748b; font-weight: 600; }
-#aiFloatingChatBody .ai-pulse { animation: aiPulse 1.2s infinite ease-in-out; }
-@keyframes aiPulse {
-  0%, 80%, 100% { opacity: 0.3; transform: scale(0.9); }
-  40% { opacity: 1; transform: scale(1.1); }
+#aiFloatingChatBody .typing-dots { display: flex; gap: 4px; align-items: center; }
+#aiFloatingChatBody .typing-dot {
+  width: 7px; height: 7px;
+  background: #3b82f6;
+  border-radius: 50%;
+  animation: typingBounce 1.4s infinite ease-in-out both;
+}
+#aiFloatingChatBody .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+#aiFloatingChatBody .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+#aiFloatingChatBody .typing-dot:nth-child(3) { animation-delay: 0s; }
+@keyframes typingBounce {
+  0%, 80%, 100% { transform: scale(0.4); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
 }
 /* Tool call tag — PWA style */
 #aiFloatingChatBody .ai-tool-call-tag {
@@ -885,7 +892,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     addMsg(query, 'user');
 
     // Thinking indicator
-    addMsg('<div class="ai-thinking-indicator" id="aiFloatThinkingIndicator"><i class="bi bi-three-dots ai-pulse"></i> <em class="ai-thinking-text">Thinking</em></div>', 'assistant');
+    addMsg('<div class="ai-thinking-indicator" id="aiFloatThinkingIndicator"><div class="typing-dots"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div> <em class="ai-thinking-text" style="font-size:12px;color:#94a3b8;font-weight:600;font-style:normal;">Thinking...</em></div>', 'assistant');
     var statuses = ['Thinking','Processing','Searching','Analyzing','Fetching','Targeting','Computing'];
     var sIdx = 0, dCount = 0;
     if (window._floatTypingInterval) clearInterval(window._floatTypingInterval);
