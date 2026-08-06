@@ -1320,15 +1320,16 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
 
     // Command definitions for suggestions & highlighting
     const CMD_LIST = [
-      { cmd: '/job', desc: 'Job / Planning Priority Mode' },
-      { cmd: '/plate', desc: 'Plate Priority Mode' },
-      { cmd: '/planning', desc: 'Job Planning Board' },
+      { cmd: '/erp', desc: 'Executive 360° ERP Master Overview' },
       { cmd: '/paper', desc: 'Paper Stock Priority Mode' },
+      { cmd: '/plate', desc: 'Plate Priority Mode' },
+      { cmd: '/stock', desc: 'Mixed Item Extra Stock Pool' },
+      { cmd: '/job', desc: 'Job / Planning Priority Mode' },
+      { cmd: '/planning', desc: 'Job Planning Board' },
       { cmd: '/product', desc: 'Product / Item lookup' },
       { cmd: '/client', desc: 'Client / Party lookup' },
       { cmd: '/dispatch', desc: 'Dispatch / Packing Priority Mode' },
       { cmd: '/order', desc: 'Order lookup' },
-      { cmd: '/stock', desc: 'Stock lookup' },
     ];
     const CMD_NAMES = CMD_LIST.map(c => c.cmd);
 

@@ -497,6 +497,10 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     <div id="aiFloatingCmdSuggestionsPopup" class="ai-popup-menu" style="position:absolute;bottom:calc(100% + 4px);left:8px;right:8px;background:rgba(30,41,59,0.98);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(16,185,129,0.75);border-radius:12px;padding:4px;display:none;z-index:101;box-shadow:0 -4px 24px rgba(16,185,129,0.25);max-height:180px;overflow-y:auto;flex-direction:column;"></div>
     <!-- Command Suggestions Dropup -->
     <div class="ai-cmd-suggestions" id="aiFloatingCmdSuggestions" style="position:absolute;bottom:calc(100% + 4px);left:8px;right:8px;background:rgba(30,41,59,0.98);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(59,130,246,0.75);border-radius:12px;padding:4px;display:none;z-index:100;box-shadow:0 -4px 24px rgba(59,130,246,0.25);max-height:180px;overflow-y:auto">
+      <div class="ai-cmd-item" data-cmd="/erp" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
+        <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/erp</span>
+        <span style="font-size:12px;color:#94a3b8">Executive 360° ERP Master Overview</span>
+      </div>
       <div class="ai-cmd-item" data-cmd="/job" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s;color:#e2e8f0" onmouseover="this.style.background='rgba(59,130,246,0.15)'" onmouseout="this.style.background='transparent'">
         <span style="font-weight:700;color:#ef4444;font-size:13px;min-width:65px">/job</span>
         <span style="font-size:12px;color:#94a3b8">Job Priority Mode</span>
