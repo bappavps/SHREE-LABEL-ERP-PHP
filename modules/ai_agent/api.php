@@ -4358,18 +4358,20 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             $mixedCatLabel = 'Barcode';
         }
 
-        $mixedCats = "'pos_paper_roll','one_ply','two_ply','barcode','printing_roll','printing_label'";
-        $catWhere = $mixedCat ? " AND category = '" . $db->real_escape_string($mixedCat) . "'" : '';
+        if (!defined('MI_HELPER_ONLY')) {
+            define('MI_HELPER_ONLY', true);
+        }
+        require_once __DIR__ . '/../inventory/mixed-item/api/mixed_item_api.php';
 
-        $cntRes = $db->query("SELECT COUNT(*) as cnt, IFNULL(SUM(quantity),0) as total_extra FROM finished_goods_stock WHERE category IN ({$mixedCats}){$catWhere}");
-        $sumRow = $cntRes ? $cntRes->fetch_assoc() : [];
-        $totalItems = (int) ($sumRow['cnt'] ?? 0);
-        $totalExtraQty = (float) ($sumRow['total_extra'] ?? 0);
+        $rows = mi_fetch_rows($db, $mixedCat ?: '');
+        $totalItems = count($rows);
+        $totalExtraQty = 0;
+        foreach ($rows as $mr) {
+            $totalExtraQty += (float) ($mr['extra_qty'] ?? 0);
+        }
 
         $assignRes = $db->query("SELECT COUNT(*) as cnt FROM mixed_item_assignments WHERE status = 'pending'");
         $pendingAssign = $assignRes ? (int) ($assignRes->fetch_assoc()['cnt'] ?? 0) : 0;
-
-        $rows = $db->query("SELECT id, category, sub_type, item_name, item_code, size, quantity, unit, batch_no, date, remarks FROM finished_goods_stock WHERE category IN ({$mixedCats}){$catWhere} ORDER BY id DESC LIMIT 15")->fetch_all(MYSQLI_ASSOC);
 
         // Tab options rendered as clickable suggestion chips ("Which tab's report?")
         $tabOptions = [
@@ -4395,9 +4397,10 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                         . "  - Total Extra Quantity: **" . number_format($totalExtraQty) . " PCS / Rolls**\n\n"
                         . "📋 **{$mixedCatLabel} Extra Items Grid:**\n\n";
                     foreach ($rows as $idx => $r) {
-                        $answer .= "• **Item " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Mixed Item') . "`** (ID: **{$r['id']}** | Category: **" . strtoupper($r['category']) . "**)\n"
+                        $qtyStr = number_format((float) ($r['extra_qty'] ?? $r['quantity'] ?? 0)) . " " . ($r['unit_type'] ?? 'PCS');
+                        $answer .= "• **Item " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Mixed Item') . "`** (ID: **" . ($r['source_id'] ?? $r['id']) . "** | Category: **" . strtoupper($r['category']) . "**)\n"
                             . "  - 📐 **Size & Spec:** **" . ($r['size'] ?: 'N/A') . "**\n"
-                            . "  - 🔢 **Extra Quantity:** **" . number_format((float) $r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
+                            . "  - 🔢 **Extra Quantity:** **" . $qtyStr . "**\n"
                             . "  - 🏷️ **Batch / Job No:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
                     }
                 }
@@ -4413,9 +4416,10 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                         . "  - कुल एक्स्ट्रा मात्रा: **" . number_format($totalExtraQty) . " पीस**\n\n"
                         . "📋 **{$mixedCatLabel} एक्स्ट्रा आइटम ग्रिड:**\n\n";
                     foreach ($rows as $idx => $r) {
-                        $answer .= "• **आइटम " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Mixed Item') . "`** (ID: **{$r['id']}**)\n"
+                        $qtyStr = number_format((float) ($r['extra_qty'] ?? $r['quantity'] ?? 0)) . " " . ($r['unit_type'] ?? 'PCS');
+                        $answer .= "• **आइटम " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Mixed Item') . "`** (ID: **" . ($r['source_id'] ?? $r['id']) . "**)\n"
                             . "  - 📐 **साइज़:** **" . ($r['size'] ?: 'N/A') . "**\n"
-                            . "  - 🔢 **एक्स्ट्रा मात्रा:** **" . number_format((float) $r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
+                            . "  - 🔢 **एक्स्ट्रा मात्रा:** **" . $qtyStr . "**\n"
                             . "  - 🏷️ **बैच नंबर:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
                     }
                 }
@@ -4431,9 +4435,10 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                         . "  - সর্বমোট এক্সট্রা কোয়ান্টিটি: **" . number_format($totalExtraQty) . "টি পিস/লেবেল**\n\n"
                         . "📋 **{$mixedCatLabel} এক্সট্রা আইটেম গ্রিড:**\n\n";
                     foreach ($rows as $idx => $r) {
-                        $answer .= "• **এক্সট্রা আইটেম " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Mixed Item') . "`** (ID: **{$r['id']}** | ক্যাটাগরি: **" . strtoupper($r['category']) . "**)\n"
+                        $qtyStr = number_format((float) ($r['extra_qty'] ?? $r['quantity'] ?? 0)) . " " . ($r['unit_type'] ?? 'PCS');
+                        $answer .= "• **এক্সট্রা আইটেম " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Mixed Item') . "`** (ID: **" . ($r['source_id'] ?? $r['id']) . "** | ক্যাটাগরি: **" . strtoupper($r['category']) . "**)\n"
                             . "  - 📐 **সাইজ ও স্পেক:** **" . ($r['size'] ?: 'N/A') . "**\n"
-                            . "  - 🔢 **এক্সট্রা কোয়ান্টিটি:** **" . number_format((float) $r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
+                            . "  - 🔢 **এক্সট্রা কোয়ান্টিটি:** **" . $qtyStr . "**\n"
                             . "  - 🏷️ **ব্যাচ / জব নম্বর:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
                     }
                 }
@@ -4449,9 +4454,10 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 . "🔀 **Active Mixed Extra Items Grid:**\n\n";
 
             foreach ($rows as $idx => $r) {
-                $answer .= "• **Extra Item " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Mixed Item') . "`** (ID: **{$r['id']}** | Category: **" . strtoupper($r['category']) . "**)\n"
+                $qtyStr = number_format((float) ($r['extra_qty'] ?? $r['quantity'] ?? 0)) . " " . ($r['unit_type'] ?? 'PCS');
+                $answer .= "• **Extra Item " . ($idx + 1) . ": `" . ($r['item_name'] ?: 'Mixed Item') . "`** (ID: **" . ($r['source_id'] ?? $r['id']) . "** | Category: **" . strtoupper($r['category']) . "**)\n"
                     . "  - 📐 **Size & Spec:** **" . ($r['size'] ?: 'N/A') . "**\n"
-                    . "  - 🔢 **Extra Quantity:** **" . number_format((float) $r['quantity']) . " " . ($r['unit'] ?: 'PCS') . "**\n"
+                    . "  - 🔢 **Extra Quantity:** **" . $qtyStr . "**\n"
                     . "  - 🏷️ **Batch / Job No:** `" . ($r['batch_no'] ?: 'N/A') . "`\n\n";
             }
 

@@ -475,6 +475,10 @@ function mi_ensure_assignment_table(mysqli $db): void
     }
 }
 
+if (defined('MI_HELPER_ONLY') && MI_HELPER_ONLY) {
+    return;
+}
+
 mi_require_access();
 mi_ensure_assignment_table($db);
 
