@@ -78,7 +78,7 @@
       allHtml += '<span class="msg-meta">' + label + ' \u00B7 ' + timeStr + '</span>';
       allHtml += '<button class="ai-btn-copy-msg" title="Copy"><i class="bi bi-clipboard"></i></button>';
       if (sender === 'user') {
-        allHtml += '<button class="ai-btn-copy-msg ai-btn-edit-msg" title="Edit Prompt"><i class="bi bi-pencil"></i></button>';
+        allHtml += '<button class="ai-btn-copy-msg ai-btn-edit-msg" title="Edit Prompt"><i class="bi bi-pencil-square"></i></button>';
       }
       allHtml += '<button class="ai-btn-copy-msg ai-btn-regen-msg" title="Regenerate"><i class="bi bi-arrow-clockwise"></i></button>';
       allHtml += '</div>';

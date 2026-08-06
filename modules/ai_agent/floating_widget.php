@@ -122,13 +122,14 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
 #aiFloatingChatBody .msg-meta { font-size: 10px; color: #64748b; font-weight: 500; letter-spacing: 0.02em; }
 /* Copy button in footer — PWA style */
 #aiFloatingChatBody .btn-copy-msg {
-  display: none; background: none; border: none;
-  color: #94a3b8; font-size: 12px; cursor: pointer;
-  padding: 2px 6px; border-radius: 6px;
+  display: inline-flex; background: none; border: none;
+  color: #94a3b8; font-size: 13px; cursor: pointer;
+  padding: 3px 6px; border-radius: 6px;
   transition: all 0.2s; align-items: center; gap: 3px;
+  opacity: 0.85; margin-left: 4px;
 }
-#aiFloatingChatBody .msg-group:hover .btn-copy-msg { display: inline-flex; }
-#aiFloatingChatBody .btn-copy-msg:hover { background: rgba(255,255,255,0.08); color: #e2e8f0; }
+#aiFloatingChatBody .msg-group .btn-copy-msg { display: inline-flex; }
+#aiFloatingChatBody .btn-copy-msg:hover { background: rgba(59,130,246,0.12); color: #3b82f6; opacity: 1; transform: scale(1.1); }
 #aiFloatingChatBody .btn-copy-msg:active { transform: scale(1.15); }
 #aiFloatingChatBody .btn-copy-msg.copied { color: #22c55e; }
 /* Thinking indicator matching PWA typing-box */
@@ -757,7 +758,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       bubbleHtml += '</div></div>';
     }
 
-    var editBtnHtml = sender === 'user' ? '<button class="btn-copy-msg btn-edit-msg" onclick="_floatEditMsg(this)" title="Edit Prompt"><i class="bi bi-pencil"></i></button>' : '';
+    var editBtnHtml = sender === 'user' ? '<button class="btn-copy-msg btn-edit-msg" onclick="_floatEditMsg(this)" title="Edit Prompt"><i class="bi bi-pencil-square"></i></button>' : '';
 
     var cmdClass = commandType ? ' ai-cmd-' + commandType : '';
     var html = '<div class="msg-group ' + sender + cmdClass + '">'

@@ -632,18 +632,26 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
 
     .btn-copy-msg {
       background: none; border: none;
-      color: var(--text-dim);
-      font-size: 12px;
+      color: #94a3b8;
+      font-size: 13px;
       cursor: pointer;
-      padding: 2px;
+      padding: 3px 6px;
       border-radius: 4px;
       transition: all 0.2s;
-      display: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.85;
+      margin-left: 4px;
     }
-    .msg-group.assistant:hover .btn-copy-msg,
-    .msg-group.assistant:active .btn-copy-msg,
-    .msg-group.user:hover .btn-copy-msg,
-    .msg-group.user:active .btn-copy-msg { display: flex; }
+    .btn-copy-msg:hover {
+      opacity: 1;
+      color: #3b82f6;
+      background: rgba(59, 130, 246, 0.12);
+      transform: scale(1.1);
+    }
+    .msg-group.assistant .btn-copy-msg,
+    .msg-group.user .btn-copy-msg { display: inline-flex; }
     .btn-copy-msg:active { color: var(--accent); transform: scale(1.2); }
     .btn-copy-msg.copied { color: #22c55e; }
 
@@ -1937,7 +1945,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
               <div class="msg-footer">
                 <span class="msg-meta">You · ${time}</span>
                 <button class="btn-copy-msg" onclick="copyMsg(this)" title="Copy"><i class="bi bi-clipboard"></i></button>
-                <button class="btn-copy-msg btn-edit-msg" onclick="editUserMsg(this)" title="Edit Prompt"><i class="bi bi-pencil"></i></button>
+                <button class="btn-copy-msg btn-edit-msg" onclick="editUserMsg(this)" title="Edit Prompt"><i class="bi bi-pencil-square"></i></button>
                 <button class="btn-copy-msg btn-regen-msg" onclick="regenerateMsg(this)" title="Regenerate"><i class="bi bi-arrow-clockwise"></i></button>
               </div>
             </div>
