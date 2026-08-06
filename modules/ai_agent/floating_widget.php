@@ -665,6 +665,29 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     });
   };
 
+  window._floatRegenMsg = function(btn) {
+    var msgGroup = btn.closest('.msg-group');
+    var promptText = '';
+    if (msgGroup.classList.contains('user')) {
+      var bubble = msgGroup.querySelector('.msg-bubble');
+      promptText = ((bubble && (bubble.innerText || bubble.textContent)) || '').trim();
+    } else {
+      var prev = msgGroup.previousElementSibling;
+      while (prev) {
+        if (prev.classList.contains('msg-group') && prev.classList.contains('user')) {
+          var bubble = prev.querySelector('.msg-bubble');
+          promptText = ((bubble && (bubble.innerText || bubble.textContent)) || '').trim();
+          break;
+        }
+        prev = prev.previousElementSibling;
+      }
+    }
+    if (promptText && input) {
+      input.value = promptText;
+      sendMsg();
+    }
+  };
+
   // ─── Append a message to floating chat body (PWA-identical HTML) ───
   function addMsg(text, sender, toolUsed, suggestions, commandType) {
     if (!chatBody) return;
@@ -702,6 +725,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       + '<div class="msg-footer">'
       + '<span class="msg-meta">' + label + ' \u00B7 ' + timeStr + '</span>'
       + '<button class="btn-copy-msg" onclick="_floatCopyMsg(this)" title="Copy"><i class="bi bi-clipboard"></i></button>'
+      + '<button class="btn-copy-msg btn-regen-msg" onclick="_floatRegenMsg(this)" title="Regenerate"><i class="bi bi-arrow-clockwise"></i></button>'
       + '</div></div></div></div>';
 
     chatBody.insertAdjacentHTML('beforeend', html);

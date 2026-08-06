@@ -77,6 +77,7 @@
       allHtml += '<div class="ai-msg-footer">';
       allHtml += '<span class="msg-meta">' + label + ' \u00B7 ' + timeStr + '</span>';
       allHtml += '<button class="ai-btn-copy-msg" title="Copy"><i class="bi bi-clipboard"></i></button>';
+      allHtml += '<button class="ai-btn-copy-msg ai-btn-regen-msg" title="Regenerate"><i class="bi bi-arrow-clockwise"></i></button>';
       allHtml += '</div>';
     }
 
@@ -89,7 +90,7 @@
     chatBody.scrollTop = chatBody.scrollHeight;
   }
 
-  // Event delegation on chatBody for suggestion chips & copy buttons
+  // Event delegation on chatBody for suggestion chips, copy & regenerate buttons
   if (chatBody) {
     chatBody.addEventListener('click', function(e) {
       var chip = e.target.closest('.ai-suggestion-chip');
@@ -101,7 +102,7 @@
         }
       }
       var copyBtn = e.target.closest('.ai-btn-copy-msg');
-      if (copyBtn) {
+      if (copyBtn && !copyBtn.classList.contains('ai-btn-regen-msg')) {
         e.stopPropagation();
         var bubbleEl = copyBtn.closest('.ai-msg-content').querySelector('.ai-msg-bubble');
         var text = bubbleEl.innerText || bubbleEl.textContent;
@@ -113,6 +114,30 @@
             copyBtn.classList.remove('copied');
           }, 1500);
         });
+        return;
+      }
+      var regenBtn = e.target.closest('.ai-btn-regen-msg');
+      if (regenBtn) {
+        e.stopPropagation();
+        var msgDiv = regenBtn.closest('.ai-msg');
+        var promptText = '';
+        if (msgDiv.classList.contains('user')) {
+          var bubbleEl = msgDiv.querySelector('.ai-msg-bubble');
+          promptText = (bubbleEl ? (bubbleEl.innerText || bubbleEl.textContent) : '').trim();
+        } else {
+          var prev = msgDiv.previousElementSibling;
+          while (prev) {
+            if (prev.classList.contains('ai-msg') && prev.classList.contains('user')) {
+              var bubbleEl = prev.querySelector('.ai-msg-bubble');
+              promptText = (bubbleEl ? (bubbleEl.innerText || bubbleEl.textContent) : '').trim();
+              break;
+            }
+            prev = prev.previousElementSibling;
+          }
+        }
+        if (promptText && !state.isProcessing) {
+          handleSend(promptText);
+        }
       }
     });
   }

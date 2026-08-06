@@ -1937,6 +1937,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
               <div class="msg-footer">
                 <span class="msg-meta">You · ${time}</span>
                 <button class="btn-copy-msg" onclick="copyMsg(this)" title="Copy"><i class="bi bi-clipboard"></i></button>
+                <button class="btn-copy-msg btn-regen-msg" onclick="regenerateMsg(this)" title="Regenerate"><i class="bi bi-arrow-clockwise"></i></button>
               </div>
             </div>
           </div>
@@ -1995,6 +1996,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
               <div class="msg-footer">
                 <span class="msg-meta">AI Copilot · ${time}</span>
                 <button class="btn-copy-msg" onclick="copyMsg(this)" title="Copy"><i class="bi bi-clipboard"></i></button>
+                <button class="btn-copy-msg btn-regen-msg" onclick="regenerateMsg(this)" title="Regenerate"><i class="bi bi-arrow-clockwise"></i></button>
               </div>
             </div>
           </div>
@@ -2020,6 +2022,29 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
         if (navigator.vibrate) navigator.vibrate(10);
         setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard"></i>'; btn.classList.remove('copied'); }, 1500);
       });
+    }
+
+    function regenerateMsg(btn) {
+      const msgGroup = btn.closest('.msg-group');
+      let promptText = '';
+      if (msgGroup.classList.contains('user')) {
+        const bubble = msgGroup.querySelector('.msg-bubble');
+        promptText = (bubble.innerText || bubble.textContent).trim();
+      } else {
+        let prev = msgGroup.previousElementSibling;
+        while (prev) {
+          if (prev.classList.contains('msg-group') && prev.classList.contains('user')) {
+            const bubble = prev.querySelector('.msg-bubble');
+            promptText = (bubble.innerText || bubble.textContent).trim();
+            break;
+          }
+          prev = prev.previousElementSibling;
+        }
+      }
+      if (promptText) {
+        setChatText(promptText);
+        processChatInput();
+      }
     }
 
     function showTyping(show) {
