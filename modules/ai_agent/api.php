@@ -3516,14 +3516,75 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
                 // Save context
                 $_SESSION['ai_last_plate_id'] = $plateData[0]['id'];
 
+                if ($jobSearchExplicit && count($plateData) > 1) {
+                    $normStr = function($s) {
+                        return mb_strtolower(preg_replace('/[^\p{L}\p{N}]/u', '', (string)$s), 'UTF-8');
+                    };
+                    $targetNorm = $normStr($jobSearchExplicit);
+                    
+                    usort($plateData, function($a, $b) use ($normStr, $targetNorm) {
+                        $normA = $normStr($a['name'] ?? '');
+                        $normB = $normStr($b['name'] ?? '');
+                        if ($normA === $targetNorm) return -1;
+                        if ($normB === $targetNorm) return 1;
+                        if ($targetNorm !== '' && strpos($normA, $targetNorm) !== false && strpos($normB, $targetNorm) === false) return -1;
+                        if ($targetNorm !== '' && strpos($normB, $targetNorm) !== false && strpos($normA, $targetNorm) === false) return 1;
+                        return 0;
+                    });
+                }
+
+                $isColorQuery = (preg_match('/\b(color|colors|colour|colours|কালার|কয়টি কালার|কত কালার|রং|कितने कलर)\b/i', $prompt) !== 0);
+                $directAnswerHeader = "";
+                if ($isColorQuery && !empty($plateData)) {
+                    $targetRow = $plateData[0];
+                    $targetName = trim($targetRow['name'] ?? 'Target Plate');
+                    $targetPlateNo = trim($targetRow['plate'] ?? '');
+                    $targetPlateStr = $targetPlateNo ? " (Plate: {$targetPlateNo})" : "";
+                    $tColors = [];
+                    foreach(['c','m','y','k','special_1','special_2','special_3','special_4','special_5'] as $cField) {
+                        $cv = trim((string)($targetRow[$cField] ?? ''));
+                        if ($cv !== '' && mb_strtolower($cv, 'UTF-8') !== 'na' && mb_strtolower($cv, 'UTF-8') !== 'n/a' && $cv !== '-') {
+                            $tColors[] = $cv;
+                        }
+                    }
+                    $tColorCount = count($tColors);
+                    $tColorStr = $tColorCount > 0 ? implode(', ', $tColors) : 'None';
+                    
+                    if ($userLang === 'Bengali') {
+                        $directAnswerHeader = '<div style="background: linear-gradient(135deg, #eff6ff 0%, #e0f2fe 100%); border: 1.5px solid #3b82f6; border-left: 5px solid #2563eb; border-radius: 10px; padding: 12px 16px; margin: 10px 0 14px 0; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);">' . "\n"
+                            . '  <div style="font-weight: 800; color: #1e40af; font-size: 0.95rem; margin-bottom: 6px;">🎯 <b>সরাসরি উত্তর - "' . htmlspecialchars($targetName) . '"</b>' . htmlspecialchars($targetPlateStr) . '</div>' . "\n"
+                            . '  <div style="font-size: 0.9rem; color: #1e293b; line-height: 1.6;">' . "\n"
+                            . '    ▸ <b>মোট কালার:</b> <span style="background: #2563eb; color: #ffffff; padding: 2px 8px; border-radius: 12px; font-size: 0.82rem; font-weight: 700;">' . $tColorCount . 'টি</span><br>' . "\n"
+                            . '    ▸ <b>কালার লিস্ট:</b> <code style="background: #ffffff; color: #0f172a; padding: 3px 8px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: 600; font-family: monospace;">' . htmlspecialchars($tColorStr) . '</code>' . "\n"
+                            . '  </div>' . "\n"
+                            . '</div>' . "\n\n";
+                    } elseif ($userLang === 'Hindi') {
+                        $directAnswerHeader = '<div style="background: linear-gradient(135deg, #eff6ff 0%, #e0f2fe 100%); border: 1.5px solid #3b82f6; border-left: 5px solid #2563eb; border-radius: 10px; padding: 12px 16px; margin: 10px 0 14px 0; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);">' . "\n"
+                            . '  <div style="font-weight: 800; color: #1e40af; font-size: 0.95rem; margin-bottom: 6px;">🎯 <b>सीधा उत्तर - "' . htmlspecialchars($targetName) . '"</b>' . htmlspecialchars($targetPlateStr) . '</div>' . "\n"
+                            . '  <div style="font-size: 0.9rem; color: #1e293b; line-height: 1.6;">' . "\n"
+                            . '    ▸ <b>कुल कलर:</b> <span style="background: #2563eb; color: #ffffff; padding: 2px 8px; border-radius: 12px; font-size: 0.82rem; font-weight: 700;">' . $tColorCount . '</span><br>' . "\n"
+                            . '    ▸ <b>कलर लिस्ट:</b> <code style="background: #ffffff; color: #0f172a; padding: 3px 8px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: 600; font-family: monospace;">' . htmlspecialchars($tColorStr) . '</code>' . "\n"
+                            . '  </div>' . "\n"
+                            . '</div>' . "\n\n";
+                    } else {
+                        $directAnswerHeader = '<div style="background: linear-gradient(135deg, #eff6ff 0%, #e0f2fe 100%); border: 1.5px solid #3b82f6; border-left: 5px solid #2563eb; border-radius: 10px; padding: 12px 16px; margin: 10px 0 14px 0; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);">' . "\n"
+                            . '  <div style="font-weight: 800; color: #1e40af; font-size: 0.95rem; margin-bottom: 6px;">🎯 <b>Direct Answer for "' . htmlspecialchars($targetName) . '"</b>' . htmlspecialchars($targetPlateStr) . '</div>' . "\n"
+                            . '  <div style="font-size: 0.9rem; color: #1e293b; line-height: 1.6;">' . "\n"
+                            . '    ▸ <b>Total Colors Used:</b> <span style="background: #2563eb; color: #ffffff; padding: 2px 8px; border-radius: 12px; font-size: 0.82rem; font-weight: 700;">' . $tColorCount . ' Colors</span><br>' . "\n"
+                            . '    ▸ <b>Color Breakdown:</b> <code style="background: #ffffff; color: #0f172a; padding: 3px 8px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: 600; font-family: monospace;">' . htmlspecialchars($tColorStr) . '</code>' . "\n"
+                            . '  </div>' . "\n"
+                            . '</div>' . "\n\n";
+                    }
+                }
+
                 $sampleCount = count($plateData);
 
                 if ($userLang === 'Bengali') {
-                    $answer = "📐 **Plate Management & Math Engine:**\n\nআপনার ডাটাবেসে **{$sampleCount}টি ম্যাচিং প্লেট** পাওয়া গেছে:\n\n";
+                    $answer = "📐 **Plate Management & Math Engine:**\n\n" . $directAnswerHeader . "আপনার ডাটাবেসে **{$sampleCount}টি ম্যাচিং প্লেট** পাওয়া গেছে:\n\n";
                 } elseif ($userLang === 'Hindi') {
-                    $answer = "📐 **Plate Management & Math Engine:**\n\nआपके डेटाबेस में **{$sampleCount} मैचिंग प्लेट** मिले हैं:\n\n";
+                    $answer = "📐 **Plate Management & Math Engine:**\n\n" . $directAnswerHeader . "आपके डेटाबेस में **{$sampleCount} मैचिंग प्लेट** मिले हैं:\n\n";
                 } else {
-                    $answer = "📐 **Plate Management & Math Engine:**\n\nFound **{$sampleCount} matching plate(s)** in your database:\n\n";
+                    $answer = "📐 **Plate Management & Math Engine:**\n\n" . $directAnswerHeader . "Found **{$sampleCount} matching plate(s)** in your database:\n\n";
                 }
 
                 foreach ($plateData as $idx => $row) {
@@ -5579,14 +5640,75 @@ function fetch_erp_data_by_intent(mysqli $db, string $prompt, string $userLang):
             // Save context
             $_SESSION['ai_last_plate_id'] = $plateData[0]['id'];
 
+            if ($jobSearchExplicit && count($plateData) > 1) {
+                $normStr = function($s) {
+                    return mb_strtolower(preg_replace('/[^\p{L}\p{N}]/u', '', (string)$s), 'UTF-8');
+                };
+                $targetNorm = $normStr($jobSearchExplicit);
+                
+                usort($plateData, function($a, $b) use ($normStr, $targetNorm) {
+                    $normA = $normStr($a['name'] ?? '');
+                    $normB = $normStr($b['name'] ?? '');
+                    if ($normA === $targetNorm) return -1;
+                    if ($normB === $targetNorm) return 1;
+                    if ($targetNorm !== '' && strpos($normA, $targetNorm) !== false && strpos($normB, $targetNorm) === false) return -1;
+                    if ($targetNorm !== '' && strpos($normB, $targetNorm) !== false && strpos($normA, $targetNorm) === false) return 1;
+                    return 0;
+                });
+            }
+
+            $isColorQuery = (preg_match('/\b(color|colors|colour|colours|কালার|কয়টি কালার|কত কালার|রং|कितने कलर)\b/i', $prompt) !== 0);
+            $directAnswerHeader = "";
+            if ($isColorQuery && !empty($plateData)) {
+                $targetRow = $plateData[0];
+                $targetName = trim($targetRow['name'] ?? 'Target Plate');
+                $targetPlateNo = trim($targetRow['plate'] ?? '');
+                $targetPlateStr = $targetPlateNo ? " (Plate: {$targetPlateNo})" : "";
+                $tColors = [];
+                foreach(['c','m','y','k','special_1','special_2','special_3','special_4','special_5'] as $cField) {
+                    $cv = trim((string)($targetRow[$cField] ?? ''));
+                    if ($cv !== '' && mb_strtolower($cv, 'UTF-8') !== 'na' && mb_strtolower($cv, 'UTF-8') !== 'n/a' && $cv !== '-') {
+                        $tColors[] = $cv;
+                    }
+                }
+                $tColorCount = count($tColors);
+                $tColorStr = $tColorCount > 0 ? implode(', ', $tColors) : 'None';
+                
+                if ($userLang === 'Bengali') {
+                    $directAnswerHeader = '<div style="background: linear-gradient(135deg, #eff6ff 0%, #e0f2fe 100%); border: 1.5px solid #3b82f6; border-left: 5px solid #2563eb; border-radius: 10px; padding: 12px 16px; margin: 10px 0 14px 0; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);">' . "\n"
+                        . '  <div style="font-weight: 800; color: #1e40af; font-size: 0.95rem; margin-bottom: 6px;">🎯 <b>সরাসরি উত্তর - "' . htmlspecialchars($targetName) . '"</b>' . htmlspecialchars($targetPlateStr) . '</div>' . "\n"
+                        . '  <div style="font-size: 0.9rem; color: #1e293b; line-height: 1.6;">' . "\n"
+                        . '    ▸ <b>মোট কালার:</b> <span style="background: #2563eb; color: #ffffff; padding: 2px 8px; border-radius: 12px; font-size: 0.82rem; font-weight: 700;">' . $tColorCount . 'টি</span><br>' . "\n"
+                        . '    ▸ <b>কালার লিস্ট:</b> <code style="background: #ffffff; color: #0f172a; padding: 3px 8px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: 600; font-family: monospace;">' . htmlspecialchars($tColorStr) . '</code>' . "\n"
+                        . '  </div>' . "\n"
+                        . '</div>' . "\n\n";
+                } elseif ($userLang === 'Hindi') {
+                    $directAnswerHeader = '<div style="background: linear-gradient(135deg, #eff6ff 0%, #e0f2fe 100%); border: 1.5px solid #3b82f6; border-left: 5px solid #2563eb; border-radius: 10px; padding: 12px 16px; margin: 10px 0 14px 0; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);">' . "\n"
+                        . '  <div style="font-weight: 800; color: #1e40af; font-size: 0.95rem; margin-bottom: 6px;">🎯 <b>सीधा उत्तर - "' . htmlspecialchars($targetName) . '"</b>' . htmlspecialchars($targetPlateStr) . '</div>' . "\n"
+                        . '  <div style="font-size: 0.9rem; color: #1e293b; line-height: 1.6;">' . "\n"
+                        . '    ▸ <b>कुल कलर:</b> <span style="background: #2563eb; color: #ffffff; padding: 2px 8px; border-radius: 12px; font-size: 0.82rem; font-weight: 700;">' . $tColorCount . '</span><br>' . "\n"
+                        . '    ▸ <b>कलर लिस्ट:</b> <code style="background: #ffffff; color: #0f172a; padding: 3px 8px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: 600; font-family: monospace;">' . htmlspecialchars($tColorStr) . '</code>' . "\n"
+                        . '  </div>' . "\n"
+                        . '</div>' . "\n\n";
+                } else {
+                    $directAnswerHeader = '<div style="background: linear-gradient(135deg, #eff6ff 0%, #e0f2fe 100%); border: 1.5px solid #3b82f6; border-left: 5px solid #2563eb; border-radius: 10px; padding: 12px 16px; margin: 10px 0 14px 0; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);">' . "\n"
+                        . '  <div style="font-weight: 800; color: #1e40af; font-size: 0.95rem; margin-bottom: 6px;">🎯 <b>Direct Answer for "' . htmlspecialchars($targetName) . '"</b>' . htmlspecialchars($targetPlateStr) . '</div>' . "\n"
+                        . '  <div style="font-size: 0.9rem; color: #1e293b; line-height: 1.6;">' . "\n"
+                        . '    ▸ <b>Total Colors Used:</b> <span style="background: #2563eb; color: #ffffff; padding: 2px 8px; border-radius: 12px; font-size: 0.82rem; font-weight: 700;">' . $tColorCount . ' Colors</span><br>' . "\n"
+                        . '    ▸ <b>Color Breakdown:</b> <code style="background: #ffffff; color: #0f172a; padding: 3px 8px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: 600; font-family: monospace;">' . htmlspecialchars($tColorStr) . '</code>' . "\n"
+                        . '  </div>' . "\n"
+                        . '</div>' . "\n\n";
+                }
+            }
+
             $sampleCount = count($plateData);
 
             if ($userLang === 'Bengali') {
-                $answer = "📐 **Plate Management & Math Engine:**\n\nআপনার ডাটাবেসে **{$sampleCount}টি ম্যাচিং প্লেট** পাওয়া গেছে:\n\n";
+                $answer = "📐 **Plate Management & Math Engine:**\n\n" . $directAnswerHeader . "আপনার ডাটাবেসে **{$sampleCount}টি ম্যাচিং প্লেট** পাওয়া গেছে:\n\n";
             } elseif ($userLang === 'Hindi') {
-                $answer = "📐 **Plate Management & Math Engine:**\n\nआपके डेटाबेस में **{$sampleCount} मैचिंग प्लेट** मिले हैं:\n\n";
+                $answer = "📐 **Plate Management & Math Engine:**\n\n" . $directAnswerHeader . "आपके डेटाबेस में **{$sampleCount} मैचिंग प्लेट** मिले हैं:\n\n";
             } else {
-                $answer = "📐 **Plate Management & Math Engine:**\n\nFound **{$sampleCount} matching plate(s)** in your database:\n\n";
+                $answer = "📐 **Plate Management & Math Engine:**\n\n" . $directAnswerHeader . "Found **{$sampleCount} matching plate(s)** in your database:\n\n";
             }
 
             foreach ($plateData as $idx => $row) {

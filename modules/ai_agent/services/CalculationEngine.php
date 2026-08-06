@@ -105,6 +105,57 @@ class CalculationEngine
         $labelsPerMeter = ($repeatMm > 0) ? ((1000 / $repeatMm) * $ups) : 0;
         $totalImpressions = 0;
 
+        // Check if required parameters for calculation are missing in DB (e.g. Repeat Value = 0mm)
+        if (($runningMeter > 0 || $labels > 0 || $budget > 0) && $repeatMm <= 0) {
+            $title = $plateRow ? trim($plateRow['name']) : "Job";
+            $slNo = $plateRow ? trim((string)($plateRow['sl_no'] ?? '')) : '';
+            $slStr = $slNo !== '' ? " (SL: {$slNo})" : "";
+            
+            if ($userLang === 'Bengali') {
+                $answer = "⚠️ **হিসাব সম্পন্ন করা সম্ভব হচ্ছে না (খালি ডাটা ওয়ার্নিং):**\n"
+                    . "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    . "📋 **জব নেম:** `{$title}`{$slStr}\n"
+                    . "❌ **অনুপস্থিত ডাটা:** **Repeat Value (রিপিট ভ্যালু `0mm` বা খালি)**\n\n"
+                    . "📌 **কারণ:**\n"
+                    . "রানিং মিটার থেকে লেবেল সংখ্যা বা পেপারের হিসাব করার জন্য **Repeat Value** থাকা বাধ্যতামূলক। "
+                    . "বর্তমানে ডাটাবেসে এই জবের রিপিট ভ্যালু `0mm` হয়ে রয়েছে।\n\n"
+                    . "💡 **পরামর্শ:**\n"
+                    . "১. [Plate Management Page]({$baseUrlCalc}/modules/plate-tools/plate-management/index.php) এ গিয়ে এই জবের **Repeat Value** আপডেট করুন।\n"
+                    . "২. অথবা প্রশ্নটিতে রিপিট ভ্যালু দিয়ে আবার চেষ্টা করুন (যেমন: `/plate \"{$title}\" {$runningMeter} mtr repeat 250mm`).\n";
+            } elseif ($userLang === 'Hindi') {
+                $answer = "⚠️ **गणना संभव नहीं है (खामी डेटा चेतावनी):**\n"
+                    . "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    . "📋 **जॉब नाम:** `{$title}`{$slStr}\n"
+                    . "❌ **अनुपलब्ध डेटा:** **Repeat Value (`0mm` या खाली)**\n\n"
+                    . "📌 **कारण:**\n"
+                    . "मीटर से लेबेल की सटीक गणना के लिए **Repeat Value** होना अनिवार्य है। वर्तमान में डेटाबेस में यह `0mm` है।\n\n"
+                    . "💡 **सुझाव:**\n"
+                    . "१. [Plate Management Page]({$baseUrlCalc}/modules/plate-tools/plate-management/index.php) पर जाएँ और Repeat Value अपडेट करें।\n"
+                    . "२. या सवाल में रिपीट वैल्यू जोड़ें (जैसे: `/plate \"{$title}\" {$runningMeter} mtr repeat 250mm`).\n";
+            } else {
+                $answer = "⚠️ **Calculation Cannot Be Completed (Missing Required Data):**\n"
+                    . "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    . "📋 **Job Name:** `{$title}`{$slStr}\n"
+                    . "❌ **Missing Field:** **Repeat Value (`0mm` or missing)**\n\n"
+                    . "📌 **Reason:**\n"
+                    . "Calculating label output from running meters requires a valid **Repeat Value** (> 0mm). "
+                    . "Currently, the ERP record for this job has `Repeat Value = 0mm`.\n\n"
+                    . "💡 **Suggestions:**\n"
+                    . "1. Open [Plate Management Page]({$baseUrlCalc}/modules/plate-tools/plate-management/index.php) and update the Repeat Value for this plate.\n"
+                    . "2. Or include the repeat value directly in your query (e.g., `/plate \"{$title}\" {$runningMeter} mtr repeat 250mm`).\n";
+            }
+
+            return [
+                'ok' => true,
+                'answer' => $answer,
+                'provider' => 'ERP AI Job Calculator',
+                'tool_used' => 'Job Calculation Engine',
+                'user_lang' => $userLang,
+                'suggestions' => ["Show {$title} details", "Open Plate Management"],
+                'command_type' => 'plate'
+            ];
+        }
+
         // Determine calculation mode
         if ($runningMeter > 0) {
             $calcType = 'running_meter';
