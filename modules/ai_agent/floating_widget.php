@@ -688,6 +688,47 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     }
   };
 
+  window._floatEditMsg = function(btn) {
+    var msgContent = btn.closest('.msg-content');
+    var bubble = msgContent.querySelector('.msg-bubble');
+    if (!bubble || msgContent.querySelector('.msg-edit-box')) return;
+
+    var originalText = ((bubble.innerText || bubble.textContent) || '').trim();
+    var originalHtml = bubble.innerHTML;
+
+    bubble.innerHTML = '<div class="msg-edit-box" style="display:flex;flex-direction:column;gap:8px;width:100%;margin-top:4px;">'
+      + '<textarea class="msg-edit-input" style="width:100%;min-height:55px;background:rgba(15,23,42,0.85);border:1px solid #3b82f6;color:#fff;border-radius:8px;padding:6px 8px;font-size:13px;resize:vertical;outline:none;font-family:inherit;">' + esc(originalText) + '</textarea>'
+      + '<div style="display:flex;gap:6px;justify-content:flex-end;">'
+      + '<button type="button" class="btn-cancel-edit" style="background:rgba(148,163,184,0.2);border:none;color:#cbd5e1;padding:3px 8px;border-radius:6px;font-size:12px;cursor:pointer;">Cancel</button>'
+      + '<button type="button" class="btn-save-edit" style="background:#3b82f6;border:none;color:#fff;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Save & Regenerate</button>'
+      + '</div></div>';
+
+    var textarea = bubble.querySelector('.msg-edit-input');
+    if (textarea) {
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    }
+
+    var cancelBtn = bubble.querySelector('.btn-cancel-edit');
+    if (cancelBtn) {
+      cancelBtn.onclick = function() { bubble.innerHTML = originalHtml; };
+    }
+
+    var saveBtn = bubble.querySelector('.btn-save-edit');
+    if (saveBtn) {
+      saveBtn.onclick = function() {
+        var newText = textarea.value.trim();
+        if (newText && input) {
+          bubble.innerHTML = esc(newText);
+          input.value = newText;
+          sendMsg();
+        } else {
+          bubble.innerHTML = originalHtml;
+        }
+      };
+    }
+  };
+
   // ─── Append a message to floating chat body (PWA-identical HTML) ───
   function addMsg(text, sender, toolUsed, suggestions, commandType) {
     if (!chatBody) return;
@@ -716,6 +757,8 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       bubbleHtml += '</div></div>';
     }
 
+    var editBtnHtml = sender === 'user' ? '<button class="btn-copy-msg btn-edit-msg" onclick="_floatEditMsg(this)" title="Edit Prompt"><i class="bi bi-pencil"></i></button>' : '';
+
     var cmdClass = commandType ? ' ai-cmd-' + commandType : '';
     var html = '<div class="msg-group ' + sender + cmdClass + '">'
       + '<div class="msg-row">'
@@ -725,6 +768,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       + '<div class="msg-footer">'
       + '<span class="msg-meta">' + label + ' \u00B7 ' + timeStr + '</span>'
       + '<button class="btn-copy-msg" onclick="_floatCopyMsg(this)" title="Copy"><i class="bi bi-clipboard"></i></button>'
+      + editBtnHtml
       + '<button class="btn-copy-msg btn-regen-msg" onclick="_floatRegenMsg(this)" title="Regenerate"><i class="bi bi-arrow-clockwise"></i></button>'
       + '</div></div></div></div>';
 

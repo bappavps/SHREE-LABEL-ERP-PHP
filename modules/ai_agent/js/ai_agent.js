@@ -77,6 +77,9 @@
       allHtml += '<div class="ai-msg-footer">';
       allHtml += '<span class="msg-meta">' + label + ' \u00B7 ' + timeStr + '</span>';
       allHtml += '<button class="ai-btn-copy-msg" title="Copy"><i class="bi bi-clipboard"></i></button>';
+      if (sender === 'user') {
+        allHtml += '<button class="ai-btn-copy-msg ai-btn-edit-msg" title="Edit Prompt"><i class="bi bi-pencil"></i></button>';
+      }
       allHtml += '<button class="ai-btn-copy-msg ai-btn-regen-msg" title="Regenerate"><i class="bi bi-arrow-clockwise"></i></button>';
       allHtml += '</div>';
     }
@@ -90,7 +93,7 @@
     chatBody.scrollTop = chatBody.scrollHeight;
   }
 
-  // Event delegation on chatBody for suggestion chips, copy & regenerate buttons
+  // Event delegation on chatBody for suggestion chips, copy, edit & regenerate buttons
   if (chatBody) {
     chatBody.addEventListener('click', function(e) {
       var chip = e.target.closest('.ai-suggestion-chip');
@@ -101,8 +104,48 @@
           return;
         }
       }
+      var editBtn = e.target.closest('.ai-btn-edit-msg');
+      if (editBtn) {
+        e.stopPropagation();
+        var msgDiv = editBtn.closest('.ai-msg');
+        var bubble = msgDiv.querySelector('.ai-msg-bubble');
+        if (!bubble || msgDiv.querySelector('.msg-edit-box')) return;
+
+        var originalText = (bubble.innerText || bubble.textContent).trim();
+        var originalHtml = bubble.innerHTML;
+
+        bubble.innerHTML = '<div class="msg-edit-box" style="display:flex;flex-direction:column;gap:8px;width:100%;margin-top:4px;">'
+          + '<textarea class="msg-edit-input" style="width:100%;min-height:55px;background:rgba(15,23,42,0.85);border:1px solid #3b82f6;color:#fff;border-radius:8px;padding:6px 8px;font-size:13px;resize:vertical;outline:none;font-family:inherit;">' + escapeHtml(originalText) + '</textarea>'
+          + '<div style="display:flex;gap:6px;justify-content:flex-end;">'
+          + '<button type="button" class="btn-cancel-edit" style="background:rgba(148,163,184,0.2);border:none;color:#cbd5e1;padding:3px 8px;border-radius:6px;font-size:12px;cursor:pointer;">Cancel</button>'
+          + '<button type="button" class="btn-save-edit" style="background:#3b82f6;border:none;color:#fff;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Save & Regenerate</button>'
+          + '</div></div>';
+
+        var textarea = bubble.querySelector('.msg-edit-input');
+        if (textarea) {
+          textarea.focus();
+          textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        }
+
+        var cancelBtn = bubble.querySelector('.btn-cancel-edit');
+        if (cancelBtn) { cancelBtn.onclick = function() { bubble.innerHTML = originalHtml; }; }
+
+        var saveBtn = bubble.querySelector('.btn-save-edit');
+        if (saveBtn) {
+          saveBtn.onclick = function() {
+            var newText = textarea.value.trim();
+            if (newText && !state.isProcessing) {
+              bubble.innerHTML = escapeHtml(newText);
+              handleSend(newText);
+            } else {
+              bubble.innerHTML = originalHtml;
+            }
+          };
+        }
+        return;
+      }
       var copyBtn = e.target.closest('.ai-btn-copy-msg');
-      if (copyBtn && !copyBtn.classList.contains('ai-btn-regen-msg')) {
+      if (copyBtn && !copyBtn.classList.contains('ai-btn-regen-msg') && !copyBtn.classList.contains('ai-btn-edit-msg')) {
         e.stopPropagation();
         var bubbleEl = copyBtn.closest('.ai-msg-content').querySelector('.ai-msg-bubble');
         var text = bubbleEl.innerText || bubbleEl.textContent;

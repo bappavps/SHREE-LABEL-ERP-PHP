@@ -1937,6 +1937,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
               <div class="msg-footer">
                 <span class="msg-meta">You · ${time}</span>
                 <button class="btn-copy-msg" onclick="copyMsg(this)" title="Copy"><i class="bi bi-clipboard"></i></button>
+                <button class="btn-copy-msg btn-edit-msg" onclick="editUserMsg(this)" title="Edit Prompt"><i class="bi bi-pencil"></i></button>
                 <button class="btn-copy-msg btn-regen-msg" onclick="regenerateMsg(this)" title="Regenerate"><i class="bi bi-arrow-clockwise"></i></button>
               </div>
             </div>
@@ -2022,6 +2023,43 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
         if (navigator.vibrate) navigator.vibrate(10);
         setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard"></i>'; btn.classList.remove('copied'); }, 1500);
       });
+    }
+
+    function editUserMsg(btn) {
+      const msgContent = btn.closest('.msg-content');
+      const bubble = msgContent.querySelector('.msg-bubble');
+      if (msgContent.querySelector('.msg-edit-box')) return;
+
+      const originalText = (bubble.innerText || bubble.textContent).trim();
+      const originalHtml = bubble.innerHTML;
+
+      bubble.innerHTML = `
+        <div class="msg-edit-box" style="display:flex;flex-direction:column;gap:8px;width:100%;margin-top:4px;">
+          <textarea class="msg-edit-input" style="width:100%;min-height:60px;background:rgba(15,23,42,0.85);border:1px solid #3b82f6;color:#fff;border-radius:8px;padding:8px 10px;font-size:14px;resize:vertical;outline:none;font-family:inherit;">${escapeHtml(originalText)}</textarea>
+          <div style="display:flex;gap:6px;justify-content:flex-end;">
+            <button type="button" class="btn-cancel-edit" style="background:rgba(148,163,184,0.2);border:none;color:#cbd5e1;padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;">Cancel</button>
+            <button type="button" class="btn-save-edit" style="background:#3b82f6;border:none;color:#fff;padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Save & Regenerate</button>
+          </div>
+        </div>`;
+
+      const textarea = bubble.querySelector('.msg-edit-input');
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+      bubble.querySelector('.btn-cancel-edit').onclick = function() {
+        bubble.innerHTML = originalHtml;
+      };
+
+      bubble.querySelector('.btn-save-edit').onclick = function() {
+        const newText = textarea.value.trim();
+        if (newText) {
+          bubble.innerHTML = escapeHtml(newText);
+          setChatText(newText);
+          processChatInput();
+        } else {
+          bubble.innerHTML = originalHtml;
+        }
+      };
     }
 
     function regenerateMsg(btn) {
