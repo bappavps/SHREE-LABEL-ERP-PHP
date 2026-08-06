@@ -833,6 +833,57 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
   </div>
 </div>
 
+<!-- Section: Document & Manual Knowledge Base (PDF / TXT Ingestion) -->
+<div class="ai-card full" style="border: 2px solid #818cf8; background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%); margin-bottom: 24px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+    <h4><i class="bi bi-file-earmark-pdf-fill" style="color:#4f46e5;"></i> Document & Manual Knowledge Base <span style="font-size:.78rem; font-weight:400; color:#6366f1;">(PDF / TXT / DOC RAG Upload)</span></h4>
+  </div>
+  <p style="font-size:.84rem; color:#475569; margin:0 0 16px;">
+    Upload company manuals, price lists, machine SOPs, or policy documents (PDF, TXT, MD, CSV, DOCX). The AI Agent automatically ingests, extracts text, and chunk-indexes the document for instant natural language Q&A!
+  </p>
+
+  <form id="doc_upload_form" style="background:#f1f5f9; padding:16px; border-radius:10px; border:1px dashed #94a3b8; margin-bottom:20px;">
+    <div style="display:grid; grid-template-columns: 2fr 3fr auto; gap:12px; align-items:flex-end;">
+      <div class="ai-field" style="margin-bottom:0;">
+        <label style="font-weight:700; color:#334155;">Document Title</label>
+        <input type="text" id="doc_title_input" placeholder="e.g. Return Policy, Machine SOP, Price List" style="background:#fff;">
+      </div>
+      <div class="ai-field" style="margin-bottom:0;">
+        <label style="font-weight:700; color:#334155;">Select File (PDF, TXT, DOC, CSV)</label>
+        <input type="file" id="doc_file_input" accept=".pdf,.txt,.md,.csv,.json,.doc,.docx" style="background:#fff;">
+      </div>
+      <div>
+        <button type="button" class="ai-btn ai-btn-primary" onclick="uploadAiDocument()" id="doc_upload_btn" style="height:42px; background:#4f46e5; border-color:#4338ca;">
+          <i class="bi bi-cloud-arrow-up-fill"></i> Upload & Ingest
+        </button>
+      </div>
+    </div>
+    <div id="doc_upload_status" style="margin-top:10px; font-size:.84rem; font-weight:600; display:none;"></div>
+  </form>
+
+  <h5 style="font-size:.9rem; font-weight:700; color:#1e1b4b; margin-bottom:10px;"><i class="bi bi-journals"></i> Ingested Documents List</h5>
+  <div id="doc_table_wrap">
+    <table class="kb-table">
+      <thead>
+        <tr>
+          <th style="width:40px">#</th>
+          <th>Document Title</th>
+          <th>Original File Name</th>
+          <th style="width:90px">Type</th>
+          <th style="width:110px">Characters</th>
+          <th style="width:150px">Uploaded At</th>
+          <th style="width:90px">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="doc_tbody">
+        <tr>
+          <td colspan="7" style="text-align:center; color:#94a3b8; padding:20px">Loading uploaded documents...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <!-- Section 3: Plugin Installation Guide -->
 <div class="ai-card full">
   <h4><i class="bi bi-plug"></i> Plugin Installation Guide (Hostinger / Remote Server)</h4>
@@ -1465,11 +1516,107 @@ $aiCsrfToken = $_SESSION['ai_agent_csrf_token'];
     return d.innerHTML;
   }
 
-  // Close modal on overlay click
-  document.getElementById('kb_modal').addEventListener('click', function (e) {
-    if (e.target === this) kbCloseModal();
-  });
+  // ─── Document Upload & Ingestion JS ───
+  function docLoadList() {
+    fetch(KB_API + '?action=list_documents')
+      .then(r => r.json())
+      .then(d => {
+        const tbody = document.getElementById('doc_tbody');
+        if (!tbody) return;
+        if (!d.ok || !d.documents || d.documents.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:24px"><i class="bi bi-file-earmark-text" style="font-size:1.8rem;display:block;margin-bottom:6px"></i>No documents uploaded yet.<br><small>Upload a PDF, TXT, or DOC file above to train the AI.</small></td></tr>';
+          return;
+        }
+        let html = '';
+        d.documents.forEach((doc) => {
+          const typeBadge = '<span class="kb-cat-badge kb-cat-faq" style="background:#e0e7ff;color:#3730a3;text-transform:uppercase">' + escHtml(doc.file_type) + '</span>';
+          html += '<tr>'
+            + '<td style="color:#94a3b8">' + doc.id + '</td>'
+            + '<td style="font-weight:700;color:#1e1b4b">' + escHtml(doc.title) + '</td>'
+            + '<td><code>' + escHtml(doc.original_name) + '</code></td>'
+            + '<td>' + typeBadge + '</td>'
+            + '<td><span style="font-weight:600;color:#059669">' + (parseInt(doc.char_count) || 0).toLocaleString() + ' chars</span></td>'
+            + '<td style="font-size:.78rem;color:#64748b">' + escHtml(doc.created_at) + '</td>'
+            + '<td><button class="ai-btn ai-btn-sm" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca" onclick="docDelete(' + doc.id + ')" title="Delete Document"><i class="bi bi-trash"></i></button></td>'
+            + '</tr>';
+        });
+        tbody.innerHTML = html;
+      })
+      .catch(() => {
+        const tbody = document.getElementById('doc_tbody');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="color:#b91c1c;text-align:center">Error loading documents.</td></tr>';
+      });
+  }
+
+  function uploadAiDocument() {
+    const fileInput = document.getElementById('doc_file_input');
+    const titleInput = document.getElementById('doc_title_input');
+    const statusDiv = document.getElementById('doc_upload_status');
+    const btn = document.getElementById('doc_upload_btn');
+
+    if (!fileInput.files || fileInput.files.length === 0) {
+      alert('Please select a PDF, TXT, or DOC file to upload.');
+      return;
+    }
+
+    const file = fileInput.files[0];
+    const fd = new FormData();
+    fd.append('action', 'upload_document');
+    fd.append('doc_file', file);
+    fd.append('title', titleInput.value.trim());
+    fd.append('csrf_token', AI_CSRF_TOKEN);
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split spin"></i> Ingesting...';
+    statusDiv.style.display = 'block';
+    statusDiv.style.color = '#4338ca';
+    statusDiv.innerHTML = '⏳ Extracting text and indexing document for AI... Please wait.';
+
+    fetch(KB_API, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(d => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-cloud-arrow-up-fill"></i> Upload & Ingest';
+        if (d.ok) {
+          statusDiv.style.color = '#16a34a';
+          statusDiv.innerHTML = '✅ ' + d.message + ' (' + (d.char_count || 0).toLocaleString() + ' chars, ' + d.chunks_created + ' knowledge chunks indexed)';
+          fileInput.value = '';
+          titleInput.value = '';
+          docLoadList();
+          kbLoad();
+        } else {
+          statusDiv.style.color = '#dc2626';
+          statusDiv.innerHTML = '❌ ' + (d.error || 'Upload failed.');
+        }
+      })
+      .catch(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-cloud-arrow-up-fill"></i> Upload & Ingest';
+        statusDiv.style.color = '#dc2626';
+        statusDiv.innerHTML = '❌ Network error during upload.';
+      });
+  }
+
+  function docDelete(id) {
+    if (!confirm('Are you sure you want to delete this document and remove its indexed knowledge chunks?')) return;
+    const fd = new FormData();
+    fd.append('action', 'delete_document');
+    fd.append('id', id);
+    fd.append('csrf_token', AI_CSRF_TOKEN);
+    fetch(KB_API, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok) {
+          docLoadList();
+          kbLoad();
+        } else {
+          alert(d.error || 'Delete failed.');
+        }
+      })
+      .catch(() => alert('Network error.'));
+  }
 
   // Initial load
   kbLoad();
+  docLoadList();
 </script>

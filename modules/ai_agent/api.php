@@ -1742,7 +1742,7 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array
 
     $promptLower = mb_strtolower(trim($prompt), 'UTF-8');
     preg_match_all('/[\x{0980}-\x{09FF}\x{0900}-\x{097F}\w]+/u', $promptLower, $promptMatches);
-    $kbStopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'show', 'details', 'this', 'the', 'a', 'an', 'what', 'where', 'how', 'when', 'who', 'list', 'get', 'for', 'about', 'with', 'from', 'ache', 'koto', 'kotogulo', 'ki', 'kon', 'jabe', 'hote', 'ar', 'er', 'diye', 'giye', 'ache', 'hobe', 'হে', 'আছে', 'কত', 'কতগুলো', 'কি', 'কী', 'কোন', 'দিয়ে', 'গিয়ে', 'নাম', 'বলো', 'কোথায়', 'কোনটি', 'এবং', 'বা', 'এর', 'সেরা', 'টি', 'গুলো', 'গুলা', 'দাও', 'করো', 'করবে', 'কে', 'কেন', 'কবে', 'থেকে', 'তে', 'যে', 'ও', 'আর', 'হলো', 'হল', 'নাকি', 'তাই', 'যেন', 'তবে', 'সুতরাং', 'খুব', 'সবচেয়ে', 'কয়েকটি', 'বৈশিষ্ট্য', 'পৃথিবীর'];
+    $kbStopwords = ['can', 'you', 'tell', 'me', 'which', 'is', 'in', 'my', 'show', 'details', 'detail', 'this', 'the', 'a', 'an', 'what', 'where', 'how', 'when', 'who', 'list', 'get', 'for', 'about', 'with', 'from', 'name', 'original', 'info', 'type', 'number', 'data', 'search', 'find', 'value', 'total', 'count', 'ache', 'koto', 'kotogulo', 'ki', 'kon', 'jabe', 'hote', 'ar', 'er', 'diye', 'giye', 'ache', 'hobe', 'হে', 'আছে', 'কত', 'কতগুলো', 'কি', 'কী', 'কোন', 'দিয়ে', 'গিয়ে', 'নাম', 'বলো', 'কোথায়', 'কোনটি', 'এবং', 'বা', 'এর', 'সেরা', 'টি', 'গুলো', 'গুলা', 'দাও', 'করো', 'করবে', 'কে', 'কেন', 'কবে', 'থেকে', 'তে', 'যে', 'ও', 'আর', 'হলো', 'হল', 'নাকি', 'তাই', 'যেন', 'তবে', 'সুতরাং', 'খুব', 'সবচেয়ে', 'কয়েকটি', 'বৈশিষ্ট্য', 'পৃথিবীর'];
 
     $promptTokens = array_filter($promptMatches[0] ?? [], function ($t) use ($kbStopwords) {
         return mb_strlen($t) >= 3 && !in_array($t, $kbStopwords, true);
@@ -1814,7 +1814,7 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array
         }
     }
 
-    if ($bestMatch && $bestScore >= 2.0) {
+    if ($bestMatch && $bestScore >= 2.5) {
         return $bestMatch;
     }
     return null;

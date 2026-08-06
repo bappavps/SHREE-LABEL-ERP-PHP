@@ -30,6 +30,21 @@ if (empty($_SESSION['ai_agent_knowledge_table_checked'])) {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
     }
+    $docTableCheck = $db->query("SHOW TABLES LIKE 'ai_agent_documents'");
+    if ($docTableCheck && $docTableCheck->num_rows === 0) {
+        $db->query("
+            CREATE TABLE ai_agent_documents (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                title VARCHAR(255) NOT NULL,
+                file_name VARCHAR(255) NOT NULL,
+                original_name VARCHAR(255) NOT NULL,
+                file_type VARCHAR(50) NOT NULL,
+                extracted_text LONGTEXT NOT NULL,
+                char_count INT DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    }
     $_SESSION['ai_agent_knowledge_table_checked'] = true;
 }
 
@@ -118,6 +133,25 @@ switch ($action) {
         break;
     case 'test_fallback_chain':
         testFallbackChain();
+        break;
+    case 'upload_document':
+        if (!validateCsrf($csrfToken, $expectedToken)) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'Invalid CSRF token.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        uploadDocument($db);
+        break;
+    case 'list_documents':
+        listDocuments($db);
+        break;
+    case 'delete_document':
+        if (!validateCsrf($csrfToken, $expectedToken)) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'Invalid CSRF token.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        deleteDocument($db);
         break;
     default:
         http_response_code(400);
@@ -651,14 +685,7 @@ function testFallbackChain()
         $label = $ep['label'];
         $url = $ep['url'];
         $apiKey = $ep['api_key'];
-        $model = $ep['model'];
-        
-        if ($url === 'gemini') {
-             $details[] = ['label' => $label, 'status' => 'ok', 'info' => 'API Key Configured (Skipped curl test)'];
-             continue;
-        }
-
-        if (empty($url)) {
+        $model = $ep['model'];        if (empty($url)) {
             $details[] = ['label' => $label, 'status' => 'skip', 'info' => 'No URL'];
             continue;
         }
@@ -716,4 +743,170 @@ function testFallbackChain()
         'message' => $successCount . '/' . count($allEndpoints) . ' active agents connected.',
         'details' => $details,
     ], JSON_UNESCAPED_UNICODE);
+}
+
+/* ── Document / PDF Upload & Extraction Functions ──────────────────────── */
+
+function extractTextFromPdfFile($filePath) {
+    if (!file_exists($filePath)) return '';
+    $content = @file_get_contents($filePath);
+    if (!$content) return '';
+
+    $text = '';
+    if (preg_match_all('/BT[\s\S]*?ET/s', $content, $btMatches)) {
+        foreach ($btMatches[0] as $bt) {
+            if (preg_match_all('/\((.*?)\)\s*T[jJ]/s', $bt, $tjMatches)) {
+                foreach ($tjMatches[1] as $str) {
+                    $text .= $str . ' ';
+                }
+            }
+            if (preg_match_all('/\[(.*?)\]\s*TJ/s', $bt, $arrayMatches)) {
+                foreach ($arrayMatches[1] as $arr) {
+                    if (preg_match_all('/\((.*?)\)/s', $arr, $subMatches)) {
+                        foreach ($subMatches[1] as $str) {
+                            $text .= $str;
+                        }
+                    }
+                    $text .= ' ';
+                }
+            }
+        }
+    }
+
+    if (trim($text) === '') {
+        preg_match_all('/[\x20-\x7E\xA0-\xFF]{4,}/', $content, $matches);
+        $text = implode(' ', array_filter($matches[0], function($s) {
+            return !preg_match('/^\/(Font|Catalog|Page|Stream|Obj|Type|Parent|Root|Length|Filter)/i', $s);
+        }));
+    }
+
+    return trim($text);
+}
+
+function uploadDocument($db) {
+    $title = trim($_POST['title'] ?? '');
+    if (empty($_FILES['doc_file']) || $_FILES['doc_file']['error'] !== UPLOAD_ERR_OK) {
+        echo json_encode(['ok' => false, 'error' => 'Please select a valid document file to upload.'], JSON_UNESCAPED_UNICODE);
+        return;
+    }
+
+    $file = $_FILES['doc_file'];
+    $origName = $file['name'];
+    $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+
+    $allowed = ['pdf', 'txt', 'md', 'csv', 'json', 'doc', 'docx'];
+    if (!in_array($ext, $allowed)) {
+        echo json_encode(['ok' => false, 'error' => 'Only PDF, TXT, MD, CSV, JSON, and DOC files are supported.'], JSON_UNESCAPED_UNICODE);
+        return;
+    }
+
+    if ($title === '') {
+        $title = pathinfo($origName, PATHINFO_FILENAME);
+    }
+
+    $uploadDir = __DIR__ . '/../../uploads/ai_documents/';
+    if (!is_dir($uploadDir)) {
+        @mkdir($uploadDir, 0777, true);
+    }
+
+    $safeFileName = 'ai_doc_' . time() . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', $origName);
+    $targetPath = $uploadDir . $safeFileName;
+
+    if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
+        echo json_encode(['ok' => false, 'error' => 'Failed to save uploaded file on server.'], JSON_UNESCAPED_UNICODE);
+        return;
+    }
+
+    $extractedText = '';
+    if ($ext === 'pdf') {
+        $extractedText = extractTextFromPdfFile($targetPath);
+    } else {
+        $raw = @file_get_contents($targetPath);
+        if ($raw) {
+            $extractedText = @mb_convert_encoding($raw, 'UTF-8', 'UTF-8, ISO-8859-1, WINDOWS-1252');
+        }
+    }
+
+    if (empty($extractedText)) {
+        $extractedText = "Uploaded document: " . $title . " (File: " . $origName . ")";
+    }
+
+    $charCount = mb_strlen($extractedText, 'UTF-8');
+
+    $stmt = $db->prepare("INSERT INTO ai_agent_documents (title, file_name, original_name, file_type, extracted_text, char_count) VALUES (?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param("sssssi", $title, $safeFileName, $origName, $ext, $extractedText, $charCount);
+    $stmt->execute();
+    $docId = $db->insert_id;
+    $stmt->close();
+
+    // Chunk and ingest into ai_agent_knowledge so RAG immediately matches questions
+    $chunkSize = 800;
+    $len = mb_strlen($extractedText, 'UTF-8');
+    $part = 1;
+    for ($i = 0; $i < $len; $i += $chunkSize) {
+        $chunk = mb_substr($extractedText, $i, $chunkSize, 'UTF-8');
+        $q = "Document: " . $title . " (Part " . $part . ")";
+        $cat = "Document: " . $title;
+        $kw = $title . ", " . $origName;
+        
+        $kbStmt = $db->prepare("INSERT INTO ai_agent_knowledge (category, question, answer, keywords, is_active) VALUES (?, ?, ?, ?, 1)");
+        $kbStmt->bind_param("ssss", $cat, $q, $chunk, $kw);
+        $kbStmt->execute();
+        $kbStmt->close();
+        $part++;
+    }
+
+    echo json_encode([
+        'ok' => true,
+        'doc_id' => $docId,
+        'title' => $title,
+        'char_count' => $charCount,
+        'chunks_created' => ($part - 1),
+        'message' => 'Document successfully uploaded and ingested into AI Knowledge Base!'
+    ], JSON_UNESCAPED_UNICODE);
+}
+
+function listDocuments($db) {
+    $res = $db->query("SELECT id, title, file_name, original_name, file_type, char_count, created_at FROM ai_agent_documents ORDER BY id DESC");
+    $docs = [];
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $docs[] = $row;
+        }
+    }
+    echo json_encode(['ok' => true, 'documents' => $docs], JSON_UNESCAPED_UNICODE);
+}
+
+function deleteDocument($db) {
+    $id = (int) ($_POST['id'] ?? 0);
+    if ($id <= 0) {
+        echo json_encode(['ok' => false, 'error' => 'Invalid document ID.'], JSON_UNESCAPED_UNICODE);
+        return;
+    }
+
+    $stmt = $db->prepare("SELECT title, file_name FROM ai_agent_documents WHERE id = ?");
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $doc = $res->fetch_assoc();
+    $stmt->close();
+
+    if ($doc) {
+        $filePath = __DIR__ . '/../../uploads/ai_documents/' . $doc['file_name'];
+        if (file_exists($filePath)) {
+            @unlink($filePath);
+        }
+        $catLike = 'Document: ' . $doc['title'] . '%';
+        $delKb = $db->prepare("DELETE FROM ai_agent_knowledge WHERE category LIKE ?");
+        $delKb->bind_param("s", $catLike);
+        $delKb->execute();
+        $delKb->close();
+
+        $delDoc = $db->prepare("DELETE FROM ai_agent_documents WHERE id = ?");
+        $delDoc->bind_param("i", $id);
+        $delDoc->execute();
+        $delDoc->close();
+    }
+
+    echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
 }
