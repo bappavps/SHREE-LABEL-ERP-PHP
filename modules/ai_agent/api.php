@@ -1204,6 +1204,59 @@ if (strpos($pTrimmed, '/erp') === 0 || $pTrimmed === 'erp' || $pTrimmed === 'ই
         echo json_encode(['ok' => true, 'answer' => $answer, 'provider' => 'ERP Executive 360 Engine', 'tool_used' => 'Master ERP Overview Tool', 'user_lang' => $userLang, 'suggestions' => $suggestions, 'command_type' => 'erp'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         exit;
     } else {
+        $subLower = mb_strtolower($subQuery, 'UTF-8');
+        if (strpos($subLower, 'floor') !== false || strpos($subLower, 'live') !== false || strpos($subLower, 'production') !== false || strpos($subLower, 'ফ্লোর') !== false || strpos($subLower, 'প্রোডাকশন') !== false || strpos($subLower, 'জব') !== false) {
+            $jobRes = $db->query("SELECT department, status, COUNT(*) as cnt FROM jobs GROUP BY department, status");
+            $deptStats = [];
+            if ($jobRes) {
+                while ($r = $jobRes->fetch_assoc()) {
+                    $d = $r['department'] ?: 'Planning';
+                    $st = $r['status'] ?: 'Pending';
+                    $deptStats[$d][$st] = (int)$r['cnt'];
+                }
+            }
+
+            $planRes = $db->query("SELECT id, job_no, job_name, status, department FROM planning ORDER BY id DESC LIMIT 5");
+            $recentPlans = $planRes ? $planRes->fetch_all(MYSQLI_ASSOC) : [];
+
+            $baseUrl = defined('BASE_URL') ? BASE_URL : '/shree-label-php';
+
+            if ($userLang === 'Bengali') {
+                $answer = "📊 **Shree Label ERP — লাইভ ফ্লোর রিয়েল-টাইম প্রোডাকশন সামারি:**\n\n"
+                    . "⚙️ **স্টেজ-বাই-স্টেজ লাইভ ফ্লোর স্ট্যাটাস:**\n"
+                    . "  - 📝 **Planning Stage:** " . (count($recentPlans)) . "টি অ্যাক্টিভ জব কার্ড\n"
+                    . "  - ✂️ **Jumbo Slitting:** " . ($deptStats['jumbo_slitting']['In Progress'] ?? $deptStats['jumbo_slitting']['Pending'] ?? 0) . "টি জব প্রক্রিয়াধীন\n"
+                    . "  - 🖨️ **Flexo Printing:** " . ($deptStats['flexo_printing']['In Progress'] ?? $deptStats['flexo_printing']['Pending'] ?? 0) . "টি জব প্রিন্টিংয়ে\n"
+                    . "  - 🔪 **Die Cutting / Flatbed:** " . ($deptStats['flatbed']['In Progress'] ?? $deptStats['flatbed']['Pending'] ?? 0) . "টি জব ডাই-কাটিংয়ে\n"
+                    . "  - 🏷️ **Label Slitting:** " . ($deptStats['label_slitting']['In Progress'] ?? $deptStats['label_slitting']['Queued'] ?? 0) . "টি জব স্লিটিংয়ে\n"
+                    . "  - 📦 **Packing & Dispatch:** " . ($deptStats['packing']['Completed'] ?? 0) . "টি জব প্রস্তুত\n\n"
+                    . "📋 **সাম্প্রতিক রানিং জবস:**\n";
+                foreach ($recentPlans as $pRow) {
+                    $answer .= "• **`" . ($pRow['job_no'] ?: 'PLN-JOB') . "`** — `" . ($pRow['job_name'] ?: 'Production Job') . "` (স্ট্যাটাস: **" . ($pRow['status'] ?: 'In Production') . "**)\n";
+                }
+                $answer .= "\n👉 [লাইভ ফ্লোর ড্যাশবোর্ড খুলতে এখানে ক্লিক করুন]({$baseUrl}/modules/live_floor/index.php)";
+                $suggestions = ['/paper', '/plate', '/stock', '/erp'];
+            } else {
+                $answer = "📊 **Shree Label ERP — Live Floor Real-Time Production Summary:**\n\n"
+                    . "⚙️ **Stage-by-Stage Live Floor Status:**\n"
+                    . "  - 📝 **Planning Stage:** " . (count($recentPlans)) . " Active Jobs\n"
+                    . "  - ✂️ **Jumbo Slitting:** " . ($deptStats['jumbo_slitting']['In Progress'] ?? $deptStats['jumbo_slitting']['Pending'] ?? 0) . " Jobs In-Progress\n"
+                    . "  - 🖨️ **Flexo Printing:** " . ($deptStats['flexo_printing']['In Progress'] ?? $deptStats['flexo_printing']['Pending'] ?? 0) . " Jobs Printing\n"
+                    . "  - 🔪 **Die Cutting / Flatbed:** " . ($deptStats['flatbed']['In Progress'] ?? $deptStats['flatbed']['Pending'] ?? 0) . " Jobs Die-Cutting\n"
+                    . "  - 🏷️ **Label Slitting:** " . ($deptStats['label_slitting']['In Progress'] ?? $deptStats['label_slitting']['Queued'] ?? 0) . " Jobs Slitting\n"
+                    . "  - 📦 **Packing & Dispatch:** " . ($deptStats['packing']['Completed'] ?? 0) . " Jobs Ready\n\n"
+                    . "📋 **Recent Active Jobs:**\n";
+                foreach ($recentPlans as $pRow) {
+                    $answer .= "• **`" . ($pRow['job_no'] ?: 'PLN-JOB') . "`** — `" . ($pRow['job_name'] ?: 'Production Job') . "` (Status: **" . ($pRow['status'] ?: 'In Production') . "**)\n";
+                }
+                $answer .= "\n👉 [Click here to open Live Floor Dashboard]({$baseUrl}/modules/live_floor/index.php)";
+                $suggestions = ['/paper', '/plate', '/stock', '/erp'];
+            }
+
+            echo json_encode(['ok' => true, 'answer' => $answer, 'provider' => 'ERP Live Floor Engine', 'tool_used' => 'Live Floor Real-Time Tool', 'user_lang' => $userLang, 'suggestions' => $suggestions, 'command_type' => 'erp'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+
         $erpOnlyMode = true;
         $prompt = $subQuery;
         $p = mb_strtolower($prompt, 'UTF-8');
