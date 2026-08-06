@@ -2064,6 +2064,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
           bubble.innerHTML = escapeHtml(newText);
           setChatText(newText);
           processChatInput();
+          sendQuery();
         } else {
           bubble.innerHTML = originalHtml;
         }
@@ -2090,6 +2091,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       if (promptText) {
         setChatText(promptText);
         processChatInput();
+        sendQuery();
       }
     }
 

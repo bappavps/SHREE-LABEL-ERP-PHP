@@ -683,9 +683,8 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
         prev = prev.previousElementSibling;
       }
     }
-    if (promptText && input) {
-      input.value = promptText;
-      sendMsg();
+    if (promptText && typeof doSend === 'function') {
+      doSend(promptText);
     }
   };
 
@@ -719,10 +718,9 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     if (saveBtn) {
       saveBtn.onclick = function() {
         var newText = textarea.value.trim();
-        if (newText && input) {
+        if (newText && typeof doSend === 'function') {
           bubble.innerHTML = esc(newText);
-          input.value = newText;
-          sendMsg();
+          doSend(newText);
         } else {
           bubble.innerHTML = originalHtml;
         }
