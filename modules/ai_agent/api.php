@@ -1112,6 +1112,104 @@ if ($pTrimmedSingle === '/' || $pTrimmedSingle === '/help' || $pTrimmedSingle ==
     exit;
 }
 
+// /erp command — Master Executive 360° ERP Overview
+if (strpos($pTrimmed, '/erp') === 0 || $pTrimmed === 'erp' || $pTrimmed === 'ইআরপি' || $pTrimmed === 'ईआरपी') {
+    $subQuery = preg_replace('/^\/erp\s*/iu', '', trim($prompt));
+    $subQuery = preg_replace('/^ইআরপি\s*/u', '', $subQuery);
+    $subQuery = preg_replace('/^ईआरपी\s*/u', '', $subQuery);
+    $subQuery = trim($subQuery);
+
+    if ($subQuery === '') {
+        $paperStmt = $db->query("SELECT COUNT(*) as total_rolls, IFNULL(SUM(length_mtr),0) as total_mtr, IFNULL(SUM((width_mm/1000)*length_mtr),0) as total_sqm, IFNULL(SUM(weight_kg),0) as total_wt FROM paper_stock");
+        $paperRow = $paperStmt ? $paperStmt->fetch_assoc() : [];
+        $totalRolls = (int)($paperRow['total_rolls'] ?? 0);
+        $totalMtr = (float)($paperRow['total_mtr'] ?? 0);
+        $totalSqm = (float)($paperRow['total_sqm'] ?? 0);
+        $totalWt = (float)($paperRow['total_wt'] ?? 0);
+
+        $plateStmt = $db->query("SELECT COUNT(*) as total_plates FROM master_plate_data");
+        $totalPlates = $plateStmt ? (int)($plateStmt->fetch_assoc()['total_plates'] ?? 0) : 0;
+
+        if (!defined('MI_HELPER_ONLY')) define('MI_HELPER_ONLY', true);
+        require_once __DIR__ . '/../inventory/mixed-item/api/mixed_item_api.php';
+        $mixedRows = function_exists('mi_fetch_rows') ? mi_fetch_rows($db, '') : [];
+        $totalMixedItems = count($mixedRows);
+        $totalMixedQty = 0;
+        foreach ($mixedRows as $mr) { $totalMixedQty += (float)($mr['extra_qty'] ?? 0); }
+
+        $jobStmt = $db->query("SELECT COUNT(*) as cnt FROM jobs WHERE status NOT IN ('Completed','Cancelled')");
+        $activeJobsCount = $jobStmt ? (int)($jobStmt->fetch_assoc()['cnt'] ?? 0) : 0;
+
+        if ($userLang === 'Bengali') {
+            $answer = "🌐 **Shree Label ERP — এক্সিকিউটিভ ৩৬০° মাস্টার সিস্টেম ও ইনভেন্টরি ওভারভিউ:**\n\n"
+                . "📦 **১. পেপার স্টক ইনভেন্টরি (`/paper`):**\n"
+                . "  - 🔵 মোট রোল সংখ্যা: **" . number_format($totalRolls) . "টি রোল**\n"
+                . "  - ⚡ সর্বমোট রানিং লেন্থ: **" . number_format($totalMtr, 0) . " মিটার (MTR)**\n"
+                . "  - 📐 সর্বমোট সারফেস এরিয়া: **" . number_format($totalSqm, 0) . " SQM**\n"
+                . "  - ⚖️ মোট গ্রস ওজন: **" . number_format($totalWt, 0) . " KG**\n\n"
+                . "🏷️ **২. মাস্টার প্লেট ইনভেন্টরি (`/plate`):**\n"
+                . "  - 📁 রেজিষ্টার্ড মোট মাস্টার প্লেট: **" . number_format($totalPlates) . "টি প্লেট**\n"
+                . "  - ⚙️ সিলিন্ডার সাপোর্ট: **9 inch থেকে 16 inch & Flat Bed**\n\n"
+                . "🔀 **৩. মিক্সড আইটেম ও এক্সট্রা প্রোডাকশন পুল (`/stock`):**\n"
+                . "  - 🔀 অ্যাক্টিভ এক্সট্রা পুল ব্যাচ: **" . number_format($totalMixedItems) . "টি আইটেম** (মোট লুজ স্টক: **" . number_format($totalMixedQty) . " PCS**)\n\n"
+                . "⚙️ **৪. লাইভ প্রোডাকশন ফ্লোর ও জবস (`/job`):**\n"
+                . "  - 📋 প্রোডাকশনে রানিং মোট জব: **" . number_format($activeJobsCount) . "টি জব**\n\n"
+                . "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                . "👉 **নির্দিষ্ট মডিউলের বিস্তারিত জানতে নিচে ক্লিক করুন বা টাইপ করুন:**\n"
+                . "• **`/paper`** ➔ পেপার স্টক, রানিং মিটার ও সাপ্লায়ার বিশ্লেষণ\n"
+                . "• **`/plate`** ➔ প্লেট সার্চ, রিক্যালকুলেশন, আপস ও সিলিন্ডার সাইজ\n"
+                . "• **`/stock`** ➔ মিক্সড এক্সট্রা স্টক ও প্যাকিং হ্যান্ডওভার";
+            $suggestions = ['/paper', '/plate', '/stock', '/cal 100mm x 150mm'];
+        } elseif ($userLang === 'Hindi') {
+            $answer = "🌐 **Shree Label ERP — एग्जीक्यूटिव 360° मास्टर सिस्टम और इन्वेंटरी सारांश:**\n\n"
+                . "📦 **1. पेपर स्टॉक इन्वेंटरी (`/paper`):**\n"
+                . "  - 🔵 कुल रोल संख्या: **" . number_format($totalRolls) . " रोल**\n"
+                . "  - ⚡ कुल रनिंग मीटर: **" . number_format($totalMtr, 0) . " मीटर (MTR)**\n"
+                . "  - 📐 कुल सरफेस एरिया: **" . number_format($totalSqm, 0) . " SQM**\n"
+                . "  - ⚖️ कुल वजन: **" . number_format($totalWt, 0) . " KG**\n\n"
+                . "🏷️ **2. मास्टर प्लेट इन्वेंटरी (`/plate`):**\n"
+                . "  - 📁 पंजीकृत कुल मास्टर प्लेट: **" . number_format($totalPlates) . " प्लेट**\n\n"
+                . "🔀 **3. मिक्सड और एक्स्ट्रा पूल (`/stock`):**\n"
+                . "  - 🔀 एक्टिव एक्स्ट्रा पूल बैच: **" . number_format($totalMixedItems) . " आइटम** (" . number_format($totalMixedQty) . " PCS)\n\n"
+                . "⚙️ **4. लाइव प्रोडक्शन और जॉब्स (`/job`):**\n"
+                . "  - 📋 एक्टिव प्रोडक्शन जॉब्स: **" . number_format($activeJobsCount) . " जॉब**\n\n"
+                . "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                . "👉 **विस्तृत रिपोर्ट के लिए चुनें:**\n"
+                . "• **`/paper`** ➔ पेपर स्टॉक और सप्लायर रिपोर्ट\n"
+                . "• **`/plate`** ➔ प्लेट सर्च और सिलेंडर साइज\n"
+                . "• **`/stock`** ➔ मिक्सड आइटम और रीपैकिंग";
+            $suggestions = ['/paper', '/plate', '/stock', '/cal 100mm x 150mm'];
+        } else {
+            $answer = "🌐 **Shree Label ERP — Executive 360° Master System & Inventory Overview:**\n\n"
+                . "📦 **1. Paper Stock Inventory (`/paper`):**\n"
+                . "  - 🔵 Total Rolls in Inventory: **" . number_format($totalRolls) . " Rolls**\n"
+                . "  - ⚡ Total Running Length: **" . number_format($totalMtr, 0) . " MTR**\n"
+                . "  - 📐 Total Surface Area: **" . number_format($totalSqm, 0) . " SQM**\n"
+                . "  - ⚖️ Gross Inventory Weight: **" . number_format($totalWt, 0) . " KG**\n\n"
+                . "🏷️ **2. Master Plate Inventory (`/plate`):**\n"
+                . "  - 📁 Total Registered Master Plates: **" . number_format($totalPlates) . " Plates**\n"
+                . "  - ⚙️ Cylinder Support: **9 inch to 16 inch & Flat Bed**\n\n"
+                . "🔀 **3. Mixed & Extra Production Pool (`/stock`):**\n"
+                . "  - 🔀 Active Extra Pool Batches: **" . number_format($totalMixedItems) . " Items** (Total Loose Stock: **" . number_format($totalMixedQty) . " PCS**)\n\n"
+                . "⚙️ **4. Active Production & Live Floor (`/job`):**\n"
+                . "  - 📋 Active Jobs in Production: **" . number_format($activeJobsCount) . " Jobs**\n\n"
+                . "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                . "👉 **Need deeper module analytics?** Click or type:\n"
+                . "• **`/paper`** ➔ For deep Paper Stock & Material breakdown\n"
+                . "• **`/plate`** ➔ For Plate Lookup, Ups & Paper Meter Calculations\n"
+                . "• **`/stock`** ➔ For Mixed Item Extra Pool & Repacking Handover";
+            $suggestions = ['/paper', '/plate', '/stock', '/cal 100mm x 150mm'];
+        }
+
+        echo json_encode(['ok' => true, 'answer' => $answer, 'provider' => 'ERP Executive 360 Engine', 'tool_used' => 'Master ERP Overview Tool', 'user_lang' => $userLang, 'suggestions' => $suggestions, 'command_type' => 'erp'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    } else {
+        $erpOnlyMode = true;
+        $prompt = $subQuery;
+        $p = mb_strtolower($prompt, 'UTF-8');
+    }
+}
+
 // /plate command
 if (strpos($pTrimmed, '/plate') === 0 || $pTrimmed === 'plate' || $pTrimmed === 'প্লেট' || strpos($pTrimmed, 'प्लेट') !== false) {
     $_SESSION['ai_priority_mode'] = 'plate';
