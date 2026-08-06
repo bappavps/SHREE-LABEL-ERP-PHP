@@ -161,7 +161,8 @@ class LLMClient
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode($payload),
             CURLOPT_TIMEOUT => 90,
-            CURLOPT_SSL_VERIFYPEER => true
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => 0
         ]);
 
         $response = curl_exec($ch);

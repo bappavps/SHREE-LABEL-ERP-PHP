@@ -36,9 +36,9 @@ set_exception_handler(function ($e) {
     http_response_code(200);
     echo json_encode([
         'ok' => true,
-        'answer' => "⚠️ **An error occurred while processing your request.**\n\nPlease try again or rephrase your command.",
+        'answer' => "⚠️ **Error Details:** " . $e->getMessage() . " in `" . basename($e->getFile()) . "` (Line " . $e->getLine() . ")\n\nPlease try again or rephrase your command.",
         'provider' => 'ERP System',
-        'tool_used' => 'Error Handler'
+        'tool_used' => 'Exception Handler'
     ], JSON_UNESCAPED_UNICODE);
     exit;
 });
@@ -46,11 +46,14 @@ set_exception_handler(function ($e) {
 set_error_handler(function ($errno, $errstr, $errfile, $errline) {
     if (error_reporting() === 0)
         return false;
+    if (in_array($errno, [E_NOTICE, E_USER_NOTICE, E_DEPRECATED, E_USER_DEPRECATED, E_WARNING, E_USER_WARNING])) {
+        return true;
+    }
     if (ob_get_level() > 0) ob_end_clean();
     http_response_code(200);
     echo json_encode([
         'ok' => true,
-        'answer' => "⚠️ **An internal error occurred.**\n\nPlease check your command or try again.",
+        'answer' => "⚠️ **Internal Error Details:** " . $errstr . " in `" . basename($errfile) . "` (Line " . $errline . ")",
         'provider' => 'ERP System',
         'tool_used' => 'Error Handler'
     ], JSON_UNESCAPED_UNICODE);
