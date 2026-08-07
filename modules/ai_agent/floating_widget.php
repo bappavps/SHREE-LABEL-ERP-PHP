@@ -489,18 +489,12 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
 
   <!-- Quick Capabilities Chips (PWA-style toggle) -->
   <div class="ai-float-chips-toggle" id="aiFloatChipsToggle">
-    <i class="bi bi-grid-3x3-gap-fill"></i> Quick Actions
-    <i class="bi bi-chevron-down"></i>
+    <i class="bi bi-star-fill" style="color:#f59e0b;"></i> Quick Actions
+    <span class="qa-badge" id="aiFloatQaBadge" style="display:none;background:#f59e0b;color:#000;font-size:11px;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:4px;">0</span>
+    <i class="bi bi-chevron-down" style="margin-left:auto;"></i>
   </div>
   <div class="ai-float-chips-section" id="aiFloatChipsSection">
-    <div class="ai-float-chips-grid">
-      <?php foreach ($floatChips as $chip): ?>
-        <button type="button" class="ai-float-chip-item" data-key="<?= e($chip['key']) ?>" data-prompt="<?= e($chip['prompt']) ?>">
-          <i class="bi <?= e($chip['icon']) ?> ai-float-chip-icon"></i>
-          <span><?= e($chip['label']) ?></span>
-        </button>
-      <?php endforeach; ?>
-    </div>
+    <div id="aiFloatQuickActionsList" style="display:flex;flex-direction:column;gap:6px;padding:4px 0;"></div>
   </div>
 
   <div class="ai-chat-body" id="aiFloatingChatBody" style="flex:1;padding:14px;background:#0a0f1e;overflow-y:auto;scroll-behavior:smooth">
@@ -791,6 +785,8 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       bubbleHtml += '</div></div>';
     }
 
+    var isFav = (typeof isQuickActionSaved === 'function') ? isQuickActionSaved(text) : false;
+    var favBtnHtml = sender === 'user' ? '<button class="btn-copy-msg btn-fav-msg ' + (isFav ? 'active' : '') + '" onclick="_floatToggleFavMsg(this)" title="' + (isFav ? 'Remove from Quick Actions' : 'Pin to Quick Actions') + '"><i class="bi ' + (isFav ? 'bi-star-fill' : 'bi-star') + '" style="' + (isFav ? 'color:#f59e0b;' : '') + '"></i></button>' : '';
     var editBtnHtml = sender === 'user' ? '<button class="btn-copy-msg btn-edit-msg" onclick="_floatEditMsg(this)" title="Edit Prompt"><i class="bi bi-pencil-square"></i></button>' : '';
 
     var cmdClass = commandType ? ' ai-cmd-' + commandType : '';
@@ -801,6 +797,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       + '<div class="msg-bubble">' + bubbleHtml + '</div>'
       + '<div class="msg-footer">'
       + '<span class="msg-meta">' + label + ' \u00B7 ' + timeStr + '</span>'
+      + favBtnHtml
       + '<button class="btn-copy-msg" onclick="_floatCopyMsg(this)" title="Copy"><i class="bi bi-clipboard"></i></button>'
       + editBtnHtml
       + '<button class="btn-copy-msg btn-regen-msg" onclick="_floatRegenMsg(this)" title="Regenerate"><i class="bi bi-arrow-clockwise"></i></button>'
@@ -1422,13 +1419,161 @@ function floatSetActive(items) {
     }
 }
 
-// Click outside the floating autocomplete dropdown closes it
-document.addEventListener('mousedown', function(e) {
-    if (acFloatDropdown.style.display === 'block' && !acFloatDropdown.contains(e.target) && e.target !== floatInput && !floatInput.contains(e.target)) {
-        acFloatDropdown.style.display = 'none';
-        acFloatDropdown.innerHTML = '';
-        window.acFloatFocus = -1;
+// ─── FLOATING WIDGET FAVORITE QUICK ACTIONS ENGINE ───
+if (typeof STORAGE_KEY_QA === 'undefined') {
+  var STORAGE_KEY_QA = 'erp_ai_quick_actions';
+}
+
+function getQuickActions() {
+  try {
+    var data = localStorage.getItem(STORAGE_KEY_QA);
+    return data ? JSON.parse(data) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function isQuickActionSaved(prompt) {
+  var list = getQuickActions();
+  var clean = prompt.trim().toLowerCase();
+  return list.some(function(item) { return (typeof item === 'string' ? item : item.prompt).trim().toLowerCase() === clean; });
+}
+
+function saveQuickAction(prompt) {
+  var list = getQuickActions();
+  var clean = prompt.trim();
+  if (!clean) return;
+  if (!isQuickActionSaved(clean)) {
+    list.push({ id: Date.now(), prompt: clean });
+    localStorage.setItem(STORAGE_KEY_QA, JSON.stringify(list));
+  }
+  renderFloatingQuickActions();
+  updateFloatingUserMsgStars();
+}
+
+function removeQuickAction(prompt) {
+  var list = getQuickActions();
+  var clean = prompt.trim().toLowerCase();
+  list = list.filter(function(item) { return (typeof item === 'string' ? item : item.prompt).trim().toLowerCase() !== clean; });
+  localStorage.setItem(STORAGE_KEY_QA, JSON.stringify(list));
+  renderFloatingQuickActions();
+  updateFloatingUserMsgStars();
+}
+
+window._floatToggleFavMsg = function(btn) {
+  var msgContent = btn.closest('.msg-content');
+  var bubble = msgContent.querySelector('.msg-bubble');
+  var prompt = ((bubble && (bubble.innerText || bubble.textContent)) || '').trim();
+  if (!prompt) return;
+
+  if (isQuickActionSaved(prompt)) {
+    removeQuickAction(prompt);
+    btn.classList.remove('active');
+    btn.innerHTML = '<i class="bi bi-star"></i>';
+    btn.title = 'Pin to Quick Actions';
+    showFloatingToast('Removed from Quick Actions');
+  } else {
+    saveQuickAction(prompt);
+    btn.classList.add('active');
+    btn.innerHTML = '<i class="bi bi-star-fill" style="color:#f59e0b;"></i>';
+    btn.title = 'Remove from Quick Actions';
+    showFloatingToast('Added to Quick Actions ⭐');
+  }
+  if (navigator.vibrate) navigator.vibrate(15);
+};
+
+window.deleteFloatingQuickAction = function(e, prompt) {
+  e.stopPropagation();
+  removeQuickAction(prompt);
+  showFloatingToast('Deleted from Quick Actions');
+  if (navigator.vibrate) navigator.vibrate(15);
+};
+
+window.runFloatingQuickAction = function(prompt) {
+  if (typeof doSend === 'function') {
+    doSend(prompt);
+  }
+  var sec = document.getElementById('aiFloatChipsSection');
+  if (sec) sec.classList.remove('visible');
+  var tog = document.getElementById('aiFloatChipsToggle');
+  if (tog) tog.classList.remove('active');
+};
+
+function renderFloatingQuickActions() {
+  var container = document.getElementById('aiFloatQuickActionsList');
+  if (!container) return;
+
+  var list = getQuickActions();
+  var badge = document.getElementById('aiFloatQaBadge');
+  if (badge) {
+    badge.textContent = list.length;
+    badge.style.display = list.length > 0 ? 'inline-block' : 'none';
+  }
+
+  if (list.length === 0) {
+    container.innerHTML = '<div class="empty-qa-box" style="padding:14px;text-align:center;background:rgba(15,23,42,0.5);border:1px dashed rgba(255,255,255,0.12);border-radius:10px;color:#94a3b8;font-size:12px;">'
+      + '<i class="bi bi-star-fill" style="font-size:18px;color:#f59e0b;display:block;margin-bottom:4px;"></i>'
+      + '<strong>No Favorite Quick Actions Pinned</strong>'
+      + '<p style="margin:4px 0 0 0;font-size:11px;color:#64748b;">Click the <i class="bi bi-star"></i> star icon on any user prompt in chat to pin it here for 1-click execution!</p>'
+      + '</div>';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < list.length; i++) {
+    var pText = typeof list[i] === 'string' ? list[i] : list[i].prompt;
+    var escP = esc(pText);
+    html += '<div class="qa-fav-item" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#e2e8f0;font-size:12px;cursor:pointer;margin-bottom:4px;" onclick="runFloatingQuickAction(\'' + escP.replace(/'/g, "\\'") + '\')">'
+      + '<div style="display:flex;align-items:center;gap:8px;flex:1;overflow:hidden;">'
+      + '<i class="bi bi-star-fill" style="color:#f59e0b;font-size:13px;flex-shrink:0;"></i>'
+      + '<span style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escP + '</span>'
+      + '</div>'
+      + '<button type="button" style="background:none;border:none;color:#ef4444;opacity:0.8;padding:2px 6px;cursor:pointer;" onclick="deleteFloatingQuickAction(event, \'' + escP.replace(/'/g, "\\'") + '\')" title="Delete">'
+      + '<i class="bi bi-trash3-fill"></i>'
+      + '</button>'
+      + '</div>';
+  }
+  container.innerHTML = html;
+}
+
+function updateFloatingUserMsgStars() {
+  var chatBodyEl = document.getElementById('aiFloatingChatBody');
+  if (!chatBodyEl) return;
+  var userGroups = chatBodyEl.querySelectorAll('.msg-group.user');
+  for (var i = 0; i < userGroups.length; i++) {
+    var bubble = userGroups[i].querySelector('.msg-bubble');
+    var btn = userGroups[i].querySelector('.btn-fav-msg');
+    if (bubble && btn) {
+      var prompt = ((bubble.innerText || bubble.textContent) || '').trim();
+      var isFav = isQuickActionSaved(prompt);
+      btn.classList.toggle('active', isFav);
+      btn.title = isFav ? 'Remove from Quick Actions' : 'Pin to Quick Actions';
+      btn.innerHTML = '<i class="bi ' + (isFav ? 'bi-star-fill' : 'bi-star') + '" style="' + (isFav ? 'color:#f59e0b;' : '') + '"></i>';
     }
-});
+  }
+}
+
+function showFloatingToast(msg) {
+  var toast = document.getElementById('aiFloatingToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'aiFloatingToast';
+    toast.style.cssText = 'position:absolute;bottom:70px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,0.95);color:#fff;border:1px solid #3b82f6;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.4);backdrop-filter:blur(8px);transition:all 0.3s ease;opacity:0;pointer-events:none;';
+    var wrap = document.getElementById('aiFloatingChatWidget');
+    if (wrap) wrap.appendChild(toast);
+    else document.body.appendChild(toast);
+  }
+  toast.innerHTML = msg;
+  toast.style.opacity = '1';
+  toast.style.transform = 'translateX(-50%) translateY(0)';
+  if (window._floatToastTimeout) clearTimeout(window._floatToastTimeout);
+  window._floatToastTimeout = setTimeout(function() {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(-50%) translateY(10px)';
+  }, 2200);
+}
+
+// Initial Render for Floating Widget
+renderFloatingQuickActions();
 // ============================================================
 </script>

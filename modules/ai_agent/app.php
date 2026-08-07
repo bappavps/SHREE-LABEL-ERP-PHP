@@ -1137,6 +1137,68 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     }
     .popup-item i { color: #3b82f6; font-size: 15px; }
     
+    /* Favorite Star Button & Quick Actions Saved List Styling */
+    .btn-fav-msg { transition: all 0.2s ease; }
+    .btn-fav-msg.active, .btn-fav-msg:hover { color: #f59e0b !important; }
+    .qa-fav-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 14px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      color: #e2e8f0;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .qa-fav-item:hover {
+      background: rgba(59, 130, 246, 0.18);
+      border-color: rgba(59, 130, 246, 0.4);
+      color: #fff;
+    }
+    .qa-fav-content {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+      overflow: hidden;
+    }
+    .qa-fav-text {
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .qa-fav-delete {
+      background: none;
+      border: none;
+      color: #ef4444;
+      opacity: 0.75;
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      flex-shrink: 0;
+    }
+    .qa-fav-delete:hover {
+      opacity: 1;
+      background: rgba(239, 68, 68, 0.25);
+      color: #f87171;
+    }
+    .empty-qa-box {
+      padding: 18px 14px;
+      text-align: center;
+      background: rgba(15, 23, 42, 0.5);
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      color: #94a3b8;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
     /* Light Theme */
     [data-theme="light"] .ai-popup-menu {
       background: rgba(255, 255, 255, 0.95);
@@ -1182,36 +1244,16 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     </div>
   </header>
 
-  <!-- Chips Toggle Button -->
+  <!-- Quick Actions Toggle Button -->
   <div class="chips-toggle" id="chipsToggle">
-    <i class="bi bi-grid-3x3-gap-fill"></i> Quick Actions
-    <i class="bi bi-chevron-down"></i>
+    <i class="bi bi-star-fill" style="color:#f59e0b;"></i> Quick Actions
+    <span class="qa-badge" id="qaBadge" style="display:none;background:#f59e0b;color:#000;font-size:11px;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:4px;">0</span>
+    <i class="bi bi-chevron-down" style="margin-left:auto;"></i>
   </div>
 
-  <!-- Chips Category Grid -->
+  <!-- Quick Actions Saved Favorites Section -->
   <div class="chips-section" id="chipsSection">
-    <div class="chips-grid">
-      <?php foreach ($chipCategories as $catKey => $cat): ?>
-        <?php if (!empty($cat['items'])): ?>
-        <div class="chip-category">
-          <div class="cat-header">
-            <div class="cat-icon" style="background: <?= $cat['color'] ?>20; color: <?= $cat['color'] ?>;">
-              <i class="bi <?= $cat['icon'] ?>"></i>
-            </div>
-            <span class="cat-label"><?= $cat['label'] ?></span>
-          </div>
-          <div class="cat-items">
-            <?php foreach ($cat['items'] as $c): ?>
-              <button class="chip-item" data-prompt="<?= e($c['prompt']) ?>">
-                <i class="bi <?= $cat['icon'] ?> chip-icon" style="color: <?= $cat['color'] ?>"></i>
-                <?= e($c['label']) ?>
-              </button>
-            <?php endforeach; ?>
-          </div>
-        </div>
-        <?php endif; ?>
-      <?php endforeach; ?>
-    </div>
+    <div id="quickActionsList" style="display:flex;flex-direction:column;gap:6px;padding:4px 0;"></div>
   </div>
 
   <!-- Chat Container -->
@@ -1317,6 +1359,9 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
   </footer>
 
   <script>
+    function escapeHtml(text) {
+      return text ? String(text).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m])) : '';
+    }
     const API_URL = '<?= $baseUrl ?>/modules/ai_agent/api.php';
     let newMsgCount = 0;
     let isUserScrolled = false;
@@ -2064,8 +2109,11 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
 
     function appendUserMsg(text) {
       const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      // Just escape HTML — no quote highlighting in sent messages (input box only)
       const highlighted = escapeHtml(text);
+      const isFav = isQuickActionSaved(text);
+      const starIcon = isFav ? 'bi-star-fill' : 'bi-star';
+      const starStyle = isFav ? 'color:#f59e0b;' : '';
+
       const html = `
         <div class="msg-group user">
           <div class="msg-row">
@@ -2074,6 +2122,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
               <div class="msg-bubble">${highlighted}</div>
               <div class="msg-footer">
                 <span class="msg-meta">You · ${time}</span>
+                <button class="btn-copy-msg btn-fav-msg ${isFav ? 'active' : ''}" onclick="toggleFavMsg(this)" title="${isFav ? 'Remove from Quick Actions' : 'Pin to Quick Actions'}"><i class="bi ${starIcon}" style="${starStyle}"></i></button>
                 <button class="btn-copy-msg" onclick="copyMsg(this)" title="Copy"><i class="bi bi-clipboard"></i></button>
                 <button class="btn-copy-msg btn-edit-msg" onclick="editUserMsg(this)" title="Edit Prompt"><i class="bi bi-pencil-square"></i></button>
                 <button class="btn-copy-msg btn-regen-msg" onclick="regenerateMsg(this)" title="Regenerate"><i class="bi bi-arrow-clockwise"></i></button>
@@ -2268,14 +2317,161 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
         if (label) label.textContent = 'Thinking...';
       }
     }
-
     function scrollToBottom() {
       chatStream.scrollTo({ top: chatStream.scrollHeight, behavior: 'smooth' });
     }
 
-    function escapeHtml(text) {
-      return text.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
+    // ─── FAVORITE QUICK ACTIONS ENGINE ───
+    const STORAGE_KEY_QA = 'erp_ai_quick_actions';
+
+    function getQuickActions() {
+      try {
+        const data = localStorage.getItem(STORAGE_KEY_QA);
+        return data ? JSON.parse(data) : [];
+      } catch (e) {
+        return [];
+      }
     }
+
+    function isQuickActionSaved(prompt) {
+      const list = getQuickActions();
+      const clean = prompt.trim().toLowerCase();
+      return list.some(item => (typeof item === 'string' ? item : item.prompt).trim().toLowerCase() === clean);
+    }
+
+    function saveQuickAction(prompt) {
+      const list = getQuickActions();
+      const clean = prompt.trim();
+      if (!clean) return;
+      if (!isQuickActionSaved(clean)) {
+        list.push({ id: Date.now(), prompt: clean });
+        localStorage.setItem(STORAGE_KEY_QA, JSON.stringify(list));
+      }
+      renderQuickActions();
+      updateUserMsgStars();
+    }
+
+    function removeQuickAction(prompt) {
+      let list = getQuickActions();
+      const clean = prompt.trim().toLowerCase();
+      list = list.filter(item => (typeof item === 'string' ? item : item.prompt).trim().toLowerCase() !== clean);
+      localStorage.setItem(STORAGE_KEY_QA, JSON.stringify(list));
+      renderQuickActions();
+      updateUserMsgStars();
+    }
+
+    function toggleFavMsg(btn) {
+      const msgContent = btn.closest('.msg-content');
+      const bubble = msgContent.querySelector('.msg-bubble');
+      const prompt = (bubble.innerText || bubble.textContent).trim();
+      if (!prompt) return;
+
+      if (isQuickActionSaved(prompt)) {
+        removeQuickAction(prompt);
+        btn.classList.remove('active');
+        btn.innerHTML = '<i class="bi bi-star"></i>';
+        btn.title = 'Pin to Quick Actions';
+        showToast('Removed from Quick Actions');
+      } else {
+        saveQuickAction(prompt);
+        btn.classList.add('active');
+        btn.innerHTML = '<i class="bi bi-star-fill" style="color:#f59e0b;"></i>';
+        btn.title = 'Remove from Quick Actions';
+        showToast('Added to Quick Actions ⭐');
+      }
+      if (navigator.vibrate) navigator.vibrate(15);
+    }
+
+    function deleteQuickAction(e, prompt) {
+      e.stopPropagation();
+      removeQuickAction(prompt);
+      showToast('Deleted from Quick Actions');
+      if (navigator.vibrate) navigator.vibrate(15);
+    }
+
+    function runQuickAction(prompt) {
+      setChatText(prompt);
+      processChatInput();
+      sendQuery();
+      const chipsSection = document.getElementById('chipsSection');
+      if (chipsSection) chipsSection.classList.remove('visible');
+      const toggle = document.getElementById('chipsToggle');
+      if (toggle) toggle.classList.remove('active');
+    }
+
+    function renderQuickActions() {
+      const container = document.getElementById('quickActionsList');
+      if (!container) return;
+
+      const list = getQuickActions();
+      const badge = document.getElementById('qaBadge');
+      if (badge) {
+        badge.textContent = list.length;
+        badge.style.display = list.length > 0 ? 'inline-block' : 'none';
+      }
+
+      if (list.length === 0) {
+        container.innerHTML = `
+          <div class="empty-qa-box">
+            <i class="bi bi-star-fill" style="font-size:22px;color:#f59e0b;display:block;margin-bottom:6px;"></i>
+            <strong>No Favorite Quick Actions Pinned</strong>
+            <p style="margin:4px 0 0 0;font-size:12px;color:#94a3b8;">Click the <i class="bi bi-star"></i> star icon on any user prompt in chat to pin it here for 1-click execution!</p>
+          </div>`;
+        return;
+      }
+
+      let html = '';
+      list.forEach(item => {
+        const pText = typeof item === 'string' ? item : item.prompt;
+        const escP = escapeHtml(pText);
+        html += `
+          <div class="qa-fav-item" onclick="runQuickAction('${escP.replace(/'/g, "\\'")}')">
+            <div class="qa-fav-content">
+              <i class="bi bi-star-fill" style="color:#f59e0b;font-size:14px;flex-shrink:0;"></i>
+              <span class="qa-fav-text">${escP}</span>
+            </div>
+            <button type="button" class="qa-fav-delete" onclick="deleteQuickAction(event, '${escP.replace(/'/g, "\\'")}')" title="Delete from Quick Actions">
+              <i class="bi bi-trash3-fill"></i>
+            </button>
+          </div>`;
+      });
+      container.innerHTML = html;
+    }
+
+    function updateUserMsgStars() {
+      document.querySelectorAll('.msg-group.user').forEach(group => {
+        const bubble = group.querySelector('.msg-bubble');
+        const btn = group.querySelector('.btn-fav-msg');
+        if (bubble && btn) {
+          const prompt = (bubble.innerText || bubble.textContent).trim();
+          const isFav = isQuickActionSaved(prompt);
+          btn.classList.toggle('active', isFav);
+          btn.title = isFav ? 'Remove from Quick Actions' : 'Pin to Quick Actions';
+          btn.innerHTML = `<i class="bi ${isFav ? 'bi-star-fill' : 'bi-star'}" style="${isFav ? 'color:#f59e0b;' : ''}"></i>`;
+        }
+      });
+    }
+
+    function showToast(msg) {
+      let toast = document.getElementById('aiToast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'aiToast';
+        toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,0.92);color:#fff;border:1px solid #3b82f6;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.4);backdrop-filter:blur(8px);transition:all 0.3s ease;opacity:0;pointer-events:none;';
+        document.body.appendChild(toast);
+      }
+      toast.innerHTML = msg;
+      toast.style.opacity = '1';
+      toast.style.transform = 'translateX(-50%) translateY(0)';
+      if (window._toastTimeout) clearTimeout(window._toastTimeout);
+      window._toastTimeout = setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(-50%) translateY(10px)';
+      }, 2200);
+    }
+
+    // Initialize Quick Actions on Load
+    renderQuickActions();
 
     // Focus input on load
     setTimeout(() => chatInput.focus(), 300);
