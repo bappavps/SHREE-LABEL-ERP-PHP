@@ -110,6 +110,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
   width: 100%;
   max-width: 100%;
   overflow-x: auto !important;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   margin: 10px 0;
   border-radius: 10px;
@@ -117,6 +118,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
   background: rgba(15, 23, 42, 0.7);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   box-sizing: border-box;
+  touch-action: pan-x pan-y;
 }
 #aiFloatingChatBody .table-responsive-wrapper::-webkit-scrollbar { height: 5px; }
 #aiFloatingChatBody .table-responsive-wrapper::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.04); }
@@ -124,6 +126,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
 #aiFloatingChatBody .msg-bubble table { width: max-content !important; min-width: 100%; table-layout: auto !important; border-collapse: collapse !important; margin: 0 !important; font-size: 12px !important; background: transparent !important; color: #e2e8f0 !important; }
 #aiFloatingChatBody .msg-bubble table tr { background: transparent !important; color: inherit !important; }
 #aiFloatingChatBody .msg-bubble th, #aiFloatingChatBody .msg-bubble td { padding: 8px 12px !important; border: 1px solid rgba(255,255,255,0.15) !important; text-align: left !important; color: inherit !important; background: transparent !important; white-space: nowrap !important; word-break: normal !important; }
+#aiFloatingChatBody .msg-bubble th:first-child, #aiFloatingChatBody .msg-bubble td:first-child { width: 1% !important; min-width: 36px !important; text-align: center !important; padding: 8px 6px !important; }
 #aiFloatingChatBody .msg-bubble th { background: linear-gradient(135deg, rgba(59,130,246,0.25), rgba(37,99,235,0.15)) !important; color: #93c5fd !important; font-weight: 700 !important; font-size: 11px !important; text-transform: uppercase !important; }
 #aiFloatingChatBody .msg-bubble tr:nth-child(even), #aiFloatingChatBody .msg-bubble tr:nth-child(even) td { background: rgba(255,255,255,0.04) !important; }
 #aiFloatingChatBody .msg-bubble ul, #aiFloatingChatBody .msg-bubble ol { padding-left: 18px; margin: 6px 0; }

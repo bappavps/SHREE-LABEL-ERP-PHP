@@ -616,6 +616,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       width: 100%;
       max-width: 100%;
       overflow-x: auto !important;
+      overflow-y: hidden;
       -webkit-overflow-scrolling: touch;
       margin: 12px 0;
       border-radius: 12px;
@@ -623,7 +624,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       background: rgba(15, 23, 42, 0.7);
       box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
       box-sizing: border-box;
-      touch-action: pan-x;
+      touch-action: pan-x pan-y;
     }
     .table-responsive-wrapper::-webkit-scrollbar {
       height: 6px;
@@ -655,6 +656,12 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       text-align: left;
       white-space: nowrap !important;
       word-break: normal !important;
+    }
+    .msg-bubble th:first-child, .msg-bubble td:first-child {
+      width: 1%;
+      min-width: 36px;
+      text-align: center;
+      padding: 9px 8px;
     }
     .msg-bubble th {
       background: linear-gradient(135deg, rgba(59,130,246,0.25) 0%, rgba(37,99,235,0.15) 100%);
