@@ -531,7 +531,8 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     .msg-group {
       display: flex;
       flex-direction: column;
-      max-width: 96%;
+      max-width: 100%;
+      min-width: 0;
       animation: msgSlide 0.3s cubic-bezier(0.22, 1, 0.36, 1);
     }
     @keyframes msgSlide {
@@ -539,13 +540,16 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       to { opacity: 1; transform: translateY(0) scale(1); }
     }
 
-    .msg-group.user { align-self: flex-end; }
-    .msg-group.assistant { align-self: flex-start; }
+    .msg-group.user { align-self: flex-end; max-width: 90%; }
+    .msg-group.assistant { align-self: flex-start; max-width: 100%; width: 100%; }
 
     .msg-row {
       display: flex;
       gap: 8px;
       align-items: flex-end;
+      min-width: 0;
+      width: 100%;
+      max-width: 100%;
     }
     .msg-group.user .msg-row { flex-direction: row-reverse; }
 
@@ -560,7 +564,13 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     .msg-group.assistant .msg-avatar { background: linear-gradient(135deg, #3b82f6, #8b5cf6); }
     .msg-group.user .msg-avatar { background: linear-gradient(135deg, #10b981, #059669); }
 
-    .msg-content { display: flex; flex-direction: column; }
+    .msg-content {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-width: 0;
+      max-width: calc(100% - 38px);
+    }
 
     .msg-bubble {
       padding: 12px 16px;
@@ -569,6 +579,10 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       line-height: 1.6;
       word-break: break-word;
       position: relative;
+      min-width: 0;
+      width: 100%;
+      box-sizing: border-box;
+      overflow-x: hidden;
     }
 
     .msg-group.user .msg-bubble {
@@ -595,10 +609,63 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     .msg-bubble pre { background: rgba(0,0,0,0.35); padding: 10px 12px; border-radius: 10px; overflow-x: auto; margin: 8px 0; }
     .msg-bubble pre code { background: none; padding: 0; color: #e2e8f0; }
     .msg-bubble a { color: #38bdf8; text-decoration: none; font-weight: 600; border-bottom: 1px dashed rgba(56,189,248,0.4); }
-    .msg-bubble table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12px; }
-    .msg-bubble th, .msg-bubble td { padding: 6px 8px; border: 1px solid rgba(255,255,255,0.1); text-align: left; }
-    .msg-bubble th { background: rgba(59,130,246,0.15); color: #93c5fd; font-weight: 700; }
-    .msg-bubble tr:nth-child(even) td { background: rgba(255,255,255,0.03); }
+    
+    /* Mobile Responsive Markdown Tables */
+    .table-responsive-wrapper {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      overflow-x: auto !important;
+      -webkit-overflow-scrolling: touch;
+      margin: 12px 0;
+      border-radius: 12px;
+      border: 1px solid var(--border-light);
+      background: rgba(15, 23, 42, 0.7);
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
+      box-sizing: border-box;
+      touch-action: pan-x;
+    }
+    .table-responsive-wrapper::-webkit-scrollbar {
+      height: 6px;
+    }
+    .table-responsive-wrapper::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 4px;
+    }
+    .table-responsive-wrapper::-webkit-scrollbar-thumb {
+      background: rgba(59, 130, 246, 0.5);
+      border-radius: 4px;
+    }
+    .table-responsive-wrapper::-webkit-scrollbar-thumb:hover {
+      background: rgba(59, 130, 246, 0.8);
+    }
+
+    .msg-bubble table {
+      width: max-content !important;
+      min-width: 100%;
+      table-layout: auto !important;
+      border-collapse: collapse;
+      margin: 0;
+      font-size: 12.5px;
+      line-height: 1.5;
+    }
+    .msg-bubble th, .msg-bubble td {
+      padding: 9px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      text-align: left;
+      white-space: nowrap !important;
+      word-break: normal !important;
+    }
+    .msg-bubble th {
+      background: linear-gradient(135deg, rgba(59,130,246,0.25) 0%, rgba(37,99,235,0.15) 100%);
+      color: #93c5fd;
+      font-weight: 700;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .msg-bubble tr:nth-child(even) td { background: rgba(255, 255, 255, 0.03); }
+    .msg-bubble tr:hover td { background: rgba(59, 130, 246, 0.08); }
 
     /* Special Command Visual Styling — Paper Stock (green) */
     .msg-group.assistant.ai-cmd-paperstock .msg-bubble { border: 1.5px solid #10b981; background: linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(16,185,129,0.02) 100%); }
@@ -1096,6 +1163,9 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
         <i class="bi bi-moon-fill icon-moon"></i>
         <i class="bi bi-sun-fill icon-sun"></i>
       </button>
+      <button class="btn-header" id="shareBtn" title="Share AI App">
+        <i class="bi bi-share-fill"></i>
+      </button>
       <button class="btn-header" id="historyBtn" title="History">
         <i class="bi bi-clock-history"></i>
       </button>
@@ -1261,6 +1331,54 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       applyTheme(next);
       if (navigator.vibrate) navigator.vibrate(10);
     });
+
+    // Native Web Share API + Mobile Clipboard Fallback
+    const shareBtn = document.getElementById('shareBtn');
+    if (shareBtn) {
+      shareBtn.addEventListener('click', async () => {
+        if (navigator.vibrate) navigator.vibrate(15);
+        const shareData = {
+          title: 'ERP-BOT — Mobile PWA AI Copilot',
+          text: '⚡ Shree Label ERP Mobile PWA AI Agent — Smart Manufacturing Assistant!',
+          url: window.location.href
+        };
+        if (navigator.share && (navigator.canShare ? navigator.canShare(shareData) : true)) {
+          try {
+            await navigator.share(shareData);
+          } catch (err) {
+            if (err.name !== 'AbortError') copyAppUrlFallback();
+          }
+        } else {
+          copyAppUrlFallback();
+        }
+      });
+    }
+
+    function copyAppUrlFallback() {
+      const url = window.location.href;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(() => {
+          showShareToast('📋 App URL copied to clipboard!');
+        }).catch(() => {
+          prompt('Copy App URL:', url);
+        });
+      } else {
+        prompt('Copy App URL:', url);
+      }
+    }
+
+    function showShareToast(msg) {
+      let toast = document.getElementById('shareToast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'shareToast';
+        toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#10b981;color:#fff;font-size:13px;font-weight:600;padding:8px 18px;border-radius:20px;z-index:999999;box-shadow:0 4px 16px rgba(16,185,129,0.4);transition:all 0.3s ease;opacity:0;pointer-events:none;';
+        document.body.appendChild(toast);
+      }
+      toast.textContent = msg;
+      toast.style.opacity = '1';
+      setTimeout(() => { toast.style.opacity = '0'; }, 2500);
+    }
 
     // Service Worker
     if ('serviceWorker' in navigator) {
@@ -1966,9 +2084,20 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       marked.setOptions({ breaks: true, gfm: true });
       let parsedHtml = marked.parse(markdownText);
 
-      // Enhance code blocks with Copy buttons
+      // Wrap tables in responsive container for smooth mobile scrolling
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = parsedHtml;
+
+      tempDiv.querySelectorAll('table').forEach(table => {
+        if (!table.parentNode.classList.contains('table-responsive-wrapper')) {
+          const wrapper = document.createElement('div');
+          wrapper.className = 'table-responsive-wrapper';
+          table.parentNode.insertBefore(wrapper, table);
+          wrapper.appendChild(table);
+        }
+      });
+
+      // Enhance code blocks with Copy buttons
       tempDiv.querySelectorAll('pre').forEach(pre => {
         const wrapper = document.createElement('div');
         wrapper.className = 'code-block-wrapper';

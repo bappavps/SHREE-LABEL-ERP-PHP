@@ -66,13 +66,13 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 #aiFloatingChatBody .msg-group {
-  display: flex; flex-direction: column; max-width: 96%;
+  display: flex; flex-direction: column; max-width: 96%; min-width: 0;
   animation: floatMsgSlide 0.3s cubic-bezier(0.22, 1, 0.36, 1);
   margin-bottom: 14px;
 }
 #aiFloatingChatBody .msg-group.user { align-self: flex-end; }
 #aiFloatingChatBody .msg-group.assistant { align-self: flex-start; }
-#aiFloatingChatBody .msg-row { display: flex; gap: 8px; align-items: flex-end; }
+#aiFloatingChatBody .msg-row { display: flex; gap: 8px; align-items: flex-end; min-width: 0; width: 100%; }
 #aiFloatingChatBody .msg-group.user .msg-row { flex-direction: row-reverse; }
 #aiFloatingChatBody .msg-avatar {
   width: 30px; height: 30px; border-radius: 10px;
@@ -81,10 +81,11 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
 }
 #aiFloatingChatBody .msg-group.assistant .msg-avatar { background: linear-gradient(135deg, #3b82f6, #8b5cf6); }
 #aiFloatingChatBody .msg-group.user .msg-avatar { background: linear-gradient(135deg, #10b981, #059669); }
-#aiFloatingChatBody .msg-content { display: flex; flex-direction: column; }
+#aiFloatingChatBody .msg-content { display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
 #aiFloatingChatBody .msg-bubble {
   padding: 12px 16px; border-radius: 18px; font-size: 14px;
   line-height: 1.6; word-break: break-word; position: relative;
+  min-width: 0; max-width: 100%; overflow-x: hidden;
 }
 #aiFloatingChatBody .msg-group.user .msg-bubble {
   background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
@@ -104,10 +105,26 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
 #aiFloatingChatBody .msg-bubble pre { background: rgba(0,0,0,0.35); padding: 10px 12px; border-radius: 10px; overflow-x: auto; margin: 8px 0; }
 #aiFloatingChatBody .msg-bubble pre code { background: none; padding: 0; color: #e2e8f0; font-size: 12.5px; }
 #aiFloatingChatBody .msg-bubble a { color: #38bdf8; text-decoration: none; font-weight: 600; border-bottom: 1px dashed rgba(56,189,248,0.4); }
-#aiFloatingChatBody .msg-bubble table { width: 100% !important; border-collapse: collapse !important; margin: 8px 0 !important; font-size: 12px !important; background: transparent !important; color: #e2e8f0 !important; }
+#aiFloatingChatBody .table-responsive-wrapper {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+  margin: 10px 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(15, 23, 42, 0.7);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  box-sizing: border-box;
+}
+#aiFloatingChatBody .table-responsive-wrapper::-webkit-scrollbar { height: 5px; }
+#aiFloatingChatBody .table-responsive-wrapper::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.04); }
+#aiFloatingChatBody .table-responsive-wrapper::-webkit-scrollbar-thumb { background: rgba(59, 130, 246, 0.5); border-radius: 4px; }
+#aiFloatingChatBody .msg-bubble table { width: max-content !important; min-width: 100%; table-layout: auto !important; border-collapse: collapse !important; margin: 0 !important; font-size: 12px !important; background: transparent !important; color: #e2e8f0 !important; }
 #aiFloatingChatBody .msg-bubble table tr { background: transparent !important; color: inherit !important; }
-#aiFloatingChatBody .msg-bubble th, #aiFloatingChatBody .msg-bubble td { padding: 6px 8px !important; border: 1px solid rgba(255,255,255,0.15) !important; text-align: left !important; color: inherit !important; background: transparent !important; }
-#aiFloatingChatBody .msg-bubble th { background: rgba(59,130,246,0.18) !important; color: #93c5fd !important; font-weight: 700 !important; }
+#aiFloatingChatBody .msg-bubble th, #aiFloatingChatBody .msg-bubble td { padding: 8px 12px !important; border: 1px solid rgba(255,255,255,0.15) !important; text-align: left !important; color: inherit !important; background: transparent !important; white-space: nowrap !important; word-break: normal !important; }
+#aiFloatingChatBody .msg-bubble th { background: linear-gradient(135deg, rgba(59,130,246,0.25), rgba(37,99,235,0.15)) !important; color: #93c5fd !important; font-weight: 700 !important; font-size: 11px !important; text-transform: uppercase !important; }
 #aiFloatingChatBody .msg-bubble tr:nth-child(even), #aiFloatingChatBody .msg-bubble tr:nth-child(even) td { background: rgba(255,255,255,0.04) !important; }
 #aiFloatingChatBody .msg-bubble ul, #aiFloatingChatBody .msg-bubble ol { padding-left: 18px; margin: 6px 0; }
 #aiFloatingChatBody .msg-bubble li { margin-bottom: 3px; }
@@ -637,10 +654,18 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     return esc(str).replace(/\n/g, '<br>');
   }
 
-  // ─── Enhance code blocks with copy button (PWA-identical) ───
+  // ─── Enhance code blocks & wrap tables for mobile responsiveness ───
   function enhanceCodeBlocks(html) {
     var d = document.createElement('div');
     d.innerHTML = html;
+    d.querySelectorAll('table').forEach(function(table) {
+      if (!table.parentNode.classList.contains('table-responsive-wrapper')) {
+        var wrapper = document.createElement('div');
+        wrapper.className = 'table-responsive-wrapper';
+        table.parentNode.insertBefore(wrapper, table);
+        wrapper.appendChild(table);
+      }
+    });
     d.querySelectorAll('pre').forEach(function(pre) {
       var wrapper = document.createElement('div');
       wrapper.className = 'code-block-wrapper';
