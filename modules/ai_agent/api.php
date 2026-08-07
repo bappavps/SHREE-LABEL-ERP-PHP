@@ -1759,13 +1759,14 @@ function check_knowledge_base(mysqli $db, string $prompt): ?array
         $fuzzyPromptTokensMatched = []; // Track which distinct prompt tokens contributed fuzzy matches
 
         foreach ($rawKeywords as $kw) {
-            if ($kw === '')
+            $kwTrimmed = trim($kw);
+            if ($kwTrimmed === '')
                 continue;
 
-            // Direct substring match only for phrases (multiple words) to prevent single generic word triggering
-            $isPhrase = (mb_strpos(trim($kw), ' ') !== false);
-            if ($isPhrase && mb_strpos($promptLower, $kw) !== false) {
-                $matchScore += 3.0; // Strong match for exact phrases
+            // Direct match when prompt equals keyword or contains keyword/phrase (e.g. "sitani", "aditya", "mriganka", "mrigank debnath")
+            $kwLower = mb_strtolower($kwTrimmed, 'UTF-8');
+            if ($kwLower === $promptLower || mb_strpos($promptLower, $kwLower) !== false) {
+                $matchScore += 3.0; // Strong match for keyword/alias or phrase match
                 $hasExactMatch = true;
             }
 
