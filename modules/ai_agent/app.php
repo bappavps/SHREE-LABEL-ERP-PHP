@@ -54,6 +54,7 @@ $chipCategories = [
     'tools'      => ['icon' => 'bi-tools', 'color' => '#ec4899', 'label' => 'Tools & Help', 'items' => []],
 ];
 $chipMap = [
+    'erp_overview'          => 'production',
     'label_calculator'      => 'tools',
     'roll_status'           => 'production',
     'order_status'          => 'dispatch',
@@ -1178,6 +1179,10 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       <!-- Command Suggestions Dropup -->
       <div class="cmd-suggestions" id="autocompleteSuggestions" style="display:none; max-height: 250px; overflow-y: auto;"></div>
       <div class="cmd-suggestions" id="cmdSuggestions">
+        <div class="cmd-suggestion-item" data-cmd="/erp">
+          <span class="cmd-key-badge">/erp</span>
+          <span class="cmd-desc">Executive 360° ERP Master Overview</span>
+        </div>
         <div class="cmd-suggestion-item" data-cmd="/job">
           <span class="cmd-key-badge">/job</span>
           <span class="cmd-desc">Job / Planning Priority Mode</span>

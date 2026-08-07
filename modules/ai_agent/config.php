@@ -86,9 +86,10 @@ PROMPT;
 function getAiAgentQuickChips(): array
 {
     return [
+        ['key' => 'erp_overview', 'label' => 'ERP 360° Overview', 'icon' => 'bi-speedometer2', 'prompt' => '/erp show live production floor summary'],
         ['key' => 'total_roll', 'label' => 'Total Roll', 'icon' => 'bi-file-earmark-text', 'prompt' => 'Show total paper rolls'],
         ['key' => 'total_plates', 'label' => 'Total Plates', 'icon' => 'bi-layers', 'prompt' => '/plate total plates'],
-        ['key' => 'live_page_summary', 'label' => 'Live Page Summary', 'icon' => 'bi-speedometer2', 'prompt' => '/job live floor page summary'],
+        ['key' => 'live_page_summary', 'label' => 'Live Page Summary', 'icon' => 'bi-speedometer', 'prompt' => '/job live floor page summary'],
         ['key' => 'today_dispatch', 'label' => "Today's Dispatch", 'icon' => 'bi-truck', 'prompt' => '/dispatch today dispatch summary'],
         ['key' => 'label_calculator', 'label' => 'Calculator', 'icon' => 'bi-calculator', 'prompt' => 'Calculate running meters for 100mm x 50mm, 2 ups, 5mm gap, 15000 qty on 250mm roll at Rs 300/kg'],
         ['key' => 'live_summary', 'label' => 'Current Job Status', 'icon' => 'bi-graph-up', 'prompt' => 'Show live summary'],
