@@ -91,6 +91,22 @@ if (!in_array($action, ['query', 'autocomplete', 'get_quick_actions', 'save_quic
 }
 
 // ─── Quick Actions CRUD (Server-Side Favorites) ───
+function ensureQuickActionsTable($db) {
+    static $done = false;
+    if ($done) return;
+    $db->query("CREATE TABLE IF NOT EXISTS `ai_agent_quick_actions` (
+      `id` INT AUTO_INCREMENT PRIMARY KEY,
+      `prompt` VARCHAR(500) NOT NULL,
+      `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY `uq_prompt` (`prompt`(255))
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $done = true;
+}
+
+if (in_array($action, ['get_quick_actions', 'save_quick_action', 'delete_quick_action'])) {
+    ensureQuickActionsTable($db);
+}
+
 if ($action === 'get_quick_actions') {
     $result = $db->query("SELECT `id`, `prompt`, `created_at` FROM `ai_agent_quick_actions` ORDER BY `created_at` DESC");
     $items = [];
@@ -112,11 +128,15 @@ if ($action === 'save_quick_action') {
     }
     // Upsert — ignore if duplicate
     $stmt = $db->prepare("INSERT IGNORE INTO `ai_agent_quick_actions` (`prompt`) VALUES (?)");
-    $stmt->bind_param('s', $qaPrompt);
-    $stmt->execute();
-    $newId = $stmt->insert_id;
-    $stmt->close();
-    echo json_encode(['ok' => true, 'id' => (int)$newId], JSON_UNESCAPED_UNICODE);
+    if ($stmt) {
+        $stmt->bind_param('s', $qaPrompt);
+        $stmt->execute();
+        $newId = $stmt->insert_id;
+        $stmt->close();
+        echo json_encode(['ok' => true, 'id' => (int)$newId], JSON_UNESCAPED_UNICODE);
+    } else {
+        echo json_encode(['ok' => false, 'error' => 'Prepare failed']);
+    }
     exit;
 }
 
@@ -127,10 +147,14 @@ if ($action === 'delete_quick_action') {
         exit;
     }
     $stmt = $db->prepare("DELETE FROM `ai_agent_quick_actions` WHERE `id` = ? LIMIT 1");
-    $stmt->bind_param('i', $qaId);
-    $stmt->execute();
-    $stmt->close();
-    echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+    if ($stmt) {
+        $stmt->bind_param('i', $qaId);
+        $stmt->execute();
+        $stmt->close();
+        echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+    } else {
+        echo json_encode(['ok' => false, 'error' => 'Prepare failed']);
+    }
     exit;
 }
 
