@@ -360,10 +360,16 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       background: rgba(10, 15, 30, 0.7);
       border-bottom: 1px solid var(--border);
       max-height: 0;
-      overflow: hidden;
+      overflow-y: auto;
       transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      scrollbar-width: thin;
+      scrollbar-color: rgba(245, 158, 11, 0.5) rgba(0, 0, 0, 0.2);
     }
-    .chips-section.open { max-height: 500px; }
+    .chips-section::-webkit-scrollbar { width: 5px; }
+    .chips-section::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.15); }
+    .chips-section::-webkit-scrollbar-thumb { background: rgba(245, 158, 11, 0.5); border-radius: 10px; }
+    .chips-section::-webkit-scrollbar-thumb:hover { background: #f59e0b; }
+    .chips-section.open { max-height: 220px; overflow-y: auto; }
 
     .chips-toggle {
       display: flex; align-items: center; justify-content: center;
@@ -1253,7 +1259,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
 
   <!-- Quick Actions Saved Favorites Section -->
   <div class="chips-section" id="chipsSection">
-    <div id="quickActionsList" style="display:flex;flex-direction:column;gap:6px;padding:4px 0;"></div>
+    <div id="quickActionsList" style="display:flex;flex-direction:column;gap:6px;padding:8px 12px;max-height:210px;overflow-y:auto;"></div>
   </div>
 
   <!-- Chat Container -->

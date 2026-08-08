@@ -249,12 +249,18 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
 .ai-float-chips-toggle i { transition: transform 0.3s ease; font-size: 10px; }
 .ai-float-chips-toggle.open i:last-child { transform: rotate(180deg); }
 .ai-float-chips-section {
-  max-height: 0; overflow: hidden;
+  max-height: 0; overflow-y: auto;
   transition: max-height 0.35s cubic-bezier(0.4,0,0.2,1);
   background: rgba(10,15,30,0.7);
   border-bottom: 1px solid rgba(255,255,255,0.06);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(245, 158, 11, 0.5) rgba(0, 0, 0, 0.2);
 }
-.ai-float-chips-section.open { max-height: 400px; }
+.ai-float-chips-section::-webkit-scrollbar { width: 5px; }
+.ai-float-chips-section::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.15); }
+.ai-float-chips-section::-webkit-scrollbar-thumb { background: rgba(245, 158, 11, 0.5); border-radius: 10px; }
+.ai-float-chips-section::-webkit-scrollbar-thumb:hover { background: #f59e0b; }
+.ai-float-chips-section.open { max-height: 220px; overflow-y: auto; }
 .ai-float-chips-grid { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; }
 .ai-float-chip-item {
   background: rgba(255,255,255,0.04);
@@ -494,7 +500,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     <i class="bi bi-chevron-down" style="margin-left:auto;"></i>
   </div>
   <div class="ai-float-chips-section" id="aiFloatChipsSection">
-    <div id="aiFloatQuickActionsList" style="display:flex;flex-direction:column;gap:6px;padding:4px 0;"></div>
+    <div id="aiFloatQuickActionsList" style="display:flex;flex-direction:column;gap:6px;padding:8px 12px;max-height:210px;overflow-y:auto;"></div>
   </div>
 
   <div class="ai-chat-body" id="aiFloatingChatBody" style="flex:1;padding:14px;background:#0a0f1e;overflow-y:auto;scroll-behavior:smooth">
