@@ -591,17 +591,40 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
   var cmdSuggestionsPopup = document.getElementById('aiFloatingCmdSuggestionsPopup');
 
   function renderFloatCmdSuggestions(cmd) {
-    if (!promptSuggestionsData || !promptSuggestionsData[cmd]) {
-      cmdSuggestionsPopup.style.display = 'none';
-      return;
-    }
-    var suggestions = (promptSuggestionsData[cmd] || []).slice(0, 3);
     var html = '';
-    for (var i = 0; i < suggestions.length; i++) {
-      var text = suggestions[i];
+    // Static prompt suggestions
+    var staticSugs = (promptSuggestionsData && promptSuggestionsData[cmd]) ? promptSuggestionsData[cmd].slice(0, 3) : [];
+    for (var i = 0; i < staticSugs.length; i++) {
+      var text = staticSugs[i];
       var display = text.replace(cmd, '<strong style="color:#3b82f6">' + cmd + '</strong>');
       html += '<div class="popup-item" onclick="_applyFloatSuggestion(\'' + text.replace(/'/g, "\\'") + '\')"><i class="bi bi-magic"></i> <span>' + display + '</span></div>';
     }
+
+    // Inject matching favorites from server cache
+    var cache = window._qaCache || [];
+    var matchingFavs = [];
+    for (var j = 0; j < cache.length; j++) {
+      if (cache[j].prompt.toLowerCase().indexOf(cmd.toLowerCase()) === 0) {
+        matchingFavs.push(cache[j]);
+      }
+    }
+    if (matchingFavs.length > 0) {
+      if (staticSugs.length > 0) {
+        html += '<div style="border-top:1px solid rgba(245,158,11,0.25);margin:4px 0;"></div>';
+        html += '<div style="padding:4px 16px;font-size:11px;color:#f59e0b;font-weight:600;letter-spacing:0.5px;"><i class="bi bi-star-fill"></i> PINNED FAVORITES</div>';
+      }
+      for (var k = 0; k < matchingFavs.length; k++) {
+        var escP = esc(matchingFavs[k].prompt);
+        html += '<div class="popup-item" style="color:#fbbf24;" onclick="_applyFloatSuggestion(\'' + matchingFavs[k].prompt.replace(/'/g, "\\'") + '\')"><i class="bi bi-star-fill" style="color:#f59e0b;"></i> <span>' + escP + '</span></div>';
+      }
+    }
+
+    if (!html) {
+      cmdSuggestionsPopup.style.display = 'none';
+      return;
+    }
+    cmdSuggestionsPopup.style.maxHeight = '220px';
+    cmdSuggestionsPopup.style.overflowY = 'auto';
     cmdSuggestionsPopup.innerHTML = html;
     cmdSuggestionsPopup.style.display = 'flex';
   }
@@ -1159,7 +1182,8 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     if (val.startsWith('/') && !inQuote) {
        var parts = val.split(' ');
        var activeCmd = parts[0];
-       if (promptSuggestionsData[activeCmd] && val.indexOf(' ') !== -1) {
+       var hasFavs = (window._qaCache || []).some(function(item) { return item.prompt.toLowerCase().indexOf(activeCmd.toLowerCase()) === 0; });
+       if ((promptSuggestionsData[activeCmd] || hasFavs) && val.indexOf(' ') !== -1) {
            renderFloatCmdSuggestions(activeCmd);
            cmdMatch = true;
        }
@@ -1251,10 +1275,178 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     micBtn.addEventListener('click', function() { alert('Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari.'); });
   }
 
-  // ─── Quick Chips (from any page) ───
-  document.querySelectorAll('.ai-float-chip-item').forEach(function(btn) {
-    btn.addEventListener('click', function() { var p = btn.getAttribute('data-prompt'); if (p) { applyChipPrompt(p, false); } });
-  });
+  // ─── FLOATING WIDGET SERVER-BACKED FAVORITE QUICK ACTIONS ENGINE ───
+  if (typeof window._qaCache === 'undefined') {
+    window._qaCache = [];
+  }
+
+  function fetchFloatingQuickActions() {
+    fetch(API_URL + '?action=get_quick_actions')
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.ok && data.items) {
+          window._qaCache = data.items;
+        }
+        renderFloatingQuickActions();
+        updateFloatingUserMsgStars();
+      })
+      .catch(function(e) { console.error('fetchFloatingQuickActions error:', e); });
+  }
+  window.fetchFloatingQuickActions = fetchFloatingQuickActions;
+
+  function isQuickActionSaved(prompt) {
+    var clean = prompt.trim().toLowerCase();
+    return (window._qaCache || []).some(function(item) { return item.prompt.trim().toLowerCase() === clean; });
+  }
+  window.isQuickActionSaved = isQuickActionSaved;
+
+  function getQaIdByPrompt(prompt) {
+    var clean = prompt.trim().toLowerCase();
+    var found = null;
+    (window._qaCache || []).forEach(function(item) {
+      if (item.prompt.trim().toLowerCase() === clean) found = item;
+    });
+    return found ? found.id : null;
+  }
+
+  function saveFloatingQuickAction(prompt, callback) {
+    var clean = prompt.trim();
+    if (!clean || isQuickActionSaved(clean)) return;
+    var fd = new FormData();
+    fd.append('action', 'save_quick_action');
+    fd.append('prompt', clean);
+    fetch(API_URL, { method: 'POST', body: fd })
+      .then(function() { fetchFloatingQuickActions(); if (callback) callback(); })
+      .catch(function(e) { console.error('saveFloatingQuickAction error:', e); });
+  }
+
+  function removeFloatingQuickActionById(id, callback) {
+    var fd = new FormData();
+    fd.append('action', 'delete_quick_action');
+    fd.append('id', id);
+    fetch(API_URL, { method: 'POST', body: fd })
+      .then(function() { fetchFloatingQuickActions(); if (callback) callback(); })
+      .catch(function(e) { console.error('removeFloatingQuickAction error:', e); });
+  }
+
+  window._floatToggleFavMsg = function(btn) {
+    var msgContent = btn.closest('.msg-content');
+    var bubble = msgContent.querySelector('.msg-bubble');
+    var prompt = ((bubble && (bubble.innerText || bubble.textContent)) || '').trim();
+    if (!prompt) return;
+
+    if (isQuickActionSaved(prompt)) {
+      var qaId = getQaIdByPrompt(prompt);
+      if (qaId) removeFloatingQuickActionById(qaId);
+      btn.classList.remove('active');
+      btn.innerHTML = '<i class="bi bi-star"></i>';
+      btn.title = 'Pin to Quick Actions';
+      showFloatingToast('Removed from Quick Actions');
+    } else {
+      saveFloatingQuickAction(prompt);
+      btn.classList.add('active');
+      btn.innerHTML = '<i class="bi bi-star-fill" style="color:#f59e0b;"></i>';
+      btn.title = 'Remove from Quick Actions';
+      showFloatingToast('Added to Quick Actions ⭐');
+    }
+    if (navigator.vibrate) navigator.vibrate(15);
+  };
+
+  window.deleteFloatingQuickAction = function(e, id) {
+    e.stopPropagation();
+    removeFloatingQuickActionById(id);
+    showFloatingToast('Deleted from Quick Actions');
+    if (navigator.vibrate) navigator.vibrate(15);
+  };
+
+  window.runFloatingQuickAction = function(prompt) {
+    if (typeof doSend === 'function') {
+      doSend(prompt);
+    }
+    var sec = document.getElementById('aiFloatChipsSection');
+    if (sec) sec.classList.remove('visible');
+    var tog = document.getElementById('aiFloatChipsToggle');
+    if (tog) tog.classList.remove('active');
+  };
+
+  function renderFloatingQuickActions() {
+    var container = document.getElementById('aiFloatQuickActionsList');
+    if (!container) return;
+
+    var list = window._qaCache || [];
+    var badge = document.getElementById('aiFloatQaBadge');
+    if (badge) {
+      badge.textContent = list.length;
+      badge.style.display = list.length > 0 ? 'inline-block' : 'none';
+    }
+
+    if (list.length === 0) {
+      container.innerHTML = '<div style="padding:14px;text-align:center;background:rgba(15,23,42,0.5);border:1px dashed rgba(255,255,255,0.12);border-radius:10px;color:#94a3b8;font-size:12px;">'
+        + '<i class="bi bi-star-fill" style="font-size:18px;color:#f59e0b;display:block;margin-bottom:4px;"></i>'
+        + '<strong>No Favorite Quick Actions Pinned</strong>'
+        + '<p style="margin:4px 0 0 0;font-size:11px;color:#64748b;">Click the <i class="bi bi-star"></i> star icon on any user prompt in chat to pin it here for 1-click execution!</p>'
+        + '</div>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      var escP = esc(list[i].prompt);
+      var itemId = list[i].id;
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#e2e8f0;font-size:12px;cursor:pointer;margin-bottom:4px;" onclick="runFloatingQuickAction(\'' + escP.replace(/'/g, "\\'") + '\')">'
+        + '<div style="display:flex;align-items:center;gap:8px;flex:1;overflow:hidden;">'
+        + '<i class="bi bi-star-fill" style="color:#f59e0b;font-size:13px;flex-shrink:0;"></i>'
+        + '<span style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escP + '</span>'
+        + '</div>'
+        + '<button type="button" style="background:none;border:none;color:#ef4444;opacity:0.8;padding:2px 6px;cursor:pointer;" onclick="deleteFloatingQuickAction(event, ' + itemId + ')" title="Delete">'
+        + '<i class="bi bi-trash3-fill"></i>'
+        + '</button>'
+        + '</div>';
+    }
+    container.innerHTML = html;
+  }
+  window.renderFloatingQuickActions = renderFloatingQuickActions;
+
+  function updateFloatingUserMsgStars() {
+    var chatBodyEl = document.getElementById('aiFloatingChatBody');
+    if (!chatBodyEl) return;
+    var userGroups = chatBodyEl.querySelectorAll('.msg-group.user');
+    for (var i = 0; i < userGroups.length; i++) {
+      var bubble = userGroups[i].querySelector('.msg-bubble');
+      var btn = userGroups[i].querySelector('.btn-fav-msg');
+      if (bubble && btn) {
+        var prompt = ((bubble.innerText || bubble.textContent) || '').trim();
+        var isFav = isQuickActionSaved(prompt);
+        btn.classList.toggle('active', isFav);
+        btn.title = isFav ? 'Remove from Quick Actions' : 'Pin to Quick Actions';
+        btn.innerHTML = '<i class="bi ' + (isFav ? 'bi-star-fill' : 'bi-star') + '" style="' + (isFav ? 'color:#f59e0b;' : '') + '"></i>';
+      }
+    }
+  }
+  window.updateFloatingUserMsgStars = updateFloatingUserMsgStars;
+
+  function showFloatingToast(msg) {
+    var toast = document.getElementById('aiFloatingToast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'aiFloatingToast';
+      toast.style.cssText = 'position:absolute;bottom:70px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,0.95);color:#fff;border:1px solid #3b82f6;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.4);backdrop-filter:blur(8px);transition:all 0.3s ease;opacity:0;pointer-events:none;';
+      var wrap = document.getElementById('aiFloatingChatWidget');
+      if (wrap) wrap.appendChild(toast);
+      else document.body.appendChild(toast);
+    }
+    toast.innerHTML = msg;
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateX(-50%) translateY(0)';
+    if (window._floatToastTimeout) clearTimeout(window._floatToastTimeout);
+    window._floatToastTimeout = setTimeout(function() {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateX(-50%) translateY(10px)';
+    }, 2200);
+  }
+
+  // Initial fetch on load
+  fetchFloatingQuickActions();
 
 })();
 
@@ -1418,162 +1610,6 @@ function floatSetActive(items) {
         items[window.acFloatFocus].style.background = 'rgba(59,130,246,0.15)';
     }
 }
-
-// ─── FLOATING WIDGET FAVORITE QUICK ACTIONS ENGINE ───
-if (typeof STORAGE_KEY_QA === 'undefined') {
-  var STORAGE_KEY_QA = 'erp_ai_quick_actions';
-}
-
-function getQuickActions() {
-  try {
-    var data = localStorage.getItem(STORAGE_KEY_QA);
-    return data ? JSON.parse(data) : [];
-  } catch (e) {
-    return [];
-  }
-}
-
-function isQuickActionSaved(prompt) {
-  var list = getQuickActions();
-  var clean = prompt.trim().toLowerCase();
-  return list.some(function(item) { return (typeof item === 'string' ? item : item.prompt).trim().toLowerCase() === clean; });
-}
-
-function saveQuickAction(prompt) {
-  var list = getQuickActions();
-  var clean = prompt.trim();
-  if (!clean) return;
-  if (!isQuickActionSaved(clean)) {
-    list.push({ id: Date.now(), prompt: clean });
-    localStorage.setItem(STORAGE_KEY_QA, JSON.stringify(list));
-  }
-  renderFloatingQuickActions();
-  updateFloatingUserMsgStars();
-}
-
-function removeQuickAction(prompt) {
-  var list = getQuickActions();
-  var clean = prompt.trim().toLowerCase();
-  list = list.filter(function(item) { return (typeof item === 'string' ? item : item.prompt).trim().toLowerCase() !== clean; });
-  localStorage.setItem(STORAGE_KEY_QA, JSON.stringify(list));
-  renderFloatingQuickActions();
-  updateFloatingUserMsgStars();
-}
-
-window._floatToggleFavMsg = function(btn) {
-  var msgContent = btn.closest('.msg-content');
-  var bubble = msgContent.querySelector('.msg-bubble');
-  var prompt = ((bubble && (bubble.innerText || bubble.textContent)) || '').trim();
-  if (!prompt) return;
-
-  if (isQuickActionSaved(prompt)) {
-    removeQuickAction(prompt);
-    btn.classList.remove('active');
-    btn.innerHTML = '<i class="bi bi-star"></i>';
-    btn.title = 'Pin to Quick Actions';
-    showFloatingToast('Removed from Quick Actions');
-  } else {
-    saveQuickAction(prompt);
-    btn.classList.add('active');
-    btn.innerHTML = '<i class="bi bi-star-fill" style="color:#f59e0b;"></i>';
-    btn.title = 'Remove from Quick Actions';
-    showFloatingToast('Added to Quick Actions ⭐');
-  }
-  if (navigator.vibrate) navigator.vibrate(15);
-};
-
-window.deleteFloatingQuickAction = function(e, prompt) {
-  e.stopPropagation();
-  removeQuickAction(prompt);
-  showFloatingToast('Deleted from Quick Actions');
-  if (navigator.vibrate) navigator.vibrate(15);
-};
-
-window.runFloatingQuickAction = function(prompt) {
-  if (typeof doSend === 'function') {
-    doSend(prompt);
-  }
-  var sec = document.getElementById('aiFloatChipsSection');
-  if (sec) sec.classList.remove('visible');
-  var tog = document.getElementById('aiFloatChipsToggle');
-  if (tog) tog.classList.remove('active');
-};
-
-function renderFloatingQuickActions() {
-  var container = document.getElementById('aiFloatQuickActionsList');
-  if (!container) return;
-
-  var list = getQuickActions();
-  var badge = document.getElementById('aiFloatQaBadge');
-  if (badge) {
-    badge.textContent = list.length;
-    badge.style.display = list.length > 0 ? 'inline-block' : 'none';
-  }
-
-  if (list.length === 0) {
-    container.innerHTML = '<div class="empty-qa-box" style="padding:14px;text-align:center;background:rgba(15,23,42,0.5);border:1px dashed rgba(255,255,255,0.12);border-radius:10px;color:#94a3b8;font-size:12px;">'
-      + '<i class="bi bi-star-fill" style="font-size:18px;color:#f59e0b;display:block;margin-bottom:4px;"></i>'
-      + '<strong>No Favorite Quick Actions Pinned</strong>'
-      + '<p style="margin:4px 0 0 0;font-size:11px;color:#64748b;">Click the <i class="bi bi-star"></i> star icon on any user prompt in chat to pin it here for 1-click execution!</p>'
-      + '</div>';
-    return;
-  }
-
-  var html = '';
-  for (var i = 0; i < list.length; i++) {
-    var pText = typeof list[i] === 'string' ? list[i] : list[i].prompt;
-    var escP = esc(pText);
-    html += '<div class="qa-fav-item" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#e2e8f0;font-size:12px;cursor:pointer;margin-bottom:4px;" onclick="runFloatingQuickAction(\'' + escP.replace(/'/g, "\\'") + '\')">'
-      + '<div style="display:flex;align-items:center;gap:8px;flex:1;overflow:hidden;">'
-      + '<i class="bi bi-star-fill" style="color:#f59e0b;font-size:13px;flex-shrink:0;"></i>'
-      + '<span style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escP + '</span>'
-      + '</div>'
-      + '<button type="button" style="background:none;border:none;color:#ef4444;opacity:0.8;padding:2px 6px;cursor:pointer;" onclick="deleteFloatingQuickAction(event, \'' + escP.replace(/'/g, "\\'") + '\')" title="Delete">'
-      + '<i class="bi bi-trash3-fill"></i>'
-      + '</button>'
-      + '</div>';
-  }
-  container.innerHTML = html;
-}
-
-function updateFloatingUserMsgStars() {
-  var chatBodyEl = document.getElementById('aiFloatingChatBody');
-  if (!chatBodyEl) return;
-  var userGroups = chatBodyEl.querySelectorAll('.msg-group.user');
-  for (var i = 0; i < userGroups.length; i++) {
-    var bubble = userGroups[i].querySelector('.msg-bubble');
-    var btn = userGroups[i].querySelector('.btn-fav-msg');
-    if (bubble && btn) {
-      var prompt = ((bubble.innerText || bubble.textContent) || '').trim();
-      var isFav = isQuickActionSaved(prompt);
-      btn.classList.toggle('active', isFav);
-      btn.title = isFav ? 'Remove from Quick Actions' : 'Pin to Quick Actions';
-      btn.innerHTML = '<i class="bi ' + (isFav ? 'bi-star-fill' : 'bi-star') + '" style="' + (isFav ? 'color:#f59e0b;' : '') + '"></i>';
-    }
-  }
-}
-
-function showFloatingToast(msg) {
-  var toast = document.getElementById('aiFloatingToast');
-  if (!toast) {
-    toast = document.createElement('div');
-    toast.id = 'aiFloatingToast';
-    toast.style.cssText = 'position:absolute;bottom:70px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,0.95);color:#fff;border:1px solid #3b82f6;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.4);backdrop-filter:blur(8px);transition:all 0.3s ease;opacity:0;pointer-events:none;';
-    var wrap = document.getElementById('aiFloatingChatWidget');
-    if (wrap) wrap.appendChild(toast);
-    else document.body.appendChild(toast);
-  }
-  toast.innerHTML = msg;
-  toast.style.opacity = '1';
-  toast.style.transform = 'translateX(-50%) translateY(0)';
-  if (window._floatToastTimeout) clearTimeout(window._floatToastTimeout);
-  window._floatToastTimeout = setTimeout(function() {
-    toast.style.opacity = '0';
-    toast.style.transform = 'translateX(-50%) translateY(10px)';
-  }, 2200);
-}
-
-// Initial Render for Floating Widget
-renderFloatingQuickActions();
 // ============================================================
 </script>
+

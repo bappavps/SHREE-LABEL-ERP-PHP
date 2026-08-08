@@ -79,14 +79,58 @@ $prompt = trim($_REQUEST['prompt'] ?? '');
 // ─── Alias Resolution — MUST run first, before any handler or $p derivation ───
 // Resolves e.g. "mriganka" → "Mriganka Bhusan Debnath" so every subsequent
 // handler (greeting check, KB lookup, RetrievalEngine) sees the canonical name.
-if (!in_array($action, ['autocomplete'])) {
+if (!in_array($action, ['autocomplete', 'get_quick_actions', 'save_quick_action', 'delete_quick_action'])) {
     $aliasResolver = new AliasResolver($db);
     $prompt = $aliasResolver->resolve($prompt);
 }
 
 
-if (!in_array($action, ['query', 'autocomplete'])) {
+if (!in_array($action, ['query', 'autocomplete', 'get_quick_actions', 'save_quick_action', 'delete_quick_action'])) {
     echo json_encode(['ok' => false, 'error' => 'Invalid action']);
+    exit;
+}
+
+// ─── Quick Actions CRUD (Server-Side Favorites) ───
+if ($action === 'get_quick_actions') {
+    $result = $db->query("SELECT `id`, `prompt`, `created_at` FROM `ai_agent_quick_actions` ORDER BY `created_at` DESC");
+    $items = [];
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $items[] = $row;
+        }
+        $result->free();
+    }
+    echo json_encode(['ok' => true, 'items' => $items], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+if ($action === 'save_quick_action') {
+    $qaPrompt = trim($_REQUEST['prompt'] ?? '');
+    if ($qaPrompt === '') {
+        echo json_encode(['ok' => false, 'error' => 'Empty prompt']);
+        exit;
+    }
+    // Upsert — ignore if duplicate
+    $stmt = $db->prepare("INSERT IGNORE INTO `ai_agent_quick_actions` (`prompt`) VALUES (?)");
+    $stmt->bind_param('s', $qaPrompt);
+    $stmt->execute();
+    $newId = $stmt->insert_id;
+    $stmt->close();
+    echo json_encode(['ok' => true, 'id' => (int)$newId], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+if ($action === 'delete_quick_action') {
+    $qaId = intval($_REQUEST['id'] ?? 0);
+    if ($qaId <= 0) {
+        echo json_encode(['ok' => false, 'error' => 'Invalid id']);
+        exit;
+    }
+    $stmt = $db->prepare("DELETE FROM `ai_agent_quick_actions` WHERE `id` = ? LIMIT 1");
+    $stmt->bind_param('i', $qaId);
+    $stmt->execute();
+    $stmt->close();
+    echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
     exit;
 }
 

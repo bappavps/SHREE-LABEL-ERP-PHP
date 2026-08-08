@@ -1452,18 +1452,35 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
     const cmdSuggestionsPopup = document.getElementById('cmdSuggestionsPopup');
 
     function renderCmdSuggestions(cmd) {
-      if (!promptSuggestionsData || !promptSuggestionsData[cmd]) {
-        cmdSuggestionsPopup.style.display = 'none';
-        return;
-      }
-      
-      const suggestions = (promptSuggestionsData[cmd] || []).slice(0, 3);
       let html = '';
-      suggestions.forEach(text => {
-        // Highlighting the command part
+      // Static prompt suggestions
+      const staticSugs = (promptSuggestionsData && promptSuggestionsData[cmd]) ? promptSuggestionsData[cmd].slice(0, 3) : [];
+      staticSugs.forEach(text => {
         const display = text.replace(cmd, `<strong style="color:#3b82f6">${cmd}</strong>`);
         html += `<div class="popup-item" onclick="applySuggestion('${text}')"><i class="bi bi-magic"></i> <span>${display}</span></div>`;
       });
+
+      // Inject matching favorites from server cache
+      const cache = window._qaCache || [];
+      const matchingFavs = cache.filter(item => item.prompt.toLowerCase().startsWith(cmd.toLowerCase()));
+      if (matchingFavs.length > 0) {
+        if (staticSugs.length > 0) {
+          html += `<div style="border-top:1px solid rgba(245,158,11,0.25);margin:4px 0;"></div>`;
+          html += `<div style="padding:4px 16px;font-size:11px;color:#f59e0b;font-weight:600;letter-spacing:0.5px;"><i class="bi bi-star-fill"></i> PINNED FAVORITES</div>`;
+        }
+        matchingFavs.forEach(fav => {
+          const escP = escapeHtml(fav.prompt);
+          const display = escP.replace(new RegExp(cmd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), `<strong style="color:#f59e0b">${cmd}</strong>`);
+          html += `<div class="popup-item" style="color:#fbbf24;" onclick="applySuggestion('${fav.prompt.replace(/'/g, "\\'")}')"><i class="bi bi-star-fill" style="color:#f59e0b;"></i> <span>${display}</span></div>`;
+        });
+      }
+
+      if (!html) {
+        cmdSuggestionsPopup.style.display = 'none';
+        return;
+      }
+      cmdSuggestionsPopup.style.maxHeight = '220px';
+      cmdSuggestionsPopup.style.overflowY = 'auto';
       cmdSuggestionsPopup.innerHTML = html;
       cmdSuggestionsPopup.style.display = 'flex';
     }
@@ -1597,7 +1614,8 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
          const parts = text.split(' ');
          const activeCmd = parts[0];
          const inQuote = /^\/(job|plate|paper|product)\s+"/i.test(text);
-         if (promptSuggestionsData[activeCmd] && text.startsWith(activeCmd + ' ') && !inQuote) {
+         const hasFavs = (window._qaCache || []).some(item => item.prompt.toLowerCase().startsWith(activeCmd.toLowerCase()));
+         if ((promptSuggestionsData[activeCmd] || hasFavs) && text.startsWith(activeCmd + ' ') && !inQuote) {
              renderCmdSuggestions(activeCmd);
              cmdMatch = true;
          }
@@ -2321,59 +2339,75 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       chatStream.scrollTo({ top: chatStream.scrollHeight, behavior: 'smooth' });
     }
 
-    // ─── FAVORITE QUICK ACTIONS ENGINE ───
-    const STORAGE_KEY_QA = 'erp_ai_quick_actions';
+    // ─── SERVER-BACKED FAVORITE QUICK ACTIONS ENGINE ───
+    window._qaCache = []; // In-memory cache of server favorites
 
-    function getQuickActions() {
+    async function fetchQuickActions() {
       try {
-        const data = localStorage.getItem(STORAGE_KEY_QA);
-        return data ? JSON.parse(data) : [];
+        const res = await fetch(API_URL + '?action=get_quick_actions');
+        const data = await res.json();
+        if (data.ok && data.items) {
+          window._qaCache = data.items;
+        }
       } catch (e) {
-        return [];
+        console.error('fetchQuickActions error:', e);
       }
+      renderQuickActions();
+      updateUserMsgStars();
     }
 
     function isQuickActionSaved(prompt) {
-      const list = getQuickActions();
       const clean = prompt.trim().toLowerCase();
-      return list.some(item => (typeof item === 'string' ? item : item.prompt).trim().toLowerCase() === clean);
+      return (window._qaCache || []).some(item => item.prompt.trim().toLowerCase() === clean);
     }
 
-    function saveQuickAction(prompt) {
-      const list = getQuickActions();
+    function getQaIdByPrompt(prompt) {
+      const clean = prompt.trim().toLowerCase();
+      const found = (window._qaCache || []).find(item => item.prompt.trim().toLowerCase() === clean);
+      return found ? found.id : null;
+    }
+
+    async function saveQuickAction(prompt) {
       const clean = prompt.trim();
-      if (!clean) return;
-      if (!isQuickActionSaved(clean)) {
-        list.push({ id: Date.now(), prompt: clean });
-        localStorage.setItem(STORAGE_KEY_QA, JSON.stringify(list));
+      if (!clean || isQuickActionSaved(clean)) return;
+      try {
+        const fd = new FormData();
+        fd.append('action', 'save_quick_action');
+        fd.append('prompt', clean);
+        await fetch(API_URL, { method: 'POST', body: fd });
+      } catch (e) {
+        console.error('saveQuickAction error:', e);
       }
-      renderQuickActions();
-      updateUserMsgStars();
+      await fetchQuickActions();
     }
 
-    function removeQuickAction(prompt) {
-      let list = getQuickActions();
-      const clean = prompt.trim().toLowerCase();
-      list = list.filter(item => (typeof item === 'string' ? item : item.prompt).trim().toLowerCase() !== clean);
-      localStorage.setItem(STORAGE_KEY_QA, JSON.stringify(list));
-      renderQuickActions();
-      updateUserMsgStars();
+    async function removeQuickActionById(id) {
+      try {
+        const fd = new FormData();
+        fd.append('action', 'delete_quick_action');
+        fd.append('id', id);
+        await fetch(API_URL, { method: 'POST', body: fd });
+      } catch (e) {
+        console.error('removeQuickAction error:', e);
+      }
+      await fetchQuickActions();
     }
 
-    function toggleFavMsg(btn) {
+    async function toggleFavMsg(btn) {
       const msgContent = btn.closest('.msg-content');
       const bubble = msgContent.querySelector('.msg-bubble');
       const prompt = (bubble.innerText || bubble.textContent).trim();
       if (!prompt) return;
 
       if (isQuickActionSaved(prompt)) {
-        removeQuickAction(prompt);
+        const qaId = getQaIdByPrompt(prompt);
+        if (qaId) await removeQuickActionById(qaId);
         btn.classList.remove('active');
         btn.innerHTML = '<i class="bi bi-star"></i>';
         btn.title = 'Pin to Quick Actions';
         showToast('Removed from Quick Actions');
       } else {
-        saveQuickAction(prompt);
+        await saveQuickAction(prompt);
         btn.classList.add('active');
         btn.innerHTML = '<i class="bi bi-star-fill" style="color:#f59e0b;"></i>';
         btn.title = 'Remove from Quick Actions';
@@ -2382,9 +2416,9 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       if (navigator.vibrate) navigator.vibrate(15);
     }
 
-    function deleteQuickAction(e, prompt) {
+    async function deleteQuickAction(e, id) {
       e.stopPropagation();
-      removeQuickAction(prompt);
+      await removeQuickActionById(id);
       showToast('Deleted from Quick Actions');
       if (navigator.vibrate) navigator.vibrate(15);
     }
@@ -2403,7 +2437,7 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       const container = document.getElementById('quickActionsList');
       if (!container) return;
 
-      const list = getQuickActions();
+      const list = window._qaCache || [];
       const badge = document.getElementById('qaBadge');
       if (badge) {
         badge.textContent = list.length;
@@ -2422,15 +2456,14 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
 
       let html = '';
       list.forEach(item => {
-        const pText = typeof item === 'string' ? item : item.prompt;
-        const escP = escapeHtml(pText);
+        const escP = escapeHtml(item.prompt);
         html += `
           <div class="qa-fav-item" onclick="runQuickAction('${escP.replace(/'/g, "\\'")}')">
             <div class="qa-fav-content">
               <i class="bi bi-star-fill" style="color:#f59e0b;font-size:14px;flex-shrink:0;"></i>
               <span class="qa-fav-text">${escP}</span>
             </div>
-            <button type="button" class="qa-fav-delete" onclick="deleteQuickAction(event, '${escP.replace(/'/g, "\\'")}')" title="Delete from Quick Actions">
+            <button type="button" class="qa-fav-delete" onclick="deleteQuickAction(event, ${item.id})" title="Delete from Quick Actions">
               <i class="bi bi-trash3-fill"></i>
             </button>
           </div>`;
@@ -2470,8 +2503,34 @@ $promptSuggestionsJson = file_exists($promptSuggestionsPath) ? file_get_contents
       }, 2200);
     }
 
+    // ─── Migrate legacy localStorage favorites to server (one-time) ───
+    async function migrateLocalStorageFavs() {
+      try {
+        const raw = localStorage.getItem('erp_ai_quick_actions');
+        if (!raw) return;
+        const items = JSON.parse(raw);
+        if (!Array.isArray(items) || items.length === 0) return;
+        for (const item of items) {
+          const p = typeof item === 'string' ? item : item.prompt;
+          if (p && p.trim()) {
+            const fd = new FormData();
+            fd.append('action', 'save_quick_action');
+            fd.append('prompt', p.trim());
+            await fetch(API_URL, { method: 'POST', body: fd });
+          }
+        }
+        localStorage.removeItem('erp_ai_quick_actions');
+        await fetchQuickActions();
+      } catch (e) {
+        console.error('Migration error:', e);
+      }
+    }
+
     // Initialize Quick Actions on Load
-    renderQuickActions();
+    (async () => {
+      await migrateLocalStorageFavs();
+      await fetchQuickActions();
+    })();
 
     // Focus input on load
     setTimeout(() => chatInput.focus(), 300);

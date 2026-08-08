@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS `ai_agent_quick_actions` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `prompt` VARCHAR(500) NOT NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uq_prompt` (`prompt`(255))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
